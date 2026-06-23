@@ -2,10 +2,8 @@ You are running the adversarial **review-implementation** pass for a dual-review
 
 ## Required Instructions
 
-1. Before reviewing, read and follow the `review-implementation` skill from the first path that exists:
-   - `skills/review-implementation/SKILL.md`
-   - `.agents/skills/review-implementation/SKILL.md`
-   - `~/.agents/skills/review-implementation/SKILL.md`
+1. Before reviewing, read and follow this skill file:
+   - `{{SKILL_PATH}}`
 2. Also read `AGENTS.md` when present.
 3. Review only the artifact files listed below. Do not edit files. This is read-only.
 4. Return JSON matching the provided schema. No markdown fences or prose outside JSON.
