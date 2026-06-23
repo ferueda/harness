@@ -139,7 +139,7 @@ function parseInitArgs(options, rest) {
 
 function readValue(argv, index, flag) {
   const value = argv[index + 1];
-  if (value === undefined || value.startsWith("-")) {
+  if (value === undefined || value.startsWith("-") || value.trim() === "") {
     throw new Error(`Missing value for ${flag}`);
   }
   return value;
