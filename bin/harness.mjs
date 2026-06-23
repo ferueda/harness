@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
 import { run as runDualReview } from "../workflows/dual-review.workflow.js";
-import { resolveHarnessOptions } from "../lib/config.js";
+import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.js";
 import { createWorkflowContext } from "../lib/workflow-context.js";
 
 function printHelp() {
-  console.log(`Usage: harness run dual-review [options]
+  console.log(`Usage:
+  harness init [options]
+  harness run dual-review [options]
 
 Options:
   --workspace <path>       Target repo (default: nearest harness.json root or Git root)
@@ -23,7 +25,7 @@ Options:
 }
 
 function parseArgs(argv) {
-  const [command, workflow, ...rest] = argv;
+  const [command, ...rest] = argv;
   const options = {
     maxRuntimeMs: 30 * 60 * 1000,
     dryRun: false,
@@ -34,10 +36,23 @@ function parseArgs(argv) {
     return options;
   }
 
-  if (command !== "run" || workflow !== "dual-review") {
-    throw new Error("Expected command: harness run dual-review");
+  options.command = command;
+
+  if (command === "init") {
+    parseInitArgs(options, rest);
+    return options;
   }
 
+  if (command !== "run" || rest[0] !== "dual-review") {
+    throw new Error("Expected command: harness init or harness run dual-review");
+  }
+
+  options.workflow = rest[0];
+  parseRunArgs(options, rest.slice(1));
+  return options;
+}
+
+function parseRunArgs(options, rest) {
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     switch (arg) {
@@ -92,8 +107,28 @@ function parseArgs(argv) {
   if (!Number.isFinite(options.maxRuntimeMs) || options.maxRuntimeMs <= 0) {
     throw new Error("Invalid --max-runtime-ms");
   }
+}
 
-  return options;
+function parseInitArgs(options, rest) {
+  for (let index = 0; index < rest.length; index += 1) {
+    const arg = rest[index];
+    switch (arg) {
+      case "-h":
+      case "--help":
+        options.help = true;
+        break;
+      case "--workspace":
+        options.workspace = readValue(rest, index, arg);
+        index += 1;
+        break;
+      case "--base":
+        options.baseRef = readValue(rest, index, arg);
+        index += 1;
+        break;
+      default:
+        throw new Error(`Unknown option: ${arg}`);
+    }
+  }
 }
 
 function readValue(argv, index, flag) {
@@ -120,6 +155,12 @@ async function main() {
   }
 
   try {
+    if (options.command === "init") {
+      const result = initHarnessConfig(options);
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
     const ctx = createWorkflowContext(resolveHarnessOptions(options));
     const meta = await runDualReview(ctx);
     console.log(JSON.stringify(meta, null, 2));
