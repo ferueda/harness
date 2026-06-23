@@ -162,7 +162,10 @@ async function main() {
 
   try {
     if (options.command === "init") {
-      const result = initHarnessConfig(options);
+      const result = initHarnessConfig({
+        workspace: options.workspace,
+        baseRef: options.baseRef,
+      });
       console.log(JSON.stringify(result, null, 2));
       return;
     }
