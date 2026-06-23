@@ -11,7 +11,7 @@
 
 We are building **`harness`** — a single repo for agent instructions, custom workflows, and the runner that orchestrates multi-agent coding workflows (review, implement, verify) across **many target repos**, with **durable execution** as the long-term goal.
 
-**Phase 0 is done** in this repo: a sequential dual-review workflow (`review-implementation` → `code-quality-review`) invoked via `harness run dual-review`, writing artifacts to `<target-repo>/.agent-runs/reviews/`.
+**Phase 0 is done** in this repo: a sequential dual-review workflow (`review-implementation` → `code-quality-review`) invoked via `harness run dual-review`, writing artifacts to `<target-repo>/.harness/runs/reviews/`.
 
 **Next agent should:** create the new `harness` repo, migrate this repo's skills and Phase 0 review pipeline into it, then build the simplest live `dual-review.workflow.js` before adding broader primitives.
 
@@ -25,7 +25,7 @@ Build production-grade **agent loop architecture** for Felipe's personal coding 
 
 1. Run agents against **external repos** (`--workspace /path/to/app`)
 2. Keep **one `harness` repo** to maintain; target repos stay clean
-3. Persist **audit artifacts** in each target repo (`.agent-runs/`)
+3. Persist **audit artifacts** in each target repo (`.harness/`)
 4. Compose existing **skills** (`implement-plan`, `handoff-work`, `review-implementation`, `code-quality-review`, `react-to-review`) into automated pipelines
 5. Evolve toward **durable orchestration** (checkpointed steps, retries, triggers, hill-climbing meta-loops)
 
@@ -36,7 +36,7 @@ Build production-grade **agent loop architecture** for Felipe's personal coding 
 | **Instructions** | `skills/*/SKILL.md` in `harness` | Model-agnostic playbooks; globally installed to `~/.agents/skills/` |
 | **Workflows** | `workflows/*.workflow.js` in `harness` | Multi-step pipelines: verify → review → export |
 | **Orchestrator** | Inngest (planned Phase 2) | `step.run()` checkpointing, cron/webhooks, `onFailure`, concurrency |
-| **Artifacts** | `.agent-runs/` in target repos | Step traces, JSON reviews, `summary.md`, resumable `steps.json` |
+| **Artifacts** | `.harness/` in target repos | Step traces, JSON reviews, `summary.md`, resumable `steps.json` |
 | **Triggers** | GH Actions → inbox → Inngest | Loop 3: event-driven, not manual-only |
 
 ### Starting point (before this work)
@@ -50,7 +50,7 @@ Build production-grade **agent loop architecture** for Felipe's personal coding 
 
 1. **Single repo:** `harness` owns instructions, workflows, runner, and future orchestrator code
 2. **Invocation:** harness always takes `--workspace <target-repo>`; never copy harness into each app
-3. **Artifacts:** live in **target repo** at `.agent-runs/` (gitignored); not in harness repo
+3. **Artifacts:** live in **target repo** at `.harness/` (gitignored); not in harness repo
 4. **Review order:** `review-implementation` first (adversarial/correctness), then `code-quality-review` (maintainability; sees reviewer 1 output)
 5. **Export rule:** LLM produces structured JSON; **code** produces human reports (`summary.md`) — never ask an LLM to write final artifacts
 6. **Human gates:** `react-to-review` and merge remain human/agent decisions; harness does not auto-merge or auto-fix without explicit future phase
@@ -86,7 +86,7 @@ Four stacked loops:
 | 1 Agent | model + tools until done | `implement-plan`, `cursor-cli` |
 | 2 Verification | grader + retry with feedback | dual-review (+ future deterministic graders) |
 | 3 Event-driven | triggers at scale | GH Action / inbox / Inngest (not built) |
-| 4 Hill climbing | traces → improve harness | meta-review over `.agent-runs/` (not built) |
+| 4 Hill climbing | traces → improve harness | meta-review over `.harness/` (not built) |
 
 **3. TradingFlow (Claude Code Dynamic Workflow)**  
 https://github.com/lxcong/TradingFlow/blob/main/tradingflow.workflow.js
@@ -112,7 +112,7 @@ Reference implementation for **workflow composition** (not durability). Study fo
 │  target-repo (any app)                                           │
 │  src/...                                                         │
 │  dev/plans/ (optional)                                           │
-│  .agent-runs/reviews/<run-id>/  ← artifacts                      │
+│  .harness/runs/reviews/<run-id>/  ← artifacts                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -155,7 +155,7 @@ Legacy Phase 0 was a sequential dual-review script in `agent-skills`. In `harnes
 
 ### Artifact layout (contract v0)
 
-`<workspace>/.agent-runs/reviews/<run-id>/`:
+`<workspace>/.harness/runs/reviews/<run-id>/`:
 
 ```
 meta.json                      # run metadata, verdict, session IDs, scope stats (no full diff)
@@ -181,7 +181,7 @@ node bin/harness.mjs run dual-review \
   --workspace /path/to/target-repo \
   --base main --head HEAD \
   --plan dev/plans/foo.md \
-  --handoff .agent-runs/handoff.md
+  --handoff .harness/handoff.md
 
 # Tests
 npm test
@@ -213,9 +213,9 @@ npm test
 | LLM-only verification | Add deterministic `test` + `lint` steps before reviewers | 1 |
 | No retry-with-feedback | Optional fix-and-re-review loop (max 2 rounds) | 2.5 |
 | No checkpointing | `steps.json` resumability, then Inngest `step.run()` | 0.5 → 2 |
-| Artifact leakage risk | Gitignore `.agent-runs/`; keep artifacts local by default | 0.5 |
-| Triggers deferred too far | GH Action + `.agent-runs/inbox/` event file | 1.5 |
-| No hill climbing | Weekly meta-review of `.agent-runs/` → prompt PRs | 3 |
+| Artifact leakage risk | Gitignore `.harness/`; keep artifacts local by default | 0.5 |
+| Triggers deferred too far | GH Action + `.harness/inbox/` event file | 1.5 |
+| No hill climbing | Weekly meta-review of `.harness/` → prompt PRs | 3 |
 | No concurrency guard | Lock per branch SHA | 2 |
 | No `onFailure` notify | Pluggable notifier (file → slack) | 2 |
 
@@ -273,11 +273,11 @@ Do not pass full `implementation-review.json` to reviewer 2. Add `digestReview(r
 |-------|-------------|--------|
 | **0** | Dual LLM review + artifacts in `agent-skills` | ✅ Done |
 | **0.5** | Create new `harness` repo; migrate `skills/`, Phase 0 review pipeline, plans, and docs | **Next** |
-| **0.6** | `steps.json` resumability; artifact schema v1; `.agent-runs/` gitignore guidance | Pending |
+| **0.6** | `steps.json` resumability; artifact schema v1; `.harness/` gitignore guidance | Pending |
 | **1a** | Implement simple `dual-review.workflow.js`; live LLM smoke test | Pending |
 | **1b** | Generalize only proven pieces into small primitives (`agent`, `aggregate`, `export`, then maybe `step`) | Pending |
 | **1c** | Deterministic grader; `REVIEW_RULES`; `digestReview()`; split schemas if useful | Pending |
-| **1.5** | Triggers: GH Action, `.agent-runs/inbox/review.json` | Pending |
+| **1.5** | Triggers: GH Action, `.harness/inbox/review.json` | Pending |
 | **2** | Inngest orchestrator; `onFailure`; concurrency per SHA | Pending |
 | **2.5** | Capped fix-and-re-review loop | Pending |
 | **3** | Hill-climbing meta-review → skill prompt PRs (human-gated) | Pending |
@@ -295,7 +295,7 @@ harness/
 ├── lib/
 │   ├── workflow-context.js          # ctx.agent, ctx.aggregate, ctx.export
 │   ├── cursor-agent.js              # wrapper around cursor-agent.mjs
-│   ├── artifacts.js                 # .agent-runs/ writer (shared contract)
+│   ├── artifacts.js                 # .harness/ writer (shared contract)
 │   ├── digest.js                    # digestReview()
 │   ├── aggregate.js                 # verdict rollup
 │   ├── context.js                   # git scope, prompt fill
@@ -395,7 +395,7 @@ Document this contract in `harness` (versioned).
 
 ### Artifact hygiene
 
-- Target repos should gitignore `.agent-runs/`
+- Target repos should gitignore `.harness/`
 - Do not upload or publish artifacts by default
 - Keep full diffs in `context/diff.patch`, not in `meta.json`
 - Prefer relative paths inside artifact JSON when possible; absolute paths are okay for local debugging only
@@ -451,7 +451,7 @@ npm test
 
 node bin/harness.mjs run dual-review \
   --workspace /Users/frueda/dev/agent-skills --base main --head HEAD --dry-run
-# exit 0; artifacts under .agent-runs/reviews/<run-id>/
+# exit 0; artifacts under .harness/runs/reviews/<run-id>/
 ```
 
 Full LLM run not verified in this session (requires `agent` auth).
@@ -467,7 +467,7 @@ Full LLM run not verified in this session (requires `agent` auth).
 5. **Keep the first runner small**: load that workflow, pass `--workspace`, write the same artifacts Phase 0 writes
 6. **Run a full LLM smoke test** against a real branch before adding generic primitives
 7. **Add `steps.json` v1** using the simple status/output rules above
-8. **Add `.agent-runs/` gitignore guidance** to harness docs and target repo templates
+8. **Add `.harness/` gitignore guidance** to harness docs and target repo templates
 9. **Extract tiny primitives only after they repeat**: `agent`, `aggregate`, `export`; add `step` when adding graders
 10. **Add `digestReview()`** before changing reviewer prompts
 11. **Add one deterministic grader** (`step('test', ...)`) with `--test-command`
@@ -487,7 +487,7 @@ Full LLM run not verified in this session (requires `agent` auth).
 | Inngest vs alternatives | Inngest is article's choice; GH Actions acceptable for Phase 1.5 triggers only |
 | Review Manager agent | Optional synthesis step; defer unless needed for `react-to-review` input |
 | Full LLM smoke test | Run dual-review against a real branch with `agent` auth |
-| `.agent-runs/` committed in `agent-skills` | Dry-run created artifacts; add `.gitignore` entry or delete |
+| Local artifact cleanup | Old dry-run artifacts may exist in target repos; keep `.harness/` gitignored |
 | SQLite artifact index | Defer until file artifacts become hard to query across many runs |
 
 ---
@@ -495,7 +495,7 @@ Full LLM run not verified in this session (requires `agent` auth).
 ## Assumptions (do not re-litigate)
 
 1. Harness runs **against** target repos, not just itself
-2. Artifacts belong in **target repo** `.agent-runs/`
+2. Artifacts belong in **target repo** `.harness/`
 3. Reviewer order: **implementation → quality** (sequential)
 4. New repo is **`harness`**, a single source of truth for skills and workflows
 5. Phase 0 code in `agent-skills` is **throwaway scaffold** — port useful pieces into `harness`
@@ -532,7 +532,7 @@ Build a multi-repo agent harness with durable orchestration as the north star. N
 Phase 0 dual-review workflow implemented and tested. Architecture, repo consolidation, article analysis, TradingFlow lessons, and revised roadmap documented in conversation and this file.
 
 ### How it was done
-Node script spawning `cursor-agent.mjs` twice with JSON schemas; file-based artifacts in target repo `.agent-runs/reviews/`.
+Node script spawning `cursor-agent.mjs` twice with JSON schemas; file-based artifacts in target repo `.harness/runs/reviews/`.
 
 ### Why it was done
 Prove Loop 2 (verification) before Loop 3 (triggers) and orchestrator investment. TradingFlow informs workflow DSL shape for harness v1.

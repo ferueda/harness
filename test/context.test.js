@@ -12,12 +12,12 @@ import {
 
 test("buildDiffSection writes diff and returns only a file reference", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
-  const runDir = join(workspace, ".agent-runs/reviews/run-1");
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
   const diff = "diff --git a/a.txt b/a.txt\n+hello\n";
 
   const section = buildDiffSection(diff, runDir, workspace);
 
-  assert.equal(section, "Diff file: `.agent-runs/reviews/run-1/context/diff.patch`");
+  assert.equal(section, "Diff file: `.harness/runs/reviews/run-1/context/diff.patch`");
   assert.equal(readFileSync(join(runDir, "context/diff.patch"), "utf8"), diff);
   assert.doesNotMatch(section, /hello/);
   assert.doesNotMatch(section, /First 200 lines/);
@@ -25,7 +25,7 @@ test("buildDiffSection writes diff and returns only a file reference", () => {
 
 test("writeRunContext copies plan and handoff and sections return file references", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
-  const runDir = join(workspace, ".agent-runs/reviews/run-1");
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
   writeFileSync(join(workspace, "plan.md"), "# Plan\n", "utf8");
   writeFileSync(join(workspace, "handoff.md"), "# Handoff\n", "utf8");
 
@@ -40,10 +40,10 @@ test("writeRunContext copies plan and handoff and sections return file reference
   assert.equal(existsSync(join(runDir, "context/handoff.md")), true);
   assert.equal(
     buildPlanSection(artifacts.plan, workspace),
-    "Plan file: `.agent-runs/reviews/run-1/context/plan.md`",
+    "Plan file: `.harness/runs/reviews/run-1/context/plan.md`",
   );
   assert.equal(
     buildHandoffSection(artifacts.handoff, workspace),
-    "Handoff file: `.agent-runs/reviews/run-1/context/handoff.md`",
+    "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
   );
 });
