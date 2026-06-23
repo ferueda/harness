@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Pipeline"
+  short_description: "Sequential dual review via headless Cursor agents"
+  default_prompt: "Use $review-pipeline to run review-implementation then code-quality-review on this branch and persist artifacts."
