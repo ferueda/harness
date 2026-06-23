@@ -5,6 +5,7 @@ A personal agent harness for coding workflows. It keeps reusable agent instructi
 ## Repo Shape
 
 ```text
+harness.json  Repo-local harness defaults
 skills/       Agent Skill instructions
 providers/    Runtime adapters for external agent providers
 workflows/    Callable workflows, starting with dual-review
@@ -16,10 +17,20 @@ dev/plans/    Plans and handoffs for this repo
 ## First Workflow
 
 ```bash
-node bin/harness.mjs run dual-review --workspace /path/to/repo --base main
+node bin/harness.mjs run dual-review
 ```
 
 The first workflow calls `review-implementation`, then `code-quality-review`, then writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
+
+`harness.json` lives at the target repo root and keeps repo-local defaults:
+
+```json
+{
+  "base": "main"
+}
+```
+
+When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run dual-review`.
 
 Skills follow the [Agent Skills](https://agentskills.io/) format.
 
