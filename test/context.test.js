@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import {
   buildDiffSection,
   buildHandoffSection,
   buildPlanSection,
+  buildPriorReviewSection,
   writeRunContext,
 } from "../lib/context.js";
 
@@ -45,5 +46,19 @@ test("writeRunContext copies plan and handoff and sections return file reference
   assert.equal(
     buildHandoffSection(artifacts.handoff, workspace),
     "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
+  );
+});
+
+test("buildPriorReviewSection omits missing prior reviews", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+
+  assert.equal(buildPriorReviewSection(join(runDir, "implementation-review.json"), workspace), "");
+
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(runDir, "implementation-review.json"), "{}\n", "utf8");
+  assert.equal(
+    buildPriorReviewSection(join(runDir, "implementation-review.json"), workspace),
+    "- Prior implementation review file: `.harness/runs/reviews/run-1/implementation-review.json`",
   );
 });
