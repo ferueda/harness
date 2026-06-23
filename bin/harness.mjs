@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
 import { run as runDualReview } from "../workflows/dual-review.workflow.js";
+import { resolveHarnessOptions } from "../lib/config.js";
 import { createWorkflowContext } from "../lib/workflow-context.js";
 
 function printHelp() {
   console.log(`Usage: harness run dual-review [options]
 
 Options:
-  --workspace <path>       Target repo (default: cwd)
-  --base <ref>             Base ref (default: main)
+  --workspace <path>       Target repo (default: nearest harness.json root or Git root)
+  --base <ref>             Base ref (default: harness.json base or main)
   --head <ref>             Head ref (default: HEAD)
   --plan <path>            Optional plan file (relative to workspace or absolute)
   --handoff <path>         Optional handoff file
@@ -24,9 +25,6 @@ Options:
 function parseArgs(argv) {
   const [command, workflow, ...rest] = argv;
   const options = {
-    workspace: process.cwd(),
-    baseRef: "main",
-    headRef: "HEAD",
     maxRuntimeMs: 30 * 60 * 1000,
     dryRun: false,
   };
@@ -122,7 +120,7 @@ async function main() {
   }
 
   try {
-    const ctx = createWorkflowContext(options);
+    const ctx = createWorkflowContext(resolveHarnessOptions(options));
     const meta = await runDualReview(ctx);
     console.log(JSON.stringify(meta, null, 2));
     process.exit(meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1);
