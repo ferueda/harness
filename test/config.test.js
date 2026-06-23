@@ -94,3 +94,49 @@ test("initHarnessConfig creates .gitignore when needed", () => {
   assert.equal(existsSync(join(workspace, ".gitignore")), true);
   assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "main"\n}\n');
 });
+
+test("initHarnessConfig appends to existing .gitignore", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, ".gitignore"), "node_modules\n", "utf8");
+
+  const result = initHarnessConfig({}, workspace);
+
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`);
+});
+
+test("initHarnessConfig appends to .gitignore without trailing newline", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, ".gitignore"), "node_modules", "utf8");
+
+  const result = initHarnessConfig({}, workspace);
+
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`);
+});
+
+test("initHarnessConfig updates gitignore when config exists", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, "harness.json"), '{\n  "base": "develop"\n}\n', "utf8");
+
+  const result = initHarnessConfig({}, workspace);
+
+  assert.equal(result.configCreated, false);
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "develop"\n}\n');
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `${HARNESS_GITIGNORE_ENTRY}\n`);
+});
+
+test("initHarnessConfig accepts equivalent harness ignore entries", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, ".gitignore"), ".harness\n", "utf8");
+
+  const result = initHarnessConfig({}, workspace);
+
+  assert.equal(result.gitignoreUpdated, false);
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), ".harness\n");
+});
