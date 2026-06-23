@@ -35,6 +35,12 @@ When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory
 
 `harness init` creates `harness.json` when missing and ensures `.gitignore` contains `.harness/`.
 
+For external target repos, pass the repo path explicitly:
+
+```bash
+node bin/harness.mjs init --workspace /path/to/repo
+```
+
 Skills follow the [Agent Skills](https://agentskills.io/) format.
 
 ## Available Skills
