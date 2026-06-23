@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "required": ["verdict", "summary", "findings"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "needs_changes", "blocked"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "severity", "location", "issue", "recommendation", "must_fix"],
+        "properties": {
+          "title": { "type": "string" },
+          "severity": {
+            "type": "string",
+            "enum": ["Critical", "High", "Medium", "Low"]
+          },
+          "location": { "type": "string" },
+          "issue": { "type": "string" },
+          "recommendation": { "type": "string" },
+          "rationale": { "type": "string" },
+          "must_fix": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
