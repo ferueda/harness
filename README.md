@@ -18,7 +18,7 @@ dev/plans/    Plans and handoffs for this repo
 node bin/harness.mjs run dual-review --workspace /path/to/repo --base main
 ```
 
-The first workflow calls `review-implementation`, then `code-quality-review`, then writes structured artifacts under the target repo's `.agent-runs/reviews/<run-id>/`.
+The first workflow calls `review-implementation`, then `code-quality-review`, then writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
 
 Skills follow the [Agent Skills](https://agentskills.io/) format.
 
