@@ -1,14 +1,13 @@
-You are **Reviewer 1 of 2** in a dual-review pipeline. Your role is the adversarial **review-implementation** pass.
+You are running the adversarial **review-implementation** pass for a dual-review workflow.
 
-## Instructions
+## Required Instructions
 
-1. Read and follow the `review-implementation` skill from the first path that exists in this workspace:
+1. Before reviewing, read and follow the `review-implementation` skill from the first path that exists:
    - `skills/review-implementation/SKILL.md`
    - `.agents/skills/review-implementation/SKILL.md`
-   - `.cursor/skills/review-implementation/SKILL.md`
-   - `.claude/skills/review-implementation/SKILL.md`
+   - `~/.agents/skills/review-implementation/SKILL.md`
 2. Also read `AGENTS.md` when present.
-3. Review only the scoped diff below — do not edit files. This is read-only.
+3. Review only the artifact files listed below. Do not edit files. This is read-only.
 4. Return JSON matching the provided schema. No markdown fences or prose outside JSON.
 
 ## Review scope
@@ -20,15 +19,10 @@ You are **Reviewer 1 of 2** in a dual-review pipeline. Your role is the adversar
 | Merge base | `{{MERGE_BASE}}` |
 | Head SHA | `{{HEAD_SHA}}` |
 
-{{PLAN_SECTION}}
+## Review artifacts
 
-{{HANDOFF_SECTION}}
+- {{DIFF_SECTION}}
+- {{PLAN_SECTION}}
+- {{HANDOFF_SECTION}}
 
-## Diff
-
-{{DIFF_SECTION}}
-
-## Focus
-
-- Correctness, plan adherence, scope, missing tests, bugs, over-engineering
-- Adversarial posture: verify claims in the diff; do not trust commit messages alone
+Read the artifact files directly. Do not rely on summaries or previews.

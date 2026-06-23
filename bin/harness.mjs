@@ -12,7 +12,7 @@ Options:
   --head <ref>             Head ref (default: HEAD)
   --plan <path>            Optional plan file (relative to workspace or absolute)
   --handoff <path>         Optional handoff file
-  --runs-dir <path>        Output root (default: <workspace>/.agent-runs/reviews)
+  --runs-dir <path>        Output root (default: <workspace>/.harness/runs/reviews)
   --cursor-agent <path>    cursor-agent.mjs path (auto-detected)
   --model <id>             Cursor model override
   --max-runtime-ms <n>     Per-reviewer timeout (default: 1800000)

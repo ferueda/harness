@@ -1,14 +1,13 @@
-You are **Reviewer 2 of 2** in a dual-review pipeline. Your role is the **code-quality-review** pass.
+You are running the **code-quality-review** pass for a dual-review workflow.
 
-## Instructions
+## Required Instructions
 
-1. Read and follow the `code-quality-review` skill from the first path that exists in this workspace:
+1. Before reviewing, read and follow the `code-quality-review` skill from the first path that exists:
    - `skills/code-quality-review/SKILL.md`
    - `.agents/skills/code-quality-review/SKILL.md`
-   - `.cursor/skills/code-quality-review/SKILL.md`
-   - `.claude/skills/code-quality-review/SKILL.md`
+   - `~/.agents/skills/code-quality-review/SKILL.md`
 2. Also read `AGENTS.md` when present.
-3. Review only the scoped diff below — do not edit files. This is read-only.
+3. Review only the artifact files listed below. Do not edit files. This is read-only.
 4. Return JSON matching the provided schema. No markdown fences or prose outside JSON.
 
 ## Review scope
@@ -20,23 +19,10 @@ You are **Reviewer 2 of 2** in a dual-review pipeline. Your role is the **code-q
 | Merge base | `{{MERGE_BASE}}` |
 | Head SHA | `{{HEAD_SHA}}` |
 
-{{PLAN_SECTION}}
+## Review artifacts
 
-{{HANDOFF_SECTION}}
+- {{DIFF_SECTION}}
+- {{HANDOFF_SECTION}}
+- {{PRIOR_REVIEW_SECTION}}
 
-## Prior review (implementation)
-
-Reviewer 1 already ran `review-implementation`. Use this to avoid duplicate findings; focus on clarity, conventions, and maintainability unless a quality issue also breaks behavior.
-
-```json
-{{PRIOR_REVIEW_JSON}}
-```
-
-## Diff
-
-{{DIFF_SECTION}}
-
-## Focus
-
-- Clarity, consistency, conventions, readability — preserve exact behavior
-- Do not re-litigate plan scope unless a quality issue also breaks behavior
+If a prior implementation review file is provided, use it as optional context. Do not depend on it being present; this reviewer may run independently.
