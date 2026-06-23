@@ -32,6 +32,8 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 
 `harness` is Felipe's personal agent workflow repo. It contains reusable skills, callable workflows, runner code, automations, and plans.
 
+Keep this repo standalone. Do not include references, examples, paths, fixtures, or docs tied to private downstream repositories; use generic target-repo examples instead.
+
 Core layout:
 
 ```
