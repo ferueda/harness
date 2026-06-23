@@ -27,8 +27,3 @@ You are running the **code-quality-review** pass for a dual-review workflow.
 - {{PRIOR_REVIEW_SECTION}}
 
 If a prior implementation review file is provided, use it as optional context. Do not depend on it being present; this reviewer may run independently.
-
-## Focus
-
-- Clarity, consistency, conventions, readability — preserve exact behavior
-- Do not assess plan adherence; focus on maintainability unless a quality issue also breaks behavior
