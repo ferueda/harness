@@ -27,8 +27,3 @@ You are running the adversarial **review-implementation** pass for a dual-review
 - {{HANDOFF_SECTION}}
 
 Read the artifact files directly. Do not rely on summaries or previews.
-
-## Focus
-
-- Correctness, plan adherence, scope, missing tests, bugs, over-engineering
-- Adversarial posture: verify claims in the diff; do not trust commit messages alone
