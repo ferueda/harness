@@ -147,7 +147,7 @@ test("initHarnessConfig updates gitignore when config exists", () => {
 });
 
 test("initHarnessConfig accepts equivalent harness ignore entries", () => {
-  for (const entry of [".harness", ".harness/", ".harness/**", "**/.harness/"]) {
+  for (const entry of [".harness", ".harness/", ".harness/*", ".harness/**", "**/.harness", "**/.harness/"]) {
     const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
     execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
     writeFileSync(join(workspace, ".gitignore"), `${entry}\n`, "utf8");
@@ -169,4 +169,13 @@ test("initHarnessConfig reports skipped base when config exists", () => {
   assert.equal(result.configCreated, false);
   assert.equal(result.baseSkipped, true);
   assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "develop"\n}\n');
+});
+
+test("initHarnessConfig rejects missing workspaces", () => {
+  const workspace = join(tmpdir(), "missing-harness-workspace");
+
+  assert.throws(
+    () => initHarnessConfig({ workspace }, "/"),
+    /Workspace does not exist:/,
+  );
 });
