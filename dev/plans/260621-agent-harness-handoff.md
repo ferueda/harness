@@ -11,7 +11,7 @@
 
 We are building **`harness`** — a single repo for agent instructions, custom workflows, and the runner that orchestrates multi-agent coding workflows (review, implement, verify) across **many target repos**, with **durable execution** as the long-term goal.
 
-**Phase 0 is done** in this repo: a sequential dual-review pipeline (`review-implementation` → `code-quality-review`) invoked via `run-dual-review.mjs`, writing artifacts to `<target-repo>/.agent-runs/reviews/`.
+**Phase 0 is done** in this repo: a sequential dual-review workflow (`review-implementation` → `code-quality-review`) invoked via `harness run dual-review`, writing artifacts to `<target-repo>/.agent-runs/reviews/`.
 
 **Next agent should:** create the new `harness` repo, migrate this repo's skills and Phase 0 review pipeline into it, then build the simplest live `dual-review.workflow.js` before adding broader primitives.
 
@@ -129,7 +129,7 @@ implement-plan → handoff-work → [harness: verify → dual-review → export]
 
 ### Deliverable
 
-`skills/review-pipeline/` — sequential dual-review via headless Cursor agents.
+Legacy Phase 0 was a sequential dual-review script in `agent-skills`. In `harness`, the same behavior now lives in `bin/harness.mjs`, `workflows/dual-review.workflow.js`, and `lib/`.
 
 **Flow:**
 
@@ -140,18 +140,18 @@ implement-plan → handoff-work → [harness: verify → dual-review → export]
 5. `aggregateVerdict()` → `summary.md` + `meta.json`
 6. Exit `0` pass, `1` needs_changes/blocked/failure, `2` usage error
 
-### Key files (Phase 0)
+### Key source material (Phase 0)
 
 | Path | Role |
 |------|------|
-| `skills/review-pipeline/scripts/run-dual-review.mjs` | Main orchestrator (imperative; to be replaced by workflow DSL) |
-| `skills/review-pipeline/scripts/lib/context.mjs` | Git scope, prompt templates, diff handling |
-| `skills/review-pipeline/scripts/lib/aggregate.mjs` | Verdict rollup + `renderSummary()` |
-| `skills/review-pipeline/schemas/review-output.schema.json` | Shared schema for both reviewers |
-| `skills/review-pipeline/prompts/implementation-review.md` | Reviewer 1 prompt template |
-| `skills/review-pipeline/prompts/quality-review.md` | Reviewer 2 prompt template |
-| `skills/review-pipeline/SKILL.md` | Usage docs |
-| `skills/review-pipeline/scripts/run-dual-review.test.mjs` | 9 unit tests (all passing) |
+| `bin/harness.mjs` | CLI entrypoint |
+| `workflows/dual-review.workflow.js` | Concrete live workflow |
+| `lib/workflow-context.js` | Git scope, prompt rendering, agent invocation, artifact export |
+| `lib/aggregate.js` | Verdict rollup + `renderSummary()` |
+| `schemas/review-output.schema.json` | Shared schema for both reviewers |
+| `prompts/implementation-review.md` | Reviewer 1 prompt template |
+| `prompts/quality-review.md` | Reviewer 2 prompt template |
+| `test/aggregate.test.js` | Focused verdict tests |
 
 ### Artifact layout (contract v0)
 
@@ -173,18 +173,18 @@ context/handoff.md             # if --handoff provided
 
 ```bash
 # Dry-run (no LLM)
-node skills/review-pipeline/scripts/run-dual-review.mjs \
+node bin/harness.mjs run dual-review \
   --workspace /path/to/target-repo --dry-run
 
 # Full run
-node skills/review-pipeline/scripts/run-dual-review.mjs \
+node bin/harness.mjs run dual-review \
   --workspace /path/to/target-repo \
   --base main --head HEAD \
   --plan dev/plans/foo.md \
   --handoff .agent-runs/handoff.md
 
 # Tests
-node --test skills/review-pipeline/scripts/run-dual-review.test.mjs
+npm test
 ```
 
 ### Prerequisites
@@ -299,7 +299,7 @@ harness/
 │   ├── cursor-agent.js              # wrapper around cursor-agent.mjs
 │   ├── artifacts.js                 # .agent-runs/ writer (shared contract)
 │   ├── digest.js                    # digestReview()
-│   ├── aggregate.js                 # port from review-pipeline
+│   ├── aggregate.js                 # verdict rollup
 │   ├── context.js                   # git scope, prompt fill
 │   └── graders/
 │       ├── test.js
@@ -422,14 +422,11 @@ Start with one grader, probably tests. Keep it configurable:
 
 ## Aggregate verdict logic (implemented)
 
-```javascript
-// skills/review-pipeline/scripts/lib/aggregate.mjs
-// blocked if either reviewer blocked
-// needs_changes if either needs_changes OR any finding.must_fix
-// pass only if both pass
-```
+Implemented in `lib/aggregate.js`:
 
-Port verbatim to `harness/lib/aggregate.js`.
+- `blocked` if either reviewer blocked
+- `needs_changes` if either reviewer needs changes or any finding has `must_fix`
+- `pass` only if both reviewers pass
 
 ---
 
@@ -451,10 +448,10 @@ Port verbatim to `harness/lib/aggregate.js`.
 ## Verification (Phase 0)
 
 ```bash
-node --test skills/review-pipeline/scripts/run-dual-review.test.mjs
-# 9 tests, all pass
+npm test
+# 21 tests, all pass
 
-node skills/review-pipeline/scripts/run-dual-review.mjs \
+node bin/harness.mjs run dual-review \
   --workspace /Users/frueda/dev/agent-skills --base main --head HEAD --dry-run
 # exit 0; artifacts under .agent-runs/reviews/<run-id>/
 ```
@@ -467,7 +464,7 @@ Full LLM run not verified in this session (requires `agent` auth).
 
 1. **Create `harness` repo** with approved shape: `skills/`, `workflows/`, `lib/`, `automations/`, `dev/plans/`
 2. **Migrate existing skills and docs** from `agent-skills`; preserve paths under `skills/`
-3. **Migrate Phase 0 review pipeline** into the new repo as source material, not final architecture
+3. **Keep the legacy Phase 0 pipeline out of `skills/`**; workflows are runnable orchestration, not skills
 4. **Build the simplest live workflow**: `dual-review.workflow.js` calls `review-implementation`, then `code-quality-review`, then exports structured findings
 5. **Keep the first runner small**: load that workflow, pass `--workspace`, write the same artifacts Phase 0 writes
 6. **Run a full LLM smoke test** against a real branch before adding generic primitives
@@ -515,7 +512,6 @@ Full LLM run not verified in this session (requires `agent` auth).
 dev/plans/260621-agent-harness-handoff.md     ← this file
 dev/plans/README.md
 
-skills/review-pipeline/                        ← Phase 0 (migrate out)
 skills/cursor-cli/                             ← migrate into harness; runner dependency
 skills/review-implementation/SKILL.md          ← instructions only
 skills/code-quality-review/SKILL.md
@@ -535,7 +531,7 @@ AGENTS.md                                      ← workflow overview
 Build a multi-repo agent harness with durable orchestration as the north star. New single repo is `harness`, containing both `skills/` and runnable workflows. Phase 0 dual-review prototype exists in `agent-skills`.
 
 ### What was worked on
-Phase 0 `review-pipeline` implemented and tested. Architecture, repo split, article analysis, TradingFlow lessons, and revised roadmap documented in conversation and this file.
+Phase 0 dual-review workflow implemented and tested. Architecture, repo consolidation, article analysis, TradingFlow lessons, and revised roadmap documented in conversation and this file.
 
 ### How it was done
 Node script spawning `cursor-agent.mjs` twice with JSON schemas; file-based artifacts in target repo `.agent-runs/reviews/`.
