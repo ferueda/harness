@@ -9,7 +9,11 @@ function printHelp() {
   harness init [options]
   harness run dual-review [options]
 
-Options:
+Init options:
+  --workspace <path>       Target repo (default: nearest harness.json root or Git root)
+  --base <ref>             Base ref for new harness.json (default: main)
+
+Run options:
   --workspace <path>       Target repo (default: nearest harness.json root or Git root)
   --base <ref>             Base ref (default: harness.json base or main)
   --head <ref>             Head ref (default: HEAD)
@@ -20,6 +24,8 @@ Options:
   --model <id>             Cursor model override
   --max-runtime-ms <n>     Per-reviewer timeout (default: 1800000)
   --dry-run                Prepare context + prompts only; do not invoke agents
+
+Global:
   -h, --help
 `);
 }
