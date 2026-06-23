@@ -36,6 +36,7 @@ Keep this repo standalone. Do not include references, examples, paths, fixtures,
 Core layout:
 
 ```
+harness.json  Repo-local harness defaults
 skills/       Agent Skill instructions
 providers/    Runtime adapters for external agent providers
 workflows/    Callable workflows, starting with dual-review
