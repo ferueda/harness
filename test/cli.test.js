@@ -1,0 +1,46 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+
+const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const HARNESS_BIN = join(REPO_ROOT, "bin/harness.mjs");
+
+test("harness init creates config through the CLI", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cli-"));
+  mkdirSync(join(workspace, "packages/app"), { recursive: true });
+  spawnSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+
+  const result = spawnSync(
+    process.execPath,
+    [HARNESS_BIN, "init", "--workspace", workspace, "--base", "develop"],
+    { encoding: "utf8" },
+  );
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.configCreated, true);
+  assert.equal(output.gitignoreUpdated, true);
+  assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "develop"\n}\n');
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), ".harness/\n");
+});
+
+test("harness init is idempotent through the CLI", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cli-"));
+  spawnSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+
+  spawnSync(process.execPath, [HARNESS_BIN, "init", "--workspace", workspace], {
+    encoding: "utf8",
+  });
+  const result = spawnSync(process.execPath, [HARNESS_BIN, "init", "--workspace", workspace], {
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.configCreated, false);
+  assert.equal(output.gitignoreUpdated, false);
+});
