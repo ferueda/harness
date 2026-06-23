@@ -190,7 +190,7 @@ npm test
 ### Prerequisites
 
 - `agent` on PATH (`agent login` or `CURSOR_API_KEY`)
-- `skills/cursor-cli` at `skills/cursor-cli/` or `~/.agents/skills/cursor-cli/`
+- Cursor provider runtime at `providers/cursor/`
 
 ### Known Phase 0 limitations
 
@@ -292,6 +292,8 @@ harness/
 ├── skills/                         # migrated from agent-skills
 ├── workflows/
 │   └── dual-review.workflow.js      # first concrete live workflow
+├── providers/
+│   └── cursor/                      # Cursor Agent runtime adapter
 ├── lib/
 │   ├── workflow-context.js          # ctx.agent, ctx.aggregate, ctx.export
 │   ├── cursor-agent.js              # wrapper around cursor-agent.mjs
@@ -435,7 +437,7 @@ Implemented in `lib/aggregate.js`:
 | Create `harness` repo | — | New single repo for skills, workflows, and runner |
 | Migrate skills | Existing `skills/` | Preserve skill directory names and metadata |
 | Workflow DSL | TradingFlow `tradingflow.workflow.js` | Reference only; implement own primitives |
-| Headless agents | `cursor-cli` / `cursor-agent.mjs` | Migrates into `harness/skills/cursor-cli` |
+| Headless agents | `cursor-cli` / `cursor-agent.mjs` | Runtime lives in `providers/cursor`; skill stays instruction-only |
 | Review instructions | `review-implementation`, `code-quality-review` | Migrates into `harness/skills`; workflows reference paths |
 | Handoff format | `handoff-work` | Future: standardize handoff → harness input |
 | Post-review triage | `react-to-review` | Phase 1: bundle aggregated JSON as input |
@@ -510,7 +512,8 @@ Full LLM run not verified in this session (requires `agent` auth).
 dev/plans/260621-agent-harness-handoff.md     ← this file
 dev/plans/README.md
 
-skills/cursor-cli/                             ← migrate into harness; runner dependency
+providers/cursor/                              ← Cursor runner dependency
+skills/cursor-cli/                             ← instructions only
 skills/review-implementation/SKILL.md          ← instructions only
 skills/code-quality-review/SKILL.md
 skills/handoff-work/SKILL.md

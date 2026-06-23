@@ -37,6 +37,7 @@ Core layout:
 
 ```
 skills/       Agent Skill instructions
+providers/    Runtime adapters for external agent providers
 workflows/    Callable workflows, starting with dual-review
 lib/          Runner, artifact, and workflow helpers
 automations/  Background task definitions

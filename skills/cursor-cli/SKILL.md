@@ -12,7 +12,7 @@ description: >-
 
 Delegate work to a Cursor agent from the shell without the IDE chat. Use when the user wants another agent to **call, ask, invoke, or run Cursor** on a task.
 
-**Global script:** `~/.agents/skills/cursor-cli/scripts/cursor-agent.mjs`  
+**Harness provider:** `providers/cursor/cursor-agent.mjs`  
 **Optional launcher:** `cursor-agent`
 
 Requires `agent` on PATH. Local dev: `agent login` once. CI/servers: `CURSOR_API_KEY`.
@@ -48,10 +48,10 @@ cursor-agent --resume <session-id> "follow up"
 
 **Caller flow:** parse stdout → check `status` → read `structuredOutput` or `result` → save `sessionId` for `--resume`.
 
-If the launcher is not installed, call the script directly:
+If the launcher is not installed, call the harness provider directly from the harness repo:
 
 ```bash
-node ~/.agents/skills/cursor-cli/scripts/cursor-agent.mjs "your task"
+node providers/cursor/cursor-agent.mjs "your task"
 ```
 
 ## Output
@@ -141,16 +141,14 @@ On success with a schema, prefer `structuredOutput` over `result`.
 
 Verify: `agent status`
 
-## Install globally
+## Optional launcher
 
-Install the skill folder at `~/.agents/skills/cursor-cli`. Node 18+, no npm dependencies.
-
-Optional launcher:
+From the harness repo:
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sf ~/.agents/skills/cursor-cli/scripts/cursor-agent.mjs ~/.local/bin/cursor-agent
-chmod +x ~/.agents/skills/cursor-cli/scripts/cursor-agent.mjs
+ln -sf "$PWD/providers/cursor/cursor-agent.mjs" ~/.local/bin/cursor-agent
+chmod +x providers/cursor/cursor-agent.mjs
 ```
 
 Ensure `~/.local/bin` is on `PATH`.
