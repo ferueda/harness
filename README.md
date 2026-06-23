@@ -17,6 +17,7 @@ dev/plans/    Plans and handoffs for this repo
 ## First Workflow
 
 ```bash
+node bin/harness.mjs init
 node bin/harness.mjs run dual-review
 ```
 
@@ -31,6 +32,8 @@ The first workflow calls `review-implementation`, then `code-quality-review`, th
 ```
 
 When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run dual-review`.
+
+`harness init` creates `harness.json` when missing and ensures `.gitignore` contains `.harness/runs/`.
 
 Skills follow the [Agent Skills](https://agentskills.io/) format.
 
