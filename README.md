@@ -15,13 +15,33 @@ automations/  Background task definitions
 dev/plans/    Plans and handoffs for this repo
 ```
 
-## First Workflow
+## Install Harness
 
 ```bash
-pnpm build
-node dist/bin/harness.js init
-.harness/bin/harness run review
+git clone git@github.com:ferueda/harness.git ~/.harness
+~/.harness/install
+harness init
+harness run review
 ```
+
+The checkout can live anywhere. If you prefer a development directory, install from that path instead:
+
+```bash
+git clone git@github.com:ferueda/harness.git ~/dev/harness
+~/dev/harness/install
+```
+
+The installer writes a user-level `harness` command into `~/.local/bin` by default. If the checkout moves, rerun `install` from the new location.
+
+To update:
+
+```bash
+cd /path/to/harness-checkout
+git pull
+./install
+```
+
+## First Workflow
 
 The default review workflow (the change review workflow skill) starts `review-implementation` and `code-quality-review` in parallel. Reviewers read the same base artifacts, then harness aggregates their results in workflow order and writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
 
@@ -30,7 +50,7 @@ For the broader review cycle, run `review-full`. It adds a read-only `simplify` 
 Generated review handoffs can be piped directly; harness writes the shared reviewer copy under the ignored run artifact directory:
 
 ```bash
-printf '%s\n' "$HANDOFF" | .harness/bin/harness run review --handoff-stdin
+printf '%s\n' "$HANDOFF" | harness run review --handoff-stdin
 ```
 
 If a reviewer provider fails, the workflow still prints JSON to stdout and exits `1`. Failed runs use `status: "failed"`, include `failedReviews`, preserve any successful peer review summaries, and write `summary.md` plus `meta.json`.
@@ -38,8 +58,8 @@ If a reviewer provider fails, the workflow still prints JSON to stdout and exits
 Prune old local run artifacts explicitly when they are no longer useful:
 
 ```bash
-.harness/bin/harness runs prune --older-than 30d --dry-run
-.harness/bin/harness runs prune --older-than 30d
+harness runs prune --older-than 30d --dry-run
+harness runs prune --older-than 30d
 ```
 
 The command targets `<workspace>/.harness/runs/reviews` by default and prints JSON with matched/deleted counts.
@@ -59,21 +79,21 @@ When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory
 For external target repos, pass the repo path explicitly:
 
 ```bash
-node dist/bin/harness.js init --workspace /path/to/repo
+harness init --workspace /path/to/repo
 ```
 
-After init, prefer the repo-local shim:
+`harness init` also writes a target-repo fallback shim:
 
 ```bash
 /path/to/repo/.harness/bin/harness run review
 ```
 
-The init JSON also returns `recommendedCommand: ".harness/bin/harness run review"`, which assumes the shell is already at the workspace root. From nested directories, use the returned `shimPath` or the absolute command above.
+The init JSON returns `recommendedCommand: ".harness/bin/harness run review"`, which assumes the shell is already at the workspace root. Treat that as a pinned command for agents and automation when PATH is unreliable. For normal interactive use after installing harness, prefer `harness run review`.
 
 Install optional local workflow helper skills explicitly:
 
 ```bash
-/path/to/repo/.harness/bin/harness skills install change-review-workflow --workspace /path/to/repo
+harness skills install change-review-workflow --workspace /path/to/repo
 ```
 
 Skills follow the [Agent Skills](https://agentskills.io/) format. Target repos usually keep local skills in `.agents/skills/`. Workflow skill lookup stops at the first match:
@@ -314,9 +334,11 @@ A test coverage automation focused on preventing regressions. It inspects recent
 - Automatically patching coverage gaps on new code paths
 - Enforcing test requirements on critical core flows
 
-## Installation
+## Agent Skill Installation
 
-Install using the [skills CLI](https://skills.sh):
+This section is only for installing the packaged skills into an agent host. It is not the harness CLI install path above.
+
+Install skills using the [skills CLI](https://skills.sh):
 
 ```bash
 npx skills add ferueda/harness
@@ -324,7 +346,7 @@ npx skills add ferueda/harness
 
 The skills CLI works with: Amp, Antigravity, Claude Code, Clawdbot, Codex, Cursor, Droid, Gemini, Gemini CLI, GitHub Copilot, Goose, Kilo, Kiro CLI, OpenCode, Roo, Trae, and Windsurf.
 
-## Usage
+## Skill Usage
 
 Skills are automatically available once installed. The agent will use them when relevant tasks are detected or when explicitly invoked.
 
