@@ -28,6 +28,18 @@ export type InitHarnessOptions = {
   nodePath?: string;
 };
 
+export type InitHarnessResult = {
+  workspace: string;
+  configPath: string;
+  gitignorePath: string;
+  shimPath: string;
+  recommendedCommand: string;
+  baseSkipped: boolean;
+  configCreated: boolean;
+  gitignoreUpdated: boolean;
+  shimUpdated: boolean;
+};
+
 export function resolveHarnessOptions<T extends HarnessOptions>(
   options: T,
   cwd = process.cwd(),
@@ -59,17 +71,7 @@ export function findHarnessConfig(startDir: string): string | null {
 export function initHarnessConfig(
   options: InitHarnessOptions,
   cwd = process.cwd(),
-): {
-  workspace: string;
-  configPath: string;
-  gitignorePath: string;
-  shimPath: string;
-  recommendedCommand: string;
-  baseSkipped: boolean;
-  configCreated: boolean;
-  gitignoreUpdated: boolean;
-  shimUpdated: boolean;
-} {
+): InitHarnessResult {
   const workspace = resolveHarnessWorkspace(options.workspace, cwd);
   if (!existsSync(workspace) || !statSync(workspace).isDirectory()) {
     throw new Error(`Workspace does not exist: ${workspace}`);
@@ -79,7 +81,7 @@ export function initHarnessConfig(
   const gitignorePath = join(workspace, ".gitignore");
   const shim = writeHarnessShim(workspace, {
     harnessEntrypoint: resolveRequiredPath("harnessEntrypoint", options.harnessEntrypoint),
-    nodePath: resolveRequiredPath("nodePath", options.nodePath ?? process.execPath),
+    nodePath: resolve(options.nodePath ?? process.execPath),
   });
   const result = {
     workspace,
@@ -179,13 +181,14 @@ function writeHarnessShim(
 
   const content = renderHarnessShim(input);
   const existing = existsSync(shimPath) ? readFileSync(shimPath, "utf8") : null;
-  const executable = existing !== null && (statSync(shimPath).mode & 0o111) !== 0;
-  const updated = existing !== content || !executable;
+  const hadContent = existing === content;
+  const isExecutable = existing !== null && (statSync(shimPath).mode & 0o111) !== 0;
+  const updated = !hadContent || !isExecutable;
 
-  if (existing !== content) {
+  if (!hadContent) {
     writeFileSync(shimPath, content, "utf8");
   }
-  if (!executable) {
+  if (!isExecutable) {
     chmodSync(shimPath, 0o755);
   }
 
