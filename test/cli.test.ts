@@ -16,10 +16,11 @@ import { HARNESS_GITIGNORE_ENTRY } from "../lib/config.ts";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HARNESS_BIN = join(REPO_ROOT, "bin/harness.ts");
 
-function runHarness(args: string[], options: { cwd?: string } = {}) {
+function runHarness(args: string[], options: { cwd?: string; input?: string } = {}) {
   return spawnSync(process.execPath, [HARNESS_BIN, ...args], {
     cwd: options.cwd,
     encoding: "utf8",
+    input: options.input,
   });
 }
 
@@ -195,6 +196,7 @@ test("harness run review help exits cleanly", () => {
   const result = runHarness(["run", "review", "--help"]);
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness run review/);
+  expect(result.stdout).toMatch(/--handoff-stdin/);
   expect(result.stdout).toMatch(/--dry-run/);
 });
 test("harness run review-full help exits cleanly", () => {
@@ -371,6 +373,28 @@ test("harness run review rejects invalid runtime values", () => {
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/must be a positive number/);
 });
+test("harness run review rejects multiple handoff inputs", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(
+    [
+      "run",
+      "review",
+      "--workspace",
+      workspace,
+      "--base",
+      "HEAD",
+      "--head",
+      "HEAD",
+      "--handoff",
+      "handoff.md",
+      "--handoff-stdin",
+      "--dry-run",
+    ],
+    { input: "inline" },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Use only one handoff input/);
+});
 test("harness run rejects unknown workflows", () => {
   const result = runHarness(["run", "unknown"]);
   expect(result.status).toBe(2);
@@ -505,6 +529,29 @@ test("harness run review dry-run works through the CLI", () => {
   const implementationPrompt = readFileSync(output.prompts.implementation, "utf8");
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
   expectIndependentReviewPrompts(implementationPrompt, qualityPrompt);
+});
+test("harness run review writes stdin handoff into run context", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(
+    [
+      "run",
+      "review",
+      "--workspace",
+      workspace,
+      "--base",
+      "HEAD",
+      "--head",
+      "HEAD",
+      "--handoff-stdin",
+      "--dry-run",
+    ],
+    { input: "# Stdin handoff\n\nReview the piped text input.\n" },
+  );
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(readFileSync(join(output.runDir, "context/handoff.md"), "utf8")).toBe(
+    "# Stdin handoff\n\nReview the piped text input.\n",
+  );
 });
 test("harness run review-full dry-run includes simplify prompt", () => {
   const workspace = createGitWorkspace();
