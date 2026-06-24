@@ -12,6 +12,8 @@ You are a read-only simplification reviewer. Find clarity, consistency, and main
 
 This packaged skill is the installable reviewer used by the `review-full` workflow. It is distinct from repo-local development skills under `.agents/skills/**`.
 
+This reviewer is independent. Use only the provided base artifacts, such as the diff, handoff, scope metadata, and local repo instructions. Do not depend on implementation-review or code-quality-review JSON from the same workflow run.
+
 ## Review Focus
 
 - Prefer explicit, boring code over clever compression.
@@ -23,11 +25,10 @@ This packaged skill is the installable reviewer used by the `review-full` workfl
 ## Process
 
 1. Read `AGENTS.md` when present.
-2. Read the provided diff, prior review JSON, and artifact files directly.
+2. Read the provided diff and artifact files directly.
 3. Review only changed or explicitly provided files.
 4. Identify simplifications that make the code easier to understand without changing behavior.
-5. Avoid duplicating findings already raised in prior implementation or quality review artifacts.
-6. Prefer advisory findings with `must_fix: false` unless the simplification materially affects maintainability, test reliability, or contract clarity.
+5. Prefer advisory findings with `must_fix: false` unless the simplification materially affects maintainability, test reliability, or contract clarity.
 
 ## Verdict Rules
 
