@@ -68,3 +68,15 @@ test("writeRunContext rejects conflicting handoff inputs", () => {
     }),
   ).toThrow(/Use only one handoff input/);
 });
+test("writeRunContext rejects blank handoff text", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+
+  expect(() =>
+    writeRunContext({
+      workspace,
+      runDir,
+      handoffText: " \n\t",
+    }),
+  ).toThrow(/Handoff text must not be empty/);
+});
