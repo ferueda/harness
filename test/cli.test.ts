@@ -60,6 +60,17 @@ test("harness init is idempotent through the CLI", () => {
   expect(output.configCreated).toBe(false);
   expect(output.gitignoreUpdated).toBe(false);
 });
+test("harness init does not report base skipped unless base was passed", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(join(workspace, "harness.json"), '{\n  "base": "develop"\n}\n', "utf8");
+  const result = spawnSync(process.execPath, [HARNESS_BIN, "init", "--workspace", workspace], {
+    encoding: "utf8",
+  });
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.configCreated).toBe(false);
+  expect(output.baseSkipped).toBe(false);
+});
 test("harness init works with explicit non-git workspace", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-cli-"));
   const result = spawnSync(process.execPath, [HARNESS_BIN, "init", "--workspace", workspace], {
@@ -69,19 +80,75 @@ test("harness init works with explicit non-git workspace", () => {
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "main"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${HARNESS_GITIGNORE_ENTRY}\n`);
 });
+test("harness root help exits cleanly", () => {
+  const result = spawnSync(process.execPath, [HARNESS_BIN, "--help"], {
+    encoding: "utf8",
+  });
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/Usage: harness/);
+  expect(result.stdout).toMatch(/init/);
+  expect(result.stdout).toMatch(/run/);
+});
+test("harness init help exits cleanly", () => {
+  const result = spawnSync(process.execPath, [HARNESS_BIN, "init", "--help"], {
+    encoding: "utf8",
+  });
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/Usage: harness init/);
+  expect(result.stdout).toMatch(/--workspace/);
+  expect(result.stdout).toMatch(/--base/);
+});
+test("harness without a subcommand exits with help and failure", () => {
+  const result = spawnSync(process.execPath, [HARNESS_BIN], {
+    encoding: "utf8",
+  });
+  expect(result.status).toBe(1);
+  expect(result.stdout).toMatch(/Usage: harness/);
+});
 test("harness run dual-review help exits cleanly", () => {
   const result = spawnSync(process.execPath, [HARNESS_BIN, "run", "dual-review", "--help"], {
     encoding: "utf8",
   });
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness run dual-review/);
+  expect(result.stdout).toMatch(/--dry-run/);
+});
+test("harness init rejects unknown flags", () => {
+  const result = spawnSync(process.execPath, [HARNESS_BIN, "init", "--unknown"], {
+    encoding: "utf8",
+  });
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown option.*--unknown/i);
+});
+test("harness init rejects missing option values", () => {
+  const result = spawnSync(process.execPath, [HARNESS_BIN, "init", "--workspace"], {
+    encoding: "utf8",
+  });
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/argument missing|missing required argument|missing/i);
 });
 test("harness run dual-review rejects unknown flags", () => {
   const result = spawnSync(process.execPath, [HARNESS_BIN, "run", "dual-review", "--unknown"], {
     encoding: "utf8",
   });
   expect(result.status).toBe(2);
-  expect(result.stderr).toMatch(/Unknown option: --unknown/);
+  expect(result.stderr).toMatch(/unknown option.*--unknown/i);
+});
+test("harness run dual-review rejects invalid runtime values", () => {
+  const result = spawnSync(
+    process.execPath,
+    [HARNESS_BIN, "run", "dual-review", "--max-runtime-ms", "0"],
+    { encoding: "utf8" },
+  );
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/must be a positive number/);
+});
+test("harness run rejects unknown workflows", () => {
+  const result = spawnSync(process.execPath, [HARNESS_BIN, "run", "unknown"], {
+    encoding: "utf8",
+  });
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown command.*unknown/i);
 });
 test("harness run dual-review dry-run works through the CLI", () => {
   const workspace = createGitWorkspace();

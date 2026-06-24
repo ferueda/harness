@@ -1,196 +1,106 @@
 #!/usr/bin/env node
 
+import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { run as runDualReview } from "../workflows/dual-review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
 import { createWorkflowContext } from "../lib/workflow-context.ts";
 
-type HarnessCliOptions = {
-  command?: "init" | "run";
-  workflow?: "dual-review";
+type InitOptions = {
   workspace?: string;
-  baseRef?: string;
-  headRef?: string;
-  planPath?: string;
-  handoffPath?: string;
+  base?: string;
+};
+
+type DualReviewOptions = {
+  workspace?: string;
+  base?: string;
+  head?: string;
+  plan?: string;
+  handoff?: string;
   runsDir?: string;
-  cursorAgentPath?: string;
+  cursorAgent?: string;
   model?: string;
   maxRuntimeMs: number;
   dryRun: boolean;
-  help?: boolean;
 };
 
-function printHelp() {
-  console.log(`Usage:
-  harness init [options]
-  harness run dual-review [options]
-
-Init options:
-  --workspace <path>       Target repo (default: nearest harness.json root or Git root)
-  --base <ref>             Base ref for new harness.json (default: main)
-
-Run options:
-  --workspace <path>       Target repo (default: nearest harness.json root or Git root)
-  --base <ref>             Base ref (default: harness.json base or main)
-  --head <ref>             Head ref (default: HEAD)
-  --plan <path>            Optional plan file (relative to workspace or absolute)
-  --handoff <path>         Optional handoff file
-  --runs-dir <path>        Output root (default: <workspace>/.harness/runs/reviews)
-  --cursor-agent <path>    cursor-agent.ts path (auto-detected)
-  --model <id>             Cursor model override
-  --max-runtime-ms <n>     Per-reviewer timeout (default: 1800000)
-  --dry-run                Prepare context + prompts only; do not invoke agents
-
-Global:
-  -h, --help
-`);
+function positiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError("must be a positive number");
+  }
+  return parsed;
 }
 
-function parseArgs(argv: string[]): HarnessCliOptions {
-  const [command, ...rest] = argv;
-  const options: HarnessCliOptions = {
-    maxRuntimeMs: 30 * 60 * 1000,
-    dryRun: false,
-  };
+function buildProgram(): Command {
+  const program = new Command();
+  program.name("harness").description("Agent workflow harness").showHelpAfterError().exitOverride();
+  program.action(() => {
+    program.outputHelp();
+    process.exitCode = 1;
+  });
 
-  if (command === "-h" || command === "--help" || !command) {
-    options.help = true;
-    return options;
-  }
-
-  if (command === "init") {
-    options.command = command;
-    parseInitArgs(options, rest);
-    return options;
-  }
-
-  if (command !== "run" || rest[0] !== "dual-review") {
-    throw new Error("Expected command: harness init or harness run dual-review");
-  }
-
-  options.command = command;
-  options.workflow = rest[0];
-  parseRunArgs(options, rest.slice(1));
-  return options;
-}
-
-function parseRunArgs(options: HarnessCliOptions, rest: string[]): void {
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index];
-    switch (arg) {
-      case "-h":
-      case "--help":
-        options.help = true;
-        break;
-      case "--workspace":
-        options.workspace = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--base":
-        options.baseRef = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--head":
-        options.headRef = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--plan":
-        options.planPath = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--handoff":
-        options.handoffPath = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--runs-dir":
-        options.runsDir = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--cursor-agent":
-        options.cursorAgentPath = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--model":
-        options.model = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--max-runtime-ms":
-        options.maxRuntimeMs = Number(readValue(rest, index, arg));
-        index += 1;
-        break;
-      case "--dry-run":
-        options.dryRun = true;
-        break;
-      default:
-        throw new Error(`Unknown option: ${arg}`);
-    }
-  }
-
-  if (!Number.isFinite(options.maxRuntimeMs) || options.maxRuntimeMs <= 0) {
-    throw new Error("Invalid --max-runtime-ms");
-  }
-}
-
-function parseInitArgs(options: HarnessCliOptions, rest: string[]): void {
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index];
-    switch (arg) {
-      case "-h":
-      case "--help":
-        options.help = true;
-        break;
-      case "--workspace":
-        options.workspace = readValue(rest, index, arg);
-        index += 1;
-        break;
-      case "--base":
-        options.baseRef = readValue(rest, index, arg);
-        index += 1;
-        break;
-      default:
-        throw new Error(`Unknown option: ${arg}`);
-    }
-  }
-}
-
-function readValue(argv: string[], index: number, flag: string): string {
-  const value = argv[index + 1];
-  if (value === undefined || value.startsWith("-") || value.trim() === "") {
-    throw new Error(`Missing value for ${flag}`);
-  }
-  return value;
-}
-
-async function main() {
-  let options;
-  try {
-    options = parseArgs(process.argv.slice(2));
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    printHelp();
-    process.exit(2);
-  }
-
-  if (options.help) {
-    printHelp();
-    return;
-  }
-
-  try {
-    if (options.command === "init") {
+  program
+    .command("init")
+    .description("Create harness.json and ignore harness artifacts")
+    .option("--workspace <path>", "target repo (default: nearest harness.json or Git root)")
+    .option("--base <ref>", "base ref for new harness.json (default: main)")
+    .action((options: InitOptions) => {
       const result = initHarnessConfig({
         workspace: options.workspace,
-        baseRef: options.baseRef,
+        baseRef: options.base,
       });
       console.log(JSON.stringify(result, null, 2));
-      return;
-    }
+    });
 
-    const ctx = createWorkflowContext(resolveHarnessOptions(options));
-    const meta = await runDualReview(ctx);
-    console.log(JSON.stringify(meta, null, 2));
-    process.exit(meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1);
+  const run = program.command("run").description("Run a harness workflow");
+  run
+    .command("dual-review")
+    .description("Run implementation and code-quality reviewers")
+    .option("--workspace <path>", "target repo")
+    .option("--base <ref>", "base ref (default: harness.json base or main)")
+    .option("--head <ref>", "head ref (default: HEAD)")
+    .option("--plan <path>", "optional plan file")
+    .option("--handoff <path>", "optional handoff file")
+    .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
+    .option("--cursor-agent <path>", "cursor-agent entrypoint (auto-detected)")
+    .option("--model <id>", "Cursor model override")
+    .option(
+      "--max-runtime-ms <ms>",
+      "per-reviewer timeout (default: 1800000)",
+      positiveInteger,
+      30 * 60 * 1000,
+    )
+    .option("--dry-run", "prepare context and prompts only", false)
+    .action(async (options: DualReviewOptions) => {
+      const ctx = createWorkflowContext(
+        resolveHarnessOptions({
+          workspace: options.workspace,
+          baseRef: options.base,
+          headRef: options.head,
+          planPath: options.plan,
+          handoffPath: options.handoff,
+          runsDir: options.runsDir,
+          cursorAgentPath: options.cursorAgent,
+          model: options.model,
+          maxRuntimeMs: options.maxRuntimeMs,
+          dryRun: options.dryRun,
+        }),
+      );
+      const meta = await runDualReview(ctx);
+      console.log(JSON.stringify(meta, null, 2));
+      process.exitCode = meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1;
+    });
+
+  return program;
+}
+
+async function main(): Promise<void> {
+  try {
+    await buildProgram().parseAsync(process.argv);
   } catch (error) {
+    if (error instanceof CommanderError) {
+      process.exit(error.exitCode === 0 ? 0 : 2);
+    }
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
     process.exit(1);
