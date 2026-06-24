@@ -6,6 +6,7 @@ import { run as runReviewFull } from "../workflows/review-full.workflow.ts";
 import { run as runReview } from "../workflows/review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
 import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
+import { installPackagedSkill } from "../lib/skills.ts";
 import { createWorkflowContext } from "../lib/workflow-context.ts";
 
 type InitOptions = {
@@ -30,6 +31,12 @@ type RunsPruneOptions = {
   workspace?: string;
   runsDir?: string;
   olderThan: number;
+  dryRun: boolean;
+};
+
+type SkillsInstallOptions = {
+  workspace?: string;
+  force: boolean;
   dryRun: boolean;
 };
 
@@ -100,6 +107,23 @@ function buildProgram(): Command {
         workspace,
         runsDir: options.runsDir,
         olderThanMs: options.olderThan,
+        dryRun: options.dryRun,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    });
+
+  const skills = program.command("skills").description("Manage local harness skills");
+  skills
+    .command("install")
+    .description("Install a packaged harness skill into the target repo")
+    .argument("<skill>", "packaged skill name")
+    .option("--workspace <path>", "target repo (default: nearest harness.json or Git root)")
+    .option("--force", "replace an existing local skill", false)
+    .option("--dry-run", "show what would be installed without writing", false)
+    .action((skill: string, options: SkillsInstallOptions) => {
+      const result = installPackagedSkill(skill, {
+        workspace: options.workspace,
+        force: options.force,
         dryRun: options.dryRun,
       });
       console.log(JSON.stringify(result, null, 2));
