@@ -7,6 +7,7 @@ import { expect, test } from "vitest";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const INSTALL = join(REPO_ROOT, "install");
+// Keep aligned with install's PATH_WARNING_MARKER.
 const PATH_WARNING = "Add this directory to PATH:";
 
 // Generated shims run bin/harness.ts, so these tests assume pnpm install already ran.
@@ -35,7 +36,7 @@ function expectInstalledHarness(binDir: string) {
   expect(help.stdout).toMatch(/Usage: harness/);
 }
 
-test("install works when the bin dir contains spaces and quotes", () => {
+test("install writes an executable harness shim", () => {
   const binDir = mkdtempSync(join(tmpdir(), "harness install '"));
   const result = runInstall({ binDir });
   expect(result.status).toBe(0);
@@ -56,7 +57,7 @@ test("install does not report PATH guidance when bin dir is on PATH", () => {
   const binDir = mkdtempSync(join(tmpdir(), "harness-bin-"));
   const result = runInstall({
     binDir,
-    path: `${binDir}:${process.env.PATH ?? ""}`,
+    path: `${realpathSync(binDir)}:${process.env.PATH ?? ""}`,
   });
   expect(result.status).toBe(0);
   expect(result.stdout).not.toContain(PATH_WARNING);

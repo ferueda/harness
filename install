@@ -69,13 +69,14 @@ chmod +x "$SHIM"
 
 echo "Installed harness: $SHIM"
 echo "Checkout root: $ROOT"
-echo
-echo "Next:"
-echo "  harness init"
-echo "  harness run review"
 
 if ! path_contains "$BIN_DIR"; then
   echo
   echo "$PATH_WARNING_MARKER"
   echo "  export PATH=\"$BIN_DIR:\$PATH\""
 fi
+
+echo
+echo "Next:"
+echo "  harness init"
+echo "  harness run review"
