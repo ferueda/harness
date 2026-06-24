@@ -6,7 +6,7 @@ import { HarnessConfigSchema, formatZodError } from "./schemas.ts";
 const CONFIG_FILE = "harness.json";
 export const HARNESS_GITIGNORE_ENTRY = ".harness/";
 export const HARNESS_SHIM_RELATIVE_PATH = ".harness/bin/harness";
-export const HARNESS_RECOMMENDED_COMMAND = `${HARNESS_SHIM_RELATIVE_PATH} run review`;
+export const HARNESS_RECOMMENDED_COMMAND = `${HARNESS_SHIM_RELATIVE_PATH} run change-review`;
 
 export type HarnessOptions = {
   workspace?: string;
