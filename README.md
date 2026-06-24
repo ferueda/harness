@@ -29,6 +29,15 @@ For the broader review cycle, run `review-full`. It adds a read-only `simplify` 
 
 If a reviewer provider fails, the workflow still prints JSON to stdout and exits `1`. Failed runs use `status: "failed"`, include `failedReviews`, preserve any successful peer review summaries, and write `summary.md` plus `meta.json`.
 
+Prune old local run artifacts explicitly when they are no longer useful:
+
+```bash
+node dist/bin/harness.js runs prune --older-than 30d --dry-run
+node dist/bin/harness.js runs prune --older-than 30d
+```
+
+The command targets `<workspace>/.harness/runs/reviews` by default and prints JSON with matched/deleted counts.
+
 `harness.json` lives at the target repo root and keeps repo-local defaults:
 
 ```json
