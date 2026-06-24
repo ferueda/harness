@@ -81,7 +81,7 @@ function buildProgram(): Command {
 
   program
     .command("init")
-    .description("Create harness.json and ignore harness artifacts")
+    .description("Create harness.json, ignore artifacts, and write a local shim")
     .option("--workspace <path>", "target repo (default: nearest harness.json or Git root)")
     .option("--base <ref>", "base ref for new harness.json (default: main)")
     .action((options: InitOptions) => {
