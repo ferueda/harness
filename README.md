@@ -9,7 +9,7 @@ harness.json  Repo-local harness defaults
 skills/       Agent Skill instructions
 .agents/     Repo-local development skills; not installed into target repos
 providers/    Runtime adapters for external agent providers
-workflows/    Callable workflows, starting with dual-review
+workflows/    Callable review workflows
 lib/          Runner, artifact, and workflow helpers
 automations/  Background task definitions
 dev/plans/    Plans and handoffs for this repo
@@ -20,10 +20,12 @@ dev/plans/    Plans and handoffs for this repo
 ```bash
 pnpm build
 node dist/bin/harness.js init
-node dist/bin/harness.js run dual-review
+node dist/bin/harness.js run review
 ```
 
-The first workflow calls `review-implementation`, then `code-quality-review`, then writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
+The default review workflow calls `review-implementation`, then `code-quality-review`, then writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
+
+For the broader review cycle, run `review-full`. It adds a read-only `simplify` pass after the two standard reviewers.
 
 `harness.json` lives at the target repo root and keeps repo-local defaults:
 
@@ -33,7 +35,7 @@ The first workflow calls `review-implementation`, then `code-quality-review`, th
 }
 ```
 
-When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run dual-review`.
+When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run review` or `harness run review-full`.
 
 `harness init` creates `harness.json` when missing and ensures `.gitignore` contains `.harness/`.
 
@@ -43,7 +45,13 @@ For external target repos, pass the repo path explicitly:
 node dist/bin/harness.js init --workspace /path/to/repo
 ```
 
-Skills follow the [Agent Skills](https://agentskills.io/) format. Top-level `skills/` contains harness skills. `.agents/skills/` contains repo-local development skills for working on this project and should not be copied into repos that install the harness.
+Skills follow the [Agent Skills](https://agentskills.io/) format. Target repos usually keep local skills in `.agents/skills/`. Workflow skill lookup stops at the first match:
+
+1. target repo `.agents/skills/{skill}/SKILL.md`
+2. user `~/.agents/skills/{skill}/SKILL.md`
+3. packaged harness `skills/{skill}/SKILL.md`
+
+In this repo, top-level `skills/` contains packaged fallback skills. `.agents/skills/` contains repo-local development skills for working on harness itself and should not be copied into repos that install harness.
 
 ## Development
 
@@ -67,7 +75,7 @@ For fast CLI iteration from source:
 
 ```bash
 node bin/harness.ts init
-node bin/harness.ts run dual-review
+node bin/harness.ts run review
 ```
 
 ## Available Skills
@@ -134,6 +142,19 @@ Review recently modified code for clarity, consistency, and maintainability whil
 - Behavior-preserving refinement suggestions on a diff or implementation
 
 **Evaluates:** Conventions, clarity, complexity, policy compliance, architecture — without changing what the code does
+
+**Output:** Findings with severity, location, recommendation, and rationale; verdict `pass` | `needs_changes` | `blocked`
+
+---
+
+### simplify-review
+
+Review recently modified code for behavior-preserving simplification opportunities. Read-only — never edits files.
+
+**Use when:**
+- Running the `review-full` workflow
+- Looking for clarity and maintainability improvements after implementation and quality review
+- Checking whether code can be simpler without changing functionality
 
 **Output:** Findings with severity, location, recommendation, and rationale; verdict `pass` | `needs_changes` | `blocked`
 

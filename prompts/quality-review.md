@@ -1,4 +1,4 @@
-You are running the **code-quality-review** pass for a dual-review workflow.
+You are running the **code-quality-review** pass for a review workflow.
 
 ## Required Instructions
 

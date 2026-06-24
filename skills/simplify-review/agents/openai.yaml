@@ -1,0 +1,4 @@
+interface:
+  display_name: "Simplify Review"
+  short_description: "Read-only simplification review for harness review-full"
+  default_prompt: "Use $simplify-review to review the current diff for behavior-preserving simplification opportunities."

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -131,10 +131,16 @@ test("harness without a subcommand exits with help and failure", () => {
   expect(result.status).toBe(1);
   expect(result.stdout).toMatch(/Usage: harness/);
 });
-test("harness run dual-review help exits cleanly", () => {
-  const result = runHarness(["run", "dual-review", "--help"]);
+test("harness run review help exits cleanly", () => {
+  const result = runHarness(["run", "review", "--help"]);
   expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/harness run dual-review/);
+  expect(result.stdout).toMatch(/harness run review/);
+  expect(result.stdout).toMatch(/--dry-run/);
+});
+test("harness run review-full help exits cleanly", () => {
+  const result = runHarness(["run", "review-full", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness run review-full/);
   expect(result.stdout).toMatch(/--dry-run/);
 });
 test("harness init rejects unknown flags", () => {
@@ -153,13 +159,13 @@ test("harness init reports runtime errors as exit 1", () => {
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/Workspace does not exist/);
 });
-test("harness run dual-review rejects unknown flags", () => {
-  const result = runHarness(["run", "dual-review", "--unknown"]);
+test("harness run review rejects unknown flags", () => {
+  const result = runHarness(["run", "review", "--unknown"]);
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/unknown option.*--unknown/i);
 });
-test("harness run dual-review rejects invalid runtime values", () => {
-  const result = runHarness(["run", "dual-review", "--max-runtime-ms", "0"]);
+test("harness run review rejects invalid runtime values", () => {
+  const result = runHarness(["run", "review", "--max-runtime-ms", "0"]);
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/must be a positive number/);
 });
@@ -168,11 +174,11 @@ test("harness run rejects unknown workflows", () => {
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/unknown command.*unknown/i);
 });
-test("harness run dual-review dry-run works through the CLI", () => {
+test("harness run review dry-run works through the CLI", () => {
   const workspace = createGitWorkspace();
   const result = runHarness([
     "run",
-    "dual-review",
+    "review",
     "--workspace",
     workspace,
     "--base",
@@ -185,13 +191,44 @@ test("harness run dual-review dry-run works through the CLI", () => {
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
   expect(output.workspace).toBe(workspace);
+  expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
+  expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
 });
-test("harness run dual-review accepts positive finite runtime values", () => {
+test("harness run review-full dry-run includes simplify prompt", () => {
+  const workspace = createGitWorkspace();
+  const devSkillPath = join(workspace, ".agents/skills/simplify/SKILL.md");
+  mkdirSync(dirname(devSkillPath), { recursive: true });
+  writeFileSync(devSkillPath, "# Dev simplify\n", "utf8");
+  const result = runHarness([
+    "run",
+    "review-full",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("dry_run");
+  expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
+  expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
+  expect(output.prompts.simplify).toMatch(/simplify-review\.prompt\.md$/);
+
+  const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
+  expect(simplifyPrompt).toContain(`- \`${join(REPO_ROOT, "skills/simplify-review/SKILL.md")}\``);
+  expect(simplifyPrompt).not.toContain(devSkillPath);
+  expect(simplifyPrompt).toMatch(/Prior implementation review file/);
+  expect(simplifyPrompt).toMatch(/Prior code quality review file/);
+});
+test("harness run review accepts positive finite runtime values", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const result = runHarness([
     "run",
-    "dual-review",
+    "review",
     "--workspace",
     workspace,
     "--base",
@@ -209,12 +246,12 @@ test("harness run dual-review accepts positive finite runtime values", () => {
   const output = JSON.parse(result.stdout);
   expect(output.verdict).toBe("pass");
 });
-test("harness run dual-review exits 0 when reviewers pass", () => {
+test("harness run review exits 0 when reviewers pass", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const result = runHarness([
     "run",
-    "dual-review",
+    "review",
     "--workspace",
     workspace,
     "--base",
@@ -230,13 +267,15 @@ test("harness run dual-review exits 0 when reviewers pass", () => {
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("completed");
   expect(output.verdict).toBe("pass");
+  expect(output.reviews.implementation.verdict).toBe("pass");
+  expect(output.reviews.codeQuality.verdict).toBe("pass");
 });
-test("harness run dual-review exits 1 when reviewers do not pass", () => {
+test("harness run review exits 1 when reviewers do not pass", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const result = runHarness([
     "run",
-    "dual-review",
+    "review",
     "--workspace",
     workspace,
     "--base",
@@ -252,4 +291,59 @@ test("harness run dual-review exits 1 when reviewers do not pass", () => {
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("completed");
   expect(output.verdict).toBe("needs_changes");
+});
+test("harness run review-full exits 0 when all reviewers pass", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "review-full",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runs-dir",
+    runsDir,
+    "--cursor-agent",
+    createFakeCursorAgent({ reviewVerdict: "pass" }),
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("completed");
+  expect(output.verdict).toBe("pass");
+  expect(output.reviews.implementation.verdict).toBe("pass");
+  expect(output.reviews.codeQuality.verdict).toBe("pass");
+  expect(output.reviews.simplify.verdict).toBe("pass");
+
+  const [runId] = readdirSync(runsDir);
+  const simplifyPrompt = readFileSync(join(runsDir, runId, "simplify-review.prompt.md"), "utf8");
+  expect(simplifyPrompt).toMatch(/Prior implementation review file/);
+  expect(simplifyPrompt).toMatch(/Prior code quality review file/);
+});
+test("harness run review-full exits 1 when reviewers do not pass", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "review-full",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runs-dir",
+    runsDir,
+    "--cursor-agent",
+    createFakeCursorAgent({ reviewVerdict: "needs_changes" }),
+  ]);
+  expect(result.status).toBe(1);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("completed");
+  expect(output.verdict).toBe("needs_changes");
+  expect(output.reviews.implementation.verdict).toBe("needs_changes");
+  expect(output.reviews.codeQuality.verdict).toBe("needs_changes");
+  expect(output.reviews.simplify.verdict).toBe("needs_changes");
 });
