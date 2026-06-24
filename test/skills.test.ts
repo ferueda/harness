@@ -1,13 +1,30 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import type * as NodeFs from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
+
+const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 afterEach(() => {
   vi.doUnmock("node:fs");
   vi.resetModules();
 });
+
+function listFiles(root: string): string[] {
+  return readdirSync(root, { recursive: true })
+    .map((entry) => String(entry))
+    .filter((entry) => statSync(join(root, entry)).isFile())
+    .sort();
+}
 
 test("installPackagedSkill restores existing skill when forced replace fails", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-skills-"));
@@ -36,4 +53,17 @@ test("installPackagedSkill restores existing skill when forced replace fails", a
     /simulated replace failure/,
   );
   expect(readFileSync(skillPath, "utf8")).toBe("# Original local skill\n");
+});
+
+test("local change review skill stays in sync with packaged skill", () => {
+  const packagedRoot = join(REPO_ROOT, "skills/change-review-workflow");
+  const localRoot = join(REPO_ROOT, ".agents/skills/change-review-workflow");
+  const files = listFiles(packagedRoot);
+
+  expect(files).toEqual(listFiles(localRoot));
+  for (const file of files) {
+    expect(readFileSync(join(localRoot, file), "utf8")).toBe(
+      readFileSync(join(packagedRoot, file), "utf8"),
+    );
+  }
 });
