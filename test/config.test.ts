@@ -23,14 +23,7 @@ import {
 } from "../lib/config.ts";
 const TEST_HARNESS_ENTRYPOINT = "/opt/harness/dist/bin/harness.js";
 
-function initOptions(
-  options: {
-    workspace?: string;
-    baseRef?: string;
-    harnessEntrypoint?: string;
-    nodePath?: string;
-  } = {},
-) {
+function initOptions(options: Partial<InitHarnessOptions> = {}): InitHarnessOptions {
   return {
     ...options,
     harnessEntrypoint: options.harnessEntrypoint ?? TEST_HARNESS_ENTRYPOINT,
@@ -148,6 +141,18 @@ test("initHarnessConfig rewrites shim when harness entrypoint changes", () => {
   expect(result.shimUpdated).toBe(true);
   expect(shim).toContain(secondEntrypoint);
   expect(shim).not.toContain(firstEntrypoint);
+});
+test("initHarnessConfig rewrites shim when node path changes", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  const firstNodePath = "/opt/node/first/bin/node";
+  const secondNodePath = "/opt/node/second/bin/node";
+  initHarnessConfig(initOptions({ nodePath: firstNodePath }), workspace);
+  const result = initHarnessConfig(initOptions({ nodePath: secondNodePath }), workspace);
+  const shim = readFileSync(join(workspace, HARNESS_SHIM_RELATIVE_PATH), "utf8");
+  expect(result.shimUpdated).toBe(true);
+  expect(shim).toContain(secondNodePath);
+  expect(shim).not.toContain(firstNodePath);
 });
 test("initHarnessConfig quotes shim paths with spaces and single quotes", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
