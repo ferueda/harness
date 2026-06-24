@@ -1,7 +1,13 @@
 # Plans & handoffs
 
-| File | Status | Summary |
-|------|--------|---------|
-| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | `harness` repo migration, Phase 0 dual-review, live workflow roadmap |
+| File                                                                 | Status        | Summary                                                                        |
+| -------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------ |
+| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | `harness` repo migration, Phase 0 dual-review, live workflow roadmap           |
 
-**Execution order:** Start with the handoff doc — it is the source of truth for the harness initiative.
+**Execution order:** Use the handoff doc as roadmap context for the next active harness work.
+
+## Archived
+
+| File                                                                         | Status | Summary                                                                        |
+| ---------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------ |
+| [archive/260624-user-level-install.md](./archive/260624-user-level-install.md) | `done` | Add source-checkout user install so `harness` is available from any clone path |

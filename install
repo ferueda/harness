@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+BIN_DIR="${HARNESS_INSTALL_BIN_DIR:-$HOME/.local/bin}"
+# Test-only escape hatch: set HARNESS_INSTALL_SKIP_PNPM=1 to skip pnpm install.
+SKIP_PNPM="${HARNESS_INSTALL_SKIP_PNPM:-0}"
+PATH_WARNING_MARKER="Add this directory to PATH:"
+
+fail() {
+  echo "harness install: $*" >&2
+  exit 1
+}
+
+shell_quote() {
+  # Match lib/config.ts shellQuote for generated shim arguments.
+  local value="${1//\'/\'\"\'\"\'}"
+  printf "'%s'" "$value"
+}
+
+path_contains() {
+  local needle="$1"
+  local entry
+  local resolved
+
+  # Canonicalize BIN_DIR and match exact PATH segments; substring checks confuse /bin with /bin-extra.
+  IFS=":" read -ra entries <<< "${PATH:-}"
+  for entry in "${entries[@]}"; do
+    if [ "$entry" = "~" ]; then
+      entry="$HOME"
+    elif [[ "$entry" == "~/"* ]]; then
+      entry="$HOME/${entry#"~/"}"
+    fi
+    if [ -z "$entry" ] || [ ! -d "$entry" ]; then
+      continue
+    fi
+    resolved="$(cd "$entry" && pwd -P)"
+    if [ "$resolved" = "$needle" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+command -v node >/dev/null 2>&1 || fail "node not found in PATH"
+NODE="$(node -p 'process.execPath')"
+"$NODE" -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 24 ? 0 : 1)' ||
+  fail "node >=24 is required"
+
+if [ "$SKIP_PNPM" != "1" ]; then
+  PNPM="$(command -v pnpm)" || fail "pnpm not found in PATH"
+  (cd "$ROOT" && "$PNPM" install --frozen-lockfile)
+fi
+
+mkdir -p "$BIN_DIR"
+BIN_DIR="$(cd "$BIN_DIR" && pwd -P)"
+SHIM="$BIN_DIR/harness"
+ENTRYPOINT="$ROOT/bin/harness.ts"
+
+cat > "$SHIM" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec $(shell_quote "$NODE") $(shell_quote "$ENTRYPOINT") "\$@"
+EOF
+chmod +x "$SHIM"
+
+"$SHIM" --help >/dev/null
+
+echo "Installed harness: $SHIM"
+echo "Checkout root: $ROOT"
+
+if ! path_contains "$BIN_DIR"; then
+  echo
+  echo "$PATH_WARNING_MARKER"
+  echo "  export PATH=\"$BIN_DIR:\$PATH\""
+fi
+
+echo
+echo "Next:"
+echo "  harness init"
+echo "  harness run review"
