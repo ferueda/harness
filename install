@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BIN_DIR="${HARNESS_INSTALL_BIN_DIR:-$HOME/.local/bin}"
-# Test-only escape hatch: normal installs should run pnpm install --frozen-lockfile.
+# Test-only escape hatch: set HARNESS_INSTALL_SKIP_PNPM=1 to skip pnpm install.
 SKIP_PNPM="${HARNESS_INSTALL_SKIP_PNPM:-0}"
 PATH_WARNING_MARKER="Add this directory to PATH:"
 
@@ -23,9 +23,14 @@ path_contains() {
   local entry
   local resolved
 
-  # Match exact canonical PATH entries; substring checks confuse /bin with /bin-extra.
+  # Canonicalize BIN_DIR and match exact PATH segments; substring checks confuse /bin with /bin-extra.
   IFS=":" read -ra entries <<< "${PATH:-}"
   for entry in "${entries[@]}"; do
+    if [ "$entry" = "~" ]; then
+      entry="$HOME"
+    elif [[ "$entry" == "~/"* ]]; then
+      entry="$HOME/${entry#"~/"}"
+    fi
     if [ -z "$entry" ] || [ ! -d "$entry" ]; then
       continue
     fi

@@ -35,7 +35,7 @@ function expectInstalledHarness(binDir: string) {
   expect(help.stdout).toMatch(/Usage: harness/);
 }
 
-test("install writes a user-level harness shim with quoted paths", () => {
+test("install works when the bin dir contains spaces and quotes", () => {
   const binDir = mkdtempSync(join(tmpdir(), "harness install '"));
   const result = runInstall({ binDir });
   expect(result.status).toBe(0);
@@ -46,9 +46,10 @@ test("install writes a user-level harness shim with quoted paths", () => {
 
 test("install reports PATH guidance when bin dir is not on PATH", () => {
   const binDir = mkdtempSync(join(tmpdir(), "harness-bin-"));
-  const result = runInstall({ binDir, path: process.env.PATH });
+  const result = runInstall({ binDir });
   expect(result.status).toBe(0);
   expect(result.stdout).toContain(PATH_WARNING);
+  expect(result.stdout).toContain(`export PATH="${realpathSync(binDir)}:$PATH"`);
 });
 
 test("install does not report PATH guidance when bin dir is on PATH", () => {

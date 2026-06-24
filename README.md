@@ -36,6 +36,7 @@ git clone git@github.com:ferueda/harness.git ~/dev/harness
 ```
 
 The installer writes a user-level `harness` command into `~/.local/bin` by default. If the checkout moves, rerun `install` from the new location.
+If `~/.local/bin` is not on `PATH`, the installer prints the exact `export PATH=...` line to add before running `harness init`.
 
 To update:
 
