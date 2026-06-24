@@ -38,6 +38,7 @@ Core layout:
 ```
 harness.json  Repo-local harness defaults
 skills/       Agent Skill instructions
+.agents/     Repo-local development skills; not installed into target repos
 providers/    Runtime adapters for external agent providers
 workflows/    Callable workflows, starting with dual-review
 lib/          Runner, artifact, and workflow helpers
