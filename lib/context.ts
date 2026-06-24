@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, relative } from "node:path";
+import { assertNonEmptyHandoffText, HANDOFF_CONFLICT_ERROR } from "./handoff.ts";
 
 export type GitScope = {
   mergeBase: string;
@@ -136,12 +137,10 @@ function writeHandoffArtifact(input: {
   destination: string;
 }): ContextArtifact {
   if (input.path && input.text !== undefined) {
-    throw new Error("Use only one handoff input");
+    throw new Error(HANDOFF_CONFLICT_ERROR);
   }
   if (input.text !== undefined) {
-    if (!input.text.trim()) {
-      throw new Error("Handoff text must not be empty");
-    }
+    assertNonEmptyHandoffText(input.text);
     writeFileSync(input.destination, input.text, "utf8");
     return { requested: "inline handoff text", path: input.destination };
   }
