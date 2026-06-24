@@ -24,7 +24,7 @@ export type ResolvedHarnessOptions<T extends HarnessOptions = HarnessOptions> = 
 export type InitHarnessOptions = {
   workspace?: string;
   baseRef?: string;
-  harnessEntrypoint?: string;
+  harnessEntrypoint: string;
   nodePath?: string;
 };
 
@@ -57,7 +57,7 @@ export function findHarnessConfig(startDir: string): string | null {
 }
 
 export function initHarnessConfig(
-  options: InitHarnessOptions = {},
+  options: InitHarnessOptions,
   cwd = process.cwd(),
 ): {
   workspace: string;
@@ -78,15 +78,15 @@ export function initHarnessConfig(
   const configPath = join(workspace, CONFIG_FILE);
   const gitignorePath = join(workspace, ".gitignore");
   const shim = writeHarnessShim(workspace, {
-    harnessEntrypoint: resolveRequiredHarnessEntrypoint(options.harnessEntrypoint),
-    nodePath: options.nodePath ?? process.execPath,
+    harnessEntrypoint: resolveRequiredPath("harnessEntrypoint", options.harnessEntrypoint),
+    nodePath: resolveRequiredPath("nodePath", options.nodePath ?? process.execPath),
   });
   const result = {
     workspace,
     configPath,
     gitignorePath,
     shimPath: shim.path,
-    recommendedCommand: shim.recommendedCommand,
+    recommendedCommand: HARNESS_RECOMMENDED_COMMAND,
     baseSkipped: false,
     configCreated: false,
     gitignoreUpdated: false,
@@ -172,7 +172,7 @@ function ensureGitignoreEntry(path: string, entry: string): boolean {
 function writeHarnessShim(
   workspace: string,
   input: { harnessEntrypoint: string; nodePath: string },
-): { path: string; recommendedCommand: string; updated: boolean } {
+): { path: string; updated: boolean } {
   const shimPath = join(workspace, HARNESS_SHIM_RELATIVE_PATH);
   const shimDir = dirname(shimPath);
   mkdirSync(shimDir, { recursive: true });
@@ -180,31 +180,27 @@ function writeHarnessShim(
   const content = renderHarnessShim(input);
   const existing = existsSync(shimPath) ? readFileSync(shimPath, "utf8") : null;
   const executable = existing !== null && (statSync(shimPath).mode & 0o111) !== 0;
-  if (existing === content && executable) {
-    return {
-      path: shimPath,
-      recommendedCommand: HARNESS_RECOMMENDED_COMMAND,
-      updated: false,
-    };
-  }
+  const updated = existing !== content || !executable;
 
   if (existing !== content) {
     writeFileSync(shimPath, content, "utf8");
   }
-  chmodSync(shimPath, 0o755);
+  if (!executable) {
+    chmodSync(shimPath, 0o755);
+  }
+
   return {
     path: shimPath,
-    recommendedCommand: HARNESS_RECOMMENDED_COMMAND,
-    updated: true,
+    updated,
   };
 }
 
-function resolveRequiredHarnessEntrypoint(entrypoint: string | undefined): string {
-  if (!entrypoint) {
-    throw new Error("harnessEntrypoint is required to create the local harness shim");
+function resolveRequiredPath(name: string, path: string | undefined): string {
+  if (!path) {
+    throw new Error(`${name} is required to create the local harness shim`);
   }
 
-  return resolve(entrypoint);
+  return resolve(path);
 }
 
 function renderHarnessShim(input: { harnessEntrypoint: string; nodePath: string }): string {
