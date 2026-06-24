@@ -38,3 +38,45 @@ test("writeRunContext copies plan and handoff and sections return file reference
     "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
   );
 });
+test("writeRunContext writes inline handoff text as a run artifact", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+  const artifacts = writeRunContext({
+    workspace,
+    runDir,
+    handoffText: "# Caller handoff\n\nReview this scope.\n",
+  });
+
+  expect(readFileSync(join(runDir, "context/handoff.md"), "utf8")).toBe(
+    "# Caller handoff\n\nReview this scope.\n",
+  );
+  expect(buildHandoffSection(artifacts.handoff, workspace)).toBe(
+    "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
+  );
+});
+test("writeRunContext rejects conflicting handoff inputs", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+  writeFileSync(join(workspace, "handoff.md"), "# Handoff\n", "utf8");
+
+  expect(() =>
+    writeRunContext({
+      workspace,
+      runDir,
+      handoffPath: "handoff.md",
+      handoffText: "# Inline handoff\n",
+    }),
+  ).toThrow(/Use only one handoff input/);
+});
+test("writeRunContext rejects blank handoff text", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+
+  expect(() =>
+    writeRunContext({
+      workspace,
+      runDir,
+      handoffText: " \n\t",
+    }),
+  ).toThrow(/Handoff text must not be empty/);
+});

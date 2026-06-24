@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, relative } from "node:path";
+import { assertNonEmptyHandoffText, HANDOFF_CONFLICT_ERROR } from "./handoff.ts";
 
 export type GitScope = {
   mergeBase: string;
@@ -91,6 +92,7 @@ export function writeRunContext(input: {
   scope?: object;
   planPath?: string;
   handoffPath?: string;
+  handoffText?: string;
 }): { plan: ContextArtifact; handoff: ContextArtifact } {
   const contextDir = join(input.runDir, "context");
   mkdirSync(contextDir, { recursive: true });
@@ -101,17 +103,13 @@ export function writeRunContext(input: {
       workspace: input.workspace,
       destination: join(contextDir, "plan.md"),
     }),
-    handoff: copyContextFile({
-      requested: input.handoffPath,
+    handoff: writeHandoffArtifact({
+      path: input.handoffPath,
+      text: input.handoffText,
       workspace: input.workspace,
       destination: join(contextDir, "handoff.md"),
     }),
   };
-}
-
-export function renderPrompt(templatePath: string, values: Record<string, string>): string {
-  const template = readFileSync(templatePath, "utf8");
-  return fillTemplate(template, values);
 }
 
 function copyContextFile({
@@ -130,6 +128,27 @@ function copyContextFile({
 
   copyFileSync(resolved, destination);
   return { requested, path: destination };
+}
+
+function writeHandoffArtifact(input: {
+  path?: string;
+  text?: string;
+  workspace: string;
+  destination: string;
+}): ContextArtifact {
+  if (input.path && input.text !== undefined) {
+    throw new Error(HANDOFF_CONFLICT_ERROR);
+  }
+  if (input.text !== undefined) {
+    assertNonEmptyHandoffText(input.text);
+    writeFileSync(input.destination, input.text, "utf8");
+    return { requested: "inline handoff text", path: input.destination };
+  }
+  return copyContextFile({
+    requested: input.path,
+    workspace: input.workspace,
+    destination: input.destination,
+  });
 }
 
 function formatArtifactPath(path: string, workspace: string): string {

@@ -23,9 +23,15 @@ node dist/bin/harness.js init
 node dist/bin/harness.js run review
 ```
 
-The default review workflow starts `review-implementation` and `code-quality-review` in parallel. Reviewers read the same base artifacts, then harness aggregates their results in workflow order and writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
+The default review workflow (the change review workflow skill) starts `review-implementation` and `code-quality-review` in parallel. Reviewers read the same base artifacts, then harness aggregates their results in workflow order and writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
 
 For the broader review cycle, run `review-full`. It adds a read-only `simplify` pass and starts all three reviewers in parallel.
+
+Generated review handoffs can be piped directly; harness writes the shared reviewer copy under the ignored run artifact directory:
+
+```bash
+printf '%s\n' "$HANDOFF" | node dist/bin/harness.js run review --handoff-stdin
+```
 
 If a reviewer provider fails, the workflow still prints JSON to stdout and exits `1`. Failed runs use `status: "failed"`, include `failedReviews`, preserve any successful peer review summaries, and write `summary.md` plus `meta.json`.
 
@@ -54,6 +60,12 @@ For external target repos, pass the repo path explicitly:
 
 ```bash
 node dist/bin/harness.js init --workspace /path/to/repo
+```
+
+Install optional local workflow helper skills explicitly:
+
+```bash
+node dist/bin/harness.js skills install change-review-workflow --workspace /path/to/repo
 ```
 
 Skills follow the [Agent Skills](https://agentskills.io/) format. Target repos usually keep local skills in `.agents/skills/`. Workflow skill lookup stops at the first match:
@@ -206,6 +218,24 @@ Evaluate, analyze, and systematically react to an adversarial code review report
 - An adversarial review report has been provided
 - "React to this review..."
 - Evaluating review findings (Implement, Adapt, Decline) and planning fixes
+
+---
+
+### change-review-workflow
+
+Run and close the harness `review` or `review-full` workflow. Defaults to `review` unless `review-full` is explicit.
+
+**Use when:**
+- "Run a review..."
+- "Run a full review..."
+- "Run a review for these changes..."
+- "Run the change review workflow..."
+- "Run review-full..."
+- "Run a harness review..."
+- Running a multi-agent harness review
+- Compiling reviewer results and deciding which findings to apply
+
+**Coordinates:** review handoff input, CLI execution, reviewer artifact triage, accepted fixes, and re-review
 
 ---
 

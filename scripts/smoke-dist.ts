@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -14,7 +15,7 @@ function resolveSmokeBin(): string {
   return isAbsolute(override) ? override : resolve(ROOT, override);
 }
 
-function runHarness(args: string[]): string {
+function runHarness(args: string[], input?: string): string {
   if (!existsSync(BIN)) {
     throw new Error(`Built harness CLI not found: ${BIN}`);
   }
@@ -22,6 +23,7 @@ function runHarness(args: string[]): string {
   const result = spawnSync(process.execPath, [BIN, ...args], {
     cwd: ROOT,
     encoding: "utf8",
+    input,
   });
 
   if (result.status !== 0) {
@@ -40,6 +42,62 @@ function runHarness(args: string[]): string {
 }
 
 runHarness(["--help"]);
+
+const installWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-install-"));
+const installDryRunOutput = runHarness([
+  "skills",
+  "install",
+  "change-review-workflow",
+  "--workspace",
+  installWorkspace,
+  "--dry-run",
+]);
+
+const installDryRun = JSON.parse(installDryRunOutput) as {
+  skill?: unknown;
+  sourcePath?: unknown;
+  status?: unknown;
+};
+
+if (installDryRun.skill !== "change-review-workflow") {
+  throw new Error(`Expected change-review-workflow skill, got ${String(installDryRun.skill)}`);
+}
+
+if (typeof installDryRun.sourcePath !== "string") {
+  throw new Error("Expected skills install dry-run output to include sourcePath");
+}
+
+if (!normalize(installDryRun.sourcePath).endsWith(join("skills", "change-review-workflow"))) {
+  throw new Error(`Unexpected skills install sourcePath: ${installDryRun.sourcePath}`);
+}
+
+if (installDryRun.status !== "would_install") {
+  throw new Error(`Expected skills install dry-run status, got ${String(installDryRun.status)}`);
+}
+
+const installOutput = runHarness([
+  "skills",
+  "install",
+  "change-review-workflow",
+  "--workspace",
+  installWorkspace,
+]);
+const install = JSON.parse(installOutput) as {
+  status?: unknown;
+};
+
+if (install.status !== "installed") {
+  throw new Error(`Expected skills install status, got ${String(install.status)}`);
+}
+
+const installedSkill = readFileSync(
+  join(installWorkspace, ".agents/skills/change-review-workflow/SKILL.md"),
+  "utf8",
+);
+if (!installedSkill.includes("name: change-review-workflow")) {
+  throw new Error("Expected skills install to materialize change-review-workflow skill");
+}
+rmSync(installWorkspace, { recursive: true, force: true });
 
 const dryRunOutput = runHarness([
   "run",
@@ -72,6 +130,39 @@ if (
   typeof dryRun.prompts?.quality !== "string"
 ) {
   throw new Error("Expected dry-run output to include implementation and quality prompt paths");
+}
+
+const handoffDryRunOutput = runHarness(
+  [
+    "run",
+    "review",
+    "--workspace",
+    ROOT,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--handoff-stdin",
+    "--dry-run",
+  ],
+  "# Smoke handoff\n",
+);
+const handoffDryRun = JSON.parse(handoffDryRunOutput) as {
+  runDir?: unknown;
+  status?: unknown;
+};
+
+if (handoffDryRun.status !== "dry_run") {
+  throw new Error(`Expected handoff dry_run status, got ${String(handoffDryRun.status)}`);
+}
+
+if (typeof handoffDryRun.runDir !== "string") {
+  throw new Error("Expected handoff dry-run output to include runDir");
+}
+
+const handoffArtifact = readFileSync(join(handoffDryRun.runDir, "context", "handoff.md"), "utf8");
+if (handoffArtifact !== "# Smoke handoff\n") {
+  throw new Error("Expected handoff dry-run to materialize stdin handoff text");
 }
 
 const fullDryRunOutput = runHarness([

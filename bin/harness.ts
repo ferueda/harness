@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { run as runReviewFull } from "../workflows/review-full.workflow.ts";
 import { run as runReview } from "../workflows/review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
+import {
+  assertNonEmptyHandoffStdin,
+  assertPipedHandoffStdin,
+  HANDOFF_STDIN_CONFLICT_ERROR,
+} from "../lib/handoff.ts";
 import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
+import { installPackagedSkill } from "../lib/skills.ts";
 import { createWorkflowContext } from "../lib/workflow-context.ts";
 
 type InitOptions = {
@@ -19,6 +26,7 @@ type ReviewOptions = {
   head?: string;
   plan?: string;
   handoff?: string;
+  handoffStdin?: boolean;
   runsDir?: string;
   cursorAgent?: string;
   model?: string;
@@ -33,6 +41,12 @@ type RunsPruneOptions = {
   dryRun: boolean;
 };
 
+type SkillsInstallOptions = {
+  workspace?: string;
+  force: boolean;
+  dryRun: boolean;
+};
+
 const DEFAULT_MAX_RUNTIME_MS = 30 * 60 * 1000;
 
 function positiveNumber(value: string): number {
@@ -41,6 +55,18 @@ function positiveNumber(value: string): number {
     throw new InvalidArgumentError("must be a positive number");
   }
   return parsed;
+}
+
+function resolveHandoffText(options: ReviewOptions): string | undefined {
+  if (options.handoff && options.handoffStdin) {
+    throw new Error(HANDOFF_STDIN_CONFLICT_ERROR);
+  }
+  if (!options.handoffStdin) return undefined;
+  assertPipedHandoffStdin(process.stdin.isTTY);
+
+  const text = readFileSync(0, "utf8");
+  assertNonEmptyHandoffStdin(text);
+  return text;
 }
 
 function buildProgram(): Command {
@@ -105,6 +131,23 @@ function buildProgram(): Command {
       console.log(JSON.stringify(result, null, 2));
     });
 
+  const skills = program.command("skills").description("Manage local harness skills");
+  skills
+    .command("install")
+    .description("Install a packaged harness skill into the target repo")
+    .argument("<skill>", "packaged skill name")
+    .option("--workspace <path>", "target repo (default: nearest harness.json or Git root)")
+    .option("--force", "replace an existing local skill", false)
+    .option("--dry-run", "show what would be installed without writing", false)
+    .action((skill: string, options: SkillsInstallOptions) => {
+      const result = installPackagedSkill(skill, {
+        workspace: options.workspace,
+        force: options.force,
+        dryRun: options.dryRun,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    });
+
   return program;
 }
 
@@ -128,6 +171,7 @@ function addReviewCommand(
     .option("--head <ref>", "head ref (default: HEAD)")
     .option("--plan <path>", "optional plan file")
     .option("--handoff <path>", "optional handoff file")
+    .option("--handoff-stdin", "read optional handoff text from stdin", false)
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
     .option("--cursor-agent <path>", "cursor-agent entrypoint (auto-detected)")
     .option("--model <id>", "Cursor model override")
@@ -139,6 +183,7 @@ function addReviewCommand(
     )
     .option("--dry-run", "prepare context and prompts only", false)
     .action(async (options: ReviewOptions) => {
+      const handoffText = resolveHandoffText(options);
       const ctx = createWorkflowContext(
         resolveHarnessOptions({
           workspace: options.workspace,
@@ -146,6 +191,7 @@ function addReviewCommand(
           headRef: options.head,
           planPath: options.plan,
           handoffPath: options.handoff,
+          handoffText,
           runsDir: options.runsDir,
           cursorAgentPath: options.cursorAgent,
           model: options.model,

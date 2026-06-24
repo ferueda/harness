@@ -16,10 +16,15 @@ import {
   buildHandoffSection,
   buildPlanSection,
   buildRunId,
+  fillTemplate,
   prepareGitScope,
-  renderPrompt,
   writeRunContext,
 } from "./context.ts";
+import {
+  IMPLEMENTATION_REVIEW_PROMPT,
+  QUALITY_REVIEW_PROMPT,
+  SIMPLIFY_REVIEW_PROMPT,
+} from "./review-prompts.ts";
 import type { ContextArtifact } from "./context.ts";
 import type { ReviewOutput } from "./schemas.ts";
 
@@ -31,6 +36,7 @@ type WorkflowOptions = {
   cursorAgentPath?: string;
   planPath?: string;
   handoffPath?: string;
+  handoffText?: string;
   model?: string;
   maxRuntimeMs: number;
   dryRun?: boolean;
@@ -74,7 +80,7 @@ const AGENTS = {
     skillName: "review-implementation",
     title: "Implementation review",
     summaryKey: "implementation",
-    promptTemplate: join(HARNESS_ROOT, "prompts/implementation-review.md"),
+    promptTemplate: IMPLEMENTATION_REVIEW_PROMPT,
     promptFile: "implementation-review.prompt.md",
     reviewFile: "implementation-review.json",
     rawFile: "implementation-review.raw.json",
@@ -85,7 +91,7 @@ const AGENTS = {
     skillName: "code-quality-review",
     title: "Code quality review",
     summaryKey: "codeQuality",
-    promptTemplate: join(HARNESS_ROOT, "prompts/quality-review.md"),
+    promptTemplate: QUALITY_REVIEW_PROMPT,
     promptFile: "quality-review.prompt.md",
     reviewFile: "quality-review.json",
     rawFile: "quality-review.raw.json",
@@ -96,7 +102,7 @@ const AGENTS = {
     skillName: "simplify-review",
     title: "Simplify review",
     summaryKey: "simplify",
-    promptTemplate: join(HARNESS_ROOT, "prompts/simplify-review.md"),
+    promptTemplate: SIMPLIFY_REVIEW_PROMPT,
     promptFile: "simplify-review.prompt.md",
     reviewFile: "simplify-review.json",
     rawFile: "simplify-review.raw.json",
@@ -140,6 +146,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       scope,
       planPath: options.planPath,
       handoffPath: options.handoffPath,
+      handoffText: options.handoffText,
     });
 
     diffSection = buildDiffSection(scope.diff, runDir, workspace);
@@ -236,7 +243,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       const config = AGENTS[name];
 
       const promptPath = join(runDir, config.promptFile);
-      const prompt = renderPrompt(
+      const prompt = fillTemplate(
         config.promptTemplate,
         buildPromptValues({
           scope,

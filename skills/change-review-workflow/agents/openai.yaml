@@ -1,0 +1,4 @@
+interface:
+  display_name: "Change Review Workflow"
+  short_description: "Run harness change reviews"
+  default_prompt: "Use $change-review-workflow to run the harness change review workflow for these changes."

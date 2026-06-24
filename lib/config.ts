@@ -28,7 +28,7 @@ export function resolveHarnessOptions<T extends HarnessOptions>(
   options: T,
   cwd = process.cwd(),
 ): ResolvedHarnessOptions<T> {
-  const workspace = resolveWorkspace(options.workspace, cwd);
+  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
   const config = readHarnessConfig(workspace);
 
   return {
@@ -63,7 +63,7 @@ export function initHarnessConfig(
   configCreated: boolean;
   gitignoreUpdated: boolean;
 } {
-  const workspace = resolveWorkspace(options.workspace, cwd);
+  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
   if (!existsSync(workspace) || !statSync(workspace).isDirectory()) {
     throw new Error(`Workspace does not exist: ${workspace}`);
   }
@@ -94,7 +94,10 @@ export function initHarnessConfig(
   return result;
 }
 
-function resolveWorkspace(explicitWorkspace: string | undefined, cwd: string): string {
+export function resolveHarnessWorkspace(
+  explicitWorkspace: string | undefined,
+  cwd: string,
+): string {
   if (explicitWorkspace) {
     return isAbsolute(explicitWorkspace) ? explicitWorkspace : resolve(cwd, explicitWorkspace);
   }
