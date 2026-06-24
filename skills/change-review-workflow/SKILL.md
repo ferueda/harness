@@ -1,6 +1,6 @@
 ---
 name: change-review-workflow
-description: Run and close the harness `review` or `review-full` workflow for current code changes. Use when the user asks to run a review, run a full review, run review-full, run a review for these changes, run the change review workflow, run a harness review, run a multi-agent review, or compile and act on harness reviewer results. If the requested workflow is not explicit, use `review`, not `review-full`.
+description: Run and close the harness `change-review` workflow for current code changes. Use when the user asks to run a review, run a full review, run a review for these changes, run the change review workflow, run a harness review, run a multi-agent review, or compile and act on harness reviewer results. If the requested steps are not explicit, run all change-review steps.
 ---
 
 # Change Review Workflow
@@ -9,9 +9,10 @@ Coordinate harness review runs and close the loop on reviewer findings.
 
 ## Workflow Choice
 
-- Default to `review` unless the user explicitly asks for `review-full`.
-- Use `review` for the normal gate: `review-implementation` plus `code-quality-review`.
-- Use `review-full` only when requested, or when the user explicitly wants the extra read-only simplification pass.
+- Default to `change-review`, which runs `implementation`, `quality`, and `simplify`.
+- Use `--steps <ids>` only when the caller intentionally selects a subset.
+- Valid step ids are `implementation`, `quality`, and `simplify`.
+- In follow-up review cycles, the caller should decide whether a step that returned no findings in a previous run should be omitted. Do not infer that automatically; record the reason when you intentionally use `--steps`.
 
 ## Before Running
 
@@ -25,31 +26,32 @@ Coordinate harness review runs and close the loop on reviewer findings.
 Installed package:
 
 ```bash
-printf '%s\n' "$HANDOFF" | harness run review --workspace /path/to/repo --handoff-stdin
+printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --handoff-stdin
 ```
 
 Local harness source:
 
 ```bash
-printf '%s\n' "$HANDOFF" | node bin/harness.ts run review --workspace /path/to/repo --handoff-stdin
+printf '%s\n' "$HANDOFF" | node bin/harness.ts run change-review --workspace /path/to/repo --handoff-stdin
 ```
 
 Built local package:
 
 ```bash
-printf '%s\n' "$HANDOFF" | node dist/bin/harness.js run review --workspace /path/to/repo --handoff-stdin
+printf '%s\n' "$HANDOFF" | node dist/bin/harness.js run change-review --workspace /path/to/repo --handoff-stdin
 ```
 
-Explicit full review:
+Selected steps:
 
 ```bash
-printf '%s\n' "$HANDOFF" | harness run review-full --workspace /path/to/repo --handoff-stdin
+printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --steps implementation,quality --handoff-stdin
 ```
 
 Useful flags:
 
 - `--base <ref>` and `--head <ref>` set the diff range.
 - `--plan <path>` gives reviewers the implementation plan or spec.
+- `--steps <ids>` runs only the selected change-review steps in workflow order.
 - Prefer `--handoff-stdin` for generated handoffs; it gives reviewers shared context without requiring callers to create files.
 - `--handoff <path>` remains available for existing handoff files.
 - `--dry-run` writes prompts/context without running reviewer agents.
@@ -62,7 +64,7 @@ Useful flags:
 3. Triage each finding as `Implement`, `Adapt`, or `Decline`. The final call is yours; back each decision with code-backed reasoning.
 4. Apply accepted fixes yourself after triage. Keep reviewer agents read-only.
 5. Run focused verification for the accepted fixes. Add regression tests for bugs when they fit.
-6. Re-run `review` after material fixes. Use `review-full` on re-run only if it was explicitly requested for the original pass.
+6. Re-run `change-review` after material fixes. For follow-up cycles, decide whether to run all steps or use `--steps` to omit prior no-finding steps. Make that decision explicitly from the prior results and current change scope.
 
 ## Result Rules
 
