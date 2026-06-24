@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -100,6 +108,19 @@ function expectIndependentReviewPrompts(...prompts: string[]) {
   }
 }
 
+function writeRun(
+  runsDir: string,
+  runId: string,
+  metadata?: { startedAt?: string; status?: string },
+): string {
+  const runDir = join(runsDir, runId);
+  mkdirSync(runDir, { recursive: true });
+  if (metadata) {
+    writeFileSync(join(runDir, "meta.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  }
+  return runDir;
+}
+
 test("harness init creates config through the CLI", () => {
   const workspace = createGitWorkspace();
   const result = runHarness(["init", "--workspace", workspace, "--base", "develop"]);
@@ -154,6 +175,7 @@ test("harness root help exits cleanly", () => {
   expect(result.stdout).toMatch(/Usage: harness/);
   expect(result.stdout).toMatch(/init/);
   expect(result.stdout).toMatch(/run/);
+  expect(result.stdout).toMatch(/runs/);
 });
 test("harness init help exits cleanly", () => {
   const result = runHarness(["init", "--help"]);
@@ -178,6 +200,21 @@ test("harness run review-full help exits cleanly", () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness run review-full/);
   expect(result.stdout).toMatch(/--dry-run/);
+});
+test("harness runs help exits cleanly", () => {
+  const result = runHarness(["runs", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/Usage: harness runs/);
+  expect(result.stdout).toMatch(/prune/);
+});
+test("harness runs prune help exits cleanly", () => {
+  const result = runHarness(["runs", "prune", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness runs prune/);
+  expect(result.stdout).toMatch(/--older-than/);
+  expect(result.stdout).toMatch(/--dry-run/);
+  expect(result.stdout).toMatch(/--runs-dir/);
+  expect(result.stdout).toMatch(/--workspace/);
 });
 test("harness init rejects unknown flags", () => {
   const result = runHarness(["init", "--unknown"]);
@@ -209,6 +246,112 @@ test("harness run rejects unknown workflows", () => {
   const result = runHarness(["run", "unknown"]);
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/unknown command.*unknown/i);
+});
+test("harness runs prune rejects invalid durations", () => {
+  const result = runHarness(["runs", "prune", "--older-than", "soon"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/invalid duration/i);
+});
+test("harness runs prune dry-run reports old runs without deleting", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const oldRun = writeRun(runsDir, "20260101-000000-aaaaaa", {
+    status: "completed",
+    startedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const recentRun = writeRun(runsDir, "29990101-000000-bbbbbb", {
+    status: "completed",
+    startedAt: "2999-01-01T00:00:00.000Z",
+  });
+
+  const result = runHarness([
+    "runs",
+    "prune",
+    "--workspace",
+    workspace,
+    "--runs-dir",
+    runsDir,
+    "--older-than",
+    "7d",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.matched).toBe(1);
+  expect(output.deleted).toBe(0);
+  expect(output.kept).toBe(1);
+  expect(output.runs).toMatchObject([{ runId: "20260101-000000-aaaaaa", deleted: false }]);
+  expect(existsSync(oldRun)).toBe(true);
+  expect(existsSync(recentRun)).toBe(true);
+});
+test("harness runs prune deletes old runs", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const oldRun = writeRun(runsDir, "20260101-000000-aaaaaa", {
+    startedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const recentRun = writeRun(runsDir, "29990101-000000-bbbbbb", {
+    startedAt: "2999-01-01T00:00:00.000Z",
+  });
+
+  const result = runHarness([
+    "runs",
+    "prune",
+    "--workspace",
+    workspace,
+    "--runs-dir",
+    runsDir,
+    "--older-than",
+    "7d",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.matched).toBe(1);
+  expect(output.deleted).toBe(1);
+  expect(output.kept).toBe(1);
+  expect(existsSync(oldRun)).toBe(false);
+  expect(existsSync(recentRun)).toBe(true);
+});
+test("harness runs prune treats missing runs dir as empty", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = join(mkdtempSync(join(tmpdir(), "harness-runs-")), "missing");
+
+  const result = runHarness([
+    "runs",
+    "prune",
+    "--workspace",
+    workspace,
+    "--runs-dir",
+    runsDir,
+    "--older-than",
+    "7d",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.matched).toBe(0);
+  expect(output.deleted).toBe(0);
+  expect(output.kept).toBe(0);
+  expect(output.skipped).toBe(0);
+  expect(output.runs).toEqual([]);
+});
+test("harness runs prune accepts explicit runs-dir outside a workspace", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "harness-non-workspace-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+
+  const result = runHarness(
+    ["runs", "prune", "--runs-dir", runsDir, "--older-than", "7d", "--dry-run"],
+    {
+      cwd,
+    },
+  );
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.workspace).toBe(realpathSync(cwd));
+  expect(output.runsDir).toBe(runsDir);
 });
 test("harness run review dry-run works through the CLI", () => {
   const workspace = createGitWorkspace();
