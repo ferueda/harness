@@ -40,7 +40,7 @@ harness.json  Repo-local harness defaults
 skills/       Agent Skill instructions
 .agents/     Repo-local development skills; not installed into target repos
 providers/    Runtime adapters for external agent providers
-workflows/    Callable workflows, starting with review and review-full
+workflows/    Callable workflows, starting with change-review
 lib/          Runner, artifact, and workflow helpers
 automations/  Background task definitions
 dev/plans/    Plans and handoffs for this repo
@@ -67,7 +67,7 @@ Implementation plans live in **`dev/plans/`** with a shared **`dev/plans/README.
 | `review-spec` | Validate a plan/spec against codebase reality before implementation | Advisory |
 | `review-implementation` | Adversarial review of an implementation against its plan or spec | Skeptical; read-only |
 | `code-quality-review` | Behavior-preserving quality audit (clarity, conventions, maintainability) | Read-only |
-| `simplify-review` | Behavior-preserving simplification review used by `review-full` | Read-only |
+| `simplify-review` | Behavior-preserving simplification review used by `change-review` | Read-only |
 | `react-to-review` | Triage review findings (Implement, Adapt, Decline) and plan fixes | Decision + handoff |
 
 `review-implementation`, `code-quality-review`, and `simplify-review` are read-only. Use `review-implementation` when validating correctness and plan adherence; use `code-quality-review` when the goal is refinement suggestions; use `simplify-review` when the workflow needs a focused clarity pass.
