@@ -20,6 +20,11 @@ import {
   renderPrompt,
   writeRunContext,
 } from "./context.ts";
+import {
+  IMPLEMENTATION_REVIEW_PROMPT,
+  QUALITY_REVIEW_PROMPT,
+  SIMPLIFY_REVIEW_PROMPT,
+} from "./review-prompts.ts";
 import type { ContextArtifact } from "./context.ts";
 import type { ReviewOutput } from "./schemas.ts";
 
@@ -75,7 +80,7 @@ const AGENTS = {
     skillName: "review-implementation",
     title: "Implementation review",
     summaryKey: "implementation",
-    promptTemplate: join(HARNESS_ROOT, "prompts/implementation-review.md"),
+    promptTemplate: IMPLEMENTATION_REVIEW_PROMPT,
     promptFile: "implementation-review.prompt.md",
     reviewFile: "implementation-review.json",
     rawFile: "implementation-review.raw.json",
@@ -86,7 +91,7 @@ const AGENTS = {
     skillName: "code-quality-review",
     title: "Code quality review",
     summaryKey: "codeQuality",
-    promptTemplate: join(HARNESS_ROOT, "prompts/quality-review.md"),
+    promptTemplate: QUALITY_REVIEW_PROMPT,
     promptFile: "quality-review.prompt.md",
     reviewFile: "quality-review.json",
     rawFile: "quality-review.raw.json",
@@ -97,7 +102,7 @@ const AGENTS = {
     skillName: "simplify-review",
     title: "Simplify review",
     summaryKey: "simplify",
-    promptTemplate: join(HARNESS_ROOT, "prompts/simplify-review.md"),
+    promptTemplate: SIMPLIFY_REVIEW_PROMPT,
     promptFile: "simplify-review.prompt.md",
     reviewFile: "simplify-review.json",
     rawFile: "simplify-review.raw.json",
