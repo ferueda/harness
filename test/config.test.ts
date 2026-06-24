@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,24 @@ import {
   initHarnessConfig,
   resolveHarnessOptions,
 } from "../lib/config.ts";
+const TEST_HARNESS_ENTRYPOINT = "/opt/harness/dist/bin/harness.js";
+
+function initOptions(options: { workspace?: string; baseRef?: string } = {}) {
+  return {
+    ...options,
+    harnessEntrypoint: TEST_HARNESS_ENTRYPOINT,
+    nodePath: process.execPath,
+  };
+}
+
+function expectHarnessShim(workspace: string): string {
+  const shimPath = join(workspace, ".harness/bin/harness");
+  const content = readFileSync(shimPath, "utf8");
+  expect(content).toContain(process.execPath);
+  expect(content).toContain(TEST_HARNESS_ENTRYPOINT);
+  expect(statSync(shimPath).mode & 0o111).not.toBe(0);
+  return shimPath;
+}
 test("findHarnessConfig walks up from nested directories", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   const nested = join(workspace, "packages/app");
@@ -68,28 +87,33 @@ test("resolveHarnessOptions falls back to Git root without harness.json", () => 
   expect(options.workspace).toBe(realpathSync(workspace));
   expect(options.baseRef).toBe("main");
 });
-test("initHarnessConfig creates harness.json and ignores harness artifacts", () => {
+test("initHarnessConfig creates harness.json, ignores artifacts, and writes shim", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
-  const result = initHarnessConfig({ baseRef: "develop" }, workspace);
+  const result = initHarnessConfig(initOptions({ baseRef: "develop" }), workspace);
   expect(result.workspace).toBe(realpathSync(workspace));
   expect(result.configCreated).toBe(true);
   expect(result.gitignoreUpdated).toBe(true);
+  expect(result.shimUpdated).toBe(true);
+  expect(result.shimPath).toBe(join(result.workspace, ".harness/bin/harness"));
+  expect(result.recommendedCommand).toBe(".harness/bin/harness run review");
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "develop"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${HARNESS_GITIGNORE_ENTRY}\n`);
+  expectHarnessShim(workspace);
 });
 test("initHarnessConfig is idempotent", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
-  writeFileSync(join(workspace, "harness.json"), '{\n  "base": "develop"\n}\n', "utf8");
+  initHarnessConfig(initOptions({ baseRef: "develop" }), workspace);
   writeFileSync(
     join(workspace, ".gitignore"),
     `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`,
     "utf8",
   );
-  const result = initHarnessConfig({ baseRef: "main" }, workspace);
+  const result = initHarnessConfig(initOptions({ baseRef: "main" }), workspace);
   expect(result.configCreated).toBe(false);
   expect(result.gitignoreUpdated).toBe(false);
+  expect(result.shimUpdated).toBe(false);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "develop"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(
     `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`,
@@ -98,30 +122,34 @@ test("initHarnessConfig is idempotent", () => {
 test("initHarnessConfig creates .gitignore when needed", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
-  const result = initHarnessConfig({}, workspace);
+  const result = initHarnessConfig(initOptions(), workspace);
   expect(result.gitignoreUpdated).toBe(true);
   expect(result.configCreated).toBe(true);
+  expect(result.shimUpdated).toBe(true);
   expect(existsSync(join(workspace, ".gitignore"))).toBe(true);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "main"\n}\n');
+  expectHarnessShim(workspace);
 });
 test("initHarnessConfig resolves git root from nested cwd", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   const nested = join(workspace, "packages/app");
   mkdirSync(nested, { recursive: true });
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
-  const result = initHarnessConfig({}, nested);
+  const result = initHarnessConfig(initOptions(), nested);
   expect(result.workspace).toBe(realpathSync(workspace));
   expect(result.configCreated).toBe(true);
   expect(result.gitignoreUpdated).toBe(true);
+  expect(result.shimUpdated).toBe(true);
   expect(existsSync(join(workspace, "harness.json"))).toBe(true);
   expect(existsSync(join(workspace, ".gitignore"))).toBe(true);
+  expectHarnessShim(workspace);
   expect(existsSync(join(nested, "harness.json"))).toBe(false);
 });
 test("initHarnessConfig appends to existing .gitignore", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
   writeFileSync(join(workspace, ".gitignore"), "node_modules\n", "utf8");
-  const result = initHarnessConfig({}, workspace);
+  const result = initHarnessConfig(initOptions(), workspace);
   expect(result.gitignoreUpdated).toBe(true);
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(
     `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`,
@@ -131,7 +159,7 @@ test("initHarnessConfig appends to .gitignore without trailing newline", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
   writeFileSync(join(workspace, ".gitignore"), "node_modules", "utf8");
-  const result = initHarnessConfig({}, workspace);
+  const result = initHarnessConfig(initOptions(), workspace);
   expect(result.gitignoreUpdated).toBe(true);
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(
     `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`,
@@ -141,7 +169,7 @@ test("initHarnessConfig updates gitignore when config exists", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
   writeFileSync(join(workspace, "harness.json"), '{\n  "base": "develop"\n}\n', "utf8");
-  const result = initHarnessConfig({}, workspace);
+  const result = initHarnessConfig(initOptions(), workspace);
   expect(result.configCreated).toBe(false);
   expect(result.gitignoreUpdated).toBe(true);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "develop"\n}\n');
@@ -159,7 +187,7 @@ test("initHarnessConfig accepts equivalent harness ignore entries", () => {
     const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
     execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
     writeFileSync(join(workspace, ".gitignore"), `${entry}\n`, "utf8");
-    const result = initHarnessConfig({}, workspace);
+    const result = initHarnessConfig(initOptions(), workspace);
     expect(result.gitignoreUpdated).toBe(false);
     expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${entry}\n`);
   }
@@ -168,12 +196,14 @@ test("initHarnessConfig reports skipped base when config exists", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
   writeFileSync(join(workspace, "harness.json"), '{\n  "base": "develop"\n}\n', "utf8");
-  const result = initHarnessConfig({ baseRef: "main" }, workspace);
+  const result = initHarnessConfig(initOptions({ baseRef: "main" }), workspace);
   expect(result.configCreated).toBe(false);
   expect(result.baseSkipped).toBe(true);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "develop"\n}\n');
 });
 test("initHarnessConfig rejects missing workspaces", () => {
   const workspace = join(tmpdir(), "missing-harness-workspace");
-  expect(() => initHarnessConfig({ workspace }, "/")).toThrow(/Workspace does not exist:/);
+  expect(() => initHarnessConfig(initOptions({ workspace }), "/")).toThrow(
+    /Workspace does not exist:/,
+  );
 });
