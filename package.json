@@ -30,6 +30,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "commander": "15.0.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
