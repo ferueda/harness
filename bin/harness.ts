@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { run as runReviewFull } from "../workflows/review-full.workflow.ts";
 import { run as runReview } from "../workflows/review.workflow.ts";
@@ -20,6 +21,7 @@ type ReviewOptions = {
   head?: string;
   plan?: string;
   handoff?: string;
+  handoffStdin?: boolean;
   runsDir?: string;
   cursorAgent?: string;
   model?: string;
@@ -48,6 +50,20 @@ function positiveNumber(value: string): number {
     throw new InvalidArgumentError("must be a positive number");
   }
   return parsed;
+}
+
+function resolveHandoffText(options: ReviewOptions): string | undefined {
+  const sources = [options.handoff, options.handoffStdin ? "stdin" : undefined].filter(Boolean);
+  if (sources.length > 1) {
+    throw new Error("Use only one handoff input: --handoff or --handoff-stdin");
+  }
+  if (!options.handoffStdin) return undefined;
+
+  const text = readFileSync(0, "utf8");
+  if (!text) {
+    throw new Error("--handoff-stdin requires non-empty stdin");
+  }
+  return text;
 }
 
 function buildProgram(): Command {
@@ -152,6 +168,7 @@ function addReviewCommand(
     .option("--head <ref>", "head ref (default: HEAD)")
     .option("--plan <path>", "optional plan file")
     .option("--handoff <path>", "optional handoff file")
+    .option("--handoff-stdin", "read optional handoff text from stdin", false)
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
     .option("--cursor-agent <path>", "cursor-agent entrypoint (auto-detected)")
     .option("--model <id>", "Cursor model override")
@@ -163,6 +180,7 @@ function addReviewCommand(
     )
     .option("--dry-run", "prepare context and prompts only", false)
     .action(async (options: ReviewOptions) => {
+      const handoffText = resolveHandoffText(options);
       const ctx = createWorkflowContext(
         resolveHarnessOptions({
           workspace: options.workspace,
@@ -170,6 +188,7 @@ function addReviewCommand(
           headRef: options.head,
           planPath: options.plan,
           handoffPath: options.handoff,
+          handoffText,
           runsDir: options.runsDir,
           cursorAgentPath: options.cursorAgent,
           model: options.model,
