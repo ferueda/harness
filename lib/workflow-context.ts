@@ -31,6 +31,7 @@ type WorkflowOptions = {
   cursorAgentPath?: string;
   planPath?: string;
   handoffPath?: string;
+  handoffText?: string;
   model?: string;
   maxRuntimeMs: number;
   dryRun?: boolean;
@@ -140,6 +141,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       scope,
       planPath: options.planPath,
       handoffPath: options.handoffPath,
+      handoffText: options.handoffText,
     });
 
     diffSection = buildDiffSection(scope.diff, runDir, workspace);
