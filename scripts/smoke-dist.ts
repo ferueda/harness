@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,7 @@ function resolveSmokeBin(): string {
   return isAbsolute(override) ? override : resolve(ROOT, override);
 }
 
-function runHarness(args: string[]): string {
+function runHarness(args: string[], input?: string): string {
   if (!existsSync(BIN)) {
     throw new Error(`Built harness CLI not found: ${BIN}`);
   }
@@ -23,6 +23,7 @@ function runHarness(args: string[]): string {
   const result = spawnSync(process.execPath, [BIN, ...args], {
     cwd: ROOT,
     encoding: "utf8",
+    input,
   });
 
   if (result.status !== 0) {
@@ -106,6 +107,39 @@ if (
   typeof dryRun.prompts?.quality !== "string"
 ) {
   throw new Error("Expected dry-run output to include implementation and quality prompt paths");
+}
+
+const handoffDryRunOutput = runHarness(
+  [
+    "run",
+    "review",
+    "--workspace",
+    ROOT,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--handoff-stdin",
+    "--dry-run",
+  ],
+  "# Smoke handoff\n",
+);
+const handoffDryRun = JSON.parse(handoffDryRunOutput) as {
+  runDir?: unknown;
+  status?: unknown;
+};
+
+if (handoffDryRun.status !== "dry_run") {
+  throw new Error(`Expected handoff dry_run status, got ${String(handoffDryRun.status)}`);
+}
+
+if (typeof handoffDryRun.runDir !== "string") {
+  throw new Error("Expected handoff dry-run output to include runDir");
+}
+
+const handoffArtifact = readFileSync(join(handoffDryRun.runDir, "context", "handoff.md"), "utf8");
+if (handoffArtifact !== "# Smoke handoff\n") {
+  throw new Error("Expected handoff dry-run to materialize stdin handoff text");
 }
 
 const fullDryRunOutput = runHarness([
