@@ -70,14 +70,25 @@ test("exportFailed writes metadata and summary with no successful reviews", () =
   });
 
   const meta = ctx.exportFailed({
-    title: "Review Summary",
+    title: "Change Review Summary",
     reviews: [],
     failedReviews: [
       { key: "implementation", stage: "implementation", error: "implementation failed" },
     ],
+    steps: {
+      workflow: "change-review",
+      availableSteps: ["implementation", "quality", "simplify"],
+      requestedSteps: ["implementation"],
+      executedSteps: ["implementation"],
+      omittedSteps: ["quality", "simplify"],
+      partial: true,
+    },
   });
 
   expect(meta.status).toBe("failed");
+  expect(meta.workflow).toBe("change-review");
+  expect(meta.partial).toBe(true);
+  expect(meta.omittedSteps).toEqual(["quality", "simplify"]);
   expect("verdict" in meta).toBe(false);
   expect(meta.reviews).toEqual({});
   expect("failedReviews" in meta ? meta.failedReviews : undefined).toEqual([
@@ -85,6 +96,39 @@ test("exportFailed writes metadata and summary with no successful reviews", () =
   ]);
   expect(readFileSync(join(ctx.runDir, "meta.json"), "utf8")).toContain('"status": "failed"');
   const summary = readFileSync(join(ctx.runDir, "summary.md"), "utf8");
+  expect(summary).toMatch(/## Steps/);
   expect(summary).toMatch(/## Failed reviewers/);
   expect(summary).toMatch(/implementation failed/);
+});
+
+test("dry-run export writes workflow step metadata", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const ctx = createWorkflowContext({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    maxRuntimeMs: 1_000,
+    dryRun: true,
+  });
+
+  const meta = ctx.export({
+    title: "Change Review Summary",
+    reviews: [],
+    verdict: "pass",
+    steps: {
+      workflow: "change-review",
+      availableSteps: ["implementation", "quality", "simplify"],
+      requestedSteps: ["implementation"],
+      executedSteps: ["implementation"],
+      omittedSteps: ["quality", "simplify"],
+      partial: true,
+    },
+  });
+
+  expect(meta.status).toBe("dry_run");
+  expect(meta.workflow).toBe("change-review");
+  expect(meta.executedSteps).toEqual(["implementation"]);
+  expect(meta.omittedSteps).toEqual(["quality", "simplify"]);
 });
