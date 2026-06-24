@@ -5,10 +5,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HARNESS_RECOMMENDED_COMMAND } from "../lib/config.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = resolveSmokeBin();
+const EXPECTED_RECOMMENDED_COMMAND = ".harness/bin/harness run review";
 
 function resolveSmokeBin(): string {
   const override = process.env.HARNESS_SMOKE_BIN;
@@ -60,7 +60,7 @@ if (init.shimUpdated !== true) {
   throw new Error(`Expected init to update shim, got ${String(init.shimUpdated)}`);
 }
 
-if (init.recommendedCommand !== HARNESS_RECOMMENDED_COMMAND) {
+if (init.recommendedCommand !== EXPECTED_RECOMMENDED_COMMAND) {
   throw new Error(`Unexpected init recommendedCommand: ${String(init.recommendedCommand)}`);
 }
 
