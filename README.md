@@ -7,6 +7,7 @@ A personal agent harness for coding workflows. It keeps reusable agent instructi
 ```text
 harness.json  Repo-local harness defaults
 skills/       Agent Skill instructions
+.agents/     Repo-local development skills; not installed into target repos
 providers/    Runtime adapters for external agent providers
 workflows/    Callable workflows, starting with dual-review
 lib/          Runner, artifact, and workflow helpers
@@ -17,6 +18,7 @@ dev/plans/    Plans and handoffs for this repo
 ## First Workflow
 
 ```bash
+node bin/harness.mjs init
 node bin/harness.mjs run dual-review
 ```
 
@@ -32,7 +34,15 @@ The first workflow calls `review-implementation`, then `code-quality-review`, th
 
 When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run dual-review`.
 
-Skills follow the [Agent Skills](https://agentskills.io/) format.
+`harness init` creates `harness.json` when missing and ensures `.gitignore` contains `.harness/`.
+
+For external target repos, pass the repo path explicitly:
+
+```bash
+node bin/harness.mjs init --workspace /path/to/repo
+```
+
+Skills follow the [Agent Skills](https://agentskills.io/) format. Top-level `skills/` contains harness skills. `.agents/skills/` contains repo-local development skills for working on this project and should not be copied into repos that install the harness.
 
 ## Available Skills
 
@@ -213,7 +223,7 @@ A test coverage automation focused on preventing regressions. It inspects recent
 Install using the [skills CLI](https://skills.sh):
 
 ```bash
-npx skills add ferueda/agent-skills
+npx skills add ferueda/harness
 ```
 
 The skills CLI works with: Amp, Antigravity, Claude Code, Clawdbot, Codex, Cursor, Droid, Gemini, Gemini CLI, GitHub Copilot, Goose, Kilo, Kiro CLI, OpenCode, Roo, Trae, and Windsurf.

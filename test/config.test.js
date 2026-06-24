@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { findHarnessConfig, resolveHarnessOptions } from "../lib/config.js";
+import {
+  HARNESS_GITIGNORE_ENTRY,
+  findHarnessConfig,
+  initHarnessConfig,
+  resolveHarnessOptions,
+} from "../lib/config.js";
 
 test("findHarnessConfig walks up from nested directories", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
@@ -49,4 +54,128 @@ test("resolveHarnessOptions falls back to Git root without harness.json", () => 
 
   assert.equal(options.workspace, realpathSync(workspace));
   assert.equal(options.baseRef, "main");
+});
+
+test("initHarnessConfig creates harness.json and ignores harness artifacts", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+
+  const result = initHarnessConfig({ baseRef: "develop" }, workspace);
+
+  assert.equal(result.workspace, realpathSync(workspace));
+  assert.equal(result.configCreated, true);
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "develop"\n}\n');
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `${HARNESS_GITIGNORE_ENTRY}\n`);
+});
+
+test("initHarnessConfig is idempotent", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, "harness.json"), '{\n  "base": "develop"\n}\n', "utf8");
+  writeFileSync(join(workspace, ".gitignore"), `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`, "utf8");
+
+  const result = initHarnessConfig({ baseRef: "main" }, workspace);
+
+  assert.equal(result.configCreated, false);
+  assert.equal(result.gitignoreUpdated, false);
+  assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "develop"\n}\n');
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`);
+});
+
+test("initHarnessConfig creates .gitignore when needed", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+
+  const result = initHarnessConfig({}, workspace);
+
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(result.configCreated, true);
+  assert.equal(existsSync(join(workspace, ".gitignore")), true);
+  assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "main"\n}\n');
+});
+
+test("initHarnessConfig resolves git root from nested cwd", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  const nested = join(workspace, "packages/app");
+  mkdirSync(nested, { recursive: true });
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+
+  const result = initHarnessConfig({}, nested);
+
+  assert.equal(result.workspace, realpathSync(workspace));
+  assert.equal(result.configCreated, true);
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(existsSync(join(workspace, "harness.json")), true);
+  assert.equal(existsSync(join(workspace, ".gitignore")), true);
+  assert.equal(existsSync(join(nested, "harness.json")), false);
+});
+
+test("initHarnessConfig appends to existing .gitignore", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, ".gitignore"), "node_modules\n", "utf8");
+
+  const result = initHarnessConfig({}, workspace);
+
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`);
+});
+
+test("initHarnessConfig appends to .gitignore without trailing newline", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, ".gitignore"), "node_modules", "utf8");
+
+  const result = initHarnessConfig({}, workspace);
+
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`);
+});
+
+test("initHarnessConfig updates gitignore when config exists", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, "harness.json"), '{\n  "base": "develop"\n}\n', "utf8");
+
+  const result = initHarnessConfig({}, workspace);
+
+  assert.equal(result.configCreated, false);
+  assert.equal(result.gitignoreUpdated, true);
+  assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "develop"\n}\n');
+  assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `${HARNESS_GITIGNORE_ENTRY}\n`);
+});
+
+test("initHarnessConfig accepts equivalent harness ignore entries", () => {
+  for (const entry of [".harness", ".harness/", ".harness/*", ".harness/**", "**/.harness", "**/.harness/"]) {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    writeFileSync(join(workspace, ".gitignore"), `${entry}\n`, "utf8");
+
+    const result = initHarnessConfig({}, workspace);
+
+    assert.equal(result.gitignoreUpdated, false);
+    assert.equal(readFileSync(join(workspace, ".gitignore"), "utf8"), `${entry}\n`);
+  }
+});
+
+test("initHarnessConfig reports skipped base when config exists", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, "harness.json"), '{\n  "base": "develop"\n}\n', "utf8");
+
+  const result = initHarnessConfig({ baseRef: "main" }, workspace);
+
+  assert.equal(result.configCreated, false);
+  assert.equal(result.baseSkipped, true);
+  assert.equal(readFileSync(join(workspace, "harness.json"), "utf8"), '{\n  "base": "develop"\n}\n');
+});
+
+test("initHarnessConfig rejects missing workspaces", () => {
+  const workspace = join(tmpdir(), "missing-harness-workspace");
+
+  assert.throws(
+    () => initHarnessConfig({ workspace }, "/"),
+    /Workspace does not exist:/,
+  );
 });
