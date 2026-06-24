@@ -53,7 +53,7 @@ export const QUALITY_REVIEW_PROMPT = `You are running the **code-quality-review*
 Read the artifact files directly. Do not rely on summaries or previews.
 `;
 
-export const SIMPLIFY_REVIEW_PROMPT = `You are running the **simplify** review pass for a review-full workflow.
+export const SIMPLIFY_REVIEW_PROMPT = `You are running the **simplify** review pass for a change-review workflow.
 
 ## Required Instructions
 
