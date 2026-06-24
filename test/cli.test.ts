@@ -26,7 +26,13 @@ function createGitWorkspace() {
   return workspace;
 }
 
-function createFakeCursorAgent(reviewVerdict: "pass" | "needs_changes" | "blocked") {
+function createFakeCursorAgent({
+  reviewVerdict,
+  expectedMaxRuntimeMs,
+}: {
+  reviewVerdict: "pass" | "needs_changes" | "blocked";
+  expectedMaxRuntimeMs?: string;
+}) {
   const scriptPath = join(mkdtempSync(join(tmpdir(), "harness-agent-")), "cursor-agent.js");
   const structuredOutput = {
     verdict: reviewVerdict,
@@ -46,11 +52,15 @@ function createFakeCursorAgent(reviewVerdict: "pass" | "needs_changes" | "blocke
             },
           ],
   };
-  writeFileSync(
-    scriptPath,
-    `console.log(${JSON.stringify(JSON.stringify({ status: "completed", structuredOutput }))});\n`,
-    "utf8",
-  );
+  const envelope = JSON.stringify({ status: "completed", structuredOutput });
+  const runtimeCheck = expectedMaxRuntimeMs
+    ? `if (!process.argv.includes(${JSON.stringify(expectedMaxRuntimeMs)})) {
+  console.log(JSON.stringify({ status: "failed", error: "missing expected runtime" }));
+  process.exit(0);
+}
+`
+    : "";
+  writeFileSync(scriptPath, `${runtimeCheck}console.log(${JSON.stringify(envelope)});\n`, "utf8");
   return scriptPath;
 }
 
@@ -178,6 +188,7 @@ test("harness run dual-review dry-run works through the CLI", () => {
 });
 test("harness run dual-review accepts positive finite runtime values", () => {
   const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const result = runHarness([
     "run",
     "dual-review",
@@ -189,9 +200,36 @@ test("harness run dual-review accepts positive finite runtime values", () => {
     "HEAD",
     "--max-runtime-ms",
     "1.5",
-    "--dry-run",
+    "--runs-dir",
+    runsDir,
+    "--cursor-agent",
+    createFakeCursorAgent({ reviewVerdict: "pass", expectedMaxRuntimeMs: "1.5" }),
   ]);
   expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.verdict).toBe("pass");
+});
+test("harness run dual-review exits 0 when reviewers pass", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "dual-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runs-dir",
+    runsDir,
+    "--cursor-agent",
+    createFakeCursorAgent({ reviewVerdict: "pass" }),
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("completed");
+  expect(output.verdict).toBe("pass");
 });
 test("harness run dual-review exits 1 when reviewers do not pass", () => {
   const workspace = createGitWorkspace();
@@ -208,7 +246,7 @@ test("harness run dual-review exits 1 when reviewers do not pass", () => {
     "--runs-dir",
     runsDir,
     "--cursor-agent",
-    createFakeCursorAgent("needs_changes"),
+    createFakeCursorAgent({ reviewVerdict: "needs_changes" }),
   ]);
   expect(result.status).toBe(1);
   const output = JSON.parse(result.stdout);
