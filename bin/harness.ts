@@ -6,6 +6,11 @@ import { resolve } from "node:path";
 import { run as runReviewFull } from "../workflows/review-full.workflow.ts";
 import { run as runReview } from "../workflows/review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
+import {
+  assertNonEmptyHandoffStdin,
+  assertPipedHandoffStdin,
+  HANDOFF_STDIN_CONFLICT_ERROR,
+} from "../lib/handoff.ts";
 import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
 import { installPackagedSkill } from "../lib/skills.ts";
 import { createWorkflowContext } from "../lib/workflow-context.ts";
@@ -54,17 +59,13 @@ function positiveNumber(value: string): number {
 
 function resolveHandoffText(options: ReviewOptions): string | undefined {
   if (options.handoff && options.handoffStdin) {
-    throw new Error("Use only one handoff input: --handoff or --handoff-stdin");
+    throw new Error(HANDOFF_STDIN_CONFLICT_ERROR);
   }
   if (!options.handoffStdin) return undefined;
-  if (process.stdin.isTTY) {
-    throw new Error("--handoff-stdin requires piped stdin");
-  }
+  assertPipedHandoffStdin(process.stdin.isTTY);
 
   const text = readFileSync(0, "utf8");
-  if (!text.trim()) {
-    throw new Error("--handoff-stdin requires non-empty stdin");
-  }
+  assertNonEmptyHandoffStdin(text);
   return text;
 }
 
