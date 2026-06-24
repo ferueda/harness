@@ -74,6 +74,29 @@ if (!normalize(installDryRun.sourcePath).endsWith(join("skills", "change-review-
 if (installDryRun.status !== "would_install") {
   throw new Error(`Expected skills install dry-run status, got ${String(installDryRun.status)}`);
 }
+
+const installOutput = runHarness([
+  "skills",
+  "install",
+  "change-review-workflow",
+  "--workspace",
+  installWorkspace,
+]);
+const install = JSON.parse(installOutput) as {
+  status?: unknown;
+};
+
+if (install.status !== "installed") {
+  throw new Error(`Expected skills install status, got ${String(install.status)}`);
+}
+
+const installedSkill = readFileSync(
+  join(installWorkspace, ".agents/skills/change-review-workflow/SKILL.md"),
+  "utf8",
+);
+if (!installedSkill.includes("name: change-review-workflow")) {
+  throw new Error("Expected skills install to materialize change-review-workflow skill");
+}
 rmSync(installWorkspace, { recursive: true, force: true });
 
 const dryRunOutput = runHarness([
