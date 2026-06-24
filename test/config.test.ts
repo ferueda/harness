@@ -16,6 +16,7 @@ import {
   HARNESS_GITIGNORE_ENTRY,
   HARNESS_RECOMMENDED_COMMAND,
   HARNESS_SHIM_RELATIVE_PATH,
+  type InitHarnessOptions,
   findHarnessConfig,
   initHarnessConfig,
   resolveHarnessOptions,
@@ -132,7 +133,9 @@ test("initHarnessConfig is idempotent", () => {
 test("initHarnessConfig rejects missing harness entrypoint", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
   execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
-  expect(() => initHarnessConfig({}, workspace)).toThrow(/harnessEntrypoint is required/);
+  expect(() => initHarnessConfig({} as InitHarnessOptions, workspace)).toThrow(
+    /harnessEntrypoint is required/,
+  );
 });
 test("initHarnessConfig rewrites shim when harness entrypoint changes", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
