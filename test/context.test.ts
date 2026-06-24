@@ -54,3 +54,17 @@ test("writeRunContext writes inline handoff text as a run artifact", () => {
     "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
   );
 });
+test("writeRunContext rejects conflicting handoff inputs", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+  writeFileSync(join(workspace, "handoff.md"), "# Handoff\n", "utf8");
+
+  expect(() =>
+    writeRunContext({
+      workspace,
+      runDir,
+      handoffPath: "handoff.md",
+      handoffText: "# Inline handoff\n",
+    }),
+  ).toThrow(/Use only one handoff input/);
+});
