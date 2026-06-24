@@ -9,13 +9,14 @@ const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const INSTALL = join(REPO_ROOT, "install");
 const PATH_WARNING = "Add this directory to PATH:";
 
-function runInstall(options: { binDir?: string; cwd?: string; path?: string } = {}) {
+// Generated shims run bin/harness.ts, so these tests assume pnpm install already ran.
+function runInstall(options: { binDir: string; cwd?: string; path?: string }) {
   return spawnSync("bash", [INSTALL], {
     cwd: options.cwd,
     encoding: "utf8",
     env: {
       ...process.env,
-      HARNESS_INSTALL_BIN_DIR: options.binDir ?? mkdtempSync(join(tmpdir(), "harness-bin-")),
+      HARNESS_INSTALL_BIN_DIR: options.binDir,
       HARNESS_INSTALL_SKIP_PNPM: "1",
       PATH: options.path ?? process.env.PATH,
     },
@@ -34,7 +35,7 @@ function expectInstalledHarness(binDir: string) {
   expect(help.stdout).toMatch(/Usage: harness/);
 }
 
-test("install writes a user-level harness shim", () => {
+test("install writes a user-level harness shim with quoted paths", () => {
   const binDir = mkdtempSync(join(tmpdir(), "harness install '"));
   const result = runInstall({ binDir });
   expect(result.status).toBe(0);

@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BIN_DIR="${HARNESS_INSTALL_BIN_DIR:-$HOME/.local/bin}"
+# Test-only escape hatch: normal installs should run pnpm install --frozen-lockfile.
 SKIP_PNPM="${HARNESS_INSTALL_SKIP_PNPM:-0}"
 PATH_WARNING_MARKER="Add this directory to PATH:"
 
@@ -12,6 +13,7 @@ fail() {
 }
 
 shell_quote() {
+  # Match lib/config.ts shellQuote for generated shim arguments.
   local value="${1//\'/\'\"\'\"\'}"
   printf "'%s'" "$value"
 }
@@ -21,6 +23,7 @@ path_contains() {
   local entry
   local resolved
 
+  # Match exact canonical PATH entries; substring checks confuse /bin with /bin-extra.
   IFS=":" read -ra entries <<< "${PATH:-}"
   for entry in "${entries[@]}"; do
     if [ -z "$entry" ] || [ ! -d "$entry" ]; then
@@ -41,8 +44,7 @@ NODE="$(node -p 'process.execPath')"
   fail "node >=24 is required"
 
 if [ "$SKIP_PNPM" != "1" ]; then
-  command -v pnpm >/dev/null 2>&1 || fail "pnpm not found in PATH"
-  PNPM="$(command -v pnpm)"
+  PNPM="$(command -v pnpm)" || fail "pnpm not found in PATH"
   (cd "$ROOT" && "$PNPM" install --frozen-lockfile)
 fi
 

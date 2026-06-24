@@ -17,6 +17,10 @@ dev/plans/    Plans and handoffs for this repo
 
 ## Install Harness
 
+Prerequisites: Node 24 or newer, `pnpm` on `PATH`, and a POSIX shell with `bash`.
+The installer runs `pnpm install --frozen-lockfile` in the checkout before it
+writes the user-level `harness` command.
+
 ```bash
 git clone git@github.com:ferueda/harness.git ~/.harness
 ~/.harness/install
@@ -106,7 +110,10 @@ In this repo, top-level `skills/` contains packaged fallback skills. `.agents/sk
 
 ## Development
 
-Harness source is TypeScript under `bin/`, `lib/`, `providers/`, and `workflows/`. Runtime packaging builds JavaScript into `dist/`; the package bin points at `dist/bin/harness.js` so installed copies do not rely on Node loading raw TypeScript from `node_modules`.
+Harness source is TypeScript under `bin/`, `lib/`, `providers/`, and `workflows/`.
+The source-checkout install path above runs `bin/harness.ts` directly with Node
+24 type stripping. Runtime packaging still builds JavaScript into `dist/` for
+CI smoke tests and any future npm-style package path.
 
 Use the quiet gate while developing:
 
