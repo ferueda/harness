@@ -91,6 +91,7 @@ export function writeRunContext(input: {
   scope?: object;
   planPath?: string;
   handoffPath?: string;
+  handoffText?: string;
 }): { plan: ContextArtifact; handoff: ContextArtifact } {
   const contextDir = join(input.runDir, "context");
   mkdirSync(contextDir, { recursive: true });
@@ -101,8 +102,9 @@ export function writeRunContext(input: {
       workspace: input.workspace,
       destination: join(contextDir, "plan.md"),
     }),
-    handoff: copyContextFile({
-      requested: input.handoffPath,
+    handoff: writeHandoffArtifact({
+      path: input.handoffPath,
+      text: input.handoffText,
       workspace: input.workspace,
       destination: join(contextDir, "handoff.md"),
     }),
@@ -130,6 +132,26 @@ function copyContextFile({
 
   copyFileSync(resolved, destination);
   return { requested, path: destination };
+}
+
+function writeHandoffArtifact(input: {
+  path?: string;
+  text?: string;
+  workspace: string;
+  destination: string;
+}): ContextArtifact {
+  if (input.path && input.text !== undefined) {
+    throw new Error("Use only one handoff input");
+  }
+  if (input.text !== undefined) {
+    writeFileSync(input.destination, input.text, "utf8");
+    return { requested: "inline handoff text", path: input.destination };
+  }
+  return copyContextFile({
+    requested: input.path,
+    workspace: input.workspace,
+    destination: input.destination,
+  });
 }
 
 function formatArtifactPath(path: string, workspace: string): string {
