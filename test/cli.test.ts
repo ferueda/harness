@@ -39,13 +39,15 @@ function createGitWorkspace() {
   return workspace;
 }
 
-function expectInitShim(workspace: string, output: Record<string, unknown>) {
-  if (typeof output.shimPath !== "string") {
-    throw new Error("Expected init output to include shimPath");
-  }
-  const shimPath = output.shimPath;
+function expectInitShim(
+  workspace: string,
+  output: Record<string, unknown>,
+  expectedUpdated = true,
+) {
+  expect(typeof output.shimPath).toBe("string");
+  const shimPath = output.shimPath as string;
   const expectedShimPath = join(workspace, HARNESS_SHIM_RELATIVE_PATH);
-  expect(output.shimUpdated).toBe(true);
+  expect(output.shimUpdated).toBe(expectedUpdated);
   expect(realpathSync(shimPath)).toBe(realpathSync(expectedShimPath));
   expect(output.recommendedCommand).toBe(HARNESS_RECOMMENDED_COMMAND);
   expect(readFileSync(shimPath, "utf8")).toContain(HARNESS_BIN);
@@ -175,7 +177,7 @@ test("harness init is idempotent through the CLI", () => {
   const output = JSON.parse(result.stdout);
   expect(output.configCreated).toBe(false);
   expect(output.gitignoreUpdated).toBe(false);
-  expect(output.shimUpdated).toBe(false);
+  expectInitShim(workspace, output, false);
 });
 test("harness init does not report base skipped unless base was passed", () => {
   const workspace = createGitWorkspace();
