@@ -395,6 +395,46 @@ test("harness run review rejects multiple handoff inputs", () => {
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/Use only one handoff input/);
 });
+test("harness run review rejects empty stdin handoff", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(
+    [
+      "run",
+      "review",
+      "--workspace",
+      workspace,
+      "--base",
+      "HEAD",
+      "--head",
+      "HEAD",
+      "--handoff-stdin",
+      "--dry-run",
+    ],
+    { input: "" },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--handoff-stdin requires non-empty stdin/);
+});
+test("harness run review rejects blank stdin handoff", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(
+    [
+      "run",
+      "review",
+      "--workspace",
+      workspace,
+      "--base",
+      "HEAD",
+      "--head",
+      "HEAD",
+      "--handoff-stdin",
+      "--dry-run",
+    ],
+    { input: "  \n\t" },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--handoff-stdin requires non-empty stdin/);
+});
 test("harness run rejects unknown workflows", () => {
   const result = runHarness(["run", "unknown"]);
   expect(result.status).toBe(2);
