@@ -54,12 +54,18 @@ The command targets `<workspace>/.harness/runs/reviews` by default and prints JS
 
 When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run review` or `harness run review-full`.
 
-`harness init` creates `harness.json` when missing and ensures `.gitignore` contains `.harness/`.
+`harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`.
 
 For external target repos, pass the repo path explicitly:
 
 ```bash
 node dist/bin/harness.js init --workspace /path/to/repo
+```
+
+After init, prefer the repo-local shim:
+
+```bash
+/path/to/repo/.harness/bin/harness run review
 ```
 
 Install optional local workflow helper skills explicitly:
