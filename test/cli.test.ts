@@ -219,18 +219,20 @@ test("harness without a subcommand exits with help and failure", () => {
   expect(result.status).toBe(1);
   expect(result.stdout).toMatch(/Usage: harness/);
 });
-test("harness run review help exits cleanly", () => {
-  const result = runHarness(["run", "review", "--help"]);
+test("harness run change-review help exits cleanly", () => {
+  const result = runHarness(["run", "change-review", "--help"]);
   expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/harness run review/);
+  expect(result.stdout).toMatch(/harness run change-review/);
   expect(result.stdout).toMatch(/--handoff-stdin/);
+  expect(result.stdout).toMatch(/--steps/);
   expect(result.stdout).toMatch(/--dry-run/);
 });
-test("harness run review-full help exits cleanly", () => {
-  const result = runHarness(["run", "review-full", "--help"]);
-  expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/harness run review-full/);
-  expect(result.stdout).toMatch(/--dry-run/);
+test("harness run rejects removed review commands", () => {
+  for (const workflow of ["review", "review-full"]) {
+    const result = runHarness(["run", workflow]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(new RegExp(`unknown command.*${workflow}`, "i"));
+  }
 });
 test("harness runs help exits cleanly", () => {
   const result = runHarness(["runs", "--help"]);
@@ -390,22 +392,47 @@ test("harness init reports runtime errors as exit 1", () => {
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/Workspace does not exist/);
 });
-test("harness run review rejects unknown flags", () => {
-  const result = runHarness(["run", "review", "--unknown"]);
+test("harness run change-review rejects unknown flags", () => {
+  const result = runHarness(["run", "change-review", "--unknown"]);
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/unknown option.*--unknown/i);
 });
-test("harness run review rejects invalid runtime values", () => {
-  const result = runHarness(["run", "review", "--max-runtime-ms", "0"]);
+test("harness run change-review rejects invalid runtime values", () => {
+  const result = runHarness(["run", "change-review", "--max-runtime-ms", "0"]);
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/must be a positive number/);
 });
-test("harness run review rejects multiple handoff inputs", () => {
+test("harness run change-review rejects invalid steps", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--runs-dir",
+    runsDir,
+    "--steps",
+    "missing",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(
+    /unknown step: missing\. Valid steps: implementation, quality, simplify/,
+  );
+  expect(readdirSync(runsDir)).toEqual([]);
+});
+test("harness run change-review rejects empty steps", () => {
+  const result = runHarness(["run", "change-review", "--steps", " , "]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/must include at least one step/);
+});
+test("harness run change-review rejects multiple handoff inputs", () => {
   const workspace = createGitWorkspace();
   const result = runHarness(
     [
       "run",
-      "review",
+      "change-review",
       "--workspace",
       workspace,
       "--base",
@@ -422,12 +449,12 @@ test("harness run review rejects multiple handoff inputs", () => {
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/Use only one handoff input/);
 });
-test("harness run review rejects empty stdin handoff", () => {
+test("harness run change-review rejects empty stdin handoff", () => {
   const workspace = createGitWorkspace();
   const result = runHarness(
     [
       "run",
-      "review",
+      "change-review",
       "--workspace",
       workspace,
       "--base",
@@ -442,12 +469,12 @@ test("harness run review rejects empty stdin handoff", () => {
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/--handoff-stdin requires non-empty stdin/);
 });
-test("harness run review rejects blank stdin handoff", () => {
+test("harness run change-review rejects blank stdin handoff", () => {
   const workspace = createGitWorkspace();
   const result = runHarness(
     [
       "run",
-      "review",
+      "change-review",
       "--workspace",
       workspace,
       "--base",
@@ -573,11 +600,11 @@ test("harness runs prune accepts explicit runs-dir outside a workspace", () => {
   expect(output.workspace).toBe(realpathSync(cwd));
   expect(output.runsDir).toBe(runsDir);
 });
-test("harness run review dry-run works through the CLI", () => {
+test("harness run change-review dry-run works through the CLI", () => {
   const workspace = createGitWorkspace();
   const result = runHarness([
     "run",
-    "review",
+    "change-review",
     "--workspace",
     workspace,
     "--base",
@@ -589,20 +616,25 @@ test("harness run review dry-run works through the CLI", () => {
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
+  expect(output.workflow).toBe("change-review");
+  expect(output.requestedSteps).toEqual(["implementation", "quality", "simplify"]);
+  expect(output.partial).toBe(false);
   expect(output.workspace).toBe(workspace);
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
+  expect(output.prompts.simplify).toMatch(/simplify-review\.prompt\.md$/);
 
   const implementationPrompt = readFileSync(output.prompts.implementation, "utf8");
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
-  expectIndependentReviewPrompts(implementationPrompt, qualityPrompt);
+  const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
+  expectIndependentReviewPrompts(implementationPrompt, qualityPrompt, simplifyPrompt);
 });
-test("harness run review writes stdin handoff into run context", () => {
+test("harness run change-review writes stdin handoff into run context", () => {
   const workspace = createGitWorkspace();
   const result = runHarness(
     [
       "run",
-      "review",
+      "change-review",
       "--workspace",
       workspace,
       "--base",
@@ -620,14 +652,39 @@ test("harness run review writes stdin handoff into run context", () => {
     "# Stdin handoff\n\nReview the piped text input.\n",
   );
 });
-test("harness run review-full dry-run includes simplify prompt", () => {
+test("harness run change-review selected-step dry-run omits unrequested prompts", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--steps",
+    "implementation",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("dry_run");
+  expect(output.executedSteps).toEqual(["implementation"]);
+  expect(output.omittedSteps).toEqual(["quality", "simplify"]);
+  expect(output.partial).toBe(true);
+  expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
+  expect(output.prompts.quality).toBeUndefined();
+  expect(output.prompts.simplify).toBeUndefined();
+});
+test("harness run change-review dry-run includes bundled simplify prompt", () => {
   const workspace = createGitWorkspace();
   const devSkillPath = join(workspace, ".agents/skills/simplify/SKILL.md");
   mkdirSync(dirname(devSkillPath), { recursive: true });
   writeFileSync(devSkillPath, "# Dev simplify\n", "utf8");
   const result = runHarness([
     "run",
-    "review-full",
+    "change-review",
     "--workspace",
     workspace,
     "--base",
@@ -649,12 +706,12 @@ test("harness run review-full dry-run includes simplify prompt", () => {
   expect(simplifyPrompt).not.toContain(devSkillPath);
   expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
 });
-test("harness run review accepts positive finite runtime values", () => {
+test("harness run change-review accepts positive finite runtime values", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const result = runHarness([
     "run",
-    "review",
+    "change-review",
     "--workspace",
     workspace,
     "--base",
@@ -672,12 +729,12 @@ test("harness run review accepts positive finite runtime values", () => {
   const output = JSON.parse(result.stdout);
   expect(output.verdict).toBe("pass");
 });
-test("harness run review exits 0 when reviewers pass", () => {
+test("harness run change-review exits 0 when reviewers pass", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const result = runHarness([
     "run",
-    "review",
+    "change-review",
     "--workspace",
     workspace,
     "--base",
@@ -693,15 +750,20 @@ test("harness run review exits 0 when reviewers pass", () => {
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("completed");
   expect(output.verdict).toBe("pass");
+  expect(output.workflow).toBe("change-review");
+  expect(output.executedSteps).toEqual(["implementation", "quality", "simplify"]);
+  expect(output.omittedSteps).toEqual([]);
+  expect(output.partial).toBe(false);
   expect(output.reviews.implementation.verdict).toBe("pass");
   expect(output.reviews.codeQuality.verdict).toBe("pass");
+  expect(output.reviews.simplify.verdict).toBe("pass");
 });
-test("harness run review returns failed metadata when one reviewer provider fails", () => {
+test("harness run change-review selected steps return failed metadata when a provider fails", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const result = runHarness([
     "run",
-    "review",
+    "change-review",
     "--workspace",
     workspace,
     "--base",
@@ -710,6 +772,8 @@ test("harness run review returns failed metadata when one reviewer provider fail
     "HEAD",
     "--runs-dir",
     runsDir,
+    "--steps",
+    "implementation,quality",
     "--cursor-agent",
     createPromptAwareCursorAgent(),
   ]);
@@ -722,6 +786,10 @@ test("harness run review returns failed metadata when one reviewer provider fail
   expect(output.scope).toEqual(expect.any(Object));
   expect(output.startedAt).toEqual(expect.any(String));
   expect(output.durationMs).toEqual(expect.any(Number));
+  expect(output.workflow).toBe("change-review");
+  expect(output.executedSteps).toEqual(["implementation", "quality"]);
+  expect(output.omittedSteps).toEqual(["simplify"]);
+  expect(output.partial).toBe(true);
   expect(output.failedReviews).toEqual([
     {
       key: "codeQuality",
@@ -736,10 +804,14 @@ test("harness run review returns failed metadata when one reviewer provider fail
   const [runId] = readdirSync(runsDir);
   const meta = JSON.parse(readFileSync(join(runsDir, runId, "meta.json"), "utf8"));
   expect(meta.status).toBe("failed");
+  expect(meta.workflow).toBe("change-review");
+  expect(meta.omittedSteps).toEqual(["simplify"]);
   expect(meta.failedReviews).toEqual(output.failedReviews);
   expect(meta.reviews.implementation.verdict).toBe("pass");
 
   const summary = readFileSync(join(runsDir, runId, "summary.md"), "utf8");
+  expect(summary).toMatch(/## Steps/);
+  expect(summary).toMatch(/Omitted: `simplify`/);
   expect(summary).toMatch(/## Implementation review/);
   expect(summary).toMatch(/## Failed reviewers/);
   expect(summary).toMatch(/codeQuality/);
@@ -750,64 +822,12 @@ test("harness run review returns failed metadata when one reviewer provider fail
   expect(rawFailure.status).toBe("completed");
   expect(rawFailure.structuredOutput.summary).toBe("missing findings");
 });
-test("harness run review exits 1 when reviewers do not pass", () => {
+test("harness run change-review exits 1 when reviewers do not pass", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const result = runHarness([
     "run",
-    "review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runs-dir",
-    runsDir,
-    "--cursor-agent",
-    createFakeCursorAgent({ reviewVerdict: "needs_changes" }),
-  ]);
-  expect(result.status).toBe(1);
-  const output = JSON.parse(result.stdout);
-  expect(output.status).toBe("completed");
-  expect(output.verdict).toBe("needs_changes");
-});
-test("harness run review-full exits 0 when all reviewers pass", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const result = runHarness([
-    "run",
-    "review-full",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runs-dir",
-    runsDir,
-    "--cursor-agent",
-    createFakeCursorAgent({ reviewVerdict: "pass" }),
-  ]);
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output.status).toBe("completed");
-  expect(output.verdict).toBe("pass");
-  expect(output.reviews.implementation.verdict).toBe("pass");
-  expect(output.reviews.codeQuality.verdict).toBe("pass");
-  expect(output.reviews.simplify.verdict).toBe("pass");
-
-  const [runId] = readdirSync(runsDir);
-  const simplifyPrompt = readFileSync(join(runsDir, runId, "simplify-review.prompt.md"), "utf8");
-  const qualityPrompt = readFileSync(join(runsDir, runId, "quality-review.prompt.md"), "utf8");
-  expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
-});
-test("harness run review-full exits 1 when reviewers do not pass", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const result = runHarness([
-    "run",
-    "review-full",
+    "change-review",
     "--workspace",
     workspace,
     "--base",
