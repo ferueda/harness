@@ -1,2 +1,3 @@
 .harness/
 node_modules/
+dist/

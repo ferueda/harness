@@ -3,12 +3,14 @@
  * https://toonformat.dev/
  */
 
-function needsQuoting(value) {
+type ToonRecord = Record<string, unknown>;
+
+function needsQuoting(value: string): boolean {
   if (value.length === 0) return true;
   return /[:\n\r\t",\\]|^\s|\s$/.test(value);
 }
 
-function formatPrimitive(value) {
+function formatPrimitive(value: unknown): string {
   if (value === null || value === undefined) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "null";
@@ -18,17 +20,21 @@ function formatPrimitive(value) {
   return JSON.stringify(String(value));
 }
 
-function isUniformObjectArray(items) {
+function isUniformObjectArray(items: unknown[]): items is ToonRecord[] {
   if (items.length === 0) return false;
   if (!items.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
     return false;
   }
-  const keys = Object.keys(items[0]);
+  const first = items[0] as ToonRecord;
+  const keys = Object.keys(first);
   if (keys.length === 0) return false;
-  return items.every((item) => keys.every((key) => key in item));
+  return items.every((item) => {
+    const record = item as ToonRecord;
+    return keys.every((key) => key in record);
+  });
 }
 
-function encodeTabularArray(name, items, indent) {
+function encodeTabularArray(name: string, items: ToonRecord[], indent: number): string {
   const keys = Object.keys(items[0]);
   const pad = "  ".repeat(indent);
   const header = `${pad}${name}[${items.length}]{${keys.join(",")}}:`;
@@ -38,14 +44,14 @@ function encodeTabularArray(name, items, indent) {
   return [header, ...rows].join("\n");
 }
 
-function encodeStringArray(name, items, indent) {
+function encodeStringArray(name: string, items: string[], indent: number): string {
   const pad = "  ".repeat(indent);
   const header = `${pad}${name}[${items.length}]:`;
   const rows = items.map((item) => `${pad}  ${formatPrimitive(item)}`);
   return [header, ...rows].join("\n");
 }
 
-function encodeValue(value, indent = 0) {
+function encodeValue(value: unknown, indent = 0): string {
   if (Array.isArray(value)) {
     if (value.length === 0) {
       return `${"  ".repeat(indent)}items[0]:`;
@@ -57,9 +63,7 @@ function encodeValue(value, indent = 0) {
       return encodeTabularArray("items", value, indent);
     }
     const pad = "  ".repeat(indent);
-    return value
-      .map((item, index) => `${pad}- ${formatPrimitive(item)}`)
-      .join("\n");
+    return value.map((item) => `${pad}- ${formatPrimitive(item)}`).join("\n");
   }
 
   if (value && typeof value === "object") {
@@ -90,7 +94,7 @@ function encodeValue(value, indent = 0) {
   return `${"  ".repeat(indent)}${formatPrimitive(value)}`;
 }
 
-export function encodeToon(value) {
+export function encodeToon(value: unknown): string {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return `${encodeValue(value, 0)}\n`;
   }

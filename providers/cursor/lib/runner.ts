@@ -4,12 +4,34 @@ import { join, resolve } from "node:path";
 
 const EXECUTABLE_CANDIDATES = ["agent"];
 
-export function executableOnPath(name) {
+type AgentOutputFormat = "json" | "stream-json" | "text";
+
+type AgentEvent = {
+  type?: string;
+  result?: unknown;
+  session_id?: unknown;
+  is_error?: unknown;
+  usage?: unknown;
+};
+
+export type AgentCommand = {
+  executable: string;
+  args: string[];
+};
+
+export type AgentRunOptions = {
+  workspace: string;
+  outputFormat: AgentOutputFormat;
+  maxRuntimeMs: number;
+  idleTimeoutMs: number;
+};
+
+export function executableOnPath(name: string): boolean {
   const pathEntries = (process.env.PATH ?? "").split(":");
   return pathEntries.some((entry) => existsSync(resolve(entry, name)));
 }
 
-export function resolveExecutable() {
+export function resolveExecutable(): string {
   const override = process.env.CURSOR_CLI_EXECUTABLE?.trim();
   if (override) return override;
 
@@ -23,7 +45,14 @@ export function resolveExecutable() {
   return "agent";
 }
 
-export function agentJson(args, workspace = process.cwd()) {
+export function agentJson(
+  args: string[],
+  workspace = process.cwd(),
+): {
+  data?: Record<string, unknown>;
+  error?: string;
+  exitCode?: number;
+} {
   const executable = resolveExecutable();
   const result = spawnSync(executable, args, {
     cwd: workspace,
@@ -51,7 +80,15 @@ export function agentJson(args, workspace = process.cwd()) {
   }
 }
 
-function parseAgentOutput(stdout, outputFormat) {
+function parseAgentOutput(
+  stdout: string,
+  outputFormat: AgentOutputFormat,
+): {
+  resultText?: string;
+  sessionId?: string;
+  isError: boolean;
+  usage?: unknown;
+} {
   if (outputFormat === "text") {
     return {
       resultText: stdout.trim(),
@@ -77,13 +114,13 @@ function parseAgentOutput(stdout, outputFormat) {
 
   let sessionId;
   let resultText;
-  let isError;
+  let isError = false;
   let usage;
 
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let event;
+    let event: AgentEvent;
     try {
       event = JSON.parse(trimmed);
     } catch {
@@ -102,7 +139,12 @@ function parseAgentOutput(stdout, outputFormat) {
   return { resultText, sessionId, isError, usage };
 }
 
-function terminalFromEvent(event) {
+function terminalFromEvent(event: AgentEvent): {
+  resultText?: string;
+  sessionId?: string;
+  isError: boolean;
+  usage?: unknown;
+} {
   return {
     resultText: typeof event.result === "string" ? event.result : undefined,
     sessionId: typeof event.session_id === "string" ? event.session_id : undefined,
@@ -111,7 +153,19 @@ function terminalFromEvent(event) {
   };
 }
 
-export function buildCommand(options, prompt) {
+export function buildCommand(
+  options: {
+    outputFormat: AgentOutputFormat;
+    workspace: string;
+    force?: boolean;
+    model?: string;
+    mode?: "plan" | "ask";
+    sandbox?: "enabled" | "disabled";
+    resume?: string;
+    continueSession?: boolean;
+  },
+  prompt: string,
+): AgentCommand {
   const executable = resolveExecutable();
   const args = [
     "-p",
@@ -127,20 +181,32 @@ export function buildCommand(options, prompt) {
   if (options.model) args.push("--model", options.model);
   if (options.mode) args.push("--mode", options.mode);
   if (options.sandbox) args.push("--sandbox", options.sandbox);
-  if (options.resume) args.push("--resume", options.resume === true ? "" : options.resume);
+  if (options.resume) args.push("--resume", options.resume);
   if (options.continueSession) args.push("--continue");
   args.push(prompt);
 
   return { executable, args };
 }
 
-export async function runAgent(command, options) {
+export async function runAgent(
+  command: AgentCommand,
+  options: AgentRunOptions,
+): Promise<{
+  exitCode: number;
+  stderr: string;
+  timedOut: boolean;
+  timeoutKind?: "max_runtime" | "idle";
+  resultText?: string;
+  sessionId?: string;
+  isError: boolean;
+  usage?: unknown;
+}> {
   const startedAt = Date.now();
   let lastActivityAt = startedAt;
   let timedOut = false;
-  let timeoutKind;
-  const stdoutChunks = [];
-  const stderrChunks = [];
+  let timeoutKind: "max_runtime" | "idle" | undefined;
+  const stdoutChunks: string[] = [];
+  const stderrChunks: string[] = [];
 
   const subprocess = spawn(command.executable, command.args, {
     cwd: options.workspace,
@@ -183,7 +249,7 @@ export async function runAgent(command, options) {
     setTimeout(() => subprocess.kill("SIGKILL"), 5_000);
   }, checkIntervalMs);
 
-  const exitCode = await new Promise((resolveExit, rejectExit) => {
+  const exitCode = await new Promise<number>((resolveExit, rejectExit) => {
     subprocess.once("error", rejectExit);
     subprocess.once("close", (code) => resolveExit(code ?? 1));
   }).finally(() => {

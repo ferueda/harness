@@ -3,20 +3,43 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, relative } from "node:path";
 
-export function buildRunId(date = new Date()) {
+export type GitScope = {
+  mergeBase: string;
+  headSha: string;
+  headBranch: string;
+  diff: string;
+};
+
+export type ContextArtifact = {
+  requested: string | null | undefined;
+  path: string | null;
+};
+
+type RequestedContextFile = {
+  requested?: string;
+  workspace: string;
+  destination: string;
+};
+
+type ArtifactSectionOptions = {
+  none: string;
+  missing: string;
+  found: string;
+};
+
+export function buildRunId(date = new Date()): string {
   const stamp = date.toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "-");
   return `${stamp}-${randomBytes(3).toString("hex")}`;
 }
 
-export function gitExec(workspace, args) {
+export function gitExec(workspace: string, args: string[]): string {
   return execFileSync("git", args, { cwd: workspace, encoding: "utf8" }).trim();
 }
 
-/**
- * @param {string} workspace
- * @param {{ baseRef: string, headRef: string }} refs
- */
-export function prepareGitScope(workspace, refs) {
+export function prepareGitScope(
+  workspace: string,
+  refs: { baseRef: string; headRef: string },
+): GitScope {
   gitExec(workspace, ["rev-parse", "--is-inside-work-tree"]);
 
   const mergeBase = gitExec(workspace, ["merge-base", refs.baseRef, refs.headRef]);
@@ -33,40 +56,27 @@ export function prepareGitScope(workspace, refs) {
   return { mergeBase, headSha, headBranch, diff };
 }
 
-/**
- * @param {string} template
- * @param {Record<string, string>} values
- */
-export function fillTemplate(template, values) {
+export function fillTemplate(template: string, values: Record<string, string>): string {
   return template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_match, key) => values[key] ?? "");
 }
 
-export function buildPlanSection(planArtifact, workspace) {
-  if (!planArtifact?.requested) {
-    return "_No plan file provided._";
-  }
-  if (!planArtifact.path) {
-    return `_Plan file not found: \`${planArtifact.requested}\`_`;
-  }
-  return `Plan file: \`${formatArtifactPath(planArtifact.path, workspace)}\``;
+export function buildPlanSection(planArtifact: ContextArtifact, workspace: string): string {
+  return buildArtifactSection(planArtifact, workspace, {
+    none: "_No plan file provided._",
+    missing: "_Plan file not found: `{{requested}}`_",
+    found: "Plan file: `{{path}}`",
+  });
 }
 
-export function buildHandoffSection(handoffArtifact, workspace) {
-  if (!handoffArtifact?.requested) {
-    return "_No handoff file provided._";
-  }
-  if (!handoffArtifact.path) {
-    return `_Handoff file not found: \`${handoffArtifact.requested}\`_`;
-  }
-  return `Handoff file: \`${formatArtifactPath(handoffArtifact.path, workspace)}\``;
+export function buildHandoffSection(handoffArtifact: ContextArtifact, workspace: string): string {
+  return buildArtifactSection(handoffArtifact, workspace, {
+    none: "_No handoff file provided._",
+    missing: "_Handoff file not found: `{{requested}}`_",
+    found: "Handoff file: `{{path}}`",
+  });
 }
 
-/**
- * @param {string} diff
- * @param {string} runDir
- * @param {string} workspace
- */
-export function buildDiffSection(diff, runDir, workspace) {
+export function buildDiffSection(diff: string, runDir: string, workspace: string): string {
   const contextDir = join(runDir, "context");
   mkdirSync(contextDir, { recursive: true });
   const patchPath = join(contextDir, "diff.patch");
@@ -75,10 +85,13 @@ export function buildDiffSection(diff, runDir, workspace) {
   return `Diff file: \`${formatArtifactPath(patchPath, workspace)}\``;
 }
 
-/**
- * @param {{ workspace: string, runDir: string, scope: object, planPath?: string, handoffPath?: string }} input
- */
-export function writeRunContext(input) {
+export function writeRunContext(input: {
+  workspace: string;
+  runDir: string;
+  scope?: object;
+  planPath?: string;
+  handoffPath?: string;
+}): { plan: ContextArtifact; handoff: ContextArtifact } {
   const contextDir = join(input.runDir, "context");
   mkdirSync(contextDir, { recursive: true });
 
@@ -96,23 +109,23 @@ export function writeRunContext(input) {
   };
 }
 
-export function buildPriorReviewSection(reviewPath, workspace) {
+export function buildPriorReviewSection(reviewPath: string, workspace: string): string {
   if (!existsSync(reviewPath)) {
     return "";
   }
   return `- Prior implementation review file: \`${formatArtifactPath(reviewPath, workspace)}\``;
 }
 
-/**
- * @param {string} templatePath
- * @param {Record<string, string>} values
- */
-export function renderPrompt(templatePath, values) {
+export function renderPrompt(templatePath: string, values: Record<string, string>): string {
   const template = readFileSync(templatePath, "utf8");
   return fillTemplate(template, values);
 }
 
-function copyContextFile({ requested, workspace, destination }) {
+function copyContextFile({
+  requested,
+  workspace,
+  destination,
+}: RequestedContextFile): ContextArtifact {
   if (!requested) {
     return { requested: null, path: null };
   }
@@ -126,10 +139,24 @@ function copyContextFile({ requested, workspace, destination }) {
   return { requested, path: destination };
 }
 
-function formatArtifactPath(path, workspace) {
+function formatArtifactPath(path: string, workspace: string): string {
   const artifactPath = relative(workspace, path);
   if (artifactPath && !artifactPath.startsWith("..") && !isAbsolute(artifactPath)) {
     return artifactPath;
   }
   return path;
+}
+
+function buildArtifactSection(
+  artifact: ContextArtifact,
+  workspace: string,
+  options: ArtifactSectionOptions,
+): string {
+  if (!artifact?.requested) {
+    return options.none;
+  }
+  if (!artifact.path) {
+    return options.missing.replace("{{requested}}", artifact.requested);
+  }
+  return options.found.replace("{{path}}", formatArtifactPath(artifact.path, workspace));
 }

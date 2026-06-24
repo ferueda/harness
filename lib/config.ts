@@ -1,11 +1,33 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { HarnessConfigSchema, formatZodError } from "./schemas.ts";
 
 const CONFIG_FILE = "harness.json";
 export const HARNESS_GITIGNORE_ENTRY = ".harness/";
 
-export function resolveHarnessOptions(options, cwd = process.cwd()) {
+export type HarnessOptions = {
+  workspace?: string;
+  baseRef?: string;
+  headRef?: string;
+  [key: string]: unknown;
+};
+
+export type ResolvedHarnessOptions<T extends HarnessOptions = HarnessOptions> = T & {
+  workspace: string;
+  baseRef: string;
+  headRef: string;
+};
+
+export type InitHarnessOptions = {
+  workspace?: string;
+  baseRef?: string;
+};
+
+export function resolveHarnessOptions<T extends HarnessOptions>(
+  options: T,
+  cwd = process.cwd(),
+): ResolvedHarnessOptions<T> {
   const workspace = resolveWorkspace(options.workspace, cwd);
   const config = readHarnessConfig(workspace);
 
@@ -17,7 +39,7 @@ export function resolveHarnessOptions(options, cwd = process.cwd()) {
   };
 }
 
-export function findHarnessConfig(startDir) {
+export function findHarnessConfig(startDir: string): string | null {
   let current = resolve(startDir);
 
   while (true) {
@@ -30,7 +52,17 @@ export function findHarnessConfig(startDir) {
   }
 }
 
-export function initHarnessConfig(options = {}, cwd = process.cwd()) {
+export function initHarnessConfig(
+  options: InitHarnessOptions = {},
+  cwd = process.cwd(),
+): {
+  workspace: string;
+  configPath: string;
+  gitignorePath: string;
+  baseSkipped: boolean;
+  configCreated: boolean;
+  gitignoreUpdated: boolean;
+} {
   const workspace = resolveWorkspace(options.workspace, cwd);
   if (!existsSync(workspace) || !statSync(workspace).isDirectory()) {
     throw new Error(`Workspace does not exist: ${workspace}`);
@@ -48,7 +80,11 @@ export function initHarnessConfig(options = {}, cwd = process.cwd()) {
   };
 
   if (!existsSync(configPath)) {
-    writeFileSync(configPath, `${JSON.stringify({ base: options.baseRef ?? "main" }, null, 2)}\n`, "utf8");
+    writeFileSync(
+      configPath,
+      `${JSON.stringify({ base: options.baseRef ?? "main" }, null, 2)}\n`,
+      "utf8",
+    );
     result.configCreated = true;
   } else if (options.baseRef) {
     result.baseSkipped = true;
@@ -58,7 +94,7 @@ export function initHarnessConfig(options = {}, cwd = process.cwd()) {
   return result;
 }
 
-function resolveWorkspace(explicitWorkspace, cwd) {
+function resolveWorkspace(explicitWorkspace: string | undefined, cwd: string): string {
   if (explicitWorkspace) {
     return isAbsolute(explicitWorkspace) ? explicitWorkspace : resolve(cwd, explicitWorkspace);
   }
@@ -71,7 +107,7 @@ function resolveWorkspace(explicitWorkspace, cwd) {
   return resolveGitRoot(cwd);
 }
 
-function readHarnessConfig(workspace) {
+function readHarnessConfig(workspace: string) {
   const configPath = join(workspace, CONFIG_FILE);
   if (!existsSync(configPath)) return {};
 
@@ -83,28 +119,28 @@ function readHarnessConfig(workspace) {
     throw new Error(`Invalid ${CONFIG_FILE}: ${message}`);
   }
 
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`Invalid ${CONFIG_FILE}: expected an object`);
-  }
-  if (parsed.base !== undefined && typeof parsed.base !== "string") {
-    throw new Error(`Invalid ${CONFIG_FILE}: base must be a string`);
+  const result = HarnessConfigSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`Invalid ${CONFIG_FILE}: ${formatZodError(result.error)}`);
   }
 
-  return parsed;
+  return result.data;
 }
 
-function resolveGitRoot(cwd) {
+function resolveGitRoot(cwd: string): string {
   try {
     return execFileSync("git", ["rev-parse", "--show-toplevel"], {
       cwd,
       encoding: "utf8",
     }).trim();
   } catch {
-    throw new Error(`Workspace not found. Add ${CONFIG_FILE}, run inside a Git repo, or pass --workspace.`);
+    throw new Error(
+      `Workspace not found. Add ${CONFIG_FILE}, run inside a Git repo, or pass --workspace.`,
+    );
   }
 }
 
-function ensureGitignoreEntry(path, entry) {
+function ensureGitignoreEntry(path: string, entry: string): boolean {
   const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
   const lines = existing.split(/\r?\n/);
   if (lines.some((line) => isHarnessIgnoreEntry(line))) {
@@ -116,8 +152,15 @@ function ensureGitignoreEntry(path, entry) {
   return true;
 }
 
-function isHarnessIgnoreEntry(line) {
+function isHarnessIgnoreEntry(line: string): boolean {
   // Treat common .gitignore spellings as already covering the .harness artifact tree.
   const trimmed = line.trim();
-  return [".harness", ".harness/", ".harness/*", ".harness/**", "**/.harness", "**/.harness/"].includes(trimmed);
+  return [
+    ".harness",
+    ".harness/",
+    ".harness/*",
+    ".harness/**",
+    "**/.harness",
+    "**/.harness/",
+  ].includes(trimmed);
 }

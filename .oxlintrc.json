@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "node", "promise", "vitest"],
+  "ignorePatterns": ["dist/**", ".harness/**", "node_modules/**"],
+  "rules": {
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "promise/no-multiple-resolved": "error",
+    "promise/no-return-wrap": "error",
+    "typescript/consistent-type-imports": "error",
+    "vitest/expect-expect": "error",
+    "vitest/no-conditional-tests": "error",
+    "vitest/no-disabled-tests": "error"
+  }
+}

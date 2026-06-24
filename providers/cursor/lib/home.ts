@@ -1,12 +1,12 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentJson } from "./runner.mjs";
-import { collapseHomePath } from "./output.mjs";
+import { agentJson } from "./runner.ts";
+import { collapseHomePath } from "./output.ts";
 
-const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "cursor-agent.mjs");
+const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "cursor-agent.ts");
 
-export async function buildHomeEnvelope(workspace) {
-  const envelope = {
+export async function buildHomeEnvelope(workspace: string): Promise<Record<string, unknown>> {
+  const envelope: Record<string, unknown> = {
     bin: collapseHomePath(SCRIPT_PATH),
     description: "Invoke Cursor Agent headlessly for agent-to-agent tasks",
   };
@@ -26,7 +26,8 @@ export async function buildHomeEnvelope(workspace) {
 
   const auth = status.data;
   if (auth?.isAuthenticated) {
-    envelope.auth = auth.userInfo?.email ?? "authenticated";
+    const userInfo = objectValue(auth.userInfo);
+    envelope.auth = stringValue(userInfo?.email) ?? "authenticated";
   } else {
     envelope.auth = "not authenticated";
     envelope.help = ["Run `agent login` locally or set CURSOR_API_KEY for CI"];
@@ -43,4 +44,14 @@ export async function buildHomeEnvelope(workspace) {
   ];
 
   return envelope;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }

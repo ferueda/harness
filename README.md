@@ -18,8 +18,9 @@ dev/plans/    Plans and handoffs for this repo
 ## First Workflow
 
 ```bash
-node bin/harness.mjs init
-node bin/harness.mjs run dual-review
+pnpm build
+node dist/bin/harness.js init
+node dist/bin/harness.js run dual-review
 ```
 
 The first workflow calls `review-implementation`, then `code-quality-review`, then writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
@@ -39,10 +40,35 @@ When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory
 For external target repos, pass the repo path explicitly:
 
 ```bash
-node bin/harness.mjs init --workspace /path/to/repo
+node dist/bin/harness.js init --workspace /path/to/repo
 ```
 
 Skills follow the [Agent Skills](https://agentskills.io/) format. Top-level `skills/` contains harness skills. `.agents/skills/` contains repo-local development skills for working on this project and should not be copied into repos that install the harness.
+
+## Development
+
+Harness source is TypeScript under `bin/`, `lib/`, `providers/`, and `workflows/`. Runtime packaging builds JavaScript into `dist/`; the package bin points at `dist/bin/harness.js` so installed copies do not rely on Node loading raw TypeScript from `node_modules`.
+
+Use the quiet gate while developing:
+
+```bash
+pnpm check
+```
+
+For full command output:
+
+```bash
+pnpm check:v
+```
+
+The gate runs Oxfmt, Oxlint, strict TypeScript checks, Vitest, and the build. CI runs the same `pnpm check:ci` gate.
+
+For fast CLI iteration from source:
+
+```bash
+node bin/harness.ts init
+node bin/harness.ts run dual-review
+```
 
 ## Available Skills
 
