@@ -89,7 +89,6 @@ function buildProgram(): Command {
         workspace: options.workspace,
         baseRef: options.base,
         harnessEntrypoint: HARNESS_ENTRYPOINT,
-        nodePath: process.execPath,
       });
       console.log(JSON.stringify(result, null, 2));
     });
