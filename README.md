@@ -63,6 +63,13 @@ pnpm check:v
 
 The gate runs Oxfmt, Oxlint, strict TypeScript checks, Vitest, and the build. CI runs the same `pnpm check:ci` gate.
 
+For fast CLI iteration from source:
+
+```bash
+node bin/harness.ts init
+node bin/harness.ts run dual-review
+```
+
 ## Available Skills
 
 ### ask-questions

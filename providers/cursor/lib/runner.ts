@@ -49,7 +49,7 @@ export function agentJson(
   args: string[],
   workspace = process.cwd(),
 ): {
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   error?: string;
   exitCode?: number;
 } {

@@ -30,10 +30,6 @@ export function gitExec(workspace: string, args: string[]): string {
   return execFileSync("git", args, { cwd: workspace, encoding: "utf8" }).trim();
 }
 
-/**
- * @param {string} workspace
- * @param {{ baseRef: string, headRef: string }} refs
- */
 export function prepareGitScope(
   workspace: string,
   refs: { baseRef: string; headRef: string },
@@ -54,10 +50,6 @@ export function prepareGitScope(
   return { mergeBase, headSha, headBranch, diff };
 }
 
-/**
- * @param {string} template
- * @param {Record<string, string>} values
- */
 export function fillTemplate(template: string, values: Record<string, string>): string {
   return template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_match, key) => values[key] ?? "");
 }
@@ -82,11 +74,6 @@ export function buildHandoffSection(handoffArtifact: ContextArtifact, workspace:
   return `Handoff file: \`${formatArtifactPath(handoffArtifact.path, workspace)}\``;
 }
 
-/**
- * @param {string} diff
- * @param {string} runDir
- * @param {string} workspace
- */
 export function buildDiffSection(diff: string, runDir: string, workspace: string): string {
   const contextDir = join(runDir, "context");
   mkdirSync(contextDir, { recursive: true });
@@ -96,9 +83,6 @@ export function buildDiffSection(diff: string, runDir: string, workspace: string
   return `Diff file: \`${formatArtifactPath(patchPath, workspace)}\``;
 }
 
-/**
- * @param {{ workspace: string, runDir: string, scope: object, planPath?: string, handoffPath?: string }} input
- */
 export function writeRunContext(input: {
   workspace: string;
   runDir: string;
@@ -130,10 +114,6 @@ export function buildPriorReviewSection(reviewPath: string, workspace: string): 
   return `- Prior implementation review file: \`${formatArtifactPath(reviewPath, workspace)}\``;
 }
 
-/**
- * @param {string} templatePath
- * @param {Record<string, string>} values
- */
 export function renderPrompt(templatePath: string, values: Record<string, string>): string {
   const template = readFileSync(templatePath, "utf8");
   return fillTemplate(template, values);

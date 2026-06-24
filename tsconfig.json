@@ -19,6 +19,7 @@
     "bin/**/*.ts",
     "lib/**/*.ts",
     "providers/**/*.ts",
+    "scripts/**/*.ts",
     "test/**/*.ts",
     "vitest.config.ts",
     "workflows/**/*.ts"

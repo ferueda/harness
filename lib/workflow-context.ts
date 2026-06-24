@@ -63,7 +63,11 @@ const AGENTS = {
     promptFile: "implementation-review.prompt.md",
     reviewFile: "implementation-review.json",
     rawFile: "implementation-review.raw.json",
-    dryRunReview: { verdict: "pass", summary: "(dry-run placeholder)", findings: [] },
+    dryRunReview: {
+      verdict: "pass",
+      summary: "(dry-run placeholder)",
+      findings: [],
+    } satisfies ReviewOutput,
     stage: "implementation",
   },
   "code-quality-review": {
@@ -72,7 +76,11 @@ const AGENTS = {
     promptFile: "quality-review.prompt.md",
     reviewFile: "quality-review.json",
     rawFile: "quality-review.raw.json",
-    dryRunReview: { verdict: "pass", summary: "(dry-run placeholder)", findings: [] },
+    dryRunReview: {
+      verdict: "pass",
+      summary: "(dry-run placeholder)",
+      findings: [],
+    } satisfies ReviewOutput,
     stage: "quality",
   },
 };
@@ -152,7 +160,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       promptPaths[config.stage] = promptPath;
 
       if (options.dryRun) {
-        return config.dryRunReview as ReviewOutput;
+        return config.dryRunReview;
       }
 
       const result = invokeCursorAgent({
@@ -318,7 +326,7 @@ function resolveCursorAgentPath(explicitPath?: string): string {
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
-  throw new Error("cursor-agent.ts not found. Pass --cursor-agent.");
+  throw new Error("cursor-agent entrypoint not found. Pass --cursor-agent.");
 }
 
 function aggregateVerdictFromList(reviews: [ReviewOutput, ReviewOutput]): ReviewVerdict {

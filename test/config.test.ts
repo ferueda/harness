@@ -52,6 +52,13 @@ test("resolveHarnessOptions rejects invalid harness.json values", () => {
   writeFileSync(join(workspace, "harness.json"), '{ "base": 123 }\n', "utf8");
   expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(/Invalid harness\.json: base:/);
 });
+test("resolveHarnessOptions rejects non-object harness.json values", () => {
+  for (const contents of ["null", "[]", '"repo"']) {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+    writeFileSync(join(workspace, "harness.json"), `${contents}\n`, "utf8");
+    expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(/Invalid harness\.json:/);
+  }
+});
 test("resolveHarnessOptions falls back to Git root without harness.json", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-git-"));
   const nested = join(workspace, "src/app");

@@ -6,7 +6,7 @@ define RUN
 @if [ "$(VERBOSE)" = "1" ]; then $(1); else tmp="$$(mktemp)"; if ( $(1) ) >"$$tmp" 2>&1; then rm -f "$$tmp"; else cat "$$tmp"; rm -f "$$tmp"; exit 1; fi; fi
 endef
 
-.PHONY: help ensure-node build lint typecheck test format check-format fix check check-v check-ci
+.PHONY: help ensure-node build lint typecheck test smoke-dist format check-format fix check check-v check-ci
 
 ensure-node: ## Ensure node and pnpm are available
 	@command -v node >/dev/null 2>&1 || { echo "node not found in PATH"; exit 1; }
@@ -25,6 +25,9 @@ typecheck: ensure-node ## Run strict TypeScript checks
 test: ensure-node ## Run unit tests
 	$(call RUN,pnpm run test)
 
+smoke-dist: ensure-node build ## Smoke test the built CLI entrypoint
+	$(call RUN,pnpm run smoke:dist)
+
 format: ensure-node ## Apply formatting
 	pnpm run format
 
@@ -36,7 +39,8 @@ fix: ensure-node ## Auto-format and apply lint fixes
 	pnpm run lint:fix
 
 check: ensure-node ## Quiet full local gate
-	@$(MAKE) -j5 check-format lint typecheck test build
+	@$(MAKE) -j4 check-format lint typecheck test
+	@$(MAKE) smoke-dist
 
 check-v: ## Verbose full local gate
 	@VERBOSE=1 $(MAKE) check

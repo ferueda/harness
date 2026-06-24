@@ -12,6 +12,7 @@
     "dist",
     "node_modules",
     ".harness",
+    "scripts/**/*.ts",
     "test/**/*.ts",
     "**/*.test.ts",
     "vitest.config.ts"

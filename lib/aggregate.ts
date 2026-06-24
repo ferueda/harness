@@ -50,9 +50,6 @@ export function aggregateVerdict(
   return "needs_changes";
 }
 
-/**
- * @param {{ runId: string, workspace: string, scope: object, implReview: ReviewOutput, qualityReview: ReviewOutput, verdict: string, startedAt: string, durationMs: number }} input
- */
 export function renderSummary(input: {
   runId: string;
   workspace: string;

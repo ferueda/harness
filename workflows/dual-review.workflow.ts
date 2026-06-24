@@ -1,18 +1,15 @@
-export const meta = { name: "dual-review" };
+import type { ReviewVerdict } from "../lib/aggregate.ts";
+import type { ReviewOutput } from "../lib/schemas.ts";
 
-type ReviewOutput = {
-  verdict?: string;
-  summary?: string;
-  findings?: unknown[];
-};
+export const meta = { name: "dual-review" };
 
 type WorkflowContext = {
   agent(name: "review-implementation" | "code-quality-review"): Promise<ReviewOutput>;
-  aggregate(reviews: [ReviewOutput, ReviewOutput]): string;
+  aggregate(reviews: [ReviewOutput, ReviewOutput]): ReviewVerdict;
   export(input: {
     implementation: ReviewOutput;
     quality: ReviewOutput;
-    verdict: string;
+    verdict: ReviewVerdict;
   }): WorkflowRunMeta;
 };
 

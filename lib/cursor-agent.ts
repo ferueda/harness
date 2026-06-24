@@ -5,16 +5,24 @@ type CursorAgentResult =
   | {
       ok: true;
       review: ReviewOutput;
-      envelope: Record<string, any>;
+      envelope: CursorAgentEnvelope;
       exitCode: 0;
     }
   | {
       ok: false;
       error: string;
-      envelope?: Record<string, any>;
+      envelope?: CursorAgentEnvelope;
       exitCode: number;
       stderr?: string;
     };
+
+type CursorAgentEnvelope = {
+  status?: unknown;
+  structuredOutput?: unknown;
+  error?: unknown;
+  structuredError?: unknown;
+  [key: string]: unknown;
+};
 
 export function invokeCursorAgent({
   cursorAgentPath,
@@ -55,7 +63,7 @@ export function invokeCursorAgent({
     env: process.env,
   });
 
-  let envelope: Record<string, any>;
+  let envelope: CursorAgentEnvelope;
   try {
     envelope = JSON.parse(result.stdout.trim());
   } catch {
@@ -70,7 +78,10 @@ export function invokeCursorAgent({
   if (envelope.status !== "completed" || !envelope.structuredOutput) {
     return {
       ok: false,
-      error: envelope.error ?? envelope.structuredError ?? "Reviewer failed",
+      error:
+        optionalString(envelope.error) ??
+        optionalString(envelope.structuredError) ??
+        "Reviewer failed",
       envelope,
       exitCode: result.status ?? 1,
       stderr: result.stderr,
@@ -94,4 +105,8 @@ export function invokeCursorAgent({
     envelope,
     exitCode: 0,
   };
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
