@@ -130,6 +130,7 @@ test("harness init creates config through the CLI", () => {
   expect(output.gitignoreUpdated).toBe(true);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "develop"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${HARNESS_GITIGNORE_ENTRY}\n`);
+  expect(existsSync(join(workspace, ".agents/skills/change-review-workflow"))).toBe(false);
 });
 test("harness init resolves workspace from nested cwd", () => {
   const workspace = createGitWorkspace();
@@ -176,6 +177,7 @@ test("harness root help exits cleanly", () => {
   expect(result.stdout).toMatch(/init/);
   expect(result.stdout).toMatch(/run/);
   expect(result.stdout).toMatch(/runs/);
+  expect(result.stdout).toMatch(/skills/);
 });
 test("harness init help exits cleanly", () => {
   const result = runHarness(["init", "--help"]);
@@ -215,6 +217,133 @@ test("harness runs prune help exits cleanly", () => {
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).toMatch(/--runs-dir/);
   expect(result.stdout).toMatch(/--workspace/);
+});
+test("harness skills install help exits cleanly", () => {
+  const result = runHarness(["skills", "install", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness skills install/);
+  expect(result.stdout).toMatch(/--workspace/);
+  expect(result.stdout).toMatch(/--force/);
+  expect(result.stdout).toMatch(/--dry-run/);
+});
+test("harness skills install copies a packaged skill into the workspace", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "skills",
+    "install",
+    "change-review-workflow",
+    "--workspace",
+    workspace,
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  const skillPath = join(workspace, ".agents/skills/change-review-workflow/SKILL.md");
+  const metadataPath = join(workspace, ".agents/skills/change-review-workflow/agents/openai.yaml");
+  const handoffPath = join(
+    workspace,
+    ".agents/skills/change-review-workflow/references/review-handoff.md",
+  );
+  expect(output).toMatchObject({
+    workspace,
+    skill: "change-review-workflow",
+    targetPath: join(workspace, ".agents/skills/change-review-workflow"),
+    status: "installed",
+  });
+  expect(readFileSync(skillPath, "utf8")).toContain("name: change-review-workflow");
+  expect(readFileSync(metadataPath, "utf8")).toContain("Change Review Workflow");
+  expect(readFileSync(handoffPath, "utf8")).toContain("## Template");
+});
+test("harness skills install skips existing local skills unless forced", () => {
+  const workspace = createGitWorkspace();
+  const skillPath = join(workspace, ".agents/skills/change-review-workflow/SKILL.md");
+  mkdirSync(dirname(skillPath), { recursive: true });
+  writeFileSync(skillPath, "# Custom local skill\n", "utf8");
+
+  const skipped = runHarness([
+    "skills",
+    "install",
+    "change-review-workflow",
+    "--workspace",
+    workspace,
+  ]);
+  expect(skipped.status).toBe(0);
+  expect(JSON.parse(skipped.stdout).status).toBe("skipped");
+  expect(readFileSync(skillPath, "utf8")).toBe("# Custom local skill\n");
+
+  const forced = runHarness([
+    "skills",
+    "install",
+    "change-review-workflow",
+    "--workspace",
+    workspace,
+    "--force",
+  ]);
+  expect(forced.status).toBe(0);
+  expect(JSON.parse(forced.stdout).status).toBe("installed");
+  expect(readFileSync(skillPath, "utf8")).toContain("name: change-review-workflow");
+});
+test("harness skills install previews forced overwrites without writing", () => {
+  const workspace = createGitWorkspace();
+  const skillPath = join(workspace, ".agents/skills/change-review-workflow/SKILL.md");
+  mkdirSync(dirname(skillPath), { recursive: true });
+  writeFileSync(skillPath, "# Custom local skill\n", "utf8");
+
+  const result = runHarness([
+    "skills",
+    "install",
+    "change-review-workflow",
+    "--workspace",
+    workspace,
+    "--dry-run",
+    "--force",
+  ]);
+
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).status).toBe("would_overwrite");
+  expect(readFileSync(skillPath, "utf8")).toBe("# Custom local skill\n");
+});
+test("harness skills install dry-run does not write files", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "skills",
+    "install",
+    "change-review-workflow",
+    "--workspace",
+    workspace,
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).status).toBe("would_install");
+  expect(existsSync(join(workspace, ".agents/skills/change-review-workflow"))).toBe(false);
+});
+test("harness skills install rejects unsafe skill names", () => {
+  const workspace = createGitWorkspace();
+
+  for (const skillName of ["../change-review-workflow", "nested/skill", "/tmp/skill"]) {
+    const result = runHarness(["skills", "install", skillName, "--workspace", workspace]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/Invalid skill name:/);
+  }
+});
+test("harness skills install rejects unknown packaged skills", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(["skills", "install", "missing-skill", "--workspace", workspace]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Packaged skill not found: missing-skill/);
+});
+test("harness skills install reports runtime errors as exit 1", () => {
+  const missingWorkspace = join(mkdtempSync(join(tmpdir(), "harness-cli-")), "missing");
+  const result = runHarness([
+    "skills",
+    "install",
+    "change-review-workflow",
+    "--workspace",
+    missingWorkspace,
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Workspace does not exist/);
 });
 test("harness init rejects unknown flags", () => {
   const result = runHarness(["init", "--unknown"]);
