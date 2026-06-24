@@ -16,8 +16,8 @@ import {
   buildHandoffSection,
   buildPlanSection,
   buildRunId,
+  fillTemplate,
   prepareGitScope,
-  renderPrompt,
   writeRunContext,
 } from "./context.ts";
 import {
@@ -243,7 +243,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       const config = AGENTS[name];
 
       const promptPath = join(runDir, config.promptFile);
-      const prompt = renderPrompt(
+      const prompt = fillTemplate(
         config.promptTemplate,
         buildPromptValues({
           scope,
