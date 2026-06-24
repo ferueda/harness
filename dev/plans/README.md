@@ -3,6 +3,7 @@
 | File | Status | Summary |
 |------|--------|---------|
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | `harness` repo migration, Phase 0 dual-review, live workflow roadmap |
+| [260624-parallel-review-runs.md](./260624-parallel-review-runs.md) | `done` | Run review and review-full workflow agents concurrently, remove prior-review prompt coupling, and preserve failed-run artifacts |
 | [260624-typescript-oxc-vitest-migration.md](./260624-typescript-oxc-vitest-migration.md) | `done` | Migrate harness runtime and tests to TypeScript, add Oxlint/Oxfmt quality gates, replace `node:test` with Vitest, and add Zod runtime validation |
 | [260624-commander-cli-migration.md](./260624-commander-cli-migration.md) | `done` | Replace the hand-rolled harness CLI parser with Commander while preserving current command behavior and gates |
 

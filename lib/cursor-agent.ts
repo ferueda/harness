@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schemas.ts";
 
 type CursorAgentResult =
@@ -38,7 +38,7 @@ export function invokeCursorAgent({
   schemaPath: string;
   model?: string;
   maxRuntimeMs: number;
-}): CursorAgentResult {
+}): Promise<CursorAgentResult> {
   const args = [
     cursorAgentPath,
     "--format",
@@ -58,20 +58,52 @@ export function invokeCursorAgent({
   ];
   if (model) args.push("--model", model);
 
-  const result = spawnSync(process.execPath, args, {
-    encoding: "utf8",
-    env: process.env,
-  });
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, {
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    let settled = false;
+    const settle = (result: CursorAgentResult): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
 
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: string) => stderr.push(chunk));
+    child.on("error", (error) => {
+      settle({
+        ok: false,
+        error: error.message,
+        exitCode: 1,
+        stderr: stderr.join(""),
+      });
+    });
+    child.on("close", (code) => {
+      settle(parseCursorAgentOutput(stdout.join(""), stderr.join(""), code ?? 1));
+    });
+  });
+}
+
+function parseCursorAgentOutput(
+  stdout: string,
+  stderr: string,
+  exitCode: number,
+): CursorAgentResult {
   let envelope: CursorAgentEnvelope;
   try {
-    envelope = JSON.parse(result.stdout.trim());
+    envelope = JSON.parse(stdout.trim());
   } catch {
     return {
       ok: false,
-      error: `Invalid cursor-agent JSON output: ${result.stdout.slice(0, 500)}`,
-      exitCode: result.status ?? 1,
-      stderr: result.stderr,
+      error: `Invalid cursor-agent JSON output: ${stdout.slice(0, 500)}`,
+      exitCode,
+      stderr,
     };
   }
 
@@ -83,8 +115,8 @@ export function invokeCursorAgent({
         optionalString(envelope.structuredError) ??
         "Reviewer failed",
       envelope,
-      exitCode: result.status ?? 1,
-      stderr: result.stderr,
+      exitCode,
+      stderr,
     };
   }
 
@@ -94,8 +126,8 @@ export function invokeCursorAgent({
       ok: false,
       error: `Invalid reviewer structured output: ${formatZodError(review.error)}`,
       envelope,
-      exitCode: result.status ?? 1,
-      stderr: result.stderr,
+      exitCode,
+      stderr,
     };
   }
 

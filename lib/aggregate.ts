@@ -23,11 +23,33 @@ export type ReviewSection = {
   review: ReviewOutput;
 };
 
+export type FailedReview = {
+  key: string;
+  stage: string;
+  error: string;
+};
+
 export type ReviewScope = {
   baseRef: string;
   headRef: string;
   mergeBase: string;
   headSha: string;
+};
+
+type SummaryHeaderInput = {
+  title: string;
+  runId: string;
+  workspace: string;
+  scope: ReviewScope;
+  verdict: string;
+  startedAt: string;
+  durationMs: number;
+};
+
+const FAILED_REVIEW_TITLES: Record<string, string> = {
+  implementation: "Implementation review",
+  codeQuality: "Code quality review",
+  simplify: "Simplify review",
 };
 
 export function aggregateVerdict(...inputs: (ReviewOutputLike | undefined)[]): ReviewVerdict {
@@ -63,7 +85,32 @@ export function renderSummary(input: {
   startedAt: string;
   durationMs: number;
 }): string {
+  const lines = [...renderSummaryHeader(input), ...renderReviewSections(input.reviews)];
+
+  return lines.join("\n");
+}
+
+export function renderFailedSummary(input: {
+  title: string;
+  runId: string;
+  workspace: string;
+  scope: ReviewScope;
+  reviews: ReviewSection[];
+  failedReviews: FailedReview[];
+  startedAt: string;
+  durationMs: number;
+}): string {
   const lines = [
+    ...renderSummaryHeader({ ...input, verdict: "failed" }),
+    ...renderReviewSections(input.reviews),
+    ...renderFailedReviewSections(input.failedReviews),
+  ];
+
+  return lines.join("\n");
+}
+
+function renderSummaryHeader(input: SummaryHeaderInput): string[] {
+  return [
     `# ${input.title}`,
     "",
     `- **Run**: \`${input.runId}\``,
@@ -74,18 +121,34 @@ export function renderSummary(input: {
     `- **Duration**: ${Math.round(input.durationMs / 1000)}s`,
     `- **Aggregate verdict**: **${input.verdict}**`,
     "",
-    ...input.reviews.flatMap(({ title, review }) => [
-      `## ${title}`,
+  ];
+}
+
+function renderReviewSections(reviews: ReviewSection[]): string[] {
+  return reviews.flatMap(({ title, review }) => [
+    `## ${title}`,
+    "",
+    `- Verdict: **${review?.verdict ?? "unknown"}**`,
+    `- Summary: ${review?.summary ?? "(none)"}`,
+    "",
+    ...formatFindings(review?.findings),
+    "",
+  ]);
+}
+
+function renderFailedReviewSections(failedReviews: FailedReview[]): string[] {
+  return [
+    "## Failed reviewers",
+    "",
+    ...failedReviews.flatMap((review) => [
+      `### ${FAILED_REVIEW_TITLES[review.key] ?? review.key}`,
       "",
-      `- Verdict: **${review?.verdict ?? "unknown"}**`,
-      `- Summary: ${review?.summary ?? "(none)"}`,
-      "",
-      ...formatFindings(review?.findings),
+      `- **Key**: \`${review.key}\``,
+      `- **Stage**: \`${review.stage}\``,
+      `- **Error**: ${review.error}`,
       "",
     ]),
   ];
-
-  return lines.join("\n");
 }
 
 function formatFindings(findings: ReviewFindingLike[] | undefined): string[] {

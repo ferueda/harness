@@ -21,4 +21,3 @@ You are running the **code-quality-review** pass for a review workflow.
 
 - {{DIFF_SECTION}}
 - {{HANDOFF_SECTION}}
-{{PRIOR_REVIEW_SECTION}}

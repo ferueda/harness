@@ -23,9 +23,11 @@ node dist/bin/harness.js init
 node dist/bin/harness.js run review
 ```
 
-The default review workflow calls `review-implementation`, then `code-quality-review`, then writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
+The default review workflow starts `review-implementation` and `code-quality-review` in parallel. Reviewers read the same base artifacts, then harness aggregates their results in workflow order and writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
 
-For the broader review cycle, run `review-full`. It adds a read-only `simplify` pass after the two standard reviewers.
+For the broader review cycle, run `review-full`. It adds a read-only `simplify` pass and starts all three reviewers in parallel.
+
+If a reviewer provider fails, the workflow still prints JSON to stdout and exits `1`. Failed runs use `status: "failed"`, include `failedReviews`, preserve any successful peer review summaries, and write `summary.md` plus `meta.json`.
 
 `harness.json` lives at the target repo root and keeps repo-local defaults:
 

@@ -22,4 +22,3 @@ You are running the **simplify** review pass for a review-full workflow.
 
 - {{DIFF_SECTION}}
 - {{HANDOFF_SECTION}}
-{{PRIOR_REVIEW_SECTION}}

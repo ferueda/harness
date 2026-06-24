@@ -64,6 +64,42 @@ function createFakeCursorAgent({
   return scriptPath;
 }
 
+function createPromptAwareCursorAgent() {
+  const scriptPath = join(mkdtempSync(join(tmpdir(), "harness-agent-")), "cursor-agent.js");
+  const passOutput = {
+    verdict: "pass",
+    summary: "implementation passed",
+    findings: [],
+  };
+  writeFileSync(
+    scriptPath,
+    [
+      "const { basename } = require('node:path');",
+      "const promptPath = process.argv[process.argv.indexOf('--prompt-file') + 1] ?? '';",
+      "const promptName = basename(promptPath);",
+      "if (promptName === 'quality-review.prompt.md') {",
+      "  console.log(JSON.stringify({",
+      "    status: 'completed',",
+      "    structuredOutput: { verdict: 'pass', summary: 'missing findings' },",
+      "  }));",
+      "  process.exit(0);",
+      "}",
+      `console.log(${JSON.stringify(JSON.stringify({ status: "completed", structuredOutput: passOutput }))});`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  return scriptPath;
+}
+
+function expectIndependentReviewPrompts(...prompts: string[]) {
+  for (const prompt of prompts) {
+    expect(prompt).not.toMatch(/Prior implementation review file/);
+    expect(prompt).not.toMatch(/Prior code quality review file/);
+    expect(prompt).not.toMatch(/PRIOR_REVIEW_SECTION/);
+  }
+}
+
 test("harness init creates config through the CLI", () => {
   const workspace = createGitWorkspace();
   const result = runHarness(["init", "--workspace", workspace, "--base", "develop"]);
@@ -193,6 +229,10 @@ test("harness run review dry-run works through the CLI", () => {
   expect(output.workspace).toBe(workspace);
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
+
+  const implementationPrompt = readFileSync(output.prompts.implementation, "utf8");
+  const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
+  expectIndependentReviewPrompts(implementationPrompt, qualityPrompt);
 });
 test("harness run review-full dry-run includes simplify prompt", () => {
   const workspace = createGitWorkspace();
@@ -218,10 +258,10 @@ test("harness run review-full dry-run includes simplify prompt", () => {
   expect(output.prompts.simplify).toMatch(/simplify-review\.prompt\.md$/);
 
   const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
+  const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
   expect(simplifyPrompt).toContain(`- \`${join(REPO_ROOT, "skills/simplify-review/SKILL.md")}\``);
   expect(simplifyPrompt).not.toContain(devSkillPath);
-  expect(simplifyPrompt).toMatch(/Prior implementation review file/);
-  expect(simplifyPrompt).toMatch(/Prior code quality review file/);
+  expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
 });
 test("harness run review accepts positive finite runtime values", () => {
   const workspace = createGitWorkspace();
@@ -269,6 +309,60 @@ test("harness run review exits 0 when reviewers pass", () => {
   expect(output.verdict).toBe("pass");
   expect(output.reviews.implementation.verdict).toBe("pass");
   expect(output.reviews.codeQuality.verdict).toBe("pass");
+});
+test("harness run review returns failed metadata when one reviewer provider fails", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runs-dir",
+    runsDir,
+    "--cursor-agent",
+    createPromptAwareCursorAgent(),
+  ]);
+  expect(result.status).toBe(1);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("failed");
+  expect(output.verdict).toBeUndefined();
+  expect(output.runId).toEqual(expect.any(String));
+  expect(output.workspace).toBe(workspace);
+  expect(output.scope).toEqual(expect.any(Object));
+  expect(output.startedAt).toEqual(expect.any(String));
+  expect(output.durationMs).toEqual(expect.any(Number));
+  expect(output.failedReviews).toEqual([
+    {
+      key: "codeQuality",
+      stage: "quality",
+      error: expect.stringMatching(/Invalid reviewer structured output: findings:/),
+    },
+  ]);
+  expect(output.reviews.implementation.verdict).toBe("pass");
+  expect(output.implementationReview.verdict).toBe("pass");
+  expect(output.qualityReview).toBeUndefined();
+
+  const [runId] = readdirSync(runsDir);
+  const meta = JSON.parse(readFileSync(join(runsDir, runId, "meta.json"), "utf8"));
+  expect(meta.status).toBe("failed");
+  expect(meta.failedReviews).toEqual(output.failedReviews);
+  expect(meta.reviews.implementation.verdict).toBe("pass");
+
+  const summary = readFileSync(join(runsDir, runId, "summary.md"), "utf8");
+  expect(summary).toMatch(/## Implementation review/);
+  expect(summary).toMatch(/## Failed reviewers/);
+  expect(summary).toMatch(/codeQuality/);
+
+  const rawFailure = JSON.parse(
+    readFileSync(join(runsDir, runId, "quality-review.raw.json"), "utf8"),
+  );
+  expect(rawFailure.status).toBe("completed");
+  expect(rawFailure.structuredOutput.summary).toBe("missing findings");
 });
 test("harness run review exits 1 when reviewers do not pass", () => {
   const workspace = createGitWorkspace();
@@ -319,8 +413,8 @@ test("harness run review-full exits 0 when all reviewers pass", () => {
 
   const [runId] = readdirSync(runsDir);
   const simplifyPrompt = readFileSync(join(runsDir, runId, "simplify-review.prompt.md"), "utf8");
-  expect(simplifyPrompt).toMatch(/Prior implementation review file/);
-  expect(simplifyPrompt).toMatch(/Prior code quality review file/);
+  const qualityPrompt = readFileSync(join(runsDir, runId, "quality-review.prompt.md"), "utf8");
+  expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
 });
 test("harness run review-full exits 1 when reviewers do not pass", () => {
   const workspace = createGitWorkspace();
