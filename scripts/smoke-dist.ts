@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -40,6 +41,39 @@ function runHarness(args: string[]): string {
 }
 
 runHarness(["--help"]);
+
+const installWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-install-"));
+const installDryRunOutput = runHarness([
+  "skills",
+  "install",
+  "change-review-workflow",
+  "--workspace",
+  installWorkspace,
+  "--dry-run",
+]);
+
+const installDryRun = JSON.parse(installDryRunOutput) as {
+  skill?: unknown;
+  sourcePath?: unknown;
+  status?: unknown;
+};
+
+if (installDryRun.skill !== "change-review-workflow") {
+  throw new Error(`Expected change-review-workflow skill, got ${String(installDryRun.skill)}`);
+}
+
+if (typeof installDryRun.sourcePath !== "string") {
+  throw new Error("Expected skills install dry-run output to include sourcePath");
+}
+
+if (!normalize(installDryRun.sourcePath).endsWith(join("skills", "change-review-workflow"))) {
+  throw new Error(`Unexpected skills install sourcePath: ${installDryRun.sourcePath}`);
+}
+
+if (installDryRun.status !== "would_install") {
+  throw new Error(`Expected skills install dry-run status, got ${String(installDryRun.status)}`);
+}
+rmSync(installWorkspace, { recursive: true, force: true });
 
 const dryRunOutput = runHarness([
   "run",
