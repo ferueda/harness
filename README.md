@@ -25,7 +25,7 @@ writes the user-level `harness` command.
 git clone git@github.com:ferueda/harness.git ~/.harness
 ~/.harness/install
 harness init
-harness run review
+harness run change-review
 ```
 
 The checkout can live anywhere. If you prefer a development directory, install from that path instead:
@@ -48,14 +48,23 @@ git pull
 
 ## First Workflow
 
-The default review workflow (the change review workflow skill) starts `review-implementation` and `code-quality-review` in parallel. Reviewers read the same base artifacts, then harness aggregates their results in workflow order and writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
+The default change-review workflow starts `implementation`, `quality`, and `simplify` in parallel. Reviewers read the same base artifacts, then harness aggregates their results in workflow order and writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
 
-For the broader review cycle, run `review-full`. It adds a read-only `simplify` pass and starts all three reviewers in parallel.
+Callers can choose a subset explicitly for follow-up cycles:
+
+```bash
+harness run change-review --steps implementation
+harness run change-review --steps implementation,quality
+```
+
+Migration from old command names: `harness run review` is now
+`harness run change-review --steps implementation,quality`; `harness run
+review-full` is now `harness run change-review`.
 
 Generated review handoffs can be piped directly; harness writes the shared reviewer copy under the ignored run artifact directory:
 
 ```bash
-printf '%s\n' "$HANDOFF" | harness run review --handoff-stdin
+printf '%s\n' "$HANDOFF" | harness run change-review --handoff-stdin
 ```
 
 If a reviewer provider fails, the workflow still prints JSON to stdout and exits `1`. Failed runs use `status: "failed"`, include `failedReviews`, preserve any successful peer review summaries, and write `summary.md` plus `meta.json`.
@@ -77,7 +86,7 @@ The command targets `<workspace>/.harness/runs/reviews` by default and prints JS
 }
 ```
 
-When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run review` or `harness run review-full`.
+When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run change-review`.
 
 `harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`. The shim is a bash script; target machines need a POSIX shell with `bash` available.
 
@@ -90,10 +99,10 @@ harness init --workspace /path/to/repo
 `harness init` also writes a target-repo fallback shim:
 
 ```bash
-/path/to/repo/.harness/bin/harness run review
+/path/to/repo/.harness/bin/harness run change-review
 ```
 
-The init JSON returns `recommendedCommand: ".harness/bin/harness run review"`, which assumes the shell is already at the workspace root. Treat that as a pinned command for agents and automation when PATH is unreliable. For normal interactive use after installing harness, prefer `harness run review`.
+The init JSON returns `recommendedCommand: ".harness/bin/harness run change-review"`, which assumes the shell is already at the workspace root. Treat that as a pinned command for agents and automation when PATH is unreliable. For normal interactive use after installing harness, prefer `harness run change-review`.
 
 Install optional local workflow helper skills explicitly:
 
@@ -134,7 +143,7 @@ For fast CLI iteration from source:
 
 ```bash
 node bin/harness.ts init
-node bin/harness.ts run review
+node bin/harness.ts run change-review
 ```
 
 ## Available Skills
@@ -211,7 +220,7 @@ Review recently modified code for clarity, consistency, and maintainability whil
 Review recently modified code for behavior-preserving simplification opportunities. Read-only — never edits files.
 
 **Use when:**
-- Running the `review-full` workflow
+- Running the `change-review` workflow
 - Looking for clarity and maintainability improvements after implementation and quality review
 - Checking whether code can be simpler without changing functionality
 
@@ -259,19 +268,19 @@ Evaluate, analyze, and systematically react to an adversarial code review report
 
 ### change-review-workflow
 
-Run and close the harness `review` or `review-full` workflow. Defaults to `review` unless `review-full` is explicit.
+Run and close the harness `change-review` workflow. Defaults to all steps unless `--steps` is explicit.
 
 **Use when:**
 - "Run a review..."
 - "Run a full review..."
 - "Run a review for these changes..."
 - "Run the change review workflow..."
-- "Run review-full..."
+- "Run change-review..."
 - "Run a harness review..."
 - Running a multi-agent harness review
 - Compiling reviewer results and deciding which findings to apply
 
-**Coordinates:** review handoff input, CLI execution, reviewer artifact triage, accepted fixes, and re-review
+**Coordinates:** review handoff input, CLI execution, optional selected steps, reviewer artifact triage, accepted fixes, and re-review
 
 ---
 
