@@ -17,7 +17,7 @@ Coordinate harness review runs and close the loop on reviewer findings.
 
 1. Create a self-contained review handoff using [references/review-handoff.md](references/review-handoff.md). Completion criterion: a reviewer can understand the goal, scope, changed files, verification, and scrutiny points without chat history.
 2. Confirm the Git review scope. Harness reviews `merge-base(base, head)..head`; unstaged, staged-but-uncommitted, and untracked files are not included unless `head` points at a commit/tree that contains them. If reviewing current worktree changes, create an explicit temporary review ref or commit object and pass it with `--head`.
-3. Save the handoff in the target repo and pass it with `--handoff`. The workflow sends that same context to every reviewer; do not rely on chat history.
+3. Prefer `--handoff-stdin` for generated handoffs. Harness writes the reviewer-facing file under the ignored run artifact directory. Use `--handoff <path>` only when a handoff file already exists.
 4. Include `--plan` when a plan/spec exists. Include `--workspace` when reviewing a repo other than the current one.
 
 ## CLI
@@ -25,31 +25,33 @@ Coordinate harness review runs and close the loop on reviewer findings.
 Installed package:
 
 ```bash
-harness run review --workspace /path/to/repo --handoff /path/to/handoff.md
+printf '%s\n' "$HANDOFF" | harness run review --workspace /path/to/repo --handoff-stdin
 ```
 
 Local harness source:
 
 ```bash
-node bin/harness.ts run review --workspace /path/to/repo --handoff /path/to/handoff.md
+printf '%s\n' "$HANDOFF" | node bin/harness.ts run review --workspace /path/to/repo --handoff-stdin
 ```
 
 Built local package:
 
 ```bash
-node dist/bin/harness.js run review --workspace /path/to/repo --handoff /path/to/handoff.md
+printf '%s\n' "$HANDOFF" | node dist/bin/harness.js run review --workspace /path/to/repo --handoff-stdin
 ```
 
 Explicit full review:
 
 ```bash
-harness run review-full --workspace /path/to/repo --handoff /path/to/handoff.md
+printf '%s\n' "$HANDOFF" | harness run review-full --workspace /path/to/repo --handoff-stdin
 ```
 
 Useful flags:
 
 - `--base <ref>` and `--head <ref>` set the diff range.
 - `--plan <path>` gives reviewers the implementation plan or spec.
+- Prefer `--handoff-stdin` for generated handoffs; it gives reviewers shared context without requiring callers to create files.
+- `--handoff <path>` remains available for existing handoff files.
 - `--dry-run` writes prompts/context without running reviewer agents.
 - `--runs-dir <path>` overrides the default `.harness/runs/reviews` output root.
 
