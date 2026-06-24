@@ -53,14 +53,13 @@ function positiveNumber(value: string): number {
 }
 
 function resolveHandoffText(options: ReviewOptions): string | undefined {
-  const sources = [options.handoff, options.handoffStdin ? "stdin" : undefined].filter(Boolean);
-  if (sources.length > 1) {
+  if (options.handoff && options.handoffStdin) {
     throw new Error("Use only one handoff input: --handoff or --handoff-stdin");
   }
   if (!options.handoffStdin) return undefined;
 
   const text = readFileSync(0, "utf8");
-  if (!text) {
+  if (!text.trim()) {
     throw new Error("--handoff-stdin requires non-empty stdin");
   }
   return text;
