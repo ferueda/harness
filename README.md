@@ -30,7 +30,7 @@ For the broader review cycle, run `review-full`. It adds a read-only `simplify` 
 Generated review handoffs can be piped directly; harness writes the shared reviewer copy under the ignored run artifact directory:
 
 ```bash
-printf '%s\n' "$HANDOFF" | node dist/bin/harness.js run review --handoff-stdin
+printf '%s\n' "$HANDOFF" | .harness/bin/harness run review --handoff-stdin
 ```
 
 If a reviewer provider fails, the workflow still prints JSON to stdout and exits `1`. Failed runs use `status: "failed"`, include `failedReviews`, preserve any successful peer review summaries, and write `summary.md` plus `meta.json`.
@@ -38,8 +38,8 @@ If a reviewer provider fails, the workflow still prints JSON to stdout and exits
 Prune old local run artifacts explicitly when they are no longer useful:
 
 ```bash
-node dist/bin/harness.js runs prune --older-than 30d --dry-run
-node dist/bin/harness.js runs prune --older-than 30d
+.harness/bin/harness runs prune --older-than 30d --dry-run
+.harness/bin/harness runs prune --older-than 30d
 ```
 
 The command targets `<workspace>/.harness/runs/reviews` by default and prints JSON with matched/deleted counts.
@@ -73,7 +73,7 @@ The init JSON also returns `recommendedCommand: ".harness/bin/harness run review
 Install optional local workflow helper skills explicitly:
 
 ```bash
-node dist/bin/harness.js skills install change-review-workflow --workspace /path/to/repo
+/path/to/repo/.harness/bin/harness skills install change-review-workflow --workspace /path/to/repo
 ```
 
 Skills follow the [Agent Skills](https://agentskills.io/) format. Target repos usually keep local skills in `.agents/skills/`. Workflow skill lookup stops at the first match:
