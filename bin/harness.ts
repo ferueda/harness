@@ -23,9 +23,11 @@ type DualReviewOptions = {
   dryRun: boolean;
 };
 
-function positiveInteger(value: string): number {
+const DEFAULT_MAX_RUNTIME_MS = 30 * 60 * 1000;
+
+function positiveNumber(value: string): number {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new InvalidArgumentError("must be a positive number");
   }
   return parsed;
@@ -66,9 +68,9 @@ function buildProgram(): Command {
     .option("--model <id>", "Cursor model override")
     .option(
       "--max-runtime-ms <ms>",
-      "per-reviewer timeout (default: 1800000)",
-      positiveInteger,
-      30 * 60 * 1000,
+      `per-reviewer timeout (default: ${DEFAULT_MAX_RUNTIME_MS})`,
+      positiveNumber,
+      DEFAULT_MAX_RUNTIME_MS,
     )
     .option("--dry-run", "prepare context and prompts only", false)
     .action(async (options: DualReviewOptions) => {
