@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import { resolve } from "node:path";
 import { run as runReviewFull } from "../workflows/review-full.workflow.ts";
 import { run as runReview } from "../workflows/review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
+import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
 import { createWorkflowContext } from "../lib/workflow-context.ts";
 
 type InitOptions = {
@@ -21,6 +23,13 @@ type ReviewOptions = {
   cursorAgent?: string;
   model?: string;
   maxRuntimeMs: number;
+  dryRun: boolean;
+};
+
+type RunsPruneOptions = {
+  workspace?: string;
+  runsDir?: string;
+  olderThan: number;
   dryRun: boolean;
 };
 
@@ -66,6 +75,35 @@ function buildProgram(): Command {
     description: "Run implementation, code-quality, and simplify reviewers",
     workflow: runReviewFull,
   });
+
+  const runs = program.command("runs").description("Manage harness run artifacts");
+  runs
+    .command("prune")
+    .description("Delete old harness run artifacts")
+    .option(
+      "--workspace <path>",
+      "target repo (default: nearest harness.json or Git root; cwd when only --runs-dir is set)",
+    )
+    .option("--runs-dir <path>", "runs root (default: <workspace>/.harness/runs/reviews)")
+    .requiredOption(
+      "--older-than <duration>",
+      "delete runs older than a duration, e.g. 7d or 24h",
+      parseRetentionDuration,
+    )
+    .option("--dry-run", "show what would be deleted without deleting", false)
+    .action((options: RunsPruneOptions) => {
+      const shouldResolveWorkspace = options.workspace || !options.runsDir;
+      const workspace = shouldResolveWorkspace
+        ? resolveHarnessOptions({ workspace: options.workspace }).workspace
+        : resolve(process.cwd());
+      const result = pruneRuns({
+        workspace,
+        runsDir: options.runsDir,
+        olderThanMs: options.olderThan,
+        dryRun: options.dryRun,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    });
 
   return program;
 }
