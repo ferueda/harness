@@ -4,7 +4,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   aggregateVerdict,
+  renderFailedSummary,
   renderSummary,
+  type FailedReview,
   type ReviewSection,
   type ReviewVerdict,
 } from "./aggregate.ts";
@@ -13,7 +15,6 @@ import {
   buildDiffSection,
   buildHandoffSection,
   buildPlanSection,
-  buildPriorReviewSection,
   buildRunId,
   prepareGitScope,
   renderPrompt,
@@ -41,6 +42,8 @@ type Scope = ReturnType<typeof prepareGitScope> & {
 };
 
 type ScopeMeta = ReturnType<typeof buildScopeMeta>;
+type ReviewSummary = ReturnType<typeof summarizeReview>;
+type ReviewSummaries = Record<string, ReviewSummary>;
 
 export type ReviewAgentName = keyof typeof AGENTS;
 
@@ -146,6 +149,78 @@ export function createWorkflowContext(options: WorkflowOptions) {
   }
 
   const promptPaths: PromptArtifacts = {};
+  const writeDryRunMeta = () => {
+    const meta = {
+      runId,
+      status: "dry_run",
+      workspace,
+      scope: scopeMeta,
+      runDir,
+      cursorAgentPath,
+      prompts: promptPaths,
+    };
+    writeJson(join(runDir, "meta.json"), meta);
+    return meta;
+  };
+  const finalizeRun = (
+    input:
+      | {
+          status: "completed";
+          title: string;
+          reviews: ReviewSection[];
+          verdict: ReviewVerdict;
+        }
+      | {
+          status: "failed";
+          title: string;
+          reviews: ReviewSection[];
+          failedReviews: FailedReview[];
+        },
+  ) => {
+    const durationMs = Date.now() - startedAt.getTime();
+    const startedAtIso = startedAt.toISOString();
+
+    const summary =
+      input.status === "completed"
+        ? renderSummary({
+            title: input.title,
+            runId,
+            workspace,
+            scope,
+            reviews: input.reviews,
+            verdict: input.verdict,
+            startedAt: startedAtIso,
+            durationMs,
+          })
+        : renderFailedSummary({
+            title: input.title,
+            runId,
+            workspace,
+            scope,
+            reviews: input.reviews,
+            failedReviews: input.failedReviews,
+            startedAt: startedAtIso,
+            durationMs,
+          });
+    writeFileSync(join(runDir, "summary.md"), summary, "utf8");
+
+    const reviewSummaries = buildReviewSummaries(input.reviews);
+    const baseMeta = {
+      runId,
+      workspace,
+      scope: scopeMeta,
+      startedAt: startedAtIso,
+      durationMs,
+      ...buildTopLevelReviewFields(reviewSummaries),
+      reviews: reviewSummaries,
+    };
+    const meta =
+      input.status === "completed"
+        ? { ...baseMeta, status: "completed", verdict: input.verdict }
+        : { ...baseMeta, status: "failed", failedReviews: input.failedReviews };
+    writeJson(join(runDir, "meta.json"), meta);
+    return meta;
+  };
 
   return {
     runId,
@@ -167,7 +242,6 @@ export function createWorkflowContext(options: WorkflowOptions) {
           scope,
           diffSection,
           workspace,
-          runDir,
           contextArtifacts,
           agentName: name,
           skillPath: resolveSkillPath(config.skillName, workspace),
@@ -177,15 +251,11 @@ export function createWorkflowContext(options: WorkflowOptions) {
       promptPaths[config.stage] = promptPath;
 
       if (options.dryRun) {
-        writeFileSync(
-          join(runDir, config.reviewFile),
-          JSON.stringify(config.dryRunReview, null, 2),
-          "utf8",
-        );
+        writeJson(join(runDir, config.reviewFile), config.dryRunReview);
         return config.dryRunReview;
       }
 
-      const result = invokeCursorAgent({
+      const result = await invokeCursorAgent({
         cursorAgentPath,
         workspace,
         promptPath,
@@ -194,34 +264,16 @@ export function createWorkflowContext(options: WorkflowOptions) {
         maxRuntimeMs: options.maxRuntimeMs,
       });
 
-      writeFileSync(
+      writeJson(
         join(runDir, config.rawFile),
-        JSON.stringify(
-          result.ok ? result.envelope : (result.envelope ?? { error: result.error }),
-          null,
-          2,
-        ),
-        "utf8",
+        result.ok ? result.envelope : (result.envelope ?? { error: result.error }),
       );
 
       if (!result.ok) {
-        writeFailure({
-          runDir,
-          runId,
-          workspace,
-          scopeMeta,
-          startedAt,
-          stage: config.stage,
-          result,
-        });
         throw new Error(`${config.stage} reviewer failed: ${result.error}`);
       }
 
-      writeFileSync(
-        join(runDir, config.reviewFile),
-        JSON.stringify(result.review, null, 2),
-        "utf8",
-      );
+      writeJson(join(runDir, config.reviewFile), result.review);
       return result.review;
     },
     export({
@@ -233,59 +285,29 @@ export function createWorkflowContext(options: WorkflowOptions) {
       reviews: ReviewSection[];
       verdict: ReviewVerdict;
     }) {
-      const durationMs = Date.now() - startedAt.getTime();
-
       if (options.dryRun) {
-        const meta = {
-          runId,
-          status: "dry_run",
-          workspace,
-          scope: scopeMeta,
-          runDir,
-          cursorAgentPath,
-          prompts: promptPaths,
-        };
-        writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
-        return meta;
+        return writeDryRunMeta();
       }
 
-      const summary = renderSummary({
-        title,
-        runId,
-        workspace,
-        scope,
-        reviews,
-        verdict,
-        startedAt: startedAt.toISOString(),
-        durationMs,
-      });
-      writeFileSync(join(runDir, "summary.md"), summary, "utf8");
-
-      const reviewSummaries = Object.fromEntries(
-        reviews.map(({ key, review }) => [key, summarizeReview(review)]),
-      );
-      const meta = {
-        runId,
-        status: "completed",
-        verdict,
-        workspace,
-        scope: scopeMeta,
-        startedAt: startedAt.toISOString(),
-        durationMs,
-        implementationReview: reviewSummaries.implementation,
-        qualityReview: reviewSummaries.codeQuality,
-        ...(reviewSummaries.simplify ? { simplifyReview: reviewSummaries.simplify } : {}),
-        reviews: reviewSummaries,
-      };
-      writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
-      return meta;
+      return finalizeRun({ status: "completed", title, reviews, verdict });
+    },
+    exportFailed({
+      title,
+      reviews,
+      failedReviews,
+    }: {
+      title: string;
+      reviews: ReviewSection[];
+      failedReviews: FailedReview[];
+    }) {
+      return finalizeRun({ status: "failed", title, reviews, failedReviews });
     },
   };
 }
 
-function getReviewInfo(name: ReviewAgentName): { key: string; title: string } {
+function getReviewInfo(name: ReviewAgentName): { key: string; title: string; stage: string } {
   const config = AGENTS[name];
-  return { key: config.summaryKey, title: config.title };
+  return { key: config.summaryKey, title: config.title, stage: config.stage };
 }
 
 function buildScopeMeta(scope: Scope) {
@@ -304,7 +326,6 @@ function buildPromptValues({
   scope,
   diffSection,
   workspace,
-  runDir,
   contextArtifacts,
   agentName,
   skillPath,
@@ -312,7 +333,6 @@ function buildPromptValues({
   scope: Scope;
   diffSection: string;
   workspace: string;
-  runDir: string;
   contextArtifacts: PromptContextArtifacts;
   agentName: ReviewAgentName;
   skillPath: string;
@@ -329,37 +349,7 @@ function buildPromptValues({
     HANDOFF_SECTION: buildHandoffSection(contextArtifacts.handoff, workspace),
     DIFF_SECTION: diffSection,
     SKILL_PATH: skillPath,
-    PRIOR_REVIEW_SECTION: buildPriorReviewContext(agentName, runDir, workspace),
   };
-}
-
-function buildPriorReviewContext(
-  agentName: ReviewAgentName,
-  runDir: string,
-  workspace: string,
-): string {
-  if (agentName === "simplify") {
-    return [
-      buildPriorReviewSection(
-        join(runDir, "implementation-review.json"),
-        workspace,
-        "Prior implementation review file",
-      ),
-      buildPriorReviewSection(
-        join(runDir, "quality-review.json"),
-        workspace,
-        "Prior code quality review file",
-      ),
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  return buildPriorReviewSection(
-    join(runDir, "implementation-review.json"),
-    workspace,
-    "Prior implementation review file",
-  );
 }
 
 export function resolveSkillPath(
@@ -400,34 +390,35 @@ function summarizeReview(review: ReviewSection["review"]): {
   };
 }
 
-function writeFailure({
-  runDir,
-  runId,
-  workspace,
-  scopeMeta,
-  startedAt,
-  stage,
-  result,
-}: {
-  runDir: string;
-  runId: string;
-  workspace: string;
-  scopeMeta: ScopeMeta;
-  startedAt: Date;
-  stage: string;
-  result: { error: string };
-}): void {
-  const meta = {
-    runId,
-    status: "failed",
-    failedStage: stage,
-    error: result.error,
-    workspace,
-    scope: scopeMeta,
-    startedAt: startedAt.toISOString(),
-    durationMs: Date.now() - startedAt.getTime(),
-  };
-  writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
+function buildReviewSummaries(reviews: ReviewSection[]): ReviewSummaries {
+  return Object.fromEntries(reviews.map(({ key, review }) => [key, summarizeReview(review)]));
+}
+
+function buildTopLevelReviewFields(reviewSummaries: ReviewSummaries): {
+  implementationReview?: ReviewSummary;
+  qualityReview?: ReviewSummary;
+  simplifyReview?: ReviewSummary;
+} {
+  const fields: {
+    implementationReview?: ReviewSummary;
+    qualityReview?: ReviewSummary;
+    simplifyReview?: ReviewSummary;
+  } = {};
+  const fieldNames = {
+    implementation: "implementationReview",
+    codeQuality: "qualityReview",
+    simplify: "simplifyReview",
+  } as const;
+
+  for (const [key, fieldName] of Object.entries(fieldNames)) {
+    const summary = reviewSummaries[key];
+    if (summary) fields[fieldName] = summary;
+  }
+  return fields;
+}
+
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, JSON.stringify(value, null, 2), "utf8");
 }
 
 export function cleanupOrphanedRunDir(runDir: string): boolean {
