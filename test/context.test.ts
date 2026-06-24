@@ -38,3 +38,19 @@ test("writeRunContext copies plan and handoff and sections return file reference
     "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
   );
 });
+test("writeRunContext writes inline handoff text as a run artifact", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+  const artifacts = writeRunContext({
+    workspace,
+    runDir,
+    handoffText: "# Caller handoff\n\nReview this scope.\n",
+  });
+
+  expect(readFileSync(join(runDir, "context/handoff.md"), "utf8")).toBe(
+    "# Caller handoff\n\nReview this scope.\n",
+  );
+  expect(buildHandoffSection(artifacts.handoff, workspace)).toBe(
+    "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
+  );
+});
