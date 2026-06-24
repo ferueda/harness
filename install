@@ -79,4 +79,4 @@ fi
 echo
 echo "Next:"
 echo "  harness init"
-echo "  harness run review"
+echo "  harness run change-review"
