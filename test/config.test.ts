@@ -1,5 +1,6 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -13,22 +14,31 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   HARNESS_GITIGNORE_ENTRY,
+  HARNESS_RECOMMENDED_COMMAND,
+  HARNESS_SHIM_RELATIVE_PATH,
   findHarnessConfig,
   initHarnessConfig,
   resolveHarnessOptions,
 } from "../lib/config.ts";
 const TEST_HARNESS_ENTRYPOINT = "/opt/harness/dist/bin/harness.js";
 
-function initOptions(options: { workspace?: string; baseRef?: string } = {}) {
+function initOptions(
+  options: {
+    workspace?: string;
+    baseRef?: string;
+    harnessEntrypoint?: string;
+    nodePath?: string;
+  } = {},
+) {
   return {
     ...options,
-    harnessEntrypoint: TEST_HARNESS_ENTRYPOINT,
-    nodePath: process.execPath,
+    harnessEntrypoint: options.harnessEntrypoint ?? TEST_HARNESS_ENTRYPOINT,
+    nodePath: options.nodePath ?? process.execPath,
   };
 }
 
 function expectHarnessShim(workspace: string): string {
-  const shimPath = join(workspace, ".harness/bin/harness");
+  const shimPath = join(workspace, HARNESS_SHIM_RELATIVE_PATH);
   const content = readFileSync(shimPath, "utf8");
   expect(content).toContain(process.execPath);
   expect(content).toContain(TEST_HARNESS_ENTRYPOINT);
@@ -95,8 +105,8 @@ test("initHarnessConfig creates harness.json, ignores artifacts, and writes shim
   expect(result.configCreated).toBe(true);
   expect(result.gitignoreUpdated).toBe(true);
   expect(result.shimUpdated).toBe(true);
-  expect(result.shimPath).toBe(join(result.workspace, ".harness/bin/harness"));
-  expect(result.recommendedCommand).toBe(".harness/bin/harness run review");
+  expect(result.shimPath).toBe(join(result.workspace, HARNESS_SHIM_RELATIVE_PATH));
+  expect(result.recommendedCommand).toBe(HARNESS_RECOMMENDED_COMMAND);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "develop"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${HARNESS_GITIGNORE_ENTRY}\n`);
   expectHarnessShim(workspace);
@@ -118,6 +128,47 @@ test("initHarnessConfig is idempotent", () => {
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(
     `node_modules\n${HARNESS_GITIGNORE_ENTRY}\n`,
   );
+});
+test("initHarnessConfig rejects missing harness entrypoint", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  expect(() => initHarnessConfig({}, workspace)).toThrow(/harnessEntrypoint is required/);
+});
+test("initHarnessConfig rewrites shim when harness entrypoint changes", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  const firstEntrypoint = "/opt/harness/first.js";
+  const secondEntrypoint = "/opt/harness/second.js";
+  initHarnessConfig(initOptions({ harnessEntrypoint: firstEntrypoint }), workspace);
+  const result = initHarnessConfig(initOptions({ harnessEntrypoint: secondEntrypoint }), workspace);
+  const shim = readFileSync(join(workspace, HARNESS_SHIM_RELATIVE_PATH), "utf8");
+  expect(result.shimUpdated).toBe(true);
+  expect(shim).toContain(secondEntrypoint);
+  expect(shim).not.toContain(firstEntrypoint);
+});
+test("initHarnessConfig quotes shim paths with spaces and single quotes", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
+  const quoteDir = mkdtempSync(join(tmpdir(), "harness quote '"));
+  const nodePath = join(quoteDir, "node wrapper");
+  const harnessEntrypoint = join(quoteDir, "entry point's script");
+  const argFile = join(quoteDir, "arg.txt");
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(nodePath, '#!/usr/bin/env bash\nexec "$@"\n', "utf8");
+  writeFileSync(
+    harnessEntrypoint,
+    `#!/usr/bin/env bash\nprintf '%s\\n' "$1" > ${JSON.stringify(argFile)}\n`,
+    "utf8",
+  );
+  chmodSync(nodePath, 0o755);
+  chmodSync(harnessEntrypoint, 0o755);
+  const result = initHarnessConfig(initOptions({ harnessEntrypoint, nodePath }), workspace);
+  const shim = spawnSync(result.shimPath, ["hello world"], {
+    cwd: workspace,
+    encoding: "utf8",
+  });
+  expect(shim.status).toBe(0);
+  expect(shim.stderr).toBe("");
+  expect(readFileSync(argFile, "utf8")).toBe("hello world\n");
 });
 test("initHarnessConfig creates .gitignore when needed", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-init-"));
