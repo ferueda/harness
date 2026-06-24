@@ -109,17 +109,6 @@ export function writeRunContext(input: {
   };
 }
 
-export function buildPriorReviewSection(
-  reviewPath: string,
-  workspace: string,
-  label = "Prior implementation review file",
-): string {
-  if (!existsSync(reviewPath)) {
-    return "";
-  }
-  return `- ${label}: \`${formatArtifactPath(reviewPath, workspace)}\``;
-}
-
 export function renderPrompt(templatePath: string, values: Record<string, string>): string {
   const template = readFileSync(templatePath, "utf8");
   return fillTemplate(template, values);
