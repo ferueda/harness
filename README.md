@@ -20,7 +20,7 @@ dev/plans/    Plans and handoffs for this repo
 ```bash
 pnpm build
 node dist/bin/harness.js init
-node dist/bin/harness.js run review
+.harness/bin/harness run review
 ```
 
 The default review workflow (the change review workflow skill) starts `review-implementation` and `code-quality-review` in parallel. Reviewers read the same base artifacts, then harness aggregates their results in workflow order and writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
@@ -54,7 +54,7 @@ The command targets `<workspace>/.harness/runs/reviews` by default and prints JS
 
 When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run review` or `harness run review-full`.
 
-`harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`.
+`harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`. The shim is a bash script; target machines need a POSIX shell with `bash` available.
 
 For external target repos, pass the repo path explicitly:
 
@@ -67,6 +67,8 @@ After init, prefer the repo-local shim:
 ```bash
 /path/to/repo/.harness/bin/harness run review
 ```
+
+The init JSON also returns `recommendedCommand: ".harness/bin/harness run review"`, which assumes the shell is already at the workspace root. From nested directories, use the returned `shimPath` or the absolute command above.
 
 Install optional local workflow helper skills explicitly:
 
