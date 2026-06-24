@@ -27,6 +27,12 @@ The default review workflow (the change review workflow skill) starts `review-im
 
 For the broader review cycle, run `review-full`. It adds a read-only `simplify` pass and starts all three reviewers in parallel.
 
+Generated review handoffs can be piped directly; harness writes the shared reviewer copy under the ignored run artifact directory:
+
+```bash
+printf '%s\n' "$HANDOFF" | node dist/bin/harness.js run review --handoff-stdin
+```
+
 If a reviewer provider fails, the workflow still prints JSON to stdout and exits `1`. Failed runs use `status: "failed"`, include `failedReviews`, preserve any successful peer review summaries, and write `summary.md` plus `meta.json`.
 
 Prune old local run artifacts explicitly when they are no longer useful:
