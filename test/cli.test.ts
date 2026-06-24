@@ -12,7 +12,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { HARNESS_GITIGNORE_ENTRY } from "../lib/config.ts";
+import {
+  HARNESS_GITIGNORE_ENTRY,
+  HARNESS_RECOMMENDED_COMMAND,
+  HARNESS_SHIM_RELATIVE_PATH,
+} from "../lib/config.ts";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HARNESS_BIN = join(REPO_ROOT, "bin/harness.ts");
 
@@ -127,12 +131,12 @@ test("harness init creates config through the CLI", () => {
   const result = runHarness(["init", "--workspace", workspace, "--base", "develop"]);
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
-  const shimPath = join(workspace, ".harness/bin/harness");
+  const shimPath = join(workspace, HARNESS_SHIM_RELATIVE_PATH);
   expect(output.configCreated).toBe(true);
   expect(output.gitignoreUpdated).toBe(true);
   expect(output.shimUpdated).toBe(true);
   expect(output.shimPath).toBe(shimPath);
-  expect(output.recommendedCommand).toBe(".harness/bin/harness run review");
+  expect(output.recommendedCommand).toBe(HARNESS_RECOMMENDED_COMMAND);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "develop"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${HARNESS_GITIGNORE_ENTRY}\n`);
   expect(readFileSync(shimPath, "utf8")).toContain(HARNESS_BIN);
@@ -193,6 +197,7 @@ test("harness init help exits cleanly", () => {
   const result = runHarness(["init", "--help"]);
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/Usage: harness init/);
+  expect(result.stdout).toMatch(/local shim/);
   expect(result.stdout).toMatch(/--workspace/);
   expect(result.stdout).toMatch(/--base/);
 });
