@@ -6,7 +6,7 @@ You are running the **simplify** review pass for a review-full workflow.
    - `{{SKILL_PATH}}`
 2. Also read `AGENTS.md` when present.
 3. Review only the artifact files listed below. Do not edit files. This is read-only.
-4. Use the simplify skill as behavior-preserving review guidance: find clarity, consistency, and maintainability improvements that should be made by a later implementer.
+4. Use the simplify-review skill as behavior-preserving review guidance: find clarity, consistency, and maintainability improvements that should be made by a later implementer.
 5. Return JSON matching the provided schema. No markdown fences or prose outside JSON.
 
 ## Review scope

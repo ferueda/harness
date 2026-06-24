@@ -73,3 +73,32 @@ if (
 ) {
   throw new Error("Expected dry-run output to include implementation and quality prompt paths");
 }
+
+const fullDryRunOutput = runHarness([
+  "run",
+  "review-full",
+  "--workspace",
+  ROOT,
+  "--base",
+  "HEAD",
+  "--head",
+  "HEAD",
+  "--dry-run",
+]);
+
+const fullDryRun = JSON.parse(fullDryRunOutput) as {
+  status?: unknown;
+  prompts?: { implementation?: unknown; quality?: unknown; simplify?: unknown };
+};
+
+if (fullDryRun.status !== "dry_run") {
+  throw new Error(`Expected review-full dry_run status, got ${String(fullDryRun.status)}`);
+}
+
+if (
+  typeof fullDryRun.prompts?.implementation !== "string" ||
+  typeof fullDryRun.prompts?.quality !== "string" ||
+  typeof fullDryRun.prompts?.simplify !== "string"
+) {
+  throw new Error("Expected review-full dry-run output to include all prompt paths");
+}

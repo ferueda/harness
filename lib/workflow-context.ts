@@ -42,9 +42,9 @@ type Scope = ReturnType<typeof prepareGitScope> & {
 
 type ScopeMeta = ReturnType<typeof buildScopeMeta>;
 
-type AgentName = keyof typeof AGENTS;
+export type ReviewAgentName = keyof typeof AGENTS;
 
-type PromptArtifacts = Partial<Record<(typeof AGENTS)[AgentName]["stage"], string>>;
+type PromptArtifacts = Partial<Record<(typeof AGENTS)[ReviewAgentName]["stage"], string>>;
 
 type PromptContextArtifacts = {
   plan: ContextArtifact;
@@ -69,6 +69,8 @@ const DRY_RUN_REVIEW = {
 const AGENTS = {
   "review-implementation": {
     skillName: "review-implementation",
+    title: "Implementation review",
+    summaryKey: "implementation",
     promptTemplate: join(HARNESS_ROOT, "prompts/implementation-review.md"),
     promptFile: "implementation-review.prompt.md",
     reviewFile: "implementation-review.json",
@@ -78,6 +80,8 @@ const AGENTS = {
   },
   "code-quality-review": {
     skillName: "code-quality-review",
+    title: "Code quality review",
+    summaryKey: "codeQuality",
     promptTemplate: join(HARNESS_ROOT, "prompts/quality-review.md"),
     promptFile: "quality-review.prompt.md",
     reviewFile: "quality-review.json",
@@ -86,7 +90,9 @@ const AGENTS = {
     stage: "quality",
   },
   simplify: {
-    skillName: "simplify",
+    skillName: "simplify-review",
+    title: "Simplify review",
+    summaryKey: "simplify",
     promptTemplate: join(HARNESS_ROOT, "prompts/simplify-review.md"),
     promptFile: "simplify-review.prompt.md",
     reviewFile: "simplify-review.json",
@@ -150,8 +156,8 @@ export function createWorkflowContext(options: WorkflowOptions) {
     startedAt,
     dryRun: options.dryRun,
     aggregate: aggregateVerdict,
-    reviewTitle: getReviewTitle,
-    async agent(name: AgentName): Promise<ReviewOutput> {
+    reviewInfo: getReviewInfo,
+    async agent(name: ReviewAgentName): Promise<ReviewOutput> {
       const config = AGENTS[name];
 
       const promptPath = join(runDir, config.promptFile);
@@ -171,6 +177,11 @@ export function createWorkflowContext(options: WorkflowOptions) {
       promptPaths[config.stage] = promptPath;
 
       if (options.dryRun) {
+        writeFileSync(
+          join(runDir, config.reviewFile),
+          JSON.stringify(config.dryRunReview, null, 2),
+          "utf8",
+        );
         return config.dryRunReview;
       }
 
@@ -251,7 +262,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       writeFileSync(join(runDir, "summary.md"), summary, "utf8");
 
       const reviewSummaries = Object.fromEntries(
-        reviews.map(({ title, review }) => [reviewMetaKey(title), summarizeReview(review)]),
+        reviews.map(({ key, review }) => [key, summarizeReview(review)]),
       );
       const meta = {
         runId,
@@ -272,15 +283,9 @@ export function createWorkflowContext(options: WorkflowOptions) {
   };
 }
 
-function getReviewTitle(name: AgentName): string {
-  switch (name) {
-    case "review-implementation":
-      return "Implementation review";
-    case "code-quality-review":
-      return "Code quality review";
-    case "simplify":
-      return "Simplify review";
-  }
+function getReviewInfo(name: ReviewAgentName): { key: string; title: string } {
+  const config = AGENTS[name];
+  return { key: config.summaryKey, title: config.title };
 }
 
 function buildScopeMeta(scope: Scope) {
@@ -309,7 +314,7 @@ function buildPromptValues({
   workspace: string;
   runDir: string;
   contextArtifacts: PromptContextArtifacts;
-  agentName: AgentName;
+  agentName: ReviewAgentName;
   skillPath: string;
 }): Record<string, string> {
   return {
@@ -324,18 +329,47 @@ function buildPromptValues({
     HANDOFF_SECTION: buildHandoffSection(contextArtifacts.handoff, workspace),
     DIFF_SECTION: diffSection,
     SKILL_PATH: skillPath,
-    PRIOR_REVIEW_SECTION: buildPriorReviewSection(
-      join(runDir, "implementation-review.json"),
-      workspace,
-    ),
+    PRIOR_REVIEW_SECTION: buildPriorReviewContext(agentName, runDir, workspace),
   };
 }
 
-function resolveSkillPath(skillName: string, workspace: string): string {
+function buildPriorReviewContext(
+  agentName: ReviewAgentName,
+  runDir: string,
+  workspace: string,
+): string {
+  if (agentName === "simplify") {
+    return [
+      buildPriorReviewSection(
+        join(runDir, "implementation-review.json"),
+        workspace,
+        "Prior implementation review file",
+      ),
+      buildPriorReviewSection(
+        join(runDir, "quality-review.json"),
+        workspace,
+        "Prior code quality review file",
+      ),
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return buildPriorReviewSection(
+    join(runDir, "implementation-review.json"),
+    workspace,
+    "Prior implementation review file",
+  );
+}
+
+export function resolveSkillPath(
+  skillName: string,
+  workspace: string,
+  homeDir = homedir(),
+): string {
   const candidates = [
-    join(workspace, "skills", skillName, "SKILL.md"),
     join(workspace, ".agents/skills", skillName, "SKILL.md"),
-    join(homedir(), ".agents/skills", skillName, "SKILL.md"),
+    join(homeDir, ".agents/skills", skillName, "SKILL.md"),
     join(HARNESS_ROOT, "skills", skillName, "SKILL.md"),
   ];
 
@@ -364,13 +398,6 @@ function summarizeReview(review: ReviewSection["review"]): {
     verdict: review?.verdict,
     findingCount: review?.findings?.length ?? 0,
   };
-}
-
-function reviewMetaKey(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/\s+review$/, "")
-    .replace(/[^a-z0-9]+([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase());
 }
 
 function writeFailure({

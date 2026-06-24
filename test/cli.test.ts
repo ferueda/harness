@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -196,6 +196,9 @@ test("harness run review dry-run works through the CLI", () => {
 });
 test("harness run review-full dry-run includes simplify prompt", () => {
   const workspace = createGitWorkspace();
+  const devSkillPath = join(workspace, ".agents/skills/simplify/SKILL.md");
+  mkdirSync(dirname(devSkillPath), { recursive: true });
+  writeFileSync(devSkillPath, "# Dev simplify\n", "utf8");
   const result = runHarness([
     "run",
     "review-full",
@@ -213,6 +216,12 @@ test("harness run review-full dry-run includes simplify prompt", () => {
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
   expect(output.prompts.simplify).toMatch(/simplify-review\.prompt\.md$/);
+
+  const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
+  expect(simplifyPrompt).toContain(`- \`${join(REPO_ROOT, "skills/simplify-review/SKILL.md")}\``);
+  expect(simplifyPrompt).not.toContain(devSkillPath);
+  expect(simplifyPrompt).toMatch(/Prior implementation review file/);
+  expect(simplifyPrompt).toMatch(/Prior code quality review file/);
 });
 test("harness run review accepts positive finite runtime values", () => {
   const workspace = createGitWorkspace();
@@ -307,4 +316,34 @@ test("harness run review-full exits 0 when all reviewers pass", () => {
   expect(output.reviews.implementation.verdict).toBe("pass");
   expect(output.reviews.codeQuality.verdict).toBe("pass");
   expect(output.reviews.simplify.verdict).toBe("pass");
+
+  const [runId] = readdirSync(runsDir);
+  const simplifyPrompt = readFileSync(join(runsDir, runId, "simplify-review.prompt.md"), "utf8");
+  expect(simplifyPrompt).toMatch(/Prior implementation review file/);
+  expect(simplifyPrompt).toMatch(/Prior code quality review file/);
+});
+test("harness run review-full exits 1 when reviewers do not pass", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "review-full",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runs-dir",
+    runsDir,
+    "--cursor-agent",
+    createFakeCursorAgent({ reviewVerdict: "needs_changes" }),
+  ]);
+  expect(result.status).toBe(1);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("completed");
+  expect(output.verdict).toBe("needs_changes");
+  expect(output.reviews.implementation.verdict).toBe("needs_changes");
+  expect(output.reviews.codeQuality.verdict).toBe("needs_changes");
+  expect(output.reviews.simplify.verdict).toBe("needs_changes");
 });

@@ -45,7 +45,13 @@ For external target repos, pass the repo path explicitly:
 node dist/bin/harness.js init --workspace /path/to/repo
 ```
 
-Skills follow the [Agent Skills](https://agentskills.io/) format. Top-level `skills/` contains harness skills. `.agents/skills/` contains repo-local development skills for working on this project and should not be copied into repos that install the harness.
+Skills follow the [Agent Skills](https://agentskills.io/) format. Target repos usually keep local skills in `.agents/skills/`. Workflow skill lookup stops at the first match:
+
+1. target repo `.agents/skills/{skill}/SKILL.md`
+2. user `~/.agents/skills/{skill}/SKILL.md`
+3. packaged harness `skills/{skill}/SKILL.md`
+
+In this repo, top-level `skills/` contains packaged fallback skills. `.agents/skills/` contains repo-local development skills for working on harness itself and should not be copied into repos that install harness.
 
 ## Development
 
@@ -136,6 +142,19 @@ Review recently modified code for clarity, consistency, and maintainability whil
 - Behavior-preserving refinement suggestions on a diff or implementation
 
 **Evaluates:** Conventions, clarity, complexity, policy compliance, architecture — without changing what the code does
+
+**Output:** Findings with severity, location, recommendation, and rationale; verdict `pass` | `needs_changes` | `blocked`
+
+---
+
+### simplify-review
+
+Review recently modified code for behavior-preserving simplification opportunities. Read-only — never edits files.
+
+**Use when:**
+- Running the `review-full` workflow
+- Looking for clarity and maintainability improvements after implementation and quality review
+- Checking whether code can be simpler without changing functionality
 
 **Output:** Findings with severity, location, recommendation, and rationale; verdict `pass` | `needs_changes` | `blocked`
 

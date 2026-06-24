@@ -1,3 +1,5 @@
+import type { ReviewOutput } from "./schemas.ts";
+
 export type ReviewVerdict = "pass" | "needs_changes" | "blocked";
 
 export type ReviewFindingLike = {
@@ -16,8 +18,9 @@ export type ReviewOutputLike = {
 };
 
 export type ReviewSection = {
+  key: string;
   title: string;
-  review: ReviewOutputLike;
+  review: ReviewOutput;
 };
 
 export type ReviewScope = {

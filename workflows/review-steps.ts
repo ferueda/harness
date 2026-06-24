@@ -1,7 +1,6 @@
 import type { ReviewSection, ReviewVerdict } from "../lib/aggregate.ts";
+import type { ReviewAgentName } from "../lib/workflow-context.ts";
 import type { ReviewOutput } from "../lib/schemas.ts";
-
-type ReviewAgentName = "review-implementation" | "code-quality-review" | "simplify";
 
 type WorkflowRunMeta = {
   verdict?: string;
@@ -9,10 +8,10 @@ type WorkflowRunMeta = {
   [key: string]: unknown;
 };
 
-type WorkflowContext = {
+export type WorkflowContext = {
   agent(name: ReviewAgentName): Promise<ReviewOutput>;
   aggregate(...reviews: ReviewOutput[]): ReviewVerdict;
-  reviewTitle(name: ReviewAgentName): string;
+  reviewInfo(name: ReviewAgentName): { key: string; title: string };
   export(input: {
     title: string;
     reviews: ReviewSection[];
@@ -25,11 +24,13 @@ export async function runReviewSteps(
   title: string,
   agents: ReviewAgentName[],
 ): Promise<WorkflowRunMeta> {
-  const reviews: (ReviewSection & { review: ReviewOutput })[] = [];
+  const reviews: ReviewSection[] = [];
 
   for (const agentName of agents) {
+    const reviewInfo = ctx.reviewInfo(agentName);
     reviews.push({
-      title: ctx.reviewTitle(agentName),
+      key: reviewInfo.key,
+      title: reviewInfo.title,
       review: await ctx.agent(agentName),
     });
   }
