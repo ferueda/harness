@@ -4,8 +4,12 @@ import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { run as runReviewFull } from "../workflows/review-full.workflow.ts";
-import { run as runReview } from "../workflows/review.workflow.ts";
+import {
+  CHANGE_REVIEW_STEPS,
+  isChangeReviewStep,
+  run as runChangeReview,
+  type ChangeReviewStepId,
+} from "../workflows/change-review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
 import {
   assertNonEmptyHandoffStdin,
@@ -14,7 +18,7 @@ import {
 } from "../lib/handoff.ts";
 import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
 import { installPackagedSkill } from "../lib/skills.ts";
-import { createWorkflowContext } from "../lib/workflow-context.ts";
+import { cleanupOrphanedRunDir, createWorkflowContext } from "../lib/workflow-context.ts";
 
 type InitOptions = {
   workspace?: string;
@@ -33,6 +37,7 @@ type ReviewOptions = {
   model?: string;
   maxRuntimeMs: number;
   dryRun: boolean;
+  steps?: ChangeReviewStepId[];
 };
 
 type RunsPruneOptions = {
@@ -57,6 +62,26 @@ function positiveNumber(value: string): number {
     throw new InvalidArgumentError("must be a positive number");
   }
   return parsed;
+}
+
+function parseStepList(value: string): ChangeReviewStepId[] {
+  const steps = value
+    .split(",")
+    .map((step) => step.trim())
+    .filter(Boolean);
+  if (steps.length === 0) {
+    throw new InvalidArgumentError("must include at least one step");
+  }
+  const selectedSteps: ChangeReviewStepId[] = [];
+  for (const step of steps) {
+    if (!isChangeReviewStep(step)) {
+      throw new InvalidArgumentError(
+        `unknown step: ${step}. Valid steps: ${CHANGE_REVIEW_STEPS.join(", ")}`,
+      );
+    }
+    selectedSteps.push(step);
+  }
+  return selectedSteps;
 }
 
 function resolveHandoffText(options: ReviewOptions): string | undefined {
@@ -95,14 +120,9 @@ function buildProgram(): Command {
 
   const run = program.command("run").description("Run a harness workflow");
   addReviewCommand(run, {
-    name: "review",
-    description: "Run implementation and code-quality reviewers",
-    workflow: runReview,
-  });
-  addReviewCommand(run, {
-    name: "review-full",
+    name: "change-review",
     description: "Run implementation, code-quality, and simplify reviewers",
-    workflow: runReviewFull,
+    workflow: runChangeReview,
   });
 
   const runs = program.command("runs").description("Manage harness run artifacts");
@@ -163,7 +183,7 @@ function addReviewCommand(
   }: {
     name: string;
     description: string;
-    workflow: typeof runReview;
+    workflow: typeof runChangeReview;
   },
 ): void {
   parent
@@ -178,6 +198,11 @@ function addReviewCommand(
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
     .option("--cursor-agent <path>", "cursor-agent entrypoint (auto-detected)")
     .option("--model <id>", "Cursor model override")
+    .option(
+      "--steps <ids>",
+      "comma-separated change-review steps: implementation,quality,simplify",
+      parseStepList,
+    )
     .option(
       "--max-runtime-ms <ms>",
       `per-reviewer timeout (default: ${DEFAULT_MAX_RUNTIME_MS})`,
@@ -202,7 +227,13 @@ function addReviewCommand(
           dryRun: options.dryRun,
         }),
       );
-      const meta = await workflow(ctx);
+      let meta;
+      try {
+        meta = await workflow(ctx, { steps: options.steps });
+      } catch (error) {
+        cleanupOrphanedRunDir(ctx.runDir);
+        throw error;
+      }
       console.log(JSON.stringify(meta, null, 2));
       process.exitCode = meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1;
     });
