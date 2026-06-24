@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { Command, CommanderError, InvalidArgumentError } from "commander";
-import { run as runDualReview } from "../workflows/dual-review.workflow.ts";
+import { run as runReviewFull } from "../workflows/review-full.workflow.ts";
+import { run as runReview } from "../workflows/review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
 import { createWorkflowContext } from "../lib/workflow-context.ts";
 
@@ -10,7 +11,7 @@ type InitOptions = {
   base?: string;
 };
 
-type DualReviewOptions = {
+type ReviewOptions = {
   workspace?: string;
   base?: string;
   head?: string;
@@ -55,9 +56,35 @@ function buildProgram(): Command {
     });
 
   const run = program.command("run").description("Run a harness workflow");
-  run
-    .command("dual-review")
-    .description("Run implementation and code-quality reviewers")
+  addReviewCommand(run, {
+    name: "review",
+    description: "Run implementation and code-quality reviewers",
+    workflow: runReview,
+  });
+  addReviewCommand(run, {
+    name: "review-full",
+    description: "Run implementation, code-quality, and simplify reviewers",
+    workflow: runReviewFull,
+  });
+
+  return program;
+}
+
+function addReviewCommand(
+  parent: Command,
+  {
+    name,
+    description,
+    workflow,
+  }: {
+    name: string;
+    description: string;
+    workflow: typeof runReview;
+  },
+): void {
+  parent
+    .command(name)
+    .description(description)
     .option("--workspace <path>", "target repo")
     .option("--base <ref>", "base ref (default: harness.json base or main)")
     .option("--head <ref>", "head ref (default: HEAD)")
@@ -73,7 +100,7 @@ function buildProgram(): Command {
       DEFAULT_MAX_RUNTIME_MS,
     )
     .option("--dry-run", "prepare context and prompts only", false)
-    .action(async (options: DualReviewOptions) => {
+    .action(async (options: ReviewOptions) => {
       const ctx = createWorkflowContext(
         resolveHarnessOptions({
           workspace: options.workspace,
@@ -88,12 +115,10 @@ function buildProgram(): Command {
           dryRun: options.dryRun,
         }),
       );
-      const meta = await runDualReview(ctx);
+      const meta = await workflow(ctx);
       console.log(JSON.stringify(meta, null, 2));
       process.exitCode = meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1;
     });
-
-  return program;
 }
 
 async function main(): Promise<void> {

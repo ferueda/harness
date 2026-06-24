@@ -15,6 +15,11 @@ export type ReviewOutputLike = {
   findings?: ReviewFindingLike[];
 };
 
+export type ReviewSection = {
+  title: string;
+  review: ReviewOutputLike;
+};
+
 export type ReviewScope = {
   baseRef: string;
   headRef: string;
@@ -22,13 +27,8 @@ export type ReviewScope = {
   headSha: string;
 };
 
-export function aggregateVerdict(
-  implReview: ReviewOutputLike | undefined,
-  qualityReview: ReviewOutputLike | undefined,
-): ReviewVerdict {
-  const reviews = [implReview, qualityReview].filter((review): review is ReviewOutputLike =>
-    Boolean(review),
-  );
+export function aggregateVerdict(...inputs: (ReviewOutputLike | undefined)[]): ReviewVerdict {
+  const reviews = inputs.filter((review): review is ReviewOutputLike => Boolean(review));
 
   if (reviews.some((review) => review.verdict === "blocked")) {
     return "blocked";
@@ -43,7 +43,7 @@ export function aggregateVerdict(
   );
   if (hasMustFix) return "needs_changes";
 
-  if (reviews.length === 2 && reviews.every((review) => review.verdict === "pass")) {
+  if (reviews.length > 0 && reviews.every((review) => review.verdict === "pass")) {
     return "pass";
   }
 
@@ -51,17 +51,17 @@ export function aggregateVerdict(
 }
 
 export function renderSummary(input: {
+  title: string;
   runId: string;
   workspace: string;
   scope: ReviewScope;
-  implReview: ReviewOutputLike;
-  qualityReview: ReviewOutputLike;
+  reviews: ReviewSection[];
   verdict: string;
   startedAt: string;
   durationMs: number;
 }): string {
   const lines = [
-    "# Dual Review Summary",
+    `# ${input.title}`,
     "",
     `- **Run**: \`${input.runId}\``,
     `- **Workspace**: \`${input.workspace}\``,
@@ -71,20 +71,15 @@ export function renderSummary(input: {
     `- **Duration**: ${Math.round(input.durationMs / 1000)}s`,
     `- **Aggregate verdict**: **${input.verdict}**`,
     "",
-    "## Implementation review",
-    "",
-    `- Verdict: **${input.implReview?.verdict ?? "unknown"}**`,
-    `- Summary: ${input.implReview?.summary ?? "(none)"}`,
-    "",
-    ...formatFindings(input.implReview?.findings),
-    "",
-    "## Code quality review",
-    "",
-    `- Verdict: **${input.qualityReview?.verdict ?? "unknown"}**`,
-    `- Summary: ${input.qualityReview?.summary ?? "(none)"}`,
-    "",
-    ...formatFindings(input.qualityReview?.findings),
-    "",
+    ...input.reviews.flatMap(({ title, review }) => [
+      `## ${title}`,
+      "",
+      `- Verdict: **${review?.verdict ?? "unknown"}**`,
+      `- Summary: ${review?.summary ?? "(none)"}`,
+      "",
+      ...formatFindings(review?.findings),
+      "",
+    ]),
   ];
 
   return lines.join("\n");

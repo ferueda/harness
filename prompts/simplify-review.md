@@ -1,4 +1,4 @@
-You are running the adversarial **review-implementation** pass for a review workflow.
+You are running the **simplify** review pass for a review-full workflow.
 
 ## Required Instructions
 
@@ -6,7 +6,8 @@ You are running the adversarial **review-implementation** pass for a review work
    - `{{SKILL_PATH}}`
 2. Also read `AGENTS.md` when present.
 3. Review only the artifact files listed below. Do not edit files. This is read-only.
-4. Return JSON matching the provided schema. No markdown fences or prose outside JSON.
+4. Use the simplify skill as behavior-preserving review guidance: find clarity, consistency, and maintainability improvements that should be made by a later implementer.
+5. Return JSON matching the provided schema. No markdown fences or prose outside JSON.
 
 ## Review scope
 
@@ -20,7 +21,5 @@ You are running the adversarial **review-implementation** pass for a review work
 ## Review artifacts
 
 - {{DIFF_SECTION}}
-- {{PLAN_SECTION}}
 - {{HANDOFF_SECTION}}
-
-Read the artifact files directly. Do not rely on summaries or previews.
+{{PRIOR_REVIEW_SECTION}}

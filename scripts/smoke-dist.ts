@@ -43,7 +43,7 @@ runHarness(["--help"]);
 
 const dryRunOutput = runHarness([
   "run",
-  "dual-review",
+  "review",
   "--workspace",
   ROOT,
   "--base",

@@ -11,3 +11,8 @@ test("aggregateVerdict treats must_fix findings as needs_changes", () => {
 test("aggregateVerdict passes only when both reviewers pass", () => {
   expect(aggregateVerdict({ verdict: "pass" }, { verdict: "pass" })).toBe("pass");
 });
+test("aggregateVerdict passes when all reviewers pass", () => {
+  expect(aggregateVerdict({ verdict: "pass" }, { verdict: "pass" }, { verdict: "pass" })).toBe(
+    "pass",
+  );
+});

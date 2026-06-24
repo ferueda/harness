@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { aggregateVerdict, renderSummary, type ReviewVerdict } from "./aggregate.ts";
+import {
+  aggregateVerdict,
+  renderSummary,
+  type ReviewSection,
+  type ReviewVerdict,
+} from "./aggregate.ts";
 import { invokeCursorAgent } from "./cursor-agent.ts";
 import {
   buildDiffSection,
@@ -80,6 +85,15 @@ const AGENTS = {
     dryRunReview: DRY_RUN_REVIEW,
     stage: "quality",
   },
+  simplify: {
+    skillName: "simplify",
+    promptTemplate: join(HARNESS_ROOT, "prompts/simplify-review.md"),
+    promptFile: "simplify-review.prompt.md",
+    reviewFile: "simplify-review.json",
+    rawFile: "simplify-review.raw.json",
+    dryRunReview: DRY_RUN_REVIEW,
+    stage: "simplify",
+  },
 };
 
 export function createWorkflowContext(options: WorkflowOptions) {
@@ -136,6 +150,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
     startedAt,
     dryRun: options.dryRun,
     aggregate: aggregateVerdict,
+    reviewTitle: getReviewTitle,
     async agent(name: AgentName): Promise<ReviewOutput> {
       const config = AGENTS[name];
 
@@ -199,12 +214,12 @@ export function createWorkflowContext(options: WorkflowOptions) {
       return result.review;
     },
     export({
-      implementation,
-      quality,
+      title,
+      reviews,
       verdict,
     }: {
-      implementation: ReviewOutput;
-      quality: ReviewOutput;
+      title: string;
+      reviews: ReviewSection[];
       verdict: ReviewVerdict;
     }) {
       const durationMs = Date.now() - startedAt.getTime();
@@ -224,17 +239,20 @@ export function createWorkflowContext(options: WorkflowOptions) {
       }
 
       const summary = renderSummary({
+        title,
         runId,
         workspace,
         scope,
-        implReview: implementation,
-        qualityReview: quality,
+        reviews,
         verdict,
         startedAt: startedAt.toISOString(),
         durationMs,
       });
       writeFileSync(join(runDir, "summary.md"), summary, "utf8");
 
+      const reviewSummaries = Object.fromEntries(
+        reviews.map(({ title, review }) => [reviewMetaKey(title), summarizeReview(review)]),
+      );
       const meta = {
         runId,
         status: "completed",
@@ -243,13 +261,26 @@ export function createWorkflowContext(options: WorkflowOptions) {
         scope: scopeMeta,
         startedAt: startedAt.toISOString(),
         durationMs,
-        implementationReview: summarizeReview(implementation),
-        qualityReview: summarizeReview(quality),
+        implementationReview: reviewSummaries.implementation,
+        qualityReview: reviewSummaries.codeQuality,
+        ...(reviewSummaries.simplify ? { simplifyReview: reviewSummaries.simplify } : {}),
+        reviews: reviewSummaries,
       };
       writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
       return meta;
     },
   };
+}
+
+function getReviewTitle(name: AgentName): string {
+  switch (name) {
+    case "review-implementation":
+      return "Implementation review";
+    case "code-quality-review":
+      return "Code quality review";
+    case "simplify":
+      return "Simplify review";
+  }
 }
 
 function buildScopeMeta(scope: Scope) {
@@ -325,14 +356,21 @@ function resolveCursorAgentPath(explicitPath?: string): string {
   throw new Error("cursor-agent entrypoint not found. Pass --cursor-agent.");
 }
 
-function summarizeReview(review: ReviewOutput): {
-  verdict: ReviewOutput["verdict"];
+function summarizeReview(review: ReviewSection["review"]): {
+  verdict: ReviewSection["review"]["verdict"];
   findingCount: number;
 } {
   return {
     verdict: review?.verdict,
     findingCount: review?.findings?.length ?? 0,
   };
+}
+
+function reviewMetaKey(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\s+review$/, "")
+    .replace(/[^a-z0-9]+([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase());
 }
 
 function writeFailure({
