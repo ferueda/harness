@@ -111,10 +111,6 @@ export function writeRunContext(input: {
   };
 }
 
-export function renderPrompt(template: string, values: Record<string, string>): string {
-  return fillTemplate(template, values);
-}
-
 function copyContextFile({
   requested,
   workspace,
@@ -143,6 +139,9 @@ function writeHandoffArtifact(input: {
     throw new Error("Use only one handoff input");
   }
   if (input.text !== undefined) {
+    if (!input.text.trim()) {
+      throw new Error("Handoff text must not be empty");
+    }
     writeFileSync(input.destination, input.text, "utf8");
     return { requested: "inline handoff text", path: input.destination };
   }
