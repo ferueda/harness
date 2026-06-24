@@ -221,22 +221,6 @@ function parseFlags(argv: string[]): CursorAgentOptions {
     }
   }
 
-  if (!["toon", "json"].includes(options.format)) {
-    throw new Error("Invalid --format. Use toon or json.");
-  }
-
-  if (!["json", "stream-json", "text"].includes(options.outputFormat)) {
-    throw new Error("Invalid --output-format. Use json, stream-json, or text.");
-  }
-
-  if (options.mode && !["plan", "ask"].includes(options.mode)) {
-    throw new Error("Invalid --mode. Use plan or ask.");
-  }
-
-  if (options.sandbox && !["enabled", "disabled"].includes(options.sandbox)) {
-    throw new Error("Invalid --sandbox. Use enabled or disabled.");
-  }
-
   if (!Number.isFinite(options.maxRuntimeMs) || options.maxRuntimeMs <= 0) {
     throw new Error("Invalid --max-runtime-ms. Use a positive number.");
   }

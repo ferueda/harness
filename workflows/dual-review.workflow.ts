@@ -5,7 +5,7 @@ export const meta = { name: "dual-review" };
 
 type WorkflowContext = {
   agent(name: "review-implementation" | "code-quality-review"): Promise<ReviewOutput>;
-  aggregate(reviews: [ReviewOutput, ReviewOutput]): ReviewVerdict;
+  aggregate(implementation: ReviewOutput, quality: ReviewOutput): ReviewVerdict;
   export(input: {
     implementation: ReviewOutput;
     quality: ReviewOutput;
@@ -26,6 +26,6 @@ export async function run(ctx: WorkflowContext): Promise<WorkflowRunMeta> {
   return ctx.export({
     implementation,
     quality,
-    verdict: ctx.aggregate([implementation, quality]),
+    verdict: ctx.aggregate(implementation, quality),
   });
 }

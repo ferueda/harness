@@ -55,6 +55,11 @@ const DEFAULT_CURSOR_AGENT = join(
   RUNTIME_ROOT,
   IS_BUILT_OUTPUT ? "providers/cursor/cursor-agent.js" : "providers/cursor/cursor-agent.ts",
 );
+const DRY_RUN_REVIEW = {
+  verdict: "pass",
+  summary: "(dry-run placeholder)",
+  findings: [],
+} satisfies ReviewOutput;
 
 const AGENTS = {
   "review-implementation": {
@@ -63,11 +68,7 @@ const AGENTS = {
     promptFile: "implementation-review.prompt.md",
     reviewFile: "implementation-review.json",
     rawFile: "implementation-review.raw.json",
-    dryRunReview: {
-      verdict: "pass",
-      summary: "(dry-run placeholder)",
-      findings: [],
-    } satisfies ReviewOutput,
+    dryRunReview: DRY_RUN_REVIEW,
     stage: "implementation",
   },
   "code-quality-review": {
@@ -76,11 +77,7 @@ const AGENTS = {
     promptFile: "quality-review.prompt.md",
     reviewFile: "quality-review.json",
     rawFile: "quality-review.raw.json",
-    dryRunReview: {
-      verdict: "pass",
-      summary: "(dry-run placeholder)",
-      findings: [],
-    } satisfies ReviewOutput,
+    dryRunReview: DRY_RUN_REVIEW,
     stage: "quality",
   },
 };
@@ -138,10 +135,9 @@ export function createWorkflowContext(options: WorkflowOptions) {
     scopeMeta,
     startedAt,
     dryRun: options.dryRun,
-    aggregate: aggregateVerdictFromList,
+    aggregate: aggregateVerdict,
     async agent(name: AgentName): Promise<ReviewOutput> {
       const config = AGENTS[name];
-      if (!config) throw new Error(`Unknown agent: ${name}`);
 
       const promptPath = join(runDir, config.promptFile);
       const prompt = renderPrompt(
@@ -327,10 +323,6 @@ function resolveCursorAgentPath(explicitPath?: string): string {
     if (existsSync(candidate)) return candidate;
   }
   throw new Error("cursor-agent entrypoint not found. Pass --cursor-agent.");
-}
-
-function aggregateVerdictFromList(reviews: [ReviewOutput, ReviewOutput]): ReviewVerdict {
-  return aggregateVerdict(reviews[0], reviews[1]);
 }
 
 function summarizeReview(review: ReviewOutput): {

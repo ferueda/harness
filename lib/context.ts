@@ -21,6 +21,12 @@ type RequestedContextFile = {
   destination: string;
 };
 
+type ArtifactSectionOptions = {
+  none: string;
+  missing: string;
+  found: string;
+};
+
 export function buildRunId(date = new Date()): string {
   const stamp = date.toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "-");
   return `${stamp}-${randomBytes(3).toString("hex")}`;
@@ -55,23 +61,19 @@ export function fillTemplate(template: string, values: Record<string, string>): 
 }
 
 export function buildPlanSection(planArtifact: ContextArtifact, workspace: string): string {
-  if (!planArtifact?.requested) {
-    return "_No plan file provided._";
-  }
-  if (!planArtifact.path) {
-    return `_Plan file not found: \`${planArtifact.requested}\`_`;
-  }
-  return `Plan file: \`${formatArtifactPath(planArtifact.path, workspace)}\``;
+  return buildArtifactSection(planArtifact, workspace, {
+    none: "_No plan file provided._",
+    missing: "_Plan file not found: `{{requested}}`_",
+    found: "Plan file: `{{path}}`",
+  });
 }
 
 export function buildHandoffSection(handoffArtifact: ContextArtifact, workspace: string): string {
-  if (!handoffArtifact?.requested) {
-    return "_No handoff file provided._";
-  }
-  if (!handoffArtifact.path) {
-    return `_Handoff file not found: \`${handoffArtifact.requested}\`_`;
-  }
-  return `Handoff file: \`${formatArtifactPath(handoffArtifact.path, workspace)}\``;
+  return buildArtifactSection(handoffArtifact, workspace, {
+    none: "_No handoff file provided._",
+    missing: "_Handoff file not found: `{{requested}}`_",
+    found: "Handoff file: `{{path}}`",
+  });
 }
 
 export function buildDiffSection(diff: string, runDir: string, workspace: string): string {
@@ -143,4 +145,18 @@ function formatArtifactPath(path: string, workspace: string): string {
     return artifactPath;
   }
   return path;
+}
+
+function buildArtifactSection(
+  artifact: ContextArtifact,
+  workspace: string,
+  options: ArtifactSectionOptions,
+): string {
+  if (!artifact?.requested) {
+    return options.none;
+  }
+  if (!artifact.path) {
+    return options.missing.replace("{{requested}}", artifact.requested);
+  }
+  return options.found.replace("{{path}}", formatArtifactPath(artifact.path, workspace));
 }
