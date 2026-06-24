@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, relative } from "node:path";
 
@@ -111,8 +111,7 @@ export function writeRunContext(input: {
   };
 }
 
-export function renderPrompt(templatePath: string, values: Record<string, string>): string {
-  const template = readFileSync(templatePath, "utf8");
+export function renderPrompt(template: string, values: Record<string, string>): string {
   return fillTemplate(template, values);
 }
 
