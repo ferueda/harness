@@ -12,7 +12,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { HARNESS_GITIGNORE_ENTRY } from "../lib/config.ts";
+import {
+  HARNESS_GITIGNORE_ENTRY,
+  HARNESS_RECOMMENDED_COMMAND,
+  HARNESS_SHIM_RELATIVE_PATH,
+} from "../lib/config.ts";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HARNESS_BIN = join(REPO_ROOT, "bin/harness.ts");
 
@@ -33,6 +37,23 @@ function createGitWorkspace() {
   execFileSync("git", ["add", "README.md"], { cwd: workspace });
   execFileSync("git", ["commit", "-m", "init"], { cwd: workspace, stdio: "ignore" });
   return workspace;
+}
+
+function expectInitShim(
+  workspace: string,
+  output: Record<string, unknown>,
+  expectedUpdated = true,
+) {
+  expect(typeof output.shimPath).toBe("string");
+  const shimPath = output.shimPath as string;
+  const expectedShimPath = join(workspace, HARNESS_SHIM_RELATIVE_PATH);
+  expect(output.shimUpdated).toBe(expectedUpdated);
+  expect(realpathSync(shimPath)).toBe(realpathSync(expectedShimPath));
+  expect(output.recommendedCommand).toBe(HARNESS_RECOMMENDED_COMMAND);
+  expect(readFileSync(shimPath, "utf8")).toContain(HARNESS_BIN);
+  const shimHelp = spawnSync(shimPath, ["--help"], { cwd: workspace, encoding: "utf8" });
+  expect(shimHelp.status).toBe(0);
+  expect(shimHelp.stdout).toMatch(/Usage: harness/);
 }
 
 function createFakeCursorAgent({
@@ -131,6 +152,7 @@ test("harness init creates config through the CLI", () => {
   expect(output.gitignoreUpdated).toBe(true);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "develop"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${HARNESS_GITIGNORE_ENTRY}\n`);
+  expectInitShim(workspace, output);
   expect(existsSync(join(workspace, ".agents/skills/change-review-workflow"))).toBe(false);
 });
 test("harness init resolves workspace from nested cwd", () => {
@@ -144,6 +166,7 @@ test("harness init resolves workspace from nested cwd", () => {
   expect(output.gitignoreUpdated).toBe(true);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "main"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${HARNESS_GITIGNORE_ENTRY}\n`);
+  expectInitShim(workspace, output);
 });
 test("harness init is idempotent through the CLI", () => {
   const workspace = createGitWorkspace();
@@ -154,6 +177,7 @@ test("harness init is idempotent through the CLI", () => {
   const output = JSON.parse(result.stdout);
   expect(output.configCreated).toBe(false);
   expect(output.gitignoreUpdated).toBe(false);
+  expectInitShim(workspace, output, false);
 });
 test("harness init does not report base skipped unless base was passed", () => {
   const workspace = createGitWorkspace();
@@ -168,8 +192,10 @@ test("harness init works with explicit non-git workspace", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-cli-"));
   const result = runHarness(["init", "--workspace", workspace]);
   expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
   expect(readFileSync(join(workspace, "harness.json"), "utf8")).toBe('{\n  "base": "main"\n}\n');
   expect(readFileSync(join(workspace, ".gitignore"), "utf8")).toBe(`${HARNESS_GITIGNORE_ENTRY}\n`);
+  expectInitShim(workspace, output);
 });
 test("harness root help exits cleanly", () => {
   const result = runHarness(["--help"]);
@@ -184,6 +210,7 @@ test("harness init help exits cleanly", () => {
   const result = runHarness(["init", "--help"]);
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/Usage: harness init/);
+  expect(result.stdout).toMatch(/local shim/);
   expect(result.stdout).toMatch(/--workspace/);
   expect(result.stdout).toMatch(/--base/);
 });

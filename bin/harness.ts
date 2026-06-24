@@ -3,6 +3,7 @@
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { run as runReviewFull } from "../workflows/review-full.workflow.ts";
 import { run as runReview } from "../workflows/review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
@@ -48,6 +49,7 @@ type SkillsInstallOptions = {
 };
 
 const DEFAULT_MAX_RUNTIME_MS = 30 * 60 * 1000;
+const HARNESS_ENTRYPOINT = fileURLToPath(import.meta.url);
 
 function positiveNumber(value: string): number {
   const parsed = Number(value);
@@ -79,13 +81,14 @@ function buildProgram(): Command {
 
   program
     .command("init")
-    .description("Create harness.json and ignore harness artifacts")
+    .description("Create harness.json, ignore artifacts, and write a local shim")
     .option("--workspace <path>", "target repo (default: nearest harness.json or Git root)")
     .option("--base <ref>", "base ref for new harness.json (default: main)")
     .action((options: InitOptions) => {
       const result = initHarnessConfig({
         workspace: options.workspace,
         baseRef: options.base,
+        harnessEntrypoint: HARNESS_ENTRYPOINT,
       });
       console.log(JSON.stringify(result, null, 2));
     });

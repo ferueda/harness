@@ -20,7 +20,7 @@ dev/plans/    Plans and handoffs for this repo
 ```bash
 pnpm build
 node dist/bin/harness.js init
-node dist/bin/harness.js run review
+.harness/bin/harness run review
 ```
 
 The default review workflow (the change review workflow skill) starts `review-implementation` and `code-quality-review` in parallel. Reviewers read the same base artifacts, then harness aggregates their results in workflow order and writes structured artifacts under the target repo's `.harness/runs/reviews/<run-id>/`.
@@ -30,7 +30,7 @@ For the broader review cycle, run `review-full`. It adds a read-only `simplify` 
 Generated review handoffs can be piped directly; harness writes the shared reviewer copy under the ignored run artifact directory:
 
 ```bash
-printf '%s\n' "$HANDOFF" | node dist/bin/harness.js run review --handoff-stdin
+printf '%s\n' "$HANDOFF" | .harness/bin/harness run review --handoff-stdin
 ```
 
 If a reviewer provider fails, the workflow still prints JSON to stdout and exits `1`. Failed runs use `status: "failed"`, include `failedReviews`, preserve any successful peer review summaries, and write `summary.md` plus `meta.json`.
@@ -38,8 +38,8 @@ If a reviewer provider fails, the workflow still prints JSON to stdout and exits
 Prune old local run artifacts explicitly when they are no longer useful:
 
 ```bash
-node dist/bin/harness.js runs prune --older-than 30d --dry-run
-node dist/bin/harness.js runs prune --older-than 30d
+.harness/bin/harness runs prune --older-than 30d --dry-run
+.harness/bin/harness runs prune --older-than 30d
 ```
 
 The command targets `<workspace>/.harness/runs/reviews` by default and prints JSON with matched/deleted counts.
@@ -54,7 +54,7 @@ The command targets `<workspace>/.harness/runs/reviews` by default and prints JS
 
 When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run review` or `harness run review-full`.
 
-`harness init` creates `harness.json` when missing and ensures `.gitignore` contains `.harness/`.
+`harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`. The shim is a bash script; target machines need a POSIX shell with `bash` available.
 
 For external target repos, pass the repo path explicitly:
 
@@ -62,10 +62,18 @@ For external target repos, pass the repo path explicitly:
 node dist/bin/harness.js init --workspace /path/to/repo
 ```
 
+After init, prefer the repo-local shim:
+
+```bash
+/path/to/repo/.harness/bin/harness run review
+```
+
+The init JSON also returns `recommendedCommand: ".harness/bin/harness run review"`, which assumes the shell is already at the workspace root. From nested directories, use the returned `shimPath` or the absolute command above.
+
 Install optional local workflow helper skills explicitly:
 
 ```bash
-node dist/bin/harness.js skills install change-review-workflow --workspace /path/to/repo
+/path/to/repo/.harness/bin/harness skills install change-review-workflow --workspace /path/to/repo
 ```
 
 Skills follow the [Agent Skills](https://agentskills.io/) format. Target repos usually keep local skills in `.agents/skills/`. Workflow skill lookup stops at the first match:

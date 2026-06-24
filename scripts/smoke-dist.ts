@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = resolveSmokeBin();
+const EXPECTED_RECOMMENDED_COMMAND = ".harness/bin/harness run review";
 
 function resolveSmokeBin(): string {
   const override = process.env.HARNESS_SMOKE_BIN;
@@ -42,6 +43,40 @@ function runHarness(args: string[], input?: string): string {
 }
 
 runHarness(["--help"]);
+
+const initWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-init-"));
+const initOutput = runHarness(["init", "--workspace", initWorkspace]);
+const init = JSON.parse(initOutput) as {
+  recommendedCommand?: unknown;
+  shimPath?: unknown;
+  shimUpdated?: unknown;
+};
+
+if (typeof init.shimPath !== "string") {
+  throw new Error("Expected init output to include shimPath");
+}
+
+if (init.shimUpdated !== true) {
+  throw new Error(`Expected init to update shim, got ${String(init.shimUpdated)}`);
+}
+
+if (init.recommendedCommand !== EXPECTED_RECOMMENDED_COMMAND) {
+  throw new Error(`Unexpected init recommendedCommand: ${String(init.recommendedCommand)}`);
+}
+
+const shimContent = readFileSync(init.shimPath, "utf8");
+if (!shimContent.includes(BIN)) {
+  throw new Error("Expected init shim to point at built harness CLI");
+}
+
+const shimHelp = spawnSync(init.shimPath, ["--help"], {
+  cwd: initWorkspace,
+  encoding: "utf8",
+});
+if (shimHelp.status !== 0 || !shimHelp.stdout.includes("Usage: harness")) {
+  throw new Error("Expected init shim to run harness help");
+}
+rmSync(initWorkspace, { recursive: true, force: true });
 
 const installWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-install-"));
 const installDryRunOutput = runHarness([
