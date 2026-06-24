@@ -57,6 +57,9 @@ function resolveHandoffText(options: ReviewOptions): string | undefined {
     throw new Error("Use only one handoff input: --handoff or --handoff-stdin");
   }
   if (!options.handoffStdin) return undefined;
+  if (process.stdin.isTTY) {
+    throw new Error("--handoff-stdin requires piped stdin");
+  }
 
   const text = readFileSync(0, "utf8");
   if (!text.trim()) {
