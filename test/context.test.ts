@@ -1,64 +1,51 @@
-import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { expect, test } from "vitest";
 import {
   buildDiffSection,
   buildHandoffSection,
   buildPlanSection,
   buildPriorReviewSection,
   writeRunContext,
-} from "../lib/context.js";
-
+} from "../lib/context.ts";
 test("buildDiffSection writes diff and returns only a file reference", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
   const runDir = join(workspace, ".harness/runs/reviews/run-1");
   const diff = "diff --git a/a.txt b/a.txt\n+hello\n";
-
   const section = buildDiffSection(diff, runDir, workspace);
-
-  assert.equal(section, "Diff file: `.harness/runs/reviews/run-1/context/diff.patch`");
-  assert.equal(readFileSync(join(runDir, "context/diff.patch"), "utf8"), diff);
-  assert.doesNotMatch(section, /hello/);
-  assert.doesNotMatch(section, /First 200 lines/);
+  expect(section).toBe("Diff file: `.harness/runs/reviews/run-1/context/diff.patch`");
+  expect(readFileSync(join(runDir, "context/diff.patch"), "utf8")).toBe(diff);
+  expect(section).not.toMatch(/hello/);
+  expect(section).not.toMatch(/First 200 lines/);
 });
-
 test("writeRunContext copies plan and handoff and sections return file references", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
   const runDir = join(workspace, ".harness/runs/reviews/run-1");
   writeFileSync(join(workspace, "plan.md"), "# Plan\n", "utf8");
   writeFileSync(join(workspace, "handoff.md"), "# Handoff\n", "utf8");
-
   const artifacts = writeRunContext({
     workspace,
     runDir,
     planPath: "plan.md",
     handoffPath: "handoff.md",
   });
-
-  assert.equal(existsSync(join(runDir, "context/plan.md")), true);
-  assert.equal(existsSync(join(runDir, "context/handoff.md")), true);
-  assert.equal(
-    buildPlanSection(artifacts.plan, workspace),
+  expect(existsSync(join(runDir, "context/plan.md"))).toBe(true);
+  expect(existsSync(join(runDir, "context/handoff.md"))).toBe(true);
+  expect(buildPlanSection(artifacts.plan, workspace)).toBe(
     "Plan file: `.harness/runs/reviews/run-1/context/plan.md`",
   );
-  assert.equal(
-    buildHandoffSection(artifacts.handoff, workspace),
+  expect(buildHandoffSection(artifacts.handoff, workspace)).toBe(
     "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
   );
 });
-
 test("buildPriorReviewSection omits missing prior reviews", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
   const runDir = join(workspace, ".harness/runs/reviews/run-1");
-
-  assert.equal(buildPriorReviewSection(join(runDir, "implementation-review.json"), workspace), "");
-
+  expect(buildPriorReviewSection(join(runDir, "implementation-review.json"), workspace)).toBe("");
   mkdirSync(runDir, { recursive: true });
   writeFileSync(join(runDir, "implementation-review.json"), "{}\n", "utf8");
-  assert.equal(
-    buildPriorReviewSection(join(runDir, "implementation-review.json"), workspace),
+  expect(buildPriorReviewSection(join(runDir, "implementation-review.json"), workspace)).toBe(
     "- Prior implementation review file: `.harness/runs/reviews/run-1/implementation-review.json`",
   );
 });

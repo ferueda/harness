@@ -1,18 +1,13 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { aggregateVerdict } from "../lib/aggregate.js";
-
+import { expect, test } from "vitest";
+import { aggregateVerdict } from "../lib/aggregate.ts";
 test("aggregateVerdict prefers blocked over other verdicts", () => {
-  assert.equal(aggregateVerdict({ verdict: "blocked" }, { verdict: "pass" }), "blocked");
+  expect(aggregateVerdict({ verdict: "blocked" }, { verdict: "pass" })).toBe("blocked");
 });
-
 test("aggregateVerdict treats must_fix findings as needs_changes", () => {
-  assert.equal(
+  expect(
     aggregateVerdict({ verdict: "pass", findings: [{ must_fix: true }] }, { verdict: "pass" }),
-    "needs_changes",
-  );
+  ).toBe("needs_changes");
 });
-
 test("aggregateVerdict passes only when both reviewers pass", () => {
-  assert.equal(aggregateVerdict({ verdict: "pass" }, { verdict: "pass" }), "pass");
+  expect(aggregateVerdict({ verdict: "pass" }, { verdict: "pass" })).toBe("pass");
 });
