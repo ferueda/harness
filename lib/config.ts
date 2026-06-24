@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { HarnessConfigSchema, formatZodError } from "./schemas.ts";
 
 const CONFIG_FILE = "harness.json";
 export const HARNESS_GITIGNORE_ENTRY = ".harness/";
-const SHIM_RELATIVE_PATH = ".harness/bin/harness";
-const RECOMMENDED_COMMAND = `${SHIM_RELATIVE_PATH} run review`;
+export const HARNESS_SHIM_RELATIVE_PATH = ".harness/bin/harness";
+export const HARNESS_RECOMMENDED_COMMAND = `${HARNESS_SHIM_RELATIVE_PATH} run review`;
 
 export type HarnessOptions = {
   workspace?: string;
@@ -78,7 +78,7 @@ export function initHarnessConfig(
   const configPath = join(workspace, CONFIG_FILE);
   const gitignorePath = join(workspace, ".gitignore");
   const shim = writeHarnessShim(workspace, {
-    harnessEntrypoint: options.harnessEntrypoint ?? resolve(process.argv[1] ?? ""),
+    harnessEntrypoint: resolveRequiredHarnessEntrypoint(options.harnessEntrypoint),
     nodePath: options.nodePath ?? process.execPath,
   });
   const result = {
@@ -173,7 +173,7 @@ function writeHarnessShim(
   workspace: string,
   input: { harnessEntrypoint: string; nodePath: string },
 ): { path: string; recommendedCommand: string; updated: boolean } {
-  const shimPath = join(workspace, SHIM_RELATIVE_PATH);
+  const shimPath = join(workspace, HARNESS_SHIM_RELATIVE_PATH);
   const shimDir = dirname(shimPath);
   mkdirSync(shimDir, { recursive: true });
 
@@ -183,7 +183,7 @@ function writeHarnessShim(
   if (existing === content && executable) {
     return {
       path: shimPath,
-      recommendedCommand: formatRecommendedCommand(workspace, shimPath),
+      recommendedCommand: HARNESS_RECOMMENDED_COMMAND,
       updated: false,
     };
   }
@@ -194,9 +194,17 @@ function writeHarnessShim(
   chmodSync(shimPath, 0o755);
   return {
     path: shimPath,
-    recommendedCommand: formatRecommendedCommand(workspace, shimPath),
+    recommendedCommand: HARNESS_RECOMMENDED_COMMAND,
     updated: true,
   };
+}
+
+function resolveRequiredHarnessEntrypoint(entrypoint: string | undefined): string {
+  if (!entrypoint) {
+    throw new Error("harnessEntrypoint is required to create the local harness shim");
+  }
+
+  return resolve(entrypoint);
 }
 
 function renderHarnessShim(input: { harnessEntrypoint: string; nodePath: string }): string {
@@ -206,11 +214,6 @@ function renderHarnessShim(input: { harnessEntrypoint: string; nodePath: string 
     `exec ${shellQuote(input.nodePath)} ${shellQuote(input.harnessEntrypoint)} "$@"`,
     "",
   ].join("\n");
-}
-
-function formatRecommendedCommand(workspace: string, shimPath: string): string {
-  const relativeShimPath = relative(workspace, shimPath);
-  return relativeShimPath ? `${relativeShimPath} run review` : RECOMMENDED_COMMAND;
 }
 
 function shellQuote(value: string): string {
