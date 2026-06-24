@@ -3,13 +3,42 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildEnvelope, buildErrorEnvelope } from "./lib/envelope.mjs";
-import { buildHomeEnvelope } from "./lib/home.mjs";
-import { emitEnvelope, failUsage, finish, EXIT } from "./lib/output.mjs";
-import { buildCommand, runAgent } from "./lib/runner.mjs";
-import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.mjs";
+import { buildEnvelope, buildErrorEnvelope, type EnvelopeStatus } from "./lib/envelope.ts";
+import { buildHomeEnvelope } from "./lib/home.ts";
+import { emitEnvelope, failUsage, finish, EXIT } from "./lib/output.ts";
+import { buildCommand, runAgent } from "./lib/runner.ts";
+import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
+
+type CursorAgentOptions = {
+  promptParts: string[];
+  workspace: string;
+  outputFormat: "json" | "stream-json" | "text";
+  format: "toon" | "json";
+  full: boolean;
+  verbose: boolean;
+  quiet: boolean;
+  maxRuntimeMs: number;
+  idleTimeoutMs: number;
+  dryRun: boolean;
+  help: boolean;
+  promptFile?: string;
+  readStdin?: boolean;
+  model?: string;
+  mode?: "plan" | "ask";
+  force?: boolean;
+  sandbox?: "enabled" | "disabled";
+  resume?: string;
+  continueSession?: boolean;
+  schemaPath?: string;
+  schemaJson?: string;
+};
+
+type ParsedCommand =
+  | { command: "home"; options: CursorAgentOptions }
+  | { command: "help"; options: CursorAgentOptions }
+  | { command: "run"; options: CursorAgentOptions };
 
 function printHelp() {
   console.log(`Usage: node ${SCRIPT_PATH} [options] [prompt...]
@@ -47,7 +76,7 @@ Environment:
 `);
 }
 
-function parseArgs(argv) {
+function parseArgs(argv: string[]): ParsedCommand {
   if (argv.length === 0) {
     return { command: "home", options: baseOptions() };
   }
@@ -60,7 +89,7 @@ function parseArgs(argv) {
   return { command: "run", options };
 }
 
-function baseOptions() {
+function baseOptions(): CursorAgentOptions {
   return {
     promptParts: [],
     workspace: process.cwd(),
@@ -76,7 +105,7 @@ function baseOptions() {
   };
 }
 
-function parseFlags(argv) {
+function parseFlags(argv: string[]): CursorAgentOptions {
   const options = baseOptions();
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -102,7 +131,13 @@ function parseFlags(argv) {
         index += 1;
         break;
       case "--mode":
-        options.mode = readFlagValue(argv, index, arg);
+        {
+          const mode = readFlagValue(argv, index, arg);
+          if (mode !== "plan" && mode !== "ask") {
+            throw new Error("Invalid --mode. Use plan or ask.");
+          }
+          options.mode = mode;
+        }
         index += 1;
         break;
       case "--force":
@@ -110,7 +145,13 @@ function parseFlags(argv) {
         options.force = true;
         break;
       case "--sandbox":
-        options.sandbox = readFlagValue(argv, index, arg);
+        {
+          const sandbox = readFlagValue(argv, index, arg);
+          if (sandbox !== "enabled" && sandbox !== "disabled") {
+            throw new Error("Invalid --sandbox. Use enabled or disabled.");
+          }
+          options.sandbox = sandbox;
+        }
         index += 1;
         break;
       case "--resume":
@@ -121,11 +162,27 @@ function parseFlags(argv) {
         options.continueSession = true;
         break;
       case "--output-format":
-        options.outputFormat = readFlagValue(argv, index, arg);
+        {
+          const outputFormat = readFlagValue(argv, index, arg);
+          if (
+            outputFormat !== "json" &&
+            outputFormat !== "stream-json" &&
+            outputFormat !== "text"
+          ) {
+            throw new Error("Invalid --output-format. Use json, stream-json, or text.");
+          }
+          options.outputFormat = outputFormat;
+        }
         index += 1;
         break;
       case "--format":
-        options.format = readFlagValue(argv, index, arg);
+        {
+          const format = readFlagValue(argv, index, arg);
+          if (format !== "toon" && format !== "json") {
+            throw new Error("Invalid --format. Use toon or json.");
+          }
+          options.format = format;
+        }
         index += 1;
         break;
       case "--schema":
@@ -199,7 +256,7 @@ function parseFlags(argv) {
   return options;
 }
 
-function readFlagValue(argv, index, flag) {
+function readFlagValue(argv: string[], index: number, flag: string): string {
   const value = argv[index + 1];
   if (value === undefined || value.startsWith("--")) {
     throw new Error(`Missing value for ${flag}`);
@@ -207,15 +264,15 @@ function readFlagValue(argv, index, flag) {
   return value;
 }
 
-async function readPrompt(options) {
-  const chunks = [];
+async function readPrompt(options: CursorAgentOptions): Promise<string> {
+  const chunks: string[] = [];
   if (options.promptFile) chunks.push(readFileSync(options.promptFile, "utf8"));
   if (options.promptParts?.length) chunks.push(options.promptParts.join(" "));
   if (options.readStdin) {
-    const stdin = await new Promise((resolveStdin, rejectStdin) => {
-      const parts = [];
+    const stdin = await new Promise<string>((resolveStdin, rejectStdin) => {
+      const parts: string[] = [];
       process.stdin.setEncoding("utf8");
-      process.stdin.on("data", (part) => parts.push(part));
+      process.stdin.on("data", (part) => parts.push(String(part)));
       process.stdin.on("end", () => resolveStdin(parts.join("")));
       process.stdin.on("error", rejectStdin);
     });
@@ -228,7 +285,7 @@ async function readPrompt(options) {
   return prompt;
 }
 
-async function runInvoke(options) {
+async function runInvoke(options: CursorAgentOptions): Promise<void> {
   let schema;
   try {
     schema = loadSchema(options);
@@ -243,7 +300,11 @@ async function runInvoke(options) {
     prompt = wrapPrompt(await readPrompt(options), schema);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    failUsage(message, ['Run `cursor-agent "your task"` or --prompt-file / --stdin'], options.format);
+    failUsage(
+      message,
+      ['Run `cursor-agent "your task"` or --prompt-file / --stdin'],
+      options.format,
+    );
     return;
   }
 
@@ -284,7 +345,7 @@ async function runInvoke(options) {
 
   const structured = schema ? parseStructuredOutput(result.resultText, schema) : undefined;
 
-  let status = "completed";
+  let status: EnvelopeStatus = "completed";
   if (result.timedOut) status = "timed_out";
   else if (result.exitCode !== 0 || result.isError || structured?.error) status = "failed";
 

@@ -1,12 +1,34 @@
-/** @typedef {{ verdict?: string, summary?: string, findings?: Array<{ title?: string, severity?: string, must_fix?: boolean }> }} ReviewOutput */
+export type ReviewVerdict = "pass" | "needs_changes" | "blocked";
 
-/**
- * @param {ReviewOutput | undefined} implReview
- * @param {ReviewOutput | undefined} qualityReview
- * @returns {"pass" | "needs_changes" | "blocked"}
- */
-export function aggregateVerdict(implReview, qualityReview) {
-  const reviews = [implReview, qualityReview].filter(Boolean);
+export type ReviewFindingLike = {
+  title?: string;
+  severity?: string;
+  location?: string;
+  issue?: string;
+  recommendation?: string;
+  must_fix?: boolean;
+};
+
+export type ReviewOutputLike = {
+  verdict?: string;
+  summary?: string;
+  findings?: ReviewFindingLike[];
+};
+
+export type ReviewScope = {
+  baseRef: string;
+  headRef: string;
+  mergeBase: string;
+  headSha: string;
+};
+
+export function aggregateVerdict(
+  implReview: ReviewOutputLike | undefined,
+  qualityReview: ReviewOutputLike | undefined,
+): ReviewVerdict {
+  const reviews = [implReview, qualityReview].filter((review): review is ReviewOutputLike =>
+    Boolean(review),
+  );
 
   if (reviews.some((review) => review.verdict === "blocked")) {
     return "blocked";
@@ -31,7 +53,16 @@ export function aggregateVerdict(implReview, qualityReview) {
 /**
  * @param {{ runId: string, workspace: string, scope: object, implReview: ReviewOutput, qualityReview: ReviewOutput, verdict: string, startedAt: string, durationMs: number }} input
  */
-export function renderSummary(input) {
+export function renderSummary(input: {
+  runId: string;
+  workspace: string;
+  scope: ReviewScope;
+  implReview: ReviewOutputLike;
+  qualityReview: ReviewOutputLike;
+  verdict: string;
+  startedAt: string;
+  durationMs: number;
+}): string {
   const lines = [
     "# Dual Review Summary",
     "",
@@ -62,8 +93,7 @@ export function renderSummary(input) {
   return lines.join("\n");
 }
 
-/** @param {ReviewOutput["findings"]} findings */
-function formatFindings(findings) {
+function formatFindings(findings: ReviewFindingLike[] | undefined): string[] {
   if (!findings?.length) {
     return ["_No findings._"];
   }

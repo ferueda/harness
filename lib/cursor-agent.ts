@@ -1,4 +1,20 @@
 import { spawnSync } from "node:child_process";
+import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schemas.ts";
+
+type CursorAgentResult =
+  | {
+      ok: true;
+      review: ReviewOutput;
+      envelope: Record<string, any>;
+      exitCode: 0;
+    }
+  | {
+      ok: false;
+      error: string;
+      envelope?: Record<string, any>;
+      exitCode: number;
+      stderr?: string;
+    };
 
 export function invokeCursorAgent({
   cursorAgentPath,
@@ -7,7 +23,14 @@ export function invokeCursorAgent({
   schemaPath,
   model,
   maxRuntimeMs,
-}) {
+}: {
+  cursorAgentPath: string;
+  workspace: string;
+  promptPath: string;
+  schemaPath: string;
+  model?: string;
+  maxRuntimeMs: number;
+}): CursorAgentResult {
   const args = [
     cursorAgentPath,
     "--format",
@@ -32,7 +55,7 @@ export function invokeCursorAgent({
     env: process.env,
   });
 
-  let envelope;
+  let envelope: Record<string, any>;
   try {
     envelope = JSON.parse(result.stdout.trim());
   } catch {
@@ -54,9 +77,20 @@ export function invokeCursorAgent({
     };
   }
 
+  const review = ReviewOutputSchema.safeParse(envelope.structuredOutput);
+  if (!review.success) {
+    return {
+      ok: false,
+      error: `Invalid reviewer structured output: ${formatZodError(review.error)}`,
+      envelope,
+      exitCode: result.status ?? 1,
+      stderr: result.stderr,
+    };
+  }
+
   return {
     ok: true,
-    review: envelope.structuredOutput,
+    review: review.data,
     envelope,
     exitCode: 0,
   };

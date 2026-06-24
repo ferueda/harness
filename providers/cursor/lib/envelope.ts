@@ -1,15 +1,55 @@
 const DEFAULT_PREVIEW_CHARS = 800;
 
-function formatTokenCount(count) {
+export type EnvelopeStatus = "completed" | "failed" | "timed_out";
+
+type Usage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+};
+
+type HelpContext = {
+  status?: EnvelopeStatus;
+  sessionId?: string;
+  structuredError?: string;
+  resultTruncated?: boolean;
+  hasSchema?: boolean;
+  error?: string;
+  authRequired?: boolean;
+  timedOut?: boolean;
+  isHome?: boolean;
+};
+
+export type CursorEnvelope = {
+  status: EnvelopeStatus;
+  sessionId?: string;
+  durationMs?: number;
+  usageSummary?: string;
+  error?: string;
+  structuredOutput?: unknown;
+  result?: string;
+  resultTruncated?: boolean;
+  resultChars?: number;
+  verbose?: {
+    workspace?: string;
+    usage?: unknown;
+    timeoutKind?: string;
+  };
+  help?: string[];
+};
+
+function formatTokenCount(count: number | undefined): string | null {
   if (count === undefined) return null;
   if (count < 1000) return `${count}`;
   return `${Math.round(count / 1000)}k`;
 }
 
-export function summarizeUsage(usage) {
+export function summarizeUsage(usage: unknown): string | undefined {
   if (!usage || typeof usage !== "object") return undefined;
-  const input = usage.inputTokens ?? usage.input_tokens;
-  const output = usage.outputTokens ?? usage.output_tokens;
+  const typedUsage = usage as Usage;
+  const input = typedUsage.inputTokens ?? typedUsage.input_tokens;
+  const output = typedUsage.outputTokens ?? typedUsage.output_tokens;
   if (input === undefined && output === undefined) return undefined;
   const inLabel = formatTokenCount(input);
   const outLabel = formatTokenCount(output);
@@ -19,7 +59,14 @@ export function summarizeUsage(usage) {
   return parts.join(", ");
 }
 
-export function truncateText(text, limit = DEFAULT_PREVIEW_CHARS) {
+export function truncateText(
+  text: string | undefined,
+  limit = DEFAULT_PREVIEW_CHARS,
+): {
+  preview: string;
+  truncated: boolean;
+  totalChars: number;
+} {
   if (!text || text.length <= limit) {
     return { preview: text ?? "", truncated: false, totalChars: text?.length ?? 0 };
   }
@@ -30,8 +77,8 @@ export function truncateText(text, limit = DEFAULT_PREVIEW_CHARS) {
   };
 }
 
-export function buildHelpHints(context) {
-  const help = [];
+export function buildHelpHints(context: HelpContext): string[] {
+  const help: string[] = [];
 
   if (context.error) {
     if (context.error.includes("prompt is required")) {
@@ -84,8 +131,21 @@ export function buildEnvelope({
   verbose = false,
   schema,
   timeoutKind,
-}) {
-  const envelope = { status };
+}: {
+  status: EnvelopeStatus;
+  sessionId?: string;
+  resultText?: string;
+  structuredOutput?: unknown;
+  structuredError?: string;
+  usage?: unknown;
+  durationMs?: number;
+  workspace?: string;
+  full?: boolean;
+  verbose?: boolean;
+  schema?: unknown;
+  timeoutKind?: string;
+}): CursorEnvelope {
+  const envelope: CursorEnvelope = { status };
 
   if (sessionId) envelope.sessionId = sessionId;
   if (durationMs !== undefined) envelope.durationMs = durationMs;
@@ -150,7 +210,7 @@ export function buildEnvelope({
   return envelope;
 }
 
-export function buildErrorEnvelope(message, help = []) {
+export function buildErrorEnvelope(message: string, help: string[] = []): CursorEnvelope {
   return {
     status: "failed",
     error: message,

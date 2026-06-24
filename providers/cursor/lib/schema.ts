@@ -1,7 +1,19 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 
-export function loadSchema(options) {
+type JsonTypeName = "string" | "number" | "boolean" | "object" | "array" | "null";
+
+export type JsonSchema = {
+  type?: JsonTypeName | JsonTypeName[];
+  enum?: unknown[];
+  required?: string[];
+  properties?: Record<string, JsonSchema>;
+  items?: JsonSchema;
+};
+
+export function loadSchema(options: {
+  schemaJson?: string;
+  schemaPath?: string;
+}): JsonSchema | undefined {
   if (options.schemaJson) {
     return JSON.parse(options.schemaJson);
   }
@@ -11,7 +23,7 @@ export function loadSchema(options) {
   return undefined;
 }
 
-export function wrapPrompt(prompt, schema) {
+export function wrapPrompt(prompt: string, schema: JsonSchema | undefined): string {
   if (!schema) return prompt;
 
   return [
@@ -27,14 +39,14 @@ export function wrapPrompt(prompt, schema) {
   ].join("\n");
 }
 
-export function extractJsonFromText(text) {
+export function extractJsonFromText(text: string): string {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/);
   if (fenced?.[1]) return fenced[1].trim();
   return firstParseableJsonValue(trimmed) ?? trimmed;
 }
 
-function firstParseableJsonValue(text) {
+function firstParseableJsonValue(text: string): string | undefined {
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     if (char !== "{" && char !== "[") continue;
@@ -51,7 +63,7 @@ function firstParseableJsonValue(text) {
   return undefined;
 }
 
-function balancedJsonEnd(text, start) {
+function balancedJsonEnd(text: string, start: number): number | undefined {
   const first = text[start];
   const stack = first === "{" ? ["}"] : first === "[" ? ["]"] : [];
   if (stack.length === 0) return undefined;
@@ -82,13 +94,19 @@ function balancedJsonEnd(text, start) {
   return undefined;
 }
 
-export function parseStructuredOutput(resultText, schema) {
+export function parseStructuredOutput(
+  resultText: string | undefined,
+  schema: JsonSchema | undefined,
+): {
+  value?: unknown;
+  error?: string;
+} {
   if (!resultText) {
     return { error: "Agent returned no final text to parse as JSON." };
   }
 
   const jsonText = extractJsonFromText(resultText);
-  let value;
+  let value: unknown;
   try {
     value = JSON.parse(jsonText);
   } catch (error) {
@@ -106,7 +124,7 @@ export function parseStructuredOutput(resultText, schema) {
   return { value };
 }
 
-function validateJsonSchema(value, schema, path) {
+function validateJsonSchema(value: unknown, schema: JsonSchema, path: string): string | undefined {
   if (!schema || typeof schema !== "object") return undefined;
 
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) {
@@ -127,12 +145,13 @@ function validateJsonSchema(value, schema, path) {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       return `${path}: expected object`;
     }
+    const objectValue = value as Record<string, unknown>;
     for (const key of schema.required ?? []) {
-      if (!(key in value)) return `${path}: missing required property "${key}"`;
+      if (!(key in objectValue)) return `${path}: missing required property "${key}"`;
     }
     for (const [key, propSchema] of Object.entries(schema.properties ?? {})) {
-      if (key in value) {
-        const childError = validateJsonSchema(value[key], propSchema, `${path}.${key}`);
+      if (key in objectValue) {
+        const childError = validateJsonSchema(objectValue[key], propSchema, `${path}.${key}`);
         if (childError) return childError;
       }
     }
@@ -151,8 +170,19 @@ function validateJsonSchema(value, schema, path) {
   return undefined;
 }
 
-function jsonTypeOf(value) {
+function jsonTypeOf(value: unknown): JsonTypeName {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
-  return typeof value;
+  switch (typeof value) {
+    case "string":
+      return "string";
+    case "number":
+      return "number";
+    case "boolean":
+      return "boolean";
+    case "object":
+      return "object";
+    default:
+      return "object";
+  }
 }

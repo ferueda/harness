@@ -1,8 +1,24 @@
 #!/usr/bin/env node
 
-import { run as runDualReview } from "../workflows/dual-review.workflow.js";
-import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.js";
-import { createWorkflowContext } from "../lib/workflow-context.js";
+import { run as runDualReview } from "../workflows/dual-review.workflow.ts";
+import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
+import { createWorkflowContext } from "../lib/workflow-context.ts";
+
+type HarnessCliOptions = {
+  command?: "init" | "run";
+  workflow?: "dual-review";
+  workspace?: string;
+  baseRef?: string;
+  headRef?: string;
+  planPath?: string;
+  handoffPath?: string;
+  runsDir?: string;
+  cursorAgentPath?: string;
+  model?: string;
+  maxRuntimeMs: number;
+  dryRun: boolean;
+  help?: boolean;
+};
 
 function printHelp() {
   console.log(`Usage:
@@ -20,7 +36,7 @@ Run options:
   --plan <path>            Optional plan file (relative to workspace or absolute)
   --handoff <path>         Optional handoff file
   --runs-dir <path>        Output root (default: <workspace>/.harness/runs/reviews)
-  --cursor-agent <path>    cursor-agent.mjs path (auto-detected)
+  --cursor-agent <path>    cursor-agent.ts path (auto-detected)
   --model <id>             Cursor model override
   --max-runtime-ms <n>     Per-reviewer timeout (default: 1800000)
   --dry-run                Prepare context + prompts only; do not invoke agents
@@ -30,9 +46,9 @@ Global:
 `);
 }
 
-function parseArgs(argv) {
+function parseArgs(argv: string[]): HarnessCliOptions {
   const [command, ...rest] = argv;
-  const options = {
+  const options: HarnessCliOptions = {
     maxRuntimeMs: 30 * 60 * 1000,
     dryRun: false,
   };
@@ -42,9 +58,8 @@ function parseArgs(argv) {
     return options;
   }
 
-  options.command = command;
-
   if (command === "init") {
+    options.command = command;
     parseInitArgs(options, rest);
     return options;
   }
@@ -53,12 +68,13 @@ function parseArgs(argv) {
     throw new Error("Expected command: harness init or harness run dual-review");
   }
 
+  options.command = command;
   options.workflow = rest[0];
   parseRunArgs(options, rest.slice(1));
   return options;
 }
 
-function parseRunArgs(options, rest) {
+function parseRunArgs(options: HarnessCliOptions, rest: string[]): void {
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     switch (arg) {
@@ -115,7 +131,7 @@ function parseRunArgs(options, rest) {
   }
 }
 
-function parseInitArgs(options, rest) {
+function parseInitArgs(options: HarnessCliOptions, rest: string[]): void {
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     switch (arg) {
@@ -137,7 +153,7 @@ function parseInitArgs(options, rest) {
   }
 }
 
-function readValue(argv, index, flag) {
+function readValue(argv: string[], index: number, flag: string): string {
   const value = argv[index + 1];
   if (value === undefined || value.startsWith("-") || value.trim() === "") {
     throw new Error(`Missing value for ${flag}`);

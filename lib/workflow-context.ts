@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { aggregateVerdict, renderSummary } from "./aggregate.js";
-import { invokeCursorAgent } from "./cursor-agent.js";
+import { aggregateVerdict, renderSummary, type ReviewVerdict } from "./aggregate.ts";
+import { invokeCursorAgent } from "./cursor-agent.ts";
 import {
   buildDiffSection,
   buildHandoffSection,
@@ -13,11 +13,48 @@ import {
   prepareGitScope,
   renderPrompt,
   writeRunContext,
-} from "./context.js";
+} from "./context.ts";
+import type { ContextArtifact } from "./context.ts";
+import type { ReviewOutput } from "./schemas.ts";
 
-const HARNESS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+type WorkflowOptions = {
+  workspace: string;
+  baseRef: string;
+  headRef: string;
+  runsDir?: string;
+  cursorAgentPath?: string;
+  planPath?: string;
+  handoffPath?: string;
+  model?: string;
+  maxRuntimeMs: number;
+  dryRun?: boolean;
+};
+
+type Scope = ReturnType<typeof prepareGitScope> & {
+  baseRef: string;
+  headRef: string;
+};
+
+type ScopeMeta = ReturnType<typeof buildScopeMeta>;
+
+type AgentName = keyof typeof AGENTS;
+
+type PromptArtifacts = Partial<Record<(typeof AGENTS)[AgentName]["stage"], string>>;
+
+type PromptContextArtifacts = {
+  plan: ContextArtifact;
+  handoff: ContextArtifact;
+};
+
+const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const IS_BUILT_OUTPUT = basename(MODULE_ROOT) === "dist";
+const HARNESS_ROOT = IS_BUILT_OUTPUT ? resolve(MODULE_ROOT, "..") : MODULE_ROOT;
+const RUNTIME_ROOT = IS_BUILT_OUTPUT ? MODULE_ROOT : HARNESS_ROOT;
 const SCHEMA_PATH = join(HARNESS_ROOT, "schemas/review-output.schema.json");
-const DEFAULT_CURSOR_AGENT = join(HARNESS_ROOT, "providers/cursor/cursor-agent.mjs");
+const DEFAULT_CURSOR_AGENT = join(
+  RUNTIME_ROOT,
+  IS_BUILT_OUTPUT ? "providers/cursor/cursor-agent.js" : "providers/cursor/cursor-agent.ts",
+);
 
 const AGENTS = {
   "review-implementation": {
@@ -40,7 +77,7 @@ const AGENTS = {
   },
 };
 
-export function createWorkflowContext(options) {
+export function createWorkflowContext(options: WorkflowOptions) {
   const workspace = resolve(options.workspace);
   if (!existsSync(workspace)) {
     throw new Error(`Workspace does not exist: ${workspace}`);
@@ -50,11 +87,11 @@ export function createWorkflowContext(options) {
   const runId = buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/reviews")), runId);
 
-  let cursorAgentPath;
-  let contextArtifacts;
-  let scope;
-  let scopeMeta;
-  let diffSection;
+  let cursorAgentPath: string;
+  let contextArtifacts: PromptContextArtifacts;
+  let scope: Scope;
+  let scopeMeta: ScopeMeta;
+  let diffSection: string;
   try {
     mkdirSync(runDir, { recursive: true });
 
@@ -83,7 +120,7 @@ export function createWorkflowContext(options) {
     throw error;
   }
 
-  const promptPaths = {};
+  const promptPaths: PromptArtifacts = {};
 
   return {
     runId,
@@ -94,7 +131,7 @@ export function createWorkflowContext(options) {
     startedAt,
     dryRun: options.dryRun,
     aggregate: aggregateVerdictFromList,
-    async agent(name) {
+    async agent(name: AgentName): Promise<ReviewOutput> {
       const config = AGENTS[name];
       if (!config) throw new Error(`Unknown agent: ${name}`);
 
@@ -115,7 +152,7 @@ export function createWorkflowContext(options) {
       promptPaths[config.stage] = promptPath;
 
       if (options.dryRun) {
-        return config.dryRunReview;
+        return config.dryRunReview as ReviewOutput;
       }
 
       const result = invokeCursorAgent({
@@ -129,19 +166,43 @@ export function createWorkflowContext(options) {
 
       writeFileSync(
         join(runDir, config.rawFile),
-        JSON.stringify(result.envelope ?? { error: result.error }, null, 2),
+        JSON.stringify(
+          result.ok ? result.envelope : (result.envelope ?? { error: result.error }),
+          null,
+          2,
+        ),
         "utf8",
       );
 
       if (!result.ok) {
-        writeFailure({ runDir, runId, workspace, scopeMeta, startedAt, stage: config.stage, result });
+        writeFailure({
+          runDir,
+          runId,
+          workspace,
+          scopeMeta,
+          startedAt,
+          stage: config.stage,
+          result,
+        });
         throw new Error(`${config.stage} reviewer failed: ${result.error}`);
       }
 
-      writeFileSync(join(runDir, config.reviewFile), JSON.stringify(result.review, null, 2), "utf8");
+      writeFileSync(
+        join(runDir, config.reviewFile),
+        JSON.stringify(result.review, null, 2),
+        "utf8",
+      );
       return result.review;
     },
-    export({ implementation, quality, verdict }) {
+    export({
+      implementation,
+      quality,
+      verdict,
+    }: {
+      implementation: ReviewOutput;
+      quality: ReviewOutput;
+      verdict: ReviewVerdict;
+    }) {
       const durationMs = Date.now() - startedAt.getTime();
 
       if (options.dryRun) {
@@ -187,7 +248,7 @@ export function createWorkflowContext(options) {
   };
 }
 
-function buildScopeMeta(scope) {
+function buildScopeMeta(scope: Scope) {
   return {
     baseRef: scope.baseRef,
     headRef: scope.headRef,
@@ -207,14 +268,24 @@ function buildPromptValues({
   contextArtifacts,
   agentName,
   skillPath,
-}) {
+}: {
+  scope: Scope;
+  diffSection: string;
+  workspace: string;
+  runDir: string;
+  contextArtifacts: PromptContextArtifacts;
+  agentName: AgentName;
+  skillPath: string;
+}): Record<string, string> {
   return {
     BASE_REF: scope.baseRef,
     HEAD_REF: scope.headRef,
     MERGE_BASE: scope.mergeBase,
     HEAD_SHA: scope.headSha,
     PLAN_SECTION:
-      agentName === "review-implementation" ? buildPlanSection(contextArtifacts.plan, workspace) : "",
+      agentName === "review-implementation"
+        ? buildPlanSection(contextArtifacts.plan, workspace)
+        : "",
     HANDOFF_SECTION: buildHandoffSection(contextArtifacts.handoff, workspace),
     DIFF_SECTION: diffSection,
     SKILL_PATH: skillPath,
@@ -225,7 +296,7 @@ function buildPromptValues({
   };
 }
 
-function resolveSkillPath(skillName, workspace) {
+function resolveSkillPath(skillName: string, workspace: string): string {
   const candidates = [
     join(workspace, "skills", skillName, "SKILL.md"),
     join(workspace, ".agents/skills", skillName, "SKILL.md"),
@@ -239,30 +310,48 @@ function resolveSkillPath(skillName, workspace) {
   throw new Error(`Skill not found: ${skillName}`);
 }
 
-function resolveCursorAgentPath(explicitPath) {
-  const candidates = [
-    explicitPath ? resolve(explicitPath) : null,
-    DEFAULT_CURSOR_AGENT,
-  ].filter(Boolean);
+function resolveCursorAgentPath(explicitPath?: string): string {
+  const candidates = [explicitPath ? resolve(explicitPath) : null, DEFAULT_CURSOR_AGENT].filter(
+    (candidate): candidate is string => Boolean(candidate),
+  );
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
-  throw new Error("cursor-agent.mjs not found. Pass --cursor-agent.");
+  throw new Error("cursor-agent.ts not found. Pass --cursor-agent.");
 }
 
-function aggregateVerdictFromList(reviews) {
+function aggregateVerdictFromList(reviews: [ReviewOutput, ReviewOutput]): ReviewVerdict {
   return aggregateVerdict(reviews[0], reviews[1]);
 }
 
-function summarizeReview(review) {
+function summarizeReview(review: ReviewOutput): {
+  verdict: ReviewOutput["verdict"];
+  findingCount: number;
+} {
   return {
     verdict: review?.verdict,
     findingCount: review?.findings?.length ?? 0,
   };
 }
 
-function writeFailure({ runDir, runId, workspace, scopeMeta, startedAt, stage, result }) {
+function writeFailure({
+  runDir,
+  runId,
+  workspace,
+  scopeMeta,
+  startedAt,
+  stage,
+  result,
+}: {
+  runDir: string;
+  runId: string;
+  workspace: string;
+  scopeMeta: ScopeMeta;
+  startedAt: Date;
+  stage: string;
+  result: { error: string };
+}): void {
   const meta = {
     runId,
     status: "failed",
@@ -276,7 +365,7 @@ function writeFailure({ runDir, runId, workspace, scopeMeta, startedAt, stage, r
   writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
 }
 
-export function cleanupOrphanedRunDir(runDir) {
+export function cleanupOrphanedRunDir(runDir: string): boolean {
   if (existsSync(join(runDir, "meta.json"))) {
     return false;
   }

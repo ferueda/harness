@@ -1,12 +1,12 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentJson } from "./runner.mjs";
-import { collapseHomePath } from "./output.mjs";
+import { agentJson } from "./runner.ts";
+import { collapseHomePath } from "./output.ts";
 
-const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "cursor-agent.mjs");
+const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "cursor-agent.ts");
 
-export async function buildHomeEnvelope(workspace) {
-  const envelope = {
+export async function buildHomeEnvelope(workspace: string): Promise<Record<string, unknown>> {
+  const envelope: Record<string, any> = {
     bin: collapseHomePath(SCRIPT_PATH),
     description: "Invoke Cursor Agent headlessly for agent-to-agent tasks",
   };
