@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { Agent as CursorSdkAgent } from "@cursor/sdk";
 import type {
   AgentOptions as CursorSdkAgentOptions,
+  ModelSelection as CursorSdkModelSelection,
   Run as CursorSdkRun,
   RunResult as CursorSdkRunResult,
   SDKAgent as CursorSdkAgentInstance,
@@ -87,7 +88,7 @@ async function invokeCursorSdkAgent({
     sdkAgent = await withDeadline(
       createSdkAgent({
         apiKey,
-        model: { id: input.model ?? DEFAULT_AGENT_MODELS.cursor },
+        model: cursorSdkModelSelection(input.model),
         mode: "agent",
         local: {
           cwd: input.workspace,
@@ -189,6 +190,12 @@ async function invokeCursorSdkAgent({
     if (timeout) clearTimeout(timeout);
     if (sdkAgent) await safeDisposeAgent(sdkAgent);
   }
+}
+
+function cursorSdkModelSelection(
+  model: string = DEFAULT_AGENT_MODELS.cursor,
+): CursorSdkModelSelection {
+  return { id: model, params: [{ id: "fast", value: "false" }] };
 }
 
 function readOutputSchema(
