@@ -11,7 +11,7 @@ import {
   type ReviewVerdict,
   type WorkflowStepMetadata,
 } from "./aggregate.ts";
-import { invokeCursorAgent } from "./cursor-agent.ts";
+import type { Agent, AgentRunResult } from "./agents.ts";
 import {
   buildDiffSection,
   buildHandoffSection,
@@ -21,13 +21,14 @@ import {
   prepareGitScope,
   writeRunContext,
 } from "./context.ts";
+import { createCursorAgent } from "./cursor-agent.ts";
 import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
   SIMPLIFY_REVIEW_PROMPT,
 } from "./review-prompts.ts";
 import type { ContextArtifact } from "./context.ts";
-import type { ReviewOutput } from "./schemas.ts";
+import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schemas.ts";
 
 type WorkflowOptions = {
   workspace: string;
@@ -52,9 +53,9 @@ type ScopeMeta = ReturnType<typeof buildScopeMeta>;
 type ReviewSummary = ReturnType<typeof summarizeReview>;
 type ReviewSummaries = Record<string, ReviewSummary>;
 
-export type ReviewAgentName = keyof typeof AGENTS;
+export type ReviewAgentName = keyof typeof REVIEWER_CONFIGS;
 
-type PromptArtifacts = Partial<Record<(typeof AGENTS)[ReviewAgentName]["stage"], string>>;
+type PromptArtifacts = Partial<Record<(typeof REVIEWER_CONFIGS)[ReviewAgentName]["stage"], string>>;
 
 type PromptContextArtifacts = {
   plan: ContextArtifact;
@@ -76,7 +77,7 @@ const DRY_RUN_REVIEW = {
   findings: [],
 } satisfies ReviewOutput;
 
-const AGENTS = {
+const REVIEWER_CONFIGS = {
   "review-implementation": {
     skillName: "review-implementation",
     title: "Implementation review",
@@ -122,7 +123,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
   const runId = buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/reviews")), runId);
 
-  let cursorAgentPath: string;
+  let reviewProvider: Agent;
   let contextArtifacts: PromptContextArtifacts;
   let scope: Scope;
   let scopeMeta: ScopeMeta;
@@ -130,7 +131,9 @@ export function createWorkflowContext(options: WorkflowOptions) {
   try {
     mkdirSync(runDir, { recursive: true });
 
-    cursorAgentPath = resolveCursorAgentPath(options.cursorAgentPath);
+    reviewProvider = createCursorAgent({
+      cursorAgentPath: resolveCursorAgentPath(options.cursorAgentPath),
+    });
     scope = {
       ...prepareGitScope(workspace, {
         baseRef: options.baseRef,
@@ -157,6 +160,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
   }
 
   const promptPaths: PromptArtifacts = {};
+  const agentMeta = { name: reviewProvider.name };
   const writeDryRunMeta = (steps?: WorkflowStepMetadata) => {
     const meta = {
       runId,
@@ -164,7 +168,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       workspace,
       scope: scopeMeta,
       runDir,
-      cursorAgentPath,
+      agent: agentMeta,
       ...(steps ?? {}),
       prompts: promptPaths,
     };
@@ -221,6 +225,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
     const baseMeta = {
       runId,
       workspace,
+      agent: agentMeta,
       scope: scopeMeta,
       startedAt: startedAtIso,
       durationMs,
@@ -247,7 +252,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
     aggregate: aggregateVerdict,
     reviewInfo: getReviewInfo,
     async agent(name: ReviewAgentName): Promise<ReviewOutput> {
-      const config = AGENTS[name];
+      const config = REVIEWER_CONFIGS[name];
 
       const promptPath = join(runDir, config.promptFile);
       const prompt = fillTemplate(
@@ -269,26 +274,23 @@ export function createWorkflowContext(options: WorkflowOptions) {
         return config.dryRunReview;
       }
 
-      const result = await invokeCursorAgent({
-        cursorAgentPath,
+      const result = await reviewProvider.run({
         workspace,
-        promptPath,
+        prompt,
         schemaPath: SCHEMA_PATH,
         model: options.model,
         maxRuntimeMs: options.maxRuntimeMs,
       });
 
-      writeJson(
-        join(runDir, config.rawFile),
-        result.ok ? result.envelope : (result.envelope ?? { error: result.error }),
-      );
+      writeJson(join(runDir, config.rawFile), rawAgentArtifact(result));
 
       if (!result.ok) {
         throw new Error(`${config.stage} reviewer failed: ${result.error}`);
       }
 
-      writeJson(join(runDir, config.reviewFile), result.review);
-      return result.review;
+      const review = parseReviewerOutput(config.stage, result.structuredOutput);
+      writeJson(join(runDir, config.reviewFile), review);
+      return review;
     },
     export({
       title,
@@ -324,7 +326,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
 }
 
 function getReviewInfo(name: ReviewAgentName): { key: string; title: string; stage: string } {
-  const config = AGENTS[name];
+  const config = REVIEWER_CONFIGS[name];
   return { key: config.summaryKey, title: config.title, stage: config.stage };
 }
 
@@ -368,6 +370,23 @@ function buildPromptValues({
     DIFF_SECTION: diffSection,
     SKILL_PATH: skillPath,
   };
+}
+
+function parseReviewerOutput(stage: string, structuredOutput: unknown): ReviewOutput {
+  const review = ReviewOutputSchema.safeParse(structuredOutput);
+  if (!review.success) {
+    throw new Error(
+      `${stage} reviewer failed: Invalid reviewer structured output: ${formatZodError(
+        review.error,
+      )}`,
+    );
+  }
+  return review.data;
+}
+
+function rawAgentArtifact(result: AgentRunResult): unknown {
+  if (result.ok || result.raw !== undefined) return result.raw;
+  return { error: result.error };
 }
 
 export function resolveSkillPath(

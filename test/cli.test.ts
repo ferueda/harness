@@ -86,11 +86,22 @@ function createFakeCursorAgent({
   const runtimeCheck = expectedMaxRuntimeMs
     ? `if (!process.argv.includes(${JSON.stringify(expectedMaxRuntimeMs)})) {
   console.log(JSON.stringify({ status: "failed", error: "missing expected runtime" }));
-  process.exit(0);
+  return;
 }
 `
     : "";
-  writeFileSync(scriptPath, `${runtimeCheck}console.log(${JSON.stringify(envelope)});\n`, "utf8");
+  writeFileSync(
+    scriptPath,
+    [
+      "process.stdin.resume();",
+      "process.stdin.on('end', () => {",
+      runtimeCheck,
+      `  console.log(${JSON.stringify(envelope)});`,
+      "});",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
   return scriptPath;
 }
 
@@ -104,17 +115,20 @@ function createPromptAwareCursorAgent() {
   writeFileSync(
     scriptPath,
     [
-      "const { basename } = require('node:path');",
-      "const promptPath = process.argv[process.argv.indexOf('--prompt-file') + 1] ?? '';",
-      "const promptName = basename(promptPath);",
-      "if (promptName === 'quality-review.prompt.md') {",
-      "  console.log(JSON.stringify({",
-      "    status: 'completed',",
-      "    structuredOutput: { verdict: 'pass', summary: 'missing findings' },",
-      "  }));",
-      "  process.exit(0);",
-      "}",
-      `console.log(${JSON.stringify(JSON.stringify({ status: "completed", structuredOutput: passOutput }))});`,
+      "const chunks = [];",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => chunks.push(String(chunk)));",
+      "process.stdin.on('end', () => {",
+      "  const prompt = chunks.join('');",
+      "  if (prompt.includes('code-quality-review/SKILL.md')) {",
+      "    console.log(JSON.stringify({",
+      "      status: 'completed',",
+      "      structuredOutput: { verdict: 'pass', summary: 'missing findings' },",
+      "    }));",
+      "    return;",
+      "  }",
+      `  console.log(${JSON.stringify(JSON.stringify({ status: "completed", structuredOutput: passOutput }))});`,
+      "});",
       "",
     ].join("\n"),
     "utf8",
