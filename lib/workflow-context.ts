@@ -21,8 +21,14 @@ import type {
   AgentRunInput,
   AgentRunResult,
   AgentSandboxMode,
+  CursorRuntime,
 } from "./agents.ts";
-import { DEFAULT_AGENT_MODELS, DEFAULT_CODEX_REASONING_EFFORT } from "./agents.ts";
+import {
+  DEFAULT_AGENT_MODELS,
+  DEFAULT_CODEX_REASONING_EFFORT,
+  effectiveCursorRuntime,
+  isCursorSdkRuntime,
+} from "./agents.ts";
 import {
   buildDiffSection,
   buildHandoffSection,
@@ -46,6 +52,7 @@ type WorkflowOptions = {
   headRef: string;
   runsDir?: string;
   agentProvider?: AgentProviderName;
+  cursorRuntime?: CursorRuntime;
   cursorAgentPath?: string;
   codexPathOverride?: string;
   planPath?: string;
@@ -159,6 +166,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
     const agentProviderFactory = options.agentProviderFactory ?? createAgentProvider;
     reviewProvider = agentProviderFactory({
       provider: options.agentProvider ?? "cursor",
+      cursorRuntime: options.cursorRuntime,
       cursorAgentPath: options.cursorAgentPath,
       codexPathOverride: options.codexPathOverride,
     });
@@ -192,6 +200,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
   const agentMeta = {
     name: reviewProvider.name,
     model: resolvedAgentModel(reviewProvider.name, options),
+    ...resolvedCursorRuntimeMeta(reviewProvider.name, options),
     ...agentPolicyMeta,
   };
   const writeDryRunMeta = (steps?: WorkflowStepMetadata) => {
@@ -282,6 +291,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
     scopeMeta,
     startedAt,
     dryRun: options.dryRun,
+    reviewConcurrency: resolvedReviewConcurrency(reviewProvider.name, options),
     aggregate: aggregateVerdict,
     reviewInfo: getReviewInfo,
     async agent(name: ReviewAgentName): Promise<ReviewOutput> {
@@ -378,6 +388,21 @@ function reviewPolicyOptions(
 
 function resolvedAgentModel(providerName: AgentProviderName, options: WorkflowOptions): string {
   return options.model ?? DEFAULT_AGENT_MODELS[providerName];
+}
+
+function resolvedCursorRuntimeMeta(providerName: AgentProviderName, options: WorkflowOptions) {
+  if (providerName !== "cursor") return {};
+  return { runtime: effectiveCursorRuntime(options.cursorRuntime) };
+}
+
+function resolvedReviewConcurrency(
+  providerName: AgentProviderName,
+  options: WorkflowOptions,
+): "parallel" | "serial" {
+  if (isCursorSdkRuntime(providerName, options.cursorRuntime)) {
+    return "serial";
+  }
+  return "parallel";
 }
 
 function buildScopeMeta(scope: Scope) {

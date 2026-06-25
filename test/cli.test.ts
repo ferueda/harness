@@ -253,6 +253,7 @@ test("harness run change-review help exits cleanly", () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness run change-review/);
   expect(result.stdout).toMatch(/--handoff-stdin/);
+  expect(result.stdout).toMatch(/--runtime/);
   expect(result.stdout).toMatch(/--steps/);
   expect(result.stdout).toMatch(/--dry-run/);
 });
@@ -436,6 +437,11 @@ test("harness run change-review rejects invalid agent provider values", () => {
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/must be one of: cursor, codex/);
 });
+test("harness run change-review rejects invalid Cursor runtime values", () => {
+  const result = runHarness(["run", "change-review", "--runtime", "native"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/must be one of: cli, sdk/);
+});
 test("harness run change-review rejects invalid sandbox values", () => {
   const result = runHarness(["run", "change-review", "--sandbox", "loose"]);
   expect(result.status).toBe(2);
@@ -512,6 +518,48 @@ test("harness run change-review rejects Cursor agent override for Codex", () => 
 
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/--cursor-agent applies only when --agent cursor is active/);
+});
+test("harness run change-review rejects Cursor runtime for Codex", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(join(workspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
+
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runtime",
+    "sdk",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--runtime applies only when --agent cursor is active/);
+});
+test("harness run change-review rejects Cursor agent override for SDK runtime", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runtime",
+    "sdk",
+    "--cursor-agent",
+    "/opt/cursor-agent.js",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--cursor-agent applies only when Cursor runtime is cli/);
 });
 test("harness run change-review ignores Codex-only policy config for Cursor", () => {
   const workspace = createGitWorkspace();
@@ -777,6 +825,7 @@ test("harness run change-review dry-run works through the CLI", () => {
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
+  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "cli" });
   expect(output.workflow).toBe("change-review");
   expect(output.requestedSteps).toEqual(["implementation", "quality", "simplify"]);
   expect(output.partial).toBe(false);
@@ -789,6 +838,26 @@ test("harness run change-review dry-run works through the CLI", () => {
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
   const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
   expectIndependentReviewPrompts(implementationPrompt, qualityPrompt, simplifyPrompt);
+});
+test("harness run change-review dry-run accepts Cursor SDK runtime", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runtime",
+    "sdk",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("dry_run");
+  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "sdk" });
 });
 test("harness run change-review writes stdin handoff into run context", () => {
   const workspace = createGitWorkspace();

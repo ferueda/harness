@@ -10,10 +10,12 @@ import {
   AGENT_PROVIDERS,
   AGENT_REASONING_EFFORTS,
   AGENT_SANDBOX_MODES,
+  CURSOR_RUNTIMES,
   type AgentApprovalPolicy,
   type AgentProviderName,
   type AgentReasoningEffort,
   type AgentSandboxMode,
+  type CursorRuntime,
 } from "../lib/agents.ts";
 import {
   CHANGE_REVIEW_STEPS,
@@ -45,6 +47,7 @@ type ReviewOptions = {
   handoffStdin?: boolean;
   runsDir?: string;
   agent?: AgentProviderName;
+  runtime?: CursorRuntime;
   cursorAgent?: string;
   codexExecutable?: string;
   model?: string;
@@ -81,6 +84,7 @@ function positiveNumber(value: string): number {
 }
 
 const parseAgentProvider = makeEnumParser<AgentProviderName>(AGENT_PROVIDERS);
+const parseCursorRuntime = makeEnumParser<CursorRuntime>(CURSOR_RUNTIMES);
 const parseSandboxMode = makeEnumParser<AgentSandboxMode>(AGENT_SANDBOX_MODES);
 const parseApprovalPolicy = makeEnumParser<AgentApprovalPolicy>(AGENT_APPROVAL_POLICIES);
 const parseReasoningEffort = makeEnumParser<AgentReasoningEffort>(AGENT_REASONING_EFFORTS);
@@ -236,6 +240,7 @@ function addReviewCommand(
     .option("--handoff-stdin", "read optional handoff text from stdin", false)
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
     .option("--agent <provider>", "review agent provider: cursor or codex", parseAgentProvider)
+    .option("--runtime <runtime>", "Cursor runtime: cli or sdk (default: cli)", parseCursorRuntime)
     .option("--cursor-agent <path>", "cursor-agent entrypoint (auto-detected)")
     .option("--codex-executable <path>", "Codex CLI executable override")
     .option("--model <id>", "agent model override")
@@ -277,6 +282,7 @@ function addReviewCommand(
         handoffText,
         runsDir: options.runsDir,
         agentProvider: options.agent,
+        cursorRuntime: options.runtime,
         cursorAgentPath: options.cursorAgent,
         codexPathOverride: options.codexExecutable,
         model: options.model,
@@ -297,8 +303,14 @@ function addReviewCommand(
       if (resolvedOptions.agentProvider !== "codex" && options.codexExecutable) {
         throw new Error("--codex-executable applies only when --agent codex is active");
       }
+      if (resolvedOptions.agentProvider !== "cursor" && options.runtime) {
+        throw new Error("--runtime applies only when --agent cursor is active");
+      }
       if (resolvedOptions.agentProvider !== "cursor" && options.cursorAgent) {
         throw new Error("--cursor-agent applies only when --agent cursor is active");
+      }
+      if (resolvedOptions.cursorRuntime === "sdk" && options.cursorAgent) {
+        throw new Error("--cursor-agent applies only when Cursor runtime is cli");
       }
 
       const ctx = createWorkflowContext(resolvedOptions);
