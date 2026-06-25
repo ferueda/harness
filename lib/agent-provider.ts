@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createCodexAgent } from "./codex-agent.ts";
+import { createCodexAgent } from "../providers/codex/codex-agent.ts";
 import { createCursorAgent } from "./cursor-agent.ts";
 import type { Agent, AgentProviderName } from "./agents.ts";
 

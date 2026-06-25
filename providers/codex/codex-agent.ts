@@ -6,7 +6,7 @@ import {
   type ThreadOptions,
   type TurnOptions,
 } from "@openai/codex-sdk";
-import type { Agent, AgentRunInput, AgentRunResult } from "./agents.ts";
+import type { Agent, AgentRunInput, AgentRunResult } from "../../lib/agents.ts";
 
 type CodexThread = {
   id: string | null;
