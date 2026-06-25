@@ -4,10 +4,12 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   DEFAULT_AGENT_MODELS,
   DEFAULT_CODEX_REASONING_EFFORT,
+  effectiveCursorRuntime,
   type AgentApprovalPolicy,
   type AgentProviderName,
   type AgentReasoningEffort,
   type AgentSandboxMode,
+  type CursorRuntime,
 } from "./agents.ts";
 import { HarnessConfigSchema, formatZodError } from "./schemas.ts";
 
@@ -21,6 +23,7 @@ export type HarnessOptions = {
   baseRef?: string;
   headRef?: string;
   agentProvider?: AgentProviderName;
+  cursorRuntime?: CursorRuntime;
   model?: string;
   codexPathOverride?: string;
   sandboxMode?: AgentSandboxMode;
@@ -34,6 +37,7 @@ export type ResolvedHarnessOptions<T extends HarnessOptions = HarnessOptions> = 
   baseRef: string;
   headRef: string;
   agentProvider: AgentProviderName;
+  cursorRuntime?: CursorRuntime;
   model?: string;
   codexPathOverride?: string;
   sandboxMode?: AgentSandboxMode;
@@ -68,6 +72,7 @@ export function resolveHarnessOptions<T extends HarnessOptions>(
   const config = readHarnessConfig(workspace);
   const agentProvider = options.agentProvider ?? config.defaultAgent ?? "cursor";
   const agentConfig = config.agents?.[agentProvider] ?? {};
+  const cursorConfig = agentProvider === "cursor" ? config.agents?.cursor : undefined;
   const codexConfig = agentProvider === "codex" ? config.agents?.codex : undefined;
 
   return {
@@ -76,6 +81,10 @@ export function resolveHarnessOptions<T extends HarnessOptions>(
     baseRef: options.baseRef ?? config.base ?? "main",
     headRef: options.headRef ?? "HEAD",
     agentProvider,
+    cursorRuntime:
+      agentProvider === "cursor"
+        ? effectiveCursorRuntime(options.cursorRuntime ?? cursorConfig?.runtime)
+        : undefined,
     model: options.model ?? agentConfig.model ?? DEFAULT_AGENT_MODELS[agentProvider],
     codexPathOverride: options.codexPathOverride ?? codexConfig?.executable,
     sandboxMode: options.sandboxMode ?? codexConfig?.sandboxMode,
