@@ -150,7 +150,6 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
     local: {
       cwd: workspace,
       settingSources: [],
-      sandboxOptions: { enabled: true },
       autoReview: true,
     },
   });
