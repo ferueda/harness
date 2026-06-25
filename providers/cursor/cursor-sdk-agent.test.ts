@@ -6,7 +6,12 @@ import { expect, test } from "vitest";
 import { createCursorSdkAgent, type CursorSdkAgentFactoryOptions } from "./cursor-sdk-agent.ts";
 
 type FakeSdkOptions = {
-  result?: { status: "finished" | "error" | "cancelled"; result?: string };
+  result?: {
+    status: "finished" | "error" | "cancelled";
+    result?: string;
+    requestId?: string;
+    model?: string;
+  };
   createError?: Error;
   sendError?: Error;
   disposeError?: Error;
@@ -257,7 +262,14 @@ test("createCursorSdkAgent allows .harness artifacts", async () => {
 
 test("createCursorSdkAgent reports terminal SDK statuses", async () => {
   const workspace = createGitWorkspace();
-  const errorSdk = createFakeSdk({ result: { status: "error", result: "failed" } });
+  const errorSdk = createFakeSdk({
+    result: {
+      status: "error",
+      result: "failed because auth expired",
+      requestId: "req-error",
+      model: "composer-2.5",
+    },
+  });
   const errorResult = await createCursorSdkAgent({
     apiKey: "cursor-key",
     createSdkAgent: errorSdk.createSdkAgent,
@@ -265,6 +277,9 @@ test("createCursorSdkAgent reports terminal SDK statuses", async () => {
   expect(errorResult.ok).toBe(false);
   if (errorResult.ok) return;
   expect(errorResult.error).toMatch(/error status/);
+  expect(errorResult.error).toContain("failed because auth expired");
+  expect(errorResult.error).toContain("req-error");
+  expect(errorResult.error).toContain("composer-2.5");
 
   const cancelledSdk = createFakeSdk({ result: { status: "cancelled", result: "cancelled" } });
   const cancelledResult = await createCursorSdkAgent({
@@ -371,8 +386,13 @@ test("createCursorSdkAgent detects workspace mutations on timeout", async () => 
 
   expect(result.ok).toBe(false);
   if (result.ok) return;
+  expect(result.exitCode).toBe(124);
   expect(result.error).toBe("Cursor SDK runtime modified the workspace during a review run");
   expect(result.raw).toMatchObject({
+    underlyingFailure: {
+      exitCode: 124,
+      error: expect.stringContaining("timed out"),
+    },
     workspaceStatus: {
       before: "",
       after: expect.stringContaining("changed-on-timeout.txt"),
