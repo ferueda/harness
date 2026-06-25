@@ -11,7 +11,18 @@ import {
   type ReviewVerdict,
   type WorkflowStepMetadata,
 } from "./aggregate.ts";
-import type { Agent, AgentRunResult } from "./agents.ts";
+import { createAgentProvider } from "./agent-provider.ts";
+import type { AgentProviderOptions } from "./agent-provider.ts";
+import type {
+  Agent,
+  AgentApprovalPolicy,
+  AgentProviderName,
+  AgentReasoningEffort,
+  AgentRunInput,
+  AgentRunResult,
+  AgentSandboxMode,
+} from "./agents.ts";
+import { DEFAULT_AGENT_MODELS, DEFAULT_CODEX_REASONING_EFFORT } from "./agents.ts";
 import {
   buildDiffSection,
   buildHandoffSection,
@@ -21,7 +32,6 @@ import {
   prepareGitScope,
   writeRunContext,
 } from "./context.ts";
-import { createCursorAgent } from "./cursor-agent.ts";
 import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
@@ -35,13 +45,22 @@ type WorkflowOptions = {
   baseRef: string;
   headRef: string;
   runsDir?: string;
+  agentProvider?: AgentProviderName;
   cursorAgentPath?: string;
+  codexPathOverride?: string;
   planPath?: string;
   handoffPath?: string;
   handoffText?: string;
   model?: string;
+  sandboxMode?: AgentSandboxMode;
+  approvalPolicy?: AgentApprovalPolicy;
+  modelReasoningEffort?: AgentReasoningEffort;
   maxRuntimeMs: number;
   dryRun?: boolean;
+};
+
+type WorkflowContextFactoryOptions = WorkflowOptions & {
+  agentProviderFactory?: (options: AgentProviderOptions) => Agent;
 };
 
 type Scope = ReturnType<typeof prepareGitScope> & {
@@ -65,12 +84,9 @@ type PromptContextArtifacts = {
 const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const IS_BUILT_OUTPUT = basename(MODULE_ROOT) === "dist";
 const HARNESS_ROOT = IS_BUILT_OUTPUT ? resolve(MODULE_ROOT, "..") : MODULE_ROOT;
-const RUNTIME_ROOT = IS_BUILT_OUTPUT ? MODULE_ROOT : HARNESS_ROOT;
 const SCHEMA_PATH = join(HARNESS_ROOT, "schemas/review-output.schema.json");
-const DEFAULT_CURSOR_AGENT = join(
-  RUNTIME_ROOT,
-  IS_BUILT_OUTPUT ? "providers/cursor/cursor-agent.js" : "providers/cursor/cursor-agent.ts",
-);
+const REVIEW_SANDBOX_MODE = "read-only" satisfies AgentSandboxMode;
+const REVIEW_APPROVAL_POLICY = "never" satisfies AgentApprovalPolicy;
 const DRY_RUN_REVIEW = {
   verdict: "pass",
   summary: "(dry-run placeholder)",
@@ -114,6 +130,15 @@ const REVIEWER_CONFIGS = {
 };
 
 export function createWorkflowContext(options: WorkflowOptions) {
+  return createWorkflowContextInternal(options);
+}
+
+// Test-only seam for provider injection; production callers should use createWorkflowContext.
+export function createWorkflowContextForTest(options: WorkflowContextFactoryOptions) {
+  return createWorkflowContextInternal(options);
+}
+
+function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
   const workspace = resolve(options.workspace);
   if (!existsSync(workspace)) {
     throw new Error(`Workspace does not exist: ${workspace}`);
@@ -131,8 +156,11 @@ export function createWorkflowContext(options: WorkflowOptions) {
   try {
     mkdirSync(runDir, { recursive: true });
 
-    reviewProvider = createCursorAgent({
-      cursorAgentPath: resolveCursorAgentPath(options.cursorAgentPath),
+    const agentProviderFactory = options.agentProviderFactory ?? createAgentProvider;
+    reviewProvider = agentProviderFactory({
+      provider: options.agentProvider ?? "cursor",
+      cursorAgentPath: options.cursorAgentPath,
+      codexPathOverride: options.codexPathOverride,
     });
     scope = {
       ...prepareGitScope(workspace, {
@@ -160,7 +188,12 @@ export function createWorkflowContext(options: WorkflowOptions) {
   }
 
   const promptPaths: PromptArtifacts = {};
-  const agentMeta = { name: reviewProvider.name };
+  const agentPolicyMeta = reviewPolicyOptions(reviewProvider.name, options);
+  const agentMeta = {
+    name: reviewProvider.name,
+    model: resolvedAgentModel(reviewProvider.name, options),
+    ...agentPolicyMeta,
+  };
   const writeDryRunMeta = (steps?: WorkflowStepMetadata) => {
     const meta = {
       runId,
@@ -169,7 +202,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       scope: scopeMeta,
       runDir,
       agent: agentMeta,
-      ...(steps ?? {}),
+      ...steps,
       prompts: promptPaths,
     };
     writeJson(join(runDir, "meta.json"), meta);
@@ -229,7 +262,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       scope: scopeMeta,
       startedAt: startedAtIso,
       durationMs,
-      ...(input.steps ?? {}),
+      ...input.steps,
       ...buildTopLevelReviewFields(reviewSummaries),
       reviews: reviewSummaries,
     };
@@ -278,7 +311,8 @@ export function createWorkflowContext(options: WorkflowOptions) {
         workspace,
         prompt,
         schemaPath: SCHEMA_PATH,
-        model: options.model,
+        model: resolvedAgentModel(reviewProvider.name, options),
+        ...agentPolicyMeta,
         maxRuntimeMs: options.maxRuntimeMs,
       });
 
@@ -328,6 +362,22 @@ export function createWorkflowContext(options: WorkflowOptions) {
 function getReviewInfo(name: ReviewAgentName): { key: string; title: string; stage: string } {
   const config = REVIEWER_CONFIGS[name];
   return { key: config.summaryKey, title: config.title, stage: config.stage };
+}
+
+function reviewPolicyOptions(
+  providerName: AgentProviderName,
+  options: WorkflowOptions,
+): Pick<AgentRunInput, "sandboxMode" | "approvalPolicy" | "modelReasoningEffort"> {
+  if (providerName !== "codex") return {};
+  return {
+    sandboxMode: options.sandboxMode ?? REVIEW_SANDBOX_MODE,
+    approvalPolicy: options.approvalPolicy ?? REVIEW_APPROVAL_POLICY,
+    modelReasoningEffort: options.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
+  };
+}
+
+function resolvedAgentModel(providerName: AgentProviderName, options: WorkflowOptions): string {
+  return options.model ?? DEFAULT_AGENT_MODELS[providerName];
 }
 
 function buildScopeMeta(scope: Scope) {
@@ -404,17 +454,6 @@ export function resolveSkillPath(
     if (existsSync(candidate)) return candidate;
   }
   throw new Error(`Skill not found: ${skillName}`);
-}
-
-function resolveCursorAgentPath(explicitPath?: string): string {
-  const candidates = [explicitPath ? resolve(explicitPath) : null, DEFAULT_CURSOR_AGENT].filter(
-    (candidate): candidate is string => Boolean(candidate),
-  );
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  throw new Error("cursor-agent entrypoint not found. Pass --cursor-agent.");
 }
 
 function summarizeReview(review: ReviewSection["review"]): {
