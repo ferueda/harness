@@ -50,6 +50,7 @@ export async function runReviewSteps(
     ctx.reviewConcurrency === "serial"
       ? await runReviewTasksSerially(ctx, reviewTasks)
       : await Promise.allSettled(reviewTasks.map((task) => runReviewTask(ctx, task)));
+  const exportStepMetadata = trimExecutedStepMetadata(stepMetadata, results.length);
 
   const reviews: ReviewSection[] = [];
   const failedReviews: FailedReview[] = [];
@@ -70,14 +71,14 @@ export async function runReviewSteps(
   }
 
   if (failedReviews.length > 0) {
-    return ctx.exportFailed({ title, reviews, failedReviews, steps: stepMetadata });
+    return ctx.exportFailed({ title, reviews, failedReviews, steps: exportStepMetadata });
   }
 
   return ctx.export({
     title,
     reviews,
     verdict: ctx.aggregate(...reviews.map(({ review }) => review)),
-    steps: stepMetadata,
+    steps: exportStepMetadata,
   });
 }
 
@@ -102,7 +103,24 @@ async function runReviewTasksSerially(ctx: WorkflowContext, tasks: ReviewTask[])
       results.push({ status: "fulfilled", value: await runReviewTask(ctx, task) });
     } catch (reason) {
       results.push({ status: "rejected", reason });
+      break;
     }
   }
   return results;
+}
+
+function trimExecutedStepMetadata(
+  stepMetadata: WorkflowStepMetadata | undefined,
+  executedCount: number,
+): WorkflowStepMetadata | undefined {
+  if (!stepMetadata || executedCount >= stepMetadata.executedSteps.length) return stepMetadata;
+
+  const executedSteps = stepMetadata.executedSteps.slice(0, executedCount);
+  const stoppedSteps = stepMetadata.executedSteps.slice(executedCount);
+  return {
+    ...stepMetadata,
+    executedSteps,
+    omittedSteps: [...stepMetadata.omittedSteps, ...stoppedSteps],
+    partial: true,
+  };
 }
