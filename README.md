@@ -136,7 +136,7 @@ Cursor also has an experimental SDK runtime:
 CURSOR_API_KEY=... harness run change-review --agent cursor --runtime sdk
 ```
 
-The SDK runtime uses Cursor local agent mode, requires `CURSOR_API_KEY`, runs change-review steps serially in one harness process, and rejects review runs that modify tracked workspace status outside `.harness/`. SDK sandboxing and auto-review are defense-in-depth only; the git status comparison is the review safety backstop. It is not equivalent to the CLI `ask` path, is not the default, and unlike the CLI runtime cannot rely on `agent login` auth.
+The SDK runtime uses Cursor local agent mode, requires `CURSOR_API_KEY`, runs change-review steps serially in one harness process, and rejects review runs that modify tracked workspace status outside `.harness/`. The git status comparison is the review safety backstop; Cursor SDK local sandboxing is environment-dependent and is not required by harness. It is not equivalent to the CLI `ask` path, is not the default, and unlike the CLI runtime cannot rely on `agent login` auth.
 
 `harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`. The shim is a bash script; target machines need a POSIX shell with `bash` available.
 
