@@ -14,8 +14,11 @@ import { expect, test } from "vitest";
 import {
   cleanupOrphanedRunDir,
   createWorkflowContext,
+  createWorkflowContextForTest,
   resolveSkillPath,
 } from "../lib/workflow-context.ts";
+import type { AgentRunInput } from "../lib/agents.ts";
+import type { AgentProviderOptions } from "../lib/agent-provider.ts";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 function createGitWorkspace() {
@@ -172,4 +175,223 @@ test("workflow context validates provider structured output as review output", a
   );
   const raw = JSON.parse(readFileSync(join(ctx.runDir, "implementation-review.raw.json"), "utf8"));
   expect(raw.structuredOutput.summary).toBe("missing findings");
+});
+
+test("workflow context rejects Cursor findings without rationale", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const fakeAgent = join(mkdtempSync(join(tmpdir(), "harness-agent-")), "cursor-agent.js");
+  writeFileSync(
+    fakeAgent,
+    [
+      "#!/usr/bin/env node",
+      "console.log(JSON.stringify({",
+      '  status: "completed",',
+      "  structuredOutput: {",
+      "    verdict: 'needs_changes',",
+      "    summary: 'missing rationale',",
+      "    findings: [{",
+      "      title: 'Missing rationale',",
+      "      severity: 'Medium',",
+      "      location: 'lib/example.ts:1',",
+      "      issue: 'No rationale field',",
+      "      recommendation: 'Add rationale',",
+      "      must_fix: true,",
+      "    }],",
+      "  },",
+      "}));",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakeAgent, 0o755);
+
+  const ctx = createWorkflowContext({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    cursorAgentPath: fakeAgent,
+    maxRuntimeMs: 1_000,
+  });
+
+  await expect(ctx.agent("review-implementation")).rejects.toThrow(
+    /Invalid reviewer structured output: findings\.0\.rationale:/,
+  );
+});
+
+test("workflow context rejects Codex findings with extra properties", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProvider: "codex",
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return {
+            ok: true,
+            structuredOutput: {
+              verdict: "needs_changes",
+              summary: "extra property",
+              findings: [
+                {
+                  title: "Extra property",
+                  severity: "Medium",
+                  location: "lib/example.ts:1",
+                  issue: "Unexpected field",
+                  recommendation: "Remove field",
+                  rationale: "The workflow schema should reject unknown finding keys.",
+                  must_fix: false,
+                  extra: "nope",
+                },
+              ],
+            },
+            raw: { ok: true },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  await expect(ctx.agent("review-implementation")).rejects.toThrow(
+    /Invalid reviewer structured output: findings\.0: .*extra/i,
+  );
+});
+
+test("workflow context rejects Codex findings without rationale", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProvider: "codex",
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return {
+            ok: true,
+            structuredOutput: {
+              verdict: "needs_changes",
+              summary: "missing rationale",
+              findings: [
+                {
+                  title: "Missing rationale",
+                  severity: "Medium",
+                  location: "lib/example.ts:1",
+                  issue: "No rationale field",
+                  recommendation: "Add rationale",
+                  must_fix: true,
+                },
+              ],
+            },
+            raw: { ok: true },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  await expect(ctx.agent("review-implementation")).rejects.toThrow(
+    /Invalid reviewer structured output: findings\.0\.rationale:/,
+  );
+});
+
+test("workflow context passes Codex review sandbox and approval defaults", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const calls: {
+    providerOptions?: AgentProviderOptions;
+    input?: AgentRunInput;
+  } = {};
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProvider: "codex",
+    agentProviderFactory(options) {
+      calls.providerOptions = options;
+      return {
+        name: options.provider,
+        async run(input) {
+          calls.input = input;
+          return {
+            ok: true,
+            structuredOutput: {
+              verdict: "pass",
+              summary: "ok",
+              findings: [],
+            },
+            raw: { ok: true },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  const review = await ctx.agent("review-implementation");
+
+  expect(review.verdict).toBe("pass");
+  expect(calls.providerOptions).toMatchObject({ provider: "codex" });
+  expect(calls.input).toMatchObject({
+    model: "gpt-5.5",
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
+    modelReasoningEffort: "high",
+  });
+});
+
+test("workflow context passes explicit Codex sandbox and approval overrides", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const calls: { input?: AgentRunInput } = {};
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProvider: "codex",
+    model: "gpt-test",
+    sandboxMode: "workspace-write",
+    approvalPolicy: "on-request",
+    modelReasoningEffort: "medium",
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          calls.input = input;
+          return {
+            ok: true,
+            structuredOutput: {
+              verdict: "pass",
+              summary: "ok",
+              findings: [],
+            },
+            raw: { ok: true },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  await ctx.agent("review-implementation");
+
+  expect(calls.input).toMatchObject({
+    model: "gpt-test",
+    sandboxMode: "workspace-write",
+    approvalPolicy: "on-request",
+    modelReasoningEffort: "medium",
+  });
 });
