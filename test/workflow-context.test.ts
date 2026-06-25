@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -131,4 +138,38 @@ test("dry-run export writes workflow step metadata", () => {
   expect(meta.workflow).toBe("change-review");
   expect(meta.executedSteps).toEqual(["implementation"]);
   expect(meta.omittedSteps).toEqual(["quality", "simplify"]);
+});
+
+test("workflow context validates provider structured output as review output", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const fakeAgent = join(mkdtempSync(join(tmpdir(), "harness-agent-")), "cursor-agent.js");
+  writeFileSync(
+    fakeAgent,
+    [
+      "#!/usr/bin/env node",
+      "console.log(JSON.stringify({",
+      '  status: "completed",',
+      "  structuredOutput: { verdict: 'pass', summary: 'missing findings' },",
+      "}));",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakeAgent, 0o755);
+
+  const ctx = createWorkflowContext({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    cursorAgentPath: fakeAgent,
+    maxRuntimeMs: 1_000,
+  });
+
+  await expect(ctx.agent("review-implementation")).rejects.toThrow(
+    /Invalid reviewer structured output: findings:/,
+  );
+  const raw = JSON.parse(readFileSync(join(ctx.runDir, "implementation-review.raw.json"), "utf8"));
+  expect(raw.structuredOutput.summary).toBe("missing findings");
 });
