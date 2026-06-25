@@ -149,6 +149,36 @@ test("change-review can run selected reviews serially", async () => {
   ]);
 });
 
+test("change-review serial mode stops after the first failed reviewer", async () => {
+  const deferred = createDeferredReviews();
+  const harness = createContext(deferred, { reviewConcurrency: "serial" });
+  const run = runChangeReview(harness.ctx);
+
+  expect(harness.started).toEqual(["review-implementation"]);
+  deferred["review-implementation"].reject(
+    new Error("Cursor SDK runtime modified the workspace during a review run"),
+  );
+
+  await expect(run).resolves.toMatchObject({ status: "failed" });
+  expect(harness.started).toEqual(["review-implementation"]);
+  expect(harness.exportedReviews).toEqual([]);
+  expect(harness.exportedFailures).toEqual([
+    {
+      key: "implementation",
+      stage: "implementation",
+      error: "Cursor SDK runtime modified the workspace during a review run",
+    },
+  ]);
+  expect(harness.exportedSteps).toEqual({
+    workflow: "change-review",
+    availableSteps: ["implementation", "quality", "simplify"],
+    requestedSteps: ["implementation", "quality", "simplify"],
+    executedSteps: ["implementation"],
+    omittedSteps: ["quality", "simplify"],
+    partial: true,
+  });
+});
+
 test("change-review starts only selected steps in workflow order", async () => {
   const deferred = createDeferredReviews();
   const harness = createContext(deferred);
