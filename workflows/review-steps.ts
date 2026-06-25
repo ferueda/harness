@@ -17,6 +17,7 @@ export type WorkflowContext = {
   agent(name: ReviewAgentName): Promise<ReviewOutput>;
   aggregate(...reviews: ReviewOutput[]): ReviewVerdict;
   reviewInfo(name: ReviewAgentName): { key: string; title: string; stage: string };
+  reviewConcurrency?: "parallel" | "serial";
   export(input: {
     title: string;
     reviews: ReviewSection[];
@@ -45,15 +46,10 @@ export async function runReviewSteps(
     ...step,
     ...ctx.reviewInfo(step.agentName),
   }));
-  const results = await Promise.allSettled(
-    reviewTasks.map(async ({ agentName, key, title: reviewTitle }) => {
-      return {
-        key,
-        title: reviewTitle,
-        review: await ctx.agent(agentName),
-      };
-    }),
-  );
+  const results =
+    ctx.reviewConcurrency === "serial"
+      ? await runReviewTasksSerially(ctx, reviewTasks)
+      : await Promise.allSettled(reviewTasks.map((task) => runReviewTask(ctx, task)));
 
   const reviews: ReviewSection[] = [];
   const failedReviews: FailedReview[] = [];
@@ -83,4 +79,30 @@ export async function runReviewSteps(
     verdict: ctx.aggregate(...reviews.map(({ review }) => review)),
     steps: stepMetadata,
   });
+}
+
+type ReviewTask = ReviewStep & {
+  key: string;
+  title: string;
+  stage: string;
+};
+
+function runReviewTask(ctx: WorkflowContext, task: ReviewTask) {
+  return ctx.agent(task.agentName).then((review) => ({
+    key: task.key,
+    title: task.title,
+    review,
+  }));
+}
+
+async function runReviewTasksSerially(ctx: WorkflowContext, tasks: ReviewTask[]) {
+  const results: PromiseSettledResult<Awaited<ReturnType<typeof runReviewTask>>>[] = [];
+  for (const task of tasks) {
+    try {
+      results.push({ status: "fulfilled", value: await runReviewTask(ctx, task) });
+    } catch (reason) {
+      results.push({ status: "rejected", reason });
+    }
+  }
+  return results;
 }
