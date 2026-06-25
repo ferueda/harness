@@ -61,6 +61,7 @@ async function invokeCursorSdkAgent({
   let timedOut = false;
   let timeout: NodeJS.Timeout | undefined;
   const startedAt = Date.now();
+  // maxRuntimeMs is a total budget across create, send, and wait.
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => {
       timedOut = true;
@@ -119,7 +120,7 @@ async function invokeCursorSdkAgent({
       return withWorkspaceGuard(
         {
           ok: false,
-          error: "Cursor SDK run finished with error status",
+          error: cursorSdkErrorStatusMessage(result),
           raw,
           exitCode: 1,
         },
@@ -282,15 +283,15 @@ function withWorkspaceGuard(
       before: beforeStatus,
       after: afterStatus.value,
     }),
-  } as AgentRunResult;
+  };
 
   if (afterStatus.value === beforeStatus) return guardedResult;
 
   return {
     ok: false,
     error: "Cursor SDK runtime modified the workspace during a review run",
-    raw: guardedResult.raw,
-    exitCode: 1,
+    raw: addUnderlyingFailure(guardedResult.raw, result),
+    exitCode: result.ok ? 1 : result.exitCode,
   };
 }
 
@@ -305,6 +306,38 @@ function addWorkspaceStatus(
     };
   }
   return { raw, workspaceStatus };
+}
+
+function addUnderlyingFailure(raw: unknown, result: AgentRunResult): unknown {
+  if (result.ok) return raw;
+  const underlying = {
+    error: result.error,
+    exitCode: result.exitCode,
+  };
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return {
+      ...raw,
+      underlyingFailure: underlying,
+    };
+  }
+  return { raw, underlyingFailure: underlying };
+}
+
+function cursorSdkErrorStatusMessage(result: CursorSdkRunResult): string {
+  const details = [
+    `status=${result.status}`,
+    result.requestId ? `requestId=${result.requestId}` : null,
+    result.model ? `model=${result.model}` : null,
+    typeof result.result === "string" && result.result.trim()
+      ? `result=${truncate(result.result.trim(), 240)}`
+      : null,
+  ].filter((detail): detail is string => Boolean(detail));
+  return `Cursor SDK run finished with error status (${details.join(", ")})`;
+}
+
+function truncate(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 3)}...`;
 }
 
 async function cancelRun(run: CursorSdkRun): Promise<void> {
