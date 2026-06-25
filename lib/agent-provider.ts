@@ -3,10 +3,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCodexAgent } from "../providers/codex/codex-agent.ts";
 import { createCursorAgent } from "./cursor-agent.ts";
-import type { Agent, AgentProviderName } from "./agents.ts";
+import { isCursorSdkRuntime } from "./agents.ts";
+import type { Agent, AgentProviderName, AgentRunInput, CursorRuntime } from "./agents.ts";
 
 export type AgentProviderOptions = {
   provider: AgentProviderName;
+  cursorRuntime?: CursorRuntime;
   cursorAgentPath?: string;
   codexPathOverride?: string;
 };
@@ -25,9 +27,25 @@ export function createAgentProvider(options: AgentProviderOptions): Agent {
     return createCodexAgent({ codexPathOverride: options.codexPathOverride });
   }
 
+  if (isCursorSdkRuntime(options.provider, options.cursorRuntime)) {
+    return createLazyCursorSdkAgent();
+  }
+
   return createCursorAgent({
     cursorAgentPath: resolveCursorAgentPath(options.cursorAgentPath),
   });
+}
+
+function createLazyCursorSdkAgent(): Agent {
+  let providerAgent: Agent | undefined;
+  return {
+    name: "cursor",
+    async run(input: AgentRunInput) {
+      const { createCursorSdkAgent } = await import("../providers/cursor/cursor-sdk-agent.ts");
+      providerAgent ??= createCursorSdkAgent();
+      return providerAgent.run(input);
+    },
+  };
 }
 
 function resolveCursorAgentPath(explicitPath?: string): string {
