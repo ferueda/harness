@@ -9,53 +9,34 @@ Coordinate harness review runs and close the loop on reviewer findings.
 
 ## Workflow Choice
 
-- Default to `change-review`, which runs `implementation`, `quality`, and `simplify`.
-- Use `--steps <ids>` only when the caller intentionally selects a subset.
-- Valid step ids are `implementation`, `quality`, and `simplify`.
-- In follow-up review cycles, the caller should decide whether a step that returned no findings in a previous run should be omitted. Do not infer that automatically; record the reason when you intentionally use `--steps`.
+- Default to `change-review`, which runs all review roles:
+  - `implementation`: correctness, plan/spec fit, behavioral regressions, missing tests.
+  - `quality`: clarity, conventions, maintainability, behavior-preserving refinements.
+  - `simplify`: unnecessary complexity and smaller equivalent shapes.
+- Use `--steps <ids>` only when the caller intentionally selected roles, or on a follow-up run where you intentionally skip a role that already passed. Record the skip reason.
 
 ## Before Running
 
-1. Create a self-contained review handoff using [references/review-handoff.md](references/review-handoff.md). Completion criterion: a reviewer can understand the goal, scope, changed files, verification, and scrutiny points without chat history.
-2. Confirm the Git review scope. Harness reviews `merge-base(base, head)..head`; unstaged, staged-but-uncommitted, and untracked files are not included unless `head` points at a commit/tree that contains them. If reviewing current worktree changes, create an explicit temporary review ref or commit object and pass it with `--head`.
-3. Prefer `--handoff-stdin` for generated handoffs. Harness writes the reviewer-facing file under the ignored run artifact directory. Use `--handoff <path>` only when a handoff file already exists.
+1. Compose a self-contained review handoff using [references/review-handoff.md](references/review-handoff.md). Completion criterion: a reviewer can understand the goal, scope, changed files, verification, and scrutiny points without chat history.
+2. Pipe that handoff through stdin with `--handoff-stdin`. Do not write a handoff file into the target repo; harness writes the reviewer-facing file under the ignored run artifact directory.
+3. Confirm Git review scope. Harness reviews `merge-base(base, head)..head`; unstaged, staged-but-uncommitted, and untracked files are excluded unless `head` points at a commit/tree containing them. If reviewing current worktree changes, create a temporary review ref or commit object and pass it with `--head`.
 4. Include `--plan` when a plan/spec exists. Include `--workspace` when reviewing a repo other than the current one.
 
-## CLI
+## Running
 
-Installed package:
-
-```bash
-printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --handoff-stdin
-```
-
-Local harness source:
+Use the available harness executable: `harness`, `.harness/bin/harness`, or `node bin/harness.ts` when working from this source repo.
 
 ```bash
-printf '%s\n' "$HANDOFF" | node bin/harness.ts run change-review --workspace /path/to/repo --handoff-stdin
+printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --handoff-stdin
 ```
 
-Built local package:
+For a deliberate partial run:
 
 ```bash
-printf '%s\n' "$HANDOFF" | node dist/bin/harness.js run change-review --workspace /path/to/repo --handoff-stdin
+printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --steps implementation,quality --handoff-stdin
 ```
 
-Selected steps:
-
-```bash
-printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --steps implementation,quality --handoff-stdin
-```
-
-Useful flags:
-
-- `--base <ref>` and `--head <ref>` set the diff range.
-- `--plan <path>` gives reviewers the implementation plan or spec.
-- `--steps <ids>` runs only the selected change-review steps in workflow order.
-- Prefer `--handoff-stdin` for generated handoffs; it gives reviewers shared context without requiring callers to create files.
-- `--handoff <path>` remains available for existing handoff files.
-- `--dry-run` writes prompts/context without running reviewer agents.
-- `--runs-dir <path>` overrides the default `.harness/runs/reviews` output root.
+Defaults: Cursor `composer-2.5`; Codex `gpt-5.5` with effort `high`. Use `--agent` or `--model` only when the caller asks or repo config requires it. Run `harness models` before choosing a non-default model.
 
 ## After Results
 
@@ -64,7 +45,7 @@ Useful flags:
 3. Triage each finding as `Implement`, `Adapt`, or `Decline`. The final call is yours; back each decision with code-backed reasoning.
 4. Apply accepted fixes yourself after triage. Keep reviewer agents read-only.
 5. Run focused verification for the accepted fixes. Add regression tests for bugs when they fit.
-6. Re-run `change-review` after material fixes. For follow-up cycles, decide whether to run all steps or use `--steps` to omit prior no-finding steps. Make that decision explicitly from the prior results and current change scope.
+6. Re-run `change-review` after material fixes. For follow-up cycles, decide whether to run all roles or use `--steps` to omit prior passing roles. Make that decision explicitly from the prior results and current change scope.
 
 ## Result Rules
 
