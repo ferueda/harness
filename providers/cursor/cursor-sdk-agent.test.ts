@@ -145,7 +145,7 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
   expect(result.sessionId).toBe("agent-123");
   expect(calls.options).toMatchObject({
     apiKey: "cursor-key",
-    model: { id: "gpt-5.5-high" },
+    model: { id: "gpt-5.5-high", params: [{ id: "fast", value: "false" }] },
     mode: "agent",
     local: {
       cwd: workspace,
@@ -157,6 +157,26 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
   expect(calls.prompt).toContain("review this");
   expect(calls.disposed).toBe(true);
   expect(calls.closed).toBe(false);
+});
+
+test("createCursorSdkAgent disables fast mode for SDK model selections", async () => {
+  const workspace = createGitWorkspace();
+  const { calls, createSdkAgent } = createFakeSdk();
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+  }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  expect(calls.options?.model).toEqual({
+    id: "composer-2.5",
+    params: [{ id: "fast", value: "false" }],
+  });
 });
 
 test("createCursorSdkAgent requires an API key", async () => {
