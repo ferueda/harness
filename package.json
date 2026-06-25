@@ -29,6 +29,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@connectrpc/connect-node": "^1.7.0",
     "@cursor/sdk": "1.0.19",
     "@openai/codex-sdk": "0.142.0",
     "commander": "15.0.0",
