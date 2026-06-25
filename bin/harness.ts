@@ -5,6 +5,17 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  AGENT_APPROVAL_POLICIES,
+  AGENT_MODEL_CATALOG,
+  AGENT_PROVIDERS,
+  AGENT_REASONING_EFFORTS,
+  AGENT_SANDBOX_MODES,
+  type AgentApprovalPolicy,
+  type AgentProviderName,
+  type AgentReasoningEffort,
+  type AgentSandboxMode,
+} from "../lib/agents.ts";
+import {
   CHANGE_REVIEW_STEPS,
   isChangeReviewStep,
   run as runChangeReview,
@@ -33,8 +44,13 @@ type ReviewOptions = {
   handoff?: string;
   handoffStdin?: boolean;
   runsDir?: string;
+  agent?: AgentProviderName;
   cursorAgent?: string;
+  codexExecutable?: string;
   model?: string;
+  sandbox?: AgentSandboxMode;
+  approvalPolicy?: AgentApprovalPolicy;
+  reasoningEffort?: AgentReasoningEffort;
   maxRuntimeMs: number;
   dryRun: boolean;
   steps?: ChangeReviewStepId[];
@@ -62,6 +78,22 @@ function positiveNumber(value: string): number {
     throw new InvalidArgumentError("must be a positive number");
   }
   return parsed;
+}
+
+const parseAgentProvider = makeEnumParser<AgentProviderName>(AGENT_PROVIDERS);
+const parseSandboxMode = makeEnumParser<AgentSandboxMode>(AGENT_SANDBOX_MODES);
+const parseApprovalPolicy = makeEnumParser<AgentApprovalPolicy>(AGENT_APPROVAL_POLICIES);
+const parseReasoningEffort = makeEnumParser<AgentReasoningEffort>(AGENT_REASONING_EFFORTS);
+
+function makeEnumParser<T extends string>(values: readonly T[]): (value: string) => T {
+  return (value: string) => {
+    if (isOneOf(value, values)) return value;
+    throw new InvalidArgumentError(`must be one of: ${values.join(", ")}`);
+  };
+}
+
+function isOneOf<const T extends readonly string[]>(value: string, values: T): value is T[number] {
+  return values.includes(value);
 }
 
 function parseStepList(value: string): ChangeReviewStepId[] {
@@ -154,6 +186,13 @@ function buildProgram(): Command {
       console.log(JSON.stringify(result, null, 2));
     });
 
+  program
+    .command("models")
+    .description("List known agent models and defaults")
+    .action(() => {
+      console.log(JSON.stringify(AGENT_MODEL_CATALOG, null, 2));
+    });
+
   const skills = program.command("skills").description("Manage local harness skills");
   skills
     .command("install")
@@ -196,8 +235,25 @@ function addReviewCommand(
     .option("--handoff <path>", "optional handoff file")
     .option("--handoff-stdin", "read optional handoff text from stdin", false)
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
+    .option("--agent <provider>", "review agent provider: cursor or codex", parseAgentProvider)
     .option("--cursor-agent <path>", "cursor-agent entrypoint (auto-detected)")
-    .option("--model <id>", "Cursor model override")
+    .option("--codex-executable <path>", "Codex CLI executable override")
+    .option("--model <id>", "agent model override")
+    .option(
+      "--sandbox <mode>",
+      "Codex-only sandbox mode (default for reviews: read-only)",
+      parseSandboxMode,
+    )
+    .option(
+      "--approval-policy <policy>",
+      "Codex-only approval policy (default for reviews: never)",
+      parseApprovalPolicy,
+    )
+    .option(
+      "--reasoning-effort <effort>",
+      "Codex-only reasoning effort: minimal,low,medium,high,xhigh",
+      parseReasoningEffort,
+    )
     .option(
       "--steps <ids>",
       "comma-separated change-review steps: implementation,quality,simplify",
@@ -212,21 +268,40 @@ function addReviewCommand(
     .option("--dry-run", "prepare context and prompts only", false)
     .action(async (options: ReviewOptions) => {
       const handoffText = resolveHandoffText(options);
-      const ctx = createWorkflowContext(
-        resolveHarnessOptions({
-          workspace: options.workspace,
-          baseRef: options.base,
-          headRef: options.head,
-          planPath: options.plan,
-          handoffPath: options.handoff,
-          handoffText,
-          runsDir: options.runsDir,
-          cursorAgentPath: options.cursorAgent,
-          model: options.model,
-          maxRuntimeMs: options.maxRuntimeMs,
-          dryRun: options.dryRun,
-        }),
-      );
+      const resolvedOptions = resolveHarnessOptions({
+        workspace: options.workspace,
+        baseRef: options.base,
+        headRef: options.head,
+        planPath: options.plan,
+        handoffPath: options.handoff,
+        handoffText,
+        runsDir: options.runsDir,
+        agentProvider: options.agent,
+        cursorAgentPath: options.cursorAgent,
+        codexPathOverride: options.codexExecutable,
+        model: options.model,
+        sandboxMode: options.sandbox,
+        approvalPolicy: options.approvalPolicy,
+        modelReasoningEffort: options.reasoningEffort,
+        maxRuntimeMs: options.maxRuntimeMs,
+        dryRun: options.dryRun,
+      });
+      if (
+        resolvedOptions.agentProvider !== "codex" &&
+        (options.sandbox || options.approvalPolicy || options.reasoningEffort)
+      ) {
+        throw new Error(
+          "--sandbox, --approval-policy, and --reasoning-effort apply only when --agent codex is active",
+        );
+      }
+      if (resolvedOptions.agentProvider !== "codex" && options.codexExecutable) {
+        throw new Error("--codex-executable applies only when --agent codex is active");
+      }
+      if (resolvedOptions.agentProvider !== "cursor" && options.cursorAgent) {
+        throw new Error("--cursor-agent applies only when --agent cursor is active");
+      }
+
+      const ctx = createWorkflowContext(resolvedOptions);
       let meta;
       try {
         meta = await workflow(ctx, { steps: options.steps });

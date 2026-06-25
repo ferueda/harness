@@ -7,6 +7,7 @@ export type JsonSchema = {
   enum?: unknown[];
   required?: string[];
   properties?: Record<string, JsonSchema>;
+  additionalProperties?: boolean | JsonSchema;
   items?: JsonSchema;
 };
 
@@ -152,6 +153,21 @@ function validateJsonSchema(value: unknown, schema: JsonSchema, path: string): s
     for (const [key, propSchema] of Object.entries(schema.properties ?? {})) {
       if (key in objectValue) {
         const childError = validateJsonSchema(objectValue[key], propSchema, `${path}.${key}`);
+        if (childError) return childError;
+      }
+    }
+    const propertySchemas = schema.properties ?? {};
+    for (const key of Object.keys(objectValue)) {
+      if (key in propertySchemas) continue;
+      if (schema.additionalProperties === false) {
+        return `${path}: unexpected property "${key}"`;
+      }
+      if (typeof schema.additionalProperties === "object") {
+        const childError = validateJsonSchema(
+          objectValue[key],
+          schema.additionalProperties,
+          `${path}.${key}`,
+        );
         if (childError) return childError;
       }
     }

@@ -56,13 +56,106 @@ test("resolveHarnessOptions uses harness.json directory as workspace", () => {
   expect(options.baseRef).toBe("develop");
   expect(options.headRef).toBe("feature");
 });
+test("resolveHarnessOptions reads agent defaults from harness.json", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify(
+      {
+        base: "develop",
+        defaultAgent: "codex",
+        agents: {
+          codex: {
+            model: "gpt-test",
+            executable: "/opt/codex",
+            sandboxMode: "workspace-write",
+            approvalPolicy: "on-request",
+            modelReasoningEffort: "medium",
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  const options = resolveHarnessOptions({ workspace }, "/");
+  expect(options.baseRef).toBe("develop");
+  expect(options.agentProvider).toBe("codex");
+  expect(options.model).toBe("gpt-test");
+  expect(options.codexPathOverride).toBe("/opt/codex");
+  expect(options.sandboxMode).toBe("workspace-write");
+  expect(options.approvalPolicy).toBe("on-request");
+  expect(options.modelReasoningEffort).toBe("medium");
+});
+test("resolveHarnessOptions reads provider-scoped Cursor config", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "defaultAgent": "cursor", "agents": { "cursor": { "model": "gpt-5.5-high" } } }\n',
+    "utf8",
+  );
+  const options = resolveHarnessOptions({ workspace }, "/");
+  expect(options.agentProvider).toBe("cursor");
+  expect(options.model).toBe("gpt-5.5-high");
+  expect(options.modelReasoningEffort).toBeUndefined();
+});
+test("resolveHarnessOptions applies provider model defaults", () => {
+  const cursorWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  const cursorOptions = resolveHarnessOptions({ workspace: cursorWorkspace }, "/");
+  expect(cursorOptions.agentProvider).toBe("cursor");
+  expect(cursorOptions.model).toBe("composer-2.5");
+  expect(cursorOptions.modelReasoningEffort).toBeUndefined();
+
+  const codexWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(join(codexWorkspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
+  const codexOptions = resolveHarnessOptions({ workspace: codexWorkspace }, "/");
+  expect(codexOptions.agentProvider).toBe("codex");
+  expect(codexOptions.model).toBe("gpt-5.5");
+  expect(codexOptions.modelReasoningEffort).toBe("high");
+});
+test("resolveHarnessOptions ignores Codex policy config for Cursor", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "agents": { "codex": { "sandboxMode": "read-only", "approvalPolicy": "never" } } }\n',
+    "utf8",
+  );
+  const options = resolveHarnessOptions({ workspace }, "/");
+  expect(options.agentProvider).toBe("cursor");
+  expect(options.sandboxMode).toBeUndefined();
+  expect(options.approvalPolicy).toBeUndefined();
+  expect(options.modelReasoningEffort).toBeUndefined();
+});
+test("resolveHarnessOptions strips Codex policy config when CLI overrides to Cursor", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "defaultAgent": "codex", "agents": { "codex": { "sandboxMode": "read-only", "approvalPolicy": "never" } } }\n',
+    "utf8",
+  );
+  const options = resolveHarnessOptions({ workspace, agentProvider: "cursor" as const }, "/");
+  expect(options.agentProvider).toBe("cursor");
+  expect(options.sandboxMode).toBeUndefined();
+  expect(options.approvalPolicy).toBeUndefined();
+  expect(options.modelReasoningEffort).toBeUndefined();
+});
 test("resolveHarnessOptions lets explicit flags override harness.json", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
-  writeFileSync(join(workspace, "harness.json"), '{ "base": "develop" }\n', "utf8");
-  const options = resolveHarnessOptions({ workspace, baseRef: "main" }, "/");
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "base": "develop", "defaultAgent": "codex", "agents": { "codex": { "model": "gpt-test" } } }\n',
+    "utf8",
+  );
+  const options = resolveHarnessOptions(
+    { workspace, baseRef: "main", agentProvider: "cursor" as const, model: "gpt-override" },
+    "/",
+  );
   expect(options.workspace).toBe(workspace);
   expect(options.baseRef).toBe("main");
   expect(options.headRef).toBe("HEAD");
+  expect(options.agentProvider).toBe("cursor");
+  expect(options.model).toBe("gpt-override");
 });
 test("resolveHarnessOptions accepts unknown harness.json keys", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
@@ -74,6 +167,46 @@ test("resolveHarnessOptions rejects invalid harness.json values", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeFileSync(join(workspace, "harness.json"), '{ "base": 123 }\n', "utf8");
   expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(/Invalid harness\.json: base:/);
+});
+test("resolveHarnessOptions rejects invalid agent config values", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(join(workspace, "harness.json"), '{ "defaultAgent": "other" }\n', "utf8");
+  expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(
+    /Invalid harness\.json: defaultAgent:/,
+  );
+});
+test("resolveHarnessOptions rejects invalid sandbox config values", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "agents": { "codex": { "sandboxMode": "loose" } } }\n',
+    "utf8",
+  );
+  expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(
+    /Invalid harness\.json: agents\.codex\.sandboxMode:/,
+  );
+});
+test("resolveHarnessOptions rejects invalid approval policy config values", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "agents": { "codex": { "approvalPolicy": "always" } } }\n',
+    "utf8",
+  );
+  expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(
+    /Invalid harness\.json: agents\.codex\.approvalPolicy:/,
+  );
+});
+test("resolveHarnessOptions rejects invalid reasoning effort config values", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "agents": { "codex": { "modelReasoningEffort": "huge" } } }\n',
+    "utf8",
+  );
+  expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(
+    /Invalid harness\.json: agents\.codex\.modelReasoningEffort:/,
+  );
 });
 test("resolveHarnessOptions rejects non-object harness.json values", () => {
   for (const contents of ["null", "[]", '"repo"']) {

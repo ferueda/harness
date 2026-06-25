@@ -220,6 +220,21 @@ test("harness root help exits cleanly", () => {
   expect(result.stdout).toMatch(/runs/);
   expect(result.stdout).toMatch(/skills/);
 });
+test("harness models prints provider model defaults", () => {
+  const result = runHarness(["models"]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.cursor.defaultModel).toBe("composer-2.5");
+  expect(output.cursor.models).toEqual([
+    "claude-opus-4-8-thinking-high",
+    "gpt-5.5-high",
+    "composer-2.5",
+  ]);
+  expect(output.cursor.liveListCommand).toBe("agent models");
+  expect(output.codex.defaultModel).toBe("gpt-5.5");
+  expect(output.codex.defaultReasoningEffort).toBe("high");
+  expect(output.codex.reasoningEfforts).toContain("xhigh");
+});
 test("harness init help exits cleanly", () => {
   const result = runHarness(["init", "--help"]);
   expect(result.status).toBe(0);
@@ -415,6 +430,138 @@ test("harness run change-review rejects invalid runtime values", () => {
   const result = runHarness(["run", "change-review", "--max-runtime-ms", "0"]);
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/must be a positive number/);
+});
+test("harness run change-review rejects invalid agent provider values", () => {
+  const result = runHarness(["run", "change-review", "--agent", "other"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/must be one of: cursor, codex/);
+});
+test("harness run change-review rejects invalid sandbox values", () => {
+  const result = runHarness(["run", "change-review", "--sandbox", "loose"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/must be one of: read-only, workspace-write, danger-full-access/);
+});
+test("harness run change-review rejects invalid approval policy values", () => {
+  const result = runHarness(["run", "change-review", "--approval-policy", "always"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/must be one of: never, on-request, on-failure, untrusted/);
+});
+test("harness run change-review rejects invalid reasoning effort values", () => {
+  const result = runHarness(["run", "change-review", "--reasoning-effort", "huge"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/must be one of: minimal, low, medium, high, xhigh/);
+});
+test("harness run change-review rejects Codex-only policy flags for Cursor", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--sandbox",
+    "read-only",
+    "--reasoning-effort",
+    "high",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/apply only when --agent codex is active/);
+});
+test("harness run change-review rejects Codex executable override for Cursor", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(join(workspace, "harness.json"), '{ "defaultAgent": "cursor" }\n', "utf8");
+
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--codex-executable",
+    "/opt/codex",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--codex-executable applies only when --agent codex is active/);
+});
+test("harness run change-review rejects Cursor agent override for Codex", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(join(workspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
+
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--cursor-agent",
+    "/opt/cursor-agent.js",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--cursor-agent applies only when --agent cursor is active/);
+});
+test("harness run change-review ignores Codex-only policy config for Cursor", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "defaultAgent": "cursor", "agents": { "codex": { "sandboxMode": "read-only" } } }\n',
+    "utf8",
+  );
+
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5" });
+});
+test("harness run change-review lets Cursor override Codex policy config", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "defaultAgent": "codex", "agents": { "codex": { "sandboxMode": "read-only", "approvalPolicy": "never" } } }\n',
+    "utf8",
+  );
+
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--agent",
+    "cursor",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5" });
 });
 test("harness run change-review rejects invalid steps", () => {
   const workspace = createGitWorkspace();
@@ -690,6 +837,64 @@ test("harness run change-review selected-step dry-run omits unrequested prompts"
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toBeUndefined();
   expect(output.prompts.simplify).toBeUndefined();
+});
+test("harness run change-review dry-run accepts Codex provider options", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--agent",
+    "codex",
+    "--codex-executable",
+    "/opt/codex",
+    "--sandbox",
+    "workspace-write",
+    "--approval-policy",
+    "on-request",
+    "--reasoning-effort",
+    "medium",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("dry_run");
+  expect(output.agent).toMatchObject({
+    name: "codex",
+    model: "gpt-5.5",
+    sandboxMode: "workspace-write",
+    approvalPolicy: "on-request",
+    modelReasoningEffort: "medium",
+  });
+});
+test("harness run change-review dry-run reads Codex provider from harness.json", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(join(workspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.agent).toMatchObject({
+    name: "codex",
+    model: "gpt-5.5",
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
+    modelReasoningEffort: "high",
+  });
 });
 test("harness run change-review dry-run includes bundled simplify prompt", () => {
   const workspace = createGitWorkspace();

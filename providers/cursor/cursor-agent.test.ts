@@ -167,3 +167,30 @@ test("structured output parser extracts and validates JSON", () => {
   });
   expect(parseStructuredOutput('{"verdict":"maybe"}', schema).error).toMatch(/expected one of/);
 });
+
+test("structured output parser rejects unexpected properties when schema is strict", () => {
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["verdict", "findings"],
+    properties: {
+      verdict: { enum: ["pass", "needs_changes"] },
+      findings: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["title"],
+          properties: {
+            title: { type: "string" },
+          },
+        },
+      },
+    },
+  };
+
+  expect(
+    parseStructuredOutput('{"verdict":"pass","findings":[{"title":"ok","extra":"nope"}]}', schema)
+      .error,
+  ).toMatch(/unexpected property "extra"/);
+});

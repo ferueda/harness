@@ -82,11 +82,41 @@ The command targets `<workspace>/.harness/runs/reviews` by default and prints JS
 
 ```json
 {
-  "base": "main"
+  "base": "main",
+  "defaultAgent": "cursor"
 }
 ```
 
 When `--workspace` is omitted, the CLI uses the nearest `harness.json` directory as the workspace. If none is found, it falls back to the current Git root. Workflow selection stays explicit: `harness run change-review`.
+
+Reviewer agents are selected with `--agent cursor|codex` or `defaultAgent` in `harness.json`:
+
+```json
+{
+  "base": "main",
+  "defaultAgent": "codex",
+  "agents": {
+    "cursor": {
+      "model": "composer-2.5"
+    },
+    "codex": {
+      "model": "gpt-5.5",
+      "executable": "/opt/codex",
+      "sandboxMode": "read-only",
+      "approvalPolicy": "never",
+      "modelReasoningEffort": "high"
+    }
+  }
+}
+```
+
+`cursor` remains the default provider. Config is provider-scoped under `agents`, so Cursor and Codex settings do not mix. Default review models are `composer-2.5` for Cursor and `gpt-5.5` for Codex. Codex also defaults to `modelReasoningEffort: "high"`, `sandboxMode: "read-only"`, and `approvalPolicy: "never"`. Other Codex modes are exposed for future workflows and explicit overrides.
+
+For Codex, harness uses the TypeScript SDK without passing a custom environment, so auth follows the local Codex CLI: run `codex login` once or provide `CODEX_API_KEY` in the environment. Use `harness models` for the harness model catalog. For live Cursor account-specific models, run `agent models`.
+
+```bash
+harness run change-review --agent codex --model gpt-5.5 --reasoning-effort high --sandbox read-only --approval-policy never
+```
 
 `harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`. The shim is a bash script; target machines need a POSIX shell with `bash` available.
 

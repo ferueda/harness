@@ -1,6 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  DEFAULT_AGENT_MODELS,
+  DEFAULT_CODEX_REASONING_EFFORT,
+  type AgentApprovalPolicy,
+  type AgentProviderName,
+  type AgentReasoningEffort,
+  type AgentSandboxMode,
+} from "./agents.ts";
 import { HarnessConfigSchema, formatZodError } from "./schemas.ts";
 
 const CONFIG_FILE = "harness.json";
@@ -12,6 +20,12 @@ export type HarnessOptions = {
   workspace?: string;
   baseRef?: string;
   headRef?: string;
+  agentProvider?: AgentProviderName;
+  model?: string;
+  codexPathOverride?: string;
+  sandboxMode?: AgentSandboxMode;
+  approvalPolicy?: AgentApprovalPolicy;
+  modelReasoningEffort?: AgentReasoningEffort;
   [key: string]: unknown;
 };
 
@@ -19,6 +33,12 @@ export type ResolvedHarnessOptions<T extends HarnessOptions = HarnessOptions> = 
   workspace: string;
   baseRef: string;
   headRef: string;
+  agentProvider: AgentProviderName;
+  model?: string;
+  codexPathOverride?: string;
+  sandboxMode?: AgentSandboxMode;
+  approvalPolicy?: AgentApprovalPolicy;
+  modelReasoningEffort?: AgentReasoningEffort;
 };
 
 export type InitHarnessOptions = {
@@ -46,12 +66,25 @@ export function resolveHarnessOptions<T extends HarnessOptions>(
 ): ResolvedHarnessOptions<T> {
   const workspace = resolveHarnessWorkspace(options.workspace, cwd);
   const config = readHarnessConfig(workspace);
+  const agentProvider = options.agentProvider ?? config.defaultAgent ?? "cursor";
+  const agentConfig = config.agents?.[agentProvider] ?? {};
+  const codexConfig = agentProvider === "codex" ? config.agents?.codex : undefined;
 
   return {
     ...options,
     workspace,
     baseRef: options.baseRef ?? config.base ?? "main",
     headRef: options.headRef ?? "HEAD",
+    agentProvider,
+    model: options.model ?? agentConfig.model ?? DEFAULT_AGENT_MODELS[agentProvider],
+    codexPathOverride: options.codexPathOverride ?? codexConfig?.executable,
+    sandboxMode: options.sandboxMode ?? codexConfig?.sandboxMode,
+    approvalPolicy: options.approvalPolicy ?? codexConfig?.approvalPolicy,
+    modelReasoningEffort:
+      options.modelReasoningEffort ??
+      (agentProvider === "codex"
+        ? (codexConfig?.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT)
+        : undefined),
   };
 }
 

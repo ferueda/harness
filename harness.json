@@ -1,3 +1,15 @@
 {
-  "base": "main"
+  "base": "main",
+  "defaultAgent": "cursor",
+  "agents": {
+    "cursor": {
+      "model": "composer-2.5"
+    },
+    "codex": {
+      "model": "gpt-5.5",
+      "modelReasoningEffort": "high",
+      "sandboxMode": "read-only",
+      "approvalPolicy": "never"
+    }
+  }
 }

@@ -8,6 +8,7 @@ export type ReviewFindingLike = {
   location?: string;
   issue?: string;
   recommendation?: string;
+  rationale?: string;
   must_fix?: boolean;
 };
 
@@ -202,6 +203,7 @@ function formatFindings(findings: ReviewFindingLike[] | undefined): string[] {
     `- **must_fix**: ${finding.must_fix === true}`,
     `- **Issue**: ${finding.issue ?? ""}`,
     `- **Recommendation**: ${finding.recommendation ?? ""}`,
+    `- **Rationale**: ${finding.rationale ?? ""}`,
     "",
   ]);
 }

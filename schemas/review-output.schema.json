@@ -1,5 +1,6 @@
 {
   "type": "object",
+  "additionalProperties": false,
   "required": ["verdict", "summary", "findings"],
   "properties": {
     "verdict": {
@@ -13,7 +14,16 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["title", "severity", "location", "issue", "recommendation", "must_fix"],
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "severity",
+          "location",
+          "issue",
+          "recommendation",
+          "rationale",
+          "must_fix"
+        ],
         "properties": {
           "title": { "type": "string" },
           "severity": {
