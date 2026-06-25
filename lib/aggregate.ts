@@ -29,6 +29,15 @@ export type FailedReview = {
   error: string;
 };
 
+export type WorkflowStepMetadata = {
+  workflow: string;
+  availableSteps: string[];
+  requestedSteps: string[];
+  executedSteps: string[];
+  omittedSteps: string[];
+  partial: boolean;
+};
+
 export type ReviewScope = {
   baseRef: string;
   headRef: string;
@@ -44,6 +53,7 @@ type SummaryHeaderInput = {
   verdict: string;
   startedAt: string;
   durationMs: number;
+  steps?: WorkflowStepMetadata;
 };
 
 const FAILED_REVIEW_TITLES: Record<string, string> = {
@@ -84,8 +94,13 @@ export function renderSummary(input: {
   verdict: string;
   startedAt: string;
   durationMs: number;
+  steps?: WorkflowStepMetadata;
 }): string {
-  const lines = [...renderSummaryHeader(input), ...renderReviewSections(input.reviews)];
+  const lines = [
+    ...renderSummaryHeader(input),
+    ...renderStepSections(input.steps),
+    ...renderReviewSections(input.reviews),
+  ];
 
   return lines.join("\n");
 }
@@ -99,9 +114,11 @@ export function renderFailedSummary(input: {
   failedReviews: FailedReview[];
   startedAt: string;
   durationMs: number;
+  steps?: WorkflowStepMetadata;
 }): string {
   const lines = [
     ...renderSummaryHeader({ ...input, verdict: "failed" }),
+    ...renderStepSections(input.steps),
     ...renderReviewSections(input.reviews),
     ...renderFailedReviewSections(input.failedReviews),
   ];
@@ -122,6 +139,27 @@ function renderSummaryHeader(input: SummaryHeaderInput): string[] {
     `- **Aggregate verdict**: **${input.verdict}**`,
     "",
   ];
+}
+
+function renderStepSections(steps: WorkflowStepMetadata | undefined): string[] {
+  if (!steps?.partial) return [];
+
+  const lines = [
+    "## Steps",
+    "",
+    `- Available: ${formatStepList(steps.availableSteps)}`,
+    `- Executed: ${formatStepList(steps.executedSteps)}`,
+  ];
+
+  if (steps.omittedSteps.length > 0) {
+    lines.push(`- Omitted: ${formatStepList(steps.omittedSteps)}`);
+  }
+
+  return [...lines, ""];
+}
+
+function formatStepList(steps: string[]): string {
+  return steps.length > 0 ? steps.map((step) => `\`${step}\``).join(", ") : "_none_";
 }
 
 function renderReviewSections(reviews: ReviewSection[]): string[] {

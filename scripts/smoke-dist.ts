@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = resolveSmokeBin();
-const EXPECTED_RECOMMENDED_COMMAND = ".harness/bin/harness run review";
+const EXPECTED_RECOMMENDED_COMMAND = ".harness/bin/harness run change-review";
 
 function resolveSmokeBin(): string {
   const override = process.env.HARNESS_SMOKE_BIN;
@@ -136,7 +136,7 @@ rmSync(installWorkspace, { recursive: true, force: true });
 
 const dryRunOutput = runHarness([
   "run",
-  "review",
+  "change-review",
   "--workspace",
   ROOT,
   "--base",
@@ -149,7 +149,10 @@ const dryRunOutput = runHarness([
 const dryRun = JSON.parse(dryRunOutput) as {
   status?: unknown;
   runDir?: unknown;
-  prompts?: { implementation?: unknown; quality?: unknown };
+  workflow?: unknown;
+  executedSteps?: unknown;
+  partial?: unknown;
+  prompts?: { implementation?: unknown; quality?: unknown; simplify?: unknown };
 };
 
 if (dryRun.status !== "dry_run") {
@@ -160,17 +163,69 @@ if (typeof dryRun.runDir !== "string") {
   throw new Error("Expected dry-run output to include runDir");
 }
 
+if (dryRun.workflow !== "change-review") {
+  throw new Error(`Expected change-review workflow metadata, got ${String(dryRun.workflow)}`);
+}
+
+if (
+  !Array.isArray(dryRun.executedSteps) ||
+  dryRun.executedSteps.join(",") !== "implementation,quality,simplify" ||
+  dryRun.partial !== false
+) {
+  throw new Error("Expected default dry-run output to include full step metadata");
+}
+
 if (
   typeof dryRun.prompts?.implementation !== "string" ||
-  typeof dryRun.prompts?.quality !== "string"
+  typeof dryRun.prompts?.quality !== "string" ||
+  typeof dryRun.prompts?.simplify !== "string"
 ) {
-  throw new Error("Expected dry-run output to include implementation and quality prompt paths");
+  throw new Error("Expected dry-run output to include all prompt paths");
+}
+
+const selectedDryRunOutput = runHarness([
+  "run",
+  "change-review",
+  "--workspace",
+  ROOT,
+  "--base",
+  "HEAD",
+  "--head",
+  "HEAD",
+  "--steps",
+  "implementation",
+  "--dry-run",
+]);
+
+const selectedDryRun = JSON.parse(selectedDryRunOutput) as {
+  status?: unknown;
+  executedSteps?: unknown;
+  omittedSteps?: unknown;
+  partial?: unknown;
+  prompts?: { implementation?: unknown; quality?: unknown; simplify?: unknown };
+};
+
+if (selectedDryRun.status !== "dry_run") {
+  throw new Error(`Expected selected-step dry_run status, got ${String(selectedDryRun.status)}`);
+}
+
+if (
+  !Array.isArray(selectedDryRun.executedSteps) ||
+  selectedDryRun.executedSteps.join(",") !== "implementation" ||
+  !Array.isArray(selectedDryRun.omittedSteps) ||
+  selectedDryRun.omittedSteps.join(",") !== "quality,simplify" ||
+  selectedDryRun.partial !== true ||
+  typeof selectedDryRun.prompts?.implementation !== "string" ||
+  selectedDryRun.prompts?.quality !== undefined ||
+  selectedDryRun.prompts?.simplify !== undefined
+) {
+  throw new Error("Expected selected-step dry-run output to include only implementation prompt");
 }
 
 const handoffDryRunOutput = runHarness(
   [
     "run",
-    "review",
+    "change-review",
     "--workspace",
     ROOT,
     "--base",
@@ -198,33 +253,4 @@ if (typeof handoffDryRun.runDir !== "string") {
 const handoffArtifact = readFileSync(join(handoffDryRun.runDir, "context", "handoff.md"), "utf8");
 if (handoffArtifact !== "# Smoke handoff\n") {
   throw new Error("Expected handoff dry-run to materialize stdin handoff text");
-}
-
-const fullDryRunOutput = runHarness([
-  "run",
-  "review-full",
-  "--workspace",
-  ROOT,
-  "--base",
-  "HEAD",
-  "--head",
-  "HEAD",
-  "--dry-run",
-]);
-
-const fullDryRun = JSON.parse(fullDryRunOutput) as {
-  status?: unknown;
-  prompts?: { implementation?: unknown; quality?: unknown; simplify?: unknown };
-};
-
-if (fullDryRun.status !== "dry_run") {
-  throw new Error(`Expected review-full dry_run status, got ${String(fullDryRun.status)}`);
-}
-
-if (
-  typeof fullDryRun.prompts?.implementation !== "string" ||
-  typeof fullDryRun.prompts?.quality !== "string" ||
-  typeof fullDryRun.prompts?.simplify !== "string"
-) {
-  throw new Error("Expected review-full dry-run output to include all prompt paths");
 }

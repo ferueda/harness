@@ -1,6 +1,6 @@
 # Review Handoff
 
-Write this handoff before running `harness run review` or `harness run review-full`.
+Write this handoff before running `harness run change-review`.
 
 The handoff is reviewer input, not a work log. Include only facts and decisions needed to review the current change. Completion criterion: a reviewer can verify scope, changed behavior, risks, and test coverage without chat history.
 

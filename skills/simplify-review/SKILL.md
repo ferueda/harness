@@ -10,7 +10,7 @@ description: >
 
 You are a read-only simplification reviewer. Find clarity, consistency, and maintainability improvements that preserve exact behavior. Do not edit files.
 
-This packaged skill is the installable reviewer used by the `review-full` workflow. It is distinct from repo-local development skills under `.agents/skills/**`.
+This packaged skill is the installable reviewer used by the `change-review` workflow. It is distinct from repo-local development skills under `.agents/skills/**`.
 
 This reviewer is independent. Use only the provided base artifacts, such as the diff, handoff, scope metadata, and local repo instructions. Do not depend on implementation-review or code-quality-review JSON from the same workflow run.
 

@@ -9,6 +9,7 @@ import {
   type FailedReview,
   type ReviewSection,
   type ReviewVerdict,
+  type WorkflowStepMetadata,
 } from "./aggregate.ts";
 import { invokeCursorAgent } from "./cursor-agent.ts";
 import {
@@ -156,7 +157,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
   }
 
   const promptPaths: PromptArtifacts = {};
-  const writeDryRunMeta = () => {
+  const writeDryRunMeta = (steps?: WorkflowStepMetadata) => {
     const meta = {
       runId,
       status: "dry_run",
@@ -164,6 +165,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       scope: scopeMeta,
       runDir,
       cursorAgentPath,
+      ...(steps ?? {}),
       prompts: promptPaths,
     };
     writeJson(join(runDir, "meta.json"), meta);
@@ -176,12 +178,14 @@ export function createWorkflowContext(options: WorkflowOptions) {
           title: string;
           reviews: ReviewSection[];
           verdict: ReviewVerdict;
+          steps?: WorkflowStepMetadata;
         }
       | {
           status: "failed";
           title: string;
           reviews: ReviewSection[];
           failedReviews: FailedReview[];
+          steps?: WorkflowStepMetadata;
         },
   ) => {
     const durationMs = Date.now() - startedAt.getTime();
@@ -198,6 +202,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
             verdict: input.verdict,
             startedAt: startedAtIso,
             durationMs,
+            steps: input.steps,
           })
         : renderFailedSummary({
             title: input.title,
@@ -208,6 +213,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
             failedReviews: input.failedReviews,
             startedAt: startedAtIso,
             durationMs,
+            steps: input.steps,
           });
     writeFileSync(join(runDir, "summary.md"), summary, "utf8");
 
@@ -218,6 +224,7 @@ export function createWorkflowContext(options: WorkflowOptions) {
       scope: scopeMeta,
       startedAt: startedAtIso,
       durationMs,
+      ...(input.steps ?? {}),
       ...buildTopLevelReviewFields(reviewSummaries),
       reviews: reviewSummaries,
     };
@@ -287,27 +294,31 @@ export function createWorkflowContext(options: WorkflowOptions) {
       title,
       reviews,
       verdict,
+      steps,
     }: {
       title: string;
       reviews: ReviewSection[];
       verdict: ReviewVerdict;
+      steps?: WorkflowStepMetadata;
     }) {
       if (options.dryRun) {
-        return writeDryRunMeta();
+        return writeDryRunMeta(steps);
       }
 
-      return finalizeRun({ status: "completed", title, reviews, verdict });
+      return finalizeRun({ status: "completed", title, reviews, verdict, steps });
     },
     exportFailed({
       title,
       reviews,
       failedReviews,
+      steps,
     }: {
       title: string;
       reviews: ReviewSection[];
       failedReviews: FailedReview[];
+      steps?: WorkflowStepMetadata;
     }) {
-      return finalizeRun({ status: "failed", title, reviews, failedReviews });
+      return finalizeRun({ status: "failed", title, reviews, failedReviews, steps });
     },
   };
 }

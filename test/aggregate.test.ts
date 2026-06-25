@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { aggregateVerdict, renderFailedSummary } from "../lib/aggregate.ts";
+import { aggregateVerdict, renderFailedSummary, renderSummary } from "../lib/aggregate.ts";
 test("aggregateVerdict prefers blocked over other verdicts", () => {
   expect(aggregateVerdict({ verdict: "blocked" }, { verdict: "pass" })).toBe("blocked");
 });
@@ -29,7 +29,7 @@ test("aggregateVerdict passes when all provided reviewers pass", () => {
 
 test("renderFailedSummary includes successful sections and failed reviewers", () => {
   const summary = renderFailedSummary({
-    title: "Review Summary",
+    title: "Change Review Summary",
     runId: "run-1",
     workspace: "/tmp/workspace",
     scope: {
@@ -54,4 +54,98 @@ test("renderFailedSummary includes successful sections and failed reviewers", ()
   expect(summary).toMatch(/## Failed reviewers/);
   expect(summary).toMatch(/codeQuality/);
   expect(summary).toMatch(/bad output/);
+});
+
+test("renderSummary includes omitted steps for partial reviews", () => {
+  const summary = renderSummary({
+    title: "Change Review Summary",
+    runId: "run-1",
+    workspace: "/tmp/workspace",
+    scope: {
+      baseRef: "main",
+      headRef: "HEAD",
+      mergeBase: "abc123",
+      headSha: "def456",
+    },
+    reviews: [
+      {
+        key: "implementation",
+        title: "Implementation review",
+        review: { verdict: "pass", summary: "ok", findings: [] },
+      },
+    ],
+    verdict: "pass",
+    startedAt: "2026-06-24T00:00:00.000Z",
+    durationMs: 1_000,
+    steps: {
+      workflow: "change-review",
+      availableSteps: ["implementation", "quality", "simplify"],
+      requestedSteps: ["implementation"],
+      executedSteps: ["implementation"],
+      omittedSteps: ["quality", "simplify"],
+      partial: true,
+    },
+  });
+
+  expect(summary).toMatch(/## Steps/);
+  expect(summary).toMatch(/Executed: `implementation`/);
+  expect(summary).toMatch(/Omitted: `quality`, `simplify`/);
+});
+
+test("renderFailedSummary includes omitted steps for failed partial reviews", () => {
+  const summary = renderFailedSummary({
+    title: "Change Review Summary",
+    runId: "run-1",
+    workspace: "/tmp/workspace",
+    scope: {
+      baseRef: "main",
+      headRef: "HEAD",
+      mergeBase: "abc123",
+      headSha: "def456",
+    },
+    reviews: [],
+    failedReviews: [{ key: "implementation", stage: "implementation", error: "failed" }],
+    startedAt: "2026-06-24T00:00:00.000Z",
+    durationMs: 1_000,
+    steps: {
+      workflow: "change-review",
+      availableSteps: ["implementation", "quality", "simplify"],
+      requestedSteps: ["implementation"],
+      executedSteps: ["implementation"],
+      omittedSteps: ["quality", "simplify"],
+      partial: true,
+    },
+  });
+
+  expect(summary).toMatch(/## Steps/);
+  expect(summary).toMatch(/Omitted: `quality`, `simplify`/);
+  expect(summary).toMatch(/## Failed reviewers/);
+});
+
+test("renderSummary omits step section for full reviews", () => {
+  const summary = renderSummary({
+    title: "Change Review Summary",
+    runId: "run-1",
+    workspace: "/tmp/workspace",
+    scope: {
+      baseRef: "main",
+      headRef: "HEAD",
+      mergeBase: "abc123",
+      headSha: "def456",
+    },
+    reviews: [],
+    verdict: "pass",
+    startedAt: "2026-06-24T00:00:00.000Z",
+    durationMs: 1_000,
+    steps: {
+      workflow: "change-review",
+      availableSteps: ["implementation", "quality", "simplify"],
+      requestedSteps: ["implementation", "quality", "simplify"],
+      executedSteps: ["implementation", "quality", "simplify"],
+      omittedSteps: [],
+      partial: false,
+    },
+  });
+
+  expect(summary).not.toMatch(/## Steps/);
 });

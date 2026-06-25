@@ -1,8 +1,12 @@
 import { expect, test } from "vitest";
-import type { ReviewSection, ReviewVerdict } from "../lib/aggregate.ts";
+import type { ReviewSection, ReviewVerdict, WorkflowStepMetadata } from "../lib/aggregate.ts";
 import type { ReviewOutput } from "../lib/schemas.ts";
 import type { ReviewAgentName } from "../lib/workflow-context.ts";
-import { runReviewSteps, type WorkflowContext } from "../workflows/review-steps.ts";
+import {
+  normalizeChangeReviewSteps,
+  run as runChangeReview,
+} from "../workflows/change-review.workflow.ts";
+import type { WorkflowContext } from "../workflows/review-steps.ts";
 
 type DeferredReview = {
   promise: Promise<ReviewOutput>;
@@ -26,10 +30,19 @@ function createDeferredReview(): DeferredReview {
   return { promise, resolve, reject };
 }
 
+function createDeferredReviews(): Record<ReviewAgentName, DeferredReview> {
+  return {
+    "review-implementation": createDeferredReview(),
+    "code-quality-review": createDeferredReview(),
+    simplify: createDeferredReview(),
+  };
+}
+
 function createContext(deferred: Record<ReviewAgentName, DeferredReview>) {
   const started: ReviewAgentName[] = [];
   let exportedReviews: ReviewSection[] | undefined;
   let exportedFailures: unknown[] | undefined;
+  let exportedSteps: WorkflowStepMetadata | undefined;
   const ctx: WorkflowContext = {
     agent(name) {
       started.push(name);
@@ -54,13 +67,15 @@ function createContext(deferred: Record<ReviewAgentName, DeferredReview>) {
       } satisfies Record<ReviewAgentName, { key: string; title: string; stage: string }>;
       return info[name];
     },
-    export({ reviews, verdict }) {
+    export({ reviews, verdict, steps }) {
       exportedReviews = reviews;
+      exportedSteps = steps;
       return { status: "completed", verdict };
     },
-    exportFailed({ reviews, failedReviews }) {
+    exportFailed({ reviews, failedReviews, steps }) {
       exportedReviews = reviews;
       exportedFailures = failedReviews;
+      exportedSteps = steps;
       return { status: "failed" };
     },
   };
@@ -73,20 +88,41 @@ function createContext(deferred: Record<ReviewAgentName, DeferredReview>) {
     get exportedFailures() {
       return exportedFailures;
     },
+    get exportedSteps() {
+      return exportedSteps;
+    },
   };
 }
 
-test("runReviewSteps starts review agents before any review resolves", async () => {
-  const deferred = {
-    "review-implementation": createDeferredReview(),
-    "code-quality-review": createDeferredReview(),
-    simplify: createDeferredReview(),
-  };
+test("change-review starts all review steps by default before any review resolves", async () => {
+  const deferred = createDeferredReviews();
   const harness = createContext(deferred);
-  const run = runReviewSteps(harness.ctx, "Review Summary", [
-    "review-implementation",
-    "code-quality-review",
+  const run = runChangeReview(harness.ctx);
+
+  expect(harness.started).toEqual(["review-implementation", "code-quality-review", "simplify"]);
+  deferred.simplify.resolve(PASS_REVIEW);
+  deferred["code-quality-review"].resolve(PASS_REVIEW);
+  deferred["review-implementation"].resolve(PASS_REVIEW);
+  await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  expect(harness.exportedReviews?.map((review) => review.key)).toEqual([
+    "implementation",
+    "codeQuality",
+    "simplify",
   ]);
+  expect(harness.exportedSteps).toEqual({
+    workflow: "change-review",
+    availableSteps: ["implementation", "quality", "simplify"],
+    requestedSteps: ["implementation", "quality", "simplify"],
+    executedSteps: ["implementation", "quality", "simplify"],
+    omittedSteps: [],
+    partial: false,
+  });
+});
+
+test("change-review starts only selected steps in workflow order", async () => {
+  const deferred = createDeferredReviews();
+  const harness = createContext(deferred);
+  const run = runChangeReview(harness.ctx, { steps: ["quality", "implementation"] });
 
   expect(harness.started).toEqual(["review-implementation", "code-quality-review"]);
   deferred["code-quality-review"].resolve(PASS_REVIEW);
@@ -96,44 +132,41 @@ test("runReviewSteps starts review agents before any review resolves", async () 
     "implementation",
     "codeQuality",
   ]);
+  expect(harness.exportedSteps).toMatchObject({
+    requestedSteps: ["implementation", "quality"],
+    executedSteps: ["implementation", "quality"],
+    omittedSteps: ["simplify"],
+    partial: true,
+  });
 });
 
-test("runReviewSteps starts review-full agents before any review resolves", async () => {
-  const deferred = {
-    "review-implementation": createDeferredReview(),
-    "code-quality-review": createDeferredReview(),
-    simplify: createDeferredReview(),
-  };
+test("change-review normalizes duplicate selected steps", async () => {
+  const deferred = createDeferredReviews();
   const harness = createContext(deferred);
-  const run = runReviewSteps(harness.ctx, "Full Review Summary", [
-    "review-implementation",
-    "code-quality-review",
-    "simplify",
-  ]);
+  const run = runChangeReview(harness.ctx, { steps: ["implementation", "implementation"] });
 
-  expect(harness.started).toEqual(["review-implementation", "code-quality-review", "simplify"]);
-  deferred.simplify.resolve(PASS_REVIEW);
-  deferred["code-quality-review"].resolve(PASS_REVIEW);
+  expect(harness.started).toEqual(["review-implementation"]);
   deferred["review-implementation"].resolve(PASS_REVIEW);
-  await run;
-  expect(harness.exportedReviews?.map((review) => review.key)).toEqual([
-    "implementation",
-    "codeQuality",
-    "simplify",
-  ]);
+  await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  expect(harness.exportedReviews?.map((review) => review.key)).toEqual(["implementation"]);
+  expect(harness.exportedSteps).toMatchObject({
+    requestedSteps: ["implementation"],
+    executedSteps: ["implementation"],
+    omittedSteps: ["quality", "simplify"],
+    partial: true,
+  });
 });
 
-test("runReviewSteps exports failed reviews after all reviewers settle", async () => {
-  const deferred = {
-    "review-implementation": createDeferredReview(),
-    "code-quality-review": createDeferredReview(),
-    simplify: createDeferredReview(),
-  };
+test("change-review rejects unknown selected steps", () => {
+  expect(() => normalizeChangeReviewSteps(["missing"])).toThrow(
+    /Unknown change-review step: missing\. Valid steps: implementation, quality, simplify/,
+  );
+});
+
+test("change-review exports failed selected reviews after all selected reviewers settle", async () => {
+  const deferred = createDeferredReviews();
   const harness = createContext(deferred);
-  const run = runReviewSteps(harness.ctx, "Review Summary", [
-    "review-implementation",
-    "code-quality-review",
-  ]);
+  const run = runChangeReview(harness.ctx, { steps: ["implementation", "quality"] });
 
   deferred["code-quality-review"].reject(new Error("quality broke"));
   expect(harness.exportedFailures).toBeUndefined();
@@ -144,19 +177,17 @@ test("runReviewSteps exports failed reviews after all reviewers settle", async (
   expect(harness.exportedFailures).toEqual([
     { key: "codeQuality", stage: "quality", error: "quality broke" },
   ]);
+  expect(harness.exportedSteps).toMatchObject({
+    requestedSteps: ["implementation", "quality"],
+    omittedSteps: ["simplify"],
+    partial: true,
+  });
 });
 
-test("runReviewSteps preserves successful later reviews when an earlier reviewer fails", async () => {
-  const deferred = {
-    "review-implementation": createDeferredReview(),
-    "code-quality-review": createDeferredReview(),
-    simplify: createDeferredReview(),
-  };
+test("change-review preserves successful later reviews when an earlier selected reviewer fails", async () => {
+  const deferred = createDeferredReviews();
   const harness = createContext(deferred);
-  const run = runReviewSteps(harness.ctx, "Review Summary", [
-    "review-implementation",
-    "code-quality-review",
-  ]);
+  const run = runChangeReview(harness.ctx, { steps: ["implementation", "quality"] });
 
   deferred["review-implementation"].reject(new Error("implementation broke"));
   deferred["code-quality-review"].resolve(PASS_REVIEW);
@@ -168,17 +199,10 @@ test("runReviewSteps preserves successful later reviews when an earlier reviewer
   ]);
 });
 
-test("runReviewSteps supports all reviewers failing", async () => {
-  const deferred = {
-    "review-implementation": createDeferredReview(),
-    "code-quality-review": createDeferredReview(),
-    simplify: createDeferredReview(),
-  };
+test("change-review supports all selected reviewers failing", async () => {
+  const deferred = createDeferredReviews();
   const harness = createContext(deferred);
-  const run = runReviewSteps(harness.ctx, "Review Summary", [
-    "review-implementation",
-    "code-quality-review",
-  ]);
+  const run = runChangeReview(harness.ctx, { steps: ["implementation", "quality"] });
 
   deferred["review-implementation"].reject(new Error("implementation broke"));
   deferred["code-quality-review"].reject(new Error("quality broke"));
