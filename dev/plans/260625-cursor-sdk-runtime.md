@@ -115,8 +115,8 @@ Cursor SDK facts from the attached docs:
 - `agent.send()` returns a `Run` with `stream()`, `wait()`, `cancel()`,
   `conversation()`, `status`, `requestId`, `model`, and `durationMs`.
 - SDK mode is `mode: "plan" | "agent"`; there is no documented `ask` mode.
-- Local agents default to unrestricted tool calls. `local.sandboxOptions.enabled`
-  constrains shell/network/filesystem behavior but does not mean read-only.
+- Cursor SDK local sandboxing is environment-dependent and is not equivalent to
+  Codex `read-only`.
 - `local.autoReview` is best-effort and not a security boundary.
 - Hooks are file-based only; there is no programmatic hook callback.
 
@@ -124,7 +124,7 @@ Decision for this plan:
 
 - Use SDK `mode: "agent"` and steer review behavior through the prompt.
 - Keep SDK runtime opt-in.
-- Treat sandbox and auto-review as defense-in-depth only.
+- Treat auto-review as defense-in-depth only.
 - Use a git before/after guard as the mutation backstop.
 - Serialize SDK review steps at the workflow layer to avoid concurrent reviewers
   invalidating each other's mutation guard.
@@ -353,7 +353,6 @@ Adapter behavior:
     local: {
       cwd: input.workspace,
       settingSources: [],
-      sandboxOptions: { enabled: true },
       autoReview: true,
     },
   });
@@ -458,8 +457,8 @@ Update `README.md`:
 - State default is `"cli"` until SDK read-only behavior is proven.
 - State SDK requires `CURSOR_API_KEY`; CLI can still use `agent login`.
 - State SDK runtime is not equivalent to CLI ask mode.
-- State git mutation detection is the actual enforcement backstop; sandbox and
-  auto-review are defense-in-depth only.
+- State git mutation detection is the actual enforcement backstop; Cursor SDK
+  local sandboxing is environment-dependent and not required by harness.
 - Include a config example:
 
   ```json
@@ -597,7 +596,8 @@ Stop and report back if:
   status.
 - `providers/cursor/cursor-agent.ts` remains the standalone CLI wrapper used by
   the `cursor-cli` skill and as fallback runtime.
-- `sandboxOptions.enabled` and `autoReview` are not read-only guarantees.
-  Reviewers should scrutinize the git mutation guard and the README wording.
+- Cursor SDK local sandboxing is not required because support is
+  environment-dependent. Reviewers should scrutinize the git mutation guard and
+  the README wording.
 - Streaming/status output is deliberately deferred. Add it after the SDK runtime
   proves useful, not before.
