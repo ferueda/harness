@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { createCodexAgent } from "../lib/codex-agent.ts";
+import { createCodexAgent } from "./codex-agent.ts";
 import type { CodexOptions, ThreadOptions, TurnOptions } from "@openai/codex-sdk";
 
 type FakeTurnInput = {
