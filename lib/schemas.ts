@@ -4,6 +4,7 @@ import {
   AGENT_PROVIDERS,
   AGENT_REASONING_EFFORTS,
   AGENT_SANDBOX_MODES,
+  CURSOR_RUNTIMES,
 } from "./agents.ts";
 
 export const HarnessConfigSchema = z
@@ -15,6 +16,7 @@ export const HarnessConfigSchema = z
         cursor: z
           .object({
             model: z.string().optional(),
+            runtime: z.enum(CURSOR_RUNTIMES).optional(),
           })
           .passthrough()
           .optional(),
