@@ -38,7 +38,14 @@ function createDeferredReviews(): Record<ReviewAgentName, DeferredReview> {
   };
 }
 
-function createContext(deferred: Record<ReviewAgentName, DeferredReview>) {
+function flushAsyncWork(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function createContext(
+  deferred: Record<ReviewAgentName, DeferredReview>,
+  options: { reviewConcurrency?: WorkflowContext["reviewConcurrency"] } = {},
+) {
   const started: ReviewAgentName[] = [];
   let exportedReviews: ReviewSection[] | undefined;
   let exportedFailures: unknown[] | undefined;
@@ -67,6 +74,7 @@ function createContext(deferred: Record<ReviewAgentName, DeferredReview>) {
       } satisfies Record<ReviewAgentName, { key: string; title: string; stage: string }>;
       return info[name];
     },
+    reviewConcurrency: options.reviewConcurrency,
     export({ reviews, verdict, steps }) {
       exportedReviews = reviews;
       exportedSteps = steps;
@@ -117,6 +125,28 @@ test("change-review starts all review steps by default before any review resolve
     omittedSteps: [],
     partial: false,
   });
+});
+
+test("change-review can run selected reviews serially", async () => {
+  const deferred = createDeferredReviews();
+  const harness = createContext(deferred, { reviewConcurrency: "serial" });
+  const run = runChangeReview(harness.ctx);
+
+  expect(harness.started).toEqual(["review-implementation"]);
+  deferred["review-implementation"].resolve(PASS_REVIEW);
+  await flushAsyncWork();
+  expect(harness.started).toEqual(["review-implementation", "code-quality-review"]);
+  deferred["code-quality-review"].resolve(PASS_REVIEW);
+  await flushAsyncWork();
+  expect(harness.started).toEqual(["review-implementation", "code-quality-review", "simplify"]);
+  deferred.simplify.resolve(PASS_REVIEW);
+
+  await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  expect(harness.exportedReviews?.map((review) => review.key)).toEqual([
+    "implementation",
+    "codeQuality",
+    "simplify",
+  ]);
 });
 
 test("change-review starts only selected steps in workflow order", async () => {
