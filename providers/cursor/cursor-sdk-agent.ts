@@ -92,7 +92,6 @@ async function invokeCursorSdkAgent({
         local: {
           cwd: input.workspace,
           settingSources: [],
-          sandboxOptions: { enabled: true },
           autoReview: true,
         },
       }),
