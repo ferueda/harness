@@ -29,6 +29,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@openai/codex-sdk": "0.142.0",
     "commander": "15.0.0",
     "zod": "4.4.3"
   },
