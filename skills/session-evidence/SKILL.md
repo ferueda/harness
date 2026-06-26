@@ -97,7 +97,6 @@ Running `--include-turns` without `--days`, `--workspace`, `--query`, or
   or semantic search.
 - Keep table output small with `--evidence-limit`; JSON keeps the full
   `matches` and artifact arrays for agent handoff.
-- Use `sessions cursor show <sessionId>` for the 1-2 most relevant matches
 - Use `sessions cursor show <sessionId>` or `sessions codex show <sessionId>`
   for the 1-2 most relevant matches instead of opening every result.
 - Codex indexing uses `~/.codex/state_5.sqlite` as the source of truth and only
