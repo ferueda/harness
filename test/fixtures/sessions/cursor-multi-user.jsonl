@@ -1,0 +1,4 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<user_info>\nWorkspace Path: /Users/alice/dev/my-repo\n</user_info>\n<user_query>\nPlease prefer concise status updates.\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Understood."}]}}
+{"role":"tool","message":{"content":[{"type":"text","text":"tool output"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nReview this handoff before continuing.\n</user_query>"}]}}

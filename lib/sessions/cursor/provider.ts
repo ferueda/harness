@@ -51,17 +51,21 @@ class CursorSessionProvider implements SessionProvider {
   async *iterUserTurns(filters: SessionFilters = {}): AsyncIterable<UserTurn> {
     for (const session of this.list(filters)) {
       const transcript = this.readTranscript(session);
-      for (const turn of transcript.turns) {
+      let userTurnIndex = 0;
+      for (const [turnIndex, turn] of transcript.turns.entries()) {
         if (turn.role !== "user") continue;
         yield {
           sessionId: session.sessionId,
           workspacePath: session.workspacePath,
           workspacePathConfidence: session.workspacePathConfidence,
           workspacePathSource: effectiveWorkspacePathSource(session),
+          turnIndex,
+          isFirstUserTurn: userTurnIndex === 0,
           text: turn.text,
           rawText: turn.rawText,
           session,
         };
+        userTurnIndex += 1;
       }
     }
   }

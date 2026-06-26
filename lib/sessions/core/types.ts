@@ -49,6 +49,8 @@ export type UserTurn = {
   workspacePath: string;
   workspacePathConfidence: WorkspacePathConfidence;
   workspacePathSource?: WorkspacePathSource;
+  turnIndex: number;
+  isFirstUserTurn: boolean;
   text: string;
   rawText: string;
   session: SessionRecord;

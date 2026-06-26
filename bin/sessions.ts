@@ -12,6 +12,13 @@ import type {
 } from "../lib/sessions/core/types.ts";
 import type { PhraseCount, SessionClassAnalysis } from "../lib/sessions/core/analyze.ts";
 import {
+  DEFAULT_EVIDENCE_LIMIT,
+  DEFAULT_MIN_SUPPORT,
+  DEFAULT_PATTERN_LIMIT,
+  extractSessionEvidence,
+  type SessionEvidenceReport,
+} from "../lib/sessions/core/evidence.ts";
+import {
   analyzeCursorSessions,
   cursorSessions,
   type CursorAnalysisSampleSet,
@@ -32,6 +39,14 @@ type AnalyzeOptions = {
   provider: (typeof ANALYZE_PROVIDERS)[number];
   format: (typeof TABLE_JSON_FORMATS)[number];
   limit: number;
+  includeTurns: boolean;
+  days?: number;
+  workspace?: string;
+  query?: string;
+  includeAutomation: boolean;
+  evidenceLimit: number;
+  patternLimit: number;
+  minSupport: number;
 };
 
 type ListOptions = {
@@ -89,8 +104,39 @@ function buildProgram(): Command {
     .option("--provider <provider>", "cursor", makeEnumParser(ANALYZE_PROVIDERS), "cursor")
     .option("--format <format>", "table or json", makeEnumParser(TABLE_JSON_FORMATS), "table")
     .option("--limit <n>", "maximum rows per analysis section", positiveInteger, 10)
-    .action((options: AnalyzeOptions) => {
-      const analysis = analyzeIndexedSessions(options);
+    .option("--include-turns", "include bounded transcript evidence", false)
+    .option(
+      "--days <n>",
+      "only scan transcript evidence from sessions updated in the last N days",
+      positiveInteger,
+    )
+    .option("--workspace <path-or-key>", "workspace path prefix or key for transcript evidence")
+    .option(
+      "--query <text>",
+      "search transcript evidence sessions by title, id, workspace, or first query",
+    )
+    .option("--include-automation", "include automation sessions in transcript evidence", false)
+    .option(
+      "--evidence-limit <n>",
+      "maximum examples/artifacts per evidence pattern",
+      positiveInteger,
+      DEFAULT_EVIDENCE_LIMIT,
+    )
+    .option(
+      "--pattern-limit <n>",
+      "maximum transcript evidence pattern rows",
+      positiveInteger,
+      DEFAULT_PATTERN_LIMIT,
+    )
+    .option(
+      "--min-support <n>",
+      "minimum distinct sessions per evidence pattern",
+      positiveInteger,
+      DEFAULT_MIN_SUPPORT,
+    )
+    .action(async (options: AnalyzeOptions, command) => {
+      validateAnalyzeOptions(options, command);
+      const analysis = await analyzeSessionsCommand(options);
       if (options.format === "json") {
         console.log(JSON.stringify(analysis, null, 2));
         return;
@@ -157,6 +203,25 @@ function buildProgram(): Command {
   return program;
 }
 
+async function analyzeSessionsCommand(
+  options: AnalyzeOptions,
+): Promise<CursorSessionAnalysis & { evidence?: SessionEvidenceReport }> {
+  const analysis = analyzeIndexedSessions(options);
+  if (!options.includeTurns) return analysis;
+
+  warnIfUnboundedEvidenceScan(options);
+  const evidence = await extractSessionEvidence(
+    cursorProvider.iterUserTurns(toSessionFilters(options)),
+    {
+      provider: "cursor",
+      evidenceLimit: options.evidenceLimit,
+      patternLimit: options.patternLimit,
+      minSupport: options.minSupport,
+    },
+  );
+  return { ...analysis, evidence };
+}
+
 function analyzeIndexedSessions(options: AnalyzeOptions): CursorSessionAnalysis {
   switch (options.provider) {
     case "cursor":
@@ -164,6 +229,36 @@ function analyzeIndexedSessions(options: AnalyzeOptions): CursorSessionAnalysis 
         limit: options.limit,
       });
   }
+}
+
+function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void {
+  if (options.includeTurns) return;
+  if (
+    options.days !== undefined ||
+    options.workspace !== undefined ||
+    options.query !== undefined ||
+    options.includeAutomation ||
+    command.getOptionValueSource("evidenceLimit") === "cli" ||
+    command.getOptionValueSource("patternLimit") === "cli" ||
+    command.getOptionValueSource("minSupport") === "cli"
+  ) {
+    command.error("error: transcript evidence options require --include-turns");
+  }
+}
+
+function warnIfUnboundedEvidenceScan(options: AnalyzeOptions): void {
+  if (hasEvidenceNarrowingFilters(options)) return;
+  console.error(
+    "warning: --include-turns without --days, --workspace, or --query scans all matching cached transcripts",
+  );
+}
+
+function hasEvidenceNarrowingFilters(
+  options: Pick<AnalyzeOptions, "days" | "workspace" | "query">,
+): boolean {
+  return (
+    options.days !== undefined || options.workspace !== undefined || options.query !== undefined
+  );
 }
 
 async function main(): Promise<void> {
@@ -179,9 +274,21 @@ async function main(): Promise<void> {
 }
 
 function toFilters(options: ListOptions): SessionFilters {
+  return toSessionFilters(options, { limit: options.limit });
+}
+
+function toSessionFilters(
+  options: {
+    days?: number;
+    workspace?: string;
+    query?: string;
+    includeAutomation: boolean;
+  },
+  extra: Pick<SessionFilters, "limit"> = {},
+): SessionFilters {
   const workspace = options.workspace?.trim();
   return {
-    limit: options.limit,
+    ...extra,
     days: options.days,
     workspaceKey: workspace && !workspace.startsWith("/") ? workspace : undefined,
     workspacePathPrefix: workspace?.startsWith("/") ? workspace : undefined,
@@ -215,7 +322,9 @@ function renderStats(stats: IndexStats): string {
   ].join("\n");
 }
 
-function renderCursorAnalysis(analysis: CursorSessionAnalysis): string {
+function renderCursorAnalysis(
+  analysis: CursorSessionAnalysis & { evidence?: SessionEvidenceReport },
+): string {
   return [
     "Session index analysis",
     `  provider:         ${analysis.provider}`,
@@ -235,13 +344,9 @@ function renderCursorAnalysis(analysis: CursorSessionAnalysis): string {
     "Top first-query words",
     renderPhraseCounts(analysis.topFirstQueryWords),
     "",
-    renderClassMarkers(
-      "Self-improve marker candidates (all sessions; informational only)",
-      analysis.classBreakdown.all,
-      false,
-    ),
+    renderClassMarkers("Lexical marker counts (metadata only)", analysis.classBreakdown.all, false),
     "",
-    "Class-scoped marker candidates (buckets can overlap; non-automation excludes automation-classified sessions)",
+    "Class-scoped lexical marker counts (buckets can overlap; non-automation excludes automation-classified sessions)",
     renderClassMarkers("Non-automation sessions", analysis.classBreakdown.realUser),
     "",
     renderClassMarkers("Automation sessions", analysis.classBreakdown.automation),
@@ -255,8 +360,11 @@ function renderCursorAnalysis(analysis: CursorSessionAnalysis): string {
     renderSamples("Preference marker samples", analysis.cursor.preferenceMarkers),
     renderSamples("Noise marker samples", analysis.cursor.noiseMarkers),
     "",
-    "Index improvement candidates",
+    "Index quality signals",
     renderIndexImprovementCandidates(analysis.indexImprovementCandidates),
+    ...(analysis.evidence
+      ? ["", "Transcript evidence patterns", renderEvidenceReport(analysis.evidence)]
+      : []),
   ].join("\n");
 }
 
@@ -300,6 +408,27 @@ function renderIndexImprovementCandidates(
         `  ${candidate.severity.padEnd(6)} ${candidate.count.toString().padStart(4)}  ${candidate.id}: ${candidate.message}`,
     )
     .join("\n");
+}
+
+function renderEvidenceReport(report: SessionEvidenceReport): string {
+  const summary = [
+    `  scanned sessions: ${report.scannedSessions}`,
+    `  scanned user turns: ${report.scannedUserTurns}`,
+    `  skipped user turns: ${report.skippedUserTurns}`,
+    `  excluded fragments: ${report.excludedFragments}`,
+  ];
+  if (report.patterns.length === 0) return [...summary, "  none"].join("\n");
+
+  const rows = report.patterns.map((pattern) => [
+    pattern.bucket,
+    pattern.support.toString(),
+    shorten(pattern.label, 48),
+    shorten(pattern.signals.join(", "), 28),
+    shorten(pattern.examples[0]?.text ?? "", 54),
+  ]);
+  return [...summary, renderTable(["bucket", "support", "label", "signals", "example"], rows)].join(
+    "\n",
+  );
 }
 
 function renderPhraseCounts(items: readonly PhraseCount[]): string {
