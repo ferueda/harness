@@ -12,7 +12,7 @@ Coordinate harness review runs and close the loop on reviewer findings.
 - Default to `change-review`, which runs all review roles:
   - `implementation`: correctness, plan/spec fit, behavioral regressions, missing tests.
   - `quality`: clarity, conventions, maintainability, behavior-preserving refinements.
-  - `simplify`: unnecessary complexity and smaller equivalent shapes (via `simplify-review`).
+  - `simplify`: unnecessary complexity and smaller equivalent shapes.
 - Use `--steps <ids>` only when the caller intentionally selected roles, or on a follow-up run where you intentionally skip a role that already passed. Record the skip reason.
 
 ## Before Running
