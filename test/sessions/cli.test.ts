@@ -305,6 +305,172 @@ test("sessions analyze include-turns filters scanned sessions", async () => {
   expect(query.evidence.patterns[0].examples[0].sessionId).toBe("other");
 });
 
+test("sessions analyze turn-query searches transcript text without changing query semantics", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "multi", "cursor-multi-user.jsonl");
+  await buildCursorIndex(env);
+
+  const metadataQuery = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--format",
+      "json",
+      "--query",
+      "handoff",
+      "--min-support",
+      "1",
+    ],
+    env.homeDir,
+  );
+  const turnQuery = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--format",
+      "json",
+      "--turn-query",
+      "handoff",
+    ],
+    env.homeDir,
+  );
+
+  expect(metadataQuery.evidence.scannedSessions).toBe(0);
+  expect(metadataQuery.evidence.matches).toEqual([]);
+  expect(turnQuery.evidence.scannedSessions).toBe(1);
+  expect(turnQuery.evidence.matches).toEqual([
+    expect.objectContaining({
+      sessionId: "multi",
+      turnIndex: 3,
+      isFirstUserTurn: false,
+      text: "Review this handoff before continuing.",
+      query: "handoff",
+      matchedQueries: ["handoff"],
+    }),
+  ]);
+});
+
+test("sessions analyze extract-only emits slim JSON evidence without index analysis", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "multi", "cursor-multi-user.jsonl");
+  await buildCursorIndex(env);
+
+  const output = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--extract-only",
+      "--format",
+      "json",
+      "--turn-query",
+      "handoff",
+    ],
+    env.homeDir,
+  );
+
+  expect(output).toEqual({
+    provider: "cursor",
+    evidence: expect.objectContaining({
+      provider: "cursor",
+      scannedSessions: 1,
+      scannedUserTurns: 2,
+      patterns: [],
+      matches: [
+        expect.objectContaining({
+          sessionId: "multi",
+          matchedQueries: ["handoff"],
+        }),
+      ],
+    }),
+  });
+  expect(output).not.toHaveProperty("topFirstQueryPrefixes");
+  expect(output).not.toHaveProperty("indexImprovementCandidates");
+  expect(output).not.toHaveProperty("classBreakdown");
+});
+
+test("sessions analyze supports repeatable turn-query OR matching", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "multi", "cursor-multi-user.jsonl");
+  await buildCursorIndex(env);
+
+  const output = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--extract-only",
+      "--format",
+      "json",
+      "--turn-query",
+      "prefer",
+      "--turn-query",
+      "handoff",
+    ],
+    env.homeDir,
+  );
+
+  expect(output.evidence.matches).toEqual([
+    expect.objectContaining({
+      turnIndex: 0,
+      matchedQueries: ["prefer"],
+    }),
+    expect.objectContaining({
+      turnIndex: 3,
+      matchedQueries: ["handoff"],
+    }),
+  ]);
+});
+
+test("sessions analyze turn-query suppresses broad scan warning and renders table matches", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "multi", "cursor-multi-user.jsonl");
+  await buildCursorIndex(env);
+
+  const result = runSessions(
+    ["analyze", "--provider", "cursor", "--include-turns", "--turn-query", "handoff"],
+    env.homeDir,
+  );
+
+  expect(result.status).toBe(0);
+  expect(result.stderr).not.toContain("warning: --include-turns");
+  expect(result.stdout).toContain("Transcript matches");
+  expect(result.stdout).toContain("multi");
+  expect(result.stdout).toContain("Review this handoff before continuing.");
+});
+
+test("sessions analyze extract-only table compacts match artifact display", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "artifact", "cursor-artifact-user.jsonl");
+  await buildCursorIndex(env);
+
+  const result = runSessions(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--extract-only",
+      "--turn-query",
+      "review",
+    ],
+    env.homeDir,
+  );
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Transcript evidence");
+  expect(result.stdout).not.toContain("Session index analysis");
+  expect(result.stdout).toContain("Transcript matches");
+  expect(result.stdout).toContain("artifacts");
+  expect(result.stdout).toContain("+");
+});
+
 test("sessions analyze include-turns can include automation sessions", async () => {
   const env = makeSessionEnv();
   writeTranscript(env, "Users-alice-dev-my-repo", "real-one", "cursor-real-user.jsonl");
@@ -351,6 +517,27 @@ test("sessions analyze rejects turn filters without include-turns", () => {
   const env = makeSessionEnv();
 
   const result = runSessions(["analyze", "--provider", "cursor", "--days", "30"], env.homeDir);
+
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("transcript evidence options require --include-turns");
+});
+
+test("sessions analyze rejects turn-query without include-turns", () => {
+  const env = makeSessionEnv();
+
+  const result = runSessions(
+    ["analyze", "--provider", "cursor", "--turn-query", "verify"],
+    env.homeDir,
+  );
+
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("transcript evidence options require --include-turns");
+});
+
+test("sessions analyze rejects extract-only without include-turns", () => {
+  const env = makeSessionEnv();
+
+  const result = runSessions(["analyze", "--provider", "cursor", "--extract-only"], env.homeDir);
 
   expect(result.status).toBe(2);
   expect(result.stderr).toContain("transcript evidence options require --include-turns");
