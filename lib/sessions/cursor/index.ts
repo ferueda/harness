@@ -1,15 +1,10 @@
 import { statSync } from "node:fs";
 import type { SessionEnvironment } from "../core/env.ts";
 import { writeCursorCache } from "../core/cache.ts";
-import type {
-  CursorSession,
-  IndexSnapshot,
-  WorkspacePathConfidence,
-  WorkspacePathSource,
-} from "../core/types.ts";
+import type { CursorSession, IndexSnapshot } from "../core/types.ts";
 import { isAutomationSession, isSubagentSession } from "./classify.ts";
 import { buildCursorMetaIndex, readCursorSessionMeta } from "./meta.ts";
-import { globTranscriptFiles, type TranscriptFile } from "./paths.ts";
+import { globTranscriptFiles, type TranscriptFile, type WorkspacePathResult } from "./paths.ts";
 import { CursorTranscriptParseError, parseTranscriptFile } from "./transcript.ts";
 
 export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSnapshot> {
@@ -71,13 +66,9 @@ export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSn
 
 function resolveWorkspace(
   file: TranscriptFile,
-  explicit:
-    | { path: string; confidence: WorkspacePathConfidence; source: WorkspacePathSource }
-    | undefined,
-  storeDb:
-    | { path: string; confidence: WorkspacePathConfidence; source: WorkspacePathSource }
-    | undefined,
-): { path: string; confidence: WorkspacePathConfidence; source: WorkspacePathSource } {
+  explicit: WorkspacePathResult | undefined,
+  storeDb: WorkspacePathResult | undefined,
+): WorkspacePathResult {
   return (
     explicit ??
     storeDb ?? {
