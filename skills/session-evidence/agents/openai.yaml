@@ -1,0 +1,4 @@
+interface:
+  display_name: "Session Evidence"
+  short_description: "Analyze transcript evidence from local agent sessions"
+  default_prompt: "Use $session-evidence to run sessions analyze with transcript evidence, inspect recurring patterns, and separate observations from possible follow-up plans."
