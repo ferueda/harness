@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
@@ -44,6 +44,15 @@ test("resolveCodexRolloutPath preserves absolute paths", () => {
   const absolute = join(env.homeDir, "rollout.jsonl");
 
   expect(resolveCodexRolloutPath(env, absolute)).toBe(absolute);
+});
+
+test("resolveCodexRolloutPath finds bare filenames in archived sessions", () => {
+  const env = makeSessionEnv();
+  const expected = join(env.codexHome, "archived_sessions", "rollout.jsonl");
+  mkdirSync(join(env.codexHome, "archived_sessions"), { recursive: true });
+  writeFileSync(expected, "", "utf8");
+
+  expect(resolveCodexRolloutPath(env, "rollout.jsonl")).toBe(expected);
 });
 
 test("workspaceKeyForCodexPath creates stable readable keys", () => {
