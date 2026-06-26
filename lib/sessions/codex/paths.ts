@@ -17,7 +17,11 @@ export function resolveCodexRolloutPath(env: SessionEnvironment, rolloutPath: st
   }
   const direct = join(env.codexHome, relative);
   if (existsSync(direct)) return direct;
-  return join(env.codexHome, "sessions", relative);
+  const sessionsPath = join(env.codexHome, "sessions", relative);
+  if (existsSync(sessionsPath)) return sessionsPath;
+  const archivedPath = join(env.codexHome, "archived_sessions", relative);
+  if (existsSync(archivedPath)) return archivedPath;
+  return sessionsPath;
 }
 
 export function workspaceKeyForCodexPath(path: string): string {
