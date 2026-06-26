@@ -45,18 +45,6 @@ For each finding:
 **Rationale**: [Technical justification]
 ```
 
-Include a **Simplicity summary** after findings:
-
-```markdown
-## Simplicity summary
-
-**Verdict**: Right-sized | Heavy | Under-specified
-**Largest simplification opportunity**: …
-**Phases or scope to cut or defer**: …
-```
-
-Verdict meanings: **Right-sized** — scope matches the problem; **Heavy** — goal is sound but complexity is removable; **Under-specified** — too thin to execute safely.
-
 ## Guidelines
 
 - **Verify against code** — Don't trust the spec blindly; check actual implementations
