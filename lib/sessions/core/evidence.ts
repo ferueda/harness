@@ -59,6 +59,20 @@ export type EvidencePattern = {
   examples: EvidenceExample[];
 };
 
+export type EvidenceMatch = {
+  sessionId: string;
+  workspacePath: string;
+  workspacePathConfidence: WorkspacePathConfidence;
+  workspacePathSource?: WorkspacePathSource;
+  turnIndex: number;
+  isFirstUserTurn: boolean;
+  updatedAtMs?: number;
+  text: string;
+  query?: string;
+  matchedQueries: string[];
+  artifacts: EvidenceArtifact[];
+};
+
 export type SessionEvidenceReport = {
   schemaVersion: 1;
   provider: SessionProviderId;
@@ -66,6 +80,7 @@ export type SessionEvidenceReport = {
   scannedUserTurns: number;
   skippedUserTurns: number;
   excludedFragments: number;
+  matches: EvidenceMatch[];
   patterns: EvidencePattern[];
   artifacts: Record<EvidenceArtifactType, EvidenceArtifact[]>;
 };
@@ -76,6 +91,9 @@ export type ExtractSessionEvidenceOptions = {
   patternLimit?: number;
   minSupport?: number;
   snippetLength?: number;
+  turnQuery?: string;
+  turnQueries?: readonly string[];
+  includePatterns?: boolean;
 };
 
 export const DEFAULT_EVIDENCE_LIMIT = 3;
@@ -101,9 +119,30 @@ const SIGNALS = {
   preference: [...PREFERENCE_MARKERS],
   "git-pr": ["pull request", "pr", "branch", "commit", "merge"],
   debugging: ["debug", "failure", "failed", "error", "broken", "investigate"],
-  testing: ["test", "vitest", "baseline", "coverage", "flaky", "check"],
-  review: ["review", "code-quality", "implementation review", "review-spec", "audit", "validate"],
-  planning: ["plan", "spec", "phases", "roadmap", "next", "scope"],
+  testing: [
+    "test",
+    "vitest",
+    "baseline",
+    "coverage",
+    "flaky",
+    "check",
+    "verify",
+    "validate",
+    "confirm",
+  ],
+  review: ["review", "code-quality", "implementation review", "review-spec", "audit"],
+  planning: [
+    "plan",
+    "spec",
+    "phases",
+    "roadmap",
+    "next",
+    "scope",
+    "how to",
+    "what should",
+    "should we",
+    "explain",
+  ],
   implementation: ["implement", "build", "add", "refactor", "fix", "patch"],
   research: ["read article", "compare", "understand"],
   other: [],
@@ -154,9 +193,12 @@ export async function extractSessionEvidence(
   const patternLimit = options.patternLimit ?? DEFAULT_PATTERN_LIMIT;
   const minSupport = options.minSupport ?? DEFAULT_MIN_SUPPORT;
   const snippetLength = options.snippetLength ?? DEFAULT_SNIPPET_LENGTH;
+  const turnQueries = normalizeTurnQueries(options);
+  const includePatterns = options.includePatterns ?? true;
 
   const scannedSessions = new Set<string>();
   const artifacts = emptyArtifacts();
+  const matches: EvidenceMatch[] = [];
   const patterns = new Map<string, PatternAccumulator>();
   let scannedUserTurns = 0;
   let skippedUserTurns = 0;
@@ -165,6 +207,21 @@ export async function extractSessionEvidence(
   for await (const turn of turns) {
     scannedUserTurns += 1;
     scannedSessions.add(turn.sessionId);
+    const normalizedTurnText = normalizeSnippet(turn.text);
+    const turnArtifacts = extractArtifacts(turn.text, turn.sessionId);
+    const matchedQueries = matchingTurnQueries(normalizedTurnText, turnQueries);
+    const includeTurnArtifacts =
+      includePatterns || turnQueries.length === 0 || matchedQueries.length > 0;
+    if (includeTurnArtifacts) addArtifacts(artifacts, turnArtifacts, evidenceLimit);
+
+    if (matchedQueries.length > 0) {
+      matches.push(matchForTurn(turn, matchedQueries, turnArtifacts, snippetLength));
+    }
+
+    if (!includePatterns) {
+      continue;
+    }
+
     const fragments = fragmentsForTurn(turn.text);
     if (fragments.length === 0) {
       skippedUserTurns += 1;
@@ -174,7 +231,6 @@ export async function extractSessionEvidence(
     for (const fragment of fragments) {
       const normalized = normalizeSnippet(fragment);
       const fragmentArtifacts = extractArtifacts(fragment, turn.sessionId);
-      addArtifacts(artifacts, fragmentArtifacts, evidenceLimit);
 
       const bucket = bucketForFragment(normalized);
       if (bucket === "noise") {
@@ -212,9 +268,63 @@ export async function extractSessionEvidence(
     scannedUserTurns,
     skippedUserTurns,
     excludedFragments,
-    patterns: finalizePatterns(patterns, minSupport, patternLimit),
+    matches,
+    patterns: includePatterns ? finalizePatterns(patterns, minSupport, patternLimit) : [],
     artifacts,
   };
+}
+
+function matchForTurn(
+  turn: UserTurn,
+  matchedQueries: string[],
+  artifacts: EvidenceArtifact[],
+  snippetLength: number,
+): EvidenceMatch {
+  const query = matchedQueries[0];
+  return {
+    sessionId: turn.sessionId,
+    workspacePath: turn.workspacePath,
+    workspacePathConfidence: turn.workspacePathConfidence,
+    workspacePathSource: turn.workspacePathSource,
+    turnIndex: turn.turnIndex,
+    isFirstUserTurn: turn.isFirstUserTurn,
+    updatedAtMs: turn.session.updatedAtMs,
+    text: query
+      ? snippetAroundQuery(turn.text, query, snippetLength)
+      : snippet(turn.text, snippetLength),
+    query,
+    matchedQueries,
+    artifacts,
+  };
+}
+
+type NormalizedTurnQuery = {
+  value: string;
+  normalized: string;
+};
+
+function normalizeTurnQueries(options: ExtractSessionEvidenceOptions): NormalizedTurnQuery[] {
+  const values = [...(options.turnQueries ?? []), ...(options.turnQuery ? [options.turnQuery] : [])]
+    .map((query) => query.trim())
+    .filter(hasText);
+  const seen = new Set<string>();
+  const queries: NormalizedTurnQuery[] = [];
+  for (const value of values) {
+    const normalized = normalizeSnippet(value);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    queries.push({ value, normalized });
+  }
+  return queries;
+}
+
+function matchingTurnQueries(
+  normalizedTurnText: string,
+  queries: readonly NormalizedTurnQuery[],
+): string[] {
+  return queries
+    .filter((query) => phraseMatches(normalizedTurnText, query.normalized))
+    .map((query) => query.value);
 }
 
 function fragmentsForTurn(text: string): string[] {
@@ -475,6 +585,23 @@ function artifactKey(artifact: EvidenceArtifact): string {
 
 function cleanArtifact(value: string): string {
   return value.replace(/[),.;:]+$/g, "").trim();
+}
+
+function snippetAroundQuery(value: string, query: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+
+  const lower = normalized.toLowerCase();
+  const index = lower.indexOf(query.toLowerCase());
+  if (index < 0) return snippet(normalized, maxLength);
+
+  const start = Math.max(0, index - Math.floor((maxLength - query.length) / 2));
+  const end = Math.min(normalized.length, start + maxLength);
+  const adjustedStart = Math.max(0, end - maxLength);
+  const prefix = adjustedStart > 0 ? "..." : "";
+  const suffix = end < normalized.length ? "..." : "";
+  const bodyLength = maxLength - prefix.length - suffix.length;
+  return `${prefix}${normalized.slice(adjustedStart, adjustedStart + bodyLength)}${suffix}`;
 }
 
 function snippet(value: string, maxLength: number): string {
