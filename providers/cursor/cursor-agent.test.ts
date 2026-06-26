@@ -14,7 +14,7 @@ function runCli(args: string[], options: { env?: NodeJS.ProcessEnv } = {}) {
   });
 }
 test("dry-run emits the Cursor command without leaking the prompt", () => {
-  const workspace = mkdtempSync(join(tmpdir(), "cursor-agent-workspace-"));
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cursor-workspace-"));
   const output = execFileSync(
     process.execPath,
     [SCRIPT_PATH, "--format", "json", "--dry-run", "--workspace", workspace, "inspect secrets"],
@@ -38,17 +38,26 @@ test("missing flag values fail as usage errors", () => {
   const result = runCli(["--workspace"]);
   expect(result.status).toBe(2);
   expect(result.stdout).toMatch(/Missing value for --workspace/);
+  expect(result.stdout).toMatch(/harness-cursor --help/);
+  expect(result.stdout).not.toMatch(/`cursor-agent/);
 });
 test("invalid enum flags fail before invoking Cursor", () => {
-  const workspace = mkdtempSync(join(tmpdir(), "cursor-agent-workspace-"));
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cursor-workspace-"));
   const result = runCli(["--workspace", workspace, "--mode", "edit", "task"]);
   expect(result.status).toBe(2);
   expect(result.stdout).toMatch(/Invalid --mode/);
 });
-test("resolveExecutable does not discover a cursor-agent launcher as Cursor CLI", () => {
-  const binDir = mkdtempSync(join(tmpdir(), "cursor-agent-bin-"));
-  const homeDir = mkdtempSync(join(tmpdir(), "cursor-agent-home-"));
-  const launcher = join(binDir, "cursor-agent");
+test("help names the harness-cursor launcher", () => {
+  const result = runCli(["--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/Usage: harness-cursor/);
+  expect(result.stdout).toMatch(/--full/);
+  expect(result.stdout).not.toMatch(/Usage: .*cursor-agent/);
+});
+test("resolveExecutable does not discover harness-cursor launcher as Cursor CLI", () => {
+  const binDir = mkdtempSync(join(tmpdir(), "harness-cursor-bin-"));
+  const homeDir = mkdtempSync(join(tmpdir(), "harness-cursor-home-"));
+  const launcher = join(binDir, "harness-cursor");
   writeFileSync(launcher, "#!/bin/sh\nexit 0\n");
   chmodSync(launcher, 0o755);
   const originalPath = process.env.PATH;
@@ -67,7 +76,7 @@ test("resolveExecutable does not discover a cursor-agent launcher as Cursor CLI"
   }
 });
 test("resolveExecutable falls back to the Cursor installer local agent path", () => {
-  const homeDir = mkdtempSync(join(tmpdir(), "cursor-agent-home-"));
+  const homeDir = mkdtempSync(join(tmpdir(), "harness-cursor-home-"));
   const localBin = join(homeDir, ".local/bin");
   mkdirSync(localBin, { recursive: true });
   const localAgent = join(localBin, "agent");
@@ -89,7 +98,7 @@ test("resolveExecutable falls back to the Cursor installer local agent path", ()
   }
 });
 test("fake Cursor stream output becomes a successful envelope", () => {
-  const workspace = mkdtempSync(join(tmpdir(), "cursor-agent-workspace-"));
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cursor-workspace-"));
   const fakeAgent = join(workspace, "agent");
   writeFileSync(
     fakeAgent,
@@ -114,7 +123,7 @@ test("fake Cursor stream output becomes a successful envelope", () => {
   expect(envelope.usageSummary).toBe("1k in, 5 out");
 });
 test("disabled idle timeout allows silent Cursor work until max runtime", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "cursor-agent-workspace-"));
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cursor-workspace-"));
   const fakeAgent = join(workspace, "agent");
   writeFileSync(
     fakeAgent,
@@ -135,7 +144,7 @@ test("disabled idle timeout allows silent Cursor work until max runtime", async 
   expect(result.resultText).toBe("done");
 });
 test("explicit idle timeout still kills silent Cursor work", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "cursor-agent-workspace-"));
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cursor-workspace-"));
   const fakeAgent = join(workspace, "agent");
   writeFileSync(
     fakeAgent,

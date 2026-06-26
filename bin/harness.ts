@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Command, CommanderError, InvalidArgumentError } from "commander";
+import { Command, CommanderError, InvalidArgumentError, Option } from "commander";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,7 @@ type ReviewOptions = {
   runsDir?: string;
   agent?: AgentProviderName;
   runtime?: CursorRuntime;
+  cursorWrapper?: string;
   cursorAgent?: string;
   codexExecutable?: string;
   model?: string;
@@ -241,7 +242,10 @@ function addReviewCommand(
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
     .option("--agent <provider>", "review agent provider: cursor or codex", parseAgentProvider)
     .option("--runtime <runtime>", "Cursor runtime: cli or sdk (default: cli)", parseCursorRuntime)
-    .option("--cursor-agent <path>", "cursor-agent entrypoint (auto-detected)")
+    .option("--cursor-wrapper <path>", "Cursor wrapper entrypoint (auto-detected)")
+    .addOption(
+      new Option("--cursor-agent <path>", "deprecated alias for --cursor-wrapper").hideHelp(),
+    )
     .option("--codex-executable <path>", "Codex CLI executable override")
     .option("--model <id>", "agent model override")
     .option(
@@ -273,6 +277,10 @@ function addReviewCommand(
     .option("--dry-run", "prepare context and prompts only", false)
     .action(async (options: ReviewOptions) => {
       const handoffText = resolveHandoffText(options);
+      const cursorWrapperPath = options.cursorWrapper ?? options.cursorAgent;
+      if (options.cursorWrapper && options.cursorAgent) {
+        throw new Error("Use only one of --cursor-wrapper or --cursor-agent");
+      }
       const resolvedOptions = resolveHarnessOptions({
         workspace: options.workspace,
         baseRef: options.base,
@@ -283,7 +291,7 @@ function addReviewCommand(
         runsDir: options.runsDir,
         agentProvider: options.agent,
         cursorRuntime: options.runtime,
-        cursorAgentPath: options.cursorAgent,
+        cursorAgentPath: cursorWrapperPath,
         codexPathOverride: options.codexExecutable,
         model: options.model,
         sandboxMode: options.sandbox,
@@ -306,11 +314,11 @@ function addReviewCommand(
       if (resolvedOptions.agentProvider !== "cursor" && options.runtime) {
         throw new Error("--runtime applies only when --agent cursor is active");
       }
-      if (resolvedOptions.agentProvider !== "cursor" && options.cursorAgent) {
-        throw new Error("--cursor-agent applies only when --agent cursor is active");
+      if (resolvedOptions.agentProvider !== "cursor" && cursorWrapperPath) {
+        throw new Error("--cursor-wrapper applies only when --agent cursor is active");
       }
-      if (resolvedOptions.cursorRuntime === "sdk" && options.cursorAgent) {
-        throw new Error("--cursor-agent applies only when Cursor runtime is cli");
+      if (resolvedOptions.cursorRuntime === "sdk" && cursorWrapperPath) {
+        throw new Error("--cursor-wrapper applies only when Cursor runtime is cli");
       }
 
       const ctx = createWorkflowContext(resolvedOptions);
