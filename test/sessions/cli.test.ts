@@ -1,9 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { writeCursorCache } from "../../lib/sessions/core/cache.ts";
+import { writeCodexCache, writeCursorCache } from "../../lib/sessions/core/cache.ts";
+import { buildCodexIndex } from "../../lib/sessions/codex/index.ts";
 import { buildCursorIndex } from "../../lib/sessions/cursor/index.ts";
-import { makeSessionEnv, session, writeMeta, writeTranscript } from "./helpers.ts";
+import {
+  codexSession,
+  makeSessionEnv,
+  session,
+  writeCodexRollout,
+  writeCodexStateDb,
+  writeMeta,
+  writeTranscript,
+} from "./helpers.ts";
 
 const SESSIONS_BIN = join(process.cwd(), "bin/sessions.ts");
 
@@ -634,12 +643,133 @@ test("sessions analyze include-turns reports missing transcript guidance", () =>
   );
 });
 
-test.each(["codex", "all"])("sessions analyze rejects unsupported provider %s", (provider) => {
+test("sessions codex commands browse indexed Codex sessions", () => {
   const env = makeSessionEnv();
-  const result = runSessions(["analyze", "--provider", provider], env.homeDir);
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-real-user.jsonl");
+  writeCodexStateDb(env, [{ id: "real", rolloutPath: "sessions/real.jsonl", title: "Real" }]);
+
+  const reindex = runSessions(["codex", "reindex"], env.homeDir);
+  expect(reindex.status).toBe(0);
+  expect(JSON.parse(reindex.stdout)).toMatchObject({
+    provider: "codex",
+    transcriptsFound: 1,
+    indexedSessions: 1,
+  });
+
+  const list = runSessions(["codex", "list"], env.homeDir);
+  expect(list.status).toBe(0);
+  expect(list.stdout).toContain("real");
+  expect(list.stdout).toContain("Real");
+
+  const show = runSessions(["codex", "show", "real"], env.homeDir);
+  expect(show.status).toBe(0);
+  expect(show.stdout).toContain("Please verify the Codex provider works.");
+
+  const exported = runSessions(["codex", "export", "real", "--format", "json"], env.homeDir);
+  expect(exported.status).toBe(0);
+  expect(JSON.parse(exported.stdout)).toMatchObject({
+    session: { provider: "codex", sessionId: "real" },
+  });
+
+  const stats = runSessions(["codex", "stats", "--format", "json"], env.homeDir);
+  expect(stats.status).toBe(0);
+  expect(JSON.parse(stats.stdout)).toMatchObject({
+    provider: "codex",
+    transcriptsFound: 1,
+    indexedSessions: 1,
+  });
+});
+
+test("sessions analyze supports Codex provider in JSON and table modes", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-real-user.jsonl");
+  writeCodexStateDb(env, [{ id: "real", rolloutPath: "sessions/real.jsonl", title: "Real" }]);
+  await buildCodexIndex(env);
+
+  const json = runSessions(["analyze", "--provider", "codex", "--format", "json"], env.homeDir);
+  expect(json.status).toBe(0);
+  expect(JSON.parse(json.stdout)).toMatchObject({
+    provider: "codex",
+    totalSessions: 1,
+    workspacePathSource: {
+      transcript: 0,
+      "store-db": 1,
+      "project-key": 0,
+    },
+  });
+
+  const table = runSessions(["analyze", "--provider", "codex"], env.homeDir);
+  expect(table.status).toBe(0);
+  expect(table.stdout).toContain("provider:         codex");
+  expect(table.stdout).toContain("Lexical marker counts");
+  expect(table.stdout).not.toContain("Cursor samples");
+});
+
+test("sessions analyze Codex extract-only searches user turns", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-real-user.jsonl");
+  writeCodexStateDb(env, [{ id: "real", rolloutPath: "sessions/real.jsonl", title: "Real" }]);
+  await buildCodexIndex(env);
+
+  const output = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "codex",
+      "--include-turns",
+      "--extract-only",
+      "--format",
+      "json",
+      "--turn-query",
+      "verify",
+    ],
+    env.homeDir,
+  );
+
+  expect(output).toEqual({
+    provider: "codex",
+    evidence: expect.objectContaining({
+      provider: "codex",
+      scannedSessions: 1,
+      scannedUserTurns: 2,
+      patterns: [],
+      matches: [
+        expect.objectContaining({
+          sessionId: "real",
+          matchedQueries: ["verify"],
+        }),
+      ],
+    }),
+  });
+});
+
+test("sessions analyze Codex include-turns reports missing transcript guidance", () => {
+  const env = makeSessionEnv();
+  writeCodexCache(env, {
+    provider: "codex",
+    schemaVersion: 1,
+    lastReindexAt: "2026-06-26T00:00:00.000Z",
+    transcriptsFound: 1,
+    indexedSessions: 1,
+    skipped: 0,
+    skippedUnparseable: 0,
+    sessions: [codexSession({ sessionId: "stale", rolloutPath: "/no/such/rollout.jsonl" })],
+  });
+
+  const result = runSessions(["analyze", "--provider", "codex", "--include-turns"], env.homeDir);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain(
+    "Transcript missing for session stale; run sessions codex reindex",
+  );
+});
+
+test("sessions analyze rejects unsupported provider all", () => {
+  const env = makeSessionEnv();
+  const result = runSessions(["analyze", "--provider", "all"], env.homeDir);
 
   expect(result.status).toBe(2);
-  expect(result.stderr).toContain("must be one of: cursor");
+  expect(result.stderr).toContain("must be one of: cursor, codex");
 });
 
 function runSessions(args: string[], homeDir: string) {
