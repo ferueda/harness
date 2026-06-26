@@ -39,6 +39,8 @@ test("iterUserTurns yields user turns from filtered real sessions", async () => 
     workspacePath: "/Users/alice/dev/my-repo",
     workspacePathConfidence: "explicit",
     workspacePathSource: "transcript",
+    turnIndex: 0,
+    isFirstUserTurn: true,
     text: "Please prefer concise status updates in this repo.",
     session: {
       isAutomation: false,
@@ -46,6 +48,23 @@ test("iterUserTurns yields user turns from filtered real sessions", async () => 
     },
   });
   expect(turns[0]?.rawText).toContain("<user_query>");
+});
+
+test("iterUserTurns reports transcript turn indexes and first-user flags", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-project", "multi-chat", "cursor-multi-user.jsonl");
+  await buildCursorIndex(env);
+
+  const turns = [];
+  for await (const turn of createCursorSessionProvider(env).iterUserTurns()) {
+    turns.push(turn);
+  }
+
+  expect(turns).toHaveLength(2);
+  expect(turns.map((turn) => [turn.turnIndex, turn.isFirstUserTurn, turn.text])).toEqual([
+    [0, true, "Please prefer concise status updates."],
+    [3, false, "Review this handoff before continuing."],
+  ]);
 });
 
 test("list can include automation workers that are also subagents", async () => {
