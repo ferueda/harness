@@ -13,6 +13,7 @@ import type {
   WorkspacePathSource,
 } from "../core/types.ts";
 import { buildCodexIndex } from "./index.ts";
+import { cleanCodexUserMessage, looksLikeInjectedCodexContext } from "./normalize.ts";
 import { CodexRolloutParseError, parseCodexRolloutFile } from "./rollout.ts";
 
 export function createCodexSessionProvider(
@@ -61,7 +62,7 @@ class CodexSessionProvider implements SessionProvider {
           workspacePathSource: effectiveWorkspacePathSource(session),
           turnIndex,
           isFirstUserTurn: userTurnIndex === 0,
-          text: turn.text,
+          text: userTurnIndex === 0 ? evidenceFirstUserText(session, turn.text) : turn.text,
           rawText: turn.rawText,
           session,
         };
@@ -104,6 +105,11 @@ function effectiveWorkspacePathSource(session: SessionRecord): WorkspacePathSour
     session.workspacePathSource ??
     (session.workspacePathConfidence === "explicit" ? "store-db" : "project-key")
   );
+}
+
+function evidenceFirstUserText(session: SessionRecord, text: string): string {
+  if (!looksLikeInjectedCodexContext(text)) return text;
+  return cleanCodexUserMessage(session.firstUserQuery) ?? cleanCodexUserMessage(text) ?? text;
 }
 
 function isNodeErrorCode(error: unknown, code: string): boolean {
