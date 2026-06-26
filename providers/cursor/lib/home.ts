@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { LAUNCHER_COMMAND } from "./command.ts";
 import { agentJson } from "./runner.ts";
 import { collapseHomePath } from "./output.ts";
 
@@ -39,8 +40,8 @@ export async function buildHomeEnvelope(workspace: string): Promise<Record<strin
   if (about.data?.model) envelope.defaultModel = about.data.model;
 
   envelope.help = [
-    'Run `cursor-agent "your prompt"` to invoke a subagent',
-    "Run `cursor-agent --help` for flags",
+    `Run \`${LAUNCHER_COMMAND} "your prompt"\` to invoke a subagent`,
+    `Run \`${LAUNCHER_COMMAND} --help\` for flags`,
   ];
 
   return envelope;
