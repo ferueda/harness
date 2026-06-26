@@ -78,15 +78,16 @@ export type ExtractSessionEvidenceOptions = {
   snippetLength?: number;
 };
 
-const DEFAULT_EVIDENCE_LIMIT = 3;
-const DEFAULT_PATTERN_LIMIT = 10;
-const DEFAULT_MIN_SUPPORT = 2;
+export const DEFAULT_EVIDENCE_LIMIT = 3;
+export const DEFAULT_PATTERN_LIMIT = 10;
+export const DEFAULT_MIN_SUPPORT = 2;
 const DEFAULT_SNIPPET_LENGTH = 180;
 const MIN_FRAGMENT_LENGTH = 12;
 const MAX_FRAGMENT_LENGTH = 240;
 const MAX_FRAGMENTS_PER_TURN = 20;
 const GROUP_SNIPPET_LENGTH = 80;
 const GENERIC_METADATA_NOISE = new Set(["diff", "review", "workflow"]);
+// Transcript evidence keeps broad review/workflow/diff signals; metadata analysis treats them as noise.
 const EVIDENCE_NOISE_MARKERS = NOISE_MARKERS.filter(
   (marker) => !GENERIC_METADATA_NOISE.has(marker),
 );
@@ -103,6 +104,8 @@ const SIGNALS = {
   research: ["read article", "investigate", "compare", "understand"],
   other: [],
 } satisfies Record<EvidenceBucket, readonly string[]>;
+
+const TRANSCRIPT_NOISE_SIGNALS = [...new Set([...SIGNALS.noise, ...EVIDENCE_NOISE_MARKERS])];
 
 const BUCKET_PRECEDENCE = [
   "noise",
@@ -234,8 +237,7 @@ function boundedFragment(fragment: string): string {
 }
 
 function bucketForFragment(normalized: string): EvidenceBucket {
-  if (matchesAny(normalized, SIGNALS.noise) || matchesAny(normalized, EVIDENCE_NOISE_MARKERS))
-    return "noise";
+  if (matchesAny(normalized, TRANSCRIPT_NOISE_SIGNALS)) return "noise";
 
   for (const bucket of BUCKET_PRECEDENCE) {
     if (bucket === "noise" || bucket === "other") continue;
@@ -253,11 +255,9 @@ function matchesAny(normalized: string, signals: readonly string[]): boolean {
 }
 
 function dominantSignal(signals: readonly string[]): string {
-  return (
-    [...signals].toSorted(
-      (left, right) => right.length - left.length || left.localeCompare(right),
-    )[0] ?? "other"
-  );
+  return [...signals].toSorted(
+    (left, right) => right.length - left.length || left.localeCompare(right),
+  )[0]!;
 }
 
 function addPattern(
@@ -334,16 +334,21 @@ function patternId(groupKey: string): string {
 }
 
 function extractArtifacts(fragment: string, sessionId: string): EvidenceArtifact[] {
+  const prUrls = matches(
+    fragment,
+    /https:\/\/github\.com\/[^\s`'")]+\/pull\/\d+/g,
+    "pull-request",
+    sessionId,
+  );
+  const genericUrlText = prUrls.reduce(
+    (text, artifact) => text.replace(artifact.value, ""),
+    fragment,
+  );
   return [
     ...matches(fragment, /\b(?:dev\/plans|plans)\/[^\s`'")]+\.md\b/g, "plan-file", sessionId),
     ...matches(fragment, /\b[^\s`'")]+-plan\.md\b/g, "plan-file", sessionId),
-    ...matches(
-      fragment,
-      /https:\/\/github\.com\/[^\s`'")]+\/pull\/\d+/g,
-      "pull-request",
-      sessionId,
-    ),
-    ...matches(fragment, /https?:\/\/[^\s`'")]+/g, "url", sessionId),
+    ...prUrls,
+    ...matches(genericUrlText, /https?:\/\/[^\s`'")]+/g, "url", sessionId),
     ...commands(fragment, sessionId),
     ...paths(fragment, sessionId),
     ...branches(fragment, sessionId),
@@ -395,9 +400,9 @@ function paths(fragment: string, sessionId: string): EvidenceArtifact[] {
 }
 
 function branches(fragment: string, sessionId: string): EvidenceArtifact[] {
-  const backticked = [...fragment.matchAll(/`([A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+)`/g)].map(
-    (match) => match[1],
-  );
+  const backticked = [...fragment.matchAll(/`([A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+)`/g)]
+    .map((match) => match[1])
+    .filter((value): value is string => hasText(value) && !hasKnownFileExtension(value));
   const explicit = [
     ...fragment.matchAll(/\b(?:branch|checkout)\s+([A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+)/gi),
   ].map((match) => match[1]);
@@ -406,6 +411,10 @@ function branches(fragment: string, sessionId: string): EvidenceArtifact[] {
     value: cleanArtifact(value),
     sessionId,
   }));
+}
+
+function hasKnownFileExtension(value: string): boolean {
+  return /\.(?:md|ts|tsx|js|mjs|json|yaml|yml|sh|txt)\b/.test(value);
 }
 
 function addArtifacts(
