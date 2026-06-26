@@ -259,7 +259,7 @@ Coordinate planning from intent to implementation. Routes through shape, diagnos
 
 **Coordinates:** `shape-requirements`, `diagnose-issue`, `review-spec`, `create-plan`, `implement-plan`, `handoff-work`, then `change-review-workflow`
 
-**References:** `references/routing.md`, `references/routing-scenarios.md` (fixtures)
+**References:** `references/routing.md` (rules, fixtures, pass criteria)
 
 ---
 
@@ -327,7 +327,7 @@ Review a spec document against codebase reality. Identifies gaps, risks, overeng
 - "Check this plan..."
 - Validating a plan before implementation
 
-**Evaluates:** Architecture, Feasibility, Simplicity, Reliability, Performance, Security, Edge Cases, Testing — includes a formal proportionality pass and **Simplicity summary**
+**Evaluates:** Architecture, Feasibility, Simplicity, Reliability, Performance, Security, Edge Cases, Testing — includes proportionality check; Simplicity issues are standard findings (no separate summary block)
 
 ---
 
@@ -439,7 +439,7 @@ transcript searches.
 - Auditing which skills and workflows you actually invoke across sessions
 - Weekly/monthly workflow audits
 
-**Audits:** `skills/session-evidence/references/audit-examples.md`. Compare sessions to coordinator fixtures (e.g. `planning-workflow/references/routing-scenarios.md`).
+**Audits:** `skills/session-evidence/references/audit-examples.md`. Compare sessions to coordinator fixtures (e.g. `planning-workflow/references/routing.md`).
 
 **Output:** Matching snippets, `matchedQueries`, artifacts, session ids, and
 turn indexes. Use `sessions cursor show <sessionId>` or
