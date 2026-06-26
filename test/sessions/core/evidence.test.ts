@@ -92,7 +92,7 @@ test("extractSessionEvidence extracts bounded artifacts", async () => {
     [
       turn(
         "one",
-        "Plan dev/plans/260626-session-evidence-extraction.md, inspect https://github.com/acme/repo/pull/42, checkout branch `codex/session-evidence`, run `pnpm test`, and patch lib/sessions/core/evidence.ts.",
+        "Plan dev/plans/260626-session-evidence-extraction.md, inspect https://github.com/acme/repo/pull/42 and https://example.com/docs, checkout branch `codex/session-evidence`, run `pnpm test`, and patch `lib/sessions/core/evidence.ts`.",
       ),
       turn("two", "Plan dev/plans/260626-other-plan.md and run `pnpm typecheck`."),
     ],
@@ -122,6 +122,18 @@ test("extractSessionEvidence extracts bounded artifacts", async () => {
     },
   ]);
   expect(report.artifacts.path).toHaveLength(1);
+  expect(report.artifacts.url).toEqual([
+    {
+      type: "url",
+      value: "https://example.com/docs",
+      sessionId: "one",
+    },
+  ]);
+  expect(report.artifacts.branch).not.toContainEqual({
+    type: "branch",
+    value: "lib/sessions/core/evidence.ts",
+    sessionId: "one",
+  });
   expect(report.patterns[0]?.artifacts.length).toBeLessThanOrEqual(1);
 });
 
@@ -158,6 +170,24 @@ test("extractSessionEvidence truncates examples and sorts output deterministical
   const preference = report.patterns.find((pattern) => pattern.bucket === "preference");
   expect(preference?.examples[0]?.text).toHaveLength(40);
   expect(preference?.examples[0]?.text.endsWith("...")).toBe(true);
+});
+
+test("extractSessionEvidence enforces patternLimit after sorting", async () => {
+  const report = await extractSessionEvidence(
+    [
+      turn("two-a", "Run vitest for the sessions analyzer."),
+      turn("two-b", "Run vitest for the sessions analyzer."),
+      turn("one-a", "Debug the broken transcript parser."),
+      turn("one-b", "Plan the next analyzer phase."),
+    ],
+    { provider: "cursor", minSupport: 1, patternLimit: 2 },
+  );
+
+  expect(report.patterns).toHaveLength(2);
+  expect(report.patterns.map((pattern) => [pattern.bucket, pattern.support])).toEqual([
+    ["testing", 2],
+    ["debugging", 1],
+  ]);
 });
 
 function buckets(patterns: { bucket: EvidenceBucket }[]): EvidenceBucket[] {
