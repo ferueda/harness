@@ -247,15 +247,17 @@ function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void
 }
 
 function warnIfUnboundedEvidenceScan(options: AnalyzeOptions): void {
-  if (
-    options.days !== undefined ||
-    options.workspace !== undefined ||
-    options.query !== undefined
-  ) {
-    return;
-  }
+  if (hasEvidenceNarrowingFilters(options)) return;
   console.error(
     "warning: --include-turns without --days, --workspace, or --query scans all matching cached transcripts",
+  );
+}
+
+function hasEvidenceNarrowingFilters(
+  options: Pick<AnalyzeOptions, "days" | "workspace" | "query">,
+): boolean {
+  return (
+    options.days !== undefined || options.workspace !== undefined || options.query !== undefined
   );
 }
 
@@ -344,7 +346,7 @@ function renderCursorAnalysis(
     "",
     renderClassMarkers("Lexical marker counts (metadata only)", analysis.classBreakdown.all, false),
     "",
-    "Class-scoped marker candidates (buckets can overlap; non-automation excludes automation-classified sessions)",
+    "Class-scoped lexical marker counts (buckets can overlap; non-automation excludes automation-classified sessions)",
     renderClassMarkers("Non-automation sessions", analysis.classBreakdown.realUser),
     "",
     renderClassMarkers("Automation sessions", analysis.classBreakdown.automation),
