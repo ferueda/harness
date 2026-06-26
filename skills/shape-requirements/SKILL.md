@@ -40,9 +40,9 @@ Follow the loaded reference through its **completion criterion**.
 | `review-spec` | Brief or plan needs codebase validation |
 | Stop | User only wanted confirmation or brief |
 
-Offer the natural next step. Don't auto-run unless asked.
+After **gate** approval, continue with the user's original build, fix, or plan request. For **interview** mode or clarify-only requests, offer the natural next step and wait.
 
-**Done when:** next step stated; user responded or deferred.
+**Done when:** original requested work continues, or next step stated for interview/clarify-only.
 
 ## Cross-branch
 
