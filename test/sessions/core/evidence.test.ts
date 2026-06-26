@@ -184,7 +184,7 @@ test("extractSessionEvidence returns flat turn-query matches outside pattern sup
         },
       ),
     ],
-    { provider: "cursor", turnQuery: "how to verify", snippetLength: 80 },
+    { provider: "cursor", turnQueries: ["how  to verify"], snippetLength: 80 },
   );
 
   expect(report.patterns).toHaveLength(0);
@@ -194,8 +194,8 @@ test("extractSessionEvidence returns flat turn-query matches outside pattern sup
       turnIndex: 4,
       isFirstUserTurn: false,
       updatedAtMs: 1_777_000_000_000,
-      query: "how to verify",
-      matchedQueries: ["how to verify"],
+      query: "how  to verify",
+      matchedQueries: ["how  to verify"],
       text: expect.stringContaining("how to verify"),
       artifacts: [
         {
@@ -237,6 +237,21 @@ test("extractSessionEvidence supports repeatable OR turn queries", async () => {
   ]);
 });
 
+test("extractSessionEvidence keeps one-off turn-query matches independent of minSupport", async () => {
+  const report = await extractSessionEvidence(
+    [turn("one-off", "Debug the broken transcript parser.")],
+    { provider: "cursor", turnQueries: ["debug"], minSupport: 2 },
+  );
+
+  expect(report.matches).toEqual([
+    expect.objectContaining({
+      sessionId: "one-off",
+      matchedQueries: ["debug"],
+    }),
+  ]);
+  expect(report.patterns).toEqual([]);
+});
+
 test("extractSessionEvidence centers turn-query snippets around the match", async () => {
   const report = await extractSessionEvidence(
     [
@@ -245,7 +260,7 @@ test("extractSessionEvidence centers turn-query snippets around the match", asyn
         `${"before ".repeat(30)}please verify the CLI output after the final command ${"after ".repeat(30)}`,
       ),
     ],
-    { provider: "cursor", turnQuery: "verify", snippetLength: 70 },
+    { provider: "cursor", turnQueries: ["verify"], snippetLength: 70 },
   );
 
   expect(report.matches[0]?.text).toContain("verify");
