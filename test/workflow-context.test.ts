@@ -61,9 +61,6 @@ test("resolveSkillPath falls back to user agent skills before bundled skills", (
 });
 test("resolveSkillPath falls back to bundled workflow skills", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
-  const devSkillPath = join(workspace, ".agents/skills/simplify/SKILL.md");
-  mkdirSync(join(workspace, ".agents/skills/simplify"), { recursive: true });
-  writeFileSync(devSkillPath, "# Dev simplify\n", "utf8");
   const skillPath = resolveSkillPath("simplify-review", workspace, workspace);
   expect(skillPath).toBe(join(REPO_ROOT, "skills/simplify-review/SKILL.md"));
   expect(readFileSync(skillPath, "utf8")).toContain("name: simplify-review");
