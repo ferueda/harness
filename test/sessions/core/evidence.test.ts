@@ -170,6 +170,106 @@ test("extractSessionEvidence hides one-off patterns unless requested", async () 
   expect(exploratoryReport.patterns.map((pattern) => pattern.bucket)).toContain("debugging");
 });
 
+test("extractSessionEvidence returns flat turn-query matches outside pattern support", async () => {
+  const report = await extractSessionEvidence(
+    [
+      turn("first", "Please prefer concise status updates."),
+      turn(
+        "second",
+        "Earlier context is irrelevant. Please explain how to verify the parser output with `pnpm test` before shipping.",
+        {
+          turnIndex: 4,
+          isFirstUserTurn: false,
+          session: session({ sessionId: "second", updatedAtMs: 1_777_000_000_000 }),
+        },
+      ),
+    ],
+    { provider: "cursor", turnQuery: "how to verify", snippetLength: 80 },
+  );
+
+  expect(report.patterns).toHaveLength(0);
+  expect(report.matches).toEqual([
+    expect.objectContaining({
+      sessionId: "second",
+      turnIndex: 4,
+      isFirstUserTurn: false,
+      updatedAtMs: 1_777_000_000_000,
+      query: "how to verify",
+      matchedQueries: ["how to verify"],
+      text: expect.stringContaining("how to verify"),
+      artifacts: [
+        {
+          type: "command",
+          value: "pnpm test",
+          sessionId: "second",
+        },
+      ],
+    }),
+  ]);
+});
+
+test("extractSessionEvidence supports repeatable OR turn queries", async () => {
+  const report = await extractSessionEvidence(
+    [
+      turn("first", "Please validate and check the exported transcript."),
+      turn("second", "Please explain the command output."),
+      turn("third", "No matching phrase here."),
+    ],
+    {
+      provider: "cursor",
+      turnQueries: ["validate", "check", "explain"],
+      includePatterns: false,
+    },
+  );
+
+  expect(report.patterns).toEqual([]);
+  expect(report.matches).toEqual([
+    expect.objectContaining({
+      sessionId: "first",
+      query: "validate",
+      matchedQueries: ["validate", "check"],
+    }),
+    expect.objectContaining({
+      sessionId: "second",
+      query: "explain",
+      matchedQueries: ["explain"],
+    }),
+  ]);
+});
+
+test("extractSessionEvidence centers turn-query snippets around the match", async () => {
+  const report = await extractSessionEvidence(
+    [
+      turn(
+        "long",
+        `${"before ".repeat(30)}please verify the CLI output after the final command ${"after ".repeat(30)}`,
+      ),
+    ],
+    { provider: "cursor", turnQuery: "verify", snippetLength: 70 },
+  );
+
+  expect(report.matches[0]?.text).toContain("verify");
+  expect(report.matches[0]?.text.startsWith("...")).toBe(true);
+  expect(report.matches[0]?.text.endsWith("...")).toBe(true);
+});
+
+test("extractSessionEvidence keeps verify and how-to terms as broad evidence signals", async () => {
+  const report = await extractSessionEvidence(
+    [
+      turn("verify", "Verify the generated report before committing."),
+      turn("how-to", "Explain how to run the analyzer for recent sessions."),
+    ],
+    { provider: "cursor", minSupport: 1 },
+  );
+
+  expect(report.patterns).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ bucket: "planning", signals: ["explain", "how to"] }),
+      expect.objectContaining({ bucket: "testing", signals: ["verify"] }),
+    ]),
+  );
+});
+
 test("extractSessionEvidence truncates examples and sorts output deterministically", async () => {
   const longText = `Always prefer ${"concise ".repeat(50)}evidence summaries.`;
   const report = await extractSessionEvidence(
