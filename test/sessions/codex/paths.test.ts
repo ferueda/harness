@@ -31,6 +31,21 @@ test("resolveCodexRolloutPath resolves relative archived paths under codex home"
   expect(resolveCodexRolloutPath(env, "archived_sessions/rollout.jsonl")).toBe(expected);
 });
 
+test("resolveCodexRolloutPath resolves relative session paths under codex home", () => {
+  const env = makeSessionEnv();
+  const expected = join(env.codexHome, "sessions", "rollout.jsonl");
+  mkdirSync(join(env.codexHome, "sessions"), { recursive: true });
+
+  expect(resolveCodexRolloutPath(env, "sessions/rollout.jsonl")).toBe(expected);
+});
+
+test("resolveCodexRolloutPath preserves absolute paths", () => {
+  const env = makeSessionEnv();
+  const absolute = join(env.homeDir, "rollout.jsonl");
+
+  expect(resolveCodexRolloutPath(env, absolute)).toBe(absolute);
+});
+
 test("workspaceKeyForCodexPath creates stable readable keys", () => {
   expect(workspaceKeyForCodexPath("/Users/example/dev/my repo")).toBe("Users-example-dev-my-repo");
   expect(workspaceKeyForCodexPath("")).toBe("home");
