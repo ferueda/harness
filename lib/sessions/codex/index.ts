@@ -51,6 +51,10 @@ export async function buildCodexIndex(env: SessionEnvironment): Promise<IndexSna
         const firstUserQuery =
           cleanCodexUserMessage(row.first_user_message) ??
           cleanCodexUserMessage(parsed.firstUserQuery);
+        const rawFirstUserQuery = rawClassificationText(
+          row.first_user_message,
+          parsed.firstUserQuery,
+        );
         const parentThreadId = parentByChild.get(row.id);
         const classification = {
           threadId: row.id,
@@ -58,6 +62,7 @@ export async function buildCodexIndex(env: SessionEnvironment): Promise<IndexSna
           source: row.source,
           threadSource: row.thread_source ?? undefined,
           firstUserQuery,
+          rawFirstUserQuery,
           isSpawnChild: parentThreadId !== undefined,
           parentThreadId,
           agentRole: row.agent_role ?? undefined,
@@ -150,6 +155,13 @@ function readSpawnEdges(db: DatabaseSync): Map<string, string> {
     // Older Codex schemas may not have thread_spawn_edges; subagent source JSON still covers those rows.
     return new Map();
   }
+}
+
+function rawClassificationText(...values: (string | null | undefined)[]): string | undefined {
+  const text = values
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join("\n");
+  return text || undefined;
 }
 
 function isNodeErrorCode(error: unknown, code: string): boolean {
