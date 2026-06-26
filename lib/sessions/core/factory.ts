@@ -14,6 +14,6 @@ export function createSessionProvider(
     case "auto":
       return createCursorSessionProvider(env);
     case "codex":
-      return createCodexSessionProvider();
+      return createCodexSessionProvider(env);
   }
 }
