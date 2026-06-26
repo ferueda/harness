@@ -4,6 +4,7 @@ import type { SessionEnvironment } from "../core/env.ts";
 import { writeCodexCache } from "../core/cache.ts";
 import type { CodexSession, IndexSnapshot, WorkspacePathConfidence } from "../core/types.ts";
 import { isCodexAutomation, isCodexSubagent } from "./classify.ts";
+import { cleanCodexUserMessage } from "./normalize.ts";
 import { codexStateDbPath, resolveCodexRolloutPath, workspaceKeyForCodexPath } from "./paths.ts";
 import { CodexRolloutParseError, parseCodexRolloutFile } from "./rollout.ts";
 
@@ -47,7 +48,9 @@ export async function buildCodexIndex(env: SessionEnvironment): Promise<IndexSna
         const parsed = parseCodexRolloutFile(rolloutPath);
         const workspacePath = row.cwd || env.homeDir;
         const workspacePathConfidence: WorkspacePathConfidence = row.cwd ? "explicit" : "decoded";
-        const firstUserQuery = parsed.firstUserQuery ?? row.first_user_message ?? undefined;
+        const firstUserQuery =
+          cleanCodexUserMessage(row.first_user_message) ??
+          cleanCodexUserMessage(parsed.firstUserQuery);
         const parentThreadId = parentByChild.get(row.id);
         const classification = {
           threadId: row.id,
