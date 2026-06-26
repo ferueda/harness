@@ -16,8 +16,8 @@ and provenance; keep interpretation separate from extraction.
 
 1. Start narrow. Choose `--days`, `--workspace`, `--query`, or repeatable
    `--turn-query` before scanning transcript evidence.
-2. Use `--turn-query` when you need actual user-turn text, such as `verify`,
-   `how to`, `review`, `test`, or `debug`.
+2. Use `--turn-query` for user-turn text. Starter terms by goal:
+   [references/turn-queries.md](references/turn-queries.md).
 3. Use `--extract-only` for investigation so index metadata does not bury the
    matching turns.
 4. Scan table output first. Use `--evidence-limit` to keep the table small.
@@ -94,8 +94,8 @@ Running `--include-turns` without `--days`, `--workspace`, `--query`, or
 
 ## Recommendations
 
-- Prefer exact words and short phrases. Try adjacent terms when a phrase returns
-  zero matches, such as `verify`, `validate`, and `check`.
+- Turn-query categories and examples: [references/turn-queries.md](references/turn-queries.md).
+- Prefer exact words and short phrases. Try adjacent terms in the same category when a phrase returns zero matches.
 - Use repeatable `--turn-query` for synonyms instead of broadening into fuzzy
   or semantic search.
 - Keep table output small with `--evidence-limit`; JSON keeps the full
@@ -123,7 +123,7 @@ Running `--include-turns` without `--days`, `--workspace`, `--query`, or
 
 ## Evaluation
 
-Workflow and skill audits: [references/audit-examples.md](references/audit-examples.md). Coordinator fixtures (e.g. `planning-workflow/references/routing.md`) define expected routing.
+Workflow and skill audits: [references/audit-examples.md](references/audit-examples.md). Exploration turn queries: [references/turn-queries.md](references/turn-queries.md). Coordinator fixtures (e.g. `planning-workflow/references/routing.md`) define expected routing.
 
 ## Reading Output
 
