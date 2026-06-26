@@ -200,14 +200,28 @@ node bin/harness.ts run change-review
 
 ## Session Extraction
 
-Use `sessions` to inspect local agent session history. Reindex Cursor data
-first, then search transcript evidence when an agent needs prior-session
+Use `sessions` to inspect local agent session history. Reindex Cursor or Codex
+data first, then search transcript evidence when an agent needs prior-session
 context.
 
 ```bash
 node bin/sessions.ts cursor reindex
 node bin/sessions.ts analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
 ```
+
+Codex uses a separate provider and cache:
+
+```bash
+node bin/sessions.ts codex reindex
+node bin/sessions.ts codex stats --format json
+node bin/sessions.ts analyze --provider codex --include-turns --extract-only --turn-query "verify"
+node bin/sessions.ts codex show <sessionId>
+```
+
+Codex indexing reads `~/.codex/state_5.sqlite` as the source of truth, with
+`~/.codex/sqlite/state_5.sqlite` only as a missing-root fallback. Codex
+metadata/evidence may clean a leading injected first-turn preamble; `codex
+show` and `codex export` preserve raw rollout transcript text.
 
 For targeted investigation, prefer exact transcript turn searches:
 
