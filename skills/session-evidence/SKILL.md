@@ -102,6 +102,9 @@ Running `--include-turns` without `--days`, `--workspace`, `--query`, or
   for the 1-2 most relevant matches instead of opening every result.
 - Codex indexing uses `~/.codex/state_5.sqlite` as the source of truth and only
   falls back to `~/.codex/sqlite/state_5.sqlite` if the root DB is missing.
+- Codex metadata/evidence may clean a leading injected first-turn preamble
+  using the DB first user message. Use `sessions codex show <sessionId>` when
+  raw rollout transcript fidelity matters.
 - Treat `patterns` as recurrence hints only. Do not treat output as a
   recommendation.
 
