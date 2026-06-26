@@ -20,8 +20,8 @@ export type IndexStats = {
 };
 
 export function getCursorIndexStats(env: SessionEnvironment): IndexStats {
-  const sessions = readCachedSessions(env);
-  const meta = readCacheMeta(env);
+  const sessions = readCachedSessions(env, "cursor");
+  const meta = readCacheMeta(env, "cursor");
   const transcriptsFound = globTranscriptFiles(env).length || meta?.counts.transcriptsFound || 0;
   const times = sessions
     .map((session) => session.updatedAtMs)
