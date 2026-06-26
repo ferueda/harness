@@ -12,6 +12,9 @@ import type {
 } from "../lib/sessions/core/types.ts";
 import type { PhraseCount, SessionClassAnalysis } from "../lib/sessions/core/analyze.ts";
 import {
+  DEFAULT_EVIDENCE_LIMIT,
+  DEFAULT_MIN_SUPPORT,
+  DEFAULT_PATTERN_LIMIT,
   extractSessionEvidence,
   type SessionEvidenceReport,
 } from "../lib/sessions/core/evidence.ts";
@@ -117,14 +120,19 @@ function buildProgram(): Command {
       "--evidence-limit <n>",
       "maximum examples/artifacts per evidence pattern",
       positiveInteger,
-      3,
+      DEFAULT_EVIDENCE_LIMIT,
     )
-    .option("--pattern-limit <n>", "maximum transcript evidence pattern rows", positiveInteger, 10)
+    .option(
+      "--pattern-limit <n>",
+      "maximum transcript evidence pattern rows",
+      positiveInteger,
+      DEFAULT_PATTERN_LIMIT,
+    )
     .option(
       "--min-support <n>",
       "minimum distinct sessions per evidence pattern",
       positiveInteger,
-      2,
+      DEFAULT_MIN_SUPPORT,
     )
     .action(async (options: AnalyzeOptions, command) => {
       validateAnalyzeOptions(options, command);
@@ -201,8 +209,9 @@ async function analyzeSessionsCommand(
   const analysis = analyzeIndexedSessions(options);
   if (!options.includeTurns) return analysis;
 
+  warnIfUnboundedEvidenceScan(options);
   const evidence = await extractSessionEvidence(
-    cursorProvider.iterUserTurns(toAnalyzeFilters(options)),
+    cursorProvider.iterUserTurns(toSessionFilters(options)),
     {
       provider: "cursor",
       evidenceLimit: options.evidenceLimit,
@@ -228,12 +237,26 @@ function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void
     options.days !== undefined ||
     options.workspace !== undefined ||
     options.query !== undefined ||
-    options.includeAutomation
+    options.includeAutomation ||
+    command.getOptionValueSource("evidenceLimit") === "cli" ||
+    command.getOptionValueSource("patternLimit") === "cli" ||
+    command.getOptionValueSource("minSupport") === "cli"
   ) {
-    command.error(
-      "error: --days, --workspace, --query, and --include-automation require --include-turns",
-    );
+    command.error("error: transcript evidence options require --include-turns");
   }
+}
+
+function warnIfUnboundedEvidenceScan(options: AnalyzeOptions): void {
+  if (
+    options.days !== undefined ||
+    options.workspace !== undefined ||
+    options.query !== undefined
+  ) {
+    return;
+  }
+  console.error(
+    "warning: --include-turns without --days, --workspace, or --query scans all matching cached transcripts",
+  );
 }
 
 async function main(): Promise<void> {
@@ -250,10 +273,6 @@ async function main(): Promise<void> {
 
 function toFilters(options: ListOptions): SessionFilters {
   return toSessionFilters(options, { limit: options.limit });
-}
-
-function toAnalyzeFilters(options: AnalyzeOptions): SessionFilters {
-  return toSessionFilters(options);
 }
 
 function toSessionFilters(
