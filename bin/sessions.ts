@@ -10,7 +10,7 @@ import type {
   SessionFilters,
   SessionRecord,
 } from "../lib/sessions/core/types.ts";
-import type { PhraseCount } from "../lib/sessions/core/analyze.ts";
+import type { PhraseCount, SessionClassAnalysis } from "../lib/sessions/core/analyze.ts";
 import {
   analyzeCursorSessions,
   cursorSessions,
@@ -225,7 +225,7 @@ function renderCursorAnalysis(analysis: CursorSessionAnalysis): string {
     `  missing updated:  ${analysis.missing.updatedAtMs}`,
     `  automation:       ${analysis.classifications.automation}`,
     `  subagent:         ${analysis.classifications.subagent}`,
-    `  real-user:        ${analysis.classifications.realUser}`,
+    `  non-automation:   ${analysis.classifications.realUser}`,
     `  workspace paths:  ${analysis.workspacePathConfidence.explicit} explicit / ${analysis.workspacePathConfidence.decoded} decoded`,
     "",
     "Top first-query prefixes",
@@ -234,11 +234,18 @@ function renderCursorAnalysis(analysis: CursorSessionAnalysis): string {
     "Top first-query words",
     renderPhraseCounts(analysis.topFirstQueryWords),
     "",
-    "Self-improve marker candidates (all sessions; informational only)",
-    "  Preference-like markers",
-    renderPhraseCounts(analysis.candidatePreferenceMarkers),
-    "  Noise/skip markers",
-    renderPhraseCounts(analysis.candidateNoiseMarkers),
+    renderClassMarkers(
+      "Self-improve marker candidates (all sessions; informational only)",
+      analysis.classBreakdown.all,
+      false,
+    ),
+    "",
+    "Class-scoped marker candidates (buckets can overlap; non-automation excludes automation-classified sessions)",
+    renderClassMarkers("Non-automation sessions", analysis.classBreakdown.realUser),
+    "",
+    renderClassMarkers("Automation sessions", analysis.classBreakdown.automation),
+    "",
+    renderClassMarkers("Subagent sessions", analysis.classBreakdown.subagent),
     "",
     "Cursor samples",
     renderSamples("Suspicious automation", analysis.cursor.suspiciousAutomation),
@@ -249,6 +256,23 @@ function renderCursorAnalysis(analysis: CursorSessionAnalysis): string {
     "",
     "Index improvement candidates",
     renderIndexImprovementCandidates(analysis.indexImprovementCandidates),
+  ].join("\n");
+}
+
+function renderClassMarkers(
+  title: string,
+  analysis: SessionClassAnalysis,
+  includeSessionCount = true,
+): string {
+  const suffix = includeSessionCount
+    ? ` (${analysis.totalSessions} session${analysis.totalSessions === 1 ? "" : "s"})`
+    : "";
+  return [
+    `${title}${suffix}`,
+    "  Preference-like markers",
+    renderPhraseCounts(analysis.candidatePreferenceMarkers),
+    "  Noise/skip markers",
+    renderPhraseCounts(analysis.candidateNoiseMarkers),
   ].join("\n");
 }
 

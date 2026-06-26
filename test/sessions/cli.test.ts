@@ -38,6 +38,25 @@ test("sessions analyze emits JSON for Cursor cache", () => {
     provider: "cursor",
     totalSessions: 2,
     candidatePreferenceMarkers: [{ phrase: "prefer", count: 1 }],
+    classBreakdown: {
+      all: {
+        totalSessions: 2,
+        candidatePreferenceMarkers: [{ phrase: "prefer", count: 1 }],
+        candidateNoiseMarkers: [{ phrase: "automated worker", count: 1 }],
+      },
+      realUser: {
+        totalSessions: 1,
+        candidatePreferenceMarkers: [{ phrase: "prefer", count: 1 }],
+      },
+      automation: {
+        totalSessions: 1,
+        candidateNoiseMarkers: [{ phrase: "automated worker", count: 1 }],
+      },
+      subagent: {
+        totalSessions: 1,
+        candidateNoiseMarkers: [{ phrase: "automated worker", count: 1 }],
+      },
+    },
   });
   expect(output.cursor).toMatchObject({
     suspiciousAutomation: { total: 0, samples: [] },
@@ -89,6 +108,10 @@ test("sessions analyze table output includes self-improve marker section", () =>
     "Self-improve marker candidates (all sessions; informational only)",
   );
   expect(result.stdout).toContain("Preference-like markers");
+  expect(result.stdout).toContain("Class-scoped marker candidates");
+  expect(result.stdout).toContain("Non-automation sessions (1 session)");
+  expect(result.stdout).toContain("Automation sessions (0 sessions)");
+  expect(result.stdout).toContain("Subagent sessions (0 sessions)");
   expect(result.stdout).toContain("Preference marker samples (1 total)");
   expect(result.stdout).toContain("Index improvement candidates");
 });
