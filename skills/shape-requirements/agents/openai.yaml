@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shape Requirements"
+  short_description: "Gate underspecified tasks or interview to draft a requirements brief"
+  default_prompt: "Use $shape-requirements — gate if the task is underspecified, interview if I need a brief."
