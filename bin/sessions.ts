@@ -7,10 +7,16 @@ import { createSessionProvider } from "../lib/sessions/core/factory.ts";
 import type {
   ExportFormat,
   IndexSnapshot,
+  SessionProviderId,
   SessionFilters,
   SessionRecord,
 } from "../lib/sessions/core/types.ts";
-import type { PhraseCount, SessionClassAnalysis } from "../lib/sessions/core/analyze.ts";
+import {
+  analyzeSessions,
+  type PhraseCount,
+  type SessionAnalysis,
+  type SessionClassAnalysis,
+} from "../lib/sessions/core/analyze.ts";
 import {
   DEFAULT_EVIDENCE_LIMIT,
   DEFAULT_MIN_SUPPORT,
@@ -27,17 +33,21 @@ import {
   type CursorSessionAnalysis,
 } from "../lib/sessions/cursor/analyze.ts";
 import { getCursorIndexStats, type IndexStats } from "../lib/sessions/cursor/stats.ts";
+import { getCodexIndexStats, type CodexIndexStats } from "../lib/sessions/codex/stats.ts";
 import { defaultSessionEnvironment } from "../lib/sessions/core/env.ts";
 import { renderTranscriptMarkdown } from "../lib/sessions/core/show.ts";
+import type { SessionProvider } from "../lib/sessions/core/provider.ts";
 
-const ANALYZE_PROVIDERS = ["cursor"] as const;
+const ANALYZE_PROVIDERS = ["cursor", "codex"] as const;
 const TABLE_JSON_FORMATS = ["table", "json"] as const;
 const EXPORT_FORMATS = ["json", "jsonl", "md"] as const;
 const sessionEnv = defaultSessionEnvironment();
-const cursorProvider = createSessionProvider("cursor", sessionEnv);
+
+type AnalyzeProvider = (typeof ANALYZE_PROVIDERS)[number];
+type SessionIndexStats = IndexStats | CodexIndexStats;
 
 type AnalyzeOptions = {
-  provider: (typeof ANALYZE_PROVIDERS)[number];
+  provider: AnalyzeProvider;
   format: (typeof TABLE_JSON_FORMATS)[number];
   limit: number;
   includeTurns: boolean;
@@ -53,10 +63,13 @@ type AnalyzeOptions = {
 };
 
 type AnalyzeCommandResult =
-  | { mode: "full"; analysis: CursorSessionAnalysis & { evidence?: SessionEvidenceReport } }
+  | {
+      mode: "full";
+      analysis: (SessionAnalysis | CursorSessionAnalysis) & { evidence?: SessionEvidenceReport };
+    }
   | {
       mode: "extract-only";
-      provider: (typeof ANALYZE_PROVIDERS)[number];
+      provider: AnalyzeProvider;
       evidence: SessionEvidenceReport;
     };
 
@@ -163,64 +176,11 @@ function buildProgram(): Command {
         console.log(JSON.stringify(jsonAnalysisOutput(analysis), null, 2));
         return;
       }
-      console.log(renderCursorAnalysis(analysis, { matchLimit: options.evidenceLimit }));
+      console.log(renderAnalysis(analysis, { matchLimit: options.evidenceLimit }));
     });
 
-  const cursor = program.command("cursor").description("Browse Cursor sessions");
-  cursor
-    .command("reindex")
-    .description("Rebuild the Cursor session cache")
-    .option("--force", "accepted for compatibility; reindex always rebuilds", false)
-    .action(async () => {
-      const snapshot = await cursorProvider.reindex();
-      console.log(JSON.stringify(snapshotSummary(snapshot), null, 2));
-    });
-
-  cursor
-    .command("list")
-    .description("List Cursor sessions")
-    .option("--limit <n>", "maximum rows", positiveInteger, 25)
-    .option("--days <n>", "only sessions updated in the last N days", positiveInteger)
-    .option("--workspace <path-or-key>", "workspace path prefix or key")
-    .option("--query <text>", "search title, session id, workspace, or first query")
-    .option("--include-automation", "include automation sessions", false)
-    .action((options: ListOptions) => {
-      const sessions = cursorProvider.list(toFilters(options));
-      console.log(renderSessionTable(sessions));
-    });
-
-  cursor
-    .command("show")
-    .description("Render a Cursor session transcript")
-    .argument("<sessionId>", "session id")
-    .option("--max-tool-chars <n>", "maximum chars per long turn", positiveInteger, 2_000)
-    .action((sessionId: string, options: ShowOptions) => {
-      const transcript = cursorProvider.getTranscript(sessionId);
-      console.log(renderTranscriptMarkdown(transcript, { maxToolChars: options.maxToolChars }));
-    });
-
-  cursor
-    .command("export")
-    .description("Export a Cursor session transcript")
-    .argument("<sessionId>", "session id")
-    .option("--format <format>", "json, jsonl, or md", makeEnumParser(EXPORT_FORMATS), "json")
-    .action((sessionId: string, options: ExportOptions) => {
-      const transcript = cursorProvider.getTranscript(sessionId);
-      process.stdout.write(exportTranscript(transcript, options.format));
-    });
-
-  cursor
-    .command("stats")
-    .description("Show Cursor session index stats")
-    .option("--format <format>", "table or json", makeEnumParser(TABLE_JSON_FORMATS), "table")
-    .action((options: StatsOptions) => {
-      const stats = getCursorIndexStats(sessionEnv);
-      if (options.format === "json") {
-        console.log(JSON.stringify(stats, null, 2));
-        return;
-      }
-      console.log(renderStats(stats));
-    });
+  registerProviderCommands(program, "cursor", "Cursor", getCursorIndexStats);
+  registerProviderCommands(program, "codex", "Codex", getCodexIndexStats);
 
   return program;
 }
@@ -244,8 +204,9 @@ async function analyzeSessionsCommand(options: AnalyzeOptions): Promise<AnalyzeC
 }
 
 async function extractEvidenceForOptions(options: AnalyzeOptions): Promise<SessionEvidenceReport> {
-  return await extractSessionEvidence(cursorProvider.iterUserTurns(toSessionFilters(options)), {
-    provider: "cursor",
+  const provider = providerFor(options.provider);
+  return await extractSessionEvidence(provider.iterUserTurns(toSessionFilters(options)), {
+    provider: options.provider,
     evidenceLimit: options.evidenceLimit,
     patternLimit: options.patternLimit,
     minSupport: options.minSupport,
@@ -258,13 +219,86 @@ function shouldIncludePatterns(options: AnalyzeOptions): boolean {
   return !options.extractOnly || options.turnQuery.length === 0;
 }
 
-function analyzeIndexedSessions(options: AnalyzeOptions): CursorSessionAnalysis {
+function analyzeIndexedSessions(options: AnalyzeOptions): SessionAnalysis | CursorSessionAnalysis {
   switch (options.provider) {
     case "cursor":
-      return analyzeCursorSessions(cursorSessions(readCachedSessions(sessionEnv)), {
+      return analyzeCursorSessions(cursorSessions(readCachedSessions(sessionEnv, "cursor")), {
+        limit: options.limit,
+      });
+    case "codex":
+      return analyzeSessions(readCachedSessions(sessionEnv, "codex"), {
+        provider: "codex",
         limit: options.limit,
       });
   }
+}
+
+function providerFor(provider: AnalyzeProvider): SessionProvider {
+  return createSessionProvider(provider, sessionEnv);
+}
+
+function registerProviderCommands(
+  program: Command,
+  providerId: AnalyzeProvider,
+  label: string,
+  statsFor: (env: typeof sessionEnv) => SessionIndexStats,
+): void {
+  const provider = program.command(providerId).description(`Browse ${label} sessions`);
+  const sessionProvider = providerFor(providerId);
+  provider
+    .command("reindex")
+    .description(`Rebuild the ${label} session cache`)
+    .option("--force", "accepted for compatibility; reindex always rebuilds", false)
+    .action(async () => {
+      const snapshot = await sessionProvider.reindex();
+      console.log(JSON.stringify(snapshotSummary(snapshot), null, 2));
+    });
+
+  provider
+    .command("list")
+    .description(`List ${label} sessions`)
+    .option("--limit <n>", "maximum rows", positiveInteger, 25)
+    .option("--days <n>", "only sessions updated in the last N days", positiveInteger)
+    .option("--workspace <path-or-key>", "workspace path prefix or key")
+    .option("--query <text>", "search title, session id, workspace, or first query")
+    .option("--include-automation", "include automation sessions", false)
+    .action((options: ListOptions) => {
+      const sessions = sessionProvider.list(toFilters(options));
+      console.log(renderSessionTable(sessions, providerId));
+    });
+
+  provider
+    .command("show")
+    .description(`Render a ${label} session transcript`)
+    .argument("<sessionId>", "session id")
+    .option("--max-tool-chars <n>", "maximum chars per long turn", positiveInteger, 2_000)
+    .action((sessionId: string, options: ShowOptions) => {
+      const transcript = sessionProvider.getTranscript(sessionId);
+      console.log(renderTranscriptMarkdown(transcript, { maxToolChars: options.maxToolChars }));
+    });
+
+  provider
+    .command("export")
+    .description(`Export a ${label} session transcript`)
+    .argument("<sessionId>", "session id")
+    .option("--format <format>", "json, jsonl, or md", makeEnumParser(EXPORT_FORMATS), "json")
+    .action((sessionId: string, options: ExportOptions) => {
+      const transcript = sessionProvider.getTranscript(sessionId);
+      process.stdout.write(exportTranscript(transcript, options.format));
+    });
+
+  provider
+    .command("stats")
+    .description(`Show ${label} session index stats`)
+    .option("--format <format>", "table or json", makeEnumParser(TABLE_JSON_FORMATS), "table")
+    .action((options: StatsOptions) => {
+      const stats = statsFor(sessionEnv);
+      if (options.format === "json") {
+        console.log(JSON.stringify(stats, null, 2));
+        return;
+      }
+      console.log(renderStats(stats));
+    });
 }
 
 function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void {
@@ -339,8 +373,9 @@ function toSessionFilters(
   };
 }
 
-function renderSessionTable(sessions: SessionRecord[]): string {
-  if (sessions.length === 0) return "No sessions found. Run `sessions cursor reindex` first.";
+function renderSessionTable(sessions: SessionRecord[], provider: SessionProviderId): string {
+  if (sessions.length === 0)
+    return `No sessions found. Run \`sessions ${provider} reindex\` first.`;
   const rows = sessions.map((session) => [
     formatDate(session.updatedAtMs),
     shorten(session.workspacePath, 32),
@@ -351,9 +386,9 @@ function renderSessionTable(sessions: SessionRecord[]): string {
   return renderTable(["updated", "workspace", "title/name", "sessionId", "automation"], rows);
 }
 
-function renderStats(stats: IndexStats): string {
+function renderStats(stats: SessionIndexStats): string {
   return [
-    "Cursor session index stats",
+    `${capitalize(stats.provider)} session index stats`,
     `  last reindex:     ${stats.lastReindexAt ?? "n/a"}`,
     `  transcripts:      ${stats.transcriptsFound} found / ${stats.indexedSessions} indexed / ${stats.skipped} skipped (${stats.skippedUnparseable} unparseable)`,
     `  user queries:     ${stats.withUserQuery}`,
@@ -369,13 +404,10 @@ function jsonAnalysisOutput(result: AnalyzeCommandResult): unknown {
     : result.analysis;
 }
 
-function renderCursorAnalysis(
-  result: AnalyzeCommandResult,
-  options: { matchLimit: number },
-): string {
+function renderAnalysis(result: AnalyzeCommandResult, options: { matchLimit: number }): string {
   if (result.mode === "extract-only") return renderEvidenceReport(result.evidence, options);
   const analysis = result.analysis;
-  return [
+  const sections = [
     "Session index analysis",
     `  provider:         ${analysis.provider}`,
     `  sessions:         ${analysis.totalSessions}`,
@@ -402,18 +434,29 @@ function renderCursorAnalysis(
     renderClassMarkers("Automation sessions", analysis.classBreakdown.automation),
     "",
     renderClassMarkers("Subagent sessions", analysis.classBreakdown.subagent),
-    "",
-    "Cursor samples",
-    renderSamples("Suspicious automation", analysis.cursor.suspiciousAutomation),
-    renderSamples("Decoded workspace paths", analysis.cursor.decodedWorkspacePaths),
-    renderSamples("Missing titles with query", analysis.cursor.missingTitles),
-    renderSamples("Preference marker samples", analysis.cursor.preferenceMarkers),
-    renderSamples("Noise marker samples", analysis.cursor.noiseMarkers),
-    "",
-    "Index quality signals",
-    renderIndexImprovementCandidates(analysis.indexImprovementCandidates),
-    ...(analysis.evidence ? ["", renderEvidenceReport(analysis.evidence, options)] : []),
-  ].join("\n");
+  ];
+  if (isCursorSessionAnalysis(analysis)) {
+    sections.push(
+      "",
+      "Cursor samples",
+      renderSamples("Suspicious automation", analysis.cursor.suspiciousAutomation),
+      renderSamples("Decoded workspace paths", analysis.cursor.decodedWorkspacePaths),
+      renderSamples("Missing titles with query", analysis.cursor.missingTitles),
+      renderSamples("Preference marker samples", analysis.cursor.preferenceMarkers),
+      renderSamples("Noise marker samples", analysis.cursor.noiseMarkers),
+      "",
+      "Index quality signals",
+      renderIndexImprovementCandidates(analysis.indexImprovementCandidates),
+    );
+  }
+  if (analysis.evidence) sections.push("", renderEvidenceReport(analysis.evidence, options));
+  return sections.join("\n");
+}
+
+function isCursorSessionAnalysis(
+  analysis: SessionAnalysis | CursorSessionAnalysis,
+): analysis is CursorSessionAnalysis {
+  return "cursor" in analysis;
 }
 
 function renderClassMarkers(
@@ -567,6 +610,10 @@ function shorten(value: string, maxLength: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 await main();

@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 export type SessionEnvironment = {
   cursorHome: string;
+  codexHome: string;
+  codexStateDbPath?: string;
   cacheRoot: string;
   homeDir: string;
   harnessRoot: string;
@@ -20,6 +22,8 @@ export function defaultSessionEnvironment(
   const harnessRoot = overrides.harnessRoot ?? resolveHarnessRoot();
   return {
     cursorHome: overrides.cursorHome ?? join(homeDir, ".cursor"),
+    codexHome: overrides.codexHome ?? join(homeDir, ".codex"),
+    codexStateDbPath: overrides.codexStateDbPath,
     cacheRoot: overrides.cacheRoot ?? join(homeDir, ".harness", "session-index"),
     homeDir,
     harnessRoot,

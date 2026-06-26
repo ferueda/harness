@@ -1,9 +1,8 @@
 import { readCachedSessions, readCacheMeta } from "../core/cache.ts";
 import type { SessionEnvironment } from "../core/env.ts";
-import { globTranscriptFiles } from "./paths.ts";
 
-export type IndexStats = {
-  provider: "cursor";
+export type CodexIndexStats = {
+  provider: "codex";
   schemaVersion: 1;
   lastReindexAt: string | null;
   transcriptsFound: number;
@@ -19,15 +18,15 @@ export type IndexStats = {
   newestSessionAt: string | null;
 };
 
-export function getCursorIndexStats(env: SessionEnvironment): IndexStats {
-  const sessions = readCachedSessions(env, "cursor");
-  const meta = readCacheMeta(env, "cursor");
-  const transcriptsFound = globTranscriptFiles(env).length || meta?.counts.transcriptsFound || 0;
+export function getCodexIndexStats(env: SessionEnvironment): CodexIndexStats {
+  const sessions = readCachedSessions(env, "codex");
+  const meta = readCacheMeta(env, "codex");
+  const transcriptsFound = meta?.counts.transcriptsFound ?? sessions.length;
   const times = sessions
     .map((session) => session.updatedAtMs)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   return {
-    provider: "cursor",
+    provider: "codex",
     schemaVersion: 1,
     lastReindexAt: meta?.lastReindexAt ?? null,
     transcriptsFound,

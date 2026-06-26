@@ -3,6 +3,7 @@
 | File                                                                 | Status      | Summary                                                                        |
 | -------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------ |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap, current `change-review` state, Inngest orchestration (Phase 2)        |
+| [260626-codex-session-provider.md](./260626-codex-session-provider.md) | `done`        | Add Codex session provider parity using shared session analyzer core           |
 | [260626-session-turn-search-extraction.md](./260626-session-turn-search-extraction.md) | `done`        | Add transcript turn search and simplify session evidence as extraction         |
 | [260626-session-evidence-extraction.md](./260626-session-evidence-extraction.md) | `done`        | Extract richer neutral evidence from session transcripts                         |
 | [260626-session-index-analysis.md](./260626-session-index-analysis.md) | `done`        | Provider-neutral analysis over indexed session metadata and lexical patterns   |

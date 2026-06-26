@@ -1,0 +1,3 @@
+{"type":"event_msg","payload":{"type":"user_message","message":"Please verify the Codex provider works."}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"I will check it."}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Now explain how to run it."}}

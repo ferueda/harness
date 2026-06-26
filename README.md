@@ -200,14 +200,28 @@ node bin/harness.ts run change-review
 
 ## Session Extraction
 
-Use `sessions` to inspect local agent session history. Reindex Cursor data
-first, then search transcript evidence when an agent needs prior-session
+Use `sessions` to inspect local agent session history. Reindex Cursor or Codex
+data first, then search transcript evidence when an agent needs prior-session
 context.
 
 ```bash
 node bin/sessions.ts cursor reindex
 node bin/sessions.ts analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
 ```
+
+Codex uses a separate provider and cache:
+
+```bash
+node bin/sessions.ts codex reindex
+node bin/sessions.ts codex stats --format json
+node bin/sessions.ts analyze --provider codex --include-turns --extract-only --turn-query "verify"
+node bin/sessions.ts codex show <sessionId>
+```
+
+Codex indexing reads `~/.codex/state_5.sqlite` as the source of truth, with
+`~/.codex/sqlite/state_5.sqlite` only as a missing-root fallback. Codex
+metadata/evidence may clean a leading injected first-turn preamble; `codex
+show` and `codex export` preserve raw rollout transcript text.
 
 For targeted investigation, prefer exact transcript turn searches:
 
@@ -282,9 +296,10 @@ Run Cursor Agent headlessly and delegate work to another Cursor agent over the C
 
 ### session-evidence
 
-Extract snippets, artifacts, session ids, and turn indexes from local agent
-session history. Uses `sessions analyze --include-turns --extract-only` and
-repeatable `--turn-query` for exact transcript searches.
+Extract snippets, artifacts, session ids, and turn indexes from local Cursor or
+Codex session history. Uses `sessions analyze --provider cursor|codex
+--include-turns --extract-only` and repeatable `--turn-query` for exact
+transcript searches.
 
 **Use when:**
 - Looking up prior session context
@@ -292,7 +307,13 @@ repeatable `--turn-query` for exact transcript searches.
 - Collecting evidence for another agent without generating recommendations
 
 **Output:** Matching snippets, `matchedQueries`, artifacts, session ids, and
-turn indexes. Use `sessions cursor show <sessionId>` for full context.
+turn indexes. Use `sessions cursor show <sessionId>` or
+`sessions codex show <sessionId>` for full context. Codex indexing reads
+`~/.codex/state_5.sqlite` as the source of truth, with
+`~/.codex/sqlite/state_5.sqlite` only as a missing-root fallback. Codex
+metadata uses the DB first user message when available and strips a leading
+injected preamble; transcript evidence may apply the same first-turn
+cleanup, while `show` and `export` preserve the raw rollout transcript.
 
 ---
 
