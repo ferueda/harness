@@ -140,7 +140,7 @@ function buildProgram(): Command {
     .option("--include-automation", "include automation sessions in transcript evidence", false)
     .option(
       "--evidence-limit <n>",
-      "maximum examples/artifacts per evidence pattern",
+      "maximum examples/artifacts per evidence pattern and table match rows",
       positiveInteger,
       DEFAULT_EVIDENCE_LIMIT,
     )
