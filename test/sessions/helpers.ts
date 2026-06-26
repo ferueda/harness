@@ -46,7 +46,12 @@ export function writeMeta(
 export function writeStoreDb(
   env: SessionEnvironment,
   chatId: string,
-  options: { workspacePath?: string; title?: string } = {},
+  options: {
+    workspacePath?: string;
+    workspacePaths?: string[];
+    title?: string;
+    invalidMeta?: boolean;
+  } = {},
 ): void {
   const chatDir = join(env.cursorHome, "chats/hash", chatId);
   mkdirSync(chatDir, { recursive: true });
@@ -59,17 +64,20 @@ export function writeStoreDb(
       mode: "agent",
       createdAt: 123,
     };
-    db.prepare("insert into meta (key, value) values (?, ?)").run(
-      "0",
-      Buffer.from(JSON.stringify(meta), "utf8").toString("hex"),
-    );
-    if (options.workspacePath) {
+    const metaValue = options.invalidMeta
+      ? Buffer.from("{bad", "utf8").toString("hex")
+      : Buffer.from(JSON.stringify(meta), "utf8").toString("hex");
+    db.prepare("insert into meta (key, value) values (?, ?)").run("0", metaValue);
+    for (const [index, workspacePath] of [
+      ...(options.workspacePaths ?? []),
+      ...(options.workspacePath ? [options.workspacePath] : []),
+    ].entries()) {
       const blob = {
         role: "user",
-        content: `<user_info>\nWorkspace Path: ${options.workspacePath}\n</user_info>`,
+        content: `<user_info>\nWorkspace Path: ${workspacePath}\n</user_info>`,
       };
       db.prepare("insert into blobs (id, data) values (?, ?)").run(
-        "workspace",
+        `workspace-${index}`,
         Buffer.from(JSON.stringify(blob), "utf8"),
       );
     }
