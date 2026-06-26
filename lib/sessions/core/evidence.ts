@@ -91,7 +91,6 @@ export type ExtractSessionEvidenceOptions = {
   patternLimit?: number;
   minSupport?: number;
   snippetLength?: number;
-  turnQuery?: string;
   turnQueries?: readonly string[];
   includePatterns?: boolean;
 };
@@ -119,18 +118,8 @@ const SIGNALS = {
   preference: [...PREFERENCE_MARKERS],
   "git-pr": ["pull request", "pr", "branch", "commit", "merge"],
   debugging: ["debug", "failure", "failed", "error", "broken", "investigate"],
-  testing: [
-    "test",
-    "vitest",
-    "baseline",
-    "coverage",
-    "flaky",
-    "check",
-    "verify",
-    "validate",
-    "confirm",
-  ],
-  review: ["review", "code-quality", "implementation review", "review-spec", "audit"],
+  testing: ["test", "vitest", "baseline", "coverage", "flaky", "check", "verify", "confirm"],
+  review: ["review", "code-quality", "implementation review", "review-spec", "audit", "validate"],
   planning: [
     "plan",
     "spec",
@@ -210,9 +199,10 @@ export async function extractSessionEvidence(
     const normalizedTurnText = normalizeSnippet(turn.text);
     const turnArtifacts = extractArtifacts(turn.text, turn.sessionId);
     const matchedQueries = matchingTurnQueries(normalizedTurnText, turnQueries);
-    const includeTurnArtifacts =
-      includePatterns || turnQueries.length === 0 || matchedQueries.length > 0;
-    if (includeTurnArtifacts) addArtifacts(artifacts, turnArtifacts, evidenceLimit);
+    // Targeted extract-only mode should roll up artifacts from matched turns only.
+    if (!includePatterns && (turnQueries.length === 0 || matchedQueries.length > 0)) {
+      addArtifacts(artifacts, turnArtifacts, evidenceLimit);
+    }
 
     if (matchedQueries.length > 0) {
       matches.push(matchForTurn(turn, matchedQueries, turnArtifacts, snippetLength));
@@ -231,6 +221,7 @@ export async function extractSessionEvidence(
     for (const fragment of fragments) {
       const normalized = normalizeSnippet(fragment);
       const fragmentArtifacts = extractArtifacts(fragment, turn.sessionId);
+      addArtifacts(artifacts, fragmentArtifacts, evidenceLimit);
 
       const bucket = bucketForFragment(normalized);
       if (bucket === "noise") {
@@ -276,7 +267,7 @@ export async function extractSessionEvidence(
 
 function matchForTurn(
   turn: UserTurn,
-  matchedQueries: string[],
+  matchedQueries: readonly NormalizedTurnQuery[],
   artifacts: EvidenceArtifact[],
   snippetLength: number,
 ): EvidenceMatch {
@@ -290,10 +281,10 @@ function matchForTurn(
     isFirstUserTurn: turn.isFirstUserTurn,
     updatedAtMs: turn.session.updatedAtMs,
     text: query
-      ? snippetAroundQuery(turn.text, query, snippetLength)
+      ? snippetAroundQuery(turn.text, query.normalized, snippetLength)
       : snippet(turn.text, snippetLength),
-    query,
-    matchedQueries,
+    query: query?.value,
+    matchedQueries: matchedQueries.map((matchedQuery) => matchedQuery.value),
     artifacts,
   };
 }
@@ -304,9 +295,7 @@ type NormalizedTurnQuery = {
 };
 
 function normalizeTurnQueries(options: ExtractSessionEvidenceOptions): NormalizedTurnQuery[] {
-  const values = [...(options.turnQueries ?? []), ...(options.turnQuery ? [options.turnQuery] : [])]
-    .map((query) => query.trim())
-    .filter(hasText);
+  const values = [...(options.turnQueries ?? [])].map((query) => query.trim()).filter(hasText);
   const seen = new Set<string>();
   const queries: NormalizedTurnQuery[] = [];
   for (const value of values) {
@@ -321,10 +310,8 @@ function normalizeTurnQueries(options: ExtractSessionEvidenceOptions): Normalize
 function matchingTurnQueries(
   normalizedTurnText: string,
   queries: readonly NormalizedTurnQuery[],
-): string[] {
-  return queries
-    .filter((query) => phraseMatches(normalizedTurnText, query.normalized))
-    .map((query) => query.value);
+): NormalizedTurnQuery[] {
+  return queries.filter((query) => phraseMatches(normalizedTurnText, query.normalized));
 }
 
 function fragmentsForTurn(text: string): string[] {
