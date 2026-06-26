@@ -37,6 +37,11 @@ test("sessions analyze emits JSON for Cursor cache", () => {
   expect(output).toMatchObject({
     provider: "cursor",
     totalSessions: 2,
+    workspacePathSource: {
+      transcript: 2,
+      "store-db": 0,
+      "project-key": 0,
+    },
     candidatePreferenceMarkers: [{ phrase: "prefer", count: 1 }],
     classBreakdown: {
       all: {
@@ -112,6 +117,7 @@ test("sessions analyze table output includes self-improve marker section", () =>
   expect(result.stdout).toContain("Non-automation sessions (1 session)");
   expect(result.stdout).toContain("Automation sessions (0 sessions)");
   expect(result.stdout).toContain("Subagent sessions (0 sessions)");
+  expect(result.stdout).toContain("path sources:     1 transcript / 0 store-db / 0 project-key");
   expect(result.stdout).toContain("Preference marker samples (1 total)");
   expect(result.stdout).toContain("Index improvement candidates");
 });
