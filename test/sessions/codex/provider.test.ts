@@ -80,6 +80,23 @@ test("CodexSessionProvider normalizes injected first user context for evidence o
   });
 });
 
+test("CodexSessionProvider normalizes instructions-only first user context for evidence", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-instructions-user.jsonl");
+  writeCodexStateDb(env, [{ id: "real", rolloutPath: "sessions/real.jsonl" }]);
+  await buildCodexIndex(env);
+  const provider = createCodexSessionProvider(env);
+
+  expect(provider.getTranscript("real").turns[0]?.text).toContain("<INSTRUCTIONS>");
+
+  const turns = [];
+  for await (const turn of provider.iterUserTurns()) turns.push(turn);
+  expect(turns[0]).toMatchObject({
+    text: "Please verify the instructions-only cleanup.",
+    rawText: expect.stringContaining("<INSTRUCTIONS>"),
+  });
+});
+
 test("CodexSessionProvider reports unreadable rollout guidance", async () => {
   const env = makeSessionEnv();
   const path = writeCodexRollout(env, "sessions/real.jsonl", "codex-real-user.jsonl");
