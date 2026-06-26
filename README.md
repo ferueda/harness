@@ -296,7 +296,10 @@ transcript searches.
 turn indexes. Use `sessions cursor show <sessionId>` or
 `sessions codex show <sessionId>` for full context. Codex indexing reads
 `~/.codex/state_5.sqlite` as the source of truth, with
-`~/.codex/sqlite/state_5.sqlite` only as a missing-root fallback.
+`~/.codex/sqlite/state_5.sqlite` only as a missing-root fallback. Codex
+metadata uses the DB first user message when available and strips a leading
+injected preamble; transcript evidence may apply the same first-turn
+cleanup, while `show` and `export` preserve the raw rollout transcript.
 
 ---
 
