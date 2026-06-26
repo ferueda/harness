@@ -123,7 +123,7 @@ Running `--include-turns` without `--days`, `--workspace`, `--query`, or
 
 ## Evaluation
 
-Workflow and skill audits: [references/audit-examples.md](references/audit-examples.md). Coordinator fixtures (e.g. `planning-workflow/references/routing-scenarios.md`) define expected routing.
+Workflow and skill audits: [references/audit-examples.md](references/audit-examples.md). Coordinator fixtures (e.g. `planning-workflow/references/routing.md`) define expected routing.
 
 ## Reading Output
 
