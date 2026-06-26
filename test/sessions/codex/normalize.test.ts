@@ -1,8 +1,5 @@
 import { expect, test } from "vitest";
-import {
-  cleanCodexUserMessage,
-  looksLikeInjectedCodexContext,
-} from "../../../lib/sessions/codex/normalize.ts";
+import { cleanCodexUserMessage } from "../../../lib/sessions/codex/normalize.ts";
 
 test("cleanCodexUserMessage strips leading AGENTS and instructions preambles", () => {
   expect(
@@ -28,9 +25,8 @@ test("cleanCodexUserMessage strips consecutive leading injected preambles", () =
   ).toBe("Create a PR");
 });
 
-test("looksLikeInjectedCodexContext only matches leading injected context", () => {
-  expect(
-    looksLikeInjectedCodexContext("# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS />"),
-  ).toBe(true);
-  expect(looksLikeInjectedCodexContext("Please review AGENTS.md for this repo.")).toBe(false);
+test("cleanCodexUserMessage preserves non-leading injected-context references", () => {
+  expect(cleanCodexUserMessage("Please review AGENTS.md for this repo.")).toBe(
+    "Please review AGENTS.md for this repo.",
+  );
 });
