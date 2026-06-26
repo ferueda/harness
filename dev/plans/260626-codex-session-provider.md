@@ -433,8 +433,8 @@ Recommended behavior:
   - `id`, `rollout_path`, `created_at`, `updated_at`, `created_at_ms`, `updated_at_ms`, `cwd`, `title`, `source`, `thread_source`, `first_user_message`, `agent_role`, `agent_nickname`, `archived`;
 - read `thread_spawn_edges` once into a `Map<childThreadId, parentThreadId>`;
 - resolve each rollout path;
-- parse each rollout file during reindex to compute `turnCount`, `userTurnCount`, and reliable `firstUserQuery`;
-- use `threads.first_user_message` only as fallback metadata when rollout parsing succeeds but no user message is found; rollout content wins when present.
+- parse each rollout file during reindex to compute `turnCount` and `userTurnCount`;
+- use `threads.first_user_message` as the preferred metadata value for `firstUserQuery`, stripping known leading injected Codex preambles when present; fall back to the cleaned first rollout user turn only when the DB field has no usable text. Rollout content remains the raw transcript source for `show` and `export`.
 - if rollout is missing or unparseable, skip the session and increment `skippedUnparseable`;
 - sort sessions by `updatedAtMs` descending then `sessionId`.
 - define `transcriptsFound` as DB rows with a non-empty `rollout_path` that the indexer attempts. Missing or unreadable rollout files count toward `transcriptsFound`, do not become indexed sessions, and increment `skippedUnparseable`; `skipped` remains `transcriptsFound - indexedSessions`.
