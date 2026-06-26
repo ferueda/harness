@@ -179,6 +179,28 @@ test("sessions analyze include-turns emits JSON evidence from transcripts", asyn
   );
 });
 
+test("sessions analyze include-turns hides one-off patterns by default", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "real-one", "cursor-real-user.jsonl");
+  writeTranscript(env, "Users-alice-dev-my-repo", "real-two", "cursor-real-user.jsonl");
+  writeTranscript(env, "Users-alice-dev-my-repo", "debug-one", "cursor-debug-user.jsonl");
+  await buildCursorIndex(env);
+
+  const output = runEvidenceJson(
+    ["analyze", "--provider", "cursor", "--include-turns", "--format", "json"],
+    env.homeDir,
+  );
+
+  expect(output.evidence.patterns).toHaveLength(1);
+  expect(output.evidence.patterns[0]).toMatchObject({
+    bucket: "preference",
+    support: 2,
+  });
+  expect(
+    output.evidence.patterns.map((pattern: { bucket: string }) => pattern.bucket),
+  ).not.toContain("debugging");
+});
+
 test("sessions analyze include-turns table output includes evidence section", async () => {
   const env = makeSessionEnv();
   writeTranscript(env, "Users-alice-dev-my-repo", "real-one", "cursor-real-user.jsonl");
@@ -293,6 +315,10 @@ test("sessions analyze include-turns can include automation sessions", async () 
 
   expect(defaultOutput.evidence.scannedUserTurns).toBe(1);
   expect(withAutomation.evidence.scannedUserTurns).toBe(2);
+  expect(withAutomation.evidence.excludedFragments).toBeGreaterThan(0);
+  expect(
+    withAutomation.evidence.patterns.map((pattern: { bucket: string }) => pattern.bucket),
+  ).not.toContain("noise");
 });
 
 test("sessions analyze rejects turn filters without include-turns", () => {
@@ -301,9 +327,19 @@ test("sessions analyze rejects turn filters without include-turns", () => {
   const result = runSessions(["analyze", "--provider", "cursor", "--days", "30"], env.homeDir);
 
   expect(result.status).toBe(2);
-  expect(result.stderr).toContain(
-    "--days, --workspace, --query, and --include-automation require --include-turns",
+  expect(result.stderr).toContain("transcript evidence options require --include-turns");
+});
+
+test("sessions analyze rejects evidence limits without include-turns", () => {
+  const env = makeSessionEnv();
+
+  const result = runSessions(
+    ["analyze", "--provider", "cursor", "--evidence-limit", "1"],
+    env.homeDir,
   );
+
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("transcript evidence options require --include-turns");
 });
 
 test("sessions analyze include-turns reports missing transcript guidance", () => {
