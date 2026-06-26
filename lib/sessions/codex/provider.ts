@@ -13,7 +13,7 @@ import type {
   WorkspacePathSource,
 } from "../core/types.ts";
 import { buildCodexIndex } from "./index.ts";
-import { cleanCodexUserMessage, looksLikeInjectedCodexContext } from "./normalize.ts";
+import { cleanCodexUserMessage } from "./normalize.ts";
 import { CodexRolloutParseError, parseCodexRolloutFile } from "./rollout.ts";
 
 export function createCodexSessionProvider(
@@ -108,7 +108,6 @@ function effectiveWorkspacePathSource(session: SessionRecord): WorkspacePathSour
 }
 
 function evidenceFirstUserText(session: SessionRecord, text: string): string {
-  if (!looksLikeInjectedCodexContext(text)) return text;
   return cleanCodexUserMessage(session.firstUserQuery) ?? cleanCodexUserMessage(text) ?? text;
 }
 
