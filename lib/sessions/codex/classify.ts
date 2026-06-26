@@ -6,6 +6,7 @@ export type CodexThreadClassificationInput = {
   source: string;
   threadSource?: string;
   firstUserQuery?: string;
+  rawFirstUserQuery?: string;
   isSpawnChild: boolean;
   parentThreadId?: string;
   agentRole?: string;
@@ -23,7 +24,8 @@ export function isCodexAutomation(input: CodexThreadClassificationInput): boolea
     input.title.startsWith("Automation:") ||
     input.source === "automation" ||
     input.threadSource === "automation" ||
-    hasAutomationMarker(input.firstUserQuery)
+    hasAutomationMarker(input.firstUserQuery) ||
+    hasAutomationMarker(input.rawFirstUserQuery)
   );
 }
 
