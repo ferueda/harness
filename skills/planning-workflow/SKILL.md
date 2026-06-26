@@ -70,5 +70,4 @@ Use `handoff-work` when a different agent or session continues:
 
 ## Reference
 
-- Routing: [references/routing.md](references/routing.md)
-- Fixtures: [references/routing-scenarios.md](references/routing-scenarios.md)
+- [references/routing.md](references/routing.md) — intake, handoffs, skip rules, fixtures, pass criteria
