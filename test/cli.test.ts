@@ -254,6 +254,8 @@ test("harness run change-review help exits cleanly", () => {
   expect(result.stdout).toMatch(/harness run change-review/);
   expect(result.stdout).toMatch(/--handoff-stdin/);
   expect(result.stdout).toMatch(/--runtime/);
+  expect(result.stdout).toMatch(/--cursor-wrapper/);
+  expect(result.stdout).not.toMatch(/--cursor-agent/);
   expect(result.stdout).toMatch(/--steps/);
   expect(result.stdout).toMatch(/--dry-run/);
 });
@@ -498,7 +500,7 @@ test("harness run change-review rejects Codex executable override for Cursor", (
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/--codex-executable applies only when --agent codex is active/);
 });
-test("harness run change-review rejects Cursor agent override for Codex", () => {
+test("harness run change-review rejects Cursor wrapper override for Codex", () => {
   const workspace = createGitWorkspace();
   writeFileSync(join(workspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
 
@@ -511,13 +513,13 @@ test("harness run change-review rejects Cursor agent override for Codex", () => 
     "HEAD",
     "--head",
     "HEAD",
-    "--cursor-agent",
-    "/opt/cursor-agent.js",
+    "--cursor-wrapper",
+    "/opt/harness-cursor",
     "--dry-run",
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--cursor-agent applies only when --agent cursor is active/);
+  expect(result.stderr).toMatch(/--cursor-wrapper applies only when --agent cursor is active/);
 });
 test("harness run change-review rejects Cursor runtime for Codex", () => {
   const workspace = createGitWorkspace();
@@ -540,7 +542,7 @@ test("harness run change-review rejects Cursor runtime for Codex", () => {
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/--runtime applies only when --agent cursor is active/);
 });
-test("harness run change-review rejects Cursor agent override for SDK runtime", () => {
+test("harness run change-review rejects Cursor wrapper override for SDK runtime", () => {
   const workspace = createGitWorkspace();
   const result = runHarness([
     "run",
@@ -553,13 +555,13 @@ test("harness run change-review rejects Cursor agent override for SDK runtime", 
     "HEAD",
     "--runtime",
     "sdk",
-    "--cursor-agent",
-    "/opt/cursor-agent.js",
+    "--cursor-wrapper",
+    "/opt/harness-cursor",
     "--dry-run",
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--cursor-agent applies only when Cursor runtime is cli/);
+  expect(result.stderr).toMatch(/--cursor-wrapper applies only when Cursor runtime is cli/);
 });
 test("harness run change-review ignores Codex-only policy config for Cursor", () => {
   const workspace = createGitWorkspace();
@@ -1010,7 +1012,7 @@ test("harness run change-review accepts positive finite runtime values", () => {
     "1.5",
     "--runs-dir",
     runsDir,
-    "--cursor-agent",
+    "--cursor-wrapper",
     createFakeCursorAgent({ reviewVerdict: "pass", expectedMaxRuntimeMs: "1.5" }),
   ]);
   expect(result.status).toBe(0);
@@ -1031,7 +1033,7 @@ test("harness run change-review exits 0 when reviewers pass", () => {
     "HEAD",
     "--runs-dir",
     runsDir,
-    "--cursor-agent",
+    "--cursor-wrapper",
     createFakeCursorAgent({ reviewVerdict: "pass" }),
   ]);
   expect(result.status).toBe(0);
@@ -1062,7 +1064,7 @@ test("harness run change-review selected steps return failed metadata when a pro
     runsDir,
     "--steps",
     "implementation,quality",
-    "--cursor-agent",
+    "--cursor-wrapper",
     createPromptAwareCursorAgent(),
   ]);
   expect(result.status).toBe(1);
@@ -1124,7 +1126,7 @@ test("harness run change-review exits 1 when reviewers do not pass", () => {
     "HEAD",
     "--runs-dir",
     runsDir,
-    "--cursor-agent",
+    "--cursor-wrapper",
     createFakeCursorAgent({ reviewVerdict: "needs_changes" }),
   ]);
   expect(result.status).toBe(1);
