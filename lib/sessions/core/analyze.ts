@@ -5,6 +5,17 @@ export type PhraseCount = {
   count: number;
 };
 
+export type SessionClassId = "all" | "realUser" | "automation" | "subagent";
+
+export type SessionClassAnalysis = {
+  totalSessions: number;
+  // Prefixes and words are exposed for JSON consumers; table output renders marker counts only.
+  topFirstQueryPrefixes: PhraseCount[];
+  topFirstQueryWords: PhraseCount[];
+  candidatePreferenceMarkers: PhraseCount[];
+  candidateNoiseMarkers: PhraseCount[];
+};
+
 export type SessionAnalysis = {
   provider: SessionProviderId | "all";
   totalSessions: number;
@@ -23,6 +34,7 @@ export type SessionAnalysis = {
   topFirstQueryWords: PhraseCount[];
   candidatePreferenceMarkers: PhraseCount[];
   candidateNoiseMarkers: PhraseCount[];
+  classBreakdown: Record<SessionClassId, SessionClassAnalysis>;
 };
 
 export type AnalyzeSessionsOptions = {
@@ -77,6 +89,7 @@ export function analyzeSessions(
   const provider = options.provider ?? "all";
   const scopedSessions =
     provider === "all" ? sessions : sessions.filter((session) => session.provider === provider);
+  const classBreakdown = analyzeSessionClasses(scopedSessions, limit);
 
   return {
     provider,
@@ -87,9 +100,9 @@ export function analyzeSessions(
       updatedAtMs: countWhere(scopedSessions, (session) => !Number.isFinite(session.updatedAtMs)),
     },
     classifications: {
-      automation: countWhere(scopedSessions, (session) => session.isAutomation),
-      subagent: countWhere(scopedSessions, (session) => session.isSubagent),
-      realUser: countWhere(scopedSessions, (session) => !session.isAutomation),
+      automation: classBreakdown.automation.totalSessions,
+      subagent: classBreakdown.subagent.totalSessions,
+      realUser: classBreakdown.realUser.totalSessions,
     },
     workspacePathConfidence: {
       explicit: countWhere(
@@ -101,10 +114,11 @@ export function analyzeSessions(
         (session) => session.workspacePathConfidence === "decoded",
       ),
     },
-    topFirstQueryPrefixes: topCounts(firstQueryPrefixes(scopedSessions), limit),
-    topFirstQueryWords: topCounts(firstQueryWords(scopedSessions), limit),
-    candidatePreferenceMarkers: markerCounts(scopedSessions, PREFERENCE_MARKERS, limit),
-    candidateNoiseMarkers: markerCounts(scopedSessions, NOISE_MARKERS, limit),
+    topFirstQueryPrefixes: classBreakdown.all.topFirstQueryPrefixes,
+    topFirstQueryWords: classBreakdown.all.topFirstQueryWords,
+    candidatePreferenceMarkers: classBreakdown.all.candidatePreferenceMarkers,
+    candidateNoiseMarkers: classBreakdown.all.candidateNoiseMarkers,
+    classBreakdown,
   };
 }
 
@@ -116,6 +130,41 @@ function firstQueryPrefixes(sessions: readonly SessionRecord[]): string[] {
   return sessions
     .map((session) => normalizedQuery(session).slice(0, PREFIX_LENGTH).trim())
     .filter(hasText);
+}
+
+function analyzeSessionClasses(
+  sessions: readonly SessionRecord[],
+  limit: number,
+): Record<SessionClassId, SessionClassAnalysis> {
+  return {
+    all: analyzeSessionClass(sessions, limit),
+    // `realUser` means not automation. It may still include non-automation subagent edge cases.
+    realUser: analyzeSessionClass(
+      sessions.filter((session) => !session.isAutomation),
+      limit,
+    ),
+    automation: analyzeSessionClass(
+      sessions.filter((session) => session.isAutomation),
+      limit,
+    ),
+    subagent: analyzeSessionClass(
+      sessions.filter((session) => session.isSubagent),
+      limit,
+    ),
+  };
+}
+
+function analyzeSessionClass(
+  sessions: readonly SessionRecord[],
+  limit: number,
+): SessionClassAnalysis {
+  return {
+    totalSessions: sessions.length,
+    topFirstQueryPrefixes: topCounts(firstQueryPrefixes(sessions), limit),
+    topFirstQueryWords: topCounts(firstQueryWords(sessions), limit),
+    candidatePreferenceMarkers: markerCounts(sessions, PREFERENCE_MARKERS, limit),
+    candidateNoiseMarkers: markerCounts(sessions, NOISE_MARKERS, limit),
+  };
 }
 
 function firstQueryWords(sessions: readonly SessionRecord[]): string[] {
