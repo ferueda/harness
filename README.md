@@ -242,7 +242,7 @@ Open the source session when snippets are not enough:
 node bin/sessions.ts cursor show <sessionId>
 ```
 
-For agent-oriented extraction and workflow audits, use the **`session-evidence`** skill. Audit playbooks: `skills/session-evidence/references/audit-examples.md`.
+For agent-oriented extraction and workflow audits, use the **`session-evidence`** skill. Turn-query starters: `skills/session-evidence/references/turn-queries.md`. Audits: `skills/session-evidence/references/audit-examples.md`.
 
 ## Available Skills
 
@@ -434,12 +434,12 @@ transcript searches.
 
 **Use when:**
 - Looking up prior session context
-- Searching user turns for terms like `review`, `verify`, `how to`, or `debug`
+- Exploring transcripts by intent (see `references/turn-queries.md`)
 - Collecting evidence for another agent without generating recommendations
 - Auditing which skills and workflows you actually invoke across sessions
 - Weekly/monthly workflow audits
 
-**Audits:** `skills/session-evidence/references/audit-examples.md`. Compare sessions to coordinator fixtures (e.g. `planning-workflow/references/routing.md`).
+**Audits:** `skills/session-evidence/references/audit-examples.md` (workflow/skill usage). **Exploration:** `skills/session-evidence/references/turn-queries.md` (starter `--turn-query` terms).
 
 **Output:** Matching snippets, `matchedQueries`, artifacts, session ids, and
 turn indexes. Use `sessions cursor show <sessionId>` or
