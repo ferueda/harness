@@ -170,7 +170,7 @@ test("workflow context passes Cursor SDK runtime to provider factory", () => {
   const meta = ctx.export({ title: "Change Review Summary", reviews: [], verdict: "pass" });
 
   expect(calls.providerOptions).toMatchObject({ provider: "cursor", cursorRuntime: "sdk" });
-  expect(ctx.reviewConcurrency).toBe("serial");
+  expect(ctx.reviewConcurrency).toBe("parallel");
   expect(meta.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "sdk" });
 });
 
