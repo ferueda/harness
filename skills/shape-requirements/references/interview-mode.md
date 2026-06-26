@@ -4,7 +4,7 @@
 
 ## Open
 
-Unless the topic is named: (1) artifact type (2) audience. Then domain-first.
+If the topic is not named, ask for artifact type first. After the answer, ask for audience. If the topic is named, start domain-first.
 
 ## Question
 
