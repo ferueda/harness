@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import { readCachedSessions } from "../lib/sessions/core/cache.ts";
 import { exportTranscript } from "../lib/sessions/core/export.ts";
 import { createSessionProvider } from "../lib/sessions/core/factory.ts";
 import type {
@@ -9,14 +10,29 @@ import type {
   SessionFilters,
   SessionRecord,
 } from "../lib/sessions/core/types.ts";
+import type { PhraseCount } from "../lib/sessions/core/analyze.ts";
+import {
+  analyzeCursorSessions,
+  cursorSessions,
+  type CursorAnalysisSampleSet,
+  type IndexImprovementCandidate,
+  type CursorSessionAnalysis,
+} from "../lib/sessions/cursor/analyze.ts";
 import { getCursorIndexStats, type IndexStats } from "../lib/sessions/cursor/stats.ts";
 import { defaultSessionEnvironment } from "../lib/sessions/core/env.ts";
 import { renderTranscriptMarkdown } from "../lib/sessions/core/show.ts";
 
+const ANALYZE_PROVIDERS = ["cursor"] as const;
+const TABLE_JSON_FORMATS = ["table", "json"] as const;
 const EXPORT_FORMATS = ["json", "jsonl", "md"] as const;
-const STATS_FORMATS = ["table", "json"] as const;
 const sessionEnv = defaultSessionEnvironment();
 const cursorProvider = createSessionProvider("cursor", sessionEnv);
+
+type AnalyzeOptions = {
+  provider: (typeof ANALYZE_PROVIDERS)[number];
+  format: (typeof TABLE_JSON_FORMATS)[number];
+  limit: number;
+};
 
 type ListOptions = {
   limit: number;
@@ -35,7 +51,7 @@ type ExportOptions = {
 };
 
 type StatsOptions = {
-  format: "table" | "json";
+  format: (typeof TABLE_JSON_FORMATS)[number];
 };
 
 function positiveInteger(value: string): number {
@@ -66,6 +82,21 @@ function buildProgram(): Command {
     program.outputHelp();
     process.exitCode = 1;
   });
+
+  program
+    .command("analyze")
+    .description("Analyze indexed session metadata")
+    .option("--provider <provider>", "cursor", makeEnumParser(ANALYZE_PROVIDERS), "cursor")
+    .option("--format <format>", "table or json", makeEnumParser(TABLE_JSON_FORMATS), "table")
+    .option("--limit <n>", "maximum rows per analysis section", positiveInteger, 10)
+    .action((options: AnalyzeOptions) => {
+      const analysis = analyzeIndexedSessions(options);
+      if (options.format === "json") {
+        console.log(JSON.stringify(analysis, null, 2));
+        return;
+      }
+      console.log(renderCursorAnalysis(analysis));
+    });
 
   const cursor = program.command("cursor").description("Browse Cursor sessions");
   cursor
@@ -113,7 +144,7 @@ function buildProgram(): Command {
   cursor
     .command("stats")
     .description("Show Cursor session index stats")
-    .option("--format <format>", "table or json", makeEnumParser(STATS_FORMATS), "table")
+    .option("--format <format>", "table or json", makeEnumParser(TABLE_JSON_FORMATS), "table")
     .action((options: StatsOptions) => {
       const stats = getCursorIndexStats(sessionEnv);
       if (options.format === "json") {
@@ -124,6 +155,15 @@ function buildProgram(): Command {
     });
 
   return program;
+}
+
+function analyzeIndexedSessions(options: AnalyzeOptions): CursorSessionAnalysis {
+  switch (options.provider) {
+    case "cursor":
+      return analyzeCursorSessions(cursorSessions(readCachedSessions(sessionEnv)), {
+        limit: options.limit,
+      });
+  }
 }
 
 async function main(): Promise<void> {
@@ -173,6 +213,73 @@ function renderStats(stats: IndexStats): string {
     `  workspaces:       ${stats.workspaces}`,
     `  range:            ${stats.oldestSessionAt ?? "n/a"} .. ${stats.newestSessionAt ?? "n/a"}`,
   ].join("\n");
+}
+
+function renderCursorAnalysis(analysis: CursorSessionAnalysis): string {
+  return [
+    "Session index analysis",
+    `  provider:         ${analysis.provider}`,
+    `  sessions:         ${analysis.totalSessions}`,
+    `  missing title:    ${analysis.missing.title} any`,
+    `  missing query:    ${analysis.missing.firstUserQuery}`,
+    `  missing updated:  ${analysis.missing.updatedAtMs}`,
+    `  automation:       ${analysis.classifications.automation}`,
+    `  subagent:         ${analysis.classifications.subagent}`,
+    `  real-user:        ${analysis.classifications.realUser}`,
+    `  workspace paths:  ${analysis.workspacePathConfidence.explicit} explicit / ${analysis.workspacePathConfidence.decoded} decoded`,
+    "",
+    "Top first-query prefixes",
+    renderPhraseCounts(analysis.topFirstQueryPrefixes),
+    "",
+    "Top first-query words",
+    renderPhraseCounts(analysis.topFirstQueryWords),
+    "",
+    "Self-improve marker candidates (all sessions; informational only)",
+    "  Preference-like markers",
+    renderPhraseCounts(analysis.candidatePreferenceMarkers),
+    "  Noise/skip markers",
+    renderPhraseCounts(analysis.candidateNoiseMarkers),
+    "",
+    "Cursor samples",
+    renderSamples("Suspicious automation", analysis.cursor.suspiciousAutomation),
+    renderSamples("Decoded workspace paths", analysis.cursor.decodedWorkspacePaths),
+    renderSamples("Missing titles with query", analysis.cursor.missingTitles),
+    renderSamples("Preference marker samples", analysis.cursor.preferenceMarkers),
+    renderSamples("Noise marker samples", analysis.cursor.noiseMarkers),
+    "",
+    "Index improvement candidates",
+    renderIndexImprovementCandidates(analysis.indexImprovementCandidates),
+  ].join("\n");
+}
+
+function renderSamples(title: string, section: CursorAnalysisSampleSet): string {
+  const titleWithTotal = `${title} (${section.total} total)`;
+  const samples = section.samples;
+  if (samples.length === 0) return `${titleWithTotal}\n  none`;
+  const rows = samples.map((sample) => [
+    sample.sessionId,
+    shorten(sample.workspacePath, 30),
+    shorten(sample.title ?? sample.firstUserQuery ?? "", 54),
+    sample.reason,
+  ]);
+  return `${titleWithTotal}\n${renderTable(["sessionId", "workspace", "title/query", "reason"], rows)}`;
+}
+
+function renderIndexImprovementCandidates(
+  candidates: readonly IndexImprovementCandidate[],
+): string {
+  if (candidates.length === 0) return "  none";
+  return candidates
+    .map(
+      (candidate) =>
+        `  ${candidate.severity.padEnd(6)} ${candidate.count.toString().padStart(4)}  ${candidate.id}: ${candidate.message}`,
+    )
+    .join("\n");
+}
+
+function renderPhraseCounts(items: readonly PhraseCount[]): string {
+  if (items.length === 0) return "  none";
+  return items.map((item) => `  ${item.count.toString().padStart(3)}  ${item.phrase}`).join("\n");
 }
 
 function renderTable(headers: string[], rows: string[][]): string {
