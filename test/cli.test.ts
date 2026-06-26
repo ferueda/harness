@@ -1048,6 +1048,27 @@ test("harness run change-review exits 0 when reviewers pass", () => {
   expect(output.reviews.codeQuality.verdict).toBe("pass");
   expect(output.reviews.simplify.verdict).toBe("pass");
 });
+test("harness run change-review accepts deprecated Cursor agent alias", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runs-dir",
+    runsDir,
+    "--cursor-agent",
+    createFakeCursorAgent({ reviewVerdict: "pass" }),
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.verdict).toBe("pass");
+});
 test("harness run change-review selected steps return failed metadata when a provider fails", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
