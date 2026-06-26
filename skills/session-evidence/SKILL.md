@@ -45,6 +45,10 @@ JSON handoff:
 sessions analyze --provider cursor --include-turns --format json --pattern-limit 20 --evidence-limit 3
 ```
 
+Running `--include-turns` without `--days`, `--workspace`, or `--query` scans
+all matching cached transcripts and prints a warning. Prefer a narrowed scan
+unless you intentionally want a broad local sweep.
+
 ## Questions To Ask
 
 - What do we repeatedly ask agents to do manually?
@@ -64,6 +68,9 @@ sessions analyze --provider cursor --include-turns --format json --pattern-limit
 - Prefer patterns backed by multiple sessions plus artifacts.
 - Treat one-off patterns as leads only when `--min-support 1` is used.
 - Check examples before naming a follow-up plan.
+- `turnIndex` is the full transcript turn index, including assistant and tool
+  turns; use it as a pointer into `sessions cursor show`, not as a user-turn
+  ordinal.
 - Keep privacy boundaries: summarize sensitive snippets; do not quote secrets,
   tokens, or private transcript text.
 
