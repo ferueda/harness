@@ -1,0 +1,2 @@
+{"type":"event_msg","payload":{"type":"user_message","message":"<INSTRUCTIONS>\nInjected context only.\n</INSTRUCTIONS>\n\nPlease verify the instructions-only cleanup."}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"I will verify it."}}
