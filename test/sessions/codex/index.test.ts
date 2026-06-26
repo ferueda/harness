@@ -92,6 +92,26 @@ test("buildCodexIndex falls back to rollout first user message when database mes
   expect(snapshot.sessions[0]?.firstUserQuery).toBe("Clean ask from the user.");
 });
 
+test("buildCodexIndex classifies automation markers inside stripped preambles", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/worker.jsonl", "codex-instructions-automation.jsonl");
+  writeCodexStateDb(env, [
+    {
+      id: "worker",
+      rolloutPath: "sessions/worker.jsonl",
+      firstUserMessage:
+        "<INSTRUCTIONS>\nYou are running as an automated worker.\n</INSTRUCTIONS>\n\nPlease review this branch.",
+    },
+  ]);
+
+  const snapshot = await buildCodexIndex(env);
+
+  expect(snapshot.sessions[0]).toMatchObject({
+    firstUserQuery: "Please review this branch.",
+    isAutomation: true,
+  });
+});
+
 test("buildCodexIndex reports a friendly missing database error", async () => {
   const env = makeSessionEnv();
 
