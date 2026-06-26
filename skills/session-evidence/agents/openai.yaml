@@ -1,4 +1,4 @@
 interface:
   display_name: "Session Evidence"
   short_description: "Extract snippets and artifacts from local agent sessions"
-  default_prompt: "Use $session-evidence to run extract-only session transcript searches, collect matching snippets and artifacts, and report session ids with turn indexes."
+  default_prompt: "Use $session-evidence to run extract-only transcript searches with repeatable turn queries, collect matching snippets and artifacts, and report session ids with turn indexes."
