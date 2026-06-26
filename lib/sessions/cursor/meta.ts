@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionEnvironment } from "../core/env.ts";
+import { extractWorkspacePathFromUserInfo, type WorkspacePathResult } from "./paths.ts";
 
 export type CursorMetaIndex = Map<string, CursorMetaPaths>;
 
@@ -14,6 +15,7 @@ export type CursorSessionMeta = CursorMetaPaths & {
   updatedAtMs?: number;
   title?: string;
   mode?: string;
+  workspacePath?: WorkspacePathResult;
 };
 
 type MetaJson = {
@@ -25,6 +27,11 @@ type StoreMeta = {
   name?: unknown;
   mode?: unknown;
   createdAt?: unknown;
+};
+
+type StoreDbData = {
+  meta: StoreMeta;
+  workspacePath?: WorkspacePathResult;
 };
 
 export function buildCursorMetaIndex(env: SessionEnvironment): CursorMetaIndex {
@@ -52,13 +59,14 @@ export async function readCursorSessionMeta(
 ): Promise<CursorSessionMeta> {
   if (!paths) return {};
   const metaJson = paths.metaJsonPath ? tryReadMetaJson(paths.metaJsonPath) : {};
-  const storeMeta = paths.storeDbPath ? await readStoreDbMeta(paths.storeDbPath) : {};
+  const storeDb = paths.storeDbPath ? await readStoreDbData(paths.storeDbPath) : { meta: {} };
   return {
     ...paths,
-    createdAtMs: numberValue(storeMeta.createdAt) ?? metaJson.createdAtMs,
+    createdAtMs: numberValue(storeDb.meta.createdAt) ?? metaJson.createdAtMs,
     updatedAtMs: metaJson.updatedAtMs,
-    title: stringValue(storeMeta.name),
-    mode: stringValue(storeMeta.mode),
+    title: stringValue(storeDb.meta.name),
+    mode: stringValue(storeDb.meta.mode),
+    workspacePath: storeDb.workspacePath,
   };
 }
 
@@ -78,7 +86,7 @@ function readMetaJson(path: string): { createdAtMs?: number; updatedAtMs?: numbe
   };
 }
 
-async function readStoreDbMeta(path: string): Promise<StoreMeta> {
+async function readStoreDbData(path: string): Promise<StoreDbData> {
   try {
     const sqlite = await import("node:sqlite");
     const db = new sqlite.DatabaseSync(path, { readOnly: true });
@@ -86,15 +94,73 @@ async function readStoreDbMeta(path: string): Promise<StoreMeta> {
       const row = db.prepare("select value from meta where key = ?").get("0") as
         | { value?: unknown }
         | undefined;
-      if (typeof row?.value !== "string") return {};
-      return JSON.parse(Buffer.from(row.value, "hex").toString("utf8")) as StoreMeta;
+      return {
+        meta:
+          typeof row?.value === "string"
+            ? (JSON.parse(Buffer.from(row.value, "hex").toString("utf8")) as StoreMeta)
+            : {},
+        workspacePath: tryReadStoreDbWorkspacePath(db),
+      };
     } finally {
       db.close();
     }
   } catch {
     // store.db is best-effort; missing SQLite support or unreadable DBs fall back to meta.json/jsonl data.
-    return {};
+    return { meta: {} };
   }
+}
+
+function tryReadStoreDbWorkspacePath(db: DatabaseLike): WorkspacePathResult | undefined {
+  try {
+    return readStoreDbWorkspacePath(db);
+  } catch {
+    return undefined;
+  }
+}
+
+function readStoreDbWorkspacePath(db: DatabaseLike): WorkspacePathResult | undefined {
+  const row = db
+    .prepare("select data from blobs where instr(cast(data as text), ?) > 0 limit 1")
+    .get("Workspace Path:") as { data?: unknown } | undefined;
+  const text = storeBlobText(row?.data);
+  if (!text) return undefined;
+  return extractWorkspacePathFromUserInfo(text, "store-db") ?? undefined;
+}
+
+type DatabaseLike = {
+  prepare(sql: string): {
+    get(...values: unknown[]): unknown;
+  };
+};
+
+function storeBlobText(value: unknown): string | undefined {
+  const text =
+    value instanceof Uint8Array
+      ? Buffer.from(value).toString("utf8")
+      : typeof value === "string"
+        ? value
+        : undefined;
+  if (!text) return undefined;
+
+  try {
+    const parsed = JSON.parse(text) as { content?: unknown };
+    return contentText(parsed.content);
+  } catch {
+    return text;
+  }
+}
+
+function contentText(content: unknown): string | undefined {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content
+    .map((item) => {
+      if (!item || typeof item !== "object" || !("text" in item)) return "";
+      return typeof item.text === "string" ? item.text : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+  return text || undefined;
 }
 
 function existingPath(path: string): string | undefined {
