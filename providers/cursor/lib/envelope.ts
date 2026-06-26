@@ -1,3 +1,5 @@
+import { LAUNCHER_COMMAND } from "./command.ts";
+
 const DEFAULT_PREVIEW_CHARS = 800;
 
 export type EnvelopeStatus = "completed" | "failed" | "timed_out";
@@ -18,7 +20,6 @@ type HelpContext = {
   error?: string;
   authRequired?: boolean;
   timedOut?: boolean;
-  isHome?: boolean;
 };
 
 export type CursorEnvelope = {
@@ -82,7 +83,7 @@ export function buildHelpHints(context: HelpContext): string[] {
 
   if (context.error) {
     if (context.error.includes("prompt is required")) {
-      help.push('Run `cursor-agent "your task"` or pass --prompt-file / --stdin');
+      help.push(`Run \`${LAUNCHER_COMMAND} "your task"\` or pass --prompt-file / --stdin`);
     }
     if (context.error.includes("schema")) {
       help.push("Use only one of --schema or --schema-json");
@@ -101,18 +102,18 @@ export function buildHelpHints(context: HelpContext): string[] {
 
   if (context.status === "completed") {
     if (context.sessionId) {
-      help.push(`Run \`cursor-agent --resume ${context.sessionId} "follow up"\` to continue`);
+      help.push(
+        `Run \`${LAUNCHER_COMMAND} --resume ${context.sessionId} "follow up"\` to continue`,
+      );
     }
     if (context.resultTruncated) {
       help.push("Run with --full for complete result text");
     }
     if (!context.hasSchema && !context.resultTruncated) {
-      help.push('Run `cursor-agent --schema-json \'{"type":"object",…}\' "task"` for typed output');
+      help.push(
+        `Run \`${LAUNCHER_COMMAND} --schema-json '{"type":"object",…}' "task"\` for typed output`,
+      );
     }
-  }
-
-  if (context.isHome) {
-    help.push('Run `cursor-agent "your prompt"` to invoke a subagent');
   }
 
   return help.slice(0, 3);
