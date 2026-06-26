@@ -4,7 +4,7 @@
   "agents": {
     "cursor": {
       "model": "composer-2.5",
-      "runtime": "cli"
+      "runtime": "sdk"
     },
     "codex": {
       "model": "gpt-5.5",
