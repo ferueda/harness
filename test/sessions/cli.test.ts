@@ -113,7 +113,7 @@ test("sessions analyze table output uses neutral metadata labels", () => {
   expect(result.stdout).toContain("Lexical marker counts (metadata only)");
   expect(result.stdout).not.toContain("Self-improve marker candidates");
   expect(result.stdout).toContain("Preference-like markers");
-  expect(result.stdout).toContain("Class-scoped marker candidates");
+  expect(result.stdout).toContain("Class-scoped lexical marker counts");
   expect(result.stdout).toContain("Non-automation sessions (1 session)");
   expect(result.stdout).toContain("Automation sessions (0 sessions)");
   expect(result.stdout).toContain("Subagent sessions (0 sessions)");
@@ -155,6 +155,7 @@ test("sessions analyze include-turns emits JSON evidence from transcripts", asyn
   );
 
   expect(result.status).toBe(0);
+  expect(result.stderr).toContain("warning: --include-turns without --days");
   const output = JSON.parse(result.stdout);
   expect(output.evidence).toMatchObject({
     schemaVersion: 1,
@@ -177,6 +178,31 @@ test("sessions analyze include-turns emits JSON evidence from transcripts", asyn
       }),
     ]),
   );
+});
+
+test("sessions analyze include-turns suppresses scan warning when narrowed", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "real-one", "cursor-real-user.jsonl");
+  await buildCursorIndex(env);
+
+  const result = runSessions(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--format",
+      "json",
+      "--days",
+      "30",
+      "--min-support",
+      "1",
+    ],
+    env.homeDir,
+  );
+
+  expect(result.status).toBe(0);
+  expect(result.stderr).not.toContain("warning: --include-turns without --days");
 });
 
 test("sessions analyze include-turns hides one-off patterns by default", async () => {
