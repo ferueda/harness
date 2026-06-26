@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<user_info>\nWorkspace Path: /Users/alice/dev/my-repo\n</user_info>\n<user_query>\nReview dev/plans/260626-session-turn-search-extraction.md, inspect https://github.com/acme/repo/pull/42, run `pnpm test`, run `pnpm typecheck`, and patch lib/sessions/core/evidence.ts.\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"I will inspect the evidence extraction changes."}]}}
