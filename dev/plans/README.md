@@ -3,6 +3,7 @@
 | File                                                                 | Status      | Summary                                                                        |
 | -------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------ |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap, current `change-review` state, Inngest orchestration (Phase 2)        |
+| [260626-session-turn-search-extraction.md](./260626-session-turn-search-extraction.md) | `done`        | Add transcript turn search and simplify session evidence as extraction         |
 | [260626-session-evidence-extraction.md](./260626-session-evidence-extraction.md) | `done`        | Extract richer neutral evidence from session transcripts                         |
 | [260626-session-index-analysis.md](./260626-session-index-analysis.md) | `done`        | Provider-neutral analysis over indexed session metadata and lexical patterns   |
 | [260625-cursor-sessions-self-improve.md](./260625-cursor-sessions-self-improve.md) | `done`        | Cursor session extraction library (`lib/sessions/`) and sessions CLI           |
