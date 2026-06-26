@@ -9,6 +9,7 @@ test("analyzeSessions counts missing fields and classifications", () => {
       title: "Real session",
       firstUserQuery: "Please prefer concise updates.",
       workspacePathConfidence: "explicit",
+      workspacePathSource: "transcript",
       isAutomation: false,
       isSubagent: false,
     }),
@@ -18,6 +19,7 @@ test("analyzeSessions counts missing fields and classifications", () => {
       firstUserQuery: undefined,
       updatedAtMs: undefined,
       workspacePathConfidence: "decoded",
+      workspacePathSource: "project-key",
       isAutomation: true,
       isSubagent: true,
     }),
@@ -39,6 +41,11 @@ test("analyzeSessions counts missing fields and classifications", () => {
     workspacePathConfidence: {
       explicit: 1,
       decoded: 1,
+    },
+    workspacePathSource: {
+      transcript: 1,
+      "store-db": 0,
+      "project-key": 1,
     },
     classBreakdown: {
       all: { totalSessions: 2 },
