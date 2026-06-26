@@ -1,94 +1,96 @@
 ---
 name: session-evidence
-description: Use when analyzing local agent session history with `sessions analyze --include-turns`, extracting neutral transcript evidence, interpreting patterns, or deciding whether evidence should lead to a workflow, skill, indexer, classifier, or process-improvement plan.
+description: Use when extracting information from local agent session history with `sessions analyze --include-turns`, searching transcript turns with `--turn-query`, or inspecting snippets, artifacts, session ids, and turn indexes.
 ---
 
 # Session Evidence
 
-Use `sessions analyze --include-turns` as an evidence extractor. The analyzer
-does not make recommendations; it surfaces bounded transcript patterns,
-artifacts, examples, and provenance for you to interpret.
-
-## When to Use
-
-- Review recent or repo-specific agent session history for recurring work.
-- Investigate a topic with transcript evidence, such as review, testing,
-  debugging, preferences, plans, PRs, commands, or index quality.
-- Interpret `sessions analyze --include-turns --format json` output for a
-  handoff or follow-up plan.
+Use `sessions analyze --include-turns --extract-only` as a local session
+extraction tool. It returns transcript snippets, artifacts, and provenance;
+keep interpretation separate from extraction.
 
 ## Workflow
 
-1. Start narrow. Choose `--days`, `--workspace`, `--query`, and `--min-support`
-   before reading evidence.
-2. Scan table output first. Use JSON when handing evidence to another agent or
-   doing deeper analysis.
-3. Inspect `patterns`, `artifacts`, `support`, `examples`, `sessionId`, and
+1. Start narrow. Choose `--days`, `--workspace`, `--query`, or repeatable
+   `--turn-query` before scanning transcript evidence.
+2. Use `--turn-query` when you need actual user-turn text, such as `verify`,
+   `how to`, `review`, `test`, or `debug`.
+3. Use `--extract-only` for investigation so index metadata does not bury the
+   matching turns.
+4. Scan table output first. Use `--format json` when handing extracted evidence
+   to another agent.
+5. Inspect `matches`, `matchedQueries`, `artifacts`, `sessionId`, and
    `turnIndex`.
-4. Drill into source sessions with `sessions cursor show <sessionId>` only when
-   snippets are not enough.
-5. Ask interpretation questions over the extracted data before deciding what it
-   means.
-6. Separate observation from interpretation. Evidence can suggest a future
-   workflow, skill, indexer, classifier, or process plan, but this skill should
-   not create one automatically.
+6. Open the source only when snippets are not enough:
+   `sessions cursor show <sessionId>`.
+7. Report extracted facts first; label any interpretation separately.
 
 ## Command Patterns
 
 Recent workspace scan:
 
 ```bash
-sessions analyze --provider cursor --include-turns --days 30 --workspace /path/to/repo
+sessions analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
 ```
 
-Topic scan:
+Find turns mentioning verification:
 
 ```bash
-sessions analyze --provider cursor --include-turns --query review --min-support 2
+sessions analyze --provider cursor --include-turns --extract-only --turn-query "verify"
+```
+
+Find how-to questions:
+
+```bash
+sessions analyze --provider cursor --include-turns --extract-only --turn-query "how to" --days 30
+```
+
+Find related exact terms:
+
+```bash
+sessions analyze --provider cursor --include-turns --extract-only --turn-query "verify" --turn-query "validate" --turn-query "check"
 ```
 
 JSON handoff:
 
 ```bash
-sessions analyze --provider cursor --include-turns --format json --pattern-limit 20 --evidence-limit 3
+sessions analyze --provider cursor --include-turns --extract-only --turn-query "review" --format json
 ```
 
-Running `--include-turns` without `--days`, `--workspace`, or `--query` scans
-all matching cached transcripts and prints a warning. Prefer a narrowed scan
-unless you intentionally want a broad local sweep.
+`--query` filters sessions by indexed metadata: title, id, workspace, or first
+user query. `--turn-query` searches user-turn transcript text.
 
-## Questions To Ask
+Running `--include-turns` without `--days`, `--workspace`, `--query`, or
+`--turn-query` scans all matching cached transcripts and prints a warning.
 
-- What do we repeatedly ask agents to do manually?
-- Which review, test, or debug loops keep showing up?
-- Which user preferences appear often enough to become repo guidance or a skill?
-- Which artifacts recur: plans, PRs, branches, commands, or paths?
-- Is the index missing useful fields because analysts keep needing transcript
-  context?
-- Which patterns are real recurring work, and which are noise from automation,
-  handoffs, or review workers?
-- What evidence would justify a separate follow-up plan, and what should stay a
-  no-op?
+## Useful Questions
 
-## Interpretation Rules
+- What user turns match this term?
+- Which snippets show the repeated request?
+- Which files, commands, PRs, branches, plans, or URLs appear?
+- Which session ids and turn indexes should be opened for more context?
+- Which requested information is missing from snippets and needs
+  `sessions cursor show`?
 
-- Treat support as recurrence, not importance.
-- Prefer patterns backed by multiple sessions plus artifacts.
-- Treat one-off patterns as leads only when `--min-support 1` is used.
-- Check examples before naming a follow-up plan.
-- `turnIndex` is the full transcript turn index, including assistant and tool
-  turns; use it as a pointer into `sessions cursor show`, not as a user-turn
-  ordinal.
-- Keep privacy boundaries: summarize sensitive snippets; do not quote secrets,
-  tokens, or private transcript text.
+## Reading Output
 
-## Output
+- `matches`: flat turn-query hits with snippets, artifacts, and provenance.
+- `matchedQueries`: exact query terms that matched that user turn.
+- `patterns`: grouped broad-scan evidence; treat support as recurrence, not
+  importance.
+- `artifacts`: extracted paths, commands, PRs, branches, plans, and URLs.
+- `turnIndex`: full transcript turn index, including assistant and tool turns.
 
-Report:
+Keep privacy boundaries: summarize sensitive snippets; do not quote secrets,
+tokens, or private transcript text.
+
+## Report
+
+Include:
 
 - `Commands run`
-- `Strong patterns`
-- `Evidence`
-- `Possible follow-ups`
-- `Noise/rejected leads`
-- `Recommended next plan or no-op`
+- `Filters used`
+- `Matching snippets`
+- `Artifacts found`
+- `Session ids / turn indexes`
+- `Missing context`
