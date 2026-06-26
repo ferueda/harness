@@ -34,6 +34,14 @@ export type CursorSession = SessionBase & {
 
 export type CodexSession = SessionBase & {
   provider: "codex";
+  threadId: string;
+  rolloutPath: string;
+  stateDbPath?: string;
+  source?: string;
+  threadSource?: string;
+  parentThreadId?: string;
+  agentRole?: string;
+  agentNickname?: string;
 };
 
 export type SessionRecord = CursorSession | CodexSession;
