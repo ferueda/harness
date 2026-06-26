@@ -16,6 +16,7 @@ import {
   DEFAULT_MIN_SUPPORT,
   DEFAULT_PATTERN_LIMIT,
   extractSessionEvidence,
+  type EvidenceArtifact,
   type SessionEvidenceReport,
 } from "../lib/sessions/core/evidence.ts";
 import {
@@ -40,14 +41,24 @@ type AnalyzeOptions = {
   format: (typeof TABLE_JSON_FORMATS)[number];
   limit: number;
   includeTurns: boolean;
+  extractOnly: boolean;
   days?: number;
   workspace?: string;
   query?: string;
+  turnQuery: string[];
   includeAutomation: boolean;
   evidenceLimit: number;
   patternLimit: number;
   minSupport: number;
 };
+
+type AnalyzeCommandResult =
+  | { mode: "full"; analysis: CursorSessionAnalysis & { evidence?: SessionEvidenceReport } }
+  | {
+      mode: "extract-only";
+      provider: (typeof ANALYZE_PROVIDERS)[number];
+      evidence: SessionEvidenceReport;
+    };
 
 type ListOptions = {
   limit: number;
@@ -86,6 +97,10 @@ function makeEnumParser<const T extends readonly string[]>(
   };
 }
 
+function collectValues(value: string, previous: string[] = []): string[] {
+  return [...previous, value];
+}
+
 function buildProgram(): Command {
   const program = new Command();
   program
@@ -105,6 +120,7 @@ function buildProgram(): Command {
     .option("--format <format>", "table or json", makeEnumParser(TABLE_JSON_FORMATS), "table")
     .option("--limit <n>", "maximum rows per analysis section", positiveInteger, 10)
     .option("--include-turns", "include bounded transcript evidence", false)
+    .option("--extract-only", "only render transcript extraction output", false)
     .option(
       "--days <n>",
       "only scan transcript evidence from sessions updated in the last N days",
@@ -113,12 +129,18 @@ function buildProgram(): Command {
     .option("--workspace <path-or-key>", "workspace path prefix or key for transcript evidence")
     .option(
       "--query <text>",
-      "search transcript evidence sessions by title, id, workspace, or first query",
+      "filter transcript evidence sessions by title, id, workspace, or first query",
+    )
+    .option(
+      "--turn-query <text>",
+      "search actual user-turn transcript text; repeat for OR matching",
+      collectValues,
+      [],
     )
     .option("--include-automation", "include automation sessions in transcript evidence", false)
     .option(
       "--evidence-limit <n>",
-      "maximum examples/artifacts per evidence pattern",
+      "maximum examples/artifacts per evidence pattern and table match rows",
       positiveInteger,
       DEFAULT_EVIDENCE_LIMIT,
     )
@@ -138,10 +160,10 @@ function buildProgram(): Command {
       validateAnalyzeOptions(options, command);
       const analysis = await analyzeSessionsCommand(options);
       if (options.format === "json") {
-        console.log(JSON.stringify(analysis, null, 2));
+        console.log(JSON.stringify(jsonAnalysisOutput(analysis), null, 2));
         return;
       }
-      console.log(renderCursorAnalysis(analysis));
+      console.log(renderCursorAnalysis(analysis, { matchLimit: options.evidenceLimit }));
     });
 
   const cursor = program.command("cursor").description("Browse Cursor sessions");
@@ -203,23 +225,37 @@ function buildProgram(): Command {
   return program;
 }
 
-async function analyzeSessionsCommand(
-  options: AnalyzeOptions,
-): Promise<CursorSessionAnalysis & { evidence?: SessionEvidenceReport }> {
+async function analyzeSessionsCommand(options: AnalyzeOptions): Promise<AnalyzeCommandResult> {
+  if (options.extractOnly) {
+    warnIfUnboundedEvidenceScan(options);
+    return {
+      mode: "extract-only",
+      provider: options.provider,
+      evidence: await extractEvidenceForOptions(options),
+    };
+  }
+
   const analysis = analyzeIndexedSessions(options);
-  if (!options.includeTurns) return analysis;
+  if (!options.includeTurns) return { mode: "full", analysis };
 
   warnIfUnboundedEvidenceScan(options);
-  const evidence = await extractSessionEvidence(
-    cursorProvider.iterUserTurns(toSessionFilters(options)),
-    {
-      provider: "cursor",
-      evidenceLimit: options.evidenceLimit,
-      patternLimit: options.patternLimit,
-      minSupport: options.minSupport,
-    },
-  );
-  return { ...analysis, evidence };
+  const evidence = await extractEvidenceForOptions(options);
+  return { mode: "full", analysis: { ...analysis, evidence } };
+}
+
+async function extractEvidenceForOptions(options: AnalyzeOptions): Promise<SessionEvidenceReport> {
+  return await extractSessionEvidence(cursorProvider.iterUserTurns(toSessionFilters(options)), {
+    provider: "cursor",
+    evidenceLimit: options.evidenceLimit,
+    patternLimit: options.patternLimit,
+    minSupport: options.minSupport,
+    turnQueries: options.turnQuery,
+    includePatterns: shouldIncludePatterns(options),
+  });
+}
+
+function shouldIncludePatterns(options: AnalyzeOptions): boolean {
+  return !options.extractOnly || options.turnQuery.length === 0;
 }
 
 function analyzeIndexedSessions(options: AnalyzeOptions): CursorSessionAnalysis {
@@ -237,6 +273,8 @@ function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void
     options.days !== undefined ||
     options.workspace !== undefined ||
     options.query !== undefined ||
+    options.turnQuery.length > 0 ||
+    options.extractOnly ||
     options.includeAutomation ||
     command.getOptionValueSource("evidenceLimit") === "cli" ||
     command.getOptionValueSource("patternLimit") === "cli" ||
@@ -249,15 +287,18 @@ function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void
 function warnIfUnboundedEvidenceScan(options: AnalyzeOptions): void {
   if (hasEvidenceNarrowingFilters(options)) return;
   console.error(
-    "warning: --include-turns without --days, --workspace, or --query scans all matching cached transcripts",
+    "warning: --include-turns without --days, --workspace, --query, or --turn-query scans all matching cached transcripts",
   );
 }
 
 function hasEvidenceNarrowingFilters(
-  options: Pick<AnalyzeOptions, "days" | "workspace" | "query">,
+  options: Pick<AnalyzeOptions, "days" | "workspace" | "query" | "turnQuery">,
 ): boolean {
   return (
-    options.days !== undefined || options.workspace !== undefined || options.query !== undefined
+    options.days !== undefined ||
+    options.workspace !== undefined ||
+    options.query !== undefined ||
+    options.turnQuery.length > 0
   );
 }
 
@@ -322,9 +363,18 @@ function renderStats(stats: IndexStats): string {
   ].join("\n");
 }
 
+function jsonAnalysisOutput(result: AnalyzeCommandResult): unknown {
+  return result.mode === "extract-only"
+    ? { provider: result.provider, evidence: result.evidence }
+    : result.analysis;
+}
+
 function renderCursorAnalysis(
-  analysis: CursorSessionAnalysis & { evidence?: SessionEvidenceReport },
+  result: AnalyzeCommandResult,
+  options: { matchLimit: number },
 ): string {
+  if (result.mode === "extract-only") return renderEvidenceReport(result.evidence, options);
+  const analysis = result.analysis;
   return [
     "Session index analysis",
     `  provider:         ${analysis.provider}`,
@@ -362,9 +412,7 @@ function renderCursorAnalysis(
     "",
     "Index quality signals",
     renderIndexImprovementCandidates(analysis.indexImprovementCandidates),
-    ...(analysis.evidence
-      ? ["", "Transcript evidence patterns", renderEvidenceReport(analysis.evidence)]
-      : []),
+    ...(analysis.evidence ? ["", renderEvidenceReport(analysis.evidence, options)] : []),
   ].join("\n");
 }
 
@@ -410,14 +458,43 @@ function renderIndexImprovementCandidates(
     .join("\n");
 }
 
-function renderEvidenceReport(report: SessionEvidenceReport): string {
+function renderEvidenceReport(
+  report: SessionEvidenceReport,
+  options: { matchLimit: number },
+): string {
   const summary = [
     `  scanned sessions: ${report.scannedSessions}`,
     `  scanned user turns: ${report.scannedUserTurns}`,
     `  skipped user turns: ${report.skippedUserTurns}`,
     `  excluded fragments: ${report.excludedFragments}`,
   ];
-  if (report.patterns.length === 0) return [...summary, "  none"].join("\n");
+  const sections = ["Transcript evidence", ...summary];
+
+  if (report.matches.length > 0) {
+    const rows = report.matches
+      .slice(0, options.matchLimit)
+      .map((match) => [
+        match.sessionId,
+        match.turnIndex.toString(),
+        shorten(match.workspacePath, 28),
+        shorten(match.text, 64),
+        shorten(formatArtifacts(match.artifacts), 36),
+      ]);
+    sections.push(
+      "",
+      "Transcript matches",
+      report.matches.length > rows.length
+        ? `  showing ${rows.length} of ${report.matches.length}`
+        : `  ${report.matches.length} match${report.matches.length === 1 ? "" : "es"}`,
+      renderTable(["session", "turn", "workspace", "snippet", "artifacts"], rows),
+    );
+  }
+
+  if (report.patterns.length === 0 && report.matches.length === 0) {
+    sections.push("", "Transcript evidence patterns", "  none");
+    return sections.join("\n");
+  }
+  if (report.patterns.length === 0) return sections.join("\n");
 
   const rows = report.patterns.map((pattern) => [
     pattern.bucket,
@@ -426,9 +503,22 @@ function renderEvidenceReport(report: SessionEvidenceReport): string {
     shorten(pattern.signals.join(", "), 28),
     shorten(pattern.examples[0]?.text ?? "", 54),
   ]);
-  return [...summary, renderTable(["bucket", "support", "label", "signals", "example"], rows)].join(
-    "\n",
+  sections.push(
+    "",
+    "Transcript evidence patterns",
+    renderTable(["bucket", "support", "label", "signals", "example"], rows),
   );
+  return sections.join("\n");
+}
+
+function formatArtifacts(artifacts: readonly EvidenceArtifact[]): string {
+  if (artifacts.length === 0) return "";
+  const preview = artifacts
+    .slice(0, 3)
+    .map((artifact) => `${artifact.type}:${artifact.value}`)
+    .join(", ");
+  const overflow = artifacts.length > 3 ? ` (+${artifacts.length - 3})` : "";
+  return `${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}${overflow}: ${preview}`;
 }
 
 function renderPhraseCounts(items: readonly PhraseCount[]): string {
