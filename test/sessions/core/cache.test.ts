@@ -27,3 +27,15 @@ test("readCachedSessions rejects unknown fields", () => {
 
   expect(() => readCachedSessions(env)).toThrow(/Invalid session cache row/);
 });
+
+test("readCachedSessions accepts rows without workspace path source", () => {
+  const env = makeSessionEnv();
+  mkdirSync(env.cacheRoot, { recursive: true });
+  const row = session({
+    sessionId: "legacy-source",
+  });
+  delete row.workspacePathSource;
+  writeFileSync(cursorCachePath(env), `${JSON.stringify(row)}\n`, "utf8");
+
+  expect(readCachedSessions(env)).toHaveLength(1);
+});
