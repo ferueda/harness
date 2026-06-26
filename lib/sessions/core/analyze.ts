@@ -123,15 +123,15 @@ export function analyzeSessions(
     workspacePathSource: {
       transcript: countWhere(
         scopedSessions,
-        (session) => workspacePathSource(session) === "transcript",
+        (session) => effectiveWorkspacePathSource(session) === "transcript",
       ),
       "store-db": countWhere(
         scopedSessions,
-        (session) => workspacePathSource(session) === "store-db",
+        (session) => effectiveWorkspacePathSource(session) === "store-db",
       ),
       "project-key": countWhere(
         scopedSessions,
-        (session) => workspacePathSource(session) === "project-key",
+        (session) => effectiveWorkspacePathSource(session) === "project-key",
       ),
     },
     topFirstQueryPrefixes: classBreakdown.all.topFirstQueryPrefixes,
@@ -230,7 +230,7 @@ function countWhere<T>(values: readonly T[], predicate: (value: T) => boolean): 
   return values.filter(predicate).length;
 }
 
-function workspacePathSource(session: SessionRecord): WorkspacePathSource {
+function effectiveWorkspacePathSource(session: SessionRecord): WorkspacePathSource {
   return (
     session.workspacePathSource ??
     (session.workspacePathConfidence === "explicit" ? "transcript" : "project-key")
