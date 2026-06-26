@@ -10,6 +10,7 @@ import type {
   SessionRecord,
   Transcript,
   UserTurn,
+  WorkspacePathSource,
 } from "../core/types.ts";
 import { buildCursorIndex } from "./index.ts";
 import { CursorTranscriptParseError, parseTranscriptFile } from "./transcript.ts";
@@ -56,6 +57,7 @@ class CursorSessionProvider implements SessionProvider {
           sessionId: session.sessionId,
           workspacePath: session.workspacePath,
           workspacePathConfidence: session.workspacePathConfidence,
+          workspacePathSource: effectiveWorkspacePathSource(session),
           text: turn.text,
           rawText: turn.rawText,
           session,
@@ -91,6 +93,13 @@ class CursorSessionProvider implements SessionProvider {
       throw error;
     }
   }
+}
+
+function effectiveWorkspacePathSource(session: SessionRecord): WorkspacePathSource {
+  return (
+    session.workspacePathSource ??
+    (session.workspacePathConfidence === "explicit" ? "transcript" : "project-key")
+  );
 }
 
 function isNodeErrorCode(error: unknown, code: string): boolean {
