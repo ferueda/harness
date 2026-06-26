@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { readCachedSessions } from "../../../lib/sessions/core/cache.ts";
 import { buildCursorIndex } from "../../../lib/sessions/cursor/index.ts";
-import { makeSessionEnv, writeMeta, writeTranscript } from "../helpers.ts";
+import { makeSessionEnv, writeMeta, writeStoreDb, writeTranscript } from "../helpers.ts";
 
 test("buildCursorIndex indexes synthetic Cursor tree and prefers explicit workspace path", async () => {
   const env = makeSessionEnv();
@@ -20,9 +20,37 @@ test("buildCursorIndex indexes synthetic Cursor tree and prefers explicit worksp
     workspaceKey: "Users-alice-dev-my-repo",
     workspacePath: "/Users/alice/dev/my-repo",
     workspacePathConfidence: "explicit",
+    workspacePathSource: "transcript",
     updatedAtMs: 2_000,
   });
   expect(readCachedSessions(env).map((session) => session.sessionId)).toEqual(["real-chat"]);
+});
+
+test("buildCursorIndex records project-key source for decoded workspace paths", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-project", "agent-worker", "cursor-automation-worker.jsonl");
+
+  const snapshot = await buildCursorIndex(env);
+
+  expect(snapshot.sessions[0]).toMatchObject({
+    workspacePath: "/Users/alice/dev/project",
+    workspacePathConfidence: "decoded",
+    workspacePathSource: "project-key",
+  });
+});
+
+test("buildCursorIndex prefers store-db workspace path over project-key decode", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "agent-worker", "cursor-automation-worker.jsonl");
+  writeStoreDb(env, "agent-worker", { workspacePath: "/Users/alice/dev/my-repo" });
+
+  const snapshot = await buildCursorIndex(env);
+
+  expect(snapshot.sessions[0]).toMatchObject({
+    workspacePath: "/Users/alice/dev/my-repo",
+    workspacePathConfidence: "explicit",
+    workspacePathSource: "store-db",
+  });
 });
 
 test("buildCursorIndex tracks unparseable transcripts without throwing", async () => {
