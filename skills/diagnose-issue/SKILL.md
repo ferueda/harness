@@ -5,7 +5,7 @@ description: Research and define codebase issues before implementation planning.
 
 # Diagnose Issue
 
-Use this skill to turn incomplete issue input into an evidence-backed problem definition and solution direction. The product is understanding, not an implementation plan.
+Turn incomplete issue input into an evidence-backed problem definition and solution direction. The product is understanding, not an implementation plan.
 
 ## Operating Rules
 
@@ -15,7 +15,7 @@ Use this skill to turn incomplete issue input into an evidence-backed problem de
 - Prefer high-confidence findings. If evidence is weak, say what is missing.
 - Keep solution discussion at the design-direction level. Do not write a step-by-step implementation plan.
 - If the reported problem does not exist, say so and cite the evidence.
-- If the issue is too vague to investigate, ask the minimum clarifying question needed to start.
+- If the issue is too vague to investigate, use `shape-requirements` **gate** only — not interview.
 
 ## Workflow
 
@@ -116,6 +116,17 @@ Use this format unless the user asked for something narrower:
 
 - <only questions that materially affect diagnosis or direction>
 ```
+
+## Hand off
+
+| Next | When |
+|------|------|
+| `shape-requirements` **gate** | **Ambiguous** status or multiple directions need a product/priority pick |
+| `create-plan` | **Confirmed** or **Likely** with a recommended direction |
+| `review-spec` | Definition will become a written plan needing codebase validation |
+| Stop | **Not Found** or **Invalidated** — report evidence; reshape only if the goal was wrong |
+
+**Done when:** problem definition delivered and next step offered.
 
 ## Quality Bar
 

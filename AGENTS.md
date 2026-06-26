@@ -48,30 +48,42 @@ dev/plans/    Plans and handoffs for this repo
 
 ## Planning workflow
 
-Implementation plans live in **`dev/plans/`** with a shared **`dev/plans/README.md`** index (execution order, dependencies, status).
+Coordinator: **`planning-workflow`**. Plans live in **`dev/plans/`** with **`dev/plans/README.md`** (execution order, dependencies, status).
 
-| Skill | Role | Plan naming |
-|-------|------|-------------|
-| `shape-requirements` | Gate or interview → confirmed interpretation or requirements brief | `dev/briefs/YYMMDD-short-slug.md` (interview) |
-| `audit` | Codebase survey → prioritized handoff plans | `YYMMDD-short-slug.md` |
-| `create-plan` | Single scoped plan from a todo/spec/issue | `YYMMDD-short-slug.md` |
-| `implement-plan` | Execute an approved plan phase-by-phase | reads from `dev/plans/` |
+| Skill | Role | Artifact |
+|-------|------|----------|
+| `planning-workflow` | Route intake → shape/validate → handoff → implement → close | — |
+| `shape-requirements` | Gate or interview → confirmed interpretation or brief | `dev/briefs/YYMMDD-short-slug.md` (interview) |
+| `diagnose-issue` | Evidence-backed problem definition before planning | inline or `dev/issues/YYMMDD-short-slug.md` |
+| `audit` | Codebase survey → prioritized handoff plans | `dev/plans/YYMMDD-short-slug.md` |
+| `create-plan` | Scoped plan from todo/spec/issue | `dev/plans/YYMMDD-short-slug.md` |
+| `review-spec` | Validate plan/spec against codebase; proportionality check; Simplicity as a finding category | advisory findings |
+| `implement-plan` | Execute approved plan phase-by-phase | reads from `dev/plans/` |
+| `handoff-work` | Transfer context between agents or sessions | inline handoff |
 
-`audit` is read-only on source; only `dev/plans/` files may be created or updated. Reconcile with existing `dev/plans/README.md` before adding plans.
+**Shape vs diagnose:** `shape-requirements` when the question is what the user wants. `diagnose-issue` when the question is what is true in the repo. Too vague to investigate → gate only, then diagnose.
+
+**Typical chain** (skip steps per `planning-workflow` routing): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `handoff-work` → `implement-plan` → `change-review-workflow`.
+
+**Routing reference:** `planning-workflow/references/routing.md` — intake, skip rules, scenario fixtures, pass criteria.
+
+`audit` is read-only on source; only `dev/plans/` files may be created or updated. Reconcile with `dev/plans/README.md` before adding plans.
 
 **Plan skill discovery (required for `audit` and `create-plan`):** Before writing a plan, check the host available-skills list (if injected), repo skill dirs (`skills/`, `.agents/skills/`, `.cursor/skills/`, `.claude/skills/`), and `AGENTS.md` / `README` for named tools. Read each candidate `SKILL.md`; embed only verified skills in the plan's **Skills for the executor** table, each tied to a specific step. Never invent skill names.
 
 ## Review workflow
 
+Coordinator: **`change-review-workflow`**. Triage (Implement / Adapt / Decline) and fixes happen in the coordinator — no separate triage skill.
+
 | Skill | Role | Posture |
 |-------|------|---------|
-| `review-spec` | Validate a plan/spec against codebase reality before implementation | Advisory |
-| `review-implementation` | Adversarial review of an implementation against its plan or spec | Skeptical; read-only |
-| `code-quality-review` | Behavior-preserving quality audit (clarity, conventions, maintainability) | Read-only |
-| `simplify-review` | Behavior-preserving simplification review used by `change-review` | Read-only |
-| `react-to-review` | Triage review findings (Implement, Adapt, Decline) and plan fixes | Decision + handoff |
+| `change-review-workflow` | Run harness reviewers, triage findings, apply fixes, re-review | Coordinator |
+| `review-spec` | Validate plan/spec before implementation | Advisory |
+| `review-implementation` | Adversarial review of implementation vs plan/spec | Skeptical; read-only |
+| `code-quality-review` | Clarity, conventions, maintainability | Read-only |
+| `simplify-review` | Behavior-preserving simplification (`change-review` step `simplify`) | Read-only |
 
-`review-implementation`, `code-quality-review`, and `simplify-review` are read-only. Use `review-implementation` when validating correctness and plan adherence; use `code-quality-review` when the goal is refinement suggestions; use `simplify-review` when the workflow needs a focused clarity pass.
+`review-implementation`, `code-quality-review`, and `simplify-review` are read-only. Use `review-implementation` for correctness; `code-quality-review` for conventions; `simplify-review` for simplification suggestions.
 
 **Skill discovery (for `implement-plan`, `review-implementation`, `code-quality-review`, `simplify-review`):** Discover available skills in the host and target repo. Read relevant `SKILL.md` files for languages, frameworks, or patterns touched by the work. Use them as guidelines — no fixed checklist. For `implement-plan`, start with the plan's **Skills for the executor** section when present.
 
@@ -81,9 +93,27 @@ Implementation plans live in **`dev/plans/`** with a shared **`dev/plans/README.
 |-------|------|
 | `handoff-work` | Transfer context to another agent for continuation or review |
 
-Use `handoff-work` when ending a session (done or not) so the next agent can continue or review without replaying prior context. The handoff must be self-contained: goal, source artifacts, constraints, what was worked on, how, why, files referenced, status, next steps, and open items.
+Use `handoff-work` when ending a session (done or not) so the next agent can continue without replaying prior context. In the planning chain, hand off after `create-plan` or partial `implement-plan`, and before `change-review-workflow` when implementer ≠ reviewer.
 
-Typical flow: `implement-plan` → `handoff-work` → `review-implementation` or `code-quality-review` → `react-to-review`.
+Typical close: `planning-workflow` → `implement-plan` → `handoff-work` (if needed) → `change-review-workflow`.
+
+## Session evidence
+
+| Skill | Role |
+|-------|------|
+| `session-evidence` | Extract snippets, artifacts, and session ids via `sessions analyze` |
+
+Facts first; label interpretation separately. Do not treat `patterns` as recommendations.
+
+**Audits:** `skills/session-evidence/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). Routing fixtures: coordinator skills (e.g. `planning-workflow/references/routing.md`).
+
+## Learning
+
+| Skill | Role | Artifact |
+|-------|------|----------|
+| `learning-coach` | Topic learning over repeated sessions; one question at a time | `MISSION.md`, `LEARNER.md`, `PLAN.md`, `LOG.md`, `RESOURCES.md` |
+
+Standalone — not part of planning or review coordinators. One topic per workspace directory.
 
 ## Directory Structure
 

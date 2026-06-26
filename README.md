@@ -160,6 +160,7 @@ Install optional local workflow helper skills explicitly:
 
 ```bash
 harness skills install change-review-workflow --workspace /path/to/repo
+harness skills install planning-workflow --workspace /path/to/repo
 ```
 
 Skills follow the [Agent Skills](https://agentskills.io/) format. Target repos usually keep local skills in `.agents/skills/`. Workflow skill lookup stops at the first match:
@@ -168,7 +169,7 @@ Skills follow the [Agent Skills](https://agentskills.io/) format. Target repos u
 2. user `~/.agents/skills/{skill}/SKILL.md`
 3. packaged harness `skills/{skill}/SKILL.md`
 
-In this repo, top-level `skills/` contains packaged fallback skills. `.agents/skills/` contains repo-local development skills for working on harness itself and should not be copied into repos that install harness.
+In this repo, top-level `skills/` contains packaged fallback skills. `.agents/skills/` dogfoods selected packaged skills (e.g. `change-review-workflow`) for harness development and must stay in sync; other entries are repo-local only (e.g. `node`, `vitest`).
 
 ## Development
 
@@ -241,7 +242,26 @@ Open the source session when snippets are not enough:
 node bin/sessions.ts cursor show <sessionId>
 ```
 
+For agent-oriented extraction and workflow audits, use the **`session-evidence`** skill. Audit playbooks: `skills/session-evidence/references/audit-examples.md`.
+
 ## Available Skills
+
+Packaged skills in `skills/` (15). Coordinators route leaf skills; invoke a coordinator when unsure where to start.
+
+### planning-workflow
+
+Coordinate planning from intent to implementation. Routes through shape, diagnose, review-spec, create-plan, implement-plan, and handoff.
+
+**Use when:**
+- Starting feature work or a non-trivial fix
+- Running the full plan-build cycle
+- Unsure which planning skill to invoke first
+
+**Coordinates:** `shape-requirements`, `diagnose-issue`, `review-spec`, `create-plan`, `implement-plan`, `handoff-work`, then `change-review-workflow`
+
+**References:** `references/routing.md` (rules, fixtures, pass criteria)
+
+---
 
 ### shape-requirements
 
@@ -251,7 +271,22 @@ Shape requirements before planning or implementing. **Gate** when a build/fix/pl
 - Build/fix/plan task lacks scope, done-ness, or constraints
 - User wants to think through an idea and produce a written brief
 
-**Output:** Confirmed interpretation (gate) or requirements brief in `dev/briefs/` (interview). Chains to `create-plan`, `review-spec`, or direct implementation.
+**Output:** Confirmed interpretation (gate) or requirements brief in `dev/briefs/` (interview). Chains to `diagnose-issue`, `create-plan`, `review-spec`, or direct implementation.
+
+---
+
+### diagnose-issue
+
+Research and define codebase issues before implementation planning. Validates whether a reported problem exists, diagnoses mechanism, compares solution directions — read-only unless the user asks for edits.
+
+**Use when:**
+- Bug report, ticket, symptom, or design concern about current code
+- User needs evidence-backed problem definition before a plan
+- Proposed solution should be validated against the checkout
+
+**Do not use when:** user wants a step-by-step plan, direct implementation, or diff review.
+
+**Output:** Problem definition (status, evidence, mechanism, solution directions). Chains to `shape-requirements` **gate**, `create-plan`, or `review-spec`.
 
 ---
 
@@ -283,67 +318,16 @@ Create a scoped, code-backed implementation plan from a todo, spec, issue, revie
 
 ---
 
-### cursor-cli
+### review-spec
 
-Run Cursor Agent headlessly and delegate work to another Cursor agent over the CLI.
-
-**Use when:**
-- "Call Cursor..."
-- "Ask Cursor..."
-- "Invoke Cursor Agent..."
-- Automating `agent -p` from scripts or agent-to-agent flows
-
----
-
-### session-evidence
-
-Extract snippets, artifacts, session ids, and turn indexes from local Cursor or
-Codex session history. Uses `sessions analyze --provider cursor|codex
---include-turns --extract-only` and repeatable `--turn-query` for exact
-transcript searches.
+Review a spec document against codebase reality. Identifies gaps, risks, overengineering, and ensures sound implementations.
 
 **Use when:**
-- Looking up prior session context
-- Searching user turns for terms like `review`, `verify`, `how to`, or `debug`
-- Collecting evidence for another agent without generating recommendations
+- "Review this spec..."
+- "Check this plan..."
+- Validating a plan before implementation
 
-**Output:** Matching snippets, `matchedQueries`, artifacts, session ids, and
-turn indexes. Use `sessions cursor show <sessionId>` or
-`sessions codex show <sessionId>` for full context. Codex indexing reads
-`~/.codex/state_5.sqlite` as the source of truth, with
-`~/.codex/sqlite/state_5.sqlite` only as a missing-root fallback. Codex
-metadata uses the DB first user message when available and strips a leading
-injected preamble; transcript evidence may apply the same first-turn
-cleanup, while `show` and `export` preserve the raw rollout transcript.
-
----
-
-### code-quality-review
-
-Review recently modified code for clarity, consistency, and maintainability while preserving exact functionality. Audits adherence to project conventions and industry best practices. Read-only — never edits files.
-
-**Use when:**
-- "Code quality review..."
-- "Readability audit..."
-- "Maintainability review..."
-- Behavior-preserving refinement suggestions on a diff or implementation
-
-**Evaluates:** Conventions, clarity, complexity, policy compliance, architecture — without changing what the code does
-
-**Output:** Findings with severity, location, recommendation, and rationale; verdict `pass` | `needs_changes` | `blocked`
-
----
-
-### simplify-review
-
-Review recently modified code for behavior-preserving simplification opportunities. Read-only — never edits files.
-
-**Use when:**
-- Running the `change-review` workflow
-- Looking for clarity and maintainability improvements after implementation and quality review
-- Checking whether code can be simpler without changing functionality
-
-**Output:** Findings with severity, location, recommendation, and rationale; verdict `pass` | `needs_changes` | `blocked`
+**Evaluates:** Architecture, Feasibility, Simplicity, Reliability, Performance, Security, Edge Cases, Testing — includes proportionality check; Simplicity issues are standard findings (no separate summary block)
 
 ---
 
@@ -362,20 +346,23 @@ Execute an approved plan or spec document phase-by-phase, writing robust idiomat
 
 ---
 
-### react-to-review
+### handoff-work
 
-Evaluate, analyze, and systematically react to an adversarial code review report. Decide on the action for each finding, justify the decision, and plan implementation.
+Hand off work in progress or finished to another agent for continuation or review. Self-contained summary with background context, what was worked on, how, why, files referenced, and what remains.
 
 **Use when:**
-- An adversarial review report has been provided
-- "React to this review..."
-- Evaluating review findings (Implement, Adapt, Decline) and planning fixes
+- Ending a session (done or not) another agent will continue or review
+- "Hand off this work..."
+- "Prepare a handoff..."
+- After `create-plan` or partial `implement-plan`; before `change-review-workflow` when implementer ≠ reviewer
+
+**Output:** Handoff block with status, context, what/how/why, file references, next steps, verification, and open items
 
 ---
 
 ### change-review-workflow
 
-Run and close the harness `change-review` workflow. Defaults to all steps unless `--steps` is explicit.
+Run and close the harness `change-review` workflow. Defaults to all steps unless `--steps` is explicit. Triage (Implement / Adapt / Decline) and fixes happen in the coordinator — no separate triage skill.
 
 **Use when:**
 - "Run a review..."
@@ -387,7 +374,7 @@ Run and close the harness `change-review` workflow. Defaults to all steps unless
 - Running a multi-agent harness review
 - Compiling reviewer results and deciding which findings to apply
 
-**Coordinates:** review handoff input, CLI execution, optional selected steps, reviewer artifact triage, accepted fixes, and re-review
+**Coordinates:** review handoff input, CLI execution, optional selected steps, finding triage, accepted fixes, and re-review
 
 ---
 
@@ -409,30 +396,86 @@ Review a given implementation critically and adversarially against its plan or s
 
 ---
 
-### review-spec
+### code-quality-review
 
-Review a spec document against codebase reality. Identifies gaps, risks, and ensures sound implementations.
+Review recently modified code for clarity, consistency, and maintainability while preserving exact functionality. Audits adherence to project conventions and industry best practices. Read-only — never edits files.
 
 **Use when:**
-- "Review this spec..."
-- "Check this plan..."
-- Validating a plan before implementation
+- "Code quality review..."
+- "Readability audit..."
+- "Maintainability review..."
+- Behavior-preserving refinement suggestions on a diff or implementation
 
-**Evaluates:** Architecture, Feasibility, Reliability, Performance, Security, Edge Cases, Testing
+**Evaluates:** Conventions, clarity, complexity, policy compliance, architecture — without changing what the code does
+
+**Output:** Findings with severity, location, recommendation, and rationale; verdict `pass` | `needs_changes` | `blocked`
 
 ---
 
-### handoff-work
+### simplify-review
 
-Hand off work in progress or finished to another agent for continuation or review. Self-contained summary with background context, what was worked on, how, why, files referenced, and what remains.
+Read-only simplification reviewer for `harness run change-review` (CLI step `simplify`).
 
 **Use when:**
-- Ending a session (done or not) another agent will continue or review
-- "Hand off this work..."
-- "Prepare a handoff..."
-- Before review on recent changes
+- Running the `change-review` workflow
+- Looking for clarity and maintainability improvements after implementation and quality review
+- Checking whether code can be simpler without changing functionality
 
-**Output:** Handoff block with status, context, what/how/why, file references, next steps, verification, and open items
+**Output:** Findings with severity, location, recommendation, and rationale; verdict `pass` | `needs_changes` | `blocked`
+
+---
+
+### session-evidence
+
+Extract snippets, artifacts, session ids, and turn indexes from local Cursor or
+Codex session history. Uses `sessions analyze --provider cursor|codex
+--include-turns --extract-only` and repeatable `--turn-query` for exact
+transcript searches.
+
+**Use when:**
+- Looking up prior session context
+- Searching user turns for terms like `review`, `verify`, `how to`, or `debug`
+- Collecting evidence for another agent without generating recommendations
+- Auditing which skills and workflows you actually invoke across sessions
+- Weekly/monthly workflow audits
+
+**Audits:** `skills/session-evidence/references/audit-examples.md`. Compare sessions to coordinator fixtures (e.g. `planning-workflow/references/routing.md`).
+
+**Output:** Matching snippets, `matchedQueries`, artifacts, session ids, and
+turn indexes. Use `sessions cursor show <sessionId>` or
+`sessions codex show <sessionId>` for full context. Codex indexing reads
+`~/.codex/state_5.sqlite` as the source of truth, with
+`~/.codex/sqlite/state_5.sqlite` only as a missing-root fallback. Codex
+metadata uses the DB first user message when available and strips a leading
+injected preamble; transcript evidence may apply the same first-turn
+cleanup, while `show` and `export` preserve the raw rollout transcript.
+
+---
+
+### cursor-cli
+
+Run Cursor Agent headlessly and delegate work to another Cursor agent over the CLI.
+
+**Use when:**
+- "Call Cursor..."
+- "Ask Cursor..."
+- "Invoke Cursor Agent..."
+- Automating `agent -p` from scripts or agent-to-agent flows
+
+---
+
+### learning-coach
+
+Guide a lightweight topic learning workspace over repeated sessions. Markdown files only — one question at a time, active recall over lectures.
+
+**Use when:**
+- Learning a new topic across multiple sessions
+- "Help me learn…", "Coach me on…", "Teach me…"
+- Building a durable learning trail in the workspace
+
+**Workspace files:** `MISSION.md`, `LEARNER.md`, `PLAN.md`, `LOG.md`, `RESOURCES.md` (one topic per directory)
+
+**Output:** Updated workspace state and exactly one focused question per turn
 
 ---
 
@@ -476,10 +519,13 @@ Skills are automatically available once installed. The agent will use them when 
 
 **Examples:**
 ```
+Use planning-workflow to add retry logic to the API client
+```
+```
+Diagnose JIRA-442: login 500 when email is empty
+```
+```
 Review this implementation adversarially
-```
-```
-Research how the payment system works
 ```
 ```
 Audit this codebase for security issues
@@ -489,6 +535,9 @@ Create a plan for this feature request
 ```
 ```
 Interview me about this new feature
+```
+```
+Help me learn Rust ownership in this folder
 ```
 
 ## Skill Structure

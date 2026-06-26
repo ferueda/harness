@@ -36,8 +36,10 @@ Follow the loaded reference through its **completion criterion**.
 | Next | When |
 |------|------|
 | Implement | Gate cleared; small repo-local change |
+| `diagnose-issue` | Brief or interpretation asserts current behavior, bug, or risk needing code evidence |
 | `create-plan` | Multi-step, cross-area, or phased |
 | `review-spec` | Brief or plan needs codebase validation |
+| `planning-workflow` | Unsure which planning step comes next |
 | Stop | User only wanted confirmation or brief |
 
 After **gate** approval, continue with the user's original build, fix, or plan request. For **interview** mode or clarify-only requests, offer the natural next step and wait.

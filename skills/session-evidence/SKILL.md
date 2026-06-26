@@ -1,6 +1,9 @@
 ---
 name: session-evidence
-description: Use when extracting information from local agent session history with `sessions analyze --include-turns`, searching transcript turns with `--turn-query`, using `--extract-only`, or inspecting snippets, artifacts, matched queries, session ids, and turn indexes.
+description: >
+  Extract snippets, artifacts, and session ids from local Cursor or Codex session
+  history via sessions analyze. Use for transcript lookup, workflow/skill usage
+  audits, and evaluating planning or review routing against real sessions.
 ---
 
 # Session Evidence
@@ -115,6 +118,12 @@ Running `--include-turns` without `--days`, `--workspace`, `--query`, or
 - Which session ids and turn indexes should be opened for more context?
 - Which requested information is missing from snippets and needs
   `sessions cursor show` or `sessions codex show`?
+- Did planning or review workflows route to the expected skills?
+- Which skills have zero invokes over 90 days?
+
+## Evaluation
+
+Workflow and skill audits: [references/audit-examples.md](references/audit-examples.md). Coordinator fixtures (e.g. `planning-workflow/references/routing.md`) define expected routing.
 
 ## Reading Output
 
