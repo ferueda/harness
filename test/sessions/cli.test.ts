@@ -394,6 +394,36 @@ test("sessions analyze extract-only emits slim JSON evidence without index analy
   expect(output).not.toHaveProperty("classBreakdown");
 });
 
+test("sessions analyze extract-only broad scan keeps patterns without index analysis", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "real-one", "cursor-real-user.jsonl");
+  writeTranscript(env, "Users-alice-dev-my-repo", "real-two", "cursor-real-user.jsonl");
+  await buildCursorIndex(env);
+
+  const output = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--extract-only",
+      "--format",
+      "json",
+      "--days",
+      "30",
+    ],
+    env.homeDir,
+  );
+
+  expect(output).not.toHaveProperty("indexImprovementCandidates");
+  expect(output.evidence.patterns).toEqual([
+    expect.objectContaining({
+      bucket: "preference",
+      support: 2,
+    }),
+  ]);
+});
+
 test("sessions analyze supports repeatable turn-query OR matching", async () => {
   const env = makeSessionEnv();
   writeTranscript(env, "Users-alice-dev-my-repo", "multi", "cursor-multi-user.jsonl");
@@ -426,6 +456,34 @@ test("sessions analyze supports repeatable turn-query OR matching", async () => 
       matchedQueries: ["handoff"],
     }),
   ]);
+});
+
+test("sessions analyze match table honors evidence-limit", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "multi", "cursor-multi-user.jsonl");
+  await buildCursorIndex(env);
+
+  const result = runSessions(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--extract-only",
+      "--turn-query",
+      "prefer",
+      "--turn-query",
+      "handoff",
+      "--evidence-limit",
+      "1",
+    ],
+    env.homeDir,
+  );
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("showing 1 of 2");
+  expect(result.stdout).toContain("Please prefer concise status updates.");
+  expect(result.stdout).not.toContain("Review this handoff before continuing.");
 });
 
 test("sessions analyze turn-query suppresses broad scan warning and renders table matches", async () => {
