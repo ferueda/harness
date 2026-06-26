@@ -130,14 +130,15 @@ function indexImprovementCandidates(
 ): IndexImprovementCandidate[] {
   const candidates: IndexImprovementCandidate[] = [];
   if (
-    analysis.workspacePathConfidence.explicit === 0 &&
-    analysis.workspacePathConfidence.decoded > 0
+    analysis.workspacePathSource.transcript === 0 &&
+    analysis.workspacePathSource["store-db"] === 0 &&
+    analysis.workspacePathSource["project-key"] > 0
   ) {
     candidates.push({
-      id: "workspace-path-decoded-only",
+      id: "workspace-path-project-key-only",
       severity: "high",
-      count: analysis.workspacePathConfidence.decoded,
-      message: "All workspace paths came from lossy Cursor project-key decoding.",
+      count: analysis.workspacePathSource["project-key"],
+      message: "All workspace paths came from Cursor project-key decoding.",
     });
   }
 

@@ -38,6 +38,7 @@ test("iterUserTurns yields user turns from filtered real sessions", async () => 
     sessionId: "real-chat",
     workspacePath: "/Users/alice/dev/my-repo",
     workspacePathConfidence: "explicit",
+    workspacePathSource: "transcript",
     text: "Please prefer concise status updates in this repo.",
     session: {
       isAutomation: false,

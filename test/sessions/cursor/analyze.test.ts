@@ -93,6 +93,7 @@ test("analyzeCursorSessions reports total counts separately from bounded samples
       session({
         sessionId: `decoded-${index}`,
         workspacePathConfidence: "decoded",
+        workspacePathSource: "project-key",
         firstUserQuery: `Please prefer concise output ${index}.`,
       }),
     ),
@@ -105,7 +106,7 @@ test("analyzeCursorSessions reports total counts separately from bounded samples
   expect(analysis.cursor.preferenceMarkers.samples).toHaveLength(2);
   expect(analysis.indexImprovementCandidates).toContainEqual(
     expect.objectContaining({
-      id: "workspace-path-decoded-only",
+      id: "workspace-path-project-key-only",
       severity: "high",
       count: 5,
     }),

@@ -1,6 +1,7 @@
 export type SessionProviderId = "cursor" | "codex";
 
 export type WorkspacePathConfidence = "explicit" | "decoded";
+export type WorkspacePathSource = "transcript" | "store-db" | "project-key";
 
 export type SessionRole = "user" | "assistant" | "system" | "tool" | "unknown";
 
@@ -11,6 +12,7 @@ export type SessionBase = {
   workspaceKey: string;
   workspacePath: string;
   workspacePathConfidence: WorkspacePathConfidence;
+  workspacePathSource?: WorkspacePathSource;
   title?: string;
   createdAtMs?: number;
   updatedAtMs?: number;
@@ -46,6 +48,7 @@ export type UserTurn = {
   sessionId: string;
   workspacePath: string;
   workspacePathConfidence: WorkspacePathConfidence;
+  workspacePathSource?: WorkspacePathSource;
   text: string;
   rawText: string;
   session: SessionRecord;

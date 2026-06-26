@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { SessionEnvironment } from "../../lib/sessions/core/env.ts";
 import type { CursorSession, Transcript } from "../../lib/sessions/core/types.ts";
 
@@ -42,6 +43,49 @@ export function writeMeta(
   writeFileSync(join(chatDir, "meta.json"), JSON.stringify({ schemaVersion: 1, ...meta }), "utf8");
 }
 
+export function writeStoreDb(
+  env: SessionEnvironment,
+  chatId: string,
+  options: {
+    workspacePath?: string;
+    workspacePaths?: string[];
+    title?: string;
+    invalidMeta?: boolean;
+  } = {},
+): void {
+  const chatDir = join(env.cursorHome, "chats/hash", chatId);
+  mkdirSync(chatDir, { recursive: true });
+  const db = new DatabaseSync(join(chatDir, "store.db"));
+  try {
+    db.exec("create table meta (key text primary key, value text)");
+    db.exec("create table blobs (id text primary key, data blob)");
+    const meta = {
+      name: options.title ?? "Stored title",
+      mode: "agent",
+      createdAt: 123,
+    };
+    const metaValue = options.invalidMeta
+      ? Buffer.from("{bad", "utf8").toString("hex")
+      : Buffer.from(JSON.stringify(meta), "utf8").toString("hex");
+    db.prepare("insert into meta (key, value) values (?, ?)").run("0", metaValue);
+    for (const [index, workspacePath] of [
+      ...(options.workspacePaths ?? []),
+      ...(options.workspacePath ? [options.workspacePath] : []),
+    ].entries()) {
+      const blob = {
+        role: "user",
+        content: `<user_info>\nWorkspace Path: ${workspacePath}\n</user_info>`,
+      };
+      db.prepare("insert into blobs (id, data) values (?, ?)").run(
+        `workspace-${index}`,
+        Buffer.from(JSON.stringify(blob), "utf8"),
+      );
+    }
+  } finally {
+    db.close();
+  }
+}
+
 export function session(overrides: Partial<CursorSession> = {}): CursorSession {
   const sessionId = overrides.sessionId ?? "session";
   return {
@@ -53,6 +97,7 @@ export function session(overrides: Partial<CursorSession> = {}): CursorSession {
     workspaceKey: "Users-example-dev-repo",
     workspacePath: "/Users/example/dev/repo",
     workspacePathConfidence: "explicit",
+    workspacePathSource: "transcript",
     updatedAtMs: 1,
     isAutomation: false,
     isSubagent: false,

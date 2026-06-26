@@ -21,6 +21,7 @@ test("extracts explicit workspace path from user_info", () => {
   expect(parsed.workspacePath).toEqual({
     path: "/Users/alice/dev/my-repo",
     confidence: "explicit",
+    source: "transcript",
   });
 });
 

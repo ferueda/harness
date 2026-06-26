@@ -227,6 +227,7 @@ function renderCursorAnalysis(analysis: CursorSessionAnalysis): string {
     `  subagent:         ${analysis.classifications.subagent}`,
     `  non-automation:   ${analysis.classifications.realUser}`,
     `  workspace paths:  ${analysis.workspacePathConfidence.explicit} explicit / ${analysis.workspacePathConfidence.decoded} decoded`,
+    `  path sources:     ${analysis.workspacePathSource.transcript} transcript / ${analysis.workspacePathSource["store-db"]} store-db / ${analysis.workspacePathSource["project-key"]} project-key`,
     "",
     "Top first-query prefixes",
     renderPhraseCounts(analysis.topFirstQueryPrefixes),

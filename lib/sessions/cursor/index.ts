@@ -1,10 +1,10 @@
 import { statSync } from "node:fs";
 import type { SessionEnvironment } from "../core/env.ts";
 import { writeCursorCache } from "../core/cache.ts";
-import type { CursorSession, IndexSnapshot, WorkspacePathConfidence } from "../core/types.ts";
+import type { CursorSession, IndexSnapshot } from "../core/types.ts";
 import { isAutomationSession, isSubagentSession } from "./classify.ts";
 import { buildCursorMetaIndex, readCursorSessionMeta } from "./meta.ts";
-import { globTranscriptFiles, type TranscriptFile } from "./paths.ts";
+import { globTranscriptFiles, type TranscriptFile, type WorkspacePathResult } from "./paths.ts";
 import { CursorTranscriptParseError, parseTranscriptFile } from "./transcript.ts";
 
 export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSnapshot> {
@@ -17,7 +17,7 @@ export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSn
     try {
       const parsed = parseTranscriptFile(file.jsonlPath);
       const meta = await readCursorSessionMeta(metaIndex.get(file.chatId));
-      const workspace = resolveWorkspace(file, parsed.workspacePath);
+      const workspace = resolveWorkspace(file, parsed.workspacePath, meta.workspacePath);
       const firstUserQuery = parsed.firstUserQuery;
       const updatedAtMs = meta.updatedAtMs ?? statSync(file.jsonlPath).mtimeMs;
       sessions.push({
@@ -28,6 +28,7 @@ export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSn
         workspaceKey: file.workspaceKey,
         workspacePath: workspace.path,
         workspacePathConfidence: workspace.confidence,
+        workspacePathSource: workspace.source,
         title: meta.title,
         createdAtMs: meta.createdAtMs,
         updatedAtMs,
@@ -65,7 +66,15 @@ export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSn
 
 function resolveWorkspace(
   file: TranscriptFile,
-  explicit: { path: string; confidence: WorkspacePathConfidence } | undefined,
-): { path: string; confidence: WorkspacePathConfidence } {
-  return explicit ?? { path: file.workspacePath, confidence: file.workspacePathConfidence };
+  explicit: WorkspacePathResult | undefined,
+  storeDb: WorkspacePathResult | undefined,
+): WorkspacePathResult {
+  return (
+    explicit ??
+    storeDb ?? {
+      path: file.workspacePath,
+      confidence: file.workspacePathConfidence,
+      source: file.workspacePathSource,
+    }
+  );
 }
