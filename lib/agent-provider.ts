@@ -56,5 +56,5 @@ function resolveCursorAgentPath(explicitPath?: string): string {
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
-  throw new Error("cursor-agent entrypoint not found. Pass --cursor-agent.");
+  throw new Error("Cursor wrapper entrypoint not found. Pass --cursor-wrapper.");
 }
