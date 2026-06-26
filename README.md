@@ -282,9 +282,10 @@ Run Cursor Agent headlessly and delegate work to another Cursor agent over the C
 
 ### session-evidence
 
-Extract snippets, artifacts, session ids, and turn indexes from local agent
-session history. Uses `sessions analyze --include-turns --extract-only` and
-repeatable `--turn-query` for exact transcript searches.
+Extract snippets, artifacts, session ids, and turn indexes from local Cursor or
+Codex session history. Uses `sessions analyze --provider cursor|codex
+--include-turns --extract-only` and repeatable `--turn-query` for exact
+transcript searches.
 
 **Use when:**
 - Looking up prior session context
@@ -292,7 +293,10 @@ repeatable `--turn-query` for exact transcript searches.
 - Collecting evidence for another agent without generating recommendations
 
 **Output:** Matching snippets, `matchedQueries`, artifacts, session ids, and
-turn indexes. Use `sessions cursor show <sessionId>` for full context.
+turn indexes. Use `sessions cursor show <sessionId>` or
+`sessions codex show <sessionId>` for full context. Codex indexing reads
+`~/.codex/state_5.sqlite` as the source of truth, with
+`~/.codex/sqlite/state_5.sqlite` only as a missing-root fallback.
 
 ---
 
