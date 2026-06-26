@@ -12,7 +12,7 @@ Coordinate harness review runs and close the loop on reviewer findings.
 - Default to `change-review`, which runs all review roles:
   - `implementation`: correctness, plan/spec fit, behavioral regressions, missing tests.
   - `quality`: clarity, conventions, maintainability, behavior-preserving refinements.
-  - `simplify`: unnecessary complexity and smaller equivalent shapes.
+  - `simplify`: unnecessary complexity and smaller equivalent shapes (via `simplify-review`).
 - Use `--steps <ids>` only when the caller intentionally selected roles, or on a follow-up run where you intentionally skip a role that already passed. Record the skip reason.
 
 ## Before Running
@@ -42,7 +42,7 @@ Defaults: Cursor `composer-2.5`; Codex `gpt-5.5` with effort `high`. Use `--agen
 
 1. Read the run `summary.md`, `meta.json`, and each reviewer JSON under `.harness/runs/reviews/<run-id>/`.
 2. Compile every finding from every completed reviewer. Preserve failed-reviewer details separately. Completion criterion: every reviewer finding and failure is accounted for exactly once.
-3. Triage each finding as `Implement`, `Adapt`, or `Decline`. The final call is yours; back each decision with code-backed reasoning.
+3. Triage each finding as `Implement`, `Adapt`, or `Decline`. Back each decision with code-backed reasoning.
 4. Apply accepted fixes yourself after triage. Keep reviewer agents read-only.
 5. Run focused verification for the accepted fixes. Add regression tests for bugs when they fit.
 6. Re-run `change-review` after material fixes. For follow-up cycles, decide whether to run all roles or use `--steps` to omit prior passing roles. Make that decision explicitly from the prior results and current change scope.
