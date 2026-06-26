@@ -1,4 +1,9 @@
-import type { SessionProviderId, SessionRecord, WorkspacePathConfidence } from "./types.ts";
+import type {
+  SessionProviderId,
+  SessionRecord,
+  WorkspacePathConfidence,
+  WorkspacePathSource,
+} from "./types.ts";
 
 export type PhraseCount = {
   phrase: string;
@@ -30,6 +35,7 @@ export type SessionAnalysis = {
     realUser: number;
   };
   workspacePathConfidence: Record<WorkspacePathConfidence, number>;
+  workspacePathSource: Record<WorkspacePathSource, number>;
   topFirstQueryPrefixes: PhraseCount[];
   topFirstQueryWords: PhraseCount[];
   candidatePreferenceMarkers: PhraseCount[];
@@ -112,6 +118,20 @@ export function analyzeSessions(
       decoded: countWhere(
         scopedSessions,
         (session) => session.workspacePathConfidence === "decoded",
+      ),
+    },
+    workspacePathSource: {
+      transcript: countWhere(
+        scopedSessions,
+        (session) => workspacePathSource(session) === "transcript",
+      ),
+      "store-db": countWhere(
+        scopedSessions,
+        (session) => workspacePathSource(session) === "store-db",
+      ),
+      "project-key": countWhere(
+        scopedSessions,
+        (session) => workspacePathSource(session) === "project-key",
       ),
     },
     topFirstQueryPrefixes: classBreakdown.all.topFirstQueryPrefixes,
@@ -208,6 +228,13 @@ function topCounts(values: readonly string[], limit: number): PhraseCount[] {
 
 function countWhere<T>(values: readonly T[], predicate: (value: T) => boolean): number {
   return values.filter(predicate).length;
+}
+
+function workspacePathSource(session: SessionRecord): WorkspacePathSource {
+  return (
+    session.workspacePathSource ??
+    (session.workspacePathConfidence === "explicit" ? "transcript" : "project-key")
+  );
 }
 
 export function hasText(value: string | undefined): value is string {
