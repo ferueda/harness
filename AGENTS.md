@@ -52,6 +52,7 @@ Implementation plans live in **`dev/plans/`** with a shared **`dev/plans/README.
 
 | Skill | Role | Plan naming |
 |-------|------|-------------|
+| `shape-requirements` | Gate or interview → confirmed interpretation or requirements brief | `dev/briefs/YYMMDD-short-slug.md` (interview) |
 | `audit` | Codebase survey → prioritized handoff plans | `YYMMDD-short-slug.md` |
 | `create-plan` | Single scoped plan from a todo/spec/issue | `YYMMDD-short-slug.md` |
 | `implement-plan` | Execute an approved plan phase-by-phase | reads from `dev/plans/` |
