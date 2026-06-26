@@ -66,6 +66,32 @@ test("buildCodexIndex marks empty cwd fallback as decoded", async () => {
   });
 });
 
+test("buildCodexIndex prefers clean database first user message over rollout preamble", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-preamble-user.jsonl");
+  writeCodexStateDb(env, [
+    {
+      id: "real",
+      rolloutPath: "sessions/real.jsonl",
+      firstUserMessage: "Clean ask from database.",
+    },
+  ]);
+
+  const snapshot = await buildCodexIndex(env);
+
+  expect(snapshot.sessions[0]?.firstUserQuery).toBe("Clean ask from database.");
+});
+
+test("buildCodexIndex falls back to rollout first user message when database message is empty", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-preamble-user.jsonl");
+  writeCodexStateDb(env, [{ id: "real", rolloutPath: "sessions/real.jsonl" }]);
+
+  const snapshot = await buildCodexIndex(env);
+
+  expect(snapshot.sessions[0]?.firstUserQuery).toBe("Clean ask from the user.");
+});
+
 test("buildCodexIndex reports a friendly missing database error", async () => {
   const env = makeSessionEnv();
 
