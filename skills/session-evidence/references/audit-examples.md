@@ -2,7 +2,7 @@
 
 Worked examples for evaluating workflows and skills with session-evidence. Extract facts first; label interpretation separately.
 
-See also coordinator fixtures: `planning-workflow/references/routing-scenarios.md`.
+See also coordinator fixtures: `planning-workflow/references/routing.md`.
 
 ## Principles
 
@@ -58,7 +58,7 @@ See also coordinator fixtures: `planning-workflow/references/routing-scenarios.m
 | Symptom | Likely fix |
 |---------|------------|
 | Skill never invoked; routing clear | Description triggers; invoke coordinator explicitly |
-| Same wrong first skill | Coordinator routing table |
+| Same wrong first skill | `planning-workflow/references/routing.md` intake or fixtures |
 | Skill invoked, wrong behavior | Leaf skill doc |
 | Zero hits weeks | Remove, merge, or promote |
 | Review findings not closed | `change-review-workflow` After Results |
@@ -67,7 +67,7 @@ See also coordinator fixtures: `planning-workflow/references/routing-scenarios.m
 
 ## Example: planning workflow
 
-**Goal:** Did routing match `planning-workflow`? Compare to fixtures in `planning-workflow/references/routing-scenarios.md`.
+**Goal:** Did routing match `planning-workflow`? Compare to fixtures in `planning-workflow/references/routing.md`.
 
 ### Extract
 
@@ -117,7 +117,7 @@ Inspect: `isFirstUserTurn`, `artifacts` plan-file / `dev/briefs/`.
 **Session id:**
 **User intent:**
 
-**Expected first skill:** (from routing-scenarios fixture #)
+**Expected first skill:** (from routing fixture #)
 **Actual first skill:** **Match:** yes | no
 **Path taken:**
 **Skipped steps + reason:**
@@ -128,9 +128,9 @@ Inspect: `isFirstUserTurn`, `artifacts` plan-file / `dev/briefs/`.
 
 | Misfire | Edit |
 |---------|------|
-| Implement on "add logging", no scope | `shape-requirements` gate-mode |
-| Interview on JIRA ticket | `planning-workflow` intake |
-| Skipped review-spec on big plan | `planning-workflow` step 2 |
+| Implement on "add logging", no scope | `shape-requirements` gate-mode or routing fixture #8 |
+| Interview on JIRA ticket | `planning-workflow/references/routing.md` intake |
+| Skipped review-spec on big plan | `planning-workflow` step 2 or routing skip table |
 
 ### Artifact check
 
