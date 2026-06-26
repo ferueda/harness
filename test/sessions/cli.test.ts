@@ -705,6 +705,84 @@ test("sessions analyze supports Codex provider in JSON and table modes", async (
   expect(table.stdout).not.toContain("Cursor samples");
 });
 
+test("sessions analyze Codex uses clean database first message for metadata", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-preamble-user.jsonl");
+  writeCodexStateDb(env, [
+    {
+      id: "real",
+      rolloutPath: "sessions/real.jsonl",
+      firstUserMessage: "Clean ask from database.",
+    },
+  ]);
+  await buildCodexIndex(env);
+
+  const result = runSessions(["analyze", "--provider", "codex", "--format", "json"], env.homeDir);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.topFirstQueryPrefixes[0]).toEqual({
+    phrase: "clean ask from database.",
+    count: 1,
+  });
+  expect(JSON.stringify(output.topFirstQueryPrefixes)).not.toContain("agents.md instructions");
+});
+
+test("sessions analyze Codex evidence searches cleaned first turn and leaves raw show output", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-preamble-user.jsonl");
+  writeCodexStateDb(env, [
+    {
+      id: "real",
+      rolloutPath: "sessions/real.jsonl",
+      firstUserMessage: "Clean ask from database.",
+    },
+  ]);
+  await buildCodexIndex(env);
+
+  const raw = runSessions(["codex", "show", "real"], env.homeDir);
+  expect(raw.status).toBe(0);
+  expect(raw.stdout).toContain("# AGENTS.md instructions");
+
+  const cleanMatches = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "codex",
+      "--include-turns",
+      "--extract-only",
+      "--format",
+      "json",
+      "--turn-query",
+      "clean ask",
+    ],
+    env.homeDir,
+  );
+  expect(cleanMatches.evidence.matches).toEqual([
+    expect.objectContaining({
+      sessionId: "real",
+      turnIndex: 0,
+      text: "Clean ask from database.",
+    }),
+  ]);
+
+  const preambleMatches = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "codex",
+      "--include-turns",
+      "--extract-only",
+      "--format",
+      "json",
+      "--turn-query",
+      "agents.md instructions",
+    ],
+    env.homeDir,
+  );
+  expect(preambleMatches.evidence.matches).toEqual([]);
+});
+
 test("sessions analyze Codex extract-only searches user turns", async () => {
   const env = makeSessionEnv();
   writeCodexRollout(env, "sessions/real.jsonl", "codex-real-user.jsonl");
