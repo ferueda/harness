@@ -73,6 +73,8 @@ test("session evidence skill stays extraction-focused", () => {
 
   expect(skill).toContain("--extract-only");
   expect(skill).toContain("--turn-query");
+  expect(skill).toContain("--evidence-limit");
+  expect(skill).toContain("matchedQueries");
   expect(skill.toLowerCase()).not.toMatch(
     /workflow proposal|skill candidate|self-improvement|recommended next plan/,
   );
