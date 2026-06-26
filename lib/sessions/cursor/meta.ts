@@ -94,11 +94,9 @@ async function readStoreDbData(path: string): Promise<StoreDbData> {
       const row = db.prepare("select value from meta where key = ?").get("0") as
         | { value?: unknown }
         | undefined;
+      const meta = readStoreMeta(row?.value);
       return {
-        meta:
-          typeof row?.value === "string"
-            ? (JSON.parse(Buffer.from(row.value, "hex").toString("utf8")) as StoreMeta)
-            : {},
+        meta,
         workspacePath: tryReadStoreDbWorkspacePath(db),
       };
     } finally {
@@ -107,6 +105,15 @@ async function readStoreDbData(path: string): Promise<StoreDbData> {
   } catch {
     // store.db is best-effort; missing SQLite support or unreadable DBs fall back to meta.json/jsonl data.
     return { meta: {} };
+  }
+}
+
+function readStoreMeta(value: unknown): StoreMeta {
+  if (typeof value !== "string") return {};
+  try {
+    return JSON.parse(Buffer.from(value, "hex").toString("utf8")) as StoreMeta;
+  } catch {
+    return {};
   }
 }
 
@@ -119,17 +126,25 @@ function tryReadStoreDbWorkspacePath(db: DatabaseLike): WorkspacePathResult | un
 }
 
 function readStoreDbWorkspacePath(db: DatabaseLike): WorkspacePathResult | undefined {
-  const row = db
-    .prepare("select data from blobs where instr(cast(data as text), ?) > 0 limit 1")
-    .get("Workspace Path:") as { data?: unknown } | undefined;
-  const text = storeBlobText(row?.data);
-  if (!text) return undefined;
-  return extractWorkspacePathFromUserInfo(text, "store-db") ?? undefined;
+  // Cursor stores message blobs as mixed binary/JSON payloads; scan newest matching blobs by marker.
+  const rows = db
+    .prepare(
+      "select data from blobs where instr(cast(data as text), ?) > 0 order by rowid desc limit 20",
+    )
+    .all("Workspace Path:") as { data?: unknown }[];
+  for (const row of rows) {
+    const text = storeBlobText(row.data);
+    if (!text) continue;
+    const workspacePath = extractWorkspacePathFromUserInfo(text, "store-db");
+    if (workspacePath) return workspacePath;
+  }
+  return undefined;
 }
 
 type DatabaseLike = {
   prepare(sql: string): {
     get(...values: unknown[]): unknown;
+    all(...values: unknown[]): unknown[];
   };
 };
 
