@@ -198,6 +198,35 @@ node bin/harness.ts init
 node bin/harness.ts run change-review
 ```
 
+## Session Extraction
+
+Use `sessions` to inspect local agent session history. Reindex Cursor data
+first, then search transcript evidence when an agent needs prior-session
+context.
+
+```bash
+node bin/sessions.ts cursor reindex
+node bin/sessions.ts analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
+```
+
+For targeted investigation, prefer exact transcript turn searches:
+
+```bash
+node bin/sessions.ts analyze --provider cursor --include-turns --extract-only --turn-query "review"
+node bin/sessions.ts analyze --provider cursor --include-turns --extract-only --turn-query "verify" --turn-query "validate" --turn-query "check"
+```
+
+`--turn-query` searches user-turn transcript text and can be repeated for OR
+matching. `--query` filters indexed session metadata only: title, id,
+workspace, or first user query. Use `--evidence-limit` to cap table match rows;
+JSON output keeps full `matches` and artifact arrays for agent handoff.
+
+Open the source session when snippets are not enough:
+
+```bash
+node bin/sessions.ts cursor show <sessionId>
+```
+
 ## Available Skills
 
 ### ask-questions
@@ -248,6 +277,22 @@ Run Cursor Agent headlessly and delegate work to another Cursor agent over the C
 - "Ask Cursor..."
 - "Invoke Cursor Agent..."
 - Automating `agent -p` from scripts or agent-to-agent flows
+
+---
+
+### session-evidence
+
+Extract snippets, artifacts, session ids, and turn indexes from local agent
+session history. Uses `sessions analyze --include-turns --extract-only` and
+repeatable `--turn-query` for exact transcript searches.
+
+**Use when:**
+- Looking up prior session context
+- Searching user turns for terms like `review`, `verify`, `how to`, or `debug`
+- Collecting evidence for another agent without generating recommendations
+
+**Output:** Matching snippets, `matchedQueries`, artifacts, session ids, and
+turn indexes. Use `sessions cursor show <sessionId>` for full context.
 
 ---
 
