@@ -86,14 +86,18 @@ const MIN_FRAGMENT_LENGTH = 12;
 const MAX_FRAGMENT_LENGTH = 240;
 const MAX_FRAGMENTS_PER_TURN = 20;
 const GROUP_SNIPPET_LENGTH = 80;
-const GENERIC_METADATA_NOISE = new Set(["diff", "review", "workflow"]);
-// Transcript evidence keeps broad review/workflow/diff signals; metadata analysis treats them as noise.
+const URL_PUNCTUATION = {
+  question: "__SESSION_EVIDENCE_URL_QUESTION__",
+  bang: "__SESSION_EVIDENCE_URL_BANG__",
+} as const;
+const GENERIC_METADATA_NOISE = new Set(["diff", "handoff", "review", "workflow"]);
+// Transcript evidence keeps broad diff/handoff/review/workflow signals; metadata analysis treats them as noise.
 const EVIDENCE_NOISE_MARKERS = NOISE_MARKERS.filter(
   (marker) => !GENERIC_METADATA_NOISE.has(marker),
 );
 
 const SIGNALS = {
-  noise: ["automated worker", "final answer", "handoff-only", "handoff", "agents.md instructions"],
+  noise: ["automated worker", "final answer", "handoff-only", "agents.md instructions"],
   preference: [...PREFERENCE_MARKERS],
   "git-pr": ["pull request", "pr", "branch", "commit", "merge"],
   debugging: ["debug", "failure", "failed", "error", "broken", "investigate"],
@@ -101,7 +105,7 @@ const SIGNALS = {
   review: ["review", "code-quality", "implementation review", "review-spec", "audit", "validate"],
   planning: ["plan", "spec", "phases", "roadmap", "next", "scope"],
   implementation: ["implement", "build", "add", "refactor", "fix", "patch"],
-  research: ["read article", "investigate", "compare", "understand"],
+  research: ["read article", "compare", "understand"],
   other: [],
 } satisfies Record<EvidenceBucket, readonly string[]>;
 
@@ -119,6 +123,8 @@ const BUCKET_PRECEDENCE = [
   "research",
   "other",
 ] as const satisfies readonly EvidenceBucket[];
+
+const ALL_BUCKET_SIGNALS = BUCKET_PRECEDENCE.flatMap((bucket) => SIGNALS[bucket]);
 
 type FragmentEvidence = {
   turn: UserTurn;
@@ -212,12 +218,23 @@ export async function extractSessionEvidence(
 }
 
 function fragmentsForTurn(text: string): string[] {
-  return text
+  return protectUrlPunctuation(text)
     .split(/\n{2,}|\n|[!?]/)
+    .map(restoreUrlPunctuation)
     .map((fragment) => boundedFragment(fragment))
     .filter(hasText)
     .filter((fragment) => fragment.length >= MIN_FRAGMENT_LENGTH)
     .slice(0, MAX_FRAGMENTS_PER_TURN);
+}
+
+function protectUrlPunctuation(text: string): string {
+  return text.replace(/https?:\/\/[^\s`'")]+/g, (url) =>
+    url.replace(/\?/g, URL_PUNCTUATION.question).replace(/!/g, URL_PUNCTUATION.bang),
+  );
+}
+
+function restoreUrlPunctuation(text: string): string {
+  return text.replaceAll(URL_PUNCTUATION.question, "?").replaceAll(URL_PUNCTUATION.bang, "!");
 }
 
 function boundedFragment(fragment: string): string {
@@ -225,9 +242,7 @@ function boundedFragment(fragment: string): string {
   if (normalized.length <= MAX_FRAGMENT_LENGTH) return normalized;
 
   const lower = normalized.toLowerCase();
-  const signals = BUCKET_PRECEDENCE.flatMap((bucket) => SIGNALS[bucket]);
-  const matchIndex = signals
-    .map((signal) => lower.indexOf(signal))
+  const matchIndex = ALL_BUCKET_SIGNALS.map((signal) => lower.indexOf(signal))
     .filter((index) => index >= 0)
     .sort((left, right) => left - right)[0];
   if (matchIndex === undefined) return normalized.slice(0, MAX_FRAGMENT_LENGTH).trim();
@@ -251,13 +266,14 @@ function matchedSignals(normalized: string, signals: readonly string[]): string[
 }
 
 function matchesAny(normalized: string, signals: readonly string[]): boolean {
-  return matchedSignals(normalized, signals).length > 0;
+  return signals.some((signal) => phraseMatches(normalized, normalizeSnippet(signal)));
 }
 
 function dominantSignal(signals: readonly string[]): string {
+  if (signals.length === 0) throw new Error("dominantSignal requires at least one signal");
   return [...signals].toSorted(
     (left, right) => right.length - left.length || left.localeCompare(right),
-  )[0]!;
+  )[0] as string;
 }
 
 function addPattern(
@@ -285,7 +301,10 @@ function addPattern(
   accumulator.sessions.add(evidence.turn.sessionId);
   for (const signal of evidence.signals) accumulator.signals.add(signal);
   addBoundedArtifacts(accumulator.artifacts, evidence.artifacts, evidenceLimit);
-  if (accumulator.examples.length < evidenceLimit) {
+  if (
+    accumulator.examples.length < evidenceLimit &&
+    !accumulator.examples.some((example) => example.sessionId === evidence.turn.sessionId)
+  ) {
     accumulator.examples.push({
       sessionId: evidence.turn.sessionId,
       workspacePath: evidence.turn.workspacePath,
