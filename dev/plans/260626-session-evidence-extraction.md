@@ -149,6 +149,8 @@ Rules:
 - Read cache and transcript files only; do not reindex automatically.
 - Default filters should exclude automation/subagent sessions when extracting
   turn evidence. Automation can be included explicitly for diagnostics.
+- When `--include-turns` is used without `--days`, `--workspace`, or `--query`,
+  print a stderr warning that all matching cached transcripts will be scanned.
 - `--days`, `--workspace`, `--query`, and `--include-automation` apply only to
   transcript evidence when `--include-turns` is present. Reject these flags
   with a clear Commander error when `--include-turns` is absent.
@@ -336,9 +338,11 @@ Start deterministic and local:
 6. Apply bucket precedence before grouping:
    `noise` -> `preference` -> `git-pr` -> `debugging` -> `testing` ->
    `review` -> `planning` -> `implementation` -> `research` -> `other`.
-   If a fragment is assigned `noise` or matches `NOISE_MARKERS`, exclude it
-   from `patterns`, and increment `excludedFragments`; do not also bucket it as
-   `review`.
+   If a fragment is assigned `noise` or matches transcript-specific noise
+   markers, exclude it from `patterns`, and increment `excludedFragments`; do
+   not also bucket it as `review`. Metadata-only noise markers such as `diff`,
+   `review`, and `workflow` should not suppress real transcript evidence for
+   review/workflow patterns.
 7. Group similar fragments with explainable deterministic keys, not embeddings:
    `groupKey = bucket + ":" + dominantSignal + ":" + normalizeSnippet(fragment).slice(0, 80)`.
    `dominantSignal` is the longest matching signal in the winning bucket's
