@@ -52,6 +52,34 @@ test("CodexSessionProvider reports missing rollout guidance", async () => {
   );
 });
 
+test("CodexSessionProvider normalizes injected first user context for evidence only", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/real.jsonl", "codex-preamble-user.jsonl");
+  writeCodexStateDb(env, [
+    {
+      id: "real",
+      rolloutPath: "sessions/real.jsonl",
+      firstUserMessage: "Clean ask from database.",
+    },
+  ]);
+  await buildCodexIndex(env);
+  const provider = createCodexSessionProvider(env);
+
+  const transcript = provider.getTranscript("real");
+  expect(transcript.turns[0]?.text).toContain("# AGENTS.md instructions");
+
+  const turns = [];
+  for await (const turn of provider.iterUserTurns()) turns.push(turn);
+  expect(turns[0]).toMatchObject({
+    text: "Clean ask from database.",
+    rawText: expect.stringContaining("# AGENTS.md instructions"),
+  });
+  expect(turns[1]).toMatchObject({
+    text: "Now verify the cleaned evidence path.",
+    rawText: "Now verify the cleaned evidence path.",
+  });
+});
+
 test("CodexSessionProvider reports unreadable rollout guidance", async () => {
   const env = makeSessionEnv();
   const path = writeCodexRollout(env, "sessions/real.jsonl", "codex-real-user.jsonl");
