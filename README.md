@@ -98,7 +98,7 @@ Reviewer agents are selected with `--agent cursor|codex` or `defaultAgent` in `h
   "agents": {
     "cursor": {
       "model": "composer-2.5",
-      "runtime": "cli"
+      "runtime": "sdk"
     },
     "codex": {
       "model": "gpt-5.5",
@@ -111,7 +111,7 @@ Reviewer agents are selected with `--agent cursor|codex` or `defaultAgent` in `h
 }
 ```
 
-`cursor` remains the default provider. Config is provider-scoped under `agents`, so Cursor and Codex settings do not mix. Default review models are `composer-2.5` for Cursor and `gpt-5.5` for Codex. Cursor defaults to `runtime: "cli"`. Codex defaults to `modelReasoningEffort: "high"`, `sandboxMode: "read-only"`, and `approvalPolicy: "never"`. Other Codex modes are exposed for future workflows and explicit overrides.
+`cursor` remains the default provider. Config is provider-scoped under `agents`, so Cursor and Codex settings do not mix. Default review models are `composer-2.5` for Cursor and `gpt-5.5` for Codex. The built-in Cursor runtime fallback is `cli`; this repo's `harness.json` opts into `runtime: "sdk"` for change-review runs. Codex defaults to `modelReasoningEffort: "high"`, `sandboxMode: "read-only"`, and `approvalPolicy: "never"`. Other Codex modes are exposed for future workflows and explicit overrides.
 
 For Codex, harness uses the TypeScript SDK without passing a custom environment, so auth follows the local Codex CLI: run `codex login` once or provide `CODEX_API_KEY` in the environment. Use `harness models` for the harness model catalog. For live Cursor account-specific models, run `agent models`.
 
@@ -119,7 +119,7 @@ For Codex, harness uses the TypeScript SDK without passing a custom environment,
 harness run change-review --agent codex --model gpt-5.5 --reasoning-effort high --sandbox read-only --approval-policy never
 ```
 
-Cursor also has an experimental SDK runtime:
+Cursor also supports an SDK runtime:
 
 ```json
 {
@@ -134,9 +134,11 @@ Cursor also has an experimental SDK runtime:
 
 ```bash
 CURSOR_API_KEY=... harness run change-review --agent cursor --runtime sdk
+# fallback to Cursor CLI for a run:
+harness run change-review --agent cursor --runtime cli
 ```
 
-The SDK runtime uses Cursor local agent mode, requires `CURSOR_API_KEY`, runs change-review steps serially in one harness process, and rejects review runs that modify tracked workspace status outside `.harness/`. Serial SDK runs stop after the first failed reviewer, so failed runs may have partial review coverage. The git status comparison is the review safety backstop; it detects final tracked-status changes but cannot prove that a file was not edited and reverted during the run. Cursor SDK local sandboxing is environment-dependent and is not required by harness. It is not equivalent to the CLI `ask` path, is not the default, and unlike the CLI runtime cannot rely on `agent login` auth.
+The SDK runtime uses Cursor local agent mode, requires `CURSOR_API_KEY`, runs change-review steps in parallel, and rejects review runs that modify tracked workspace status outside `.harness/`. The git status comparison is the review safety backstop; it detects final tracked-status changes but cannot prove that a file was not edited and reverted during the run. Cursor SDK local sandboxing is environment-dependent and is not required by harness. It is not equivalent to the CLI `ask` path and, unlike the CLI runtime, cannot rely on `agent login` auth.
 
 `harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`. The shim is a bash script; target machines need a POSIX shell with `bash` available.
 

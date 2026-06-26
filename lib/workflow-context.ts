@@ -27,7 +27,6 @@ import {
   DEFAULT_AGENT_MODELS,
   DEFAULT_CODEX_REASONING_EFFORT,
   effectiveCursorRuntime,
-  isCursorSdkRuntime,
 } from "./agents.ts";
 import {
   buildDiffSection,
@@ -396,12 +395,9 @@ function resolvedCursorRuntimeMeta(providerName: AgentProviderName, options: Wor
 }
 
 function resolvedReviewConcurrency(
-  providerName: AgentProviderName,
-  options: WorkflowOptions,
+  _providerName: AgentProviderName,
+  _options: WorkflowOptions,
 ): "parallel" | "serial" {
-  if (isCursorSdkRuntime(providerName, options.cursorRuntime)) {
-    return "serial";
-  }
   return "parallel";
 }
 

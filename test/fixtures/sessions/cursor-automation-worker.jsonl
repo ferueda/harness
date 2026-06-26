@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nYou are running as an automated worker invoked by another agent.\n\nHard requirements for your FINAL answer:\n- Return ONLY valid JSON.\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"{\"verdict\":\"pass\"}"}]}}

@@ -1,5 +1,11 @@
 # Plan 260625-cursor-sdk-runtime: Add an opt-in Cursor SDK runtime
 
+> **Post-plan update (2026-06-26)**: After parallel Cursor CLI reviewers failed
+> before producing structured output, the harness repo opted into Cursor SDK in
+> `harness.json` and restored parallel review execution for SDK runs. The
+> original plan below is retained as implementation history; README now reflects
+> the current runtime policy.
+
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and

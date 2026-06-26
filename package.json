@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "bin": {
-    "harness": "./dist/bin/harness.js"
+    "harness": "./dist/bin/harness.js",
+    "sessions": "./dist/bin/sessions.js"
   },
   "files": [
     "dist",
