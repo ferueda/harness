@@ -243,14 +243,15 @@ node bin/sessions.ts cursor show <sessionId>
 
 ## Available Skills
 
-### ask-questions
+### shape-requirements
 
-Clarify requirements before implementing. Ensures agents ask the minimum set of must-have questions to avoid wrong work. Explicitly invoked only.
+Shape requirements before planning or implementing. **Gate** when a build/fix/plan task is underspecified. **Interview** when the user wants a brief from a vague idea.
 
 **Use when:**
-- Request is underspecified or ambiguous
-- Multiple plausible interpretations exist
-- Key constraints or acceptance criteria are unclear
+- Build/fix/plan task lacks scope, done-ness, or constraints
+- User wants to think through an idea and produce a written brief
+
+**Output:** Confirmed interpretation (gate) or requirements brief in `dev/briefs/` (interview). Chains to `create-plan`, `review-spec`, or direct implementation.
 
 ---
 
@@ -358,18 +359,6 @@ Execute an approved plan or spec document phase-by-phase, writing robust idiomat
 - Working through phases from `dev/plans/`
 
 **Output:** Phase summaries, files touched, verification results, and updated plan checkboxes
-
----
-
-### interrogator
-
-Interview the user to extract knowledge from their head and synthesize it into a structured document. Asks one question at a time, depth-first, to produce specs, design docs, briefs, or decision records.
-
-**Use when:**
-- "Interview me about..."
-- "Help me think through..."
-- "I need to spec out..."
-- User has a vague concept and needs help turning it into a concrete artifact
 
 ---
 
