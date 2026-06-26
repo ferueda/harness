@@ -57,13 +57,15 @@ Coordinator: **`planning-workflow`**. Plans live in **`dev/plans/`** with **`dev
 | `diagnose-issue` | Evidence-backed problem definition before planning | inline or `dev/issues/YYMMDD-short-slug.md` |
 | `audit` | Codebase survey → prioritized handoff plans | `dev/plans/YYMMDD-short-slug.md` |
 | `create-plan` | Scoped plan from todo/spec/issue | `dev/plans/YYMMDD-short-slug.md` |
-| `review-spec` | Validate plan/spec against codebase; includes simplicity pass | advisory findings |
+| `review-spec` | Validate plan/spec against codebase; proportionality check; Simplicity as a finding category | advisory findings |
 | `implement-plan` | Execute approved plan phase-by-phase | reads from `dev/plans/` |
 | `handoff-work` | Transfer context between agents or sessions | inline handoff |
 
 **Shape vs diagnose:** `shape-requirements` when the question is what the user wants. `diagnose-issue` when the question is what is true in the repo. Too vague to investigate → gate only, then diagnose.
 
 **Typical chain** (skip steps per `planning-workflow` routing): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `handoff-work` → `implement-plan` → `change-review-workflow`.
+
+**Routing reference:** `planning-workflow/references/routing.md` — intake, skip rules, scenario fixtures, pass criteria.
 
 `audit` is read-only on source; only `dev/plans/` files may be created or updated. Reconcile with `dev/plans/README.md` before adding plans.
 
@@ -103,7 +105,7 @@ Typical close: `planning-workflow` → `implement-plan` → `handoff-work` (if n
 
 Facts first; label interpretation separately. Do not treat `patterns` as recommendations.
 
-**Audits:** `skills/session-evidence/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). Routing fixtures: coordinator skills (e.g. `planning-workflow/references/routing-scenarios.md`).
+**Audits:** `skills/session-evidence/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). Routing fixtures: coordinator skills (e.g. `planning-workflow/references/routing.md`).
 
 ## Learning
 
