@@ -56,6 +56,27 @@ test("analyzeSessions counts missing fields and classifications", () => {
   });
 });
 
+test("analyzeSessions backfills missing workspace path source from confidence", () => {
+  const explicit = session({
+    sessionId: "legacy-explicit",
+    workspacePathConfidence: "explicit",
+  });
+  const decoded = session({
+    sessionId: "legacy-decoded",
+    workspacePathConfidence: "decoded",
+  });
+  delete explicit.workspacePathSource;
+  delete decoded.workspacePathSource;
+
+  const analysis = analyzeSessions([explicit, decoded]);
+
+  expect(analysis.workspacePathSource).toEqual({
+    transcript: 1,
+    "store-db": 0,
+    "project-key": 1,
+  });
+});
+
 test("analyzeSessions returns stable top words, prefixes, and marker candidates", () => {
   const analysis = analyzeSessions(
     [
