@@ -5,9 +5,9 @@ description: Use when extracting information from local agent session history wi
 
 # Session Evidence
 
-Use `sessions analyze --include-turns --extract-only` as a local session
-extraction tool. It returns transcript snippets, artifacts, and provenance;
-keep interpretation separate from extraction.
+Use `sessions analyze --provider cursor|codex --include-turns --extract-only`
+as a local session extraction tool. It returns transcript snippets, artifacts,
+and provenance; keep interpretation separate from extraction.
 
 ## Workflow
 
@@ -22,7 +22,7 @@ keep interpretation separate from extraction.
 5. Inspect `matches`, `matchedQueries`, `artifacts`, `sessionId`, and
    `turnIndex`.
 6. Open the source only when snippets are not enough:
-   `sessions cursor show <sessionId>`.
+   `sessions cursor show <sessionId>` or `sessions codex show <sessionId>`.
 7. Report extracted facts first; label any interpretation separately.
 
 ## Modes
@@ -44,6 +44,13 @@ Recent workspace scan:
 
 ```bash
 sessions analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
+```
+
+Use Codex history:
+
+```bash
+sessions codex reindex
+sessions analyze --provider codex --include-turns --extract-only --turn-query "verify"
 ```
 
 Find turns mentioning verification:
@@ -91,7 +98,10 @@ Running `--include-turns` without `--days`, `--workspace`, `--query`, or
 - Keep table output small with `--evidence-limit`; JSON keeps the full
   `matches` and artifact arrays for agent handoff.
 - Use `sessions cursor show <sessionId>` for the 1-2 most relevant matches
-  instead of opening every result.
+- Use `sessions cursor show <sessionId>` or `sessions codex show <sessionId>`
+  for the 1-2 most relevant matches instead of opening every result.
+- Codex indexing uses `~/.codex/state_5.sqlite` as the source of truth and only
+  falls back to `~/.codex/sqlite/state_5.sqlite` if the root DB is missing.
 - Treat `patterns` as recurrence hints only. Do not treat output as a
   recommendation.
 
@@ -102,7 +112,7 @@ Running `--include-turns` without `--days`, `--workspace`, `--query`, or
 - Which files, commands, PRs, branches, plans, or URLs appear?
 - Which session ids and turn indexes should be opened for more context?
 - Which requested information is missing from snippets and needs
-  `sessions cursor show`?
+  `sessions cursor show` or `sessions codex show`?
 
 ## Reading Output
 
