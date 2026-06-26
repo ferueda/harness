@@ -37,3 +37,14 @@ test("isCodexAutomation uses explicit automation signals only", () => {
   expect(isCodexAutomation({ ...base, threadSource: "automation" })).toBe(true);
   expect(isCodexAutomation(base)).toBe(false);
 });
+
+test("isCodexAutomation checks raw first user text for stripped automation markers", () => {
+  expect(
+    isCodexAutomation({
+      ...base,
+      firstUserQuery: "Please review the changes.",
+      rawFirstUserQuery:
+        "<INSTRUCTIONS>\nYou are running as an automated worker.\n</INSTRUCTIONS>\n\nPlease review the changes.",
+    }),
+  ).toBe(true);
+});
