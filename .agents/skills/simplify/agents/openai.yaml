@@ -1,4 +1,0 @@
-interface:
-  display_name: "Simplify"
-  short_description: "Refine harness code for clarity without changing behavior"
-  default_prompt: "Use $simplify to refine recently modified harness code for clarity while preserving exact functionality."
