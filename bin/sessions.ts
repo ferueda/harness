@@ -53,8 +53,9 @@ type AnalyzeOptions = {
 };
 
 type AnalyzeCommandResult =
-  | (CursorSessionAnalysis & { evidence?: SessionEvidenceReport })
+  | { mode: "full"; analysis: CursorSessionAnalysis & { evidence?: SessionEvidenceReport } }
   | {
+      mode: "extract-only";
       provider: (typeof ANALYZE_PROVIDERS)[number];
       evidence: SessionEvidenceReport;
     };
@@ -159,10 +160,10 @@ function buildProgram(): Command {
       validateAnalyzeOptions(options, command);
       const analysis = await analyzeSessionsCommand(options);
       if (options.format === "json") {
-        console.log(JSON.stringify(analysis, null, 2));
+        console.log(JSON.stringify(jsonAnalysisOutput(analysis), null, 2));
         return;
       }
-      console.log(renderCursorAnalysis(analysis));
+      console.log(renderCursorAnalysis(analysis, { matchLimit: options.evidenceLimit }));
     });
 
   const cursor = program.command("cursor").description("Browse Cursor sessions");
@@ -228,17 +229,18 @@ async function analyzeSessionsCommand(options: AnalyzeOptions): Promise<AnalyzeC
   if (options.extractOnly) {
     warnIfUnboundedEvidenceScan(options);
     return {
+      mode: "extract-only",
       provider: options.provider,
       evidence: await extractEvidenceForOptions(options),
     };
   }
 
   const analysis = analyzeIndexedSessions(options);
-  if (!options.includeTurns) return analysis;
+  if (!options.includeTurns) return { mode: "full", analysis };
 
   warnIfUnboundedEvidenceScan(options);
   const evidence = await extractEvidenceForOptions(options);
-  return { ...analysis, evidence };
+  return { mode: "full", analysis: { ...analysis, evidence } };
 }
 
 async function extractEvidenceForOptions(options: AnalyzeOptions): Promise<SessionEvidenceReport> {
@@ -248,8 +250,12 @@ async function extractEvidenceForOptions(options: AnalyzeOptions): Promise<Sessi
     patternLimit: options.patternLimit,
     minSupport: options.minSupport,
     turnQueries: options.turnQuery,
-    includePatterns: !(options.extractOnly && options.turnQuery.length > 0),
+    includePatterns: shouldIncludePatterns(options),
   });
+}
+
+function shouldIncludePatterns(options: AnalyzeOptions): boolean {
+  return !options.extractOnly || options.turnQuery.length === 0;
 }
 
 function analyzeIndexedSessions(options: AnalyzeOptions): CursorSessionAnalysis {
@@ -357,9 +363,18 @@ function renderStats(stats: IndexStats): string {
   ].join("\n");
 }
 
-function renderCursorAnalysis(analysis: AnalyzeCommandResult): string {
-  if (!("totalSessions" in analysis)) return renderEvidenceReport(analysis.evidence);
+function jsonAnalysisOutput(result: AnalyzeCommandResult): unknown {
+  return result.mode === "extract-only"
+    ? { provider: result.provider, evidence: result.evidence }
+    : result.analysis;
+}
 
+function renderCursorAnalysis(
+  result: AnalyzeCommandResult,
+  options: { matchLimit: number },
+): string {
+  if (result.mode === "extract-only") return renderEvidenceReport(result.evidence, options);
+  const analysis = result.analysis;
   return [
     "Session index analysis",
     `  provider:         ${analysis.provider}`,
@@ -397,7 +412,7 @@ function renderCursorAnalysis(analysis: AnalyzeCommandResult): string {
     "",
     "Index quality signals",
     renderIndexImprovementCandidates(analysis.indexImprovementCandidates),
-    ...(analysis.evidence ? ["", renderEvidenceReport(analysis.evidence)] : []),
+    ...(analysis.evidence ? ["", renderEvidenceReport(analysis.evidence, options)] : []),
   ].join("\n");
 }
 
@@ -443,7 +458,10 @@ function renderIndexImprovementCandidates(
     .join("\n");
 }
 
-function renderEvidenceReport(report: SessionEvidenceReport): string {
+function renderEvidenceReport(
+  report: SessionEvidenceReport,
+  options: { matchLimit: number },
+): string {
   const summary = [
     `  scanned sessions: ${report.scannedSessions}`,
     `  scanned user turns: ${report.scannedUserTurns}`,
@@ -454,7 +472,7 @@ function renderEvidenceReport(report: SessionEvidenceReport): string {
 
   if (report.matches.length > 0) {
     const rows = report.matches
-      .slice(0, DEFAULT_PATTERN_LIMIT)
+      .slice(0, options.matchLimit)
       .map((match) => [
         match.sessionId,
         match.turnIndex.toString(),
@@ -472,10 +490,11 @@ function renderEvidenceReport(report: SessionEvidenceReport): string {
     );
   }
 
-  if (report.patterns.length === 0) {
+  if (report.patterns.length === 0 && report.matches.length === 0) {
     sections.push("", "Transcript evidence patterns", "  none");
     return sections.join("\n");
   }
+  if (report.patterns.length === 0) return sections.join("\n");
 
   const rows = report.patterns.map((pattern) => [
     pattern.bucket,
