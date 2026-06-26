@@ -1,11 +1,13 @@
-export const AUTOMATION_WORKER_MARKER = "You are running as an automated worker";
-export const AUTOMATION_MARKERS = [
+export {
+  AUTOMATION_MARKERS,
   AUTOMATION_WORKER_MARKER,
-  "Hard requirements for your FINAL answer",
-] as const;
+  hasAutomationMarker,
+} from "../core/classify.ts";
+
+import { AUTOMATION_WORKER_MARKER, hasAutomationMarker } from "../core/classify.ts";
 
 export function isAutomationSession(firstUserQuery = ""): boolean {
-  return AUTOMATION_MARKERS.some((marker) => firstUserQuery.includes(marker));
+  return hasAutomationMarker(firstUserQuery);
 }
 
 export function isSubagentSession(chatId: string, firstUserQuery = ""): boolean {
