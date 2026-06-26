@@ -2,14 +2,12 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { LAUNCHER_COMMAND } from "./lib/command.ts";
 import { buildEnvelope, buildErrorEnvelope, type EnvelopeStatus } from "./lib/envelope.ts";
 import { buildHomeEnvelope } from "./lib/home.ts";
 import { emitEnvelope, failUsage, finish, EXIT } from "./lib/output.ts";
 import { buildCommand, runAgent } from "./lib/runner.ts";
 import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
-
-const SCRIPT_PATH = fileURLToPath(import.meta.url);
 
 type CursorAgentOptions = {
   promptParts: string[];
@@ -41,8 +39,8 @@ type ParsedCommand =
   | { command: "run"; options: CursorAgentOptions };
 
 function printHelp() {
-  console.log(`Usage: node ${SCRIPT_PATH} [options] [prompt...]
-       node ${SCRIPT_PATH}
+  console.log(`Usage: ${LAUNCHER_COMMAND} [options] [prompt...]
+       ${LAUNCHER_COMMAND}
 
 Headless Cursor Agent wrapper. Default stdout: TOON envelope.
 
@@ -286,7 +284,7 @@ async function runInvoke(options: CursorAgentOptions): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     failUsage(
       message,
-      ['Run `cursor-agent "your task"` or --prompt-file / --stdin'],
+      [`Run \`${LAUNCHER_COMMAND} "your task"\` or --prompt-file / --stdin`],
       options.format,
     );
     return;
@@ -367,7 +365,7 @@ async function main() {
     parsed = parseArgs(process.argv.slice(2));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    failUsage(message, ["Run `cursor-agent --help` for usage"]);
+    failUsage(message, [`Run \`${LAUNCHER_COMMAND} --help\` for usage`]);
     return;
   }
 
