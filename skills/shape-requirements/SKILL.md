@@ -1,8 +1,10 @@
 ---
 name: shape-requirements
 description: >
-  Shape requirements before planning or implementing. Gate when a build/fix/plan task
-  is underspecified. Interview when the user wants a brief from a vague idea.
+  Shape requirements before planning or implementing. Gate underspecified build,
+  fix, or plan tasks. Interview when the user says "interview me about", "ask me
+  questions about", "help me think through", "I need to spec out", "let's flesh
+  out", or has a vague idea to turn into a brief.
 ---
 
 # Shape Requirements
