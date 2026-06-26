@@ -9,6 +9,14 @@ Use `sessions analyze --include-turns` as an evidence extractor. The analyzer
 does not make recommendations; it surfaces bounded transcript patterns,
 artifacts, examples, and provenance for you to interpret.
 
+## When to Use
+
+- Review recent or repo-specific agent session history for recurring work.
+- Investigate a topic with transcript evidence, such as review, testing,
+  debugging, preferences, plans, PRs, commands, or index quality.
+- Interpret `sessions analyze --include-turns --format json` output for a
+  handoff or follow-up plan.
+
 ## Workflow
 
 1. Start narrow. Choose `--days`, `--workspace`, `--query`, and `--min-support`
