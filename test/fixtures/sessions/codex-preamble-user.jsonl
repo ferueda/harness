@@ -1,0 +1,3 @@
+{"type":"event_msg","payload":{"type":"user_message","message":"# AGENTS.md instructions for /Users/example/dev/repo\n\n<INSTRUCTIONS>\n# AGENTS.md\n\nWork style: telegraph.\n</INSTRUCTIONS>\n\nClean ask from the user."}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"I will handle it."}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Now verify the cleaned evidence path."}}
