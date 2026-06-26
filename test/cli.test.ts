@@ -969,9 +969,9 @@ test("harness run change-review dry-run reads Codex provider from harness.json",
 });
 test("harness run change-review dry-run includes bundled simplify prompt", () => {
   const workspace = createGitWorkspace();
-  const devSkillPath = join(workspace, ".agents/skills/simplify/SKILL.md");
-  mkdirSync(dirname(devSkillPath), { recursive: true });
-  writeFileSync(devSkillPath, "# Dev simplify\n", "utf8");
+  const decoySkillPath = join(workspace, ".agents/skills/decoy-local/SKILL.md");
+  mkdirSync(dirname(decoySkillPath), { recursive: true });
+  writeFileSync(decoySkillPath, "# Decoy local skill\n", "utf8");
   const result = runHarness([
     "run",
     "change-review",
@@ -993,7 +993,7 @@ test("harness run change-review dry-run includes bundled simplify prompt", () =>
   const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
   expect(simplifyPrompt).toContain(`- \`${join(REPO_ROOT, "skills/simplify-review/SKILL.md")}\``);
-  expect(simplifyPrompt).not.toContain(devSkillPath);
+  expect(simplifyPrompt).not.toContain(decoySkillPath);
   expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
 });
 test("harness run change-review accepts positive finite runtime values", () => {
