@@ -105,7 +105,7 @@ Typical close: `planning-workflow` → `implement-plan` → `handoff-work` (if n
 
 Facts first; label interpretation separately. Do not treat `patterns` as recommendations.
 
-**Audits:** `skills/session-evidence/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). Routing fixtures: coordinator skills (e.g. `planning-workflow/references/routing.md`).
+**Audits:** `skills/session-evidence/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). **Exploration:** `skills/session-evidence/references/turn-queries.md` (starter `--turn-query` terms). Routing fixtures: coordinator skills (e.g. `planning-workflow/references/routing.md`).
 
 ## Learning
 
