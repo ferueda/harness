@@ -3,7 +3,8 @@
   "defaultAgent": "cursor",
   "agents": {
     "cursor": {
-      "model": "composer-2.5"
+      "model": "composer-2.5",
+      "runtime": "cli"
     },
     "codex": {
       "model": "gpt-5.5",

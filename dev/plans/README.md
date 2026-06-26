@@ -2,7 +2,7 @@
 
 | File                                                                 | Status        | Summary                                                                        |
 | -------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------ |
-| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | `harness` repo migration, Phase 0 dual-review, live workflow roadmap           |
+| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap, current `change-review` state, Inngest orchestration (Phase 2)        |
 | [260625-cursor-sdk-runtime.md](./260625-cursor-sdk-runtime.md)       | `done`        | Add opt-in Cursor SDK runtime with local safety guardrails                      |
 | [260624-change-review-steps.md](./260624-change-review-steps.md)     | `done`        | Replace `review`/`review-full` with one `change-review` workflow and `--steps` |
 
