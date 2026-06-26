@@ -40,7 +40,8 @@ test("extractSessionEvidence counts distinct sessions for repeated patterns", as
 
   expect(report.patterns).toHaveLength(1);
   expect(report.patterns[0]?.support).toBe(2);
-  expect(report.patterns[0]?.examples).toHaveLength(3);
+  expect(report.patterns[0]?.examples).toHaveLength(2);
+  expect(report.patterns[0]?.examples.map((example) => example.sessionId)).toEqual(["one", "two"]);
 });
 
 test("extractSessionEvidence assigns neutral buckets from lexical signals", async () => {
@@ -87,12 +88,26 @@ test("extractSessionEvidence excludes noise before review or testing signals", a
   expect(report.patterns[0]?.bucket).toBe("review");
 });
 
+test("extractSessionEvidence keeps real handoff requests as evidence", async () => {
+  const report = await extractSessionEvidence(
+    [turn("handoff", "Review this handoff before continuing.")],
+    { provider: "cursor", minSupport: 1 },
+  );
+
+  expect(report.excludedFragments).toBe(0);
+  expect(report.patterns).toHaveLength(1);
+  expect(report.patterns[0]).toMatchObject({
+    bucket: "review",
+    support: 1,
+  });
+});
+
 test("extractSessionEvidence extracts bounded artifacts", async () => {
   const report = await extractSessionEvidence(
     [
       turn(
         "one",
-        "Plan dev/plans/260626-session-evidence-extraction.md, inspect https://github.com/acme/repo/pull/42 and https://example.com/docs, checkout branch `codex/session-evidence`, run `pnpm test`, and patch `lib/sessions/core/evidence.ts`.",
+        "Plan dev/plans/260626-session-evidence-extraction.md, inspect https://github.com/acme/repo/pull/42 and https://example.com/docs?ref=main!, checkout branch `codex/session-evidence`, run `pnpm test`, and patch `lib/sessions/core/evidence.ts`.",
       ),
       turn("two", "Plan dev/plans/260626-other-plan.md and run `pnpm typecheck`."),
     ],
@@ -125,7 +140,7 @@ test("extractSessionEvidence extracts bounded artifacts", async () => {
   expect(report.artifacts.url).toEqual([
     {
       type: "url",
-      value: "https://example.com/docs",
+      value: "https://example.com/docs?ref=main!",
       sessionId: "one",
     },
   ]);
