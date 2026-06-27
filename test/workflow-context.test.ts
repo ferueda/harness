@@ -194,6 +194,7 @@ test("workflow context validates provider structured output as review output", a
     baseRef: "HEAD",
     headRef: "HEAD",
     runsDir,
+    cursorRuntime: "cli",
     cursorAgentPath: fakeAgent,
     maxRuntimeMs: 1_000,
   });
@@ -239,6 +240,7 @@ test("workflow context rejects Cursor findings without rationale", async () => {
     baseRef: "HEAD",
     headRef: "HEAD",
     runsDir,
+    cursorRuntime: "cli",
     cursorAgentPath: fakeAgent,
     maxRuntimeMs: 1_000,
   });
