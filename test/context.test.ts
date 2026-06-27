@@ -3,22 +3,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
-  buildDiffSection,
-  buildHandoffSection,
-  buildPlanSection,
+  buildDiffRef,
+  buildInlinedHandoffSection,
+  buildPlanRef,
   writeRunContext,
 } from "../lib/context.ts";
-test("buildDiffSection writes diff and returns only a file reference", () => {
+test("buildDiffRef writes diff and returns only a file reference", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
   const runDir = join(workspace, ".harness/runs/reviews/run-1");
   const diff = "diff --git a/a.txt b/a.txt\n+hello\n";
-  const section = buildDiffSection(diff, runDir, workspace);
-  expect(section).toBe("Diff file: `.harness/runs/reviews/run-1/context/diff.patch`");
+  const ref = buildDiffRef(diff, runDir, workspace);
+  expect(ref).toBe("Diff file: `.harness/runs/reviews/run-1/context/diff.patch`");
   expect(readFileSync(join(runDir, "context/diff.patch"), "utf8")).toBe(diff);
-  expect(section).not.toMatch(/hello/);
-  expect(section).not.toMatch(/First 200 lines/);
+  expect(ref).not.toMatch(/hello/);
+  expect(ref).not.toMatch(/First 200 lines/);
 });
-test("writeRunContext copies plan and handoff and sections return file references", () => {
+test("writeRunContext copies plan and handoff artifacts", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
   const runDir = join(workspace, ".harness/runs/reviews/run-1");
   writeFileSync(join(workspace, "plan.md"), "# Plan\n", "utf8");
@@ -31,14 +31,11 @@ test("writeRunContext copies plan and handoff and sections return file reference
   });
   expect(existsSync(join(runDir, "context/plan.md"))).toBe(true);
   expect(existsSync(join(runDir, "context/handoff.md"))).toBe(true);
-  expect(buildPlanSection(artifacts.plan, workspace)).toBe(
+  expect(buildPlanRef(artifacts.plan, workspace)).toBe(
     "Plan file: `.harness/runs/reviews/run-1/context/plan.md`",
   );
-  expect(buildHandoffSection(artifacts.handoff, workspace)).toBe(
-    "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
-  );
 });
-test("writeRunContext writes inline handoff text as a run artifact", () => {
+test("buildInlinedHandoffSection inlines handoff content when present", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
   const runDir = join(workspace, ".harness/runs/reviews/run-1");
   const artifacts = writeRunContext({
@@ -47,11 +44,28 @@ test("writeRunContext writes inline handoff text as a run artifact", () => {
     handoffText: "# Caller handoff\n\nReview this scope.\n",
   });
 
-  expect(readFileSync(join(runDir, "context/handoff.md"), "utf8")).toBe(
-    "# Caller handoff\n\nReview this scope.\n",
+  expect(buildInlinedHandoffSection(artifacts.handoff)).toBe(
+    "## Handoff\n\n# Caller handoff\n\nReview this scope.",
   );
-  expect(buildHandoffSection(artifacts.handoff, workspace)).toBe(
-    "Handoff file: `.harness/runs/reviews/run-1/context/handoff.md`",
+});
+test("buildInlinedHandoffSection returns empty string when handoff is absent", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+  const artifacts = writeRunContext({ workspace, runDir });
+
+  expect(buildInlinedHandoffSection(artifacts.handoff)).toBe("");
+});
+test("buildInlinedHandoffSection surfaces missing requested handoff path", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  const runDir = join(workspace, ".harness/runs/reviews/run-1");
+  const artifacts = writeRunContext({
+    workspace,
+    runDir,
+    handoffPath: "missing-handoff.md",
+  });
+
+  expect(buildInlinedHandoffSection(artifacts.handoff)).toBe(
+    "## Handoff\n\n_Handoff file not found: `missing-handoff.md`_",
   );
 });
 test("writeRunContext rejects conflicting handoff inputs", () => {
