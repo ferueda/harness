@@ -4,7 +4,6 @@ import {
   AGENT_PROVIDERS,
   AGENT_REASONING_EFFORTS,
   AGENT_SANDBOX_MODES,
-  CURSOR_RUNTIMES,
 } from "./agents.ts";
 
 export const HarnessConfigSchema = z
@@ -16,7 +15,6 @@ export const HarnessConfigSchema = z
         cursor: z
           .object({
             model: z.string().optional(),
-            runtime: z.enum(CURSOR_RUNTIMES).optional(),
           })
           .passthrough()
           .optional(),
@@ -34,7 +32,17 @@ export const HarnessConfigSchema = z
       .passthrough()
       .optional(),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((config, ctx) => {
+    const runtime = config.agents?.cursor?.runtime;
+    if (runtime === undefined) return;
+    ctx.addIssue({
+      code: "custom",
+      path: ["agents", "cursor", "runtime"],
+      message:
+        "Cursor CLI runtime has been removed; harness reviews use the Cursor SDK (default). Remove agents.cursor.runtime from harness.json.",
+    });
+  });
 
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
 
