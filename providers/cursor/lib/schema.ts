@@ -60,9 +60,28 @@ function tryExtractBalancedValue(text: string, start: number): string | null {
   }
 }
 
-function tryExtractBalancedObject(text: string, start: number): string | null {
-  if (text[start] !== "{") return null;
-  return tryExtractBalancedValue(text, start);
+// Schema-aware acceptance avoids selecting a nested finding object when prose precedes
+// a valid top-level review payload (rightmost `{` alone is not enough).
+function extractJsonText(
+  text: string,
+  options?: {
+    accepts?: (value: unknown) => boolean;
+    fallbackToCleaned?: boolean;
+  },
+): string | null {
+  const cleaned = stripJsonFences(text);
+  if (!cleaned) return options?.fallbackToCleaned ? cleaned : null;
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!options?.accepts || options.accepts(parsed)) return cleaned;
+  } catch {
+    // fall through to rightmost extraction
+  }
+
+  const extracted = extractRightmostParseableJson(cleaned, options?.accepts);
+  if (extracted !== null) return extracted;
+  return options?.fallbackToCleaned ? cleaned : null;
 }
 
 function extractRightmostParseableJson(
@@ -89,7 +108,7 @@ function extractRightmostParseableJson(
 
   let cursor = text.lastIndexOf("{");
   while (cursor >= 0) {
-    maybeConsider(cursor, tryExtractBalancedObject(text, cursor));
+    maybeConsider(cursor, tryExtractBalancedValue(text, cursor));
     cursor = cursor > 0 ? text.lastIndexOf("{", cursor - 1) : -1;
   }
 
@@ -103,18 +122,7 @@ function extractRightmostParseableJson(
 }
 
 export function extractJsonFromText(text: string): string {
-  const cleaned = stripJsonFences(text);
-  if (!cleaned) return cleaned;
-
-  try {
-    JSON.parse(cleaned);
-    return cleaned;
-  } catch {
-    // fall through to extraction
-  }
-
-  const extracted = extractRightmostParseableJson(cleaned);
-  return extracted ?? cleaned;
+  return extractJsonText(text, { fallbackToCleaned: true }) ?? stripJsonFences(text);
 }
 
 function balancedJsonEnd(text: string, start: number): number | undefined {
@@ -162,51 +170,25 @@ function parseJsonText(jsonText: string): { value?: unknown; error?: string } {
 }
 
 function extractStructuredJsonText(resultText: string, schema: JsonSchema): string | null {
-  const cleaned = stripJsonFences(resultText);
-  if (!cleaned) return null;
-
-  const accepts = (value: unknown) => schemaAccepts(schema, value);
-
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (accepts(parsed)) return cleaned;
-  } catch {
-    // fall through to rightmost extraction
-  }
-
-  return extractRightmostParseableJson(cleaned, accepts);
+  return extractJsonText(resultText, {
+    accepts: (value) => schemaAccepts(schema, value),
+  });
 }
 
 function extractDiagnosticJsonText(resultText: string): string | null {
-  const cleaned = stripJsonFences(resultText);
-  if (!cleaned) return null;
-
-  try {
-    JSON.parse(cleaned);
-    return cleaned;
-  } catch {
-    // fall through
-  }
-
-  return extractRightmostParseableJson(cleaned);
+  return extractJsonText(resultText);
 }
 
-function schemaValidationError(
-  schema: JsonSchema,
-  resultText: string,
-): { value?: unknown; error?: string } | null {
+function schemaValidationError(schema: JsonSchema, resultText: string): string | null {
   const jsonText = extractDiagnosticJsonText(resultText);
   if (!jsonText) return null;
 
   const parsed = parseJsonText(jsonText);
-  if (parsed.error) return parsed;
+  if (parsed.error) return parsed.error;
 
   const validationError = validateJsonSchema(parsed.value, schema, "$");
-  if (validationError) {
-    return { error: `JSON did not match schema: ${validationError}` };
-  }
-
-  return { value: parsed.value };
+  if (validationError) return `JSON did not match schema: ${validationError}`;
+  return null;
 }
 
 export function parseStructuredOutput(
@@ -228,8 +210,8 @@ export function parseStructuredOutput(
       return { value: parsed.value };
     }
 
-    const diagnostic = schemaValidationError(schema, resultText);
-    if (diagnostic) return diagnostic;
+    const diagnosticError = schemaValidationError(schema, resultText);
+    if (diagnosticError) return { error: diagnosticError };
 
     return { error: "Final answer was not valid JSON." };
   }
