@@ -333,6 +333,71 @@ test("createCodexAgent returns SDK run failures", async () => {
   });
 });
 
+test("createCodexAgent returns aborted without starting a pre-aborted run", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const controller = new AbortController();
+  controller.abort();
+  let factoryCalled = false;
+  const codexFactory = () => {
+    factoryCalled = true;
+    return {
+      startThread() {
+        throw new Error("should not start thread");
+      },
+    };
+  };
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result).toMatchObject({
+    error: "Agent was aborted",
+    exitCode: 130,
+    aborted: true,
+  });
+  expect(factoryCalled).toBe(false);
+});
+
+test("createCodexAgent returns aborted when external signal aborts a pending run", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const controller = new AbortController();
+  const calls: { signal?: AbortSignal } = {};
+  const codexFactory = () => ({
+    startThread() {
+      return {
+        id: "thread-abort",
+        run(_prompt: string, turnOptions: TurnOptions) {
+          calls.signal = turnOptions.signal;
+          queueMicrotask(() => controller.abort());
+          return new Promise<never>(() => {});
+        },
+      };
+    },
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result).toMatchObject({
+    error: "Agent was aborted",
+    exitCode: 130,
+    aborted: true,
+  });
+  expect(calls.signal?.aborted).toBe(true);
+});
+
 test("createCodexAgent uses CODEX_EXECUTABLE when no explicit override is set", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
   const { calls, codexFactory } = createFakeCodex();
@@ -380,6 +445,7 @@ test("createCodexAgent returns timeout failures through AbortSignal", async () =
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.exitCode).toBe(124);
+  expect(result.aborted).toBeUndefined();
   expect(result.error).toMatch(/timed out/);
   expect(calls.signal?.aborted).toBe(true);
 });
@@ -467,6 +533,49 @@ test("createCodexAgent observes delayed run rejection after timeout", async () =
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.exitCode).toBe(124);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(unhandledRejections).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", onUnhandledRejection);
+  }
+});
+
+test("createCodexAgent observes delayed run rejection after external abort", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const controller = new AbortController();
+  const unhandledRejections: unknown[] = [];
+  const onUnhandledRejection = (error: unknown) => {
+    unhandledRejections.push(error);
+  };
+  const codexFactory = () => ({
+    startThread() {
+      return {
+        id: "thread-abort",
+        run(_prompt: string, turnOptions: TurnOptions) {
+          queueMicrotask(() => controller.abort());
+          return new Promise<never>((_, reject) => {
+            turnOptions.signal?.addEventListener("abort", () => {
+              setTimeout(() => reject(new Error("aborted after external signal")), 0);
+            });
+          });
+        },
+      };
+    },
+  });
+
+  process.on("unhandledRejection", onUnhandledRejection);
+  try {
+    const result = await createCodexAgent({ codexFactory }).run({
+      workspace,
+      prompt: "review this",
+      maxRuntimeMs: 1_000,
+      signal: controller.signal,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.exitCode).toBe(130);
+    expect(result.aborted).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(unhandledRejections).toEqual([]);
   } finally {
