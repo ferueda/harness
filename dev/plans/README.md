@@ -20,7 +20,7 @@ Optional follow-up (todo, not a plan): [parse-resilience](../todo/260627-reviewe
 | [260627-sdk-agent-stream-logs.md](./260627-sdk-agent-stream-logs.md) | [#34](https://github.com/ferueda/harness/pull/34) | SDK `run.stream()` / `runStreamed()` JSONL + `streamArtifacts` meta |
 | [260626-workflow-step-events.md](./260626-workflow-step-events.md) | [#34](https://github.com/ferueda/harness/pull/34) | `events.jsonl`, `WorkflowEventSink`, `--verbose` heartbeats |
 | [260626-agent-abort-signal.md](./260626-agent-abort-signal.md) | [#36](https://github.com/ferueda/harness/pull/36) | SDK `AbortSignal`, `aborted` result, stream writer cleanup on cancel |
-| [260627-remove-cursor-cli-review-runtime.md](./260627-remove-cursor-cli-review-runtime.md) | pending PR | Remove Cursor CLI from harness reviews; `cursor-cli` skill launcher |
+| [260627-remove-cursor-cli-review-runtime.md](./260627-remove-cursor-cli-review-runtime.md) | [#37](https://github.com/ferueda/harness/pull/37) | Remove Cursor CLI from harness reviews; `cursor-cli` skill launcher |
 
 Historical executor steps remain in each file for reference. Do not re-run them.
 
