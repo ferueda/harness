@@ -492,6 +492,35 @@ test("workflow context includes stream artifacts for failed reviewers", async ()
   });
 });
 
+test("workflow context surfaces aborted provider results distinctly", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return {
+            ok: false,
+            aborted: true,
+            error: "Agent was aborted",
+            exitCode: 130,
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  await expect(ctx.agent("review-implementation")).rejects.toThrow(
+    "Agent was aborted: implementation reviewer",
+  );
+});
+
 test("workflow context passes explicit Codex sandbox and approval overrides", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
