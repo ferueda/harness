@@ -1,9 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { createCursorSdkAgent, type CursorSdkAgentFactoryOptions } from "./cursor-sdk-agent.ts";
+
+const REVIEW_SCHEMA_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../schemas/review-output.schema.json",
+);
 
 type FakeSdkOptions = {
   result?: {
@@ -169,6 +175,40 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
   expect(calls.prompt).toContain("review this");
   expect(calls.disposed).toBe(true);
   expect(calls.closed).toBe(false);
+});
+
+test("createCursorSdkAgent parses prose-prefixed review JSON with findings", async () => {
+  const workspace = createGitWorkspace();
+  const reviewPayload = {
+    verdict: "pass",
+    summary: "looks good",
+    findings: [
+      {
+        title: "style nit",
+        severity: "Low",
+        location: "schema.ts",
+        issue: "minor",
+        recommendation: "optional cleanup",
+        rationale: "readability",
+        must_fix: false,
+      },
+    ],
+  };
+  const resultText = `Review complete.\n\n${JSON.stringify(reviewPayload)}`;
+  const { createSdkAgent } = createFakeSdk({
+    result: { status: "finished", result: resultText },
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review changes",
+    schemaPath: REVIEW_SCHEMA_PATH,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.structuredOutput).toEqual(reviewPayload);
 });
 
 test("createCursorSdkAgent defaults to non-fast Composer 2.5", async () => {
