@@ -40,28 +40,89 @@ export function wrapPrompt(prompt: string, schema: JsonSchema | undefined): stri
   ].join("\n");
 }
 
-export function extractJsonFromText(text: string): string {
+function stripJsonFences(text: string): string {
   const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/);
-  if (fenced?.[1]) return fenced[1].trim();
-  return firstParseableJsonValue(trimmed) ?? trimmed;
+  if (!trimmed.startsWith("```")) return trimmed;
+
+  const withoutOpen = trimmed.replace(/^```(?:json)?\s*\n?/, "");
+  return withoutOpen.replace(/\n?```\s*$/, "").trim();
 }
 
-function firstParseableJsonValue(text: string): string | undefined {
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (char !== "{" && char !== "[") continue;
-    const end = balancedJsonEnd(text, index);
-    if (end === undefined) continue;
-    const candidate = text.slice(index, end + 1).trim();
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      continue;
-    }
+function tryExtractBalancedValue(text: string, start: number): string | null {
+  const end = balancedJsonEnd(text, start);
+  if (end === undefined) return null;
+  const candidate = text.slice(start, end + 1);
+  try {
+    JSON.parse(candidate);
+    return candidate;
+  } catch {
+    return null;
   }
-  return undefined;
+}
+
+// Schema-aware acceptance avoids selecting a nested finding object when prose precedes
+// a valid top-level review payload (rightmost `{` alone is not enough).
+function extractJsonText(
+  text: string,
+  options?: {
+    accepts?: (value: unknown) => boolean;
+    fallbackToCleaned?: boolean;
+  },
+): string | null {
+  const cleaned = stripJsonFences(text);
+  if (!cleaned) return options?.fallbackToCleaned ? cleaned : null;
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!options?.accepts || options.accepts(parsed)) return cleaned;
+  } catch {
+    // fall through to rightmost extraction
+  }
+
+  const extracted = extractRightmostParseableJson(cleaned, options?.accepts);
+  if (extracted !== null) return extracted;
+  return options?.fallbackToCleaned ? cleaned : null;
+}
+
+function extractRightmostParseableJson(
+  text: string,
+  accepts?: (value: unknown) => boolean,
+): string | null {
+  let bestStart = -1;
+  let bestText: string | null = null;
+
+  const maybeConsider = (start: number, candidate: string | null) => {
+    if (candidate === null) return;
+    if (accepts) {
+      try {
+        if (!accepts(JSON.parse(candidate))) return;
+      } catch {
+        return;
+      }
+    }
+    if (start > bestStart) {
+      bestStart = start;
+      bestText = candidate;
+    }
+  };
+
+  let cursor = text.lastIndexOf("{");
+  while (cursor >= 0) {
+    maybeConsider(cursor, tryExtractBalancedValue(text, cursor));
+    cursor = cursor > 0 ? text.lastIndexOf("{", cursor - 1) : -1;
+  }
+
+  cursor = text.lastIndexOf("[");
+  while (cursor >= 0) {
+    maybeConsider(cursor, tryExtractBalancedValue(text, cursor));
+    cursor = cursor > 0 ? text.lastIndexOf("[", cursor - 1) : -1;
+  }
+
+  return bestText;
+}
+
+export function extractJsonFromText(text: string): string {
+  return extractJsonText(text, { fallbackToCleaned: true }) ?? stripJsonFences(text);
 }
 
 function balancedJsonEnd(text: string, start: number): number | undefined {
@@ -95,6 +156,41 @@ function balancedJsonEnd(text: string, start: number): number | undefined {
   return undefined;
 }
 
+function schemaAccepts(schema: JsonSchema, value: unknown): boolean {
+  return validateJsonSchema(value, schema, "$") === undefined;
+}
+
+function parseJsonText(jsonText: string): { value?: unknown; error?: string } {
+  try {
+    return { value: JSON.parse(jsonText) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { error: `Final answer was not valid JSON: ${message}` };
+  }
+}
+
+function extractStructuredJsonText(resultText: string, schema: JsonSchema): string | null {
+  return extractJsonText(resultText, {
+    accepts: (value) => schemaAccepts(schema, value),
+  });
+}
+
+function extractDiagnosticJsonText(resultText: string): string | null {
+  return extractJsonText(resultText);
+}
+
+function schemaValidationError(schema: JsonSchema, resultText: string): string | null {
+  const jsonText = extractDiagnosticJsonText(resultText);
+  if (!jsonText) return null;
+
+  const parsed = parseJsonText(jsonText);
+  if (parsed.error) return parsed.error;
+
+  const validationError = validateJsonSchema(parsed.value, schema, "$");
+  if (validationError) return `JSON did not match schema: ${validationError}`;
+  return null;
+}
+
 export function parseStructuredOutput(
   resultText: string | undefined,
   schema: JsonSchema | undefined,
@@ -106,23 +202,24 @@ export function parseStructuredOutput(
     return { error: "Agent returned no final text to parse as JSON." };
   }
 
-  const jsonText = extractJsonFromText(resultText);
-  let value: unknown;
-  try {
-    value = JSON.parse(jsonText);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { error: `Final answer was not valid JSON: ${message}` };
-  }
-
   if (schema) {
-    const validationError = validateJsonSchema(value, schema, "$");
-    if (validationError) {
-      return { error: `JSON did not match schema: ${validationError}` };
+    const jsonText = extractStructuredJsonText(resultText, schema);
+    if (jsonText) {
+      const parsed = parseJsonText(jsonText);
+      if (parsed.error) return parsed;
+      return { value: parsed.value };
     }
+
+    const diagnosticError = schemaValidationError(schema, resultText);
+    if (diagnosticError) return { error: diagnosticError };
+
+    return { error: "Final answer was not valid JSON." };
   }
 
-  return { value };
+  const jsonText = extractJsonFromText(resultText);
+  const parsed = parseJsonText(jsonText);
+  if (parsed.error) return parsed;
+  return { value: parsed.value };
 }
 
 function validateJsonSchema(value: unknown, schema: JsonSchema, path: string): string | undefined {

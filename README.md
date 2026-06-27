@@ -111,7 +111,7 @@ Reviewer agents are selected with `--agent cursor|codex` or `defaultAgent` in `h
 }
 ```
 
-`cursor` remains the default provider. Config is provider-scoped under `agents`, so Cursor and Codex settings do not mix. Default review models are `composer-2.5` for Cursor and `gpt-5.5` for Codex. The built-in Cursor runtime fallback is `cli`; this repo's `harness.json` opts into `runtime: "sdk"` for change-review runs. Codex defaults to `modelReasoningEffort: "high"`, `sandboxMode: "read-only"`, and `approvalPolicy: "never"`. Other Codex modes are exposed for future workflows and explicit overrides.
+`cursor` remains the default provider. Config is provider-scoped under `agents`, so Cursor and Codex settings do not mix. Default review models are `composer-2.5` for Cursor and `gpt-5.5` for Codex. The built-in Cursor runtime fallback is `sdk`; use `--runtime cli` when you need the Cursor CLI subprocess path. Codex defaults to `modelReasoningEffort: "high"`, `sandboxMode: "read-only"`, and `approvalPolicy: "never"`. Other Codex modes are exposed for future workflows and explicit overrides.
 
 For Codex, harness uses the TypeScript SDK without passing a custom environment, so auth follows the local Codex CLI: run `codex login` once or provide `CODEX_API_KEY` in the environment. Use `harness models` for the harness model catalog.
 

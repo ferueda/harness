@@ -241,7 +241,7 @@ function addReviewCommand(
     .option("--handoff-stdin", "read optional handoff text from stdin", false)
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
     .option("--agent <provider>", "review agent provider: cursor or codex", parseAgentProvider)
-    .option("--runtime <runtime>", "Cursor runtime: cli or sdk (default: cli)", parseCursorRuntime)
+    .option("--runtime <runtime>", "Cursor runtime: cli or sdk (default: sdk)", parseCursorRuntime)
     .option("--cursor-wrapper <path>", "Cursor wrapper entrypoint (auto-detected)")
     .addOption(
       new Option("--cursor-agent <path>", "deprecated alias for --cursor-wrapper").hideHelp(),
