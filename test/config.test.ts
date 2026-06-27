@@ -105,7 +105,7 @@ test("resolveHarnessOptions applies provider model defaults", () => {
   const cursorWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   const cursorOptions = resolveHarnessOptions({ workspace: cursorWorkspace }, "/");
   expect(cursorOptions.agentProvider).toBe("cursor");
-  expect(cursorOptions.cursorRuntime).toBe("cli");
+  expect(cursorOptions.cursorRuntime).toBe("sdk");
   expect(cursorOptions.model).toBe("composer-2.5");
   expect(cursorOptions.modelReasoningEffort).toBeUndefined();
 
