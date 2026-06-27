@@ -12,9 +12,9 @@
 
 **`harness`** is the single repo for agent instructions, callable workflows, and the runner that orchestrates multi-agent coding workflows (review, implement, verify) across **many target repos**, with **durable execution** as the long-term goal.
 
-**Done today:** TypeScript CLI (`harness run change-review`), three-step review workflow (`implementation` → `quality` → `simplify`), multi-provider agents (Cursor SDK default, Codex SDK, legacy Cursor CLI runtime), artifact export to `<target-repo>/.harness/runs/reviews/`, user install, `harness init`, partial runs via `--steps`, handoff stdin, run pruning.
+**Done today:** TypeScript CLI (`harness run change-review`), three-step review workflow (`implementation` → `quality` → `simplify`), SDK reviewers (Cursor SDK default, Codex SDK), `*.stream.jsonl` + `events.jsonl` observability, SDK `AbortSignal` / `aborted` results, schema-aware JSON extraction, artifact export to `<target-repo>/.harness/runs/reviews/`, user install, `harness init`, partial runs via `--steps`, handoff stdin, run pruning. Legacy Cursor CLI review runtime remains until Phase E removal.
 
-**Next priorities:** SDK-first reviewer observability (`*.stream.jsonl`), SDK cancellation, Cursor CLI review-runtime removal, then `steps.json` resumability, `digestReview()`, deterministic graders, inbox triggers (Phase 1.5), and **Inngest orchestrator** (Phase 2) for durable step execution and event-driven reviews.
+**Next priorities:** Cursor CLI review-runtime removal, then `steps.json` resumability, `digestReview()`, deterministic graders, inbox triggers (Phase 1.5), and **Inngest orchestrator** (Phase 2).
 
 ---
 
@@ -210,11 +210,18 @@ Configured per target repo in `harness.json` under `agents.{cursor,codex}`.
 `<workspace>/.harness/runs/reviews/<run-id>/`:
 
 ```
-meta.json                         # run metadata, verdict, scope, step metadata, agent info
+meta.json                         # run metadata, verdict, scope, step metadata, streamArtifacts, eventsFile
 summary.md                        # human rollup (deterministic renderSummary)
+events.jsonl                      # step lifecycle timeline (non-dry-run)
 implementation-review.json
 quality-review.json
 simplify-review.json
+implementation-review.stream.jsonl
+quality-review.stream.jsonl
+simplify-review.stream.jsonl
+implementation-review.raw.json
+quality-review.raw.json
+simplify-review.raw.json
 implementation-review.prompt.md
 quality-review.prompt.md
 simplify-review.prompt.md
@@ -223,7 +230,7 @@ context/plan.md                   # if --plan provided
 context/handoff.md                # if --handoff or --handoff-stdin
 ```
 
-`meta.json` includes `WorkflowStepMetadata` (`workflow`, `requestedSteps`, `executedSteps`, `omittedSteps`, `partial`) but **not** a separate `steps.json` yet.
+`meta.json` includes `WorkflowStepMetadata` (`workflow`, `requestedSteps`, `executedSteps`, `omittedSteps`, `partial`), `streamArtifacts` (per-stage SDK stream log index), and `eventsFile` on completed/failed runs. **No** separate `steps.json` yet.
 
 ### Verification
 
@@ -255,7 +262,11 @@ pnpm check          # format, lint, typecheck, test, build smoke
 | Handoff stdin | `--handoff-stdin` |
 | Run pruning | `harness runs prune` |
 | Simplify reviewer | third step in change-review |
-| Cursor SDK runtime | default runtime via `DEFAULT_CURSOR_RUNTIME = "sdk"` |
+| Cursor SDK default runtime | `DEFAULT_CURSOR_RUNTIME = "sdk"` |
+| Schema-aware JSON extraction | PR [#33](https://github.com/ferueda/harness/pull/33) |
+| SDK stream logs | PR [#34](https://github.com/ferueda/harness/pull/34) — `streamArtifacts`, `*.stream.jsonl` |
+| Workflow step events | PR [#34](https://github.com/ferueda/harness/pull/34) — `events.jsonl`, `--verbose` |
+| SDK abort signal | PR [#36](https://github.com/ferueda/harness/pull/36) — `signal`, `aborted` result |
 
 ---
 
@@ -539,7 +550,8 @@ Each workflow exports `meta` (`name` today; extend when CLI help or dashboard ne
 | **0.6** | `steps.json` resumability; artifact schema v1 | Pending |
 | **1a** | Live `change-review` workflow + smoke test | ✅ Done |
 | **1b** | Primitives: `agent`, `aggregate`, `export`, `WorkflowContext` | ✅ Done |
-| **1b.5** | SDK stream logs, SDK cancellation, Cursor CLI review-runtime removal | Pending |
+| **1b.5** | SDK stream logs, workflow events, SDK cancellation | ✅ Done (PRs [#34](https://github.com/ferueda/harness/pull/34), [#36](https://github.com/ferueda/harness/pull/36)) |
+| **1b.6** | Cursor CLI review-runtime removal | Pending — [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md) |
 | **1c** | Deterministic grader; `REVIEW_RULES`; `digestReview()`; split schemas if useful | Pending |
 | **1.5** | Triggers: GH Action, `.harness/inbox/review.json` | Pending |
 | **2** | Inngest orchestrator in `orchestrator/`; `onFailure`; concurrency per SHA | Pending |
@@ -630,17 +642,16 @@ Add `steps.json` alongside `meta.json`:
 
 ## Next steps (ordered)
 
-1. **Add SDK stream logs** — `run.stream()` / `runStreamed()` JSONL files indexed in `meta.json`
-2. **Add SDK abort signal** — external cancellation contract for Cursor SDK and Codex SDK
-3. **Remove Cursor CLI review runtime** — keep or separately migrate ad-hoc `cursor-cli` skill
-4. **Add `steps.json` v1** — file-based resumability; align step IDs with future Inngest steps
-5. **Add `digestReview()`** — before changing quality-review prompts to consume prior review
-6. **Add one deterministic grader** (`grader:test`) with `--test-command`
-7. **Extract `runSingleReview` / `finalizeReview`** from monolithic `runReviewSteps` — prerequisite for Inngest import-lib path
-8. **Add inbox trigger** — GH Action writes `.harness/inbox/review.json`; optional watcher emits `harness/review.requested`
-9. **Add `orchestrator/`** — Inngest function per workflow; start with `change-review`
-10. **Add `onFailure` notifier** — file sink first, Slack later
-11. **Phase 2.5** — capped fix-and-re-review loop as additional Inngest function or branch
+1. **Remove Cursor CLI review runtime** — [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md); decide fate of ad-hoc `cursor-cli` skill
+2. **Add `steps.json` v1** — file-based resumability; align step IDs with `events.jsonl` / future Inngest steps
+3. **Add `digestReview()`** — before changing quality-review prompts to consume prior review
+4. **Add one deterministic grader** (`grader:test`) with `--test-command`
+5. **Parse resilience follow-ups** (todo) — [`dev/todo/260627-reviewer-json-parse-resilience.md`](../todo/260627-reviewer-json-parse-resilience.md)
+6. **Extract `runSingleReview` / `finalizeReview`** from monolithic `runReviewSteps` — prerequisite for Inngest import-lib path
+7. **Add inbox trigger** — GH Action writes `.harness/inbox/review.json`; optional watcher emits `harness/review.requested`
+8. **Add `orchestrator/`** — Inngest function per workflow; start with `change-review`
+9. **Add `onFailure` notifier** — file sink first, Slack later
+10. **Phase 2.5** — capped fix-and-re-review loop as additional Inngest function or branch
 
 ---
 
@@ -695,16 +706,16 @@ README.md
 Multi-repo agent harness with durable orchestration as north star. `harness` repo is live with `change-review` workflow, SDK-first multi-provider agents, install/init, and test coverage.
 
 ### What was worked on
-Original Phase 0 dual-review in `agent-skills`; full migration to `harness`; `change-review` with `--steps`; Cursor SDK default + Codex SDK providers; user install; handoff stdin; run pruning. Inngest orchestration model documented for Phase 2.
+Original Phase 0 dual-review in `agent-skills`; full migration to `harness`; `change-review` with `--steps`; Cursor SDK default + Codex SDK providers; schema-aware JSON extraction (PR #33); SDK stream logs + workflow events (PR #34); SDK abort signal (PR #36); user install; handoff stdin; run pruning.
 
 ### How it works today
-`harness run change-review` → `createWorkflowContext` → parallel SDK reviewer agents → deterministic `summary.md` + JSON artifacts under `.harness/runs/reviews/<run-id>/`.
+`harness run change-review` → `createWorkflowContext` → parallel SDK reviewer agents → `events.jsonl` + per-reviewer `*.stream.jsonl` → deterministic `summary.md` + JSON artifacts under `.harness/runs/reviews/<run-id>/`. External abort via `AgentRunInput.signal` returns `aborted: true` / exit `130`.
 
 ### Why Inngest next
 Local `steps.json` first (0.6), then Inngest `step.run()` (2) for cross-machine durability, event triggers, concurrency per SHA, and cheap retries on expensive LLM steps.
 
 ### Next steps
-SDK stream logs → SDK abort → Cursor CLI review-runtime removal → `steps.json` → `digestReview()` → grader → extract per-step runners → inbox → `orchestrator/` with conceptual function body above.
+Cursor CLI review-runtime removal → `steps.json` → `digestReview()` → grader → parse-resilience todo items → extract per-step runners → inbox → `orchestrator/`.
 
 ### Open items
 See [Open items](#open-items) table.
