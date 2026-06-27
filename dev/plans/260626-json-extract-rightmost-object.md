@@ -1,9 +1,12 @@
 # Plan 260626-json-extract-rightmost-object: Prefer rightmost JSON object when parsing reviewer output
 
-> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise.
+> **Archive note:** Implemented and removed from the active queue. Historical reference only — do not execute step-by-step. Next work: [`dev/plans/README.md`](./README.md).
 
 ## Status
 
+- **Status**: done (archived from active queue)
+- **Completed**: 2026-06-27
+- **Merged**: [#33](https://github.com/ferueda/harness/pull/33)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
