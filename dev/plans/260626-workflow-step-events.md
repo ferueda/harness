@@ -1,9 +1,12 @@
 # Plan 260626-workflow-step-events: Step lifecycle sink with durable events.jsonl for AI agents
 
-> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise.
+> **Archive note:** Implemented and removed from the active queue. Historical reference only — do not execute step-by-step. Next work: [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md).
 
 ## Status
 
+- **Status**: done (archived from active queue)
+- **Completed**: 2026-06-27
+- **Merged**: [#34](https://github.com/ferueda/harness/pull/34)
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
@@ -229,5 +232,5 @@ Stop if:
 ## Maintenance notes
 
 - Phase 0.6: migrate `events.jsonl` → `steps.json` or dual-write; reuse `stepId` values from this plan
-- `260627-sdk-agent-stream-logs.md` stream files: include in `outputs` on `step:end`
-- Future `cancelled` status for parallel peer abort (abort-signal plan)
+- Stream artifact paths are indexed in `meta.streamArtifacts` (shipped in PR #34); include in `outputs` on `step:end` when `steps.json` lands
+- Workflow-level `signal` cancellation can mark parallel peers `cancelled` when orchestration adds peer abort (PR #36 shipped provider `aborted` contract)
