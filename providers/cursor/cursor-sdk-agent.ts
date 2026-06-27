@@ -80,16 +80,19 @@ async function invokeCursorSdkAgent({
   const schemaResult = readOutputSchema(input);
   if (!schemaResult.ok) return schemaResult.error;
 
-  const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
-  if (signalState.isExternallyAborted()) {
-    signalState.cleanup();
+  if (input.signal?.aborted) {
     return createAbortedAgentResult();
   }
 
   const beforeStatus = readWorkspaceStatus(input.workspace);
   if (!beforeStatus.ok) {
-    signalState.cleanup();
     return beforeStatus.error;
+  }
+
+  const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
+  if (signalState.isExternallyAborted()) {
+    signalState.cleanup();
+    return createAbortedAgentResult();
   }
 
   let sdkAgent: CursorSdkAgentInstance | undefined;
