@@ -29,6 +29,13 @@ import {
 } from "./agents.ts";
 import type { AgentStreamFormat, AgentStreamLogSummary } from "./agent-stream-log.ts";
 import {
+  WORKFLOW_EVENTS_FILE,
+  createCompositeEventSink,
+  createFileEventSink,
+  noopEventSink,
+  type WorkflowEventSink,
+} from "./workflow-events.ts";
+import {
   buildDiffRef,
   buildInlinedHandoffSection,
   buildPlanRef,
@@ -63,6 +70,8 @@ type WorkflowOptions = {
   modelReasoningEffort?: AgentReasoningEffort;
   maxRuntimeMs: number;
   dryRun?: boolean;
+  eventSink?: WorkflowEventSink;
+  heartbeatMs?: number;
 };
 
 type WorkflowContextFactoryOptions = WorkflowOptions & {
@@ -203,6 +212,11 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
 
   const promptPaths: PromptArtifacts = {};
   const streamArtifacts: StreamArtifacts = {};
+  const eventSink = options.dryRun
+    ? noopEventSink
+    : options.eventSink
+      ? createCompositeEventSink(createFileEventSink(runDir), options.eventSink)
+      : createFileEventSink(runDir);
   const agentPolicyMeta = reviewPolicyOptions(reviewProvider.name, options);
   const agentMeta = {
     name: reviewProvider.name,
@@ -282,6 +296,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       ...buildTopLevelReviewFields(reviewSummaries),
       reviews: reviewSummaries,
       ...buildStreamArtifactsMeta(streamArtifacts),
+      eventsFile: WORKFLOW_EVENTS_FILE,
     };
     const meta =
       input.status === "completed"
@@ -299,6 +314,8 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
     scopeMeta,
     startedAt,
     dryRun: options.dryRun,
+    eventSink,
+    heartbeatMs: options.heartbeatMs,
     reviewConcurrency: resolvedReviewConcurrency(reviewProvider.name, options),
     aggregate: aggregateVerdict,
     reviewInfo: getReviewInfo,

@@ -42,7 +42,7 @@ Run `harness models` before choosing a non-default model or checking the SDK par
 
 ## After Results
 
-1. Read the run `summary.md`, `meta.json`, each reviewer JSON, and any `streamArtifacts` JSONL files under `.harness/runs/reviews/<run-id>/`.
+1. Read the run `summary.md`, `meta.json`, `events.jsonl` when `meta.eventsFile` is present, each reviewer JSON, and any `streamArtifacts` JSONL files under `.harness/runs/reviews/<run-id>/`.
 2. Compile every finding from every completed reviewer. Preserve failed-reviewer details separately. Completion criterion: every reviewer finding and failure is accounted for exactly once.
 3. Triage each finding as `Implement`, `Adapt`, or `Decline`. Back each decision with code-backed reasoning.
 4. Apply accepted fixes yourself after triage. Keep reviewer agents read-only.
@@ -55,5 +55,7 @@ Run `harness models` before choosing a non-default model or checking the SDK par
 - Treat `blocked` or failed reviewers as incomplete review coverage; inspect preserved successful results, then decide whether to fix the blocker or re-run.
 - Advisory findings may be declined, but only with a reason tied to scope, behavior, risk, or repo convention.
 - On reviewer failure, read `meta.json` first. If `streamArtifacts.<stage>.status` is `written`, inspect the referenced `*.stream.jsonl`.
+- For live caller feedback, run with `--verbose`; stdout remains final meta JSON, while stderr emits workflow events as JSONL.
+- Use `events.jsonl` for the step timeline, including starts, heartbeats, ends, elapsed time, and output artifact paths.
 - Use stream logs for forensics: tool activity, partial assistant output, timeout location, and SDK event order.
 - Do not use stream logs as verdict sources. Verdicts come from `*-review.json` or the final raw provider artifact.

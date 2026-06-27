@@ -9,7 +9,7 @@
 | [260626-review-stream-jsonl-logs.md](./260626-review-stream-jsonl-logs.md) | `archived` | Superseded CLI-gated stream-artifact plan |
 | [260627-sdk-agent-stream-logs.md](./260627-sdk-agent-stream-logs.md) | `done` | SDK `run.stream()` / `runStreamed()` JSONL logs + `streamArtifacts` meta |
 | [260627-remove-cursor-cli-review-runtime.md](./260627-remove-cursor-cli-review-runtime.md) | `pending` | Remove Cursor CLI runtime from harness reviews after SDK parity |
-| [260626-workflow-step-events.md](./260626-workflow-step-events.md) | `pending` | `events.jsonl` + `WorkflowEventSink` (independent) |
+| [260626-workflow-step-events.md](./260626-workflow-step-events.md) | `done` | `events.jsonl` + `WorkflowEventSink` + `--verbose` heartbeat events |
 
 ## Implementation order
 
