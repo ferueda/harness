@@ -1,6 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { importNodeSqlite } from "../../node-warnings.ts";
 import type { SessionEnvironment } from "../core/env.ts";
 import { extractWorkspacePathFromUserInfo, type WorkspacePathResult } from "./paths.ts";
 
@@ -89,7 +88,7 @@ function readMetaJson(path: string): { createdAtMs?: number; updatedAtMs?: numbe
 
 async function readStoreDbData(path: string): Promise<StoreDbData> {
   try {
-    const sqlite = await importNodeSqlite();
+    const sqlite = await import("node:sqlite");
     const db = new sqlite.DatabaseSync(path, { readOnly: true });
     try {
       const row = db.prepare("select value from meta where key = ?").get("0") as
