@@ -19,7 +19,7 @@ export const DEFAULT_AGENT_MODELS = {
   codex: "gpt-5.5",
 } as const satisfies Record<AgentProviderName, string>;
 
-export const DEFAULT_CURSOR_RUNTIME = "cli" satisfies CursorRuntime;
+export const DEFAULT_CURSOR_RUNTIME = "sdk" satisfies CursorRuntime;
 export const DEFAULT_CODEX_REASONING_EFFORT = "high" satisfies AgentReasoningEffort;
 
 export function effectiveCursorRuntime(runtime?: CursorRuntime): CursorRuntime {
