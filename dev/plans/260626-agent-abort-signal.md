@@ -1,10 +1,12 @@
 # Plan 260626-agent-abort-signal: Propagate SDK AbortSignal with caller-visible cancellation
 
-> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise.
+> **Archive note:** Implemented and removed from the active queue. Historical reference only — do not execute step-by-step. Next work: [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md).
 
 ## Status
 
-- **Status**: done
+- **Status**: done (archived from active queue)
+- **Completed**: 2026-06-27
+- **Merged**: [#36](https://github.com/ferueda/harness/pull/36)
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
@@ -264,6 +266,6 @@ Stop and report if:
 
 ## Maintenance notes
 
-- When workflow-level cancellation is added, pass its signal through `reviewProvider.run(...)` and decide how parallel peers are marked in `steps.json`.
-- If `260627-sdk-agent-stream-logs` lands first, abort cleanup must close stream writers and leave partial stream logs intact.
-- Cursor CLI cancellation should be handled only if the CLI runtime remains a supported review path.
+- Workflow-level cancellation: pass orchestrator `signal` through `reviewProvider.run(...)` when added; decide parallel peer marking in `steps.json`.
+- Stream writer cleanup on abort shipped with PR #36 (`260627-sdk-agent-stream-logs` + `260626-agent-abort-signal`).
+- Cursor CLI cancellation is out of scope unless review runtime is retained — see [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md).
