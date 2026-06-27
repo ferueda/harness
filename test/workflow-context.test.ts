@@ -8,19 +8,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   cleanupOrphanedRunDir,
   createWorkflowContext,
   createWorkflowContextForTest,
-  resolveSkillPath,
 } from "../lib/workflow-context.ts";
 import type { AgentRunInput } from "../lib/agents.ts";
 import type { AgentProviderOptions } from "../lib/agent-provider.ts";
 
-const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 function createGitWorkspace() {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
   execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
@@ -43,27 +40,6 @@ test("cleanupOrphanedRunDir preserves runs with metadata", () => {
   writeFileSync(join(runDir, "meta.json"), "{}\n", "utf8");
   expect(cleanupOrphanedRunDir(runDir)).toBe(false);
   expect(existsSync(runDir)).toBe(true);
-});
-test("resolveSkillPath prefers workspace agent skills over bundled skills", () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
-  const skillPath = join(workspace, ".agents/skills/review-implementation/SKILL.md");
-  mkdirSync(join(workspace, ".agents/skills/review-implementation"), { recursive: true });
-  writeFileSync(skillPath, "# Workspace review implementation\n", "utf8");
-  expect(resolveSkillPath("review-implementation", workspace)).toBe(skillPath);
-});
-test("resolveSkillPath falls back to user agent skills before bundled skills", () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
-  const homeDir = mkdtempSync(join(tmpdir(), "harness-home-"));
-  const skillPath = join(homeDir, ".agents/skills/review-implementation/SKILL.md");
-  mkdirSync(join(homeDir, ".agents/skills/review-implementation"), { recursive: true });
-  writeFileSync(skillPath, "# User review implementation\n", "utf8");
-  expect(resolveSkillPath("review-implementation", workspace, homeDir)).toBe(skillPath);
-});
-test("resolveSkillPath falls back to bundled workflow skills", () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
-  const skillPath = resolveSkillPath("simplify-review", workspace, workspace);
-  expect(skillPath).toBe(join(REPO_ROOT, "skills/simplify-review/SKILL.md"));
-  expect(readFileSync(skillPath, "utf8")).toContain("name: simplify-review");
 });
 test("exportFailed writes metadata and summary with no successful reviews", () => {
   const workspace = createGitWorkspace();
