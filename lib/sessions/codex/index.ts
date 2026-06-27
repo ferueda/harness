@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
+import { importNodeSqlite } from "../../node-warnings.ts";
 import type { SessionEnvironment } from "../core/env.ts";
 import { writeCodexCache } from "../core/cache.ts";
 import type { CodexSession, IndexSnapshot, WorkspacePathConfidence } from "../core/types.ts";
@@ -23,6 +23,7 @@ type CodexThreadRow = {
   agent_role?: string | null;
   agent_nickname?: string | null;
 };
+type DatabaseSync = import("node:sqlite").DatabaseSync;
 
 export async function buildCodexIndex(env: SessionEnvironment): Promise<IndexSnapshot> {
   const stateDbPath = codexStateDbPath(env);
@@ -31,7 +32,8 @@ export async function buildCodexIndex(env: SessionEnvironment): Promise<IndexSna
       `Codex state database not found at ${stateDbPath}; expected ${env.codexHome}/state_5.sqlite or ${env.codexHome}/sqlite/state_5.sqlite`,
     );
   }
-  const db = new DatabaseSync(stateDbPath, { readOnly: true });
+  const sqlite = await importNodeSqlite();
+  const db = new sqlite.DatabaseSync(stateDbPath, { readOnly: true });
   try {
     const rows = readThreadRows(db);
     const parentByChild = readSpawnEdges(db);

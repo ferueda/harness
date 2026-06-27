@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { createCursorSdkAgent, type CursorSdkAgentFactoryOptions } from "./cursor-sdk-agent.ts";
 
 const REVIEW_SCHEMA_PATH = join(
@@ -254,6 +254,38 @@ test("createCursorSdkAgent defaults to non-fast Composer 2.5", async () => {
     id: "composer-2.5",
     params: [{ id: "fast", value: "false" }],
   });
+});
+
+test("createCursorSdkAgent suppresses Cursor SDK SQLite experimental warning", async () => {
+  const workspace = createGitWorkspace();
+  const { createSdkAgent } = createFakeSdk();
+  const stderrWrites: string[] = [];
+  const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+    stderrWrites.push(String(chunk));
+    return true;
+  });
+
+  try {
+    const result = await createCursorSdkAgent({
+      apiKey: "cursor-key",
+      async createSdkAgent(options) {
+        process.emitWarning("SQLite is an experimental feature and might change at any time", {
+          type: "ExperimentalWarning",
+        });
+        return createSdkAgent(options);
+      },
+    }).run({
+      workspace,
+      prompt: "review this",
+      maxRuntimeMs: 1_000,
+    });
+
+    expect(result.ok).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(stderrWrites.join("")).not.toContain("SQLite is an experimental feature");
+  } finally {
+    writeSpy.mockRestore();
+  }
 });
 
 test("createCursorSdkAgent supports non-fast Opus 4.8 high thinking mode", async () => {

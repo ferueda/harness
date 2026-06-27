@@ -1,11 +1,12 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { importNodeSqlite } from "../../lib/node-warnings.ts";
 import type { SessionEnvironment } from "../../lib/sessions/core/env.ts";
 import type { CodexSession, CursorSession, Transcript } from "../../lib/sessions/core/types.ts";
 
 const FIXTURES = join(process.cwd(), "test/fixtures/sessions");
+const { DatabaseSync } = await importNodeSqlite();
 
 export function makeSessionEnv(): SessionEnvironment {
   const root = mkdtempSync(join(tmpdir(), "harness-sessions-"));

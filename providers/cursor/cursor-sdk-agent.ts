@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { Agent as CursorSdkAgent } from "@cursor/sdk";
 import type {
   AgentOptions as CursorSdkAgentOptions,
   ModelSelection as CursorSdkModelSelection,
@@ -10,12 +9,14 @@ import type {
 import { CURSOR_SDK_MODEL_MODES, DEFAULT_AGENT_MODELS } from "../../lib/agents.ts";
 import type { Agent, AgentRunInput, AgentRunResult, CursorSdkModelMode } from "../../lib/agents.ts";
 import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent-stream-log.ts";
+import { suppressNodeSqliteExperimentalWarning } from "../../lib/node-warnings.ts";
 import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
 
 type CreateCursorSdkAgent = (options: CursorSdkAgentOptions) => Promise<CursorSdkAgentInstance>;
 type CursorStreamPump = {
   settle(fallback: AgentStreamLogSummary | undefined): Promise<AgentStreamLogSummary | undefined>;
 };
+type CursorSdkModule = typeof import("@cursor/sdk");
 
 export type CursorSdkAgentFactoryOptions = {
   apiKey?: string;
@@ -38,7 +39,7 @@ const CURSOR_SDK_MODEL_PARAMS = {
 } satisfies Record<CursorSdkModelMode, CursorSdkModelSelection["params"]>;
 
 export function createCursorSdkAgent(options: CursorSdkAgentFactoryOptions = {}): Agent {
-  const createSdkAgent = options.createSdkAgent ?? CursorSdkAgent.create;
+  const createSdkAgent = options.createSdkAgent ?? createDefaultCursorSdkAgent;
 
   return {
     name: "cursor",
@@ -50,6 +51,20 @@ export function createCursorSdkAgent(options: CursorSdkAgentFactoryOptions = {})
       });
     },
   };
+}
+
+async function createDefaultCursorSdkAgent(
+  options: CursorSdkAgentOptions,
+): Promise<CursorSdkAgentInstance> {
+  const { Agent: CursorSdkAgent } = await importCursorSdk();
+  return CursorSdkAgent.create(options);
+}
+
+let cursorSdkModule: Promise<CursorSdkModule> | undefined;
+
+function importCursorSdk(): Promise<CursorSdkModule> {
+  cursorSdkModule ??= import("@cursor/sdk");
+  return cursorSdkModule;
 }
 
 async function invokeCursorSdkAgent({
@@ -85,6 +100,7 @@ async function invokeCursorSdkAgent({
   let timedOut = false;
   let timeout: NodeJS.Timeout | undefined;
   const startedAt = Date.now();
+  const restoreWarnings = suppressNodeSqliteExperimentalWarning();
   // maxRuntimeMs is a total budget across create, send, and wait.
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => {
@@ -221,6 +237,7 @@ async function invokeCursorSdkAgent({
   } finally {
     if (timeout) clearTimeout(timeout);
     if (sdkAgent) await safeDisposeAgent(sdkAgent);
+    restoreWarnings();
   }
 }
 
