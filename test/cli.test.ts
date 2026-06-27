@@ -20,11 +20,15 @@ import {
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HARNESS_BIN = join(REPO_ROOT, "bin/harness.ts");
 
-function runHarness(args: string[], options: { cwd?: string; input?: string } = {}) {
+function runHarness(
+  args: string[],
+  options: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv } = {},
+) {
   return spawnSync(process.execPath, [HARNESS_BIN, ...args], {
     cwd: options.cwd,
     encoding: "utf8",
     input: options.input,
+    env: options.env ? { ...process.env, ...options.env } : process.env,
   });
 }
 
@@ -969,20 +973,24 @@ test("harness run change-review dry-run reads Codex provider from harness.json",
 });
 test("harness run change-review dry-run includes bundled simplify prompt", () => {
   const workspace = createGitWorkspace();
+  const home = mkdtempSync(join(tmpdir(), "harness-home-"));
   const decoySkillPath = join(workspace, ".agents/skills/decoy-local/SKILL.md");
   mkdirSync(dirname(decoySkillPath), { recursive: true });
   writeFileSync(decoySkillPath, "# Decoy local skill\n", "utf8");
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--dry-run",
-  ]);
+  const result = runHarness(
+    [
+      "run",
+      "change-review",
+      "--workspace",
+      workspace,
+      "--base",
+      "HEAD",
+      "--head",
+      "HEAD",
+      "--dry-run",
+    ],
+    { env: { HOME: home } },
+  );
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
