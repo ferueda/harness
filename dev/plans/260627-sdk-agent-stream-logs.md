@@ -1,9 +1,12 @@
 # Plan 260627-sdk-agent-stream-logs: Write SDK agent stream logs for reviewer runs
 
-> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise.
+> **Archive note:** Implemented and removed from the active queue. Historical reference only — do not execute step-by-step. Next work: [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md).
 
 ## Status
 
+- **Status**: done (archived from active queue)
+- **Completed**: 2026-06-27
+- **Merged**: [#34](https://github.com/ferueda/harness/pull/34)
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
@@ -356,6 +359,6 @@ Stop and report if:
 
 ## Maintenance notes
 
-- `260626-workflow-step-events.md` can later reference these stream artifact paths from step events.
-- `260626-agent-abort-signal.md` should compose with stream logging so aborts close stream files and preserve partial JSONL.
-- A future CLI deprecation plan can remove or freeze `harness-cursor` separately; do not bundle that cleanup with stream logs.
+- `steps.json` (Phase 0.6) can reference `streamArtifacts` paths from step `outputs`.
+- `260626-agent-abort-signal` shipped (PR #36): abort closes stream writers and preserves partial JSONL.
+- CLI review-runtime removal: [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md).
