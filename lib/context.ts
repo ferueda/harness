@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, relative } from "node:path";
 import { assertNonEmptyHandoffText, HANDOFF_CONFLICT_ERROR } from "./handoff.ts";
@@ -61,7 +61,7 @@ export function fillTemplate(template: string, values: Record<string, string>): 
   return template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_match, key) => values[key] ?? "");
 }
 
-export function buildPlanSection(planArtifact: ContextArtifact, workspace: string): string {
+export function buildPlanRef(planArtifact: ContextArtifact, workspace: string): string {
   return buildArtifactSection(planArtifact, workspace, {
     none: "_No plan file provided._",
     missing: "_Plan file not found: `{{requested}}`_",
@@ -69,15 +69,23 @@ export function buildPlanSection(planArtifact: ContextArtifact, workspace: strin
   });
 }
 
-export function buildHandoffSection(handoffArtifact: ContextArtifact, workspace: string): string {
-  return buildArtifactSection(handoffArtifact, workspace, {
-    none: "_No handoff file provided._",
-    missing: "_Handoff file not found: `{{requested}}`_",
-    found: "Handoff file: `{{path}}`",
-  });
+export function buildInlinedHandoffSection(handoffArtifact: ContextArtifact): string {
+  if (!handoffArtifact?.requested) {
+    return "";
+  }
+  if (!handoffArtifact.path) {
+    return `## Handoff\n\n_Handoff file not found: \`${handoffArtifact.requested}\`_`;
+  }
+
+  const content = readFileSync(handoffArtifact.path, "utf8").trim();
+  if (!content) {
+    return "";
+  }
+
+  return `## Handoff\n\n${content}`;
 }
 
-export function buildDiffSection(diff: string, runDir: string, workspace: string): string {
+export function buildDiffRef(diff: string, runDir: string, workspace: string): string {
   const contextDir = join(runDir, "context");
   mkdirSync(contextDir, { recursive: true });
   const patchPath = join(contextDir, "diff.patch");
