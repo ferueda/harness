@@ -5,46 +5,47 @@ description: >-
   CLI. Use when the user asks to call, ask, invoke, run, or delegate to Cursor
   (e.g. "call cursor", "ask cursor", "invoke cursor agent"); when automating
   Cursor from scripts or agent-to-agent flows; or when the user mentions
-  `agent -p`, headless Cursor CLI, or `harness-cursor`.
+  `agent -p`, headless Cursor CLI, or `cursor-cli`.
 ---
 
 # Cursor CLI (Headless)
 
 Delegate work to a Cursor agent from the shell without the IDE chat. Use when the user wants another agent to **call, ask, invoke, or run Cursor** on a task.
 
-**Launcher:** `harness-cursor`
-
-**Harness provider:** `providers/cursor/cursor-agent.ts`
+**Launcher:** `cursor-cli` (skill-owned; not part of `harness run`)
 
 Requires `agent` on PATH. Local dev: `agent login` once. CI/servers: `CURSOR_API_KEY`.
+
+**Not for harness reviews:** use `harness run change-review --agent cursor` (Cursor SDK) for workflow reviews.
 
 ## When to use
 
 | Situation | Use this |
 |-----------|----------|
-| User says "call cursor", "ask cursor", "invoke cursor", etc. | `harness-cursor "…"` |
+| User says "call cursor", "ask cursor", "invoke cursor", etc. | `cursor-cli "…"` |
 | Already inside Cursor IDE chat | Task tool — not CLI |
+| Harness `change-review` workflow | `harness run change-review` (SDK) — not this launcher |
 | Long-lived typed service | `@cursor/sdk` |
 
 ## Quick start
 
 ```bash
 # Check auth + CLI version
-harness-cursor
+cursor-cli
 
 # Invoke (read-only by default — no file edits)
-harness-cursor "explain the backend routing"
+cursor-cli "explain the backend routing"
 
 # Allow edits
-harness-cursor --force "add a regression test for auth"
+cursor-cli --force "add a regression test for auth"
 
 # Typed JSON response
-harness-cursor \
+cursor-cli \
   --schema-json '{"type":"object","required":["verdict"],"properties":{"verdict":{"type":"string"}}}' \
   "Review auth.ts"
 
 # Continue a session
-harness-cursor --resume <session-id> "follow up"
+cursor-cli --resume <session-id> "follow up"
 ```
 
 **Caller flow:** parse stdout → check `status` → read `structuredOutput` or `result` → save `sessionId` for `--resume`.
@@ -61,7 +62,7 @@ sessionId: uuid
 durationMs: 8783
 usageSummary: 45271 in, 76 out
 result: truncated answer preview…
-help[1]: Run `harness-cursor --resume <id> "follow up"` to continue
+help[1]: Run `cursor-cli --resume <id> "follow up"` to continue
 ```
 
 With `--schema` / `--schema-json`:
@@ -79,7 +80,7 @@ Errors also go to stdout (not stderr):
 ```
 status: failed
 error: prompt is required
-help[1]: Run `harness-cursor "your task"` or --prompt-file / --stdin
+help[1]: Run `cursor-cli "your task"` or --prompt-file / --stdin
 ```
 
 Exit codes: `0` success, `1` error, `2` usage.
@@ -136,17 +137,29 @@ On success with a schema, prefer `structuredOutput` over `result`.
 
 Verify: `agent status`
 
-## Install Launcher
+## Install launcher
 
-From the harness repo:
+From the harness repo (skill path):
+
+```bash
+skills/cursor-cli/scripts/install.sh
+```
+
+Or manually:
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sf "$PWD/providers/cursor/cursor-agent.ts" ~/.local/bin/harness-cursor
-chmod +x providers/cursor/cursor-agent.ts
+ln -sf "$PWD/skills/cursor-cli/scripts/cursor-cli.ts" ~/.local/bin/cursor-cli
+chmod +x skills/cursor-cli/scripts/cursor-cli.ts
 ```
 
-Ensure `~/.local/bin` is on `PATH`.
+Direct run without install:
+
+```bash
+node skills/cursor-cli/scripts/cursor-cli.ts --help
+```
+
+Ensure `~/.local/bin` is on `PATH` when using `install.sh`.
 
 ## Raw CLI escape hatch
 
