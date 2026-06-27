@@ -1,9 +1,25 @@
+import type { AgentRunResult } from "./agents.ts";
+
 export type AgentSignalState = {
   signal: AbortSignal;
   isTimedOut(): boolean;
   isExternallyAborted(): boolean;
   cleanup(): void;
 };
+
+export type AgentAbortRace = {
+  promise: Promise<never>;
+  cleanup(): void;
+};
+
+export function createAbortedAgentResult(): AgentRunResult {
+  return {
+    ok: false,
+    error: "Agent was aborted",
+    exitCode: 130,
+    aborted: true,
+  };
+}
 
 export function createAgentSignalState(
   externalSignal: AbortSignal | undefined,
@@ -39,4 +55,19 @@ export function createAgentSignalState(
       externalSignal?.removeEventListener("abort", abortFromExternal);
     },
   };
+}
+
+export function createAgentAbortRace(signal: AbortSignal): AgentAbortRace {
+  let cleanup = () => {};
+  const promise = new Promise<never>((_, reject) => {
+    const onAbort = () => reject(new Error("abort"));
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    cleanup = () => signal.removeEventListener("abort", onAbort);
+  });
+
+  return { promise, cleanup };
 }
