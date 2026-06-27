@@ -637,6 +637,41 @@ test("createCursorSdkAgent preserves explicit abort when workspace changes", asy
   });
 });
 
+test("createCursorSdkAgent keeps partial stream logs on external abort", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "cursor.stream.jsonl");
+  const controller = new AbortController();
+  const { createSdkAgent } = createFakeSdk({
+    waitForever: true,
+    streamEvents: [{ type: "assistant", text: "partial abort" }],
+    onWait() {
+      controller.abort();
+    },
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(130);
+  expect(result.aborted).toBe(true);
+  expect(readJsonLines(logPath)[0]).toMatchObject({
+    event: { type: "assistant", text: "partial abort" },
+  });
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      status: "written",
+      path: logPath,
+    },
+  });
+});
+
 test("createCursorSdkAgent handles late wait rejection after external abort", async () => {
   const workspace = createGitWorkspace();
   const controller = new AbortController();
