@@ -7,7 +7,7 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: `dev/plans/260627-sdk-agent-stream-logs.md`, `dev/plans/260626-agent-abort-signal.md`
+- **Depends on**: `260627-sdk-agent-stream-logs` ✅, `260626-agent-abort-signal` ✅ (SDK parity for stream logs + cancellation)
 - **Category**: tech-debt
 - **Related**: SDK pivot; Cursor CLI review runtime deprecation
 
