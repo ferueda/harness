@@ -67,6 +67,28 @@ test("createAgentAbortRace rejects for already aborted signals", async () => {
   race.cleanup();
 });
 
+test("createAgentAbortRace rejects after subscribe and cleans up its listener", async () => {
+  const controller = new AbortController();
+  const addEventListener = controller.signal.addEventListener.bind(controller.signal);
+  const removeEventListener = controller.signal.removeEventListener.bind(controller.signal);
+  let abortListeners = 0;
+  controller.signal.addEventListener = ((type, listener, options) => {
+    if (type === "abort") abortListeners += 1;
+    return addEventListener(type, listener, options);
+  }) as AbortSignal["addEventListener"];
+  controller.signal.removeEventListener = ((type, listener, options) => {
+    if (type === "abort") abortListeners -= 1;
+    return removeEventListener(type, listener, options);
+  }) as AbortSignal["removeEventListener"];
+  const race = createAgentAbortRace(controller.signal);
+
+  controller.abort();
+
+  await expect(race.promise).rejects.toThrow("abort");
+  race.cleanup();
+  expect(abortListeners).toBe(0);
+});
+
 test("createAbortedAgentResult returns the shared abort contract", () => {
   expect(createAbortedAgentResult()).toEqual({
     ok: false,
