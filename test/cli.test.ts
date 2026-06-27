@@ -229,12 +229,10 @@ test("harness models prints provider model defaults", () => {
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.cursor.defaultModel).toBe("composer-2.5");
-  expect(output.cursor.models).toEqual([
-    "claude-opus-4-8-thinking-high",
-    "gpt-5.5-high",
-    "composer-2.5",
-  ]);
-  expect(output.cursor.liveListCommand).toBe("agent models");
+  expect(output.cursor.models).toEqual(["composer-2.5", "claude-opus-4-8", "gpt-5.5"]);
+  expect(output.cursor.modelsRuntime).toBe("sdk");
+  expect(output.cursor.modelsNote).toMatch(/Fixed Cursor SDK review modes/);
+  expect(output.cursor.liveListCommand).toBeUndefined();
   expect(output.codex.defaultModel).toBe("gpt-5.5");
   expect(output.codex.defaultReasoningEffort).toBe("high");
   expect(output.codex.reasoningEfforts).toContain("xhigh");
