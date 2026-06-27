@@ -332,17 +332,17 @@ Update `dev/plans/README.md` after implementation status changes.
 
 ## Done criteria
 
-- [ ] `AgentRunInput.logPath` exists.
-- [ ] `lib/agent-stream-log.ts` writes provider-tagged JSONL records and closes cleanly.
-- [ ] Cursor SDK run writes stream events through `run.stream()` and still parses final output from `run.wait()`.
-- [ ] Codex run writes `runStreamed()` events and reconstructs `Turn.finalResponse` from completed `agent_message` items.
-- [ ] Workflow passes per-stage `logPath` to every non-dry-run reviewer.
-- [ ] Completed and failed `meta.json` include `streamArtifacts`; dry-run meta omits it.
-- [ ] Stream files remain on parse failure or timeout when partial events were emitted.
-- [ ] No Cursor CLI stream-json/log-path implementation is added by this plan.
-- [ ] Targeted provider/workflow tests pass.
-- [ ] `pnpm run typecheck`, `pnpm test`, `pnpm run lint`, and `pnpm run format:check` pass.
-- [ ] `dev/plans/README.md` reflects the new plan status.
+- [x] `AgentRunInput.logPath` exists.
+- [x] `lib/agent-stream-log.ts` writes provider-tagged JSONL records and closes cleanly.
+- [x] Cursor SDK run writes stream events through `run.stream()` and still parses final output from `run.wait()`.
+- [x] Codex run writes `runStreamed()` events and reconstructs `Turn.finalResponse` from completed `agent_message` items.
+- [x] Workflow passes per-stage `logPath` to every non-dry-run reviewer.
+- [x] Completed and failed `meta.json` include `streamArtifacts`; dry-run meta omits it.
+- [x] Stream files remain on parse failure or timeout when partial events were emitted.
+- [x] No Cursor CLI stream-json/log-path implementation is added by this plan.
+- [x] Targeted provider/workflow tests pass.
+- [x] `pnpm run typecheck`, `pnpm test`, `pnpm run lint`, and `pnpm run format:check` pass.
+- [x] `dev/plans/README.md` reflects the new plan status.
 
 ## STOP conditions
 

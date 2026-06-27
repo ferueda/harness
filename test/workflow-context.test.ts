@@ -114,6 +114,7 @@ test("dry-run export writes workflow step metadata", () => {
   expect(meta.workflow).toBe("change-review");
   expect(meta.executedSteps).toEqual(["implementation"]);
   expect(meta.omittedSteps).toEqual(["quality", "simplify"]);
+  expect("streamArtifacts" in meta).toBe(false);
 });
 
 test("workflow context passes Cursor SDK runtime to provider factory", () => {
@@ -379,6 +380,115 @@ test("workflow context passes Codex review sandbox and approval defaults", async
     sandboxMode: "read-only",
     approvalPolicy: "never",
     modelReasoningEffort: "high",
+  });
+});
+
+test("workflow context passes reviewer stream log paths and exports metadata", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const calls: { input?: AgentRunInput } = {};
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProvider: "cursor",
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          calls.input = input;
+          if (!input.logPath) throw new Error("missing logPath");
+          writeFileSync(input.logPath, '{"event":"streamed"}\n', "utf8");
+          return {
+            ok: true,
+            structuredOutput: {
+              verdict: "pass",
+              summary: "ok",
+              findings: [],
+            },
+            raw: {
+              streamLog: {
+                path: input.logPath,
+                status: "written",
+                provider: "cursor",
+                format: "cursor-sdk-message",
+              },
+            },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  const review = await ctx.agent("review-implementation");
+  const meta = ctx.export({
+    title: "Change Review Summary",
+    reviews: [{ key: "implementation", title: "Implementation review", review }],
+    verdict: "pass",
+  });
+
+  const expectedPath = join(ctx.runDir, "implementation-review.stream.jsonl");
+  expect(calls.input?.logPath).toBe(expectedPath);
+  expect((meta as { streamArtifacts?: unknown }).streamArtifacts).toMatchObject({
+    implementation: {
+      path: expectedPath,
+      status: "written",
+      provider: "cursor",
+      format: "cursor-sdk-message",
+      bytes: 21,
+    },
+  });
+});
+
+test("workflow context includes stream artifacts for failed reviewers", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProvider: "codex",
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          if (!input.logPath) throw new Error("missing logPath");
+          writeFileSync(input.logPath, '{"event":"partial"}\n', "utf8");
+          return {
+            ok: false,
+            error: "review failed",
+            exitCode: 1,
+            raw: {
+              streamLog: {
+                path: input.logPath,
+                status: "written",
+                provider: "codex",
+                format: "codex-thread-event",
+              },
+            },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  await expect(ctx.agent("review-implementation")).rejects.toThrow(/review failed/);
+  const meta = ctx.exportFailed({
+    title: "Change Review Summary",
+    reviews: [],
+    failedReviews: [{ key: "implementation", stage: "implementation", error: "review failed" }],
+  });
+
+  expect((meta as { streamArtifacts?: unknown }).streamArtifacts).toMatchObject({
+    implementation: {
+      status: "written",
+      provider: "codex",
+      format: "codex-thread-event",
+    },
   });
 });
 

@@ -3,19 +3,28 @@ import {
   Codex,
   type CodexOptions,
   type RunResult,
+  type RunStreamedResult,
+  type ThreadEvent,
+  type ThreadItem,
   type ThreadOptions,
   type TurnOptions,
+  type Usage,
 } from "@openai/codex-sdk";
 import type { Agent, AgentRunInput, AgentRunResult } from "../../lib/agents.ts";
+import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent-stream-log.ts";
 
 type CodexThread = {
   id: string | null;
   run(prompt: string, turnOptions: TurnOptions): Promise<RunResult>;
+  runStreamed?(prompt: string, turnOptions: TurnOptions): Promise<RunStreamedResult>;
 };
 type CodexClient = {
   startThread(options: ThreadOptions): CodexThread;
 };
 type CodexFactory = (options: CodexOptions) => CodexClient;
+type CodexTurn = RunResult & { streamLog?: AgentStreamLogSummary };
+
+const CODEX_STREAM_SETTLE_TIMEOUT_MS = 1_000;
 
 export type CodexAgentOptions = {
   codexPathOverride?: string;
@@ -64,16 +73,36 @@ async function invokeCodexAgent(
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutReject = reject;
   });
+  let streamLog: AgentStreamLogSummary | undefined = input.logPath
+    ? {
+        path: input.logPath,
+        provider: "codex",
+        format: "codex-thread-event",
+        status: "missing",
+      }
+    : undefined;
+  let streamedTurnPromise: Promise<CodexTurn> | undefined;
 
   try {
     const codex = createCodex({
       codexPathOverride: codexPathOverride ?? process.env.CODEX_EXECUTABLE,
     });
     const thread = codex.startThread(buildThreadOptions(input));
-    const turnPromise = thread.run(input.prompt, {
+    const turnOptions = {
       outputSchema,
       signal: controller.signal,
-    });
+    } satisfies TurnOptions;
+    const turnPromise: Promise<CodexTurn> = input.logPath
+      ? (streamedTurnPromise = runCodexTurnStreamed(
+          thread,
+          input.prompt,
+          turnOptions,
+          input.logPath,
+          (summary) => {
+            streamLog = summary;
+          },
+        ))
+      : thread.run(input.prompt, turnOptions);
     const observedTurnPromise = turnPromise.catch((error) => {
       if (timedOut) return new Promise<never>(() => {});
       throw error;
@@ -97,12 +126,15 @@ async function invokeCodexAgent(
       usage: turn.usage ?? undefined,
     };
   } catch (error) {
+    if (timedOut) {
+      streamLog = await settleCodexStreamTask(streamedTurnPromise, () => streamLog);
+    }
     return {
       ok: false,
       error: timedOut
         ? `Codex agent timed out after ${input.maxRuntimeMs}ms`
         : `Codex agent failed: ${errorMessage(error)}`,
-      raw: errorArtifact(error),
+      raw: addStreamLog(errorArtifact(error), streamLog),
       exitCode: timedOut ? 124 : 1,
     };
   } finally {
@@ -134,6 +166,113 @@ function parseStructuredOutput(text: RunResult["finalResponse"]):
       error: `Codex final response was not valid JSON: ${errorMessage(error)}`,
     };
   }
+}
+
+async function runCodexTurnStreamed(
+  thread: CodexThread,
+  prompt: string,
+  turnOptions: TurnOptions,
+  logPath: string,
+  onStreamLog: (summary: AgentStreamLogSummary) => void,
+): Promise<CodexTurn> {
+  const writer = createAgentStreamWriter(logPath, {
+    provider: "codex",
+    format: "codex-thread-event",
+  });
+  const items: ThreadItem[] = [];
+  let finalResponse = "";
+  let usage: Usage | null = null;
+
+  try {
+    if (!thread.runStreamed) {
+      throw new Error("Codex SDK runStreamed unavailable");
+    }
+    const streamed = await thread.runStreamed(prompt, turnOptions);
+    for await (const event of streamed.events) {
+      writer.write(event);
+      updateCodexTurnFromEvent(
+        event,
+        items,
+        (text) => {
+          finalResponse = text;
+        },
+        (turnUsage) => {
+          usage = turnUsage;
+        },
+      );
+    }
+  } catch (error) {
+    writer.write({
+      type: "stream.error",
+      error: errorArtifact(error),
+    });
+    const streamLog = {
+      ...(await writer.close()),
+      status: "error",
+      error: errorMessage(error),
+    } satisfies AgentStreamLogSummary;
+    onStreamLog(streamLog);
+    throw error;
+  }
+
+  const streamLog = await writer.close();
+  onStreamLog(streamLog);
+  return { items, finalResponse, usage, streamLog };
+}
+
+function updateCodexTurnFromEvent(
+  event: ThreadEvent,
+  items: ThreadItem[],
+  setFinalResponse: (text: string) => void,
+  setUsage: (usage: Usage) => void,
+): void {
+  switch (event.type) {
+    case "item.completed":
+      items.push(event.item);
+      if (event.item.type === "agent_message") {
+        setFinalResponse(event.item.text);
+      }
+      return;
+    case "turn.completed":
+      setUsage(event.usage);
+      return;
+    case "turn.failed":
+      throw new Error(`Codex turn failed: ${event.error.message}`);
+    case "error":
+      throw new Error(`Codex stream failed: ${event.message}`);
+    default:
+      return;
+  }
+}
+
+async function settleCodexStreamTask(
+  streamTask: Promise<CodexTurn> | undefined,
+  fallback: () => AgentStreamLogSummary | undefined,
+): Promise<AgentStreamLogSummary | undefined> {
+  if (!streamTask) return fallback();
+
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      streamTask.then(
+        (turn) => turn.streamLog ?? fallback(),
+        () => fallback(),
+      ),
+      new Promise<AgentStreamLogSummary | undefined>((resolve) => {
+        timeout = setTimeout(() => resolve(fallback()), CODEX_STREAM_SETTLE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function addStreamLog(raw: unknown, streamLog: AgentStreamLogSummary | undefined): unknown {
+  if (!streamLog) return raw;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return { ...raw, streamLog };
+  }
+  return { raw, streamLog };
 }
 
 function errorMessage(error: unknown): string {

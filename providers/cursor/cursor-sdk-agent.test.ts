@@ -24,6 +24,10 @@ type FakeSdkOptions = {
   waitError?: Error;
   onWait?: () => void;
   waitForever?: boolean;
+  streamEvents?: unknown[];
+  streamError?: Error;
+  streamForever?: boolean;
+  supportsStream?: boolean;
 };
 
 function createGitWorkspace() {
@@ -62,6 +66,10 @@ function createFakeSdk({
   waitError,
   onWait,
   waitForever = false,
+  streamEvents = [],
+  streamError,
+  streamForever = false,
+  supportsStream = true,
 }: FakeSdkOptions = {}) {
   const calls: {
     options?: Parameters<NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]>>[0];
@@ -69,10 +77,12 @@ function createFakeSdk({
     cancelled: boolean;
     disposed: boolean;
     closed: boolean;
+    streamed: boolean;
   } = {
     cancelled: false,
     disposed: false,
     closed: false,
+    streamed: false,
   };
 
   const createSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]> = async (
@@ -90,9 +100,17 @@ function createFakeSdk({
           id: "run-123",
           requestId: "req-123",
           agentId: "agent-123",
-          supports: () => true,
-          unsupportedReason: () => undefined,
-          async *stream() {},
+          supports: (operation: string) => operation !== "stream" || supportsStream,
+          unsupportedReason: (operation: string) =>
+            operation === "stream" && !supportsStream ? "not available" : undefined,
+          async *stream() {
+            calls.streamed = true;
+            for (const event of streamEvents) {
+              yield event;
+            }
+            if (streamForever) await new Promise<never>(() => {});
+            if (streamError) throw streamError;
+          },
           async conversation() {
             return [];
           },
@@ -132,6 +150,13 @@ function createFakeSdk({
   };
 
   return { calls, createSdkAgent };
+}
+
+function readJsonLines(path: string): unknown[] {
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
 }
 
 test("createCursorSdkAgent sends wrapped prompt and parses structured output", async () => {
@@ -357,6 +382,110 @@ test("createCursorSdkAgent allows .harness artifacts", async () => {
   expect(result.ok).toBe(true);
 });
 
+test("createCursorSdkAgent mirrors Cursor SDK stream events to logPath", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "cursor.stream.jsonl");
+  const { calls, createSdkAgent } = createFakeSdk({
+    streamEvents: [{ type: "assistant", text: "draft" }],
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  expect(calls.streamed).toBe(true);
+  expect(readJsonLines(logPath)[0]).toMatchObject({
+    provider: "cursor",
+    format: "cursor-sdk-message",
+    sequence: 1,
+    event: { type: "assistant", text: "draft" },
+  });
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      path: logPath,
+      status: "written",
+      provider: "cursor",
+      format: "cursor-sdk-message",
+    },
+  });
+});
+
+test("createCursorSdkAgent keeps final parsing anchored to wait result when stream differs", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "cursor.stream.jsonl");
+  const { createSdkAgent } = createFakeSdk({
+    result: { status: "finished", result: '{"verdict":"pass"}' },
+    streamEvents: [{ type: "assistant", text: "not json" }],
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.structuredOutput).toEqual({ verdict: "pass" });
+  expect(readJsonLines(logPath)[0]).toMatchObject({
+    event: { type: "assistant", text: "not json" },
+  });
+});
+
+test("createCursorSdkAgent reports unsupported Cursor stream without failing review", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "cursor.stream.jsonl");
+  const { calls, createSdkAgent } = createFakeSdk({ supportsStream: false });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  expect(calls.streamed).toBe(false);
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      path: logPath,
+      status: "unsupported",
+      error: "not available",
+    },
+  });
+});
+
+test("createCursorSdkAgent records stream errors in raw artifacts", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "cursor.stream.jsonl");
+  const { createSdkAgent } = createFakeSdk({
+    streamEvents: [{ type: "assistant", text: "partial" }],
+    streamError: new Error("stream failed"),
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  expect(readJsonLines(logPath)).toHaveLength(2);
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      path: logPath,
+      status: "error",
+      error: "stream failed",
+    },
+  });
+});
+
 test("createCursorSdkAgent reports terminal SDK statuses", async () => {
   const workspace = createGitWorkspace();
   const errorSdk = createFakeSdk({
@@ -408,6 +537,65 @@ test("createCursorSdkAgent cancels timed-out runs", async () => {
     workspaceStatus: {
       before: "",
       after: "",
+    },
+  });
+});
+
+test("createCursorSdkAgent keeps partial stream logs on timeout", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "cursor.stream.jsonl");
+  const { createSdkAgent } = createFakeSdk({
+    waitForever: true,
+    streamEvents: [{ type: "assistant", text: "partial" }],
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(124);
+  expect(readJsonLines(logPath)[0]).toMatchObject({
+    event: { type: "assistant", text: "partial" },
+  });
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      status: "written",
+      path: logPath,
+    },
+  });
+});
+
+test("createCursorSdkAgent bounds settlement of hung streams on timeout", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "cursor.stream.jsonl");
+  const { createSdkAgent } = createFakeSdk({
+    waitForever: true,
+    streamEvents: [{ type: "assistant", text: "partial" }],
+    streamForever: true,
+  });
+
+  const startedAt = Date.now();
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1,
+  });
+
+  expect(Date.now() - startedAt).toBeLessThan(2_000);
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(124);
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      status: "written",
+      path: logPath,
+      error: expect.stringContaining("did not settle"),
     },
   });
 });

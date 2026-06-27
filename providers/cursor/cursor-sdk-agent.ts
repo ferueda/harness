@@ -9,15 +9,20 @@ import type {
 } from "@cursor/sdk";
 import { CURSOR_SDK_MODEL_MODES, DEFAULT_AGENT_MODELS } from "../../lib/agents.ts";
 import type { Agent, AgentRunInput, AgentRunResult, CursorSdkModelMode } from "../../lib/agents.ts";
+import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent-stream-log.ts";
 import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
 
 type CreateCursorSdkAgent = (options: CursorSdkAgentOptions) => Promise<CursorSdkAgentInstance>;
+type CursorStreamPump = {
+  settle(fallback: AgentStreamLogSummary | undefined): Promise<AgentStreamLogSummary | undefined>;
+};
 
 export type CursorSdkAgentFactoryOptions = {
   apiKey?: string;
   createSdkAgent?: CreateCursorSdkAgent;
 };
 
+const CURSOR_STREAM_SETTLE_TIMEOUT_MS = 1_000;
 const CURSOR_SDK_MODEL_PARAMS = {
   "composer-2.5": [{ id: "fast", value: "false" }],
   "claude-opus-4-8": [
@@ -75,6 +80,8 @@ async function invokeCursorSdkAgent({
 
   let sdkAgent: CursorSdkAgentInstance | undefined;
   let run: CursorSdkRun | undefined;
+  let streamLog: AgentStreamLogSummary | undefined;
+  let streamPump: CursorStreamPump | undefined;
   let timedOut = false;
   let timeout: NodeJS.Timeout | undefined;
   const startedAt = Date.now();
@@ -124,13 +131,18 @@ async function invokeCursorSdkAgent({
         void cancelRun(lateRun);
       },
     );
+    if (input.logPath) {
+      streamPump = startCursorStream(run, input.logPath);
+    }
     const result = await withDeadline(run.wait());
+    streamLog = await streamPump?.settle(streamLog);
 
     const raw = buildRawArtifact({
       agentId: sdkAgent.agentId,
       run,
       result,
       durationMs: Date.now() - startedAt,
+      streamLog,
     });
 
     if (result.status === "error") {
@@ -186,6 +198,7 @@ async function invokeCursorSdkAgent({
     if (timedOut && run) {
       await cancelRun(run);
     }
+    streamLog = await streamPump?.settle(streamLog);
     return withWorkspaceGuard(
       {
         ok: false,
@@ -196,6 +209,7 @@ async function invokeCursorSdkAgent({
           agentId: sdkAgent?.agentId,
           runId: run?.id,
           requestId: run?.requestId,
+          streamLog,
           error: errorArtifact(error),
           durationMs: Date.now() - startedAt,
         },
@@ -286,11 +300,13 @@ function buildRawArtifact({
   run,
   result,
   durationMs,
+  streamLog,
 }: {
   agentId: string;
   run: CursorSdkRun;
   result: CursorSdkRunResult;
   durationMs: number;
+  streamLog?: AgentStreamLogSummary;
 }) {
   return {
     agentId,
@@ -301,6 +317,7 @@ function buildRawArtifact({
     model: result.model,
     result: result.result,
     git: result.git,
+    streamLog,
   };
 }
 
@@ -385,6 +402,103 @@ async function cancelRun(run: CursorSdkRun): Promise<void> {
     await run.cancel();
   } catch {
     // Timeout handling should report the original timeout even if cancellation fails.
+  }
+}
+
+function startCursorStream(run: CursorSdkRun, logPath: string): CursorStreamPump {
+  const provider = "cursor";
+  const format = "cursor-sdk-message";
+  if (!run.supports("stream")) {
+    const unsupported = {
+      path: logPath,
+      provider,
+      format,
+      status: "unsupported",
+      error: run.unsupportedReason("stream"),
+    } satisfies AgentStreamLogSummary;
+    return { settle: async () => unsupported };
+  }
+
+  const writer = createAgentStreamWriter(logPath, { provider, format });
+  let stopped = false;
+  let closePromise: Promise<AgentStreamLogSummary> | undefined;
+  let events: AsyncGenerator<unknown, void> | undefined;
+  const closeWriter = async (
+    override?: Partial<Pick<AgentStreamLogSummary, "status" | "error">>,
+  ): Promise<AgentStreamLogSummary> => {
+    closePromise ??= writer.close();
+    return {
+      ...(await closePromise),
+      ...override,
+    };
+  };
+  const done = (async () => {
+    try {
+      events = run.stream();
+      for await (const event of events) {
+        if (stopped) break;
+        writer.write(event);
+      }
+    } catch (error) {
+      if (stopped) return closeWriter();
+      const summaryError = errorMessage(error);
+      writer.write({
+        type: "stream.error",
+        error: errorArtifact(error),
+      });
+      return closeWriter({
+        status: "error",
+        error: summaryError,
+      });
+    }
+    return closeWriter();
+  })();
+
+  return {
+    settle(fallback) {
+      return settleCursorStreamTask(done, fallback, logPath, async () => {
+        stopped = true;
+        void events?.return(undefined).catch(() => {});
+        const summary = await closeWriter();
+        return {
+          ...summary,
+          status: summary.status === "written" ? "written" : "error",
+          error: `Cursor SDK stream did not settle within ${CURSOR_STREAM_SETTLE_TIMEOUT_MS}ms`,
+        };
+      });
+    },
+  };
+}
+
+async function settleCursorStreamTask(
+  streamTask: Promise<AgentStreamLogSummary>,
+  fallback: AgentStreamLogSummary | undefined,
+  logPath: string,
+  onTimeout: () => Promise<AgentStreamLogSummary>,
+): Promise<AgentStreamLogSummary | undefined> {
+  if (fallback) return fallback;
+
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      streamTask.catch(
+        (error) =>
+          ({
+            path: logPath,
+            provider: "cursor",
+            format: "cursor-sdk-message",
+            status: "error",
+            error: errorMessage(error),
+          }) satisfies AgentStreamLogSummary,
+      ),
+      new Promise<AgentStreamLogSummary>((resolve) => {
+        timeout = setTimeout(() => {
+          void onTimeout().then(resolve);
+        }, CURSOR_STREAM_SETTLE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 

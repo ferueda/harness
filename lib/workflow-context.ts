@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -27,6 +27,7 @@ import {
   DEFAULT_CODEX_REASONING_EFFORT,
   effectiveCursorRuntime,
 } from "./agents.ts";
+import type { AgentStreamFormat, AgentStreamLogSummary } from "./agent-stream-log.ts";
 import {
   buildDiffRef,
   buildInlinedHandoffSection,
@@ -79,7 +80,17 @@ type ReviewSummaries = Record<string, ReviewSummary>;
 
 export type ReviewAgentName = keyof typeof REVIEWER_CONFIGS;
 
-type PromptArtifacts = Partial<Record<(typeof REVIEWER_CONFIGS)[ReviewAgentName]["stage"], string>>;
+type ReviewStage = (typeof REVIEWER_CONFIGS)[ReviewAgentName]["stage"];
+type PromptArtifacts = Partial<Record<ReviewStage, string>>;
+type StreamArtifact = {
+  path: string;
+  status: AgentStreamLogSummary["status"];
+  provider: AgentProviderName;
+  format: AgentStreamFormat;
+  bytes?: number;
+  error?: string;
+};
+type StreamArtifacts = Partial<Record<ReviewStage, StreamArtifact>>;
 
 type PromptContextArtifacts = {
   plan: ContextArtifact;
@@ -191,6 +202,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
   }
 
   const promptPaths: PromptArtifacts = {};
+  const streamArtifacts: StreamArtifacts = {};
   const agentPolicyMeta = reviewPolicyOptions(reviewProvider.name, options);
   const agentMeta = {
     name: reviewProvider.name,
@@ -269,6 +281,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       ...input.steps,
       ...buildTopLevelReviewFields(reviewSummaries),
       reviews: reviewSummaries,
+      ...buildStreamArtifactsMeta(streamArtifacts),
     };
     const meta =
       input.status === "completed"
@@ -293,6 +306,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       const config = REVIEWER_CONFIGS[name];
 
       const promptPath = join(runDir, config.promptFile);
+      const streamPath = join(runDir, `${config.stage}-review.stream.jsonl`);
       const prompt = fillTemplate(
         config.promptTemplate,
         buildPromptValues({
@@ -311,14 +325,29 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
         return config.dryRunReview;
       }
 
-      const result = await reviewProvider.run({
-        workspace,
-        prompt,
-        schemaPath: SCHEMA_PATH,
-        model: resolvedAgentModel(reviewProvider.name, options),
-        ...agentPolicyMeta,
-        maxRuntimeMs: options.maxRuntimeMs,
-      });
+      let result: AgentRunResult | undefined;
+      try {
+        result = await reviewProvider.run({
+          workspace,
+          prompt,
+          schemaPath: SCHEMA_PATH,
+          model: resolvedAgentModel(reviewProvider.name, options),
+          ...agentPolicyMeta,
+          maxRuntimeMs: options.maxRuntimeMs,
+          logPath: streamPath,
+        });
+      } finally {
+        recordStreamArtifact(
+          streamArtifacts,
+          config.stage,
+          streamPath,
+          reviewProvider.name,
+          result,
+        );
+      }
+      if (!result) {
+        throw new Error(`${config.stage} reviewer failed without a result`);
+      }
 
       writeJson(join(runDir, config.rawFile), rawAgentArtifact(result));
 
@@ -484,6 +513,69 @@ function buildTopLevelReviewFields(reviewSummaries: ReviewSummaries): {
     if (summary) fields[fieldName] = summary;
   }
   return fields;
+}
+
+function recordStreamArtifact(
+  artifacts: StreamArtifacts,
+  stage: ReviewStage,
+  path: string,
+  provider: AgentProviderName,
+  result: AgentRunResult | undefined,
+): void {
+  const streamLog = extractStreamLog(result?.raw);
+  const stat = fileStat(path);
+  const bytes = stat?.size;
+  const status = streamLog?.status ?? (bytes && bytes > 0 ? "written" : "missing");
+
+  artifacts[stage] = {
+    path,
+    status,
+    provider: streamLog?.provider ?? provider,
+    format: streamLog?.format ?? streamFormatForProvider(provider),
+    ...(bytes !== undefined ? { bytes } : {}),
+    ...(streamLog?.error ? { error: streamLog.error } : {}),
+  };
+}
+
+function extractStreamLog(raw: unknown): AgentStreamLogSummary | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const streamLog = (raw as { streamLog?: unknown }).streamLog;
+  if (!streamLog || typeof streamLog !== "object" || Array.isArray(streamLog)) return undefined;
+
+  const candidate = streamLog as Partial<AgentStreamLogSummary>;
+  if (
+    typeof candidate.path !== "string" ||
+    !isStreamStatus(candidate.status) ||
+    (candidate.provider !== "cursor" && candidate.provider !== "codex") ||
+    (candidate.format !== "cursor-sdk-message" && candidate.format !== "codex-thread-event")
+  ) {
+    return undefined;
+  }
+  return candidate as AgentStreamLogSummary;
+}
+
+function isStreamStatus(status: unknown): status is AgentStreamLogSummary["status"] {
+  return (
+    status === "written" || status === "missing" || status === "unsupported" || status === "error"
+  );
+}
+
+function streamFormatForProvider(provider: AgentProviderName): AgentStreamFormat {
+  return provider === "codex" ? "codex-thread-event" : "cursor-sdk-message";
+}
+
+function fileStat(path: string): { size: number } | undefined {
+  try {
+    return statSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+function buildStreamArtifactsMeta(artifacts: StreamArtifacts): {
+  streamArtifacts?: StreamArtifacts;
+} {
+  return Object.keys(artifacts).length > 0 ? { streamArtifacts: artifacts } : {};
 }
 
 function writeJson(path: string, value: unknown): void {

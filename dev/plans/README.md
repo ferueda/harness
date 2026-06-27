@@ -7,7 +7,7 @@
 | [260626-incremental-stream-json-parsing.md](./260626-incremental-stream-json-parsing.md) | `archived` | Superseded CLI subprocess NDJSON plan; do not implement for SDK review path |
 | [260626-agent-abort-signal.md](./260626-agent-abort-signal.md) | `pending` | SDK-first `AbortSignal` + caller-visible `aborted` result |
 | [260626-review-stream-jsonl-logs.md](./260626-review-stream-jsonl-logs.md) | `archived` | Superseded CLI-gated stream-artifact plan |
-| [260627-sdk-agent-stream-logs.md](./260627-sdk-agent-stream-logs.md) | `pending` | SDK `run.stream()` / `runStreamed()` JSONL logs + `streamArtifacts` meta |
+| [260627-sdk-agent-stream-logs.md](./260627-sdk-agent-stream-logs.md) | `done` | SDK `run.stream()` / `runStreamed()` JSONL logs + `streamArtifacts` meta |
 | [260627-remove-cursor-cli-review-runtime.md](./260627-remove-cursor-cli-review-runtime.md) | `pending` | Remove Cursor CLI runtime from harness reviews after SDK parity |
 | [260626-workflow-step-events.md](./260626-workflow-step-events.md) | `pending` | `events.jsonl` + `WorkflowEventSink` (independent) |
 
