@@ -12,9 +12,9 @@
 
 **`harness`** is the single repo for agent instructions, callable workflows, and the runner that orchestrates multi-agent coding workflows (review, implement, verify) across **many target repos**, with **durable execution** as the long-term goal.
 
-**Done today:** TypeScript CLI (`harness run change-review`), three-step review workflow (`implementation` → `quality` → `simplify`), SDK reviewers (Cursor SDK default, Codex SDK), `*.stream.jsonl` + `events.jsonl` observability, SDK `AbortSignal` / `aborted` results, schema-aware JSON extraction, artifact export to `<target-repo>/.harness/runs/reviews/`, user install, `harness init`, partial runs via `--steps`, handoff stdin, run pruning. Legacy Cursor CLI review runtime remains until Phase E removal.
+**Done today:** TypeScript CLI (`harness run change-review`), three-step review workflow (`implementation` → `quality` → `simplify`), SDK reviewers (Cursor SDK default, Codex SDK), `*.stream.jsonl` + `events.jsonl` observability, SDK `AbortSignal` / `aborted` results, schema-aware JSON extraction, artifact export to `<target-repo>/.harness/runs/reviews/`, user install, `harness init`, partial runs via `--steps`, handoff stdin, run pruning. Ad-hoc Cursor delegation via `skills/cursor-cli/` (`cursor-cli` launcher).
 
-**Next priorities:** Cursor CLI review-runtime removal, then `steps.json` resumability, `digestReview()`, deterministic graders, inbox triggers (Phase 1.5), and **Inngest orchestrator** (Phase 2).
+**Next priorities:** `steps.json` resumability, `digestReview()`, deterministic graders, inbox triggers (Phase 1.5), and **Inngest orchestrator** (Phase 2).
 
 ---
 
@@ -139,7 +139,7 @@ harness/
 │   ├── schemas.ts                  # Zod review output
 │   └── review-prompts.ts
 ├── providers/
-│   ├── cursor/                     # SDK runtime + legacy CLI wrapper
+│   ├── cursor/                     # Cursor SDK provider
 │   └── codex/                      # Codex SDK
 ├── schemas/review-output.schema.json
 ├── skills/                         # packaged skills (review, plan, handoff, ...)
@@ -156,7 +156,7 @@ harness init [--workspace <path>]
 harness run change-review [--workspace <path>] [--base main] [--head HEAD]
   [--plan <path>] [--handoff <path>] [--handoff-stdin]
   [--steps implementation,quality,simplify] [--agent cursor|codex]
-  [--runtime sdk] [--dry-run]       # legacy: --runtime cli
+  [--dry-run]
 harness runs prune --older-than 30d [--dry-run]
 harness skills install <skill> [--workspace <path>]
 harness models
@@ -201,7 +201,8 @@ On partial failure: `status: "failed"`, `failedReviews` in `meta.json`, successf
 |----------|---------|-------|
 | Cursor | `sdk` (default) | in-process `@cursor/sdk`; requires `CURSOR_API_KEY`; parallel reviewers; git status guard |
 | Codex | SDK | `@openai/codex-sdk`; `codex login` or `CODEX_API_KEY`; parallel reviewers |
-| Cursor | `cli` (legacy) | subprocess path through `harness-cursor`; scheduled for review-runtime removal |
+| Cursor | SDK | `providers/cursor/cursor-sdk-agent.ts` — default review provider |
+| Cursor (ad-hoc) | skill | `skills/cursor-cli/` — `cursor-cli` launcher for delegation outside harness |
 
 Configured per target repo in `harness.json` under `agents.{cursor,codex}`.
 
@@ -262,7 +263,7 @@ pnpm check          # format, lint, typecheck, test, build smoke
 | Handoff stdin | `--handoff-stdin` |
 | Run pruning | `harness runs prune` |
 | Simplify reviewer | third step in change-review |
-| Cursor SDK default runtime | `DEFAULT_CURSOR_RUNTIME = "sdk"` |
+| Cursor SDK default model | `composer-2.5` via `DEFAULT_AGENT_MODELS.cursor` |
 | Schema-aware JSON extraction | PR [#33](https://github.com/ferueda/harness/pull/33) |
 | SDK stream logs | PR [#34](https://github.com/ferueda/harness/pull/34) — `streamArtifacts`, `*.stream.jsonl` |
 | Workflow step events | PR [#34](https://github.com/ferueda/harness/pull/34) — `events.jsonl`, `--verbose` |
@@ -551,7 +552,7 @@ Each workflow exports `meta` (`name` today; extend when CLI help or dashboard ne
 | **1a** | Live `change-review` workflow + smoke test | ✅ Done |
 | **1b** | Primitives: `agent`, `aggregate`, `export`, `WorkflowContext` | ✅ Done |
 | **1b.5** | SDK stream logs, workflow events, SDK cancellation | ✅ Done (PRs [#34](https://github.com/ferueda/harness/pull/34), [#36](https://github.com/ferueda/harness/pull/36)) |
-| **1b.6** | Cursor CLI review-runtime removal | Pending — [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md) |
+| **1b.6** | Cursor CLI review-runtime removal | ✅ [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md) |
 | **1c** | Deterministic grader; `REVIEW_RULES`; `digestReview()`; split schemas if useful | Pending |
 | **1.5** | Triggers: GH Action, `.harness/inbox/review.json` | Pending |
 | **2** | Inngest orchestrator in `orchestrator/`; `onFailure`; concurrency per SHA | Pending |
@@ -642,7 +643,7 @@ Add `steps.json` alongside `meta.json`:
 
 ## Next steps (ordered)
 
-1. **Remove Cursor CLI review runtime** — [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md); decide fate of ad-hoc `cursor-cli` skill
+1. **`steps.json` resumability** — handoff Phase 0.6
 2. **Add `steps.json` v1** — file-based resumability; align step IDs with `events.jsonl` / future Inngest steps
 3. **Add `digestReview()`** — before changing quality-review prompts to consume prior review
 4. **Add one deterministic grader** (`grader:test`) with `--test-command`
@@ -715,7 +716,7 @@ Original Phase 0 dual-review in `agent-skills`; full migration to `harness`; `ch
 Local `steps.json` first (0.6), then Inngest `step.run()` (2) for cross-machine durability, event triggers, concurrency per SHA, and cheap retries on expensive LLM steps.
 
 ### Next steps
-Cursor CLI review-runtime removal → `steps.json` → `digestReview()` → grader → parse-resilience todo items → extract per-step runners → inbox → `orchestrator/`.
+`steps.json` → `digestReview()` → grader → parse-resilience todo items → extract per-step runners → inbox → `orchestrator/`.
 
 ### Open items
 See [Open items](#open-items) table.
