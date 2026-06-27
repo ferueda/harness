@@ -5,7 +5,7 @@
 | File | Status | Summary |
 | ---- | ------ | ------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `change-review`, durable orchestration (Phase 2), graders, triggers |
-| [260627-remove-cursor-cli-review-runtime.md](./260627-remove-cursor-cli-review-runtime.md) | `pending` | Remove Cursor CLI review runtime after SDK parity (stream logs + abort landed) |
+| [260627-remove-cursor-cli-review-runtime.md](./260627-remove-cursor-cli-review-runtime.md) | `pending` | Remove Cursor CLI from harness reviews; standalone `cursor-cli` launcher in `skills/cursor-cli/` |
 
 **Build next:** `260627-remove-cursor-cli-review-runtime` → then `steps.json` / graders per [handoff](./260621-agent-harness-handoff.md).
 
@@ -43,7 +43,7 @@ Historical executor steps remain in each file for reference. Do not re-run them.
 | SDK stream logs (Cursor + Codex) | ✅ PR #34 |
 | Workflow `events.jsonl` + `--verbose` | ✅ PR #34 |
 | SDK abort / `aborted` contract | ✅ PR #36 |
-| Cursor CLI review runtime removal | ⏳ `260627-remove-cursor-cli-review-runtime` |
+| Cursor CLI review runtime removal | ⏳ `260627-remove-cursor-cli-review-runtime` (reviews SDK-only; launcher → `skills/cursor-cli/scripts/cursor-cli.ts`) |
 | Parse resilience (syntax errors, structured output) | 📋 [todo](../todo/260627-reviewer-json-parse-resilience.md) |
 | `steps.json` resumability | 📋 handoff Phase 0.6 |
 
@@ -63,9 +63,13 @@ Phase E — remove legacy Cursor CLI path  ⏳ 260627-remove-cursor-cli-review-r
 
 ## Doc refresh after Phase E
 
-| Artifact | When |
-|----------|------ |
-| [README.md](../../README.md) | Remove / gate `--runtime cli` user docs |
-| [skills/cursor-cli/](../../skills/cursor-cli/) | Keep, archive, or split — Step 1 of removal plan |
+| Artifact | Action |
+|----------|--------|
+| [README.md](../../README.md) | SDK-only reviews; ad-hoc Cursor → `skills/cursor-cli/` |
+| [skills/cursor-cli/](../../skills/cursor-cli/) | Standalone `cursor-cli` binary (`scripts/cursor-cli.ts` + `lib/`); install via `scripts/install.sh` |
+| [skills/change-review-workflow/](../../skills/change-review-workflow/) + `.agents/skills/` mirror | Remove legacy `--runtime cli` guidance |
+| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | Runtime table + Phase E status |
+
+See plan Step 7 for full cleanup checklist and `rg` verification.
 
 **New plans:** `YYMMDD-short-slug.md` — reconcile here before adding.
