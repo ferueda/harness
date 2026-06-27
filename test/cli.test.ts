@@ -829,7 +829,7 @@ test("harness run change-review dry-run works through the CLI", () => {
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
-  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "cli" });
+  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "sdk" });
   expect(output.workflow).toBe("change-review");
   expect(output.requestedSteps).toEqual(["implementation", "quality", "simplify"]);
   expect(output.partial).toBe(false);
@@ -843,7 +843,7 @@ test("harness run change-review dry-run works through the CLI", () => {
   const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
   expectIndependentReviewPrompts(implementationPrompt, qualityPrompt, simplifyPrompt);
 });
-test("harness run change-review dry-run accepts Cursor SDK runtime", () => {
+test("harness run change-review dry-run accepts Cursor CLI runtime", () => {
   const workspace = createGitWorkspace();
   const result = runHarness([
     "run",
@@ -855,13 +855,13 @@ test("harness run change-review dry-run accepts Cursor SDK runtime", () => {
     "--head",
     "HEAD",
     "--runtime",
-    "sdk",
+    "cli",
     "--dry-run",
   ]);
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
-  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "sdk" });
+  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "cli" });
 });
 test("harness run change-review writes stdin handoff into run context", () => {
   const workspace = createGitWorkspace();
@@ -1010,6 +1010,8 @@ test("harness run change-review accepts positive finite runtime values", () => {
     "HEAD",
     "--head",
     "HEAD",
+    "--runtime",
+    "cli",
     "--max-runtime-ms",
     "1.5",
     "--runs-dir",
@@ -1033,6 +1035,8 @@ test("harness run change-review exits 0 when reviewers pass", () => {
     "HEAD",
     "--head",
     "HEAD",
+    "--runtime",
+    "cli",
     "--runs-dir",
     runsDir,
     "--cursor-wrapper",
@@ -1062,6 +1066,8 @@ test("harness run change-review accepts deprecated Cursor agent alias", () => {
     "HEAD",
     "--head",
     "HEAD",
+    "--runtime",
+    "cli",
     "--runs-dir",
     runsDir,
     "--cursor-agent",
@@ -1083,6 +1089,8 @@ test("harness run change-review selected steps return failed metadata when a pro
     "HEAD",
     "--head",
     "HEAD",
+    "--runtime",
+    "cli",
     "--runs-dir",
     runsDir,
     "--steps",
@@ -1147,6 +1155,8 @@ test("harness run change-review exits 1 when reviewers do not pass", () => {
     "HEAD",
     "--head",
     "HEAD",
+    "--runtime",
+    "cli",
     "--runs-dir",
     runsDir,
     "--cursor-wrapper",
