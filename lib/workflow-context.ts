@@ -369,6 +369,9 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       writeJson(join(runDir, config.rawFile), rawAgentArtifact(result));
 
       if (!result.ok) {
+        if (result.aborted) {
+          throw new Error(`Agent was aborted: ${config.stage} reviewer`);
+        }
         throw new Error(`${config.stage} reviewer failed: ${result.error}`);
       }
 
