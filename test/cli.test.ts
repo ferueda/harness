@@ -124,7 +124,7 @@ function createPromptAwareCursorAgent() {
       "process.stdin.on('data', (chunk) => chunks.push(String(chunk)));",
       "process.stdin.on('end', () => {",
       "  const prompt = chunks.join('');",
-      "  if (prompt.includes('code-quality-review/SKILL.md')) {",
+      "  if (prompt.includes('## Audit focus')) {",
       "    console.log(JSON.stringify({",
       "      status: 'completed',",
       "      structuredOutput: { verdict: 'pass', summary: 'missing findings' },",
@@ -885,6 +885,9 @@ test("harness run change-review writes stdin handoff into run context", () => {
   expect(readFileSync(join(output.runDir, "context/handoff.md"), "utf8")).toBe(
     "# Stdin handoff\n\nReview the piped text input.\n",
   );
+  const implementationPrompt = readFileSync(output.prompts.implementation, "utf8");
+  expect(implementationPrompt).toContain("## Handoff");
+  expect(implementationPrompt).toContain("Review the piped text input.");
 });
 test("harness run change-review selected-step dry-run omits unrequested prompts", () => {
   const workspace = createGitWorkspace();
@@ -969,26 +972,19 @@ test("harness run change-review dry-run reads Codex provider from harness.json",
     modelReasoningEffort: "high",
   });
 });
-test("harness run change-review dry-run includes bundled simplify prompt", () => {
+test("harness run change-review dry-run uses self-contained simplify prompt", () => {
   const workspace = createGitWorkspace();
-  const home = mkdtempSync(join(tmpdir(), "harness-home-"));
-  const decoySkillPath = join(workspace, ".agents/skills/decoy-local/SKILL.md");
-  mkdirSync(dirname(decoySkillPath), { recursive: true });
-  writeFileSync(decoySkillPath, "# Decoy local skill\n", "utf8");
-  const result = runHarness(
-    [
-      "run",
-      "change-review",
-      "--workspace",
-      workspace,
-      "--base",
-      "HEAD",
-      "--head",
-      "HEAD",
-      "--dry-run",
-    ],
-    { env: { HOME: home } },
-  );
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--dry-run",
+  ]);
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
@@ -998,8 +994,8 @@ test("harness run change-review dry-run includes bundled simplify prompt", () =>
 
   const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
-  expect(simplifyPrompt).toContain(`- \`${join(REPO_ROOT, "skills/simplify-review/SKILL.md")}\``);
-  expect(simplifyPrompt).not.toContain(decoySkillPath);
+  expect(simplifyPrompt).toContain("Prefer explicit, boring code");
+  expect(simplifyPrompt).not.toContain("SKILL.md");
   expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
 });
 test("harness run change-review accepts positive finite runtime values", () => {
