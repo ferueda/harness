@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -29,9 +28,9 @@ import {
   effectiveCursorRuntime,
 } from "./agents.ts";
 import {
-  buildDiffSection,
-  buildHandoffSection,
-  buildPlanSection,
+  buildDiffRef,
+  buildInlinedHandoffSection,
+  buildPlanRef,
   buildRunId,
   fillTemplate,
   prepareGitScope,
@@ -41,7 +40,7 @@ import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
   SIMPLIFY_REVIEW_PROMPT,
-} from "./review-prompts.ts";
+} from "./prompts/index.ts";
 import type { ContextArtifact } from "./context.ts";
 import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schemas.ts";
 
@@ -101,7 +100,6 @@ const DRY_RUN_REVIEW = {
 
 const REVIEWER_CONFIGS = {
   "review-implementation": {
-    skillName: "review-implementation",
     title: "Implementation review",
     summaryKey: "implementation",
     promptTemplate: IMPLEMENTATION_REVIEW_PROMPT,
@@ -112,7 +110,6 @@ const REVIEWER_CONFIGS = {
     stage: "implementation",
   },
   "code-quality-review": {
-    skillName: "code-quality-review",
     title: "Code quality review",
     summaryKey: "codeQuality",
     promptTemplate: QUALITY_REVIEW_PROMPT,
@@ -123,7 +120,6 @@ const REVIEWER_CONFIGS = {
     stage: "quality",
   },
   simplify: {
-    skillName: "simplify-review",
     title: "Simplify review",
     summaryKey: "simplify",
     promptTemplate: SIMPLIFY_REVIEW_PROMPT,
@@ -158,7 +154,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
   let contextArtifacts: PromptContextArtifacts;
   let scope: Scope;
   let scopeMeta: ScopeMeta;
-  let diffSection: string;
+  let diffRef: string;
   try {
     mkdirSync(runDir, { recursive: true });
 
@@ -188,7 +184,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       handoffText: options.handoffText,
     });
 
-    diffSection = buildDiffSection(scope.diff, runDir, workspace);
+    diffRef = buildDiffRef(scope.diff, runDir, workspace);
   } catch (error) {
     cleanupOrphanedRunDir(runDir);
     throw error;
@@ -301,11 +297,10 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
         config.promptTemplate,
         buildPromptValues({
           scope,
-          diffSection,
+          diffRef,
           workspace,
           contextArtifacts,
           agentName: name,
-          skillPath: resolveSkillPath(config.skillName, workspace),
         }),
       );
       writeFileSync(promptPath, prompt, "utf8");
@@ -415,31 +410,27 @@ function buildScopeMeta(scope: Scope) {
 
 function buildPromptValues({
   scope,
-  diffSection,
+  diffRef,
   workspace,
   contextArtifacts,
   agentName,
-  skillPath,
 }: {
   scope: Scope;
-  diffSection: string;
+  diffRef: string;
   workspace: string;
   contextArtifacts: PromptContextArtifacts;
   agentName: ReviewAgentName;
-  skillPath: string;
 }): Record<string, string> {
   return {
     BASE_REF: scope.baseRef,
     HEAD_REF: scope.headRef,
-    MERGE_BASE: scope.mergeBase,
-    HEAD_SHA: scope.headSha,
-    PLAN_SECTION:
+    DIFF_RANGE: `${scope.mergeBase}..${scope.headSha}`,
+    PLAN_REF:
       agentName === "review-implementation"
-        ? buildPlanSection(contextArtifacts.plan, workspace)
+        ? buildPlanRef(contextArtifacts.plan, workspace)
         : "",
-    HANDOFF_SECTION: buildHandoffSection(contextArtifacts.handoff, workspace),
-    DIFF_SECTION: diffSection,
-    SKILL_PATH: skillPath,
+    HANDOFF_SECTION: buildInlinedHandoffSection(contextArtifacts.handoff),
+    DIFF_REF: diffRef,
   };
 }
 
@@ -458,23 +449,6 @@ function parseReviewerOutput(stage: string, structuredOutput: unknown): ReviewOu
 function rawAgentArtifact(result: AgentRunResult): unknown {
   if (result.ok || result.raw !== undefined) return result.raw;
   return { error: result.error };
-}
-
-export function resolveSkillPath(
-  skillName: string,
-  workspace: string,
-  homeDir = homedir(),
-): string {
-  const candidates = [
-    join(workspace, ".agents/skills", skillName, "SKILL.md"),
-    join(homeDir, ".agents/skills", skillName, "SKILL.md"),
-    join(HARNESS_ROOT, "skills", skillName, "SKILL.md"),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  throw new Error(`Skill not found: ${skillName}`);
 }
 
 function summarizeReview(review: ReviewSection["review"]): {
