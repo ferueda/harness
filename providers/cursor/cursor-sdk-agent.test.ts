@@ -140,7 +140,7 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
     workspace,
     prompt: "review this",
     schemaPath,
-    model: "gpt-5.5-high",
+    model: "gpt-5.5",
     maxRuntimeMs: 1_000,
   });
 
@@ -150,7 +150,14 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
   expect(result.sessionId).toBe("agent-123");
   expect(calls.options).toMatchObject({
     apiKey: "cursor-key",
-    model: { id: "gpt-5.5-high", params: [{ id: "fast", value: "false" }] },
+    model: {
+      id: "gpt-5.5",
+      params: [
+        { id: "context", value: "272k" },
+        { id: "reasoning", value: "high" },
+        { id: "fast", value: "false" },
+      ],
+    },
     mode: "agent",
     local: {
       cwd: workspace,
@@ -164,7 +171,7 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
   expect(calls.closed).toBe(false);
 });
 
-test("createCursorSdkAgent disables fast mode for SDK model selections", async () => {
+test("createCursorSdkAgent defaults to non-fast Composer 2.5", async () => {
   const workspace = createGitWorkspace();
   const { calls, createSdkAgent } = createFakeSdk();
 
@@ -183,6 +190,56 @@ test("createCursorSdkAgent disables fast mode for SDK model selections", async (
     params: [{ id: "fast", value: "false" }],
   });
 });
+
+test("createCursorSdkAgent supports non-fast Opus 4.8 high thinking mode", async () => {
+  const workspace = createGitWorkspace();
+  const { calls, createSdkAgent } = createFakeSdk();
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+  }).run({
+    workspace,
+    prompt: "review this",
+    model: "claude-opus-4-8",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  expect(calls.options?.model).toEqual({
+    id: "claude-opus-4-8",
+    params: [
+      { id: "thinking", value: "true" },
+      { id: "effort", value: "high" },
+      { id: "fast", value: "false" },
+    ],
+  });
+});
+
+test.each(["claude-opus-4-8-thinking-high", "gpt-5.5-high"])(
+  "createCursorSdkAgent rejects unsupported SDK model mode %s",
+  async (model) => {
+    const workspace = createGitWorkspace();
+    const { calls, createSdkAgent } = createFakeSdk();
+
+    const result = await createCursorSdkAgent({
+      apiKey: "cursor-key",
+      createSdkAgent,
+    }).run({
+      workspace,
+      prompt: "review this",
+      model,
+      maxRuntimeMs: 1_000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe(
+      `Unsupported Cursor SDK model: ${model}. Use one of: composer-2.5, claude-opus-4-8, gpt-5.5. For Cursor CLI model IDs, use --runtime cli.`,
+    );
+    expect(calls.options).toBeUndefined();
+  },
+);
 
 test("createCursorSdkAgent requires an API key", async () => {
   const workspace = createGitWorkspace();
