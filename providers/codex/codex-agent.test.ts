@@ -501,6 +501,61 @@ test("createCodexAgent keeps partial stream logs on timeout", async () => {
   });
 });
 
+test("createCodexAgent keeps partial stream logs on external abort", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const logPath = join(workspace, ".harness", "codex.stream.jsonl");
+  const controller = new AbortController();
+  const codexFactory = () => ({
+    startThread() {
+      return {
+        id: "thread-abort",
+        async run() {
+          throw new Error("run should not be used when logPath is set");
+        },
+        async runStreamed(_prompt: string, turnOptions: TurnOptions) {
+          return {
+            events: (async function* () {
+              yield {
+                type: "item.completed",
+                item: { id: "message-1", type: "agent_message", text: '{"partial":true}' },
+              } satisfies ThreadEvent;
+              queueMicrotask(() => controller.abort());
+              await new Promise<void>((resolve) => {
+                turnOptions.signal?.addEventListener("abort", () => resolve(), { once: true });
+              });
+            })(),
+          };
+        },
+      };
+    },
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(130);
+  expect(result.aborted).toBe(true);
+  expect(readJsonLines(logPath)[0]).toMatchObject({
+    event: {
+      type: "item.completed",
+      item: { type: "agent_message", text: '{"partial":true}' },
+    },
+  });
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      status: "written",
+      path: logPath,
+    },
+  });
+});
+
 test("createCodexAgent observes delayed run rejection after timeout", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
   const unhandledRejections: unknown[] = [];
