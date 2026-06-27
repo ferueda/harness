@@ -307,7 +307,7 @@ test.each(["claude-opus-4-8-thinking-high", "gpt-5.5-high"])(
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toBe(
-      `Unsupported Cursor SDK model: ${model}. Use one of: composer-2.5, claude-opus-4-8, gpt-5.5. For Cursor CLI model IDs, use --runtime cli.`,
+      `Unsupported Cursor SDK model: ${model}. Use one of: composer-2.5, claude-opus-4-8, gpt-5.5.`,
     );
     expect(calls.options).toBeUndefined();
   },
