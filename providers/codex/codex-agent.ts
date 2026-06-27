@@ -12,6 +12,7 @@ import {
 } from "@openai/codex-sdk";
 import type { Agent, AgentRunInput, AgentRunResult } from "../../lib/agents.ts";
 import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent-stream-log.ts";
+import { createAgentSignalState } from "../../lib/agent-signals.ts";
 
 type CodexThread = {
   id: string | null;
@@ -62,16 +63,21 @@ async function invokeCodexAgent(
     };
   }
 
-  const controller = new AbortController();
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-    timeoutReject?.(new Error("timeout"));
-  }, input.maxRuntimeMs);
-  let timeoutReject: ((error: Error) => void) | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutReject = reject;
+  const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
+  if (signalState.isExternallyAborted()) {
+    signalState.cleanup();
+    return abortedResult();
+  }
+
+  let removeAbortListener: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    const onAbort = () => reject(new Error("abort"));
+    if (signalState.signal.aborted) {
+      onAbort();
+      return;
+    }
+    signalState.signal.addEventListener("abort", onAbort, { once: true });
+    removeAbortListener = () => signalState.signal.removeEventListener("abort", onAbort);
   });
   let streamLog: AgentStreamLogSummary | undefined = input.logPath
     ? {
@@ -90,7 +96,7 @@ async function invokeCodexAgent(
     const thread = codex.startThread(buildThreadOptions(input));
     const turnOptions = {
       outputSchema,
-      signal: controller.signal,
+      signal: signalState.signal,
     } satisfies TurnOptions;
     const turnPromise: Promise<CodexTurn> = input.logPath
       ? (streamedTurnPromise = runCodexTurnStreamed(
@@ -104,10 +110,10 @@ async function invokeCodexAgent(
         ))
       : thread.run(input.prompt, turnOptions);
     const observedTurnPromise = turnPromise.catch((error) => {
-      if (timedOut) return new Promise<never>(() => {});
+      if (signalState.signal.aborted) return new Promise<never>(() => {});
       throw error;
     });
-    const turn = await Promise.race([observedTurnPromise, timeoutPromise]);
+    const turn = await Promise.race([observedTurnPromise, abortPromise]);
     const structuredOutput = parseStructuredOutput(turn.finalResponse);
     if (!structuredOutput.ok) {
       return {
@@ -126,20 +132,33 @@ async function invokeCodexAgent(
       usage: turn.usage ?? undefined,
     };
   } catch (error) {
-    if (timedOut) {
+    if (signalState.signal.aborted) {
       streamLog = await settleCodexStreamTask(streamedTurnPromise, () => streamLog);
     }
     return {
       ok: false,
-      error: timedOut
+      error: signalState.isExternallyAborted()
+        ? "Agent was aborted"
+        : signalState.isTimedOut()
         ? `Codex agent timed out after ${input.maxRuntimeMs}ms`
         : `Codex agent failed: ${errorMessage(error)}`,
       raw: addStreamLog(errorArtifact(error), streamLog),
-      exitCode: timedOut ? 124 : 1,
+      exitCode: signalState.isExternallyAborted() ? 130 : signalState.isTimedOut() ? 124 : 1,
+      ...(signalState.isExternallyAborted() ? { aborted: true } : {}),
     };
   } finally {
-    clearTimeout(timeout);
+    removeAbortListener?.();
+    signalState.cleanup();
   }
+}
+
+function abortedResult(): AgentRunResult {
+  return {
+    ok: false,
+    error: "Agent was aborted",
+    exitCode: 130,
+    aborted: true,
+  };
 }
 
 function buildThreadOptions(input: AgentRunInput): ThreadOptions {
