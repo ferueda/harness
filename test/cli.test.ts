@@ -260,6 +260,7 @@ test("harness run change-review help exits cleanly", () => {
   expect(result.stdout).not.toMatch(/--cursor-agent/);
   expect(result.stdout).toMatch(/--steps/);
   expect(result.stdout).toMatch(/--dry-run/);
+  expect(result.stdout).toMatch(/--verbose/);
 });
 test("harness run rejects removed review commands", () => {
   for (const workflow of ["review", "review-full"]) {
@@ -1053,6 +1054,47 @@ test("harness run change-review exits 0 when reviewers pass", () => {
   expect(output.reviews.implementation.verdict).toBe("pass");
   expect(output.reviews.codeQuality.verdict).toBe("pass");
   expect(output.reviews.simplify.verdict).toBe("pass");
+});
+test("harness run change-review verbose emits JSONL events on stderr only", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--base",
+    "HEAD",
+    "--head",
+    "HEAD",
+    "--runtime",
+    "cli",
+    "--runs-dir",
+    runsDir,
+    "--cursor-wrapper",
+    createFakeCursorAgent({ reviewVerdict: "pass" }),
+    "--verbose",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("completed");
+  expect(output.eventsFile).toBe("events.jsonl");
+
+  const events = result.stderr
+    .split("\n")
+    .filter(Boolean)
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line));
+  expect(events[0]).toMatchObject({ type: "run:start", runId: output.runId });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "step:start",
+      stepId: "review-implementation",
+      cliStep: "implementation",
+    }),
+  );
+  expect(events.at(-1)).toMatchObject({ type: "run:end", runId: output.runId });
 });
 test("harness run change-review accepts deprecated Cursor agent alias", () => {
   const workspace = createGitWorkspace();

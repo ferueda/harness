@@ -57,7 +57,7 @@ Optional pre-parse repair (e.g. escape control chars inside strings, `jsonrepair
 
 ### 5. Provider structured output
 
-_See **option 9** for gnhf-aligned detail and priority. Short form: use Cursor SDK / API native JSON-schema or structured-output mode when available for reviewer calls.
+See **option 9** for detail and priority. Short form: use Cursor SDK native schema/structured-output support if available, and keep Codex `outputSchema` on reviewer calls.
 
 ### 6. Regression tests
 
@@ -68,27 +68,25 @@ _See **option 9** for gnhf-aligned detail and priority. Short form: use Cursor S
 | ---- | ---- |
 | Locks diagnostic quality | Tests only; no runtime fix |
 
-### 7. Two-phase parse (gnhf `parseOpenCodeOutput` pattern)
-
-Mirror rovodev/opencode/copilot in gnhf (`../gnhf/src/core/agents/opencode.ts`):
+### 7. Two-phase parse
 
 1. `parseAgentJson(text, accepts=schemaValid)` — schema-aware rightmost extraction
 2. If null → `parseAgentJson(text)` without accepts → run full schema validation on result
 
-Today harness `schemaValidationError` already does an unfiltered extract for diagnostics, but the **error message** can still be a nested-object schema miss instead of the original syntax failure. Align steps 1–2 with gnhf so phase-2 failures read like `findings[1].issue: expected string` or `verdict is required`, not a spurious nested fragment.
+Today harness `schemaValidationError` already does an unfiltered extract for diagnostics, but the **error message** can still be a nested-object schema miss instead of the original syntax failure. Align steps 1–2 so phase-2 failures read like `findings[1].issue: expected string` or `verdict is required`, not a spurious nested fragment.
 
 | Pros | Cons |
 | ---- | ---- |
 | Clearer errors when something parses but is wrong shape | Does not fix invalid syntax with no parseable top-level object |
-| Matches proven gnhf integration pattern | Small refactor of `parseStructuredOutput` failure paths |
+| Matches the existing parser direction | Small refactor of `parseStructuredOutput` failure paths |
 
-### 8. Parse-failure debug sample (gnhf `rovodev:output:parse-error`)
+### 8. Parse-failure debug sample
 
 On `parseStructuredOutput` failure, attach to review artifact / meta:
 
 - `parseError` (primary message)
 - `resultTextLength`
-- `resultTextSample` (first ~512 chars, same as gnhf)
+- `resultTextSample` (first ~512 chars)
 
 Harness already persists SDK `raw.result` on failure; surfacing a sample in workflow meta (or `*.review.json` error field) avoids digging into `.raw.json` during triage.
 
@@ -96,25 +94,29 @@ Harness already persists SDK `raw.result` on failure; surfacing a sample in work
 | ---- | ---- |
 | Fast incident diagnosis | Slightly larger review artifacts |
 
-### 9. Provider-native structured output (gnhf primary path)
+### 9. Provider-native structured output
 
-gnhf treats text extraction as **fallback only**. Primary paths:
+Treat text extraction as **fallback only** where SDK support allows.
 
-| gnhf agent | Mechanism |
+| Provider | Target mechanism |
 | ---------- | --------- |
-| Claude | `--json-schema` → `structured_output` on result event |
-| Codex | `--output-schema` file |
-| OpenCode | API `json_schema` + `retryCount: 1`; prefer SSE `structured` over text |
+| Cursor SDK | Prefer native JSON-schema / structured output if exposed by the installed SDK; otherwise keep prompt wrapping + parser fallback |
+| Codex SDK | Keep `outputSchema`; after stream logging, preserve it on `runStreamed()` turn options |
 
-Harness spike: Cursor SDK / CLI equivalents for reviewer calls so `parseStructuredOutput` is rarely exercised in production. OpenCode-style **`retryCount: 1` at the provider** is the closest analogue to harness option 3 without a full change-review re-run.
+Harness spike: Cursor SDK equivalent for reviewer calls so `parseStructuredOutput` is rarely exercised in production. A provider-level **single retry** on schema/syntax failure is the closest analogue to harness option 3 without a full change-review re-run.
 
 | Pros | Cons |
 | ---- | ---- |
-| Eliminates prose, fences, and most syntax errors at source | API support varies by runtime; CLI may stay text-only |
+| Eliminates prose, fences, and most syntax errors at source | Cursor SDK support must be verified; text fallback may remain necessary |
 
 ### 10. Runtime capability matrix (document + enforce)
 
-Document per provider whether reviewers use **native structured output** or **text + `parseStructuredOutput`**. Fail fast or warn when a runtime is text-only and reviewers depend on strict JSON (gnhf effectively does this by agent-specific code paths).
+Document the SDK provider parse path:
+
+- Cursor SDK: native structured-output spike vs `parseStructuredOutput` on `RunResult.result`.
+- Codex SDK: `outputSchema` on turn options plus `finalResponse` parsing; stream events remain for forensics, not verdict extraction.
+
+Fail fast or warn when a provider path is text-only and reviewers depend on strict JSON.
 
 | Pros | Cons |
 | ---- | ---- |
@@ -122,35 +124,34 @@ Document per provider whether reviewers use **native structured output** or **te
 
 ---
 
-## GNHF reference (what they do / what we skip)
+## Alignment notes
 
 **Adopt or align**
 
-- `json-extract.ts` rightmost + `accepts` — already in harness `schema.ts` (PR #33).
 - Two-phase parse + validation errors (option 7).
 - Parse-failure log sample (option 8).
 - Native structured output as primary path (option 9).
-- Provider-level retry before workflow retry (OpenCode `retryCount: 1`).
+- Provider-level retry before workflow retry.
 
 **Skip or defer (different shape)**
 
-- **ACP `lastOutputMessage` vs `outputBuf`** — gnhf splits streaming assistant messages at tool-call boundaries before parsing. Harness reviewers are one-shot final-text calls; only relevant if we add incremental/stream parsing for review steps.
-- **`toStringArray` post-parse tolerance** — gnhf normalizes `key_learnings` when the model returns a JSON string instead of an array. Review output uses Zod/`ReviewOutputSchema`; type coercion belongs there if needed, not in JSON extraction.
-- **Orchestrator iteration retry** — gnhf re-runs the whole agent iteration on throw. Harness `change-review` should use a **single targeted re-prompt** on parse failure (option 3), not a full workflow restart.
+- Streaming assistant buffers as a parsing source — SDK stream logs are for forensics, not verdict extraction.
+- Post-parse type coercion — review output uses Zod/`ReviewOutputSchema`; type coercion belongs there if needed, not in JSON extraction.
+- Whole-workflow retry — harness `change-review` should use a **single targeted re-prompt** on parse failure (option 3), not a full workflow restart.
 
 ---
 
 ## Recommendations (priority order)
 
-1. **Spike — structured output (option 9):** Highest leverage per gnhf; text extraction stays as fallback. Check Cursor SDK + CLI for JSON-schema-enforced final answers on reviewer invocations.
+1. **Spike — structured output (option 9):** Highest leverage; text extraction stays as fallback. Check Cursor SDK for JSON-schema-enforced final answers on reviewer invocations; keep Codex `outputSchema`.
 2. **Do first — diagnostics (option 2):** Report full-text `JSON.parse` failure before nested extraction. Low risk, immediate debug value.
-3. **Do first — prompt (option 1):** One line in `wrapPrompt` about escaped newlines. Cheap hedge (gnhf prompt says JSON-only but does not mention control chars either).
-4. **Do next — two-phase parse (option 7):** Port gnhf's explicit phase-1/phase-2 error semantics into `parseStructuredOutput`.
+3. **Do first — prompt (option 1):** One line in `wrapPrompt` about escaped newlines. Cheap hedge.
+4. **Do next — two-phase parse (option 7):** Add explicit phase-1/phase-2 error semantics into `parseStructuredOutput`.
 5. **Do next — tests (option 6):** Regression for malformed finding strings + misleading error message.
 6. **Do next — debug sample (option 8):** Expose `resultTextSample` on parse failure in review meta.
 7. **Consider — retry (option 3):** Provider-level first (`retryCount: 1` style), then change-review step retry on syntax error only. Good ROI (manual re-run already passed).
 8. **Document — runtime matrix (option 10):** Which paths are native vs text-parse.
-9. **Defer — repair (option 4):** gnhf does not repair invalid JSON either; only consider if structured output + retries are insufficient.
+9. **Defer — repair (option 4):** Only consider if structured output + retries are insufficient.
 
 ---
 
@@ -164,4 +165,4 @@ Document per provider whether reviewers use **native structured output** or **te
 ## Out of scope
 
 - Changing rightmost / schema-aware extraction semantics (already shipped).
-- CLI parallel spawn failures (~2s empty `resultText`) — separate issue; mitigated by SDK default runtime.
+- Legacy Cursor CLI parallel spawn failures — separate issue; mitigated by SDK default runtime and future CLI review-runtime removal.

@@ -58,6 +58,7 @@ export type AgentRunInput = {
   approvalPolicy?: AgentApprovalPolicy;
   modelReasoningEffort?: AgentReasoningEffort;
   maxRuntimeMs: number;
+  logPath?: string;
 };
 
 export type AgentRunResult =

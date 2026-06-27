@@ -1,187 +1,268 @@
-# Plan 260626-agent-abort-signal: Propagate AbortSignal with caller-visible cancellation
+# Plan 260626-agent-abort-signal: Propagate SDK AbortSignal with caller-visible cancellation
 
 > **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise.
 
 ## Status
 
-- **Priority**: P1
+- **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: none (integrate with `260626-incremental-stream-json-parsing.md` `runAgent` if landed)
+- **Depends on**: none
 - **Category**: dx
-- **Source**: GNHF adoption item #3
-- **Revised**: 2026-06-26 — round 2: wrapper envelope `aborted`; precedence vs timeout; explicit out-of-scope CLI/workflow wiring
+- **Revised**: 2026-06-27 — SDK-first cancellation; Cursor CLI subprocess kill-tree work removed from this plan
+- **Related**: `dev/plans/260627-sdk-agent-stream-logs.md`
 
 ## Why this matters
 
-Harness has no `AbortSignal` on `Agent.run()`. The **AI agent caller** that runs `harness run change-review` cannot cancel a long review gracefully. Timeouts kill processes but cancellation is indistinguishable from reviewer failure in `meta.json` / stdout.
+Harness has no external `AbortSignal` on `Agent.run()`. Timeouts exist, but a caller cannot intentionally cancel a long SDK reviewer and receive a clear cancellation result. Since `change-review` now defaults to SDK providers, the useful cancellation primitive is provider-level cancellation: Cursor SDK `run.cancel()` and Codex SDK `signal` on `runStreamed()` / `run()`.
 
-GNHF wires abort to child kill and uses `activeAbortController` per iteration. Harness needs the same primitive **plus** a caller-visible contract and **nested** process cleanup (wrapper → real `agent` CLI).
+This plan makes providers abort-ready and standardizes the result contract. It does not implement full CLI SIGINT handling or legacy Cursor CLI subprocess cleanup.
 
-## Caller-visible contract (required)
+## Current state
 
-When a run or reviewer is aborted (future workflow wiring; provider must support now):
+- `lib/agents.ts` — `AgentRunInput` has `maxRuntimeMs`, but no caller-provided `signal`; failed results have no `aborted` flag.
+- `providers/cursor/cursor-sdk-agent.ts` — has timeout logic and calls `run.cancel()` when a run times out.
+- `providers/codex/codex-agent.ts` — creates an internal `AbortController`, passes `signal` to `thread.run(...)`, and maps timeout to exit `124`.
+- `lib/workflow-context.ts` — calls `reviewProvider.run(...)` without a signal and throws generic `<stage> reviewer failed: ...` errors.
+- `lib/cursor-agent.ts` and `providers/cursor/cursor-agent.ts` still support Cursor CLI runtime, but SDK cancellation is the production path.
+
+Relevant current excerpts:
+
+```ts
+// lib/agents.ts
+export type AgentRunInput = {
+  workspace: string;
+  prompt: string;
+  schemaPath?: string;
+  model?: string;
+  sandboxMode?: AgentSandboxMode;
+  approvalPolicy?: AgentApprovalPolicy;
+  modelReasoningEffort?: AgentReasoningEffort;
+  maxRuntimeMs: number;
+};
+```
+
+```ts
+// providers/cursor/cursor-sdk-agent.ts
+if (timedOut && run) {
+  await cancelRun(run);
+}
+```
+
+```ts
+// providers/codex/codex-agent.ts
+const controller = new AbortController();
+const timeout = setTimeout(() => {
+  timedOut = true;
+  controller.abort();
+  timeoutReject?.(new Error("timeout"));
+}, input.maxRuntimeMs);
+```
+
+## Caller-visible contract
+
+When a provider is cancelled by an external caller signal:
 
 | Field | Value |
 |-------|-------|
 | `AgentRunResult` | `ok: false`, `aborted: true`, `error: "Agent was aborted"`, `exitCode: 130` |
-| `failedReviews[].error` | Include `"aborted"` or prefix `"Agent was aborted"` |
-| Future `meta.json` | `aborted: true` at run or step level when workflow cancels |
-| CLI exit code | `130` when user/agent sends SIGINT to `harness run` (optional Step 7) |
+| Timeout result | `ok: false`, no `aborted`, timeout wording, `exitCode: 124` |
+| Workflow error | Include `"Agent was aborted"` so failed review summaries are distinguishable |
+| Future `meta.json` | Can add `aborted: true` at run/step level when workflow-level signal wiring lands |
 
-**Distinguish:** `cancelled` (peer aborted) vs `failed` (reviewer defect) vs `aborted` (explicit cancel) — document for future `steps.json`; provider returns `aborted`.
+Terminology:
 
-## Process boundary (required)
+- `aborted` means explicit caller cancellation.
+- `timeout` means harness budget expiry.
+- `cancelled` from an SDK terminal run status should remain provider status unless it was caused by caller abort.
 
-```
-lib/cursor-agent.ts          kill wrapper on signal
-  → cursor-agent.ts          forward SIGTERM to runAgent AbortController
-    → runner.ts              kill real `agent` subprocess
-```
+## Commands you will need
 
-Killing wrapper Node only may **orphan** the nested `agent` process. Wrapper must not treat abort as `"Failed to start Cursor CLI"` throw — abort is a **terminal result** from `runAgent`.
+| Purpose | Command | Expected on success |
+|---------|---------|---------------------|
+| Typecheck | `pnpm run typecheck` | exit 0, no TypeScript errors |
+| Tests | `pnpm test -- providers/cursor/cursor-sdk-agent.test.ts providers/codex/codex-agent.test.ts test/workflow-context.test.ts` | exit 0, targeted tests pass |
+| Full tests | `pnpm test` | exit 0 |
+| Lint | `pnpm run lint` | exit 0 |
 
-## Current state
+## Suggested executor toolkit
 
-| File | Today |
-|------|-------|
-| `lib/agents.ts` | `maxRuntimeMs` only |
-| `providers/cursor/lib/runner.ts` | Timer SIGTERM/SIGKILL |
-| `lib/cursor-agent.ts` | No signal on wrapper spawn |
-| `providers/cursor/cursor-agent.ts` | Catches `runAgent` reject as startup failure |
-| `providers/codex/codex-agent.ts` | Internal timeout `AbortController` |
-| `providers/cursor/cursor-sdk-agent.ts` | `run.cancel()` on timeout |
+| Skill | Use for |
+|-------|---------|
+| `node` | AbortController composition, listener cleanup, async timeout behavior |
+| `typescript-refactor` | Typed result contract and signal composition without unsafe casts |
+| `vitest` | Abort tests with mock SDK runs and async assertions |
 
 ## Scope
 
-**In scope:**
-- `lib/agents.ts` — `signal?: AbortSignal`; extend `AgentRunResult` with optional `aborted?: boolean`
-- `providers/cursor/lib/stream-utils.ts` — `setupAbortHandler`
-- `providers/cursor/lib/runner.ts` — abort → kill `agent` child; return `{ aborted: true }` not throw
-- `providers/cursor/cursor-agent.ts` — internal `AbortController`; forward wrapper SIGTERM; map abort to envelope error with `aborted` semantics
-- `lib/cursor-agent.ts` — abort wrapper; map to `AgentRunResult.aborted`
-- `providers/codex/codex-agent.ts` — **compose** external signal with existing timeout signal
-- `providers/cursor/cursor-sdk-agent.ts` — compose with budget timeout; call `run.cancel()` on external abort
-- `lib/workflow-context.ts` — propagate `aborted` in thrown error message for `failedReviews`
-- Tests
+**In scope**:
 
-**Out of scope (explicit — not done criteria for this plan):**
-- Workflow `input.signal` wiring in `createWorkflowContext` / `runReviewSteps`
-- CLI `harness run` exit code `130` on SIGINT (future workflow AbortController plan)
-- Parallel peer cancellation (`cancelled` vs `failed`) — see `260626-workflow-step-events.md`
-- GNHF `--max-tokens` mid-run abort
+- `lib/agents.ts` — add `signal?: AbortSignal` to `AgentRunInput`; add `aborted?: boolean` to failed `AgentRunResult`.
+- `providers/cursor/cursor-sdk-agent.ts` — compose external abort with existing timeout budget; call `run.cancel()` on external abort after a run exists.
+- `providers/codex/codex-agent.ts` — compose external abort with existing timeout controller; pass the composed signal to Codex turn options.
+- `lib/workflow-context.ts` — surface `result.aborted` with a clear error string.
+- Tests for Cursor SDK, Codex SDK, and workflow error surfacing.
+
+**Out of scope**:
+
+- Cursor CLI wrapper `SIGTERM` forwarding.
+- `providers/cursor/lib/runner.ts` nested process kill-tree cleanup.
+- `harness run` process-level SIGINT handling and shell exit code `130`.
+- Workflow-level `AbortController` orchestration across parallel reviewers.
+- Peer cancellation semantics for partially failed parallel review runs.
+- Removing `--runtime cli` from the product.
 
 ## Steps
 
-### Step 1: Extend types
+### Step 1: Extend the provider contract
 
-```typescript
-// lib/agents.ts
-export type AgentRunInput = { /* ... */ signal?: AbortSignal };
+Edit `lib/agents.ts`.
 
-export type AgentRunResult =
-  | { ok: true; /* ... */ }
-  | { ok: false; error: string; exitCode: number; aborted?: boolean; /* ... */ };
+Add:
+
+```ts
+signal?: AbortSignal;
 ```
 
-**Verify**: `npm run typecheck` → exit 0
+to `AgentRunInput`.
 
-### Step 2: `setupAbortHandler` in stream-utils
+Add:
 
-Port GNHF `setupAbortHandler`. Unit test: abort → `child.kill` called.
+```ts
+aborted?: boolean;
+```
 
-**Verify**: test passes
+to the failed `AgentRunResult` branch only.
 
-### Step 3: `runAgent` — abort as result, not throw
+Do not require success results to carry cancellation metadata.
 
-1. `setupAbortHandler(signal, subprocess, onAbort)` — `onAbort` sets `aborted: true`, kills child, settles with result object
-2. **Precedence:** if `aborted`, do not set `timedOut` / `timeoutKind`; shared `settled` guard with timer kill
-3. Return `{ aborted: true, exitCode: 130, isError: true, timedOut: false, ... }` — **do not reject** promise for abort
-4. Test: abort before max-runtime fires → `aborted: true`, not `timedOut: true`
+**Verify**: `pnpm run typecheck` -> exit 0.
 
-**Verify**: `providers/cursor/cursor-agent.test.ts` — abort does not hit "Failed to start Cursor CLI"
+### Step 2: Add signal composition helper
 
-### Step 4: Wrapper `cursor-agent.ts`
+Create a small internal helper where it best fits. Prefer a provider-local helper first; extract to `lib/agent-signals.ts` only if both providers would otherwise duplicate non-trivial code.
 
-1. Create `AbortController` for each run; pass `signal` to `runAgent`
-2. On wrapper `SIGTERM`/`SIGINT`: `controller.abort()`
-3. Map aborted `runAgent` result to envelope: add `aborted?: boolean` to envelope (or `status: "aborted"`); `finish()` uses **exit 130** when aborted (mirror SDK)
-4. Update `parseCursorAgentOutput` in `lib/cursor-agent.ts` to map `envelope.aborted` → `AgentRunResult.aborted`
+Behavior:
 
-**Verify**: wrapper forwards abort to runner; envelope carries `aborted` through parent parse
+- Inputs: external `AbortSignal | undefined`, timeout milliseconds.
+- Outputs: composed `signal`, `isTimedOut()`, `isExternallyAborted()`, and `cleanup()`.
+- Timeout aborts with timeout state and should produce exit `124`.
+- External abort should produce exit `130`.
+- If external signal is already aborted before provider work starts, return an aborted result without creating a provider run.
+- Remove event listeners in `cleanup()`.
 
-### Step 5: Parent `lib/cursor-agent.ts`
+**Verify**: `pnpm run typecheck` -> exit 0.
 
-1. Pass `input.signal` — compose with optional local controller
-2. On abort: `child.kill("SIGTERM")` on wrapper
-3. Return `AgentRunResult` with `aborted: true`, `exitCode: 130`
+### Step 3: Wire Cursor SDK external abort
 
-**Verify**: `test/workflow-context.test.ts` passes
+Edit `providers/cursor/cursor-sdk-agent.ts`.
 
-### Step 6: Compose signals — Codex and SDK
+Implementation requirements:
 
-**Codex:** Merge external `input.signal` with existing timeout controller. On external abort (not timeout): `aborted: true`, `exitCode: 130`, `error: "Agent was aborted"`. Timeout stays `exitCode: 124`.
+- Keep current total `maxRuntimeMs` budget across create/send/wait.
+- If `input.signal` aborts before `CursorSdkAgent.create`, return `Agent was aborted`, `exitCode: 130`, `aborted: true`.
+- If abort happens after `run` exists, call `run.cancel()` once.
+- Timeout still calls `run.cancel()` and returns exit `124` without `aborted`.
+- Preserve workspace mutation guard behavior; if abort and workspace mutation both happen, keep the existing guard semantics only if tests already require it. Otherwise prefer explicit abort result.
+- Avoid unhandled rejections from late SDK work, matching the current timeout pattern.
 
-**Cursor SDK:** On external `input.signal` abort: `run.cancel()` + `aborted: true`, `exitCode: 130`. Timeout path: `124`, no `aborted` flag.
+Tests in `providers/cursor/cursor-sdk-agent.test.ts`:
 
-**Verify**: existing timeout tests still pass; add abort test per provider where mockable
+- Pre-aborted signal does not call `createSdkAgent`.
+- Abort while waiting calls fake `run.cancel()` and returns `aborted: true`, `exitCode: 130`.
+- Timeout still returns `exitCode: 124`, not `aborted`.
+- Delayed rejection after abort does not emit `unhandledRejection`.
 
-### Step 7: Workflow error surfacing (minimal)
+**Verify**: `pnpm test -- providers/cursor/cursor-sdk-agent.test.ts` -> exit 0.
 
-In `lib/workflow-context.ts` when `!result.ok`:
+### Step 4: Wire Codex external abort
 
-```typescript
+Edit `providers/codex/codex-agent.ts`.
+
+Implementation requirements:
+
+- Compose `input.signal` with the existing timeout `AbortController`.
+- Pass the composed signal as Codex `TurnOptions.signal`.
+- If external abort happens, return `ok: false`, `aborted: true`, `exitCode: 130`, `error: "Agent was aborted"`.
+- If timeout happens, preserve current timeout result: `exitCode: 124`, timeout wording, no `aborted`.
+- Preserve delayed rejection handling after timeout/abort.
+- If `260627-sdk-agent-stream-logs` has already switched Codex to `runStreamed()`, pass the same composed signal to `runStreamed(...)`.
+
+Tests in `providers/codex/codex-agent.test.ts`:
+
+- Pre-aborted signal returns `aborted: true` and does not start a run.
+- Abort while the fake run is pending aborts the signal and returns `exitCode: 130`.
+- Timeout test remains `exitCode: 124`.
+- Delayed rejection after abort does not emit `unhandledRejection`.
+
+**Verify**: `pnpm test -- providers/codex/codex-agent.test.ts` -> exit 0.
+
+### Step 5: Surface aborts in workflow errors
+
+Edit `lib/workflow-context.ts`.
+
+When `reviewProvider.run(...)` returns `!result.ok`:
+
+```ts
 if (result.aborted) {
   throw new Error(`Agent was aborted: ${config.stage} reviewer`);
 }
+throw new Error(`${config.stage} reviewer failed: ${result.error}`);
 ```
 
-Optional: extend `FailedReview` in `lib/aggregate.ts` with `aborted?: boolean` if propagating structured field (preferred over string grep for AI agents).
+Add a workflow-context test with injected provider:
 
-**Note:** `reviewProvider.run` does **not** pass `signal` yet — providers are abort-ready; end-to-end cancel awaits a future workflow plan.
+- Provider returns `{ ok: false, aborted: true, error: "Agent was aborted", exitCode: 130 }`.
+- `ctx.agent("review-implementation")` rejects with `Agent was aborted: implementation reviewer`.
 
-**Verify**: dedicated test — mock provider `{ ok: false, aborted: true, exitCode: 130 }` → `ctx.agent()` / `failedReviews` reflects abort (not generic "reviewer failed")
+Do not add workflow `signal` input in this plan.
 
-### Step 8: Full verification
+**Verify**: `pnpm test -- test/workflow-context.test.ts` -> exit 0.
 
-**Verify**: `npm test` && `npm run lint` → exit 0
+### Step 6: Full verification and index
 
-## Future workflow contract (document only)
+Run:
 
-- Parallel cancel: peers get `cancelled` status in `steps.json`, not `failed`
-- Serial stop-on-failure: no abort needed (existing break)
-- Inngest step cancel → same `signal`
+```bash
+pnpm run typecheck
+pnpm test
+pnpm run lint
+```
 
-## Workflow / CLI / agent impact
+Expected: all exit 0.
 
-| Surface | This plan | Future |
-|---------|-----------|--------|
-| `harness run` stdout | Unchanged unless abort | `aborted: true` in meta |
-| AI agent cancel | SIGKILL only today | `exit 130`, clear error string |
-| Nested `agent` | Orphan risk fixed | — |
+Update `dev/plans/README.md` after implementation status changes.
+
+## Test plan
+
+- Provider unit tests cover pre-abort, mid-run abort, timeout precedence, and late rejection handling.
+- Workflow test covers caller-visible abort wording.
+- Existing timeout tests remain unchanged except for internal helper setup.
 
 ## Done criteria
 
-- [ ] `AgentRunInput.signal` and `AgentRunResult.aborted` exist
-- [ ] `runAgent` returns abort result (no throw); `aborted` wins over `timedOut`
-- [ ] Wrapper envelope includes `aborted`; parent maps to `AgentRunResult`
-- [ ] Wrapper forwards abort to nested `agent`
-- [ ] Codex/SDK: external abort → `aborted: true`, exit `130`; timeout → `124`
-- [ ] `workflow-context` surfaces abort in error (and optional `FailedReview.aborted`)
-- [ ] Abort-specific test exists (not only "workflow-context passes")
-- [ ] **Not required:** CLI exit `130` or workflow `signal` wiring
-- [ ] `npm test` exits 0
-- [ ] `dev/plans/README.md` updated
+- [ ] `AgentRunInput.signal` exists.
+- [ ] Failed `AgentRunResult` supports `aborted?: boolean`.
+- [ ] Cursor SDK external abort calls `run.cancel()` when possible and returns exit `130`.
+- [ ] Codex external abort uses `TurnOptions.signal` and returns exit `130`.
+- [ ] Timeout paths still return exit `124` and do not set `aborted`.
+- [ ] Workflow error text distinguishes explicit abort from reviewer failure.
+- [ ] No Cursor CLI subprocess kill-tree implementation is added by this plan.
+- [ ] Targeted tests pass.
+- [ ] `pnpm run typecheck`, `pnpm test`, and `pnpm run lint` pass.
+- [ ] `dev/plans/README.md` reflects status after implementation.
 
 ## STOP conditions
 
 Stop and report if:
 
-- SDK has no cancel and product requires SDK abort.
-- Abort wiring breaks timeout exit codes (`124` vs `130`).
-- Extending `AgentRunResult` breaks consumers beyond fixable `workflow-context` check.
+- Cursor SDK `run.cancel()` cannot be called after external abort without causing unhandled rejections.
+- Codex SDK cannot accept a composed `AbortSignal` in the installed version.
+- Timeout and abort race in a way that makes exit `124` vs `130` nondeterministic.
+- Correct workflow cancellation requires changing `runReviewSteps` orchestration; that belongs in a separate workflow plan.
 
 ## Maintenance notes
 
-- Wire `runReviewSteps` `AbortController` in separate workflow plan.
-- PR: listener cleanup; no orphaned `agent` processes after cancel.
+- When workflow-level cancellation is added, pass its signal through `reviewProvider.run(...)` and decide how parallel peers are marked in `steps.json`.
+- If `260627-sdk-agent-stream-logs` lands first, abort cleanup must close stream writers and leave partial stream logs intact.
+- Cursor CLI cancellation should be handled only if the CLI runtime remains a supported review path.

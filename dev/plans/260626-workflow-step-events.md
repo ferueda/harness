@@ -9,19 +9,19 @@
 - **Risk**: LOW
 - **Depends on**: none (feeds Phase 0.6 `steps.json` in `260621-agent-harness-handoff.md`)
 - **Category**: direction
-- **Source**: GNHF adoption item #6
-- **Revised**: 2026-06-26 — round 2: composite sink in CLI; `ctx.eventSink`; dry-run meta; parallel step:end
+- **Revised**: 2026-06-27 — implemented with durable file sink, `--verbose` stderr mirror, and step heartbeats
 
 ## Why this matters
 
 `runReviewSteps` exports results in one batch. The **primary caller** is an AI agent that invokes `harness run change-review` **out-of-process** — it never sees in-process `EventEmitter` events unless they land in artifacts it already reads.
 
-GNHF's `EventEmitter` works because the TUI renderer is in-process. Harness needs lifecycle data in **durable run-dir files**, not only optional stderr.
+In-process event emitters are not enough for harness because the primary caller is usually another agent invoking `harness run change-review` out-of-process. Harness needs lifecycle data in **durable run-dir files**, not only optional stderr.
 
 This plan adds:
 1. Typed **`WorkflowEventSink`** callback (simpler than EventEmitter for v1)
 2. Default subscriber: append **`events.jsonl`** under run dir (one JSON object per line)
-3. Canonical **step ID mapping** aligned with CLI `--steps` and future `steps.json`
+3. Optional `--verbose` stderr mirror for live caller feedback while stdout remains final JSON
+4. Canonical **step ID mapping** aligned with CLI `--steps` and future `steps.json`
 
 Full `steps.json` resumability remains Phase 0.6 — this plan writes `events.jsonl` only.
 
@@ -48,7 +48,7 @@ Export `STEP_ID_BY_AGENT` **only** from `lib/workflow-events.ts` — tests impor
 | `<runDir>/events.jsonl` | **Always written** during non-dry-run `change-review` |
 | `meta.json` | Add `eventsFile: "events.jsonl"` on completed/failed only (omit dry-run) |
 
-AI agent workflow: after run, read `meta.json` → open `events.jsonl` for step timeline (or rely on final meta if sufficient).
+AI agent workflow: run with `--verbose` to receive live JSONL events on stderr, or after run read `meta.json` → open `events.jsonl` for step timeline.
 
 ## Current state
 
@@ -86,7 +86,7 @@ Create `lib/workflow-events.ts`:
 export type WorkflowStepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "cancelled";
 
 export type WorkflowEvent = {
-  type: "run:start" | "run:end" | "step:start" | "step:end";
+  type: "run:start" | "run:end" | "step:start" | "step:heartbeat" | "step:end";
   runId: string;
   workspace?: string;
   stepId?: string;       // canonical id from STEP_ID_BY_AGENT
@@ -95,6 +95,7 @@ export type WorkflowEvent = {
   startedAt?: string;
   durationMs?: number;
   error?: string;
+  elapsedMs?: number;   // heartbeats
   outputs?: string[];    // relative paths, e.g. implementation-review.json
 };
 
@@ -135,6 +136,7 @@ runId?: string;
 In `runReviewSteps`:
 
 - Per task: `ctx.eventSink?.({ type: "step:start", runId: ctx.runId!, stepId, cliStep: reviewInfo.stage, status: "running", startedAt })` before `ctx.agent`
+- While running: emit `step:heartbeat` periodically with `elapsedMs`
 - On success/failure: `step:end` with `durationMs`, `outputs`, `error` as needed
 - `stepId` from `STEP_ID_BY_AGENT[agentName]`; `cliStep` from `ctx.reviewInfo(agentName).stage` (no separate reverse map)
 - **Parallel:** every started step gets `step:end` (`completed` or `failed`); interleaved `step:start` OK
@@ -188,7 +190,7 @@ const eventSink = verbose
 
 ### Step 7: Update skill doc
 
-`skills/change-review-workflow/SKILL.md` — **After Results** §1: read `meta.eventsFile` → `events.jsonl` for step timeline; `summary.md` + reviewer JSON remain primary for findings.
+`skills/change-review-workflow/SKILL.md` — **After Results** §1: read `meta.eventsFile` → `events.jsonl` for step timeline; `--verbose` emits live JSONL events to stderr; `summary.md` + reviewer JSON remain primary for findings.
 
 **Verify**: `grep events.jsonl skills/change-review-workflow/SKILL.md`
 
@@ -207,14 +209,15 @@ Use **`WorkflowEventSink` callback** for v1. Multiple subscribers = `const sink 
 
 ## Done criteria
 
-- [ ] `lib/workflow-events.ts` with `WorkflowEventSink` + `STEP_ID_BY_AGENT`
-- [ ] `events.jsonl` written on non-dry-run change-review
-- [ ] `meta.json` includes `eventsFile` on completed/failed only
-- [ ] `ctx.eventSink` + `runId` on `WorkflowContext`; single emission site in `review-steps.ts`
-- [ ] `--verbose` uses composite sink passed into `createWorkflowContext`
-- [ ] Skill doc After Results updated
-- [ ] `npm test` exits 0
-- [ ] `dev/plans/README.md` updated
+- [x] `lib/workflow-events.ts` with `WorkflowEventSink` + `STEP_ID_BY_AGENT`
+- [x] `events.jsonl` written on non-dry-run change-review
+- [x] `meta.json` includes `eventsFile` on completed/failed only
+- [x] `ctx.eventSink` + `runId` on `WorkflowContext`; single emission site in `review-steps.ts`
+- [x] `step:heartbeat` events emitted during long-running reviewer steps
+- [x] `--verbose` uses composite sink passed into `createWorkflowContext`
+- [x] Skill doc After Results updated
+- [x] `npm test` exits 0
+- [x] `dev/plans/README.md` updated
 
 ## STOP conditions
 
@@ -226,5 +229,5 @@ Stop if:
 ## Maintenance notes
 
 - Phase 0.6: migrate `events.jsonl` → `steps.json` or dual-write; reuse `stepId` values from this plan
-- Plan 4 stream files: include in `outputs` on `step:end`
+- `260627-sdk-agent-stream-logs.md` stream files: include in `outputs` on `step:end`
 - Future `cancelled` status for parallel peer abort (abort-signal plan)

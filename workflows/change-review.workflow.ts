@@ -24,12 +24,51 @@ export function run(ctx: WorkflowContext, options: ChangeReviewOptions = {}) {
       agentName: STEP_AGENTS[id],
     }),
   );
+  const runId = ctx.eventSink ? requiredRunId(ctx) : undefined;
+  ctx.eventSink?.({
+    type: "run:start",
+    runId: runId ?? "",
+    runDir: ctx.runDir,
+    workspace: ctx.workspace,
+    status: "running",
+    startedAt: new Date().toISOString(),
+  });
+  const startedAt = Date.now();
   return runReviewSteps(
     ctx,
     "Change Review Summary",
     reviewSteps,
     buildStepMetadata(selectedSteps),
+  ).then(
+    (result) => {
+      ctx.eventSink?.({
+        type: "run:end",
+        runId: runId ?? "",
+        runDir: ctx.runDir,
+        workspace: ctx.workspace,
+        status: result.status === "failed" ? "failed" : "completed",
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    },
+    (error: unknown) => {
+      ctx.eventSink?.({
+        type: "run:end",
+        runId: runId ?? "",
+        runDir: ctx.runDir,
+        workspace: ctx.workspace,
+        status: "failed",
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    },
   );
+}
+
+function requiredRunId(ctx: WorkflowContext): string {
+  if (ctx.runId) return ctx.runId;
+  throw new Error("WorkflowContext.runId is required when emitting workflow events");
 }
 
 export function normalizeChangeReviewSteps(

@@ -3,11 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { createCodexAgent } from "./codex-agent.ts";
-import type { CodexOptions, ThreadOptions, TurnOptions } from "@openai/codex-sdk";
+import type { CodexOptions, ThreadEvent, ThreadOptions, TurnOptions } from "@openai/codex-sdk";
 
 type FakeTurnInput = {
   finalResponse?: string;
   runError?: Error;
+  streamEvents?: ThreadEvent[];
+  streamError?: Error;
 };
 
 function createSchemaFile(workspace: string): string {
@@ -24,13 +26,22 @@ function createSchemaFile(workspace: string): string {
   return schemaPath;
 }
 
-function createFakeCodex({ finalResponse = '{"verdict":"pass"}', runError }: FakeTurnInput = {}) {
+function createFakeCodex({
+  finalResponse = '{"verdict":"pass"}',
+  runError,
+  streamEvents,
+  streamError,
+}: FakeTurnInput = {}) {
   const calls: {
     codexOptions?: CodexOptions;
     threadOptions?: ThreadOptions;
     prompt?: string;
+    streamedPrompt?: string;
     turnOptions?: TurnOptions;
-  } = {};
+    runStreamed: boolean;
+  } = {
+    runStreamed: false,
+  };
 
   const codexFactory = (codexOptions: CodexOptions) => {
     calls.codexOptions = codexOptions;
@@ -54,12 +65,51 @@ function createFakeCodex({ finalResponse = '{"verdict":"pass"}', runError }: Fak
               },
             };
           },
+          async runStreamed(prompt: string, turnOptions: TurnOptions) {
+            calls.runStreamed = true;
+            calls.streamedPrompt = prompt;
+            calls.turnOptions = turnOptions;
+            if (runError) throw runError;
+            return {
+              events: (async function* () {
+                for (const event of streamEvents ?? codexSuccessStream(finalResponse)) {
+                  yield event;
+                }
+                if (streamError) throw streamError;
+              })(),
+            };
+          },
         };
       },
     };
   };
 
   return { calls, codexFactory };
+}
+
+function codexSuccessStream(finalResponse: string): ThreadEvent[] {
+  return [
+    {
+      type: "item.completed",
+      item: { id: "message-1", type: "agent_message", text: finalResponse },
+    },
+    {
+      type: "turn.completed",
+      usage: {
+        input_tokens: 1,
+        cached_input_tokens: 0,
+        output_tokens: 2,
+        reasoning_output_tokens: 0,
+      },
+    },
+  ];
+}
+
+function readJsonLines(path: string): unknown[] {
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
 }
 
 test("createCodexAgent runs Codex with schema and review defaults", async () => {
@@ -100,8 +150,99 @@ test("createCodexAgent runs Codex with schema and review defaults", async () => 
     modelReasoningEffort: "high",
   });
   expect(calls.prompt).toBe("review this");
+  expect(calls.runStreamed).toBe(false);
   expect(calls.turnOptions?.outputSchema).toEqual(JSON.parse(readFileSync(schemaPath, "utf8")));
   expect(calls.turnOptions?.signal).toBeInstanceOf(AbortSignal);
+});
+
+test("createCodexAgent streams Codex thread events to logPath", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const logPath = join(workspace, ".harness", "codex.stream.jsonl");
+  const { calls, codexFactory } = createFakeCodex();
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.structuredOutput).toEqual({ verdict: "pass" });
+  expect(result.sessionId).toBe("thread-123");
+  expect(result.usage).toEqual({
+    input_tokens: 1,
+    cached_input_tokens: 0,
+    output_tokens: 2,
+    reasoning_output_tokens: 0,
+  });
+  expect(calls.prompt).toBeUndefined();
+  expect(calls.streamedPrompt).toBe("review this");
+  expect(readJsonLines(logPath)[0]).toMatchObject({
+    provider: "codex",
+    format: "codex-thread-event",
+    sequence: 1,
+    event: {
+      type: "item.completed",
+      item: { type: "agent_message", text: '{"verdict":"pass"}' },
+    },
+  });
+  expect(result.raw).toMatchObject({
+    finalResponse: '{"verdict":"pass"}',
+    streamLog: {
+      path: logPath,
+      status: "written",
+      provider: "codex",
+      format: "codex-thread-event",
+    },
+  });
+});
+
+test("createCodexAgent uses completed agent_message as streamed final response", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const logPath = join(workspace, ".harness", "codex.stream.jsonl");
+  const { codexFactory } = createFakeCodex({
+    finalResponse: '{"verdict":"from-stream"}',
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.structuredOutput).toEqual({ verdict: "from-stream" });
+});
+
+test("createCodexAgent returns streamed turn failures with stream log metadata", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const logPath = join(workspace, ".harness", "codex.stream.jsonl");
+  const { codexFactory } = createFakeCodex({
+    streamEvents: [{ type: "turn.failed", error: { message: "model failed" } }],
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toContain("model failed");
+  expect(readJsonLines(logPath)).toHaveLength(2);
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      path: logPath,
+      status: "error",
+      error: "Codex turn failed: model failed",
+    },
+  });
 });
 
 test("createCodexAgent supports non-review sandbox and approval modes", async () => {
@@ -241,6 +382,57 @@ test("createCodexAgent returns timeout failures through AbortSignal", async () =
   expect(result.exitCode).toBe(124);
   expect(result.error).toMatch(/timed out/);
   expect(calls.signal?.aborted).toBe(true);
+});
+
+test("createCodexAgent keeps partial stream logs on timeout", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const logPath = join(workspace, ".harness", "codex.stream.jsonl");
+  const codexFactory = () => ({
+    startThread() {
+      return {
+        id: "thread-timeout",
+        async run() {
+          throw new Error("run should not be used when logPath is set");
+        },
+        async runStreamed(_prompt: string, turnOptions: TurnOptions) {
+          return {
+            events: (async function* () {
+              yield {
+                type: "item.completed",
+                item: { id: "message-1", type: "agent_message", text: '{"partial":true}' },
+              } satisfies ThreadEvent;
+              await new Promise<void>((resolve) => {
+                turnOptions.signal?.addEventListener("abort", () => resolve(), { once: true });
+              });
+            })(),
+          };
+        },
+      };
+    },
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(124);
+  expect(readJsonLines(logPath)[0]).toMatchObject({
+    event: {
+      type: "item.completed",
+      item: { type: "agent_message", text: '{"partial":true}' },
+    },
+  });
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      status: "written",
+      path: logPath,
+    },
+  });
 });
 
 test("createCodexAgent observes delayed run rejection after timeout", async () => {

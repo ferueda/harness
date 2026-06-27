@@ -31,6 +31,7 @@ import {
 } from "../lib/handoff.ts";
 import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
 import { installPackagedSkill } from "../lib/skills.ts";
+import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { cleanupOrphanedRunDir, createWorkflowContext } from "../lib/workflow-context.ts";
 
 type InitOptions = {
@@ -57,6 +58,7 @@ type ReviewOptions = {
   reasoningEffort?: AgentReasoningEffort;
   maxRuntimeMs: number;
   dryRun: boolean;
+  verbose: boolean;
   steps?: ChangeReviewStepId[];
 };
 
@@ -275,6 +277,7 @@ function addReviewCommand(
       DEFAULT_MAX_RUNTIME_MS,
     )
     .option("--dry-run", "prepare context and prompts only", false)
+    .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: ReviewOptions) => {
       const handoffText = resolveHandoffText(options);
       const cursorWrapperPath = options.cursorWrapper ?? options.cursorAgent;
@@ -321,7 +324,10 @@ function addReviewCommand(
         throw new Error("--cursor-wrapper applies only when Cursor runtime is cli");
       }
 
-      const ctx = createWorkflowContext(resolvedOptions);
+      const ctx = createWorkflowContext({
+        ...resolvedOptions,
+        eventSink: options.verbose ? writeVerboseWorkflowEvent : undefined,
+      });
       let meta;
       try {
         meta = await workflow(ctx, { steps: options.steps });
@@ -332,6 +338,10 @@ function addReviewCommand(
       console.log(JSON.stringify(meta, null, 2));
       process.exitCode = meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1;
     });
+}
+
+function writeVerboseWorkflowEvent(event: WorkflowEvent): void {
+  console.error(JSON.stringify(event));
 }
 
 async function main(): Promise<void> {

@@ -4,6 +4,11 @@ import type {
   ReviewVerdict,
   WorkflowStepMetadata,
 } from "../lib/aggregate.ts";
+import {
+  DEFAULT_WORKFLOW_HEARTBEAT_MS,
+  STEP_ID_BY_AGENT,
+  type WorkflowEventSink,
+} from "../lib/workflow-events.ts";
 import type { ReviewAgentName } from "../lib/workflow-context.ts";
 import type { ReviewOutput } from "../lib/schemas.ts";
 
@@ -14,6 +19,11 @@ type WorkflowRunMeta = {
 };
 
 export type WorkflowContext = {
+  runId?: string;
+  runDir?: string;
+  workspace?: string;
+  eventSink?: WorkflowEventSink;
+  heartbeatMs?: number;
   agent(name: ReviewAgentName): Promise<ReviewOutput>;
   aggregate(...reviews: ReviewOutput[]): ReviewVerdict;
   reviewInfo(name: ReviewAgentName): { key: string; title: string; stage: string };
@@ -89,11 +99,72 @@ type ReviewTask = ReviewStep & {
 };
 
 function runReviewTask(ctx: WorkflowContext, task: ReviewTask) {
-  return ctx.agent(task.agentName).then((review) => ({
-    key: task.key,
-    title: task.title,
-    review,
-  }));
+  if (!ctx.eventSink) {
+    return ctx.agent(task.agentName).then((review) => ({
+      key: task.key,
+      title: task.title,
+      review,
+    }));
+  }
+
+  const startedAt = new Date();
+  const stepId = STEP_ID_BY_AGENT[task.agentName];
+  const heartbeatMs = ctx.heartbeatMs ?? DEFAULT_WORKFLOW_HEARTBEAT_MS;
+  const baseEvent = {
+    runId: requiredRunId(ctx),
+    runDir: ctx.runDir,
+    workspace: ctx.workspace,
+    stepId,
+    cliStep: task.stage,
+    startedAt: startedAt.toISOString(),
+  };
+  let active = true;
+  ctx.eventSink({
+    type: "step:start",
+    ...baseEvent,
+    status: "running",
+  });
+
+  const heartbeat =
+    heartbeatMs > 0
+      ? setInterval(() => {
+          if (!active) return;
+          ctx.eventSink?.({
+            type: "step:heartbeat",
+            ...baseEvent,
+            status: "running",
+            elapsedMs: Date.now() - startedAt.getTime(),
+          });
+        }, heartbeatMs)
+      : undefined;
+
+  const finish = (status: "completed" | "failed", error?: string) => {
+    active = false;
+    if (heartbeat) clearInterval(heartbeat);
+    ctx.eventSink?.({
+      type: "step:end",
+      ...baseEvent,
+      status,
+      durationMs: Date.now() - startedAt.getTime(),
+      ...(error ? { error } : {}),
+      outputs: stepOutputs(task.stage),
+    });
+  };
+
+  return ctx.agent(task.agentName).then(
+    (review) => {
+      finish("completed");
+      return {
+        key: task.key,
+        title: task.title,
+        review,
+      };
+    },
+    (error: unknown) => {
+      finish("failed", error instanceof Error ? error.message : String(error));
+      throw error;
+    },
+  );
 }
 
 async function runReviewTasksSerially(ctx: WorkflowContext, tasks: ReviewTask[]) {
@@ -123,4 +194,18 @@ function trimExecutedStepMetadata(
     omittedSteps: [...stepMetadata.omittedSteps, ...stoppedSteps],
     partial: true,
   };
+}
+
+function requiredRunId(ctx: WorkflowContext): string {
+  if (ctx.runId) return ctx.runId;
+  throw new Error("WorkflowContext.runId is required when emitting workflow events");
+}
+
+function stepOutputs(stage: string): string[] {
+  return [
+    `${stage}-review.prompt.md`,
+    `${stage}-review.raw.json`,
+    `${stage}-review.json`,
+    `${stage}-review.stream.jsonl`,
+  ];
 }
