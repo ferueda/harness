@@ -9,14 +9,13 @@
 - **Risk**: LOW
 - **Depends on**: none (feeds Phase 0.6 `steps.json` in `260621-agent-harness-handoff.md`)
 - **Category**: direction
-- **Source**: GNHF adoption item #6
 - **Revised**: 2026-06-26 — round 2: composite sink in CLI; `ctx.eventSink`; dry-run meta; parallel step:end
 
 ## Why this matters
 
 `runReviewSteps` exports results in one batch. The **primary caller** is an AI agent that invokes `harness run change-review` **out-of-process** — it never sees in-process `EventEmitter` events unless they land in artifacts it already reads.
 
-GNHF's `EventEmitter` works because the TUI renderer is in-process. Harness needs lifecycle data in **durable run-dir files**, not only optional stderr.
+In-process event emitters are not enough for harness because the primary caller is usually another agent invoking `harness run change-review` out-of-process. Harness needs lifecycle data in **durable run-dir files**, not only optional stderr.
 
 This plan adds:
 1. Typed **`WorkflowEventSink`** callback (simpler than EventEmitter for v1)
@@ -226,5 +225,5 @@ Stop if:
 ## Maintenance notes
 
 - Phase 0.6: migrate `events.jsonl` → `steps.json` or dual-write; reuse `stepId` values from this plan
-- Plan 4 stream files: include in `outputs` on `step:end`
+- `260627-sdk-agent-stream-logs.md` stream files: include in `outputs` on `step:end`
 - Future `cancelled` status for parallel peer abort (abort-signal plan)

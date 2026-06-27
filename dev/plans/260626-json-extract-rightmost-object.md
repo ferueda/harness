@@ -9,7 +9,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: bug
-- **Source**: GNHF adoption item #1 — `json-extract.ts` pattern
+- **Source**: reviewer parse failure follow-up
 - **Revised**: 2026-06-26 — round 2: schema path bypasses `extractJsonFromText`; reuse `balancedJsonEnd`; envelope integration fixture
 
 ## Why this matters
@@ -18,13 +18,9 @@ Harness reviewers are instructed to return JSON only, but models often prepend a
 
 **Critical edge case (review-spec):** Rightmost `{` scan **without** schema acceptance can grab a **nested finding object** inside a valid review when the model prepends prose. A payload with non-empty `findings` ends with a finding `{...}` — naive rightmost scan may extract that nested object instead of the top-level review. Schema-aware `accepts` is **required**, not optional.
 
-GNHF solves direction with `extractLastJsonObject` + optional `accepts`. GNHF's test suite includes the "rovodev #144" case: prose before JSON, multiple objects, nested braces in strings.
+The target direction is rightmost extraction with optional schema acceptance. Regression coverage should include prose before JSON, multiple objects, nested braces in strings, and nested review findings.
 
-**Primary caller context:** Another AI agent invokes `harness run change-review` or `harness-cursor --schema`, then reads `structuredOutput`, `*-review.json`, and `failedReviews`. Parse failures surface as failed reviewers — this plan reduces false failures.
-
-**Reference (external repo, read-only):**
-- `/Users/frueda/dev/gnhf/src/core/agents/json-extract.ts`
-- `/Users/frueda/dev/gnhf/src/core/agents/json-extract.test.ts`
+**Primary caller context:** Another AI agent invokes `harness run change-review`, then reads `structuredOutput`, `*-review.json`, and `failedReviews`. Parse failures surface as failed reviewers — this plan reduces false failures.
 
 ## Current state
 
@@ -50,7 +46,6 @@ GNHF solves direction with `extractLastJsonObject` + optional `accepts`. GNHF's 
 | `implement-plan` | Phase execution |
 | `.agents/skills/typescript-refactor` | Balanced-brace parsing |
 | `.agents/skills/vitest` | Test structure |
-| GNHF `json-extract.test.ts` | Regression cases to port |
 
 ## Scope
 
@@ -71,19 +66,19 @@ GNHF solves direction with `extractLastJsonObject` + optional `accepts`. GNHF's 
 
 In `providers/cursor/lib/schema.ts`:
 
-1. `stripJsonFences(text)` — GNHF-style fence strip
+1. `stripJsonFences(text)` — remove surrounding JSON fences
 2. `tryExtractBalancedValue(text, start)` — delegate to existing `balancedJsonEnd` (```67:96:providers/cursor/lib/schema.ts```) + `JSON.parse` check for `{` or `[` roots
 3. `tryExtractBalancedObject(text, start)` — thin wrapper: `{`-only via `tryExtractBalancedValue`
-4. `extractLastJsonObject(text, accepts?)` — rightmost `{` scan per GNHF
+4. `extractLastJsonObject(text, accepts?)` — rightmost `{` scan
 5. `extractLastJsonValue(text, accepts?)` — rightmost `{` or `[` for array schemas
 
-Do **not** duplicate GNHF brace walkers — reuse `balancedJsonEnd` for string/escape handling.
+Do **not** duplicate brace walkers — reuse `balancedJsonEnd` for string/escape handling.
 
 **Verify**: `npm run typecheck` → exit 0
 
 ### Step 2: Wire `parseStructuredOutput` with required schema-aware acceptance
 
-**Critical:** When `schema` is provided, `parseStructuredOutput` must **not** call `extractJsonFromText` for extraction. Implement a GNHF-style pipeline:
+**Critical:** When `schema` is provided, `parseStructuredOutput` must **not** call `extractJsonFromText` for extraction. Implement this pipeline:
 
 ```typescript
 const accepts = (value: unknown) => !validateJsonSchema(value, schema, "$");
@@ -102,7 +97,7 @@ When `schema` is **undefined** (free-form CLI JSON): update `extractJsonFromText
 
 ### Step 3: Unit regression tests
 
-Create `providers/cursor/lib/schema.test.ts`. Port GNHF cases plus harness-specific:
+Create `providers/cursor/lib/schema.test.ts`. Include these cases:
 
 | Case | Expected |
 |------|----------|
@@ -120,7 +115,7 @@ Load `schemas/review-output.schema.json` for review cases.
 
 **Verify**: `npm test -- providers/cursor/lib/schema.test.ts` → all pass
 
-### Step 4: Integration test — harness-cursor envelope
+### Step 4: Integration test — Cursor provider envelope
 
 In `providers/cursor/cursor-agent.test.ts`, add test matching production path:
 
@@ -129,6 +124,8 @@ In `providers/cursor/cursor-agent.test.ts`, add test matching production path:
 3. Assert envelope `status === "completed"` and `structuredOutput.verdict` is defined
 
 Follow existing stream-json envelope test pattern (~lines 100–124 in `cursor-agent.test.ts`).
+
+**SDK pivot note:** This step records the historical fixture used when the plan was implemented. Do not add new Cursor CLI coverage for this done plan. Future parser regressions should prefer `providers/cursor/cursor-sdk-agent.test.ts` unless the legacy CLI runtime is still explicitly supported.
 
 **Verify**: `npm test -- providers/cursor/cursor-agent.test.ts` → pass
 
@@ -147,7 +144,7 @@ Follow existing stream-json envelope test pattern (~lines 100–124 in `cursor-a
 | Surface | Change |
 |---------|--------|
 | `harness run change-review` | Fewer false `failedReviews` from parse errors |
-| `harness-cursor --schema` | Same extraction path; array schemas preserved |
+| Cursor provider schema parsing | Same extraction path; array schemas preserved |
 | stdout / meta.json | No shape change |
 | AI agent caller | Reads same artifacts; more successful `*-review.json` |
 
@@ -171,5 +168,5 @@ Stop and report if:
 
 ## Maintenance notes
 
-- `260626-incremental-stream-json-parsing`: final `result` event text still flows through `parseStructuredOutput`.
-- PR focus: nested-findings regression, string escapes, array-root backward compat.
+- SDK stream logging keeps final verdict parsing on completed provider output, so final Cursor SDK text still flows through `parseStructuredOutput`.
+- PR focus: nested-findings regression, string escapes, array-root backward compatibility.
