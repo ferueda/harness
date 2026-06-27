@@ -10,7 +10,11 @@ import type {
 import { CURSOR_SDK_MODEL_MODES, DEFAULT_AGENT_MODELS } from "../../lib/agents.ts";
 import type { Agent, AgentRunInput, AgentRunResult, CursorSdkModelMode } from "../../lib/agents.ts";
 import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent-stream-log.ts";
-import { createAgentSignalState } from "../../lib/agent-signals.ts";
+import {
+  createAbortedAgentResult,
+  createAgentAbortRace,
+  createAgentSignalState,
+} from "../../lib/agent-signals.ts";
 import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
 
 type CreateCursorSdkAgent = (options: CursorSdkAgentOptions) => Promise<CursorSdkAgentInstance>;
@@ -79,7 +83,7 @@ async function invokeCursorSdkAgent({
   const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
   if (signalState.isExternallyAborted()) {
     signalState.cleanup();
-    return abortedResult();
+    return createAbortedAgentResult();
   }
 
   const beforeStatus = readWorkspaceStatus(input.workspace);
@@ -92,25 +96,16 @@ async function invokeCursorSdkAgent({
   let run: CursorSdkRun | undefined;
   let streamLog: AgentStreamLogSummary | undefined;
   let streamPump: CursorStreamPump | undefined;
-  let removeAbortListener: (() => void) | undefined;
   const startedAt = Date.now();
   // maxRuntimeMs is a total budget across create, send, and wait.
-  const abortPromise = new Promise<never>((_, reject) => {
-    const onAbort = () => reject(new Error("abort"));
-    if (signalState.signal.aborted) {
-      onAbort();
-      return;
-    }
-    signalState.signal.addEventListener("abort", onAbort, { once: true });
-    removeAbortListener = () => signalState.signal.removeEventListener("abort", onAbort);
-  });
+  const abortRace = createAgentAbortRace(signalState.signal);
   const withDeadline = <T>(promise: Promise<T>, onLateResolve?: (value: T) => void): Promise<T> =>
     Promise.race([
       promise.then(
         (value) => {
           if (!signalState.signal.aborted) return value;
           onLateResolve?.(value);
-          // Keep abandoned SDK work from surfacing after the caller has received a timeout.
+          // Keep abandoned SDK work from surfacing after the caller has received an abort result.
           return new Promise<T>(() => {});
         },
         (error) => {
@@ -118,7 +113,7 @@ async function invokeCursorSdkAgent({
           throw error;
         },
       ),
-      abortPromise,
+      abortRace.promise,
     ]);
 
   try {
@@ -211,12 +206,14 @@ async function invokeCursorSdkAgent({
       await cancelRun(run);
     }
     streamLog = await streamPump?.settle(streamLog);
+    const externallyAborted = signalState.isExternallyAborted();
+    const timedOut = signalState.isTimedOut();
     return withWorkspaceGuard(
       {
         ok: false,
-        error: signalState.isExternallyAborted()
+        error: externallyAborted
           ? "Agent was aborted"
-          : signalState.isTimedOut()
+          : timedOut
           ? `Cursor SDK agent timed out after ${input.maxRuntimeMs}ms`
           : `Cursor SDK agent failed: ${errorMessage(error)}`,
         raw: {
@@ -227,26 +224,17 @@ async function invokeCursorSdkAgent({
           error: errorArtifact(error),
           durationMs: Date.now() - startedAt,
         },
-        exitCode: signalState.isExternallyAborted() ? 130 : signalState.isTimedOut() ? 124 : 1,
-        ...(signalState.isExternallyAborted() ? { aborted: true } : {}),
+        exitCode: externallyAborted ? 130 : timedOut ? 124 : 1,
+        ...(externallyAborted ? { aborted: true } : {}),
       },
       input.workspace,
       beforeStatus.value,
     );
   } finally {
     if (sdkAgent) await safeDisposeAgent(sdkAgent);
-    removeAbortListener?.();
+    abortRace.cleanup();
     signalState.cleanup();
   }
-}
-
-function abortedResult(): AgentRunResult {
-  return {
-    ok: false,
-    error: "Agent was aborted",
-    exitCode: 130,
-    aborted: true,
-  };
 }
 
 function cursorSdkModelSelection(
