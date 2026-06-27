@@ -23,6 +23,7 @@ type FakeSdkOptions = {
   disposeError?: Error;
   waitError?: Error;
   onWait?: () => void;
+  waitRejectAfterMs?: number;
   waitForever?: boolean;
   streamEvents?: unknown[];
   streamError?: Error;
@@ -65,6 +66,7 @@ function createFakeSdk({
   disposeError,
   waitError,
   onWait,
+  waitRejectAfterMs,
   waitForever = false,
   streamEvents = [],
   streamError,
@@ -116,6 +118,11 @@ function createFakeSdk({
           },
           wait() {
             onWait?.();
+            if (waitRejectAfterMs !== undefined) {
+              return new Promise((_, reject) => {
+                setTimeout(() => reject(waitError ?? new Error("wait failed")), waitRejectAfterMs);
+              });
+            }
             if (waitError) throw waitError;
             if (waitForever) return new Promise<never>(() => {});
             return Promise.resolve({
@@ -530,6 +537,7 @@ test("createCursorSdkAgent cancels timed-out runs", async () => {
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.exitCode).toBe(124);
+  expect(result.aborted).toBeUndefined();
   expect(result.error).toMatch(/timed out/);
   expect(calls.cancelled).toBe(true);
   expect(calls.disposed).toBe(true);
@@ -539,6 +547,167 @@ test("createCursorSdkAgent cancels timed-out runs", async () => {
       after: "",
     },
   });
+});
+
+test("createCursorSdkAgent does not create SDK agent for pre-aborted signal", async () => {
+  const workspace = createGitWorkspace();
+  const controller = new AbortController();
+  controller.abort();
+  let created = false;
+  const createSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]> = async () => {
+    created = true;
+    throw new Error("should not create");
+  };
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result).toMatchObject({
+    error: "Agent was aborted",
+    exitCode: 130,
+    aborted: true,
+  });
+  expect(created).toBe(false);
+});
+
+test("createCursorSdkAgent cancels Cursor run on external abort", async () => {
+  const workspace = createGitWorkspace();
+  const controller = new AbortController();
+  const { calls, createSdkAgent } = createFakeSdk({
+    waitForever: true,
+    onWait() {
+      controller.abort();
+    },
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result).toMatchObject({
+    error: "Agent was aborted",
+    exitCode: 130,
+    aborted: true,
+  });
+  expect(calls.cancelled).toBe(true);
+  expect(calls.disposed).toBe(true);
+});
+
+test("createCursorSdkAgent preserves explicit abort when workspace changes", async () => {
+  const workspace = createGitWorkspace();
+  const controller = new AbortController();
+  const { createSdkAgent } = createFakeSdk({
+    waitForever: true,
+    onWait() {
+      writeFileSync(join(workspace, "changed-on-abort.txt"), "changed\n", "utf8");
+      controller.abort();
+    },
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result).toMatchObject({
+    error: "Agent was aborted",
+    exitCode: 130,
+    aborted: true,
+  });
+  expect(result.raw).toMatchObject({
+    workspaceStatus: {
+      before: "",
+      after: expect.stringContaining("changed-on-abort.txt"),
+    },
+  });
+});
+
+test("createCursorSdkAgent keeps partial stream logs on external abort", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "cursor.stream.jsonl");
+  const controller = new AbortController();
+  const { createSdkAgent } = createFakeSdk({
+    waitForever: true,
+    streamEvents: [{ type: "assistant", text: "partial abort" }],
+    onWait() {
+      controller.abort();
+    },
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    logPath,
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(130);
+  expect(result.aborted).toBe(true);
+  expect(readJsonLines(logPath)[0]).toMatchObject({
+    event: { type: "assistant", text: "partial abort" },
+  });
+  expect(result.raw).toMatchObject({
+    streamLog: {
+      status: "written",
+      path: logPath,
+    },
+  });
+});
+
+test("createCursorSdkAgent handles late wait rejection after external abort", async () => {
+  const workspace = createGitWorkspace();
+  const controller = new AbortController();
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  const { createSdkAgent } = createFakeSdk({
+    waitRejectAfterMs: 10,
+    waitError: new Error("late wait failure"),
+    onWait() {
+      controller.abort();
+    },
+  });
+
+  try {
+    const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+      workspace,
+      prompt: "review this",
+      maxRuntimeMs: 1_000,
+      signal: controller.signal,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result).toMatchObject({
+      error: "Agent was aborted",
+      exitCode: 130,
+      aborted: true,
+    });
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
 });
 
 test("createCursorSdkAgent keeps partial stream logs on timeout", async () => {

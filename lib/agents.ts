@@ -59,6 +59,7 @@ export type AgentRunInput = {
   modelReasoningEffort?: AgentReasoningEffort;
   maxRuntimeMs: number;
   logPath?: string;
+  signal?: AbortSignal;
 };
 
 export type AgentRunResult =
@@ -75,6 +76,7 @@ export type AgentRunResult =
       raw?: unknown;
       exitCode: number;
       stderr?: string;
+      aborted?: boolean;
     };
 
 export type Agent = {
