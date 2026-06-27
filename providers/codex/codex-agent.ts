@@ -104,10 +104,16 @@ async function invokeCodexAgent(
           },
         ))
       : thread.run(input.prompt, turnOptions);
-    const observedTurnPromise = turnPromise.catch((error) => {
-      if (signalState.signal.aborted) return new Promise<never>(() => {});
-      throw error;
-    });
+    const observedTurnPromise = turnPromise.then(
+      (turn) => {
+        if (signalState.signal.aborted) return new Promise<never>(() => {});
+        return turn;
+      },
+      (error) => {
+        if (signalState.signal.aborted) return new Promise<never>(() => {});
+        throw error;
+      },
+    );
     const turn = await Promise.race([observedTurnPromise, abortRace.promise]);
     const structuredOutput = parseStructuredOutput(turn.finalResponse);
     if (!structuredOutput.ok) {
