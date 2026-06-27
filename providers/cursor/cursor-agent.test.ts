@@ -7,6 +7,10 @@ import { expect, test } from "vitest";
 import { resolveExecutable, runAgent } from "./lib/runner.ts";
 import { parseStructuredOutput, type JsonSchema } from "./lib/schema.ts";
 const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "cursor-agent.ts");
+const REVIEW_SCHEMA_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../schemas/review-output.schema.json",
+);
 function runCli(args: string[], options: { env?: NodeJS.ProcessEnv } = {}) {
   return spawnSync(process.execPath, [SCRIPT_PATH, ...args], {
     encoding: "utf8",
@@ -202,4 +206,54 @@ test("structured output parser rejects unexpected properties when schema is stri
     parseStructuredOutput('{"verdict":"pass","findings":[{"title":"ok","extra":"nope"}]}', schema)
       .error,
   ).toMatch(/unexpected property "extra"/);
+});
+
+test("stream-json envelope parses prose-prefixed review JSON with findings", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cursor-workspace-"));
+  const fakeAgent = join(workspace, "agent");
+  const reviewPayload = {
+    verdict: "pass",
+    summary: "looks good",
+    findings: [
+      {
+        title: "style nit",
+        severity: "Low",
+        location: "schema.ts",
+        issue: "minor",
+        recommendation: "optional cleanup",
+        rationale: "readability",
+        must_fix: false,
+      },
+    ],
+  };
+  const resultText = `Review complete.\n\n${JSON.stringify(reviewPayload)}`;
+  const escapedResult = JSON.stringify(resultText);
+  writeFileSync(
+    fakeAgent,
+    [
+      "#!/bin/sh",
+      "printf '%s\\n' '{\"session_id\":\"review-abc\"}'",
+      `printf '%s\\n' '{"type":"result","result":${escapedResult},"session_id":"review-abc","is_error":false}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(fakeAgent, 0o755);
+  const result = runCli(
+    [
+      "--format",
+      "json",
+      "--output-format",
+      "stream-json",
+      "--workspace",
+      workspace,
+      "--schema",
+      REVIEW_SCHEMA_PATH,
+      "review changes",
+    ],
+    { env: { CURSOR_CLI_EXECUTABLE: fakeAgent } },
+  );
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+  const envelope = JSON.parse(result.stdout);
+  expect(envelope.status).toBe("completed");
+  expect(envelope.structuredOutput).toEqual(reviewPayload);
 });
