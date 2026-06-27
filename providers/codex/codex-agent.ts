@@ -143,8 +143,8 @@ async function invokeCodexAgent(
       error: externallyAborted
         ? "Agent was aborted"
         : timedOut
-        ? `Codex agent timed out after ${input.maxRuntimeMs}ms`
-        : `Codex agent failed: ${errorMessage(error)}`,
+          ? `Codex agent timed out after ${input.maxRuntimeMs}ms`
+          : `Codex agent failed: ${errorMessage(error)}`,
       raw: addStreamLog(errorArtifact(error), streamLog),
       exitCode: externallyAborted ? 130 : timedOut ? 124 : 1,
       ...(externallyAborted ? { aborted: true } : {}),

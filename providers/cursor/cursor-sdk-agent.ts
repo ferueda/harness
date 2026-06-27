@@ -217,8 +217,8 @@ async function invokeCursorSdkAgent({
         error: externallyAborted
           ? "Agent was aborted"
           : timedOut
-          ? `Cursor SDK agent timed out after ${input.maxRuntimeMs}ms`
-          : `Cursor SDK agent failed: ${errorMessage(error)}`,
+            ? `Cursor SDK agent timed out after ${input.maxRuntimeMs}ms`
+            : `Cursor SDK agent failed: ${errorMessage(error)}`,
         raw: {
           agentId: sdkAgent?.agentId,
           runId: run?.id,
