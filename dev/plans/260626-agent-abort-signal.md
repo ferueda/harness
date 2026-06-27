@@ -4,6 +4,7 @@
 
 ## Status
 
+- **Status**: done
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
@@ -241,16 +242,16 @@ Update `dev/plans/README.md` after implementation status changes.
 
 ## Done criteria
 
-- [ ] `AgentRunInput.signal` exists.
-- [ ] Failed `AgentRunResult` supports `aborted?: boolean`.
-- [ ] Cursor SDK external abort calls `run.cancel()` when possible and returns exit `130`.
-- [ ] Codex external abort uses `TurnOptions.signal` and returns exit `130`.
-- [ ] Timeout paths still return exit `124` and do not set `aborted`.
-- [ ] Workflow error text distinguishes explicit abort from reviewer failure.
-- [ ] No Cursor CLI subprocess kill-tree implementation is added by this plan.
-- [ ] Targeted tests pass.
-- [ ] `pnpm run typecheck`, `pnpm test`, and `pnpm run lint` pass.
-- [ ] `dev/plans/README.md` reflects status after implementation.
+- [x] `AgentRunInput.signal` exists.
+- [x] Failed `AgentRunResult` supports `aborted?: boolean`.
+- [x] Cursor SDK external abort calls `run.cancel()` when possible and returns exit `130`.
+- [x] Codex external abort uses `TurnOptions.signal` and returns exit `130`.
+- [x] Timeout paths still return exit `124` and do not set `aborted`.
+- [x] Workflow error text distinguishes explicit abort from reviewer failure.
+- [x] No Cursor CLI subprocess kill-tree implementation is added by this plan.
+- [x] Targeted tests pass.
+- [x] `pnpm run typecheck`, `pnpm test`, and `pnpm run lint` pass.
+- [x] `dev/plans/README.md` reflects status after implementation.
 
 ## STOP conditions
 
