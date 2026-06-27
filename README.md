@@ -113,7 +113,7 @@ Reviewer agents are selected with `--agent cursor|codex` or `defaultAgent` in `h
 
 `cursor` remains the default provider. Config is provider-scoped under `agents`, so Cursor and Codex settings do not mix. Default review models are `composer-2.5` for Cursor and `gpt-5.5` for Codex. The built-in Cursor runtime fallback is `cli`; this repo's `harness.json` opts into `runtime: "sdk"` for change-review runs. Codex defaults to `modelReasoningEffort: "high"`, `sandboxMode: "read-only"`, and `approvalPolicy: "never"`. Other Codex modes are exposed for future workflows and explicit overrides.
 
-For Codex, harness uses the TypeScript SDK without passing a custom environment, so auth follows the local Codex CLI: run `codex login` once or provide `CODEX_API_KEY` in the environment. Use `harness models` for the harness model catalog. For live Cursor account-specific models, run `agent models`.
+For Codex, harness uses the TypeScript SDK without passing a custom environment, so auth follows the local Codex CLI: run `codex login` once or provide `CODEX_API_KEY` in the environment. Use `harness models` for the harness model catalog.
 
 ```bash
 harness run change-review --agent codex --model gpt-5.5 --reasoning-effort high --sandbox read-only --approval-policy never
@@ -131,6 +131,14 @@ Cursor also supports an SDK runtime:
   }
 }
 ```
+
+Cursor SDK review model selection is intentionally constrained to three modes. Cursor CLI runtime (`--runtime cli`) remains a passthrough to Cursor CLI model IDs.
+
+| `--model` | SDK selection |
+|-----------|---------------|
+| `composer-2.5` | Composer 2.5 with `fast=false` |
+| `claude-opus-4-8` | Opus 4.8 with `thinking=true`, `effort=high`, `fast=false` |
+| `gpt-5.5` | GPT-5.5 with `context=272k`, `reasoning=high`, `fast=false` |
 
 ```bash
 CURSOR_API_KEY=... harness run change-review --agent cursor --runtime sdk

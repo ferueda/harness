@@ -92,12 +92,12 @@ test("resolveHarnessOptions reads provider-scoped Cursor config", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeFileSync(
     join(workspace, "harness.json"),
-    '{ "defaultAgent": "cursor", "agents": { "cursor": { "model": "gpt-5.5-high", "runtime": "sdk" } } }\n',
+    '{ "defaultAgent": "cursor", "agents": { "cursor": { "model": "gpt-5.5", "runtime": "sdk" } } }\n',
     "utf8",
   );
   const options = resolveHarnessOptions({ workspace }, "/");
   expect(options.agentProvider).toBe("cursor");
-  expect(options.model).toBe("gpt-5.5-high");
+  expect(options.model).toBe("gpt-5.5");
   expect(options.cursorRuntime).toBe("sdk");
   expect(options.modelReasoningEffort).toBeUndefined();
 });
