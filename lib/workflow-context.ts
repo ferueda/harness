@@ -426,9 +426,7 @@ function buildPromptValues({
     HEAD_REF: scope.headRef,
     DIFF_RANGE: `${scope.mergeBase}..${scope.headSha}`,
     PLAN_REF:
-      agentName === "review-implementation"
-        ? buildPlanRef(contextArtifacts.plan, workspace)
-        : "",
+      agentName === "review-implementation" ? buildPlanRef(contextArtifacts.plan, workspace) : "",
     HANDOFF_SECTION: buildInlinedHandoffSection(contextArtifacts.handoff),
     DIFF_REF: diffRef,
   };
