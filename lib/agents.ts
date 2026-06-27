@@ -3,15 +3,19 @@ export const CURSOR_RUNTIMES = ["cli", "sdk"] as const;
 export const AGENT_SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
 export const AGENT_APPROVAL_POLICIES = ["never", "on-request", "on-failure", "untrusted"] as const;
 export const AGENT_REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+export const CURSOR_SDK_MODEL_MODES = ["composer-2.5", "claude-opus-4-8", "gpt-5.5"] as const;
 
 export type AgentProviderName = (typeof AGENT_PROVIDERS)[number];
 export type CursorRuntime = (typeof CURSOR_RUNTIMES)[number];
 export type AgentSandboxMode = (typeof AGENT_SANDBOX_MODES)[number];
 export type AgentApprovalPolicy = (typeof AGENT_APPROVAL_POLICIES)[number];
 export type AgentReasoningEffort = (typeof AGENT_REASONING_EFFORTS)[number];
+export type CursorSdkModelMode = (typeof CURSOR_SDK_MODEL_MODES)[number];
+
+const DEFAULT_CURSOR_MODEL = CURSOR_SDK_MODEL_MODES[0] satisfies CursorSdkModelMode;
 
 export const DEFAULT_AGENT_MODELS = {
-  cursor: "composer-2.5",
+  cursor: DEFAULT_CURSOR_MODEL,
   codex: "gpt-5.5",
 } as const satisfies Record<AgentProviderName, string>;
 
@@ -32,8 +36,9 @@ export function isCursorSdkRuntime(
 export const AGENT_MODEL_CATALOG = {
   cursor: {
     defaultModel: DEFAULT_AGENT_MODELS.cursor,
-    models: ["claude-opus-4-8-thinking-high", "gpt-5.5-high", "composer-2.5"],
-    liveListCommand: "agent models",
+    models: CURSOR_SDK_MODEL_MODES,
+    modelsRuntime: "sdk",
+    modelsNote: "Fixed Cursor SDK review modes; --runtime cli passes model IDs to Cursor CLI.",
   },
   codex: {
     defaultModel: DEFAULT_AGENT_MODELS.codex,
