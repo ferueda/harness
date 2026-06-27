@@ -111,15 +111,15 @@ Reviewer agents are selected with `--agent cursor|codex` or `defaultAgent` in `h
 }
 ```
 
-`cursor` remains the default provider. Config is provider-scoped under `agents`, so Cursor and Codex settings do not mix. Default review models are `composer-2.5` for Cursor and `gpt-5.5` for Codex. The built-in Cursor runtime fallback is `sdk`; use `--runtime cli` when you need the Cursor CLI subprocess path. Codex defaults to `modelReasoningEffort: "high"`, `sandboxMode: "read-only"`, and `approvalPolicy: "never"`. Other Codex modes are exposed for future workflows and explicit overrides.
+`cursor` remains the default provider. Config is provider-scoped under `agents`, so Cursor and Codex settings do not mix. Default review models are `composer-2.5` for Cursor and `gpt-5.5` for Codex. Cursor SDK is the default runtime; `--runtime sdk` is optional. Codex defaults to `modelReasoningEffort: "high"`, `sandboxMode: "read-only"`, and `approvalPolicy: "never"`. Other Codex modes are exposed for future workflows and explicit overrides.
 
 For Codex, harness uses the TypeScript SDK without passing a custom environment, so auth follows the local Codex CLI: run `codex login` once or provide `CODEX_API_KEY` in the environment. Use `harness models` for the harness model catalog.
 
 ```bash
-harness run change-review --agent codex --model gpt-5.5 --reasoning-effort high --sandbox read-only --approval-policy never
+harness run change-review --agent codex --model gpt-5.5 --reasoning-effort high --sandbox read-only --approval-policy never --verbose
 ```
 
-Cursor also supports an SDK runtime:
+Cursor uses the SDK runtime:
 
 ```json
 {
@@ -132,7 +132,7 @@ Cursor also supports an SDK runtime:
 }
 ```
 
-Cursor SDK review model selection is intentionally constrained to three modes. Cursor CLI runtime (`--runtime cli`) remains a passthrough to Cursor CLI model IDs.
+Cursor SDK review model selection is intentionally constrained to three modes. The legacy Cursor CLI runtime is retained only for diagnostics while the CLI path still exists; prefer SDK execution for normal workflow runs.
 
 | `--model` | SDK selection |
 |-----------|---------------|
@@ -141,12 +141,12 @@ Cursor SDK review model selection is intentionally constrained to three modes. C
 | `gpt-5.5` | GPT-5.5 with `context=272k`, `reasoning=high`, `fast=false` |
 
 ```bash
-CURSOR_API_KEY=... harness run change-review --agent cursor --runtime sdk
-# fallback to Cursor CLI for a run:
-harness run change-review --agent cursor --runtime cli
+CURSOR_API_KEY=... harness run change-review --agent cursor --verbose
 ```
 
-The SDK runtime uses Cursor local agent mode, requires `CURSOR_API_KEY`, runs change-review steps in parallel, and rejects review runs that modify tracked workspace status outside `.harness/`. The git status comparison is the review safety backstop; it detects final tracked-status changes but cannot prove that a file was not edited and reverted during the run. Cursor SDK local sandboxing is environment-dependent and is not required by harness. It is not equivalent to the CLI `ask` path and, unlike the CLI runtime, cannot rely on `agent login` auth.
+The SDK runtime uses Cursor local agent mode, requires `CURSOR_API_KEY`, runs change-review steps in parallel, and rejects review runs that modify tracked workspace status outside `.harness/`. The git status comparison is the review safety backstop; it detects final tracked-status changes but cannot prove that a file was not edited and reverted during the run. Cursor SDK local sandboxing is environment-dependent and is not required by harness. It is not equivalent to the CLI `ask` path and cannot rely on `agent login` auth.
+
+For live caller feedback, run change-review with `--verbose`. Stdout remains the final metadata JSON. Stderr emits workflow event JSONL while reviewers run, and the durable timeline is always written to `<runDir>/events.jsonl` for non-dry-run reviews.
 
 `harness init` creates `harness.json` when missing, ensures `.gitignore` contains `.harness/`, and writes an ignored repo-local shim at `.harness/bin/harness`. The shim points back to the harness installation that ran `init`, so future agents can use a stable command without relying on `PATH`. The shim is a bash script; target machines need a POSIX shell with `bash` available.
 
@@ -204,7 +204,7 @@ For fast CLI iteration from source:
 
 ```bash
 node bin/harness.ts init
-node bin/harness.ts run change-review
+node bin/harness.ts run change-review --verbose
 ```
 
 ## Session Extraction

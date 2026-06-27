@@ -15,6 +15,13 @@ Coordinate harness review runs and close the loop on reviewer findings.
   - `simplify`: unnecessary complexity and smaller equivalent shapes.
 - Use `--steps <ids>` only when the caller intentionally selected roles, or on a follow-up run where you intentionally skip a role that already passed. Record the skip reason.
 
+## Preferred Runtime
+
+- Use SDK-first review execution. Cursor SDK is the default runtime; `--runtime sdk` is optional.
+- Include `--verbose` for day-to-day agent and automation runs so callers receive live workflow events while reviewers are still running.
+- Do not use `--runtime cli`, `--cursor-wrapper`, or `--cursor-agent` except for legacy diagnostics while the CLI path still exists.
+- For Codex-backed review, use `--agent codex`; keep default `read-only`, `never`, and `high` unless the caller explicitly requests otherwise.
+
 ## Before Running
 
 1. Compose a self-contained review handoff using [references/review-handoff.md](references/review-handoff.md). Completion criterion: a reviewer can understand the goal, scope, changed files, verification, and scrutiny points without chat history.
@@ -27,16 +34,16 @@ Coordinate harness review runs and close the loop on reviewer findings.
 Use the available harness executable: `harness`, `.harness/bin/harness`, or `node bin/harness.ts` when working from this source repo.
 
 ```bash
-printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --handoff-stdin
+printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --handoff-stdin --verbose
 ```
 
 For a deliberate partial run:
 
 ```bash
-printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --steps implementation,quality --handoff-stdin
+printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --steps implementation,quality --handoff-stdin --verbose
 ```
 
-Defaults: Cursor `composer-2.5`; Codex `gpt-5.5` with effort `high`. Use `--agent` or `--model` only when the caller asks or repo config requires it. Cursor SDK review models are constrained to `composer-2.5`, `claude-opus-4-8`, and `gpt-5.5`.
+Defaults: Cursor SDK `composer-2.5`; Codex SDK `gpt-5.5` with effort `high`. Use `--agent` or `--model` only when the caller asks or repo config requires it. Cursor SDK review models are constrained to `composer-2.5`, `claude-opus-4-8`, and `gpt-5.5`.
 
 Run `harness models` before choosing a non-default model or checking the SDK params behind each mode.
 
@@ -56,6 +63,7 @@ Run `harness models` before choosing a non-default model or checking the SDK par
 - Advisory findings may be declined, but only with a reason tied to scope, behavior, risk, or repo convention.
 - On reviewer failure, read `meta.json` first. If `streamArtifacts.<stage>.status` is `written`, inspect the referenced `*.stream.jsonl`.
 - For live caller feedback, run with `--verbose`; stdout remains final meta JSON, while stderr emits workflow events as JSONL.
+- Callers that consume `--verbose` stderr should parse JSON object lines only. Durable truth remains `<runDir>/events.jsonl`.
 - Use `events.jsonl` for the step timeline, including starts, heartbeats, ends, elapsed time, and output artifact paths.
 - Use stream logs for forensics: tool activity, partial assistant output, timeout location, and SDK event order.
 - Do not use stream logs as verdict sources. Verdicts come from `*-review.json` or the final raw provider artifact.
