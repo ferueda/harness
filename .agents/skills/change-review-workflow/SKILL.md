@@ -36,7 +36,9 @@ For a deliberate partial run:
 printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --steps implementation,quality --handoff-stdin
 ```
 
-Defaults: Cursor `composer-2.5`; Codex `gpt-5.5` with effort `high`. Use `--agent` or `--model` only when the caller asks or repo config requires it. Run `harness models` before choosing a non-default model.
+Defaults: Cursor `composer-2.5`; Codex `gpt-5.5` with effort `high`. Use `--agent` or `--model` only when the caller asks or repo config requires it. Cursor SDK review models are constrained to `composer-2.5`, `claude-opus-4-8`, and `gpt-5.5`.
+
+Run `harness models` before choosing a non-default model or checking the SDK params behind each mode.
 
 ## After Results
 
