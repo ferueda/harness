@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -117,7 +116,7 @@ test("dry-run export writes workflow step metadata", () => {
   expect("streamArtifacts" in meta).toBe(false);
 });
 
-test("workflow context passes Cursor SDK runtime to provider factory", () => {
+test("workflow context passes Cursor provider to factory", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const calls: { providerOptions?: AgentProviderOptions } = {};
@@ -127,7 +126,6 @@ test("workflow context passes Cursor SDK runtime to provider factory", () => {
     headRef: "HEAD",
     runsDir,
     agentProvider: "cursor",
-    cursorRuntime: "sdk",
     dryRun: true,
     agentProviderFactory(options) {
       calls.providerOptions = options;
@@ -143,12 +141,12 @@ test("workflow context passes Cursor SDK runtime to provider factory", () => {
 
   const meta = ctx.export({ title: "Change Review Summary", reviews: [], verdict: "pass" });
 
-  expect(calls.providerOptions).toMatchObject({ provider: "cursor", cursorRuntime: "sdk" });
+  expect(calls.providerOptions).toMatchObject({ provider: "cursor" });
   expect(ctx.reviewConcurrency).toBe("parallel");
-  expect(meta.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "sdk" });
+  expect(meta.agent).toMatchObject({ name: "cursor", model: "composer-2.5" });
 });
 
-test("workflow context keeps Cursor CLI reviews parallel by default", () => {
+test("workflow context keeps Cursor reviews parallel by default", () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
   const ctx = createWorkflowContextForTest({
@@ -175,28 +173,26 @@ test("workflow context keeps Cursor CLI reviews parallel by default", () => {
 test("workflow context validates provider structured output as review output", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const fakeAgent = join(mkdtempSync(join(tmpdir(), "harness-agent-")), "cursor-agent.js");
-  writeFileSync(
-    fakeAgent,
-    [
-      "#!/usr/bin/env node",
-      "console.log(JSON.stringify({",
-      '  status: "completed",',
-      "  structuredOutput: { verdict: 'pass', summary: 'missing findings' },",
-      "}));",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  chmodSync(fakeAgent, 0o755);
-
-  const ctx = createWorkflowContext({
+  const ctx = createWorkflowContextForTest({
     workspace,
     baseRef: "HEAD",
     headRef: "HEAD",
     runsDir,
-    cursorRuntime: "cli",
-    cursorAgentPath: fakeAgent,
+    agentProvider: "cursor",
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return {
+            ok: true,
+            structuredOutput: { verdict: "pass", summary: "missing findings" },
+            raw: {
+              structuredOutput: { verdict: "pass", summary: "missing findings" },
+            },
+          };
+        },
+      };
+    },
     maxRuntimeMs: 1_000,
   });
 
@@ -210,39 +206,37 @@ test("workflow context validates provider structured output as review output", a
 test("workflow context rejects Cursor findings without rationale", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const fakeAgent = join(mkdtempSync(join(tmpdir(), "harness-agent-")), "cursor-agent.js");
-  writeFileSync(
-    fakeAgent,
-    [
-      "#!/usr/bin/env node",
-      "console.log(JSON.stringify({",
-      '  status: "completed",',
-      "  structuredOutput: {",
-      "    verdict: 'needs_changes',",
-      "    summary: 'missing rationale',",
-      "    findings: [{",
-      "      title: 'Missing rationale',",
-      "      severity: 'Medium',",
-      "      location: 'lib/example.ts:1',",
-      "      issue: 'No rationale field',",
-      "      recommendation: 'Add rationale',",
-      "      must_fix: true,",
-      "    }],",
-      "  },",
-      "}));",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  chmodSync(fakeAgent, 0o755);
-
-  const ctx = createWorkflowContext({
+  const ctx = createWorkflowContextForTest({
     workspace,
     baseRef: "HEAD",
     headRef: "HEAD",
     runsDir,
-    cursorRuntime: "cli",
-    cursorAgentPath: fakeAgent,
+    agentProvider: "cursor",
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return {
+            ok: true,
+            structuredOutput: {
+              verdict: "needs_changes",
+              summary: "missing rationale",
+              findings: [
+                {
+                  title: "Missing rationale",
+                  severity: "Medium",
+                  location: "lib/example.ts:1",
+                  issue: "No rationale field",
+                  recommendation: "Add rationale",
+                  must_fix: true,
+                },
+              ],
+            },
+            raw: { ok: true },
+          };
+        },
+      };
+    },
     maxRuntimeMs: 1_000,
   });
 
