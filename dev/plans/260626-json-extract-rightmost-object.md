@@ -153,13 +153,13 @@ Follow existing stream-json envelope test pattern (~lines 100–124 in `cursor-a
 
 ## Done criteria
 
-- [ ] `npm run typecheck` exits 0
-- [ ] `npm test` exits 0
-- [ ] `schema.test.ts` includes prose + non-empty `findings` regression
-- [ ] `parseStructuredOutput` uses schema-aware `accepts` when schema provided
-- [ ] Array-root extraction preserved for array schemas
-- [ ] `extractJsonFromText` no longer uses left-to-right `firstParseableJsonValue`
-- [ ] `dev/plans/README.md` status row updated
+- [x] `npm run typecheck` exits 0
+- [x] `npm test` exits 0
+- [x] `schema.test.ts` includes prose + non-empty `findings` regression
+- [x] `parseStructuredOutput` uses schema-aware `accepts` when schema provided
+- [x] Array-root extraction preserved for array schemas
+- [x] `extractJsonFromText` no longer uses left-to-right `firstParseableJsonValue`
+- [x] `dev/plans/README.md` status row updated
 
 ## STOP conditions
 
