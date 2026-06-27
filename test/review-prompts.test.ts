@@ -3,35 +3,38 @@ import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
   SIMPLIFY_REVIEW_PROMPT,
-} from "../lib/review-prompts.ts";
+} from "../lib/prompts/index.ts";
 
-const DIRECT_ARTIFACT_INSTRUCTION =
-  "Read the artifact files directly. Do not rely on summaries or previews.";
-
-test("review prompts preserve common reviewer instructions", () => {
+test("review prompts include scope placeholders and JSON output contract", () => {
   for (const prompt of [
     IMPLEMENTATION_REVIEW_PROMPT,
     QUALITY_REVIEW_PROMPT,
     SIMPLIFY_REVIEW_PROMPT,
   ]) {
-    expect(prompt).toContain("{{SKILL_PATH}}");
+    expect(prompt).toContain("{{DIFF_RANGE}}");
     expect(prompt).toContain("{{BASE_REF}}");
     expect(prompt).toContain("{{HEAD_REF}}");
-    expect(prompt).toContain("{{MERGE_BASE}}");
-    expect(prompt).toContain("{{HEAD_SHA}}");
-    expect(prompt).toContain("{{DIFF_SECTION}}");
+    expect(prompt).toContain("{{DIFF_REF}}");
     expect(prompt).toContain("{{HANDOFF_SECTION}}");
-    expect(prompt).toContain(DIRECT_ARTIFACT_INSTRUCTION);
     expect(prompt).toContain("Return JSON matching the provided schema");
+    expect(prompt).not.toContain("{{MERGE_BASE}}");
+    expect(prompt).not.toContain("{{HEAD_SHA}}");
+    expect(prompt).not.toContain("{{SKILL_PATH}}");
+    expect(prompt).not.toContain("read and follow this skill file");
   }
 });
 
-test("implementation review prompt includes plan context", () => {
-  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("{{PLAN_SECTION}}");
-  expect(QUALITY_REVIEW_PROMPT).not.toContain("{{PLAN_SECTION}}");
-  expect(SIMPLIFY_REVIEW_PROMPT).not.toContain("{{PLAN_SECTION}}");
+test("implementation review prompt includes plan context and adversarial guidance", () => {
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("{{PLAN_REF}}");
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("adversarial code review");
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("Subtract before you add");
+  expect(QUALITY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
+  expect(SIMPLIFY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
 });
 
-test("simplify review prompt keeps simplify-specific guidance", () => {
-  expect(SIMPLIFY_REVIEW_PROMPT).toContain("Use the simplify-review skill");
+test("quality and simplify prompts keep reviewer-specific guidance", () => {
+  expect(QUALITY_REVIEW_PROMPT).toContain("Audit focus");
+  expect(QUALITY_REVIEW_PROMPT).toContain("preserving exact functionality");
+  expect(SIMPLIFY_REVIEW_PROMPT).toContain("preserve exact behavior");
+  expect(SIMPLIFY_REVIEW_PROMPT).toContain("Prefer explicit, boring code");
 });
