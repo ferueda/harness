@@ -556,6 +556,44 @@ test("createCodexAgent keeps partial stream logs on external abort", async () =>
   });
 });
 
+test("createCodexAgent does not return success when a turn resolves after external abort", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const controller = new AbortController();
+  const codexFactory = () => ({
+    startThread() {
+      return {
+        id: "thread-abort",
+        run() {
+          controller.abort();
+          return Promise.resolve({
+            finalResponse: '{"ok":true}',
+            items: [],
+            usage: {
+              input_tokens: 1,
+              cached_input_tokens: 0,
+              output_tokens: 2,
+              reasoning_output_tokens: 0,
+            },
+          });
+        },
+      };
+    },
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(130);
+  expect(result.aborted).toBe(true);
+  expect(result.error).toBe("Agent was aborted");
+});
+
 test("createCodexAgent observes delayed run rejection after timeout", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
   const unhandledRejections: unknown[] = [];
