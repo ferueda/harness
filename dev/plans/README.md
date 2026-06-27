@@ -3,7 +3,7 @@
 | File | Status | Summary |
 | ---- | ------ | ------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `change-review`, durable orchestration (Phase 2), graders, triggers |
-| [260626-json-extract-rightmost-object.md](./260626-json-extract-rightmost-object.md) | `pending` | Rightmost JSON + schema-aware `parseStructuredOutput` (round 2) |
+| [260626-json-extract-rightmost-object.md](./260626-json-extract-rightmost-object.md) | `done` | Rightmost JSON + schema-aware `parseStructuredOutput` (round 2) |
 | [260626-incremental-stream-json-parsing.md](./260626-incremental-stream-json-parsing.md) | `pending` | Infra: `createJSONLParser`, `--log-path`, parent bridge (no workflow edits) |
 | [260626-agent-abort-signal.md](./260626-agent-abort-signal.md) | `pending` | Provider `AbortSignal` + envelope `aborted` (no CLI/workflow signal yet) |
 | [260626-review-stream-jsonl-logs.md](./260626-review-stream-jsonl-logs.md) | `pending` | `*.stream.jsonl` + `streamArtifacts` meta (depends on stream-json infra) |
