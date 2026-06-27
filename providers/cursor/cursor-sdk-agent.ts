@@ -7,8 +7,8 @@ import type {
   RunResult as CursorSdkRunResult,
   SDKAgent as CursorSdkAgentInstance,
 } from "@cursor/sdk";
-import { DEFAULT_AGENT_MODELS } from "../../lib/agents.ts";
-import type { Agent, AgentRunInput, AgentRunResult } from "../../lib/agents.ts";
+import { CURSOR_SDK_MODEL_MODES, DEFAULT_AGENT_MODELS } from "../../lib/agents.ts";
+import type { Agent, AgentRunInput, AgentRunResult, CursorSdkModelMode } from "../../lib/agents.ts";
 import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
 
 type CreateCursorSdkAgent = (options: CursorSdkAgentOptions) => Promise<CursorSdkAgentInstance>;
@@ -17,6 +17,20 @@ export type CursorSdkAgentFactoryOptions = {
   apiKey?: string;
   createSdkAgent?: CreateCursorSdkAgent;
 };
+
+const CURSOR_SDK_MODEL_PARAMS = {
+  "composer-2.5": [{ id: "fast", value: "false" }],
+  "claude-opus-4-8": [
+    { id: "thinking", value: "true" },
+    { id: "effort", value: "high" },
+    { id: "fast", value: "false" },
+  ],
+  "gpt-5.5": [
+    { id: "context", value: "272k" },
+    { id: "reasoning", value: "high" },
+    { id: "fast", value: "false" },
+  ],
+} satisfies Record<CursorSdkModelMode, CursorSdkModelSelection["params"]>;
 
 export function createCursorSdkAgent(options: CursorSdkAgentFactoryOptions = {}): Agent {
   const createSdkAgent = options.createSdkAgent ?? CursorSdkAgent.create;
@@ -49,6 +63,9 @@ async function invokeCursorSdkAgent({
       exitCode: 1,
     };
   }
+
+  const modelResult = cursorSdkModelSelection(input.model);
+  if (!modelResult.ok) return modelResult.error;
 
   const schemaResult = readOutputSchema(input);
   if (!schemaResult.ok) return schemaResult.error;
@@ -89,7 +106,7 @@ async function invokeCursorSdkAgent({
     sdkAgent = await withDeadline(
       createSdkAgent({
         apiKey,
-        model: cursorSdkModelSelection(input.model),
+        model: modelResult.value,
         mode: "agent",
         local: {
           cwd: input.workspace,
@@ -195,8 +212,31 @@ async function invokeCursorSdkAgent({
 
 function cursorSdkModelSelection(
   model: string = DEFAULT_AGENT_MODELS.cursor,
-): CursorSdkModelSelection {
-  return { id: model, params: [{ id: "fast", value: "false" }] };
+): { ok: true; value: CursorSdkModelSelection } | { ok: false; error: AgentRunResult } {
+  if (!isCursorSdkModelMode(model)) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        error: `Unsupported Cursor SDK model: ${model}. Use one of: ${CURSOR_SDK_MODEL_MODES.join(
+          ", ",
+        )}. For Cursor CLI model IDs, use --runtime cli.`,
+        exitCode: 1,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      id: model,
+      params: CURSOR_SDK_MODEL_PARAMS[model],
+    },
+  };
+}
+
+function isCursorSdkModelMode(model: string): model is CursorSdkModelMode {
+  return CURSOR_SDK_MODEL_MODES.includes(model as CursorSdkModelMode);
 }
 
 function readOutputSchema(
