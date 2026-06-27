@@ -1,5 +1,7 @@
 # Reviewer JSON parse resilience
 
+**Status:** `open` (todo — not an active plan)
+
 **Context:** Change-review run `20260627-191750-f2a819` — implementation and quality passed; simplify failed to parse. Re-run `20260627-192257-5214fe` passed (flaky model output, not harness logic).
 
 **Incident:** Simplify reviewer returned JSON-shaped text with a **literal newline** inside a finding `issue` string (position ~1273). `JSON.parse` fails with `Bad control character in string literal`. Rightmost extraction then grabbed a nested finding object; diagnostic error reported `missing required property "verdict"` instead of the syntax error.
