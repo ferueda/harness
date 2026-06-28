@@ -1,7 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { formatZodError } from "../../schemas.ts";
 import type { SessionEnvironment } from "./env.ts";
 import type {
   CodexSession,
@@ -208,4 +207,8 @@ function parseJsonLine(line: string, path: string, lineNumber: number): unknown 
 
 function isNodeErrorCode(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
+}
+
+function formatZodError(error: z.ZodError): string {
+  return error.issues.map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`).join("; ");
 }
