@@ -5,7 +5,7 @@ import {
   codexStateDbPath,
   resolveCodexRolloutPath,
   workspaceKeyForCodexPath,
-} from "../../../lib/sessions/codex/paths.ts";
+} from "../../lib/codex/paths.ts";
 import { makeSessionEnv, writeCodexStateDb } from "../helpers.ts";
 
 test("codexStateDbPath prefers root state database", () => {
