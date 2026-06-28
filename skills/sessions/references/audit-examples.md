@@ -1,6 +1,6 @@
 # Audit examples
 
-Worked examples for evaluating workflows and skills with session-evidence. Extract facts first; label interpretation separately.
+Worked examples for evaluating workflows and skills with the sessions skill. Extract facts first; label interpretation separately.
 
 See also coordinator fixtures: `planning-workflow/references/routing.md`.
 
@@ -25,7 +25,7 @@ See also coordinator fixtures: `planning-workflow/references/routing.md`.
 ## Report template
 
 ```markdown
-## Session evidence audit
+## Sessions audit
 
 **Date:**
 **Workspace:**
@@ -33,35 +33,41 @@ See also coordinator fixtures: `planning-workflow/references/routing.md`.
 **Window:** N days
 
 ### Commands run
+
 -
 
 ### Facts
+
 | Skill / term | Matches | First-turn | Notes |
-|--------------|---------|------------|-------|
+| ------------ | ------- | ---------- | ----- |
 
 ### Artifacts
+
 -
 
 ### Session ids reviewed
+
 -
 
 ### Interpretation
+
 - Healthy:
 - Investigate:
 
 ### Action
+
 - [ ] No change | Edit skill: … | Add fixture
 ```
 
 ## When to improve what
 
-| Symptom | Likely fix |
-|---------|------------|
-| Skill never invoked; routing clear | Description triggers; invoke coordinator explicitly |
-| Same wrong first skill | `planning-workflow/references/routing.md` intake or fixtures |
-| Skill invoked, wrong behavior | Leaf skill doc |
-| Zero hits weeks | Remove, merge, or promote |
-| Review findings not closed | `change-review-workflow` After Results |
+| Symptom                            | Likely fix                                                   |
+| ---------------------------------- | ------------------------------------------------------------ |
+| Skill never invoked; routing clear | Description triggers; invoke coordinator explicitly          |
+| Same wrong first skill             | `planning-workflow/references/routing.md` intake or fixtures |
+| Skill invoked, wrong behavior      | Leaf skill doc                                               |
+| Zero hits weeks                    | Remove, merge, or promote                                    |
+| Review findings not closed         | `change-review-workflow` After Results                       |
 
 ---
 
@@ -102,12 +108,12 @@ Inspect: `isFirstUserTurn`, `artifacts` plan-file / `dev/briefs/`.
 
 ### Signals
 
-| Healthy | Investigate |
-|---------|-------------|
+| Healthy                                                         | Investigate                            |
+| --------------------------------------------------------------- | -------------------------------------- |
 | `shape-requirements` or `planning-workflow` first on vague work | `create-plan` / `implement-plan` first |
-| `review-spec` on plan path before build | Plan in artifacts, no spec review |
-| `diagnose-issue` early on tickets | Interview on clear repro |
-| `handoff-work` across agents | Next session replays chat |
+| `review-spec` on plan path before build                         | Plan in artifacts, no spec review      |
+| `diagnose-issue` early on tickets                               | Interview on clear repro               |
+| `handoff-work` across agents                                    | Next session replays chat              |
 
 ### Scorecard
 
@@ -126,11 +132,11 @@ Inspect: `isFirstUserTurn`, `artifacts` plan-file / `dev/briefs/`.
 
 ### Misfires → doc
 
-| Misfire | Edit |
-|---------|------|
+| Misfire                              | Edit                                                 |
+| ------------------------------------ | ---------------------------------------------------- |
 | Implement on "add logging", no scope | `shape-requirements` gate-mode or routing fixture #8 |
-| Interview on JIRA ticket | `planning-workflow/references/routing.md` intake |
-| Skipped review-spec on big plan | `planning-workflow` step 2 or routing skip table |
+| Interview on JIRA ticket             | `planning-workflow/references/routing.md` intake     |
+| Skipped review-spec on big plan      | `planning-workflow` step 2 or routing skip table     |
 
 ### Artifact check
 
@@ -166,11 +172,11 @@ Look for: first-turn coordinator, `harness run change-review`, `.harness/runs/re
 
 ### Signals
 
-| Healthy | Investigate |
-|---------|-------------|
-| `change-review-workflow` or harness run after implement | Merge with no review |
-| `review-spec` for plan-only | change-review on plan with no diff |
-| Re-run after fixes | Findings never triaged |
+| Healthy                                                 | Investigate                        |
+| ------------------------------------------------------- | ---------------------------------- |
+| `change-review-workflow` or harness run after implement | Merge with no review               |
+| `review-spec` for plan-only                             | change-review on plan with no diff |
+| Re-run after fixes                                      | Findings never triaged             |
 
 ### Scorecard
 
@@ -218,14 +224,14 @@ Repeat `--provider cursor`. Zero hits on `*-review` may be OK (CLI invokes them)
 ## Skill portfolio review
 
 | Skill | Cursor | Codex | Verdict |
-|-------|--------|-------|---------|
+| ----- | ------ | ----- | ------- |
 ```
 
-| Verdict | When |
-|---------|------|
-| keep | Used correctly |
-| improve description | Zero hits, still wanted |
-| merge | Overlapping skills |
-| delete | Zero hits 90d, redundant |
+| Verdict             | When                     |
+| ------------------- | ------------------------ |
+| keep                | Used correctly           |
+| improve description | Zero hits, still wanted  |
+| merge               | Overlapping skills       |
+| delete              | Zero hits 90d, redundant |
 
 Cross-repo: `audit` may be hot in one repo only — judge per workspace.
