@@ -1,13 +1,13 @@
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { ReviewOutputSchema } from "../lib/schemas.ts";
-import { schemaAccepts, type JsonSchema } from "../lib/schema-validation.ts";
+import { loadSchema, schemaAccepts } from "../lib/schema-validation.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REVIEW_SCHEMA_PATH = join(REPO_ROOT, "schemas/review-output.schema.json");
-const REVIEW_SCHEMA = JSON.parse(readFileSync(REVIEW_SCHEMA_PATH, "utf8")) as JsonSchema;
+// Parity uses schemaAccepts — subset validator only (see lib/schema-validation.ts header).
+const REVIEW_SCHEMA = loadSchema({ schemaPath: REVIEW_SCHEMA_PATH })!;
 
 const FINDING_REQUIRED = [
   "title",
@@ -56,12 +56,20 @@ test("review-output JSON schema file defines expected finding item shape", () =>
   expect(item?.required).toHaveLength(FINDING_REQUIRED.length);
   expect(item?.properties?.severity?.enum).toEqual([...SEVERITIES]);
 
-  for (const field of ["title", "location", "issue", "recommendation", "rationale"] as const) {
+  for (const field of [
+    "title",
+    "severity",
+    "location",
+    "issue",
+    "recommendation",
+    "rationale",
+  ] as const) {
     expect(item?.properties?.[field]?.type).toBe("string");
   }
   expect(item?.properties?.must_fix?.type).toBe("boolean");
 });
 
+// Inline dual-validator asserts — helpers trigger oxlint vitest(expect-expect).
 test("minimal pass payload passes JSON schema and Zod", () => {
   expect(schemaAccepts(REVIEW_SCHEMA, MINIMAL_PASS)).toBe(true);
   expect(ReviewOutputSchema.safeParse(MINIMAL_PASS).success).toBe(true);
@@ -124,6 +132,16 @@ test("must_fix as string fails both validators", () => {
     verdict: "needs_changes",
     summary: "wrong type",
     findings: [finding({ must_fix: "false" })],
+  };
+  expect(schemaAccepts(REVIEW_SCHEMA, payload)).toBe(false);
+  expect(ReviewOutputSchema.safeParse(payload).success).toBe(false);
+});
+
+test("invalid severity enum fails both validators", () => {
+  const payload = {
+    verdict: "needs_changes",
+    summary: "bad severity",
+    findings: [finding({ severity: "Urgent" })],
   };
   expect(schemaAccepts(REVIEW_SCHEMA, payload)).toBe(false);
   expect(ReviewOutputSchema.safeParse(payload).success).toBe(false);
