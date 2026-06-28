@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { exportTranscript } from "../../../lib/sessions/core/export.ts";
-import { renderTranscriptMarkdown } from "../../../lib/sessions/core/show.ts";
+import { exportTranscript } from "../../lib/core/export.ts";
+import { renderTranscriptMarkdown } from "../../lib/core/show.ts";
 import { transcript } from "../helpers.ts";
 
 test("renderTranscriptMarkdown includes metadata and truncates long turns", () => {
