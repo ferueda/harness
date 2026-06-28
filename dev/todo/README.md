@@ -8,4 +8,4 @@ Lightweight follow-ups and spikes — not full implementation plans. For scoped 
 
 **Shipped (plan/todo context):** Selection-class parse failures — PR [#33](https://github.com/ferueda/harness/pull/33) (`parseStructuredOutput` rightmost + schema-aware `accepts`).
 
-**Active plan queue:** [`dev/plans/README.md`](../plans/README.md) — next: Cursor CLI review-runtime removal.
+**Active plan queue:** [`dev/plans/README.md`](../plans/README.md) — next: `steps.json` / graders per handoff.

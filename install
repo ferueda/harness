@@ -57,8 +57,6 @@ mkdir -p "$BIN_DIR"
 BIN_DIR="$(cd "$BIN_DIR" && pwd -P)"
 SHIM="$BIN_DIR/harness"
 ENTRYPOINT="$ROOT/bin/harness.ts"
-CURSOR_SHIM="$BIN_DIR/harness-cursor"
-CURSOR_ENTRYPOINT="$ROOT/providers/cursor/cursor-agent.ts"
 
 cat > "$SHIM" <<EOF
 #!/usr/bin/env bash
@@ -67,14 +65,9 @@ exec $(shell_quote "$NODE") $(shell_quote "$ENTRYPOINT") "\$@"
 EOF
 chmod +x "$SHIM"
 
-ln -sf "$CURSOR_ENTRYPOINT" "$CURSOR_SHIM"
-chmod +x "$CURSOR_ENTRYPOINT"
-
 "$SHIM" --help >/dev/null
-"$CURSOR_SHIM" --help >/dev/null
 
 echo "Installed harness: $SHIM"
-echo "Installed harness-cursor: $CURSOR_SHIM"
 echo "Checkout root: $ROOT"
 
 if ! path_contains "$BIN_DIR"; then

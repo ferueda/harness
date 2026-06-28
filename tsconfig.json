@@ -22,7 +22,8 @@
     "scripts/**/*.ts",
     "test/**/*.ts",
     "vitest.config.ts",
-    "workflows/**/*.ts"
+    "workflows/**/*.ts",
+    "skills/cursor-cli/**/*.ts"
   ],
   "exclude": ["dist", "node_modules", ".harness"]
 }

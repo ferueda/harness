@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -14,32 +14,11 @@ function runModuleScript(script: string, options: { env?: NodeJS.ProcessEnv } = 
   });
 }
 
-test("Cursor CLI provider does not load the SDK module", () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-agent-provider-"));
-  const cursorAgentPath = join(workspace, "cursor-agent.js");
-  writeFileSync(cursorAgentPath, "#!/usr/bin/env node\n", "utf8");
-  const script = `
-    const { createAgentProvider } = await import(${JSON.stringify(AGENT_PROVIDER_URL)});
-    const provider = createAgentProvider({
-      provider: "cursor",
-      cursorRuntime: "cli",
-      cursorAgentPath: ${JSON.stringify(cursorAgentPath)},
-    });
-    console.log(provider.name);
-  `;
-
-  const result = runModuleScript(script);
-
-  expect(result.status).toBe(0);
-  expect(result.stdout.trim()).toBe("cursor");
-  expect(result.stderr).not.toMatch(/SQLite is an experimental feature/);
-});
-
-test("Cursor SDK provider lazy-loads on run", () => {
+test("Cursor provider always uses SDK and lazy-loads on run", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-agent-provider-"));
   const script = `
     const { createAgentProvider } = await import(${JSON.stringify(AGENT_PROVIDER_URL)});
-    const provider = createAgentProvider({ provider: "cursor", cursorRuntime: "sdk" });
+    const provider = createAgentProvider({ provider: "cursor" });
     const result = await provider.run({
       workspace: ${JSON.stringify(workspace)},
       prompt: "review this",

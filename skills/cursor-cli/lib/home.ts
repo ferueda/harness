@@ -4,7 +4,7 @@ import { LAUNCHER_COMMAND } from "./command.ts";
 import { agentJson } from "./runner.ts";
 import { collapseHomePath } from "./output.ts";
 
-const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "cursor-agent.ts");
+const SCRIPT_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "cursor-cli.ts");
 
 export async function buildHomeEnvelope(workspace: string): Promise<Record<string, unknown>> {
   const envelope: Record<string, unknown> = {

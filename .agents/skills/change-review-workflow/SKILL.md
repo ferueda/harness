@@ -17,9 +17,8 @@ Coordinate harness review runs and close the loop on reviewer findings.
 
 ## Preferred Runtime
 
-- Use SDK-first review execution. Cursor SDK is the default runtime; `--runtime sdk` is optional.
+- Use Cursor SDK for `harness run change-review` (default provider).
 - Include `--verbose` for day-to-day agent and automation runs so callers receive live workflow events while reviewers are still running.
-- Do not use `--runtime cli`, `--cursor-wrapper`, or `--cursor-agent` except for legacy diagnostics while the CLI path still exists.
 - For Codex-backed review, use `--agent codex`; keep default `read-only`, `never`, and `high` unless the caller explicitly requests otherwise.
 
 ## Before Running

@@ -60,86 +60,6 @@ function expectInitShim(
   expect(shimHelp.stdout).toMatch(/Usage: harness/);
 }
 
-function createFakeCursorAgent({
-  reviewVerdict,
-  expectedMaxRuntimeMs,
-}: {
-  reviewVerdict: "pass" | "needs_changes" | "blocked";
-  expectedMaxRuntimeMs?: string;
-}) {
-  const scriptPath = join(mkdtempSync(join(tmpdir(), "harness-agent-")), "cursor-agent.js");
-  const structuredOutput = {
-    verdict: reviewVerdict,
-    summary: "fake reviewer",
-    findings:
-      reviewVerdict === "pass"
-        ? []
-        : [
-            {
-              title: "Fake finding",
-              severity: "Medium",
-              location: "fake",
-              issue: "fake issue",
-              recommendation: "fake recommendation",
-              rationale: "fake rationale",
-              must_fix: true,
-            },
-          ],
-  };
-  const envelope = JSON.stringify({ status: "completed", structuredOutput });
-  const runtimeCheck = expectedMaxRuntimeMs
-    ? `if (!process.argv.includes(${JSON.stringify(expectedMaxRuntimeMs)})) {
-  console.log(JSON.stringify({ status: "failed", error: "missing expected runtime" }));
-  return;
-}
-`
-    : "";
-  writeFileSync(
-    scriptPath,
-    [
-      "process.stdin.resume();",
-      "process.stdin.on('end', () => {",
-      runtimeCheck,
-      `  console.log(${JSON.stringify(envelope)});`,
-      "});",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  return scriptPath;
-}
-
-function createPromptAwareCursorAgent() {
-  const scriptPath = join(mkdtempSync(join(tmpdir(), "harness-agent-")), "cursor-agent.js");
-  const passOutput = {
-    verdict: "pass",
-    summary: "implementation passed",
-    findings: [],
-  };
-  writeFileSync(
-    scriptPath,
-    [
-      "const chunks = [];",
-      "process.stdin.setEncoding('utf8');",
-      "process.stdin.on('data', (chunk) => chunks.push(String(chunk)));",
-      "process.stdin.on('end', () => {",
-      "  const prompt = chunks.join('');",
-      "  if (prompt.includes('## Audit focus')) {",
-      "    console.log(JSON.stringify({",
-      "      status: 'completed',",
-      "      structuredOutput: { verdict: 'pass', summary: 'missing findings' },",
-      "    }));",
-      "    return;",
-      "  }",
-      `  console.log(${JSON.stringify(JSON.stringify({ status: "completed", structuredOutput: passOutput }))});`,
-      "});",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  return scriptPath;
-}
-
 function expectIndependentReviewPrompts(...prompts: string[]) {
   for (const prompt of prompts) {
     expect(prompt).not.toMatch(/Prior implementation review file/);
@@ -230,7 +150,6 @@ test("harness models prints provider model defaults", () => {
   const output = JSON.parse(result.stdout);
   expect(output.cursor.defaultModel).toBe("composer-2.5");
   expect(output.cursor.models).toEqual(["composer-2.5", "claude-opus-4-8", "gpt-5.5"]);
-  expect(output.cursor.modelsRuntime).toBe("sdk");
   expect(output.cursor.modelsNote).toMatch(/Fixed Cursor SDK review modes/);
   expect(output.cursor.liveListCommand).toBeUndefined();
   expect(output.codex.defaultModel).toBe("gpt-5.5");
@@ -255,9 +174,8 @@ test("harness run change-review help exits cleanly", () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness run change-review/);
   expect(result.stdout).toMatch(/--handoff-stdin/);
-  expect(result.stdout).toMatch(/--runtime/);
-  expect(result.stdout).toMatch(/--cursor-wrapper/);
-  expect(result.stdout).not.toMatch(/--cursor-agent/);
+  expect(result.stdout).not.toMatch(/--runtime/);
+  expect(result.stdout).not.toMatch(/--cursor-wrapper/);
   expect(result.stdout).toMatch(/--steps/);
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).toMatch(/--verbose/);
@@ -432,7 +350,7 @@ test("harness run change-review rejects unknown flags", () => {
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/unknown option.*--unknown/i);
 });
-test("harness run change-review rejects invalid runtime values", () => {
+test("harness run change-review rejects invalid max-runtime-ms values", () => {
   const result = runHarness(["run", "change-review", "--max-runtime-ms", "0"]);
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/must be a positive number/);
@@ -442,10 +360,17 @@ test("harness run change-review rejects invalid agent provider values", () => {
   expect(result.status).toBe(2);
   expect(result.stderr).toMatch(/must be one of: cursor, codex/);
 });
-test("harness run change-review rejects invalid Cursor runtime values", () => {
-  const result = runHarness(["run", "change-review", "--runtime", "native"]);
-  expect(result.status).toBe(2);
-  expect(result.stderr).toMatch(/must be one of: cli, sdk/);
+test("harness run change-review rejects removed Cursor CLI flags", () => {
+  for (const args of [
+    ["--runtime", "sdk"],
+    ["--runtime", "cli"],
+    ["--cursor-wrapper", "/opt/cursor-cli"],
+    ["--cursor-agent", "/opt/cursor-cli"],
+  ] as const) {
+    const result = runHarness(["run", "change-review", ...args]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/unknown option/i);
+  }
 });
 test("harness run change-review rejects invalid sandbox values", () => {
   const result = runHarness(["run", "change-review", "--sandbox", "loose"]);
@@ -502,69 +427,6 @@ test("harness run change-review rejects Codex executable override for Cursor", (
 
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/--codex-executable applies only when --agent codex is active/);
-});
-test("harness run change-review rejects Cursor wrapper override for Codex", () => {
-  const workspace = createGitWorkspace();
-  writeFileSync(join(workspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
-
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--cursor-wrapper",
-    "/opt/harness-cursor",
-    "--dry-run",
-  ]);
-
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--cursor-wrapper applies only when --agent cursor is active/);
-});
-test("harness run change-review rejects Cursor runtime for Codex", () => {
-  const workspace = createGitWorkspace();
-  writeFileSync(join(workspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
-
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "sdk",
-    "--dry-run",
-  ]);
-
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--runtime applies only when --agent cursor is active/);
-});
-test("harness run change-review rejects Cursor wrapper override for SDK runtime", () => {
-  const workspace = createGitWorkspace();
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "sdk",
-    "--cursor-wrapper",
-    "/opt/harness-cursor",
-    "--dry-run",
-  ]);
-
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--cursor-wrapper applies only when Cursor runtime is cli/);
 });
 test("harness run change-review ignores Codex-only policy config for Cursor", () => {
   const workspace = createGitWorkspace();
@@ -830,7 +692,7 @@ test("harness run change-review dry-run works through the CLI", () => {
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
-  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "sdk" });
+  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5" });
   expect(output.workflow).toBe("change-review");
   expect(output.requestedSteps).toEqual(["implementation", "quality", "simplify"]);
   expect(output.partial).toBe(false);
@@ -843,26 +705,6 @@ test("harness run change-review dry-run works through the CLI", () => {
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
   const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
   expectIndependentReviewPrompts(implementationPrompt, qualityPrompt, simplifyPrompt);
-});
-test("harness run change-review dry-run accepts Cursor CLI runtime", () => {
-  const workspace = createGitWorkspace();
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "cli",
-    "--dry-run",
-  ]);
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output.status).toBe("dry_run");
-  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5", runtime: "cli" });
 });
 test("harness run change-review writes stdin handoff into run context", () => {
   const workspace = createGitWorkspace();
@@ -998,217 +840,4 @@ test("harness run change-review dry-run uses self-contained simplify prompt", ()
   expect(simplifyPrompt).toContain("Prefer explicit, boring code");
   expect(simplifyPrompt).not.toContain("SKILL.md");
   expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
-});
-test("harness run change-review accepts positive finite runtime values", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "cli",
-    "--max-runtime-ms",
-    "1.5",
-    "--runs-dir",
-    runsDir,
-    "--cursor-wrapper",
-    createFakeCursorAgent({ reviewVerdict: "pass", expectedMaxRuntimeMs: "1.5" }),
-  ]);
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output.verdict).toBe("pass");
-});
-test("harness run change-review exits 0 when reviewers pass", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "cli",
-    "--runs-dir",
-    runsDir,
-    "--cursor-wrapper",
-    createFakeCursorAgent({ reviewVerdict: "pass" }),
-  ]);
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output.status).toBe("completed");
-  expect(output.verdict).toBe("pass");
-  expect(output.workflow).toBe("change-review");
-  expect(output.executedSteps).toEqual(["implementation", "quality", "simplify"]);
-  expect(output.omittedSteps).toEqual([]);
-  expect(output.partial).toBe(false);
-  expect(output.reviews.implementation.verdict).toBe("pass");
-  expect(output.reviews.codeQuality.verdict).toBe("pass");
-  expect(output.reviews.simplify.verdict).toBe("pass");
-});
-test("harness run change-review verbose emits JSONL events on stderr only", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "cli",
-    "--runs-dir",
-    runsDir,
-    "--cursor-wrapper",
-    createFakeCursorAgent({ reviewVerdict: "pass" }),
-    "--verbose",
-  ]);
-
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output.status).toBe("completed");
-  expect(output.eventsFile).toBe("events.jsonl");
-
-  const events = result.stderr
-    .split("\n")
-    .filter(Boolean)
-    .filter((line) => line.startsWith("{"))
-    .map((line) => JSON.parse(line));
-  expect(events[0]).toMatchObject({ type: "run:start", runId: output.runId });
-  expect(events).toContainEqual(
-    expect.objectContaining({
-      type: "step:start",
-      stepId: "review-implementation",
-      cliStep: "implementation",
-    }),
-  );
-  expect(events.at(-1)).toMatchObject({ type: "run:end", runId: output.runId });
-});
-test("harness run change-review accepts deprecated Cursor agent alias", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "cli",
-    "--runs-dir",
-    runsDir,
-    "--cursor-agent",
-    createFakeCursorAgent({ reviewVerdict: "pass" }),
-  ]);
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output.verdict).toBe("pass");
-});
-test("harness run change-review selected steps return failed metadata when a provider fails", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "cli",
-    "--runs-dir",
-    runsDir,
-    "--steps",
-    "implementation,quality",
-    "--cursor-wrapper",
-    createPromptAwareCursorAgent(),
-  ]);
-  expect(result.status).toBe(1);
-  const output = JSON.parse(result.stdout);
-  expect(output.status).toBe("failed");
-  expect(output.verdict).toBeUndefined();
-  expect(output.runId).toEqual(expect.any(String));
-  expect(output.workspace).toBe(workspace);
-  expect(output.scope).toEqual(expect.any(Object));
-  expect(output.startedAt).toEqual(expect.any(String));
-  expect(output.durationMs).toEqual(expect.any(Number));
-  expect(output.workflow).toBe("change-review");
-  expect(output.executedSteps).toEqual(["implementation", "quality"]);
-  expect(output.omittedSteps).toEqual(["simplify"]);
-  expect(output.partial).toBe(true);
-  expect(output.failedReviews).toEqual([
-    {
-      key: "codeQuality",
-      stage: "quality",
-      error: expect.stringMatching(/Invalid reviewer structured output: findings:/),
-    },
-  ]);
-  expect(output.reviews.implementation.verdict).toBe("pass");
-  expect(output.implementationReview.verdict).toBe("pass");
-  expect(output.qualityReview).toBeUndefined();
-
-  const [runId] = readdirSync(runsDir);
-  const meta = JSON.parse(readFileSync(join(runsDir, runId, "meta.json"), "utf8"));
-  expect(meta.status).toBe("failed");
-  expect(meta.workflow).toBe("change-review");
-  expect(meta.omittedSteps).toEqual(["simplify"]);
-  expect(meta.failedReviews).toEqual(output.failedReviews);
-  expect(meta.reviews.implementation.verdict).toBe("pass");
-
-  const summary = readFileSync(join(runsDir, runId, "summary.md"), "utf8");
-  expect(summary).toMatch(/## Steps/);
-  expect(summary).toMatch(/Omitted: `simplify`/);
-  expect(summary).toMatch(/## Implementation review/);
-  expect(summary).toMatch(/## Failed reviewers/);
-  expect(summary).toMatch(/codeQuality/);
-
-  const rawFailure = JSON.parse(
-    readFileSync(join(runsDir, runId, "quality-review.raw.json"), "utf8"),
-  );
-  expect(rawFailure.status).toBe("completed");
-  expect(rawFailure.structuredOutput.summary).toBe("missing findings");
-});
-test("harness run change-review exits 1 when reviewers do not pass", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const result = runHarness([
-    "run",
-    "change-review",
-    "--workspace",
-    workspace,
-    "--base",
-    "HEAD",
-    "--head",
-    "HEAD",
-    "--runtime",
-    "cli",
-    "--runs-dir",
-    runsDir,
-    "--cursor-wrapper",
-    createFakeCursorAgent({ reviewVerdict: "needs_changes" }),
-  ]);
-  expect(result.status).toBe(1);
-  const output = JSON.parse(result.stdout);
-  expect(output.status).toBe("completed");
-  expect(output.verdict).toBe("needs_changes");
-  expect(output.reviews.implementation.verdict).toBe("needs_changes");
-  expect(output.reviews.codeQuality.verdict).toBe("needs_changes");
-  expect(output.reviews.simplify.verdict).toBe("needs_changes");
 });

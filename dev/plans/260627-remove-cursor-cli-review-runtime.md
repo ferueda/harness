@@ -7,6 +7,7 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
+- **State**: completed
 - **Depends on**: `260627-sdk-agent-stream-logs` ✅, `260626-agent-abort-signal` ✅ (SDK parity for stream logs + cancellation)
 - **Category**: tech-debt
 - **Related**: SDK pivot; Cursor CLI review runtime deprecation
@@ -474,19 +475,21 @@ Expected: all exit 0.
 
 ## Done criteria
 
-- [ ] `provider: "cursor"` always creates Cursor SDK provider for reviews.
-- [ ] `--runtime`, `--cursor-wrapper`, and `--cursor-agent` are removed from harness (no review-runtime CLI).
-- [ ] `lib/cursor-agent.ts` and harness `providers/cursor/cursor-agent.ts` (+ CLI-only lib) are deleted; code lives under `skills/cursor-cli/`.
-- [ ] Launcher renamed to `cursor-cli` (`scripts/cursor-cli.ts`, `LAUNCHER_COMMAND`, install symlink); no `harness-cursor` remains outside archived plans.
-- [ ] Tests no longer rely on fake `cursor-cli` wrapper scripts for **harness workflow** coverage.
-- [ ] Step 7 cleanup complete: no dead runtime types, SDK error strings, or doc examples referencing harness CLI review path.
-- [ ] `skills/change-review-workflow` and `.agents/skills/change-review-workflow` are SDK-only (no legacy CLI exception).
-- [ ] `skills/cursor-cli/` is self-contained: runs via `node skills/cursor-cli/scripts/cursor-cli.ts` and skill `install.sh` without harness `install` or harness provider imports.
-- [ ] Step 7g standalone end-to-end check passes (direct invoke + symlink install).
-- [ ] `README.md`, `harness.json`, handoff, and `dev/plans/README.md` Phase E rows updated.
-- [ ] Step 7f `rg` sweeps pass.
-- [ ] `pnpm run typecheck`, `pnpm test`, `pnpm run lint`, and `pnpm run format:check` pass.
-- [ ] This plan status + `dev/plans/README.md` active queue updated.
+Verified in PR [#37](https://github.com/ferueda/harness/pull/37).
+
+- [x] `provider: "cursor"` always creates Cursor SDK provider for reviews.
+- [x] `--runtime`, `--cursor-wrapper`, and `--cursor-agent` are removed from harness (no review-runtime CLI).
+- [x] `lib/cursor-agent.ts` and harness `providers/cursor/cursor-agent.ts` (+ CLI-only lib) are deleted; code lives under `skills/cursor-cli/`.
+- [x] Launcher renamed to `cursor-cli` (`scripts/cursor-cli.ts`, `LAUNCHER_COMMAND`, install symlink); no `harness-cursor` remains outside archived plans.
+- [x] Tests no longer rely on fake `cursor-cli` wrapper scripts for **harness workflow** coverage.
+- [x] Step 7 cleanup complete: no dead runtime types, SDK error strings, or doc examples referencing harness CLI review path.
+- [x] `skills/change-review-workflow` and `.agents/skills/change-review-workflow` are SDK-only (no legacy CLI exception).
+- [x] `skills/cursor-cli/` is self-contained: runs via `node skills/cursor-cli/scripts/cursor-cli.ts` and skill `install.sh` without harness `install` or harness provider imports.
+- [x] Step 7g standalone end-to-end check passes (direct invoke + symlink install).
+- [x] `README.md`, `harness.json`, handoff, and `dev/plans/README.md` Phase E rows updated.
+- [x] Step 7f `rg` sweeps pass.
+- [x] `pnpm run typecheck`, `pnpm test`, `pnpm run lint`, and `pnpm run format:check` pass.
+- [x] This plan status + `dev/plans/README.md` active queue updated.
 
 ## STOP conditions
 

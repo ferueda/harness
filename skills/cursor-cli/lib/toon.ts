@@ -1,5 +1,5 @@
 /**
- * Minimal TOON encoder for harness-cursor stdout (subset of TOON v3).
+ * Minimal TOON encoder for cursor-cli stdout (subset of TOON v3).
  * https://toonformat.dev/
  */
 

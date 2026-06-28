@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: false,
-    include: ["test/**/*.test.ts", "providers/**/*.test.ts"],
+    include: ["test/**/*.test.ts", "providers/**/*.test.ts", "skills/cursor-cli/**/*.test.ts"],
     restoreMocks: true,
     testTimeout: 30_000,
   },

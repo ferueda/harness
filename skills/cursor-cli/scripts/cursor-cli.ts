@@ -2,12 +2,12 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { LAUNCHER_COMMAND } from "./lib/command.ts";
-import { buildEnvelope, buildErrorEnvelope, type EnvelopeStatus } from "./lib/envelope.ts";
-import { buildHomeEnvelope } from "./lib/home.ts";
-import { emitEnvelope, failUsage, finish, EXIT } from "./lib/output.ts";
-import { buildCommand, runAgent } from "./lib/runner.ts";
-import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
+import { LAUNCHER_COMMAND } from "../lib/command.ts";
+import { buildEnvelope, buildErrorEnvelope, type EnvelopeStatus } from "../lib/envelope.ts";
+import { buildHomeEnvelope } from "../lib/home.ts";
+import { emitEnvelope, failUsage, finish, EXIT } from "../lib/output.ts";
+import { buildCommand, runAgent } from "../lib/runner.ts";
+import { loadSchema, parseStructuredOutput, wrapPrompt } from "../lib/schema.ts";
 
 type CursorAgentOptions = {
   promptParts: string[];

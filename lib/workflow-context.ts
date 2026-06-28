@@ -20,13 +20,8 @@ import type {
   AgentRunInput,
   AgentRunResult,
   AgentSandboxMode,
-  CursorRuntime,
 } from "./agents.ts";
-import {
-  DEFAULT_AGENT_MODELS,
-  DEFAULT_CODEX_REASONING_EFFORT,
-  effectiveCursorRuntime,
-} from "./agents.ts";
+import { DEFAULT_AGENT_MODELS, DEFAULT_CODEX_REASONING_EFFORT } from "./agents.ts";
 import type { AgentStreamFormat, AgentStreamLogSummary } from "./agent-stream-log.ts";
 import {
   WORKFLOW_EVENTS_FILE,
@@ -58,8 +53,6 @@ type WorkflowOptions = {
   headRef: string;
   runsDir?: string;
   agentProvider?: AgentProviderName;
-  cursorRuntime?: CursorRuntime;
-  cursorAgentPath?: string;
   codexPathOverride?: string;
   planPath?: string;
   handoffPath?: string;
@@ -181,8 +174,6 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
     const agentProviderFactory = options.agentProviderFactory ?? createAgentProvider;
     reviewProvider = agentProviderFactory({
       provider: options.agentProvider ?? "cursor",
-      cursorRuntime: options.cursorRuntime,
-      cursorAgentPath: options.cursorAgentPath,
       codexPathOverride: options.codexPathOverride,
     });
     scope = {
@@ -221,7 +212,6 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
   const agentMeta = {
     name: reviewProvider.name,
     model: resolvedAgentModel(reviewProvider.name, options),
-    ...resolvedCursorRuntimeMeta(reviewProvider.name, options),
     ...agentPolicyMeta,
   };
   const writeDryRunMeta = (steps?: WorkflowStepMetadata) => {
@@ -431,11 +421,6 @@ function reviewPolicyOptions(
 
 function resolvedAgentModel(providerName: AgentProviderName, options: WorkflowOptions): string {
   return options.model ?? DEFAULT_AGENT_MODELS[providerName];
-}
-
-function resolvedCursorRuntimeMeta(providerName: AgentProviderName, options: WorkflowOptions) {
-  if (providerName !== "cursor") return {};
-  return { runtime: effectiveCursorRuntime(options.cursorRuntime) };
 }
 
 function resolvedReviewConcurrency(

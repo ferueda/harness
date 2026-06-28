@@ -248,9 +248,7 @@ function cursorSdkModelSelection(
       ok: false,
       error: {
         ok: false,
-        error: `Unsupported Cursor SDK model: ${model}. Use one of: ${CURSOR_SDK_MODEL_MODES.join(
-          ", ",
-        )}. For Cursor CLI model IDs, use --runtime cli.`,
+        error: `Unsupported Cursor SDK model: ${model}. Use one of: ${CURSOR_SDK_MODEL_MODES.join(", ")}.`,
         exitCode: 1,
       },
     };

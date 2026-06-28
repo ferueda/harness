@@ -26,7 +26,6 @@ function runInstall(options: { binDir: string; cwd?: string; path?: string }) {
 
 function expectInstalledHarness(binDir: string) {
   const shimPath = join(realpathSync(binDir), "harness");
-  const cursorShimPath = join(realpathSync(binDir), "harness-cursor");
   expect(existsSync(shimPath)).toBe(true);
   expect(statSync(shimPath).mode & 0o111).not.toBe(0);
   const content = readFileSync(shimPath, "utf8");
@@ -35,15 +34,6 @@ function expectInstalledHarness(binDir: string) {
   const help = spawnSync(shimPath, ["--help"], { encoding: "utf8" });
   expect(help.status).toBe(0);
   expect(help.stdout).toMatch(/Usage: harness/);
-
-  expect(existsSync(cursorShimPath)).toBe(true);
-  expect(statSync(cursorShimPath).mode & 0o111).not.toBe(0);
-  expect(realpathSync(cursorShimPath)).toBe(
-    realpathSync(join(REPO_ROOT, "providers/cursor/cursor-agent.ts")),
-  );
-  const cursorHelp = spawnSync(cursorShimPath, ["--help"], { encoding: "utf8" });
-  expect(cursorHelp.status).toBe(0);
-  expect(cursorHelp.stdout).toMatch(/Usage: harness-cursor/);
 }
 
 test("install writes an executable harness shim", () => {
@@ -51,7 +41,6 @@ test("install writes an executable harness shim", () => {
   const result = runInstall({ binDir });
   expect(result.status).toBe(0);
   expect(result.stdout).toContain("Installed harness:");
-  expect(result.stdout).toContain("Installed harness-cursor:");
   expect(result.stdout).toContain("Checkout root:");
   expectInstalledHarness(binDir);
 });
