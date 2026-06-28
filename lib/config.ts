@@ -112,8 +112,9 @@ export function initHarnessConfig(
 
   const configPath = join(workspace, CONFIG_FILE);
   const gitignorePath = join(workspace, ".gitignore");
+  const harnessEntrypoint = resolveRequiredPath("harnessEntrypoint", options.harnessEntrypoint);
   const shim = writeHarnessShim(workspace, {
-    harnessEntrypoint: resolveRequiredPath("harnessEntrypoint", options.harnessEntrypoint),
+    harnessEntrypoint,
     nodePath: resolve(options.nodePath ?? process.execPath),
   });
   const result = {
@@ -209,10 +210,19 @@ function writeHarnessShim(
   input: { harnessEntrypoint: string; nodePath: string },
 ): { path: string; updated: boolean } {
   const shimPath = join(workspace, HARNESS_SHIM_RELATIVE_PATH);
+  return writeExecutableShim(
+    shimPath,
+    renderExecShim({ nodePath: input.nodePath, entrypoint: input.harnessEntrypoint }),
+  );
+}
+
+function writeExecutableShim(
+  shimPath: string,
+  content: string,
+): { path: string; updated: boolean } {
   const shimDir = dirname(shimPath);
   mkdirSync(shimDir, { recursive: true });
 
-  const content = renderHarnessShim(input);
   const existing = existsSync(shimPath) ? readFileSync(shimPath, "utf8") : null;
   const hadContent = existing === content;
   const isExecutable = existing !== null && (statSync(shimPath).mode & 0o111) !== 0;
@@ -231,21 +241,21 @@ function writeHarnessShim(
   };
 }
 
+function renderExecShim(input: { nodePath: string; entrypoint: string }): string {
+  return [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    `exec ${shellQuote(input.nodePath)} ${shellQuote(input.entrypoint)} "$@"`,
+    "",
+  ].join("\n");
+}
+
 function resolveRequiredPath(name: string, path: string | undefined): string {
   if (!path) {
     throw new Error(`${name} is required to create the local harness shim`);
   }
 
   return resolve(path);
-}
-
-function renderHarnessShim(input: { harnessEntrypoint: string; nodePath: string }): string {
-  return [
-    "#!/usr/bin/env bash",
-    "set -euo pipefail",
-    `exec ${shellQuote(input.nodePath)} ${shellQuote(input.harnessEntrypoint)} "$@"`,
-    "",
-  ].join("\n");
 }
 
 function shellQuote(value: string): string {
