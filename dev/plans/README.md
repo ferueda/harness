@@ -26,6 +26,7 @@ Shipped and superseded plans live in [`archive/`](./archive/README.md). Do not r
 | — | [shared-review-json-parse](./archive/260628-shared-review-json-parse.md) | ✅ shipped |
 | F | [harness-verification-baseline](./archive/260628-harness-verification-baseline.md) | ✅ PR #39 |
 | G | [review-runtime-hardening](./archive/260628-review-runtime-hardening.md) | ✅ PR #40 |
+| H | [sessions-skill-colocation](./archive/260628-sessions-skill-colocation.md) | ✅ shipped |
 
 ---
 
