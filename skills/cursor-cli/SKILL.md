@@ -12,9 +12,14 @@ description: >-
 
 Delegate work to a Cursor agent from the shell without the IDE chat. Use when the user wants another agent to **call, ask, invoke, or run Cursor** on a task.
 
-**Launcher:** `cursor-cli` (skill-owned; not part of `harness run`)
+**Launcher:** skill-owned; **not** part of `harness`, `harness init`, or `harness install`.
 
-Requires `agent` on PATH. Local dev: `agent login` once. CI/servers: `CURSOR_API_KEY`.
+**Agents:** do not assume `cursor-cli` is on `PATH`. Run the skill script directly:
+
+1. `node <skill-root>/scripts/cursor-cli.ts …` — resolve `<skill-root>` from the loaded `cursor-cli` skill directory (packaged `skills/cursor-cli/`, target `.agents/skills/cursor-cli/`, or `~/.agents/skills/cursor-cli/`)
+2. `~/.local/bin/cursor-cli` only after `skills/cursor-cli/scripts/install.sh` **and** `command -v cursor-cli` succeeds
+
+Requires `agent` on PATH. Set **`CURSOR_API_KEY`** for subprocesses — `agent login` / Keychain auth often fails when another agent shells out to `cursor-cli`.
 
 **Not for harness reviews:** use `harness run change-review --agent cursor` (Cursor SDK) for workflow reviews.
 
@@ -30,7 +35,13 @@ Requires `agent` on PATH. Local dev: `agent login` once. CI/servers: `CURSOR_API
 ## Quick start
 
 ```bash
-# Check auth + CLI version
+# Portable (agents): run the skill script — do not rely on bare `cursor-cli` on PATH
+node skills/cursor-cli/scripts/cursor-cli.ts --help
+
+# Optional: global symlink via skill install.sh (requires ~/.local/bin on PATH)
+skills/cursor-cli/scripts/install.sh
+
+# Check auth + CLI version (after install or via node path above)
 cursor-cli
 
 # Invoke (read-only by default — no file edits)
@@ -132,8 +143,9 @@ On success with a schema, prefer `structuredOutput` over `result`.
 
 | Context | What you need |
 |---------|----------------|
-| Your machine (after `agent login`) | Nothing extra |
-| CI / headless server | `CURSOR_API_KEY` |
+| Interactive shell with `CURSOR_API_KEY` | Export key in env |
+| Agent subprocess / nested `cursor-cli` | **`CURSOR_API_KEY` required** — Keychain `agent login` is unreliable |
+| CI / headless server | `CURSOR_API_KEY` only |
 
 Verify: `agent status`
 
