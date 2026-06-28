@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { buildCursorIndex } from "../../../lib/sessions/cursor/index.ts";
-import { getCursorIndexStats } from "../../../lib/sessions/cursor/stats.ts";
+import { buildCursorIndex } from "../../lib/cursor/index.ts";
+import { getCursorIndexStats } from "../../lib/cursor/stats.ts";
 import { makeSessionEnv, writeTranscript } from "../helpers.ts";
 
 test("getCursorIndexStats aggregates cache rows", async () => {
