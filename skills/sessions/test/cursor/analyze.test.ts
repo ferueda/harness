@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { analyzeCursorSessions } from "../../../lib/sessions/cursor/analyze.ts";
+import { analyzeCursorSessions } from "../../lib/cursor/analyze.ts";
 import { session } from "../helpers.ts";
 
 test("analyzeCursorSessions reports Cursor-specific samples", () => {
