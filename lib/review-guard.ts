@@ -68,7 +68,7 @@ export function applyWorkspaceGuard(
 
   return {
     ok: false,
-    error: "Cursor SDK runtime modified the workspace during a review run",
+    error: "Agent runtime modified the workspace during a review run",
     raw: addUnderlyingFailure(guardedResult.raw, result),
     exitCode: result.ok ? 1 : result.exitCode,
   };

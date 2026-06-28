@@ -81,6 +81,39 @@ test("applyWorkspaceGuard preserves aborted failure when post-run status is unre
   });
 });
 
+test("applyWorkspaceGuard preserves non-abort failure when post-run status is unreadable", () => {
+  const result = applyWorkspaceGuard(
+    {
+      ok: false,
+      error: "Invalid JSON in reviewer output",
+      exitCode: 1,
+      raw: { parseError: true },
+    },
+    "",
+    {
+      ok: false,
+      error: {
+        ok: false,
+        error: "git unavailable",
+        exitCode: 1,
+      },
+    },
+  );
+
+  expect(result).toMatchObject({
+    ok: false,
+    error: "Invalid JSON in reviewer output",
+    exitCode: 1,
+  });
+  expect(result.raw).toMatchObject({
+    parseError: true,
+    workspaceStatus: {
+      before: "",
+      guard: "unverified",
+    },
+  });
+});
+
 test("withWorkspaceGuard fails when workspace porcelain changes", () => {
   const workspace = createGitWorkspace();
   const before = readWorkspaceStatus(workspace);
