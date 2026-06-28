@@ -9,6 +9,7 @@ Active work: [`../README.md`](../README.md).
 | File | Merged | Summary |
 | ---- | ------ | ------- |
 | [260628-review-runtime-hardening.md](./260628-review-runtime-hardening.md) | [#40](https://github.com/ferueda/harness/pull/40) | Shared review-guard, agent-invoke, provider registry, CLI abort |
+| [260628-sessions-skill-colocation.md](./260628-sessions-skill-colocation.md) | (branch) | `sessions` CLI → `skills/sessions/`; cache `~/.sessions/index` |
 | [260628-harness-verification-baseline.md](./260628-harness-verification-baseline.md) | [#39](https://github.com/ferueda/harness/pull/39) | Review-output JSON schema ↔ Zod sync regression tests |
 | [260628-shared-review-json-parse.md](./260628-shared-review-json-parse.md) | (branch) | Shared `lib/` review parser; Codex wiring; syntax-error diagnostics |
 | [260627-remove-cursor-cli-review-runtime.md](./260627-remove-cursor-cli-review-runtime.md) | [#37](https://github.com/ferueda/harness/pull/37) | SDK-only reviews; `cursor-cli` skill launcher |
