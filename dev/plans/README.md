@@ -5,10 +5,10 @@
 | File | Status | Summary |
 | ---- | ------ | ------- |
 | [260628-harness-verification-baseline.md](./260628-harness-verification-baseline.md) | `done` | Review-output schema sync test |
-| [260628-review-runtime-hardening.md](./260628-review-runtime-hardening.md) | `ready` | Review-guard, agent-invoke, registry, CLI abort |
+| [260628-review-runtime-hardening.md](./260628-review-runtime-hardening.md) | `done` | Review-guard, agent-invoke, registry, CLI abort |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest |
 
-**Build next:** [review runtime hardening](./260628-review-runtime-hardening.md) → handoff Phase 0.6 (`steps.json`).
+**Build next:** handoff Phase 0.6 (`steps.json`).
 
 Parse-resilience remainder (retry, structured-output spike): [todo](../todo/260627-reviewer-json-parse-resilience.md).
 
@@ -27,7 +27,7 @@ Shipped and superseded plans live in [`archive/`](./archive/README.md). Do not r
 | E | [remove-cursor-cli-review-runtime](./archive/260627-remove-cursor-cli-review-runtime.md) | ✅ PR #37 |
 | — | [shared-review-json-parse](./archive/260628-shared-review-json-parse.md) | ✅ shipped |
 | F | [harness-verification-baseline](./260628-harness-verification-baseline.md) | ✅ done |
-| G | [review-runtime-hardening](./260628-review-runtime-hardening.md) | 📋 ready |
+| G | [review-runtime-hardening](./260628-review-runtime-hardening.md) | ✅ done |
 
 ---
 
