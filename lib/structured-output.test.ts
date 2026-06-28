@@ -85,6 +85,32 @@ test("parseStructuredOutput returns schema validation errors for invalid enum va
   expect(parseStructuredOutput('{"verdict":"maybe"}', schema).error).toMatch(/expected one of/);
 });
 
+test("parseStructuredOutput returns schema errors for prose-wrapped invalid JSON", () => {
+  const schema: JsonSchema = {
+    type: "object",
+    required: ["verdict"],
+    properties: {
+      verdict: { enum: ["pass", "fail"] },
+    },
+  };
+  const result = parseStructuredOutput('Here is JSON:\n{"verdict":"maybe"}', schema);
+  expect(result.error).toMatch(/did not match schema|expected one of/);
+  expect(result.error).not.toMatch(/Unexpected token/i);
+});
+
+test("parseStructuredOutput returns schema errors for trailing prose after invalid JSON", () => {
+  const schema: JsonSchema = {
+    type: "object",
+    required: ["verdict"],
+    properties: {
+      verdict: { enum: ["pass", "fail"] },
+    },
+  };
+  const result = parseStructuredOutput('{"verdict":"maybe"}\n\nDone!', schema);
+  expect(result.error).toMatch(/did not match schema|expected one of/);
+  expect(result.error).not.toMatch(/Unexpected token/i);
+});
+
 test("parseStructuredOutput returns schema validation errors for unexpected properties", () => {
   const schema: JsonSchema = {
     type: "object",
@@ -147,11 +173,8 @@ test("parseStructuredOutput handles braces inside strings in prose-wrapped JSON"
 });
 
 test("parseStructuredOutput reports syntax error before nested-object schema miss", () => {
-  const text = [
-    '{"verdict":"needs_changes","summary":"issue","findings":[',
-    '{"title":"bad","severity":"Medium","location":"x","issue":"line1',
-    'line2","recommendation":"fix","rationale":"r","must_fix":false}]}',
-  ].join("");
+  const text = `{"verdict":"needs_changes","summary":"issue","findings":[{"title":"bad","severity":"Medium","location":"x","issue":"line1
+line2","recommendation":"fix","rationale":"r","must_fix":false}]}`;
   const result = parseStructuredOutput(text, REVIEW_SCHEMA);
   expect(result.error).toMatch(/not valid JSON|Bad control character/i);
   expect(result.error).not.toMatch(/missing required property "verdict"/);
