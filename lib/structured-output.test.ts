@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { parseStructuredOutput, type JsonSchema } from "./schema.ts";
+import { parseStructuredOutput, type JsonSchema } from "./structured-output.ts";
 
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
-const REVIEW_SCHEMA_PATH = join(MODULE_ROOT, "../../../schemas/review-output.schema.json");
+const REVIEW_SCHEMA_PATH = join(MODULE_ROOT, "../schemas/review-output.schema.json");
 const REVIEW_SCHEMA = JSON.parse(readFileSync(REVIEW_SCHEMA_PATH, "utf8")) as JsonSchema;
 
 const MINIMAL_REVIEW = {
@@ -21,7 +21,7 @@ const REVIEW_WITH_FINDING = {
     {
       title: "missing test",
       severity: "Medium",
-      location: "schema.ts",
+      location: "structured-output.ts",
       issue: "no regression test",
       recommendation: "add test",
       rationale: "coverage",
@@ -144,4 +144,15 @@ test("parseStructuredOutput handles braces inside strings in prose-wrapped JSON"
   const payload = { verdict: "pass", summary: "mentions {not real}", findings: [] };
   const text = `prefix ${JSON.stringify(payload)}`;
   expect(parseStructuredOutput(text, REVIEW_SCHEMA)).toEqual({ value: payload });
+});
+
+test("parseStructuredOutput reports syntax error before nested-object schema miss", () => {
+  const text = [
+    '{"verdict":"needs_changes","summary":"issue","findings":[',
+    '{"title":"bad","severity":"Medium","location":"x","issue":"line1',
+    'line2","recommendation":"fix","rationale":"r","must_fix":false}]}',
+  ].join("");
+  const result = parseStructuredOutput(text, REVIEW_SCHEMA);
+  expect(result.error).toMatch(/not valid JSON|Bad control character/i);
+  expect(result.error).not.toMatch(/missing required property "verdict"/);
 });
