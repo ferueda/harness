@@ -271,6 +271,8 @@ Coordinate planning from intent to implementation. Routes through shape, diagnos
 
 **References:** `references/routing.md` (rules, fixtures, pass criteria)
 
+**Outside the coordinator:** use the `sessions` skill to audit whether real transcripts matched expected routing (fixtures in `references/routing.md`). Not part of this skill when an agent is invoked to plan.
+
 ---
 
 ### shape-requirements
@@ -447,6 +449,7 @@ and repeatable `--turn-query` for exact transcript searches.
 - Exploring transcripts by intent (see `references/turn-queries.md`)
 - Collecting evidence for another agent without generating recommendations
 - Auditing which skills and workflows you actually invoke across sessions
+- Scoring coordinator routing (e.g. `planning-workflow/references/routing.md` fixtures) against real transcripts
 - Weekly/monthly workflow audits
 
 **Install:** `skills/sessions/scripts/install.sh` from harness checkout.
