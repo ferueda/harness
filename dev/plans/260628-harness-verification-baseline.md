@@ -7,8 +7,8 @@
 
 ## Status
 
+- **Status**: `done`
 - **Priority**: P1
-- **Effort**: S
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: tests
