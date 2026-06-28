@@ -51,6 +51,15 @@ function tryExtractBalancedValue(text: string, start: number): string | null {
   }
 }
 
+export function leadingBalancedJsonValue(text: string): { start: number; value: string } | null {
+  const start = text.length - text.trimStart().length;
+  const first = text[start];
+  if (first !== "{" && first !== "[") return null;
+  const value = tryExtractBalancedValue(text, start);
+  if (!value) return null;
+  return { start, value };
+}
+
 function extractRightmostParseableJson(
   text: string,
   accepts?: (value: unknown) => boolean,
