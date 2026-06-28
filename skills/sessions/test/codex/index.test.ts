@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { readCachedSessions } from "../../../lib/sessions/core/cache.ts";
-import { buildCodexIndex } from "../../../lib/sessions/codex/index.ts";
+import { readCachedSessions } from "../../lib/core/cache.ts";
+import { buildCodexIndex } from "../../lib/codex/index.ts";
 import { makeSessionEnv, writeCodexRollout, writeCodexStateDb } from "../helpers.ts";
 
 test("buildCodexIndex indexes threads from state db and rollout files", async () => {
