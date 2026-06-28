@@ -37,11 +37,11 @@ Core layout:
 
 ```
 harness.json  Repo-local harness defaults
-skills/       Agent Skill instructions
+skills/       Agent Skill instructions (+ skill-owned CLIs: sessions, cursor-cli)
 .agents/     Repo-local development skills; not installed into target repos
 providers/    Runtime adapters for external agent providers
 workflows/    Callable workflows, starting with change-review
-lib/          Runner, artifact, and workflow helpers
+lib/          Runner, artifact, and workflow helpers (not sessions — see skills/sessions/)
 automations/  Background task definitions
 dev/plans/    Plans and handoffs for this repo
 ```
@@ -97,15 +97,17 @@ Use `handoff-work` when ending a session (done or not) so the next agent can con
 
 Typical close: `planning-workflow` → `implement-plan` → `handoff-work` (if needed) → `change-review-workflow`.
 
-## Session evidence
+## Sessions
 
 | Skill | Role |
 |-------|------|
-| `session-evidence` | Extract snippets, artifacts, and session ids via `sessions analyze` |
+| `sessions` | Browse and extract snippets, artifacts, and session ids via `sessions analyze` |
+
+CLI: `skills/sessions/scripts/sessions.ts` (install via `skills/sessions/scripts/install.sh`). Cache: `~/.sessions/index`.
 
 Facts first; label interpretation separately. Do not treat `patterns` as recommendations.
 
-**Audits:** `skills/session-evidence/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). **Exploration:** `skills/session-evidence/references/turn-queries.md` (starter `--turn-query` terms). Routing fixtures: coordinator skills (e.g. `planning-workflow/references/routing.md`).
+**Audits:** `skills/sessions/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). **Exploration:** `skills/sessions/references/turn-queries.md` (starter `--turn-query` terms). Routing fixtures: coordinator skills (e.g. `planning-workflow/references/routing.md`).
 
 ## Learning
 
