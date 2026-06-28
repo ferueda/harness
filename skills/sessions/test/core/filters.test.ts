@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { applySessionFilters } from "../../../lib/sessions/core/filters.ts";
+import { applySessionFilters } from "../../lib/core/filters.ts";
 import { session } from "../helpers.ts";
 
 test("filters automation by default", () => {
