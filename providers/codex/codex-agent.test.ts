@@ -450,6 +450,10 @@ test("createCodexAgent returns SDK run failures", async () => {
   expect(result.raw).toMatchObject({
     name: "Error",
     message: "auth failed",
+    workspaceStatus: {
+      before: expect.any(String),
+      after: expect.any(String),
+    },
   });
 });
 
