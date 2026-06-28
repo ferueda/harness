@@ -4,11 +4,16 @@
 
 | File | Status | Summary |
 | ---- | ------ | ------- |
+| [260628-instruction-memory-prune.md](./260628-instruction-memory-prune.md) | `todo` | Prune always-loaded instructions, stale handoff memory, and ignored review run records without editing skill trees |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest |
 
-**Build next:** handoff Phase 0.6 (`steps.json`).
+**Build next:** instruction/memory prune, then handoff Phase 0.6 (`steps.json`).
 
 Parse-resilience remainder (retry, structured-output spike): [todo](../todo/260627-reviewer-json-parse-resilience.md).
+
+Skill trees are intentionally not cleanup targets here: `skills/` contains
+packaged installable skills for target repos, while `.agents/skills/` contains
+repo-local development skills for working on harness.
 
 ---
 
@@ -33,7 +38,9 @@ Shipped and superseded plans live in [`archive/`](./archive/README.md). Do not r
 ## Dependency notes
 
 - Verification baseline and review runtime hardening are archived (`PR #39`, `PR #40`).
-- Handoff `steps.json` / graders are unblocked; build next per active queue.
+- Instruction/memory prune has no dependency and should land before more
+  planning work so future agents load less stale steering.
+- Handoff `steps.json` / graders are unblocked; build after instruction cleanup.
 
 ---
 
