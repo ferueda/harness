@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
-import { writeCursorCache } from "../../../lib/sessions/core/cache.ts";
-import { createCursorSessionProvider } from "../../../lib/sessions/cursor/provider.ts";
-import { buildCursorIndex } from "../../../lib/sessions/cursor/index.ts";
+import { writeCursorCache } from "../../lib/core/cache.ts";
+import { createCursorSessionProvider } from "../../lib/cursor/provider.ts";
+import { buildCursorIndex } from "../../lib/cursor/index.ts";
 import { makeSessionEnv, session, writeTranscript } from "../helpers.ts";
 
 test("getTranscript reports stale cache entries with reindex guidance", () => {
