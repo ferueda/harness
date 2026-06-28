@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { isAutomationSession, isSubagentSession } from "../../../lib/sessions/cursor/classify.ts";
+import { isAutomationSession, isSubagentSession } from "../../lib/cursor/classify.ts";
 
 test("detects harness automation workers", () => {
   const firstUserQuery = "You are running as an automated worker invoked by another agent.";
