@@ -1,8 +1,7 @@
 # Agent harness — active roadmap
 
 **Status:** `in_progress`  
-**Updated:** 2026-06-28  
-**Full history:** [`archive/260621-agent-harness-handoff.md`](./archive/260621-agent-harness-handoff.md) (archived; do not load by default)
+**Updated:** 2026-06-28
 
 ## Goal
 
@@ -23,7 +22,7 @@ North star: durable orchestration (checkpointed steps, retries, triggers). **Inn
 
 Live today: `harness run change-review` (implementation → quality → simplify), Cursor/Codex SDK reviewers, `events.jsonl` + `*.stream.jsonl`, handoff stdin, partial `--steps`, `harness init` + target shim, run prune, schema-aware JSON parse, install + skills install. Ad-hoc Cursor delegation: `skills/cursor-cli/` (standalone; not harness init).
 
-Shipped plan index: `dev/plans/README.md` archive table.
+Shipped work index: `dev/plans/README.md` (PR links; finished plans removed from tree).
 
 ## Pending phases
 
@@ -71,8 +70,8 @@ Add alongside `meta.json` under `.harness/runs/reviews/<run-id>/`:
 - Write outputs to temp files, then rename into place.
 - On restart: skip `completed` only when listed outputs exist; treat stale `running` as retryable.
 - Future Inngest `step.run()` IDs align with `steps.json` step `id`.
-- Optional v1 metadata: per-step `startedAt`, `durationMs`, `sessionId`; scope `diffChars`, `diffLines`. Full shape: archive handoff, `meta.json`, `lib/workflow-context.ts`.
-- Step IDs: `lib/workflow-events.ts` (`STEP_ID_BY_AGENT`) for reviewer steps; see archive handoff for `prepare-context` / grader IDs.
+- Optional v1 metadata: per-step `startedAt`, `durationMs`, `sessionId`; scope `diffChars`, `diffLines`. See `meta.json`, `lib/workflow-context.ts`.
+- Step IDs: `lib/workflow-events.ts` (`STEP_ID_BY_AGENT`) for reviewer steps; reserve `prepare-context` and `verify-tests` (`grader:test`) for Phase 0.6 / 1c.
 
 ### Grader contract (Phase 1c)
 
