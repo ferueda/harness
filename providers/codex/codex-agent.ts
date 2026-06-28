@@ -16,6 +16,8 @@ import {
   createAgentAbortRace,
   createAgentSignalState,
 } from "../../lib/agent-signals.ts";
+import { errorArtifact, errorMessage, raceWithTimeout } from "../../lib/agent-invoke.ts";
+import { readWorkspaceStatus, withWorkspaceGuard } from "../../lib/review-guard.ts";
 import { parseStructuredOutput } from "../../lib/structured-output.ts";
 import { loadSchema } from "../../lib/schema-validation.ts";
 
@@ -29,8 +31,6 @@ type CodexClient = {
 };
 type CodexFactory = (options: CodexOptions) => CodexClient;
 type CodexTurn = RunResult & { streamLog?: AgentStreamLogSummary };
-
-const CODEX_STREAM_SETTLE_TIMEOUT_MS = 1_000;
 
 export type CodexAgentOptions = {
   codexPathOverride?: string;
@@ -70,6 +70,11 @@ async function invokeCodexAgent(
   if (signalState.isExternallyAborted()) {
     signalState.cleanup();
     return createAbortedAgentResult();
+  }
+
+  const beforeStatus = readWorkspaceStatus(input.workspace);
+  if (!beforeStatus.ok) {
+    return beforeStatus.error;
   }
 
   const abortRace = createAgentAbortRace(signalState.signal);
@@ -116,38 +121,50 @@ async function invokeCodexAgent(
     const turn = await Promise.race([observedTurnPromise, abortRace.promise]);
     const parsed = parseStructuredOutput(turn.finalResponse, outputSchema);
     if (parsed.error) {
-      return {
-        ok: false,
-        error: parsed.error,
-        raw: turn,
-        exitCode: 1,
-      };
+      return withWorkspaceGuard(
+        {
+          ok: false,
+          error: parsed.error,
+          raw: turn,
+          exitCode: 1,
+        },
+        input.workspace,
+        beforeStatus.value,
+      );
     }
 
-    return {
-      ok: true,
-      structuredOutput: parsed.value,
-      raw: turn,
-      sessionId: thread.id ?? undefined,
-      usage: turn.usage ?? undefined,
-    };
+    return withWorkspaceGuard(
+      {
+        ok: true,
+        structuredOutput: parsed.value,
+        raw: turn,
+        sessionId: thread.id ?? undefined,
+        usage: turn.usage ?? undefined,
+      },
+      input.workspace,
+      beforeStatus.value,
+    );
   } catch (error) {
     if (signalState.signal.aborted) {
       streamLog = await settleCodexStreamTask(streamedTurnPromise, () => streamLog);
     }
     const externallyAborted = signalState.isExternallyAborted();
     const timedOut = signalState.isTimedOut();
-    return {
-      ok: false,
-      error: externallyAborted
-        ? "Agent was aborted"
-        : timedOut
-          ? `Codex agent timed out after ${input.maxRuntimeMs}ms`
-          : `Codex agent failed: ${errorMessage(error)}`,
-      raw: addStreamLog(errorArtifact(error), streamLog),
-      exitCode: externallyAborted ? 130 : timedOut ? 124 : 1,
-      ...(externallyAborted ? { aborted: true } : {}),
-    };
+    return withWorkspaceGuard(
+      {
+        ok: false,
+        error: externallyAborted
+          ? "Agent was aborted"
+          : timedOut
+            ? `Codex agent timed out after ${input.maxRuntimeMs}ms`
+            : `Codex agent failed: ${errorMessage(error)}`,
+        raw: addStreamLog(errorArtifact(error), streamLog),
+        exitCode: externallyAborted ? 130 : timedOut ? 124 : 1,
+        ...(externallyAborted ? { aborted: true } : {}),
+      },
+      input.workspace,
+      beforeStatus.value,
+    );
   } finally {
     abortRace.cleanup();
     signalState.cleanup();
@@ -247,20 +264,13 @@ async function settleCodexStreamTask(
 ): Promise<AgentStreamLogSummary | undefined> {
   if (!streamTask) return fallback();
 
-  let timeout: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      streamTask.then(
-        (turn) => turn.streamLog ?? fallback(),
-        () => fallback(),
-      ),
-      new Promise<AgentStreamLogSummary | undefined>((resolve) => {
-        timeout = setTimeout(() => resolve(fallback()), CODEX_STREAM_SETTLE_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
+  return raceWithTimeout(
+    streamTask.then(
+      (turn) => turn.streamLog ?? fallback(),
+      () => fallback(),
+    ),
+    fallback,
+  );
 }
 
 function addStreamLog(raw: unknown, streamLog: AgentStreamLogSummary | undefined): unknown {
@@ -269,17 +279,4 @@ function addStreamLog(raw: unknown, streamLog: AgentStreamLogSummary | undefined
     return { ...raw, streamLog };
   }
   return { raw, streamLog };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function errorArtifact(error: unknown): unknown {
-  if (!(error instanceof Error)) return { error };
-  return {
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-  };
 }
