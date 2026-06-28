@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 
 import { Command, CommanderError, InvalidArgumentError } from "commander";
-import { readCachedSessions } from "../lib/sessions/core/cache.ts";
-import { exportTranscript } from "../lib/sessions/core/export.ts";
-import { createSessionProvider } from "../lib/sessions/core/factory.ts";
+import { readCachedSessions } from "../lib/core/cache.ts";
+import { exportTranscript } from "../lib/core/export.ts";
+import { createSessionProvider } from "../lib/core/factory.ts";
 import type {
   ExportFormat,
   IndexSnapshot,
   SessionProviderId,
   SessionFilters,
   SessionRecord,
-} from "../lib/sessions/core/types.ts";
+} from "../lib/core/types.ts";
 import {
   analyzeSessions,
   type PhraseCount,
   type SessionAnalysis,
   type SessionClassAnalysis,
-} from "../lib/sessions/core/analyze.ts";
+} from "../lib/core/analyze.ts";
 import {
   DEFAULT_EVIDENCE_LIMIT,
   DEFAULT_MIN_SUPPORT,
@@ -24,19 +24,19 @@ import {
   extractSessionEvidence,
   type EvidenceArtifact,
   type SessionEvidenceReport,
-} from "../lib/sessions/core/evidence.ts";
+} from "../lib/core/evidence.ts";
 import {
   analyzeCursorSessions,
   cursorSessions,
   type CursorAnalysisSampleSet,
   type IndexImprovementCandidate,
   type CursorSessionAnalysis,
-} from "../lib/sessions/cursor/analyze.ts";
-import { getCursorIndexStats, type IndexStats } from "../lib/sessions/cursor/stats.ts";
-import { getCodexIndexStats, type CodexIndexStats } from "../lib/sessions/codex/stats.ts";
-import { defaultSessionEnvironment } from "../lib/sessions/core/env.ts";
-import { renderTranscriptMarkdown } from "../lib/sessions/core/show.ts";
-import type { SessionProvider } from "../lib/sessions/core/provider.ts";
+} from "../lib/cursor/analyze.ts";
+import { getCursorIndexStats, type IndexStats } from "../lib/cursor/stats.ts";
+import { getCodexIndexStats, type CodexIndexStats } from "../lib/codex/stats.ts";
+import { defaultSessionEnvironment } from "../lib/core/env.ts";
+import { renderTranscriptMarkdown } from "../lib/core/show.ts";
+import type { SessionProvider } from "../lib/core/provider.ts";
 
 const ANALYZE_PROVIDERS = ["cursor", "codex"] as const;
 const TABLE_JSON_FORMATS = ["table", "json"] as const;
