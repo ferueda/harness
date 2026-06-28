@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { isCodexAutomation, isCodexSubagent } from "../../../lib/sessions/codex/classify.ts";
+import { isCodexAutomation, isCodexSubagent } from "../../lib/codex/classify.ts";
 
 const base = {
   threadId: "thread",
