@@ -1,16 +1,13 @@
 import { expect, test } from "vitest";
-import {
-  extractSessionEvidence,
-  type EvidenceBucket,
-} from "../../../lib/sessions/core/evidence.ts";
-import type { UserTurn } from "../../../lib/sessions/core/types.ts";
+import { extractSessionEvidence, type EvidenceBucket } from "../../lib/core/evidence.ts";
+import type { UserTurn } from "../../lib/core/types.ts";
 import { session } from "../helpers.ts";
 
 test("extractSessionEvidence keeps dotted paths intact while fragmenting", async () => {
   const report = await extractSessionEvidence(
     [
-      turn("one", "Please test lib/sessions/core/evidence.test.ts before shipping."),
-      turn("two", "Please test lib/sessions/core/evidence.test.ts before shipping."),
+      turn("one", "Please test skills/sessions/test/core/evidence.test.ts before shipping."),
+      turn("two", "Please test skills/sessions/test/core/evidence.test.ts before shipping."),
     ],
     { provider: "cursor" },
   );
@@ -23,7 +20,7 @@ test("extractSessionEvidence keeps dotted paths intact while fragmenting", async
   expect(report.patterns[0]?.examples[0]?.text).toContain("evidence.test.ts");
   expect(report.artifacts.path).toContainEqual({
     type: "path",
-    value: "lib/sessions/core/evidence.test.ts",
+    value: "skills/sessions/test/core/evidence.test.ts",
     sessionId: "one",
   });
 });
@@ -107,7 +104,7 @@ test("extractSessionEvidence extracts bounded artifacts", async () => {
     [
       turn(
         "one",
-        "Plan dev/plans/260626-session-evidence-extraction.md, inspect https://github.com/acme/repo/pull/42 and https://example.com/docs?ref=main!, checkout branch `codex/session-evidence`, run `pnpm test`, and patch `lib/sessions/core/evidence.ts`.",
+        "Plan dev/plans/260626-session-evidence-extraction.md, inspect https://github.com/acme/repo/pull/42 and https://example.com/docs?ref=main!, checkout branch `codex/session-evidence`, run `pnpm test`, and patch `skills/sessions/lib/core/evidence.ts`.",
       ),
       turn("two", "Plan dev/plans/260626-other-plan.md and run `pnpm typecheck`."),
     ],
@@ -146,7 +143,7 @@ test("extractSessionEvidence extracts bounded artifacts", async () => {
   ]);
   expect(report.artifacts.branch).not.toContainEqual({
     type: "branch",
-    value: "lib/sessions/core/evidence.ts",
+    value: "lib/core/evidence.ts",
     sessionId: "one",
   });
   expect(report.patterns[0]?.artifacts.length).toBeLessThanOrEqual(1);
