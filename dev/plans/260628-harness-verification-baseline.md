@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Status**: `done`
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
@@ -164,14 +165,14 @@ Mark this plan `done` in `dev/plans/README.md` when complete.
 
 ## Done criteria
 
-- [ ] `vitest.config.ts` includes `lib/**/*.test.ts` (verify; already true at baseline)
-- [ ] `pnpm exec vitest list lib/structured-output.test.ts` lists 18 tests
-- [ ] `test/review-output-schema-sync.test.ts` exists with positive, negative, and strictness parity cases
-- [ ] `pnpm test` exit 0
-- [ ] `pnpm typecheck` exit 0
-- [ ] `pnpm check` exit 0
-- [ ] `dev/plans/README.md` status `done`
-- [ ] No files outside scope modified
+- [x] `vitest.config.ts` includes `lib/**/*.test.ts` (verify; already true at baseline)
+- [x] `pnpm exec vitest list lib/structured-output.test.ts` lists 18 tests
+- [x] `test/review-output-schema-sync.test.ts` exists with positive, negative, and strictness parity cases
+- [x] `pnpm test` exit 0
+- [x] `pnpm typecheck` exit 0
+- [x] `pnpm check` exit 0
+- [x] `dev/plans/README.md` status `done`
+- [x] No files outside scope modified
 
 ## STOP conditions
 
