@@ -114,11 +114,22 @@ test("resolveHarnessOptions applies provider model defaults", () => {
   expect(codexOptions.model).toBe("gpt-5.5");
   expect(codexOptions.modelReasoningEffort).toBe("high");
 });
-test("resolveHarnessOptions rejects legacy Cursor runtime config", () => {
+test("resolveHarnessOptions rejects legacy Cursor runtime cli config", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeFileSync(
     join(workspace, "harness.json"),
     '{ "defaultAgent": "cursor", "agents": { "cursor": { "runtime": "cli", "model": "gpt-5.5" } } }\n',
+    "utf8",
+  );
+  expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(
+    /Invalid harness\.json: agents\.cursor\.runtime:/,
+  );
+});
+test("resolveHarnessOptions rejects legacy Cursor runtime sdk config", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeFileSync(
+    join(workspace, "harness.json"),
+    '{ "agents": { "cursor": { "runtime": "sdk" } } }\n',
     "utf8",
   );
   expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(
