@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { Agent as CursorSdkAgent } from "@cursor/sdk";
 import type {
   AgentOptions as CursorSdkAgentOptions,
@@ -15,6 +14,8 @@ import {
   createAgentAbortRace,
   createAgentSignalState,
 } from "../../lib/agent-signals.ts";
+import { errorArtifact, errorMessage, STREAM_SETTLE_TIMEOUT_MS } from "../../lib/agent-invoke.ts";
+import { readWorkspaceStatus, withWorkspaceGuard } from "../../lib/review-guard.ts";
 import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
 
 type CreateCursorSdkAgent = (options: CursorSdkAgentOptions) => Promise<CursorSdkAgentInstance>;
@@ -27,7 +28,7 @@ export type CursorSdkAgentFactoryOptions = {
   createSdkAgent?: CreateCursorSdkAgent;
 };
 
-const CURSOR_STREAM_SETTLE_TIMEOUT_MS = 1_000;
+const CURSOR_STREAM_SETTLE_TIMEOUT_MS = STREAM_SETTLE_TIMEOUT_MS;
 const CURSOR_SDK_MODEL_PARAMS = {
   "composer-2.5": [{ id: "fast", value: "false" }],
   "claude-opus-4-8": [
@@ -284,31 +285,6 @@ function readOutputSchema(
   }
 }
 
-function readWorkspaceStatus(
-  workspace: string,
-): { ok: true; value: string } | { ok: false; error: AgentRunResult } {
-  try {
-    return {
-      ok: true,
-      value: execFileSync("git", ["status", "--porcelain=v1", "-z", "--", ".", ":!.harness"], {
-        cwd: workspace,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      }),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: {
-        ok: false,
-        error: `Failed to inspect workspace status: ${errorMessage(error)}`,
-        raw: errorArtifact(error),
-        exitCode: 1,
-      },
-    };
-  }
-}
-
 function buildRawArtifact({
   agentId,
   run,
@@ -333,66 +309,6 @@ function buildRawArtifact({
     git: result.git,
     streamLog,
   };
-}
-
-function withWorkspaceGuard(
-  result: AgentRunResult,
-  workspace: string,
-  beforeStatus: string,
-): AgentRunResult {
-  const afterStatus = readWorkspaceStatus(workspace);
-  if (!afterStatus.ok) {
-    return {
-      ...afterStatus.error,
-      raw: addWorkspaceStatus(afterStatus.error.raw, { before: beforeStatus }),
-    };
-  }
-
-  const guardedResult = {
-    ...result,
-    raw: addWorkspaceStatus(result.raw, {
-      before: beforeStatus,
-      after: afterStatus.value,
-    }),
-  };
-
-  if (afterStatus.value === beforeStatus) return guardedResult;
-  if (!result.ok && result.aborted) return guardedResult;
-
-  return {
-    ok: false,
-    error: "Cursor SDK runtime modified the workspace during a review run",
-    raw: addUnderlyingFailure(guardedResult.raw, result),
-    exitCode: result.ok ? 1 : result.exitCode,
-  };
-}
-
-function addWorkspaceStatus(
-  raw: unknown,
-  workspaceStatus: { before: string; after?: string },
-): unknown {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return {
-      ...raw,
-      workspaceStatus,
-    };
-  }
-  return { raw, workspaceStatus };
-}
-
-function addUnderlyingFailure(raw: unknown, result: AgentRunResult): unknown {
-  if (result.ok) return raw;
-  const underlying = {
-    error: result.error,
-    exitCode: result.exitCode,
-  };
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return {
-      ...raw,
-      underlyingFailure: underlying,
-    };
-  }
-  return { raw, underlyingFailure: underlying };
 }
 
 function cursorSdkErrorStatusMessage(result: CursorSdkRunResult): string {
@@ -536,33 +452,4 @@ async function disposeAgent(agent: CursorSdkAgentInstance): Promise<void> {
     return;
   }
   disposable.close?.();
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function errorArtifact(error: unknown): unknown {
-  if (!(error instanceof Error)) return { error };
-  const sdkError = error as Error & {
-    code?: unknown;
-    status?: unknown;
-    requestId?: unknown;
-    isRetryable?: unknown;
-    helpUrl?: unknown;
-    operation?: unknown;
-    endpoint?: unknown;
-  };
-  return {
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    code: sdkError.code,
-    status: sdkError.status,
-    requestId: sdkError.requestId,
-    isRetryable: sdkError.isRetryable,
-    helpUrl: sdkError.helpUrl,
-    operation: sdkError.operation,
-    endpoint: sdkError.endpoint,
-  };
 }
