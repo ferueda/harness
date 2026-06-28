@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import {
   decodeWorkspacePathFromKey,
   extractWorkspacePathFromUserInfo,
-} from "../../../lib/sessions/cursor/paths.ts";
+} from "../../lib/cursor/paths.ts";
 
 test("decodes simple Cursor workspace keys", () => {
   expect(decodeWorkspacePathFromKey("Users-example-dev-harness")).toEqual({
