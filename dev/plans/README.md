@@ -4,16 +4,13 @@
 
 | File | Status | Summary |
 | ---- | ------ | ------- |
-| [260628-instruction-memory-prune.md](./260628-instruction-memory-prune.md) | `todo` | Prune always-loaded instructions, stale handoff memory, and ignored review run records without editing skill trees |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest |
 
-**Build next:** instruction/memory prune, then handoff Phase 0.6 (`steps.json`).
+**Build next:** handoff Phase 0.6 (`steps.json`).
 
 Parse-resilience remainder (retry, structured-output spike): [todo](../todo/260627-reviewer-json-parse-resilience.md).
 
-Skill trees are intentionally not cleanup targets here: `skills/` contains
-packaged installable skills for target repos, while `.agents/skills/` contains
-repo-local development skills for working on harness.
+Skill trees are intentionally not instruction-memory cleanup targets: `skills/` packaged installable skills; `.agents/skills/` repo-local dev skills. **Deferred:** `.agents/skills/{typescript-refactor,vitest,zod}/AGENTS.md` duplicate skill summaries — fix only in a separate skill-structure plan with explicit scope for skill trees.
 
 ---
 
@@ -32,15 +29,15 @@ Shipped and superseded plans live in [`archive/`](./archive/README.md). Do not r
 | F | [harness-verification-baseline](./archive/260628-harness-verification-baseline.md) | ✅ PR #39 |
 | G | [review-runtime-hardening](./archive/260628-review-runtime-hardening.md) | ✅ PR #40 |
 | H | [sessions-skill-colocation](./archive/260628-sessions-skill-colocation.md) | ✅ shipped |
+| — | [instruction-memory-prune](./archive/260628-instruction-memory-prune.md) | ✅ shipped |
 
 ---
 
 ## Dependency notes
 
 - Verification baseline and review runtime hardening are archived (`PR #39`, `PR #40`).
-- Instruction/memory prune has no dependency and should land before more
-  planning work so future agents load less stale steering.
-- Handoff `steps.json` / graders are unblocked; build after instruction cleanup.
+- Instruction/memory prune shipped — active `AGENTS.md` and roadmap are trimmed; full handoff history in archive.
+- Handoff `steps.json` / graders are unblocked; build next per active queue.
 
 ---
 
