@@ -1,7 +1,7 @@
 import { rmSync, writeFileSync } from "node:fs";
 import { expect, test } from "vitest";
-import { createCodexSessionProvider } from "../../../lib/sessions/codex/provider.ts";
-import { buildCodexIndex } from "../../../lib/sessions/codex/index.ts";
+import { createCodexSessionProvider } from "../../lib/codex/provider.ts";
+import { buildCodexIndex } from "../../lib/codex/index.ts";
 import { makeSessionEnv, writeCodexRollout, writeCodexStateDb } from "../helpers.ts";
 
 test("CodexSessionProvider lists, reads transcripts, and iterates user turns", async () => {
