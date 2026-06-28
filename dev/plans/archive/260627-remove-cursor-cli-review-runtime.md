@@ -131,10 +131,10 @@ return { runtime: effectiveCursorRuntime(options.cursorRuntime) };
 **Out of scope**:
 
 - Codex SDK internals. The Codex SDK may spawn the Codex CLI internally; that is provider-owned and not a harness CLI runtime.
-- `bin/sessions.ts` or session-history CLI commands. They are harness CLIs, not Cursor review runtimes.
+- `bin/sessions.ts` or session-history CLI commands. *(Superseded 2026-06-28: sessions CLI lives under `skills/sessions/` — see `260628-sessions-skill-colocation`.)* Not Cursor review runtimes.
 - Removing `harness run` itself.
 - Removing Cursor SDK.
-- Rewriting session evidence or automations unless they mention `--runtime cli` / harness-installed `cursor-cli`.
+- Rewriting `sessions` skill docs or automations unless they mention `--runtime cli` / harness-installed `cursor-cli`.
 - Deduplicating `schema.ts` between SDK and skill long-term (acceptable copy at migration; SDK copy stays canonical for reviews).
 
 ## Steps

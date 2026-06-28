@@ -9,6 +9,7 @@ export default defineConfig({
       "lib/**/*.test.ts",
       "providers/**/*.test.ts",
       "skills/cursor-cli/**/*.test.ts",
+      "skills/sessions/**/*.test.ts",
     ],
     restoreMocks: true,
     testTimeout: 30_000,
