@@ -107,7 +107,9 @@ CLI: `skills/sessions/scripts/sessions.ts` (install via `skills/sessions/scripts
 
 Facts first; label interpretation separately. Do not treat `patterns` as recommendations.
 
-**Audits:** `skills/sessions/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). **Exploration:** `skills/sessions/references/turn-queries.md` (starter `--turn-query` terms). Routing fixtures: coordinator skills (e.g. `planning-workflow/references/routing.md`).
+**Audits:** `skills/sessions/references/audit-examples.md` (extract commands, scorecards, weekly/monthly loop). **Exploration:** `skills/sessions/references/turn-queries.md` (starter `--turn-query` terms).
+
+**Coordinator audits (retrospective):** Use `sessions` to score real transcripts against routing fixtures — e.g. `planning-workflow/references/routing.md`. Coordinators like `planning-workflow` do not invoke `sessions`; when an agent runs planning, it is executing work, not auditing past sessions.
 
 ## Learning
 
