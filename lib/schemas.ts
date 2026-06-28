@@ -40,7 +40,7 @@ export const HarnessConfigSchema = z
       code: "custom",
       path: ["agents", "cursor", "runtime"],
       message:
-        "Cursor CLI runtime has been removed; harness reviews use the Cursor SDK (default). Remove agents.cursor.runtime from harness.json.",
+        "agents.cursor.runtime is no longer supported; harness reviews always use the Cursor SDK. Remove agents.cursor.runtime from harness.json.",
     });
   });
 
