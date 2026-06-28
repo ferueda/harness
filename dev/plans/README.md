@@ -10,31 +10,35 @@
 
 Parse-resilience remainder (retry, structured-output spike): [todo](../todo/260627-reviewer-json-parse-resilience.md).
 
+Skill trees are intentionally not instruction-memory cleanup targets: `skills/` packaged installable skills; `.agents/skills/` repo-local dev skills. **Deferred:** `.agents/skills/{typescript-refactor,vitest,zod}/AGENTS.md` duplicate skill summaries — fix only in a separate skill-structure plan with explicit scope for skill trees.
+
 ---
 
-## Archive
+## Shipped (git history only)
 
-Shipped and superseded plans live in [`archive/`](./archive/README.md). Do not re-run archived executor steps.
+Completed plans are **removed from the tree** after land. Use merged PRs and `git log -- dev/plans/` for history — do not re-run old executor steps.
 
-| Phase | Plan | Status |
-| ----- | ---- | ------ |
-| A | [json-extract-rightmost-object](./archive/260626-json-extract-rightmost-object.md) | ✅ PR #33 |
-| B | [sdk-agent-stream-logs](./archive/260627-sdk-agent-stream-logs.md) | ✅ PR #34 |
-| C | [workflow-step-events](./archive/260626-workflow-step-events.md) | ✅ PR #34 |
-| D | [agent-abort-signal](./archive/260626-agent-abort-signal.md) | ✅ PR #36 |
-| E | [remove-cursor-cli-review-runtime](./archive/260627-remove-cursor-cli-review-runtime.md) | ✅ PR #37 |
-| — | [shared-review-json-parse](./archive/260628-shared-review-json-parse.md) | ✅ shipped |
-| F | [harness-verification-baseline](./archive/260628-harness-verification-baseline.md) | ✅ PR #39 |
-| G | [review-runtime-hardening](./archive/260628-review-runtime-hardening.md) | ✅ PR #40 |
-| H | [sessions-skill-colocation](./archive/260628-sessions-skill-colocation.md) | ✅ shipped |
+| Phase | Work | PR |
+| ----- | ---- | -- |
+| A | Rightmost JSON + schema-aware parse | [#33](https://github.com/ferueda/harness/pull/33) |
+| B | SDK stream JSONL + `streamArtifacts` | [#34](https://github.com/ferueda/harness/pull/34) |
+| C | `events.jsonl` + `--verbose` | [#34](https://github.com/ferueda/harness/pull/34) |
+| D | Provider `AbortSignal` | [#36](https://github.com/ferueda/harness/pull/36) |
+| E | SDK-only reviews; `cursor-cli` skill launcher | [#37](https://github.com/ferueda/harness/pull/37) |
+| — | Shared review JSON parse | [#38](https://github.com/ferueda/harness/pull/38) |
+| F | Review-output schema ↔ Zod sync tests | [#39](https://github.com/ferueda/harness/pull/39) |
+| G | Review-runtime hardening | [#40](https://github.com/ferueda/harness/pull/40) |
+| H | Sessions skill colocation | [#42](https://github.com/ferueda/harness/pull/42) |
+| — | Instruction memory prune | [#43](https://github.com/ferueda/harness/pull/43) |
 
 ---
 
 ## Dependency notes
 
-- Verification baseline and review runtime hardening are archived (`PR #39`, `PR #40`).
+- Verification baseline and review runtime hardening shipped (`PR #39`, `PR #40`).
+- Instruction/memory prune shipped — trimmed `AGENTS.md` and active roadmap; finished plans deleted (git history only).
 - Handoff `steps.json` / graders are unblocked; build next per active queue.
 
 ---
 
-**New plans:** `YYMMDD-short-slug.md` in this directory — reconcile here before adding. Move to `archive/` when done.
+**New plans:** `YYMMDD-short-slug.md` in this directory — reconcile here before adding. **When done:** remove the plan file and update this README shipped table; do not keep an `archive/` copy.
