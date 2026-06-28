@@ -283,6 +283,114 @@ test("createCodexAgent returns invalid JSON failures", async () => {
   expect(result.raw).toMatchObject({ finalResponse: "not json" });
 });
 
+test("createCodexAgent recovers JSON when final response prepends prose", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const schemaPath = createSchemaFile(workspace);
+  const payload = { verdict: "pass" };
+  const { codexFactory } = createFakeCodex({
+    finalResponse: `Analysis complete.\n\n${JSON.stringify(payload)}`,
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    schemaPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.structuredOutput).toEqual(payload);
+});
+
+test("createCodexAgent recovers JSON from fenced final response", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const schemaPath = createSchemaFile(workspace);
+  const payload = { verdict: "pass" };
+  const { codexFactory } = createFakeCodex({
+    finalResponse: `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``,
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    schemaPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.structuredOutput).toEqual(payload);
+});
+
+test("createCodexAgent recovers top-level object when nested fragments parse", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const schemaPath = join(workspace, "schema.json");
+  writeFileSync(
+    schemaPath,
+    JSON.stringify({
+      type: "object",
+      required: ["verdict", "findings"],
+      properties: {
+        verdict: { type: "string" },
+        findings: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["title"],
+            properties: { title: { type: "string" } },
+          },
+        },
+      },
+    }),
+    "utf8",
+  );
+  const payload = {
+    verdict: "needs_changes",
+    findings: [{ title: "missing test" }],
+  };
+  const { codexFactory } = createFakeCodex({
+    finalResponse: `Here is my review.\n\n${JSON.stringify(payload)}`,
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    schemaPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.structuredOutput).toEqual(payload);
+});
+
+test("createCodexAgent returns schema validation failures for parseable invalid output", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const schemaPath = join(workspace, "schema.json");
+  writeFileSync(
+    schemaPath,
+    JSON.stringify({
+      type: "object",
+      required: ["verdict"],
+      properties: { verdict: { enum: ["pass", "fail"] } },
+    }),
+    "utf8",
+  );
+  const { codexFactory } = createFakeCodex({ finalResponse: '{"verdict":"maybe"}' });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    schemaPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toMatch(/did not match schema|expected one of|missing required/i);
+});
+
 test("createCodexAgent returns invalid schema failures", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
   const malformedSchemaPath = join(workspace, "schema.json");

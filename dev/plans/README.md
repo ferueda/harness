@@ -8,7 +8,7 @@
 
 **Build next:** `steps.json` / graders per [handoff](./260621-agent-harness-handoff.md).
 
-Optional follow-up (todo, not a plan): [parse-resilience](../todo/260627-reviewer-json-parse-resilience.md) — diagnostics, structured output spike, retry.
+Parse-resilience remainder (retry, structured-output spike, prompt line): [todo](../todo/260627-reviewer-json-parse-resilience.md).
 
 ---
 
@@ -16,6 +16,7 @@ Optional follow-up (todo, not a plan): [parse-resilience](../todo/260627-reviewe
 
 | File | Merged | Summary |
 | ---- | ------ | ------- |
+| [260628-shared-review-json-parse.md](./260628-shared-review-json-parse.md) | pending | Move review parser to `lib/`; wire Codex; syntax-error diagnostics |
 | [260626-json-extract-rightmost-object.md](./260626-json-extract-rightmost-object.md) | [#33](https://github.com/ferueda/harness/pull/33) | Rightmost JSON + schema-aware `parseStructuredOutput` |
 | [260627-sdk-agent-stream-logs.md](./260627-sdk-agent-stream-logs.md) | [#34](https://github.com/ferueda/harness/pull/34) | SDK `run.stream()` / `runStreamed()` JSONL + `streamArtifacts` meta |
 | [260626-workflow-step-events.md](./260626-workflow-step-events.md) | [#34](https://github.com/ferueda/harness/pull/34) | `events.jsonl`, `WorkflowEventSink`, `--verbose` heartbeats |
@@ -44,7 +45,8 @@ Historical executor steps remain in each file for reference. Do not re-run them.
 | Workflow `events.jsonl` + `--verbose` | ✅ PR #34 |
 | SDK abort / `aborted` contract | ✅ PR #36 |
 | Cursor CLI review runtime removal | ✅ `260627-remove-cursor-cli-review-runtime` (reviews SDK-only; `cursor-cli` skill) |
-| Parse resilience (syntax errors, structured output) | 📋 [todo](../todo/260627-reviewer-json-parse-resilience.md) |
+| Shared `lib/` review parser + Codex wiring | ✅ [260628-shared-review-json-parse](./260628-shared-review-json-parse.md) |
+| Parse resilience remainder (retry, structured output spike) | 📋 [todo](../todo/260627-reviewer-json-parse-resilience.md) |
 | `steps.json` resumability | 📋 handoff Phase 0.6 |
 
 ---
