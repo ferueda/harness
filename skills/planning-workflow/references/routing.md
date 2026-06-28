@@ -53,7 +53,7 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 | 3 | "JIRA-442: login 500 when email is empty" | `diagnose-issue` | diagnose → `create-plan` → `implement-plan` |
 | 4 | "Review dev/plans/foo.md against the codebase" | `review-spec` | `review-spec` only |
 | 5 | "Implement dev/plans/foo.md" | `implement-plan` | implement → `change-review-workflow` |
-| 6 | "Something's wrong with sessions" | `shape-requirements` **gate** | gate → `diagnose-issue` |
+| 6 | "Something's wrong with the sessions CLI" | `shape-requirements` **gate** | gate → `diagnose-issue` |
 | 7 | "Audit this repo for DX improvements" | `audit` | audit → `create-plan`(s) |
 | 8 | "Add logging" (nothing else) | `shape-requirements` **gate** | gate only — no implement/plan before approval |
 | 9 | Three diagnose directions; pick one | `shape-requirements` **gate** | gate → `create-plan` |
@@ -69,4 +69,4 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 
 ### Score real sessions
 
-Use `session-evidence` — [audit-examples.md](../../session-evidence/references/audit-examples.md) (planning example). Score against fixture # and pass criteria.
+Use `sessions` — [audit-examples.md](../../sessions/references/audit-examples.md) (planning example). Score against fixture # and pass criteria.
