@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { parseTranscriptText } from "../../../lib/sessions/cursor/transcript.ts";
-
-const FIXTURES = join(process.cwd(), "test/fixtures/sessions");
+import { parseTranscriptText } from "../../lib/cursor/transcript.ts";
+import { FIXTURES } from "../helpers.ts";
 
 test("parses roles and extracts user_query", () => {
   const parsed = parseTranscriptText(
