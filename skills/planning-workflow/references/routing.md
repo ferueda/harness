@@ -1,6 +1,6 @@
 # Planning routing
 
-Routing rules, skip table, artifact paths, and scenario fixtures. Use when choosing the first skill, validating a path, or scoring sessions against expected behavior.
+Routing rules, skip table, artifact paths, and scenario fixtures. Use when choosing the first skill or validating a path.
 
 ## Intake
 
@@ -53,11 +53,10 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 | 3 | "JIRA-442: login 500 when email is empty" | `diagnose-issue` | diagnose → `create-plan` → `implement-plan` |
 | 4 | "Review dev/plans/foo.md against the codebase" | `review-spec` | `review-spec` only |
 | 5 | "Implement dev/plans/foo.md" | `implement-plan` | implement → `change-review-workflow` |
-| 6 | "Something's wrong with the sessions CLI" | `shape-requirements` **gate** | gate → `diagnose-issue` |
-| 7 | "Audit this repo for DX improvements" | `audit` | audit → `create-plan`(s) |
-| 8 | "Add logging" (nothing else) | `shape-requirements` **gate** | gate only — no implement/plan before approval |
-| 9 | Three diagnose directions; pick one | `shape-requirements` **gate** | gate → `create-plan` |
-| 10 | Greenfield brief, no code-truth claims | `shape-requirements` **interview** | brief → `create-plan` (skip diagnose) |
+| 6 | "Audit this repo for DX improvements" | `audit` | audit → `create-plan`(s) |
+| 7 | "Add logging" (nothing else) | `shape-requirements` **gate** | gate only — no implement/plan before approval |
+| 8 | Three diagnose directions; pick one | `shape-requirements` **gate** | gate → `create-plan` |
+| 9 | Greenfield brief, no code-truth claims | `shape-requirements` **interview** | brief → `create-plan` (skip diagnose) |
 
 ### Pass criteria
 
@@ -66,7 +65,3 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 - **interview**: one question at a time until user says write up.
 - Skipped steps match the skip table above with a stated reason.
 - Artifacts at expected paths when the path produces them.
-
-### Score real sessions
-
-Use `sessions` — [audit-examples.md](../../sessions/references/audit-examples.md) (planning example). Score against fixture # and pass criteria.
