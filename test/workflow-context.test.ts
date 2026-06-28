@@ -8,8 +8,8 @@ import {
   createWorkflowContext,
   createWorkflowContextForTest,
 } from "../lib/workflow-context.ts";
-import type { AgentRunInput } from "../lib/agents.ts";
-import type { AgentProviderOptions } from "../lib/agent-provider.ts";
+import type { AgentProviderOptions, AgentRunInput } from "../lib/agents.ts";
+import { createAgentProvider } from "../providers/registry.ts";
 
 function createGitWorkspace() {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
@@ -43,6 +43,7 @@ test("exportFailed writes metadata and summary with no successful reviews", () =
     headRef: "HEAD",
     runsDir,
     maxRuntimeMs: 1_000,
+    agentProviderFactory: createAgentProvider,
   });
 
   const meta = ctx.exportFailed({
@@ -87,6 +88,7 @@ test("dry-run export writes workflow step metadata", () => {
     runsDir,
     maxRuntimeMs: 1_000,
     dryRun: true,
+    agentProviderFactory: createAgentProvider,
   });
 
   const meta = ctx.export({
@@ -480,23 +482,28 @@ test("workflow context includes stream artifacts for failed reviewers", async ()
   });
 });
 
-test("workflow context surfaces aborted provider results distinctly", async () => {
+test("workflow context forwards run signal to provider", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const controller = new AbortController();
+  const calls: { signal?: AbortSignal } = {};
   const ctx = createWorkflowContextForTest({
     workspace,
     baseRef: "HEAD",
     headRef: "HEAD",
     runsDir,
+    signal: controller.signal,
     agentProviderFactory(options) {
       return {
         name: options.provider,
-        async run() {
+        async run(input) {
+          calls.signal = input.signal;
+          controller.abort();
           return {
             ok: false,
-            aborted: true,
             error: "Agent was aborted",
             exitCode: 130,
+            aborted: true,
           };
         },
       };
@@ -507,6 +514,8 @@ test("workflow context surfaces aborted provider results distinctly", async () =
   await expect(ctx.agent("review-implementation")).rejects.toThrow(
     "Agent was aborted: implementation reviewer",
   );
+  expect(calls.signal).toBe(controller.signal);
+  expect(calls.signal?.aborted).toBe(true);
 });
 
 test("workflow context passes explicit Codex sandbox and approval overrides", async () => {
