@@ -552,7 +552,7 @@ Each workflow exports `meta` (`name` today; extend when CLI help or dashboard ne
 | **1a** | Live `change-review` workflow + smoke test | ✅ Done |
 | **1b** | Primitives: `agent`, `aggregate`, `export`, `WorkflowContext` | ✅ Done |
 | **1b.5** | SDK stream logs, workflow events, SDK cancellation | ✅ Done (PRs [#34](https://github.com/ferueda/harness/pull/34), [#36](https://github.com/ferueda/harness/pull/36)) |
-| **1b.6** | Cursor CLI review-runtime removal | ✅ [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md) |
+| **1b.6** | Cursor CLI review-runtime removal | ✅ [`260627-remove-cursor-cli-review-runtime.md`](./archive/260627-remove-cursor-cli-review-runtime.md) |
 | **1c** | Deterministic grader; `REVIEW_RULES`; `digestReview()`; split schemas if useful | Pending |
 | **1.5** | Triggers: GH Action, `.harness/inbox/review.json` | Pending |
 | **2** | Inngest orchestrator in `orchestrator/`; `onFailure`; concurrency per SHA | Pending |
@@ -683,7 +683,7 @@ Add `steps.json` alongside `meta.json`:
 
 ```
 dev/plans/260621-agent-harness-handoff.md     ← this file
-dev/plans/260627-remove-cursor-cli-review-runtime.md
+dev/plans/archive/260627-remove-cursor-cli-review-runtime.md
 
 bin/harness.ts
 workflows/change-review.workflow.ts
