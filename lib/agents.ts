@@ -34,6 +34,11 @@ export const AGENT_MODEL_CATALOG = {
   },
 } as const;
 
+export type AgentProviderOptions = {
+  provider: AgentProviderName;
+  codexPathOverride?: string;
+};
+
 export type AgentRunInput = {
   workspace: string;
   prompt: string;

@@ -156,7 +156,7 @@ test("change-review serial mode stops after the first failed reviewer", async ()
 
   expect(harness.started).toEqual(["review-implementation"]);
   deferred["review-implementation"].reject(
-    new Error("Cursor SDK runtime modified the workspace during a review run"),
+    new Error("Agent runtime modified the workspace during a review run"),
   );
 
   await expect(run).resolves.toMatchObject({ status: "failed" });
@@ -166,7 +166,7 @@ test("change-review serial mode stops after the first failed reviewer", async ()
     {
       key: "implementation",
       stage: "implementation",
-      error: "Cursor SDK runtime modified the workspace during a review run",
+      error: "Agent runtime modified the workspace during a review run",
     },
   ]);
   expect(harness.exportedSteps).toEqual({

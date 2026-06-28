@@ -10,6 +10,7 @@
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
+- **Status**: `done`
 - **Depends on**: [260628-harness-verification-baseline.md](./260628-harness-verification-baseline.md) — **hard gate** (`done`; `test/review-output-schema-sync.test.ts` must exist)
 - **Category**: tech-debt
 - **Planned at**: commit `63b01fc`, 2026-06-28
@@ -275,14 +276,14 @@ Document: CLI `process.exitCode` remains `1` on aborted failed runs, not `130`. 
 
 ## Done criteria
 
-- [ ] Shared `review-guard` + `agent-invoke` with tests
-- [ ] Codex uses guard; all Codex `.run()` tests use git workspace
-- [ ] Post-run git failure preserves successful Cursor review (`guard: "unverified"`)
-- [ ] `errorArtifact` preserves Cursor SDK extension fields
-- [ ] `providers/registry.ts` exists; `lib/agent-provider.ts` deleted; no `lib/` → `providers/` imports
-- [ ] `bin/harness.ts` passes factory + signal; listeners removed in `finally`
-- [ ] `pnpm check` exit 0
-- [ ] `dev/plans/README.md` updated
+- [x] Shared `review-guard` + `agent-invoke` with tests
+- [x] Codex uses guard; all Codex `.run()` tests use git workspace
+- [x] Post-run git failure preserves successful Cursor review (`guard: "unverified"`)
+- [x] `errorArtifact` preserves Cursor SDK extension fields
+- [x] `providers/registry.ts` exists; `lib/agent-provider.ts` deleted; no `lib/` → `providers/` imports
+- [x] `bin/harness.ts` passes factory + signal; listeners removed in `finally`
+- [x] `pnpm check` exit 0
+- [x] `dev/plans/README.md` updated
 
 ## STOP conditions
 

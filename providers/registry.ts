@@ -1,10 +1,5 @@
-import { createCodexAgent } from "../providers/codex/codex-agent.ts";
-import type { Agent, AgentProviderName, AgentRunInput } from "./agents.ts";
-
-export type AgentProviderOptions = {
-  provider: AgentProviderName;
-  codexPathOverride?: string;
-};
+import { createCodexAgent } from "./codex/codex-agent.ts";
+import type { Agent, AgentProviderOptions, AgentRunInput } from "../lib/agents.ts";
 
 export function createAgentProvider(options: AgentProviderOptions): Agent {
   if (options.provider === "codex") {
@@ -19,7 +14,7 @@ function createLazyCursorSdkAgent(): Agent {
   return {
     name: "cursor",
     async run(input: AgentRunInput) {
-      const { createCursorSdkAgent } = await import("../providers/cursor/cursor-sdk-agent.ts");
+      const { createCursorSdkAgent } = await import("./cursor/cursor-sdk-agent.ts");
       providerAgent ??= createCursorSdkAgent();
       return providerAgent.run(input);
     },

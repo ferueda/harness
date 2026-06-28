@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 
-const AGENT_PROVIDER_URL = pathToFileURL(join(process.cwd(), "lib/agent-provider.ts")).href;
+const AGENT_PROVIDER_URL = pathToFileURL(join(process.cwd(), "providers/registry.ts")).href;
 
 function runModuleScript(script: string, options: { env?: NodeJS.ProcessEnv } = {}) {
   return spawnSync(process.execPath, ["--input-type=module", "-e", script], {
