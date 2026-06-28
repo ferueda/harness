@@ -3,6 +3,7 @@
 > **Archive note:** Superseded by the active roadmap at
 > [`../260621-agent-harness-handoff.md`](../260621-agent-harness-handoff.md).
 > Historical reference only — do not load this file by default.
+> Terminology: `react-to-review` below → post-review triage via `change-review-workflow` (After Results).
 
 **Status:** `archived`  
 **Created:** 2026-06-21  
@@ -556,7 +557,7 @@ Each workflow exports `meta` (`name` today; extend when CLI help or dashboard ne
 | **1a** | Live `change-review` workflow + smoke test | ✅ Done |
 | **1b** | Primitives: `agent`, `aggregate`, `export`, `WorkflowContext` | ✅ Done |
 | **1b.5** | SDK stream logs, workflow events, SDK cancellation | ✅ Done (PRs [#34](https://github.com/ferueda/harness/pull/34), [#36](https://github.com/ferueda/harness/pull/36)) |
-| **1b.6** | Cursor CLI review-runtime removal | ✅ [`260627-remove-cursor-cli-review-runtime.md`](./archive/260627-remove-cursor-cli-review-runtime.md) |
+| **1b.6** | Cursor CLI review-runtime removal | ✅ [`260627-remove-cursor-cli-review-runtime.md`](./260627-remove-cursor-cli-review-runtime.md) |
 | **1c** | Deterministic grader; `REVIEW_RULES`; `digestReview()`; split schemas if useful | Pending |
 | **1.5** | Triggers: GH Action, `.harness/inbox/review.json` | Pending |
 | **2** | Inngest orchestrator in `orchestrator/`; `onFailure`; concurrency per SHA | Pending |
@@ -686,7 +687,8 @@ Add `steps.json` alongside `meta.json`:
 ## Related paths
 
 ```
-dev/plans/260621-agent-harness-handoff.md     ← this file
+dev/plans/260621-agent-harness-handoff.md     ← active roadmap (../260621-agent-harness-handoff.md)
+dev/plans/archive/260621-agent-harness-handoff.md  ← this file (historical)
 dev/plans/archive/260627-remove-cursor-cli-review-runtime.md
 
 bin/harness.ts
@@ -705,22 +707,4 @@ README.md
 
 ## Work Handoff (summary block)
 
-**Status:** `in_progress`
-
-### Context
-Multi-repo agent harness with durable orchestration as north star. `harness` repo is live with `change-review` workflow, SDK-first multi-provider agents, install/init, and test coverage.
-
-### What was worked on
-Original Phase 0 dual-review in `agent-skills`; full migration to `harness`; `change-review` with `--steps`; Cursor SDK default + Codex SDK providers; schema-aware JSON extraction (PR #33); SDK stream logs + workflow events (PR #34); SDK abort signal (PR #36); user install; handoff stdin; run pruning.
-
-### How it works today
-`harness run change-review` → `createWorkflowContext` → parallel SDK reviewer agents → `events.jsonl` + per-reviewer `*.stream.jsonl` → deterministic `summary.md` + JSON artifacts under `.harness/runs/reviews/<run-id>/`. External abort via `AgentRunInput.signal` returns `aborted: true` / exit `130`.
-
-### Why Inngest next
-Local `steps.json` first (0.6), then Inngest `step.run()` (2) for cross-machine durability, event triggers, concurrency per SHA, and cheap retries on expensive LLM steps.
-
-### Next steps
-`steps.json` → `digestReview()` → grader → parse-resilience todo items → extract per-step runners → inbox → `orchestrator/`.
-
-### Open items
-See [Open items](#open-items) table.
+**Status:** `archived` — superseded by [`../260621-agent-harness-handoff.md`](../260621-agent-harness-handoff.md). Historical snapshot as of archive date; do not treat as current steering.
