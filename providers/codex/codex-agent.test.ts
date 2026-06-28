@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,17 @@ type FakeTurnInput = {
   streamEvents?: ThreadEvent[];
   streamError?: Error;
 };
+
+function createGitWorkspace() {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "harness@example.com"], { cwd: workspace });
+  execFileSync("git", ["config", "user.name", "Harness Test"], { cwd: workspace });
+  writeFileSync(join(workspace, "README.md"), "# Test\n", "utf8");
+  execFileSync("git", ["add", "README.md"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "init"], { cwd: workspace, stdio: "ignore" });
+  return workspace;
+}
 
 function createSchemaFile(workspace: string): string {
   const schemaPath = join(workspace, "schema.json");
@@ -113,7 +125,7 @@ function readJsonLines(path: string): unknown[] {
 }
 
 test("createCodexAgent runs Codex with schema and review defaults", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const schemaPath = createSchemaFile(workspace);
   const { calls, codexFactory } = createFakeCodex();
 
@@ -156,7 +168,7 @@ test("createCodexAgent runs Codex with schema and review defaults", async () => 
 });
 
 test("createCodexAgent streams Codex thread events to logPath", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const logPath = join(workspace, ".harness", "codex.stream.jsonl");
   const { calls, codexFactory } = createFakeCodex();
 
@@ -200,7 +212,7 @@ test("createCodexAgent streams Codex thread events to logPath", async () => {
 });
 
 test("createCodexAgent uses completed agent_message as streamed final response", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const logPath = join(workspace, ".harness", "codex.stream.jsonl");
   const { codexFactory } = createFakeCodex({
     finalResponse: '{"verdict":"from-stream"}',
@@ -219,7 +231,7 @@ test("createCodexAgent uses completed agent_message as streamed final response",
 });
 
 test("createCodexAgent returns streamed turn failures with stream log metadata", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const logPath = join(workspace, ".harness", "codex.stream.jsonl");
   const { codexFactory } = createFakeCodex({
     streamEvents: [{ type: "turn.failed", error: { message: "model failed" } }],
@@ -246,7 +258,7 @@ test("createCodexAgent returns streamed turn failures with stream log metadata",
 });
 
 test("createCodexAgent supports non-review sandbox and approval modes", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const { calls, codexFactory } = createFakeCodex();
 
   const result = await createCodexAgent({ codexFactory }).run({
@@ -268,7 +280,7 @@ test("createCodexAgent supports non-review sandbox and approval modes", async ()
 });
 
 test("createCodexAgent returns invalid JSON failures", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const { codexFactory } = createFakeCodex({ finalResponse: "not json" });
 
   const result = await createCodexAgent({ codexFactory }).run({
@@ -284,7 +296,7 @@ test("createCodexAgent returns invalid JSON failures", async () => {
 });
 
 test("createCodexAgent recovers JSON when final response prepends prose", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const schemaPath = createSchemaFile(workspace);
   const payload = { verdict: "pass" };
   const { codexFactory } = createFakeCodex({
@@ -304,7 +316,7 @@ test("createCodexAgent recovers JSON when final response prepends prose", async 
 });
 
 test("createCodexAgent recovers JSON from fenced final response", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const schemaPath = createSchemaFile(workspace);
   const payload = { verdict: "pass" };
   const { codexFactory } = createFakeCodex({
@@ -324,7 +336,7 @@ test("createCodexAgent recovers JSON from fenced final response", async () => {
 });
 
 test("createCodexAgent recovers top-level object when nested fragments parse", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const schemaPath = join(workspace, "schema.json");
   writeFileSync(
     schemaPath,
@@ -366,7 +378,7 @@ test("createCodexAgent recovers top-level object when nested fragments parse", a
 });
 
 test("createCodexAgent returns schema validation failures for parseable invalid output", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const schemaPath = join(workspace, "schema.json");
   writeFileSync(
     schemaPath,
@@ -392,7 +404,7 @@ test("createCodexAgent returns schema validation failures for parseable invalid 
 });
 
 test("createCodexAgent returns invalid schema failures", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const malformedSchemaPath = join(workspace, "schema.json");
   writeFileSync(malformedSchemaPath, "{", "utf8");
 
@@ -422,7 +434,7 @@ test("createCodexAgent returns invalid schema failures", async () => {
 });
 
 test("createCodexAgent returns SDK run failures", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const { codexFactory } = createFakeCodex({ runError: new Error("auth failed") });
 
   const result = await createCodexAgent({ codexFactory }).run({
@@ -442,7 +454,7 @@ test("createCodexAgent returns SDK run failures", async () => {
 });
 
 test("createCodexAgent returns aborted without starting a pre-aborted run", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const controller = new AbortController();
   controller.abort();
   let factoryCalled = false;
@@ -473,7 +485,7 @@ test("createCodexAgent returns aborted without starting a pre-aborted run", asyn
 });
 
 test("createCodexAgent returns aborted when external signal aborts a pending run", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const controller = new AbortController();
   const calls: { signal?: AbortSignal } = {};
   const codexFactory = () => ({
@@ -507,7 +519,7 @@ test("createCodexAgent returns aborted when external signal aborts a pending run
 });
 
 test("createCodexAgent uses CODEX_EXECUTABLE when no explicit override is set", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const { calls, codexFactory } = createFakeCodex();
   const previousExecutable = process.env.CODEX_EXECUTABLE;
   process.env.CODEX_EXECUTABLE = "/env/codex";
@@ -530,7 +542,7 @@ test("createCodexAgent uses CODEX_EXECUTABLE when no explicit override is set", 
 });
 
 test("createCodexAgent returns timeout failures through AbortSignal", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const calls: { signal?: AbortSignal } = {};
   const codexFactory = () => ({
     startThread() {
@@ -559,7 +571,7 @@ test("createCodexAgent returns timeout failures through AbortSignal", async () =
 });
 
 test("createCodexAgent keeps partial stream logs on timeout", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const logPath = join(workspace, ".harness", "codex.stream.jsonl");
   const codexFactory = () => ({
     startThread() {
@@ -610,7 +622,7 @@ test("createCodexAgent keeps partial stream logs on timeout", async () => {
 });
 
 test("createCodexAgent keeps partial stream logs on external abort", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const logPath = join(workspace, ".harness", "codex.stream.jsonl");
   const controller = new AbortController();
   const codexFactory = () => ({
@@ -665,7 +677,7 @@ test("createCodexAgent keeps partial stream logs on external abort", async () =>
 });
 
 test("createCodexAgent does not return success when a turn resolves after external abort", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const controller = new AbortController();
   const codexFactory = () => ({
     startThread() {
@@ -703,7 +715,7 @@ test("createCodexAgent does not return success when a turn resolves after extern
 });
 
 test("createCodexAgent observes delayed run rejection after timeout", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const unhandledRejections: unknown[] = [];
   const onUnhandledRejection = (error: unknown) => {
     unhandledRejections.push(error);
@@ -742,7 +754,7 @@ test("createCodexAgent observes delayed run rejection after timeout", async () =
 });
 
 test("createCodexAgent observes delayed run rejection after external abort", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-"));
+  const workspace = createGitWorkspace();
   const controller = new AbortController();
   const unhandledRejections: unknown[] = [];
   const onUnhandledRejection = (error: unknown) => {
@@ -782,4 +794,55 @@ test("createCodexAgent observes delayed run rejection after external abort", asy
   } finally {
     process.off("unhandledRejection", onUnhandledRejection);
   }
+});
+
+test("createCodexAgent attaches workspace status when review succeeds", async () => {
+  const workspace = createGitWorkspace();
+  const { codexFactory } = createFakeCodex();
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.raw).toMatchObject({
+    workspaceStatus: {
+      before: expect.any(String),
+      after: expect.any(String),
+    },
+  });
+});
+
+test("createCodexAgent fails when workspace porcelain changes during run", async () => {
+  const workspace = createGitWorkspace();
+  const wrappedFactory = (codexOptions: CodexOptions) => {
+    const fake = createFakeCodex({ finalResponse: '{"verdict":"pass"}' });
+    const client = fake.codexFactory(codexOptions);
+    const originalStart = client.startThread.bind(client);
+    return {
+      startThread(threadOptions: ThreadOptions) {
+        const thread = originalStart(threadOptions);
+        return {
+          ...thread,
+          async run(prompt: string, turnOptions: TurnOptions) {
+            writeFileSync(join(workspace, "dirty.txt"), "changed\n", "utf8");
+            return thread.run(prompt, turnOptions);
+          },
+        };
+      },
+    };
+  };
+
+  const result = await createCodexAgent({ codexFactory: wrappedFactory }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toMatch(/modified the workspace/);
 });
