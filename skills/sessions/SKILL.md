@@ -1,16 +1,45 @@
 ---
-name: session-evidence
+name: sessions
 description: >
-  Extract snippets, artifacts, and session ids from local Cursor or Codex session
-  history via sessions analyze. Use for transcript lookup, workflow/skill usage
-  audits, and evaluating planning or review routing against real sessions.
+  Browse and analyze local Cursor or Codex session history via the sessions CLI.
+  Use sessions analyze for transcript lookup, workflow/skill usage audits, and
+  evaluating planning or review routing against real sessions.
 ---
 
-# Session Evidence
+# Sessions
+
+Skill-owned CLI for local agent session history — not part of `harness run`.
 
 Use `sessions analyze --provider cursor|codex --include-turns --extract-only`
-as a local session extraction tool. It returns transcript snippets, artifacts,
-and provenance; keep interpretation separate from extraction.
+for transcript snippets, artifacts, and provenance. Keep interpretation separate
+from extraction.
+
+## Install launcher
+
+From the harness checkout (after `pnpm install` — needs repo `node_modules`):
+
+```bash
+skills/sessions/scripts/install.sh
+```
+
+Or manually:
+
+```bash
+mkdir -p ~/.local/bin
+ln -sf "$PWD/skills/sessions/scripts/sessions.ts" ~/.local/bin/sessions
+chmod +x skills/sessions/scripts/sessions.ts
+```
+
+Ensure `~/.local/bin` is on `PATH` when using `install.sh`.
+
+Direct run without install:
+
+```bash
+node skills/sessions/scripts/sessions.ts --help
+```
+
+Session index cache defaults to `~/.sessions/index` (migrated automatically from
+`~/.harness/session-index` on first use). Override with `SESSIONS_CACHE_DIR`.
 
 ## Workflow
 
