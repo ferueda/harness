@@ -66,15 +66,19 @@ async function invokeCodexAgent(
     };
   }
 
-  const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
-  if (signalState.isExternallyAborted()) {
-    signalState.cleanup();
+  if (input.signal?.aborted) {
     return createAbortedAgentResult();
   }
 
   const beforeStatus = readWorkspaceStatus(input.workspace);
   if (!beforeStatus.ok) {
     return beforeStatus.error;
+  }
+
+  const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
+  if (signalState.isExternallyAborted()) {
+    signalState.cleanup();
+    return createAbortedAgentResult();
   }
 
   const abortRace = createAgentAbortRace(signalState.signal);
