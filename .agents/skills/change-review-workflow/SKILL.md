@@ -19,7 +19,6 @@ Coordinate harness review runs and close the loop on reviewer findings.
 
 - Use Cursor SDK for `harness run change-review` (default provider).
 - Include `--verbose` for day-to-day agent and automation runs so callers receive live workflow events while reviewers are still running.
-- For ad-hoc Cursor delegation outside harness, use the `cursor-cli` skill — not `--runtime` or wrapper flags on harness.
 - For Codex-backed review, use `--agent codex`; keep default `read-only`, `never`, and `high` unless the caller explicitly requests otherwise.
 
 ## Before Running
