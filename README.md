@@ -6,7 +6,7 @@ A personal agent harness for coding workflows. It keeps reusable agent instructi
 
 ```text
 harness.json  Repo-local harness defaults
-skills/       Agent Skill instructions
+skills/       Agent Skill instructions (+ skill-owned CLIs: `sessions`, `cursor-cli`)
 .agents/     Repo-local development skills; not installed into target repos
 providers/    Runtime adapters for external agent providers
 workflows/    Callable review workflows
@@ -209,22 +209,24 @@ node bin/harness.ts run change-review --verbose
 
 ## Session Extraction
 
-Use `sessions` to inspect local agent session history. Reindex Cursor or Codex
-data first, then search transcript evidence when an agent needs prior-session
-context.
+Install the skill-owned `sessions` CLI from the harness checkout:
 
 ```bash
-node bin/sessions.ts cursor reindex
-node bin/sessions.ts analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
+skills/sessions/scripts/install.sh
+sessions cursor reindex
+sessions analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
 ```
+
+Without install: `node skills/sessions/scripts/sessions.ts <command>`. Index cache
+lives at `~/.sessions/index` (auto-migrated from `~/.harness/session-index`).
 
 Codex uses a separate provider and cache:
 
 ```bash
-node bin/sessions.ts codex reindex
-node bin/sessions.ts codex stats --format json
-node bin/sessions.ts analyze --provider codex --include-turns --extract-only --turn-query "verify"
-node bin/sessions.ts codex show <sessionId>
+sessions codex reindex
+sessions codex stats --format json
+sessions analyze --provider codex --include-turns --extract-only --turn-query "verify"
+sessions codex show <sessionId>
 ```
 
 Codex indexing reads `~/.codex/state_5.sqlite` as the source of truth, with
@@ -235,8 +237,8 @@ show` and `codex export` preserve raw rollout transcript text.
 For targeted investigation, prefer exact transcript turn searches:
 
 ```bash
-node bin/sessions.ts analyze --provider cursor --include-turns --extract-only --turn-query "review"
-node bin/sessions.ts analyze --provider cursor --include-turns --extract-only --turn-query "verify" --turn-query "validate" --turn-query "check"
+sessions analyze --provider cursor --include-turns --extract-only --turn-query "review"
+sessions analyze --provider cursor --include-turns --extract-only --turn-query "verify" --turn-query "validate" --turn-query "check"
 ```
 
 `--turn-query` searches user-turn transcript text and can be repeated for OR
@@ -247,10 +249,10 @@ JSON output keeps full `matches` and artifact arrays for agent handoff.
 Open the source session when snippets are not enough:
 
 ```bash
-node bin/sessions.ts cursor show <sessionId>
+sessions cursor show <sessionId>
 ```
 
-For agent-oriented extraction and workflow audits, use the **`session-evidence`** skill. Turn-query starters: `skills/session-evidence/references/turn-queries.md`. Audits: `skills/session-evidence/references/audit-examples.md`.
+For agent-oriented extraction and workflow audits, use the **`sessions`** skill. Turn-query starters: `skills/sessions/references/turn-queries.md`. Audits: `skills/sessions/references/audit-examples.md`.
 
 ## Available Skills
 
@@ -433,12 +435,12 @@ Read-only simplification reviewer for `harness run change-review` (CLI step `sim
 
 ---
 
-### session-evidence
+### sessions
 
 Extract snippets, artifacts, session ids, and turn indexes from local Cursor or
-Codex session history. Uses `sessions analyze --provider cursor|codex
---include-turns --extract-only` and repeatable `--turn-query` for exact
-transcript searches.
+Codex session history. Skill-owned CLI at `skills/sessions/scripts/sessions.ts`.
+Uses `sessions analyze --provider cursor|codex --include-turns --extract-only`
+and repeatable `--turn-query` for exact transcript searches.
 
 **Use when:**
 - Looking up prior session context
@@ -447,7 +449,9 @@ transcript searches.
 - Auditing which skills and workflows you actually invoke across sessions
 - Weekly/monthly workflow audits
 
-**Audits:** `skills/session-evidence/references/audit-examples.md` (workflow/skill usage). **Exploration:** `skills/session-evidence/references/turn-queries.md` (starter `--turn-query` terms).
+**Install:** `skills/sessions/scripts/install.sh` from harness checkout.
+
+**Audits:** `skills/sessions/references/audit-examples.md` (workflow/skill usage). **Exploration:** `skills/sessions/references/turn-queries.md` (starter `--turn-query` terms).
 
 **Output:** Matching snippets, `matchedQueries`, artifacts, session ids, and
 turn indexes. Use `sessions cursor show <sessionId>` or
