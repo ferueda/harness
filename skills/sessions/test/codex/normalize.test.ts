@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { cleanCodexUserMessage } from "../../../lib/sessions/codex/normalize.ts";
+import { cleanCodexUserMessage } from "../../lib/codex/normalize.ts";
 
 test("cleanCodexUserMessage strips leading AGENTS and instructions preambles", () => {
   expect(
