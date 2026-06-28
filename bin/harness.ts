@@ -31,6 +31,7 @@ import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
 import { installPackagedSkill } from "../lib/skills.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { cleanupOrphanedRunDir, createWorkflowContext } from "../lib/workflow-context.ts";
+import { createAgentProvider } from "../providers/registry.ts";
 
 type InitOptions = {
   workspace?: string;
@@ -298,16 +299,27 @@ function addReviewCommand(
         throw new Error("--codex-executable applies only when --agent codex is active");
       }
 
-      const ctx = createWorkflowContext({
-        ...resolvedOptions,
-        eventSink: options.verbose ? writeVerboseWorkflowEvent : undefined,
-      });
+      const runAbort = new AbortController();
+      const onRunAbort = () => runAbort.abort();
+      process.once("SIGINT", onRunAbort);
+      process.once("SIGTERM", onRunAbort);
       let meta;
       try {
-        meta = await workflow(ctx, { steps: options.steps });
-      } catch (error) {
-        cleanupOrphanedRunDir(ctx.runDir);
-        throw error;
+        const ctx = createWorkflowContext({
+          ...resolvedOptions,
+          agentProviderFactory: createAgentProvider,
+          signal: runAbort.signal,
+          eventSink: options.verbose ? writeVerboseWorkflowEvent : undefined,
+        });
+        try {
+          meta = await workflow(ctx, { steps: options.steps });
+        } catch (error) {
+          cleanupOrphanedRunDir(ctx.runDir);
+          throw error;
+        }
+      } finally {
+        process.off("SIGINT", onRunAbort);
+        process.off("SIGTERM", onRunAbort);
       }
       console.log(JSON.stringify(meta, null, 2));
       process.exitCode = meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1;
