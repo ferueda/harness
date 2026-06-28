@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import {
   Codex,
   type CodexOptions,
@@ -17,6 +16,8 @@ import {
   createAgentAbortRace,
   createAgentSignalState,
 } from "../../lib/agent-signals.ts";
+import { parseStructuredOutput } from "../../lib/structured-output.ts";
+import { loadSchema } from "../../lib/schema-validation.ts";
 
 type CodexThread = {
   id: string | null;
@@ -56,9 +57,7 @@ async function invokeCodexAgent(
 ): Promise<AgentRunResult> {
   let outputSchema;
   try {
-    outputSchema = input.schemaPath
-      ? JSON.parse(readFileSync(input.schemaPath, "utf8"))
-      : undefined;
+    outputSchema = input.schemaPath ? loadSchema({ schemaPath: input.schemaPath }) : undefined;
   } catch (error) {
     return {
       ok: false,
@@ -115,11 +114,11 @@ async function invokeCodexAgent(
       },
     );
     const turn = await Promise.race([observedTurnPromise, abortRace.promise]);
-    const structuredOutput = parseStructuredOutput(turn.finalResponse);
-    if (!structuredOutput.ok) {
+    const parsed = parseStructuredOutput(turn.finalResponse, outputSchema);
+    if (parsed.error) {
       return {
         ok: false,
-        error: structuredOutput.error,
+        error: parsed.error,
         raw: turn,
         exitCode: 1,
       };
@@ -127,7 +126,7 @@ async function invokeCodexAgent(
 
     return {
       ok: true,
-      structuredOutput: structuredOutput.value,
+      structuredOutput: parsed.value,
       raw: turn,
       sessionId: thread.id ?? undefined,
       usage: turn.usage ?? undefined,
@@ -163,22 +162,6 @@ function buildThreadOptions(input: AgentRunInput): ThreadOptions {
     approvalPolicy: input.approvalPolicy,
     modelReasoningEffort: input.modelReasoningEffort,
   };
-}
-
-function parseStructuredOutput(text: RunResult["finalResponse"]):
-  | { ok: true; value: unknown }
-  | {
-      ok: false;
-      error: string;
-    } {
-  try {
-    return { ok: true, value: JSON.parse(text) };
-  } catch (error) {
-    return {
-      ok: false,
-      error: `Codex final response was not valid JSON: ${errorMessage(error)}`,
-    };
-  }
 }
 
 async function runCodexTurnStreamed(
