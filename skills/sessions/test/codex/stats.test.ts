@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { buildCodexIndex } from "../../../lib/sessions/codex/index.ts";
-import { getCodexIndexStats } from "../../../lib/sessions/codex/stats.ts";
+import { buildCodexIndex } from "../../lib/codex/index.ts";
+import { getCodexIndexStats } from "../../lib/codex/stats.ts";
 import { makeSessionEnv, writeCodexRollout, writeCodexStateDb } from "../helpers.ts";
 
 test("getCodexIndexStats aggregates cache rows", async () => {
