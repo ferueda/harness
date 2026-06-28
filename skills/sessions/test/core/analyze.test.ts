@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { analyzeSessions } from "../../../lib/sessions/core/analyze.ts";
+import { analyzeSessions } from "../../lib/core/analyze.ts";
 import { session } from "../helpers.ts";
 
 test("analyzeSessions counts missing fields and classifications", () => {
