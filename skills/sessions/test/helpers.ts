@@ -1,20 +1,23 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import type { SessionEnvironment } from "../../lib/sessions/core/env.ts";
-import type { CodexSession, CursorSession, Transcript } from "../../lib/sessions/core/types.ts";
+import type { SessionEnvironment } from "../lib/core/env.ts";
+import type { CodexSession, CursorSession, Transcript } from "../lib/core/types.ts";
 
-const FIXTURES = join(process.cwd(), "test/fixtures/sessions");
+const HELPERS_DIR = dirname(fileURLToPath(import.meta.url));
+
+export const FIXTURES = join(HELPERS_DIR, "../fixtures/sessions");
 
 export function makeSessionEnv(): SessionEnvironment {
   const root = mkdtempSync(join(tmpdir(), "harness-sessions-"));
   return {
     cursorHome: join(root, ".cursor"),
     codexHome: join(root, ".codex"),
-    cacheRoot: join(root, ".harness/session-index"),
+    cacheRoot: join(root, ".sessions/index"),
     homeDir: root,
-    harnessRoot: process.cwd(),
+    skillRoot: join(HELPERS_DIR, ".."),
     now: () => new Date("2026-06-26T00:00:00.000Z"),
   };
 }
