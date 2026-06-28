@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import * as agentSignals from "../../lib/agent-signals.ts";
 import { createCodexAgent } from "./codex-agent.ts";
 import type { CodexOptions, ThreadEvent, ThreadOptions, TurnOptions } from "@openai/codex-sdk";
 
@@ -431,6 +432,30 @@ test("createCodexAgent returns invalid schema failures", async () => {
   if (missingResult.ok) return;
   expect(missingResult.exitCode).toBe(1);
   expect(missingResult.error).toMatch(/Invalid Codex output schema/);
+});
+
+test("createCodexAgent does not register signal state when pre-run workspace check fails", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-codex-agent-no-git-"));
+  const signalStateSpy = vi.spyOn(agentSignals, "createAgentSignalState");
+  let factoryCalled = false;
+
+  const result = await createCodexAgent({
+    codexFactory: () => {
+      factoryCalled = true;
+      throw new Error("should not create codex client");
+    },
+  }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+  });
+
+  signalStateSpy.mockRestore();
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toMatch(/Failed to inspect workspace status/);
+  expect(signalStateSpy).not.toHaveBeenCalled();
+  expect(factoryCalled).toBe(false);
 });
 
 test("createCodexAgent returns SDK run failures", async () => {
