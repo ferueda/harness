@@ -1,12 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import {
-  CodexRolloutParseError,
-  parseCodexRolloutText,
-} from "../../../lib/sessions/codex/rollout.ts";
-
-const FIXTURES = join(process.cwd(), "test/fixtures/sessions");
+import { CodexRolloutParseError, parseCodexRolloutText } from "../../lib/codex/rollout.ts";
+import { FIXTURES } from "../helpers.ts";
 
 test("parseCodexRolloutText extracts user and assistant turns", () => {
   const parsed = parseCodexRolloutText(readFixture("codex-real-user.jsonl"));
