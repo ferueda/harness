@@ -64,7 +64,6 @@ Use `handoff-work` when a different agent or session continues:
 |---------|------|
 | Code changed, review needed | `change-review-workflow` |
 | Plan-only session | update plan status; stop |
-| Portfolio or usage question | `sessions` |
 
 **Done when:** next workflow named or user stops.
 
