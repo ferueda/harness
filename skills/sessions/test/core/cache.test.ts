@@ -8,8 +8,8 @@ import {
   readCachedSessions,
   writeCodexCache,
   writeCursorCache,
-} from "../../../lib/sessions/core/cache.ts";
-import { getCursorIndexStats } from "../../../lib/sessions/cursor/stats.ts";
+} from "../../lib/core/cache.ts";
+import { getCursorIndexStats } from "../../lib/cursor/stats.ts";
 import { codexSession, makeSessionEnv, session } from "../helpers.ts";
 
 test("readCachedSessions rejects cursor rows without transcript paths", () => {
