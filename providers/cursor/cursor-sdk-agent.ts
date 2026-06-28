@@ -28,7 +28,6 @@ export type CursorSdkAgentFactoryOptions = {
   createSdkAgent?: CreateCursorSdkAgent;
 };
 
-const CURSOR_STREAM_SETTLE_TIMEOUT_MS = STREAM_SETTLE_TIMEOUT_MS;
 const CURSOR_SDK_MODEL_PARAMS = {
   "composer-2.5": [{ id: "fast", value: "false" }],
   "claude-opus-4-8": [
@@ -394,7 +393,7 @@ function startCursorStream(run: CursorSdkRun, logPath: string): CursorStreamPump
         return {
           ...summary,
           status: summary.status === "written" ? "written" : "error",
-          error: `Cursor SDK stream did not settle within ${CURSOR_STREAM_SETTLE_TIMEOUT_MS}ms`,
+          error: `Cursor SDK stream did not settle within ${STREAM_SETTLE_TIMEOUT_MS}ms`,
         };
       });
     },
@@ -425,7 +424,7 @@ async function settleCursorStreamTask(
       new Promise<AgentStreamLogSummary>((resolve) => {
         timeout = setTimeout(() => {
           void onTimeout().then(resolve);
-        }, CURSOR_STREAM_SETTLE_TIMEOUT_MS);
+        }, STREAM_SETTLE_TIMEOUT_MS);
       }),
     ]);
   } finally {
