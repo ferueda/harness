@@ -3,8 +3,32 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import type { AgentRunResult } from "../../lib/agents.ts";
+import type * as ReviewGuard from "../../lib/review-guard.ts";
 import { createCursorSdkAgent, type CursorSdkAgentFactoryOptions } from "./cursor-sdk-agent.ts";
+
+let mockPostRunStatusFailure = false;
+
+vi.mock("../../lib/review-guard.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof ReviewGuard>();
+  return {
+    ...actual,
+    withWorkspaceGuard(result: AgentRunResult, workspace: string, beforeStatus: string) {
+      if (mockPostRunStatusFailure) {
+        return actual.applyWorkspaceGuard(result, beforeStatus, {
+          ok: false,
+          error: {
+            ok: false,
+            error: "git unavailable",
+            exitCode: 1,
+          },
+        });
+      }
+      return actual.withWorkspaceGuard(result, workspace, beforeStatus);
+    },
+  };
+});
 
 const REVIEW_SCHEMA_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -368,7 +392,7 @@ test("createCursorSdkAgent detects workspace mutations outside .harness", async 
 
   expect(result.ok).toBe(false);
   if (result.ok) return;
-  expect(result.error).toBe("Cursor SDK runtime modified the workspace during a review run");
+  expect(result.error).toBe("Agent runtime modified the workspace during a review run");
 });
 
 test("createCursorSdkAgent allows .harness artifacts", async () => {
@@ -841,7 +865,7 @@ test("createCursorSdkAgent detects workspace mutations on timeout", async () => 
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.exitCode).toBe(124);
-  expect(result.error).toBe("Cursor SDK runtime modified the workspace during a review run");
+  expect(result.error).toBe("Agent runtime modified the workspace during a review run");
   expect(result.raw).toMatchObject({
     underlyingFailure: {
       exitCode: 124,
@@ -871,7 +895,7 @@ test("createCursorSdkAgent detects workspace mutations on thrown wait errors", a
 
   expect(result.ok).toBe(false);
   if (result.ok) return;
-  expect(result.error).toBe("Cursor SDK runtime modified the workspace during a review run");
+  expect(result.error).toBe("Agent runtime modified the workspace during a review run");
   expect(result.raw).toMatchObject({
     workspaceStatus: {
       before: "",
@@ -1011,6 +1035,36 @@ test("createCursorSdkAgent preserves send error details and workspace status", a
       after: "",
     },
   });
+});
+
+test("createCursorSdkAgent preserves successful review when post-run workspace status is unreadable", async () => {
+  mockPostRunStatusFailure = true;
+  try {
+    const workspace = createGitWorkspace();
+    const { createSdkAgent } = createFakeSdk({
+      result: {
+        status: "finished",
+        result: '{"verdict":"pass"}',
+      },
+    });
+
+    const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+      workspace,
+      prompt: "review this",
+      maxRuntimeMs: 1_000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.structuredOutput).toEqual({ verdict: "pass" });
+    expect(result.raw).toMatchObject({
+      workspaceStatus: {
+        guard: "unverified",
+      },
+    });
+  } finally {
+    mockPostRunStatusFailure = false;
+  }
 });
 
 test("createCursorSdkAgent does not let dispose failures mask successful results", async () => {
