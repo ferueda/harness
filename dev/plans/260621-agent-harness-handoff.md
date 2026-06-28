@@ -16,7 +16,7 @@ North star: durable orchestration (checkpointed steps, retries, triggers). **Inn
 2. Always pass `--workspace <target-repo>`; never copy harness into each app.
 3. Artifacts live in **target repo** `.harness/` — not in harness repo.
 4. Code writes human reports (`summary.md`); LLMs produce structured JSON only.
-5. Human gates on `react-to-review` and merge until explicitly changed.
+5. Human gates on post-review triage and merge until explicitly changed.
 6. **Skills** = `SKILL.md` instructions; **workflows** = runnable orchestration.
 
 ## Shipped (summary)
@@ -44,7 +44,9 @@ Shipped plan index: `dev/plans/README.md` archive table.
 - No deterministic pre-checks (tests/lint) in review pipeline.
 - No triggers — manual CLI only.
 
-## `steps.json` v1 (target)
+## Phase 0.6 / 1c contracts
+
+### `steps.json` v1 (target)
 
 Add alongside `meta.json` under `.harness/runs/reviews/<run-id>/`:
 
@@ -69,6 +71,8 @@ Add alongside `meta.json` under `.harness/runs/reviews/<run-id>/`:
 - Write outputs to temp files, then rename into place.
 - On restart: skip `completed` only when listed outputs exist; treat stale `running` as retryable.
 - Future Inngest `step.run()` IDs align with `steps.json` step `id`.
+- Optional v1 metadata: per-step `startedAt`, `durationMs`, `sessionId`; scope `diffChars`, `diffLines`. Full shape: archive handoff, `meta.json`, `lib/workflow-context.ts`.
+- Step IDs: `lib/workflow-events.ts` (`STEP_ID_BY_AGENT`) for reviewer steps; see archive handoff for `prepare-context` / grader IDs.
 
 ### Grader contract (Phase 1c)
 
@@ -79,7 +83,7 @@ Add alongside `meta.json` under `.harness/runs/reviews/<run-id>/`:
 
 ### `digestReview()` (Phase 1c)
 
-Compress prior review JSON to ~500 tokens (verdict, summary, findings by severity) for downstream prompts. Full JSON stays on disk for `react-to-review`.
+Compress prior review JSON to ~500 tokens (verdict, summary, findings by severity) for downstream prompts. Full JSON stays on disk for `change-review-workflow` triage.
 
 ## Next steps (ordered)
 
@@ -99,7 +103,7 @@ Compress prior review JSON to ~500 tokens (verdict, summary, findings by severit
 |------|-------|
 | Inngest hosting | Self-hosted vs cloud — decide before Phase 2 |
 | Per-step CLI vs lib | Prefer lib import for orchestrator |
-| Review Manager agent | Defer unless needed for `react-to-review` |
+| Review Manager agent | Defer unless needed for post-review triage |
 | SQLite artifact index | Defer until cross-run queries hurt |
 | Parallel vs serial | Graders parallel; LLM steps serial when consuming digests |
 
@@ -134,5 +138,5 @@ README.md
 | Review instructions | `review-implementation`, `code-quality-review`, `simplify-review` |
 | Chat coordinator | `change-review-workflow` |
 | Handoff | `handoff-work` — `--handoff`, `--handoff-stdin` |
-| Post-review triage | `react-to-review` |
+| Post-review triage | `change-review-workflow` (After Results) |
 | Phase 2 | Inngest docs; extract per-step runners first |
