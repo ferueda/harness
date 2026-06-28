@@ -10,12 +10,11 @@ import {
   type ReviewVerdict,
   type WorkflowStepMetadata,
 } from "./aggregate.ts";
-import { createAgentProvider } from "./agent-provider.ts";
-import type { AgentProviderOptions } from "./agent-provider.ts";
 import type {
   Agent,
   AgentApprovalPolicy,
   AgentProviderName,
+  AgentProviderOptions,
   AgentReasoningEffort,
   AgentRunInput,
   AgentRunResult,
@@ -47,7 +46,7 @@ import {
 import type { ContextArtifact } from "./context.ts";
 import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schemas.ts";
 
-type WorkflowOptions = {
+type WorkflowRunOptions = {
   workspace: string;
   baseRef: string;
   headRef: string;
@@ -65,9 +64,14 @@ type WorkflowOptions = {
   dryRun?: boolean;
   eventSink?: WorkflowEventSink;
   heartbeatMs?: number;
+  signal?: AbortSignal;
 };
 
-type WorkflowContextFactoryOptions = WorkflowOptions & {
+type WorkflowOptions = WorkflowRunOptions & {
+  agentProviderFactory: (options: AgentProviderOptions) => Agent;
+};
+
+type WorkflowContextFactoryOptions = WorkflowRunOptions & {
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
 };
 
@@ -171,7 +175,10 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
   try {
     mkdirSync(runDir, { recursive: true });
 
-    const agentProviderFactory = options.agentProviderFactory ?? createAgentProvider;
+    const agentProviderFactory = options.agentProviderFactory;
+    if (!agentProviderFactory) {
+      throw new Error("agentProviderFactory is required");
+    }
     reviewProvider = agentProviderFactory({
       provider: options.agentProvider ?? "cursor",
       codexPathOverride: options.codexPathOverride,
@@ -342,6 +349,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
           ...agentPolicyMeta,
           maxRuntimeMs: options.maxRuntimeMs,
           logPath: streamPath,
+          signal: options.signal,
         });
       } finally {
         recordStreamArtifact(
@@ -409,7 +417,7 @@ function getReviewInfo(name: ReviewAgentName): { key: string; title: string; sta
 
 function reviewPolicyOptions(
   providerName: AgentProviderName,
-  options: WorkflowOptions,
+  options: WorkflowRunOptions,
 ): Pick<AgentRunInput, "sandboxMode" | "approvalPolicy" | "modelReasoningEffort"> {
   if (providerName !== "codex") return {};
   return {
@@ -419,13 +427,13 @@ function reviewPolicyOptions(
   };
 }
 
-function resolvedAgentModel(providerName: AgentProviderName, options: WorkflowOptions): string {
+function resolvedAgentModel(providerName: AgentProviderName, options: WorkflowRunOptions): string {
   return options.model ?? DEFAULT_AGENT_MODELS[providerName];
 }
 
 function resolvedReviewConcurrency(
   _providerName: AgentProviderName,
-  _options: WorkflowOptions,
+  _options: WorkflowRunOptions,
 ): "parallel" | "serial" {
   return "parallel";
 }
