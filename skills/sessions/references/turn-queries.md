@@ -87,10 +87,10 @@ When interpreting snippets, deprioritize:
 
 ## Category → next step
 
-| Goal | Start with | Then |
-|------|------------|------|
-| Find how we verify work | Verification | Artifacts → commands, test output |
-| Understand a bug arc | Problems → Research | `sessions show` on 1–2 session ids |
-| Map planning usage | Planning + audit-examples skill names | Score against `planning-workflow/references/routing.md` |
-| Find repeated user rules | Preferences and corrections | Recurrence ≥ 2 before editing skills |
-| Agent stopped too early | Persistence and friction | Check handoff and coordinator docs |
+| Goal                     | Start with                            | Then                                                    |
+| ------------------------ | ------------------------------------- | ------------------------------------------------------- |
+| Find how we verify work  | Verification                          | Artifacts → commands, test output                       |
+| Understand a bug arc     | Problems → Research                   | `sessions show` on 1–2 session ids                      |
+| Map planning usage       | Planning + audit-examples skill names | Score against `planning-workflow/references/routing.md` |
+| Find repeated user rules | Preferences and corrections           | Recurrence ≥ 2 before editing skills                    |
+| Agent stopped too early  | Persistence and friction              | Check handoff and coordinator docs                      |
