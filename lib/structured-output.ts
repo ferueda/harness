@@ -1,4 +1,9 @@
-import { extractJsonFromText, extractJsonText, stripJsonFences } from "./json-extract.ts";
+import {
+  extractJsonFromText,
+  extractJsonText,
+  leadingBalancedJsonValue,
+  stripJsonFences,
+} from "./json-extract.ts";
 import { schemaAccepts, type JsonSchema, validateJsonSchema } from "./schema-validation.ts";
 
 export type { JsonSchema } from "./schema-validation.ts";
@@ -17,6 +22,18 @@ function fullDocumentSyntaxError(resultText: string): string | null {
   const cleaned = stripJsonFences(resultText);
   if (!cleaned) return null;
   return parseJsonText(cleaned).error ?? null;
+}
+
+// Prefer whole-document syntax errors only for JSON-rooted output without recoverable
+// trailing prose; prose-prefixed or JSON+suffix cases should surface schema diagnostics.
+function shouldPreferFullDocumentSyntaxError(cleaned: string): boolean {
+  const leading = leadingBalancedJsonValue(cleaned);
+  if (!leading) {
+    const trimmed = cleaned.trimStart();
+    return trimmed.startsWith("{") || trimmed.startsWith("[");
+  }
+  const suffix = cleaned.slice(leading.start + leading.value.length).trim();
+  return suffix.length === 0;
 }
 
 function extractStructuredJsonText(resultText: string, schema: JsonSchema): string | null {
@@ -56,8 +73,11 @@ export function parseStructuredOutput(
       return { value: parsed.value };
     }
 
-    const syntaxError = fullDocumentSyntaxError(resultText);
-    if (syntaxError) return { error: syntaxError };
+    const cleaned = stripJsonFences(resultText);
+    if (shouldPreferFullDocumentSyntaxError(cleaned)) {
+      const syntaxError = fullDocumentSyntaxError(resultText);
+      if (syntaxError) return { error: syntaxError };
+    }
 
     const diagnosticError = schemaValidationError(schema, resultText);
     if (diagnosticError) return { error: diagnosticError };
