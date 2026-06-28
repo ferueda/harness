@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { readCachedSessions } from "../../../lib/sessions/core/cache.ts";
-import { buildCursorIndex } from "../../../lib/sessions/cursor/index.ts";
+import { readCachedSessions } from "../../lib/core/cache.ts";
+import { buildCursorIndex } from "../../lib/cursor/index.ts";
 import { makeSessionEnv, writeMeta, writeStoreDb, writeTranscript } from "../helpers.ts";
 
 test("buildCursorIndex indexes synthetic Cursor tree and prefers explicit workspace path", async () => {
