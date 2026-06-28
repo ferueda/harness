@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { writeCodexCache, writeCursorCache } from "../../lib/sessions/core/cache.ts";
-import { buildCodexIndex } from "../../lib/sessions/codex/index.ts";
-import { buildCursorIndex } from "../../lib/sessions/cursor/index.ts";
+import { writeCodexCache, writeCursorCache } from "../lib/core/cache.ts";
+import { buildCodexIndex } from "../lib/codex/index.ts";
+import { buildCursorIndex } from "../lib/cursor/index.ts";
 import {
   codexSession,
   makeSessionEnv,
@@ -14,7 +15,7 @@ import {
   writeTranscript,
 } from "./helpers.ts";
 
-const SESSIONS_BIN = join(process.cwd(), "bin/sessions.ts");
+const SESSIONS_BIN = join(dirname(fileURLToPath(import.meta.url)), "../scripts/sessions.ts");
 
 test("sessions analyze emits JSON for Cursor cache", () => {
   const env = makeSessionEnv();
