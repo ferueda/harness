@@ -4,7 +4,6 @@
 
 | File | Status | Summary |
 | ---- | ------ | ------- |
-| [260629-cursor-display-titles.md](./260629-cursor-display-titles.md) | `implemented` | Sessions: derive Cursor display titles from first query |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest |
 
 **Build next:** handoff Phase 0.6 (`steps.json`).
@@ -31,6 +30,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | G | Review-runtime hardening | [#40](https://github.com/ferueda/harness/pull/40) |
 | H | Sessions skill colocation | [#42](https://github.com/ferueda/harness/pull/42) |
 | — | Instruction memory prune | [#43](https://github.com/ferueda/harness/pull/43) |
+| — | Cursor display-title fallback | [#48](https://github.com/ferueda/harness/pull/48) |
 
 ---
 
