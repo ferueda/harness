@@ -1,7 +1,8 @@
 import { statSync } from "node:fs";
 import type { SessionEnvironment } from "../core/env.ts";
+import { hasText } from "../core/analyze.ts";
 import { writeCursorCache } from "../core/cache.ts";
-import type { CursorSession, IndexSnapshot } from "../core/types.ts";
+import type { CursorSession, IndexSnapshot, SessionTitleSource } from "../core/types.ts";
 import { isAutomationSession, isSubagentSession } from "./classify.ts";
 import { buildCursorMetaIndex, readCursorSessionMeta } from "./meta.ts";
 import { globTranscriptFiles, type TranscriptFile, type WorkspacePathResult } from "./paths.ts";
@@ -13,7 +14,7 @@ import {
 
 type DisplayTitle = {
   title?: string;
-  titleSource?: CursorSession["titleSource"];
+  titleSource?: SessionTitleSource;
 };
 
 const DISPLAY_TITLE_MAX_LENGTH = 80;
@@ -83,25 +84,17 @@ function deriveDisplayTitle(
 ): DisplayTitle {
   if (hasText(storeTitle)) return { title: storeTitle, titleSource: "store-db" };
 
-  const title = truncateDisplayTitle(normalizeDisplayTitle(firstUserQuery));
+  const title = firstQueryDisplayTitle(firstUserQuery);
   return hasText(title) ? { title, titleSource: "first-query" } : {};
 }
 
-function normalizeDisplayTitle(value: string | undefined): string | undefined {
+function firstQueryDisplayTitle(value: string | undefined): string | undefined {
   if (!hasText(value)) return undefined;
   const normalized = stripInjectedBlocks(value).replace(/\s+/g, " ").trim();
-  return hasText(normalized) ? normalized : undefined;
-}
-
-function truncateDisplayTitle(value: string | undefined): string | undefined {
-  if (!hasText(value)) return undefined;
-  return value.length <= DISPLAY_TITLE_MAX_LENGTH
-    ? value
-    : `${value.slice(0, DISPLAY_TITLE_MAX_LENGTH - 3)}...`;
-}
-
-function hasText(value: string | undefined): value is string {
-  return typeof value === "string" && value.trim().length > 0;
+  if (!hasText(normalized)) return undefined;
+  return normalized.length <= DISPLAY_TITLE_MAX_LENGTH
+    ? normalized
+    : `${normalized.slice(0, DISPLAY_TITLE_MAX_LENGTH - 3)}...`;
 }
 
 function resolveWorkspace(
