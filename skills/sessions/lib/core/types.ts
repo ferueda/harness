@@ -2,6 +2,7 @@ export type SessionProviderId = "cursor" | "codex";
 
 export type WorkspacePathConfidence = "explicit" | "decoded";
 export type WorkspacePathSource = "transcript" | "store-db" | "project-key";
+export type SessionTitleSource = "store-db" | "first-query";
 
 export type SessionRole = "user" | "assistant" | "system" | "tool" | "unknown";
 
@@ -14,6 +15,7 @@ export type SessionBase = {
   workspacePathConfidence: WorkspacePathConfidence;
   workspacePathSource?: WorkspacePathSource;
   title?: string;
+  titleSource?: SessionTitleSource;
   createdAtMs?: number;
   updatedAtMs?: number;
   isAutomation: boolean;

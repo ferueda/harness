@@ -70,10 +70,14 @@ test("sessions analyze emits JSON for Cursor cache", () => {
     sessions: [
       session({
         sessionId: "preference",
+        title: "Please prefer concise updates.",
+        titleSource: "first-query",
         firstUserQuery: "Please prefer concise updates.",
       }),
       session({
         sessionId: "worker",
+        title: "You are running as an automated worker.",
+        titleSource: "first-query",
         firstUserQuery: "You are running as an automated worker.",
         isAutomation: true,
         isSubagent: true,
@@ -117,6 +121,8 @@ test("sessions analyze emits JSON for Cursor cache", () => {
   expect(output.cursor).toMatchObject({
     suspiciousAutomation: { total: 0, samples: [] },
     decodedWorkspacePaths: { total: 0, samples: [] },
+    missingDisplayTitles: { total: 0, samples: [] },
+    missingStoreDbMetadata: { total: 2 },
     preferenceMarkers: {
       total: 1,
       samples: [
@@ -127,11 +133,9 @@ test("sessions analyze emits JSON for Cursor cache", () => {
       ],
     },
   });
-  expect(output.cursor.missingTitles).toMatchObject({ total: 2 });
-  expect(output.cursor.missingTitles.samples).toHaveLength(2);
   expect(output.indexImprovementCandidates).toContainEqual(
     expect.objectContaining({
-      id: "missing-title-metadata",
+      id: "missing-store-db-metadata",
       severity: "medium",
       count: 2,
     }),
@@ -153,7 +157,12 @@ test("sessions analyze table output uses neutral metadata labels", () => {
     skipped: 0,
     skippedUnparseable: 0,
     sessions: [
-      session({ sessionId: "preference", firstUserQuery: "Always prefer concise output." }),
+      session({
+        sessionId: "preference",
+        title: "Always prefer concise output.",
+        titleSource: "first-query",
+        firstUserQuery: "Always prefer concise output.",
+      }),
     ],
   });
 
@@ -168,6 +177,10 @@ test("sessions analyze table output uses neutral metadata labels", () => {
   expect(result.stdout).toContain("Automation sessions (0 sessions)");
   expect(result.stdout).toContain("Subagent sessions (0 sessions)");
   expect(result.stdout).toContain("path sources:     1 transcript / 0 store-db / 0 project-key");
+  expect(result.stdout).toContain("missing display title: 0");
+  expect(result.stdout).toContain("missing store-db metadata: 1");
+  expect(result.stdout).toContain("Missing display titles (0 total)");
+  expect(result.stdout).toContain("Missing store-db metadata (1 total)");
   expect(result.stdout).toContain("Preference marker samples (1 total)");
   expect(result.stdout).toContain("Index quality signals");
   expect(result.stdout).not.toContain("Transcript evidence patterns");

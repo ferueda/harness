@@ -34,7 +34,8 @@ export type IndexImprovementCandidate = {
 export type CursorSpecificAnalysis = {
   suspiciousAutomation: CursorAnalysisSampleSet;
   decodedWorkspacePaths: CursorAnalysisSampleSet;
-  missingTitles: CursorAnalysisSampleSet;
+  missingDisplayTitles: CursorAnalysisSampleSet;
+  missingStoreDbMetadata: CursorAnalysisSampleSet;
   preferenceMarkers: CursorAnalysisSampleSet;
   noiseMarkers: CursorAnalysisSampleSet;
 };
@@ -64,10 +65,11 @@ export function analyzeCursorSessions(
         ? "workspace path came from lossy Cursor project-key decoding"
         : undefined,
     ),
-    missingTitles: collectSampleSet(ordered, limit, (session) =>
-      !hasText(session.title) && hasText(session.firstUserQuery)
-        ? "session has firstUserQuery but no title metadata"
-        : undefined,
+    missingDisplayTitles: collectSampleSet(ordered, limit, (session) =>
+      !hasText(session.title) ? "session has no display title" : undefined,
+    ),
+    missingStoreDbMetadata: collectSampleSet(ordered, limit, (session) =>
+      !hasText(session.storeDbPath) ? "session has no Cursor store.db metadata" : undefined,
     ),
     preferenceMarkers: markerSamples(ordered, PREFERENCE_MARKERS, limit),
     noiseMarkers: markerSamples(ordered, NOISE_MARKERS, limit),
@@ -142,12 +144,22 @@ function indexImprovementCandidates(
     });
   }
 
-  if (analysis.totalSessions > 0 && analysis.missing.title / analysis.totalSessions > 0.25) {
+  if (analysis.missing.title > 0) {
     candidates.push({
-      id: "missing-title-metadata",
-      severity: "medium",
+      id: "missing-display-title",
+      severity: "high",
       count: analysis.missing.title,
-      message: "More than 25% of indexed sessions are missing title metadata.",
+      message: "Some indexed sessions have no usable display title.",
+    });
+  }
+
+  if (cursor.missingStoreDbMetadata.total > 0) {
+    candidates.push({
+      id: "missing-store-db-metadata",
+      severity: "medium",
+      count: cursor.missingStoreDbMetadata.total,
+      message:
+        "Some Cursor sessions have no store.db metadata; this is expected for transcript-only Glass sessions.",
     });
   }
 

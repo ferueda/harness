@@ -30,6 +30,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | G | Review-runtime hardening | [#40](https://github.com/ferueda/harness/pull/40) |
 | H | Sessions skill colocation | [#42](https://github.com/ferueda/harness/pull/42) |
 | — | Instruction memory prune | [#43](https://github.com/ferueda/harness/pull/43) |
+| — | Cursor display-title fallback | [#48](https://github.com/ferueda/harness/pull/48) |
 
 ---
 

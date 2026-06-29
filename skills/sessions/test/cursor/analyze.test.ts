@@ -20,12 +20,14 @@ test("analyzeCursorSessions reports Cursor-specific samples", () => {
       session({
         sessionId: "decoded-path",
         workspacePathConfidence: "decoded",
+        title: "Use the local project instructions.",
+        titleSource: "first-query",
         firstUserQuery: "Use the local project instructions.",
       }),
       session({
         sessionId: "missing-title",
         title: undefined,
-        firstUserQuery: "Please prefer concise updates.",
+        firstUserQuery: undefined,
       }),
     ],
     { limit: 5 },
@@ -44,11 +46,13 @@ test("analyzeCursorSessions reports Cursor-specific samples", () => {
     total: 1,
     samples: [expect.objectContaining({ sessionId: "decoded-path" })],
   });
-  expect(analysis.cursor.missingTitles.samples).toContainEqual(
+  expect(analysis.cursor.missingDisplayTitles.samples).toContainEqual(
     expect.objectContaining({
       sessionId: "missing-title",
+      reason: "session has no display title",
     }),
   );
+  expect(analysis.cursor.missingStoreDbMetadata.total).toBe(4);
   expect(analysis.indexImprovementCandidates).toContainEqual(
     expect.objectContaining({
       id: "suspicious-automation-classification",
@@ -62,10 +66,14 @@ test("analyzeCursorSessions separates preference-like and noise markers", () => 
   const analysis = analyzeCursorSessions([
     session({
       sessionId: "preference",
+      title: "I want you to always prefer short updates.",
+      titleSource: "first-query",
       firstUserQuery: "I want you to always prefer short updates.",
     }),
     session({
       sessionId: "noise",
+      title: "You are running as an automated worker. Hard requirements for your FINAL answer.",
+      titleSource: "first-query",
       firstUserQuery:
         "You are running as an automated worker. Hard requirements for your FINAL answer.",
       isAutomation: true,
@@ -94,6 +102,8 @@ test("analyzeCursorSessions reports total counts separately from bounded samples
         sessionId: `decoded-${index}`,
         workspacePathConfidence: "decoded",
         workspacePathSource: "project-key",
+        title: `Please prefer concise output ${index}.`,
+        titleSource: "first-query",
         firstUserQuery: `Please prefer concise output ${index}.`,
       }),
     ),
@@ -109,6 +119,56 @@ test("analyzeCursorSessions reports total counts separately from bounded samples
       id: "workspace-path-project-key-only",
       severity: "high",
       count: 5,
+    }),
+  );
+  expect(analysis.indexImprovementCandidates).toContainEqual(
+    expect.objectContaining({
+      id: "missing-store-db-metadata",
+      severity: "medium",
+      count: 5,
+    }),
+  );
+});
+
+test("analyzeCursorSessions reports missing display titles separately from missing store-db metadata", () => {
+  const analysis = analyzeCursorSessions([
+    session({
+      sessionId: "fallback-title",
+      title: "Please prefer concise output.",
+      titleSource: "first-query",
+      firstUserQuery: "Please prefer concise output.",
+    }),
+    session({
+      sessionId: "store-title",
+      title: "Stored title",
+      titleSource: "store-db",
+      storeDbPath: "/tmp/store.db",
+      firstUserQuery: "Please prefer concise output.",
+    }),
+    session({
+      sessionId: "missing-display-title",
+      title: undefined,
+      firstUserQuery: undefined,
+    }),
+  ]);
+
+  expect(analysis.missing.title).toBe(1);
+  expect(analysis.cursor.missingDisplayTitles).toMatchObject({
+    total: 1,
+    samples: [expect.objectContaining({ sessionId: "missing-display-title" })],
+  });
+  expect(analysis.cursor.missingStoreDbMetadata).toMatchObject({
+    total: 2,
+    samples: [
+      expect.objectContaining({ sessionId: "fallback-title" }),
+      expect.objectContaining({ sessionId: "missing-display-title" }),
+    ],
+  });
+  expect(analysis.indexImprovementCandidates).toContainEqual(
+    expect.objectContaining({
+      id: "missing-display-title",
+      severity: "high",
+      count: 1,
     }),
   );
 });

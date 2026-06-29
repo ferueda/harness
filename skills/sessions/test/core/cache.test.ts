@@ -48,6 +48,27 @@ test("readCachedSessions accepts rows without workspace path source", () => {
   expect(readCachedSessions(env)).toHaveLength(1);
 });
 
+test("readCachedSessions accepts optional title source", () => {
+  const env = makeSessionEnv();
+  mkdirSync(env.cacheRoot, { recursive: true });
+  writeFileSync(
+    cursorCachePath(env),
+    `${JSON.stringify(
+      session({
+        sessionId: "display-title",
+        title: "Please inspect this session.",
+        titleSource: "first-query",
+      }),
+    )}\n`,
+    "utf8",
+  );
+
+  expect(readCachedSessions(env)[0]).toMatchObject({
+    sessionId: "display-title",
+    titleSource: "first-query",
+  });
+});
+
 test("readCachedSessions reads provider-specific codex rows", () => {
   const env = makeSessionEnv();
   writeCodexCache(env, {
