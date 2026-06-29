@@ -407,13 +407,17 @@ function jsonAnalysisOutput(result: AnalyzeCommandResult): unknown {
 function renderAnalysis(result: AnalyzeCommandResult, options: { matchLimit: number }): string {
   if (result.mode === "extract-only") return renderEvidenceReport(result.evidence, options);
   const analysis = result.analysis;
+  const cursorSummary = isCursorSessionAnalysis(analysis)
+    ? [`  missing store-db metadata: ${analysis.cursor.missingStoreDbMetadata.total}`]
+    : [];
   const sections = [
     "Session index analysis",
     `  provider:         ${analysis.provider}`,
     `  sessions:         ${analysis.totalSessions}`,
-    `  missing title:    ${analysis.missing.title} any`,
+    `  missing display title: ${analysis.missing.title}`,
     `  missing query:    ${analysis.missing.firstUserQuery}`,
     `  missing updated:  ${analysis.missing.updatedAtMs}`,
+    ...cursorSummary,
     `  automation:       ${analysis.classifications.automation}`,
     `  subagent:         ${analysis.classifications.subagent}`,
     `  non-automation:   ${analysis.classifications.realUser}`,
@@ -441,7 +445,8 @@ function renderAnalysis(result: AnalyzeCommandResult, options: { matchLimit: num
       "Cursor samples",
       renderSamples("Suspicious automation", analysis.cursor.suspiciousAutomation),
       renderSamples("Decoded workspace paths", analysis.cursor.decodedWorkspacePaths),
-      renderSamples("Missing titles with query", analysis.cursor.missingTitles),
+      renderSamples("Missing display titles", analysis.cursor.missingDisplayTitles),
+      renderSamples("Missing store-db metadata", analysis.cursor.missingStoreDbMetadata),
       renderSamples("Preference marker samples", analysis.cursor.preferenceMarkers),
       renderSamples("Noise marker samples", analysis.cursor.noiseMarkers),
       "",
