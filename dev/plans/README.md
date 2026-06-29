@@ -4,7 +4,7 @@
 
 | File | Status | Summary |
 | ---- | ------ | ------- |
-| [260629-cursor-display-titles.md](./260629-cursor-display-titles.md) | `in_review` | Sessions: derive Cursor display titles from first query |
+| [260629-cursor-display-titles.md](./260629-cursor-display-titles.md) | `implemented` | Sessions: derive Cursor display titles from first query |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest |
 
 **Build next:** handoff Phase 0.6 (`steps.json`).
