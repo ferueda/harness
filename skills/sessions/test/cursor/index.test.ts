@@ -21,9 +21,27 @@ test("buildCursorIndex indexes synthetic Cursor tree and prefers explicit worksp
     workspacePath: "/Users/alice/dev/my-repo",
     workspacePathConfidence: "explicit",
     workspacePathSource: "transcript",
+    title: "Use the local project instructions.",
+    titleSource: "first-query",
     updatedAtMs: 2_000,
   });
   expect(readCachedSessions(env).map((session) => session.sessionId)).toEqual(["real-chat"]);
+});
+
+test("buildCursorIndex prefers store-db title over first query", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "agent-worker", "cursor-automation-worker.jsonl");
+  writeStoreDb(env, "agent-worker", { title: "Stored agent title" });
+
+  const snapshot = await buildCursorIndex(env);
+
+  expect(snapshot.sessions[0]).toMatchObject({
+    title: "Stored agent title",
+    titleSource: "store-db",
+  });
+  expect(snapshot.sessions[0]?.firstUserQuery).toContain(
+    "You are running as an automated worker invoked by another agent.",
+  );
 });
 
 test("buildCursorIndex records project-key source for decoded workspace paths", async () => {
@@ -78,11 +96,51 @@ test("buildCursorIndex keeps store-db workspace path when store meta JSON is inv
   const snapshot = await buildCursorIndex(env);
 
   expect(snapshot.sessions[0]).toMatchObject({
-    title: undefined,
+    title: "You are running as an automated worker invoked by another agent. Hard require...",
+    titleSource: "first-query",
     workspacePath: "/Users/alice/dev/my-repo",
     workspacePathConfidence: "explicit",
     workspacePathSource: "store-db",
   });
+});
+
+test("buildCursorIndex cleans and truncates first-query fallback titles", async () => {
+  const env = makeSessionEnv();
+  const chatId = "long-title";
+  const transcriptDir = join(
+    env.cursorHome,
+    "projects/Users-alice-dev-project/agent-transcripts",
+    chatId,
+  );
+  mkdirSync(transcriptDir, { recursive: true });
+  writeFileSync(
+    join(transcriptDir, `${chatId}.jsonl`),
+    `${JSON.stringify({
+      role: "user",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: [
+              "<user_info>",
+              "Workspace Path: /Users/alice/dev/project",
+              "</user_info>",
+              "Please summarize this deliberately long Cursor session title candidate for the index fallback path.",
+            ].join("\n"),
+          },
+        ],
+      },
+    })}\n`,
+    "utf8",
+  );
+
+  const snapshot = await buildCursorIndex(env);
+
+  expect(snapshot.sessions[0]).toMatchObject({
+    title: "Please summarize this deliberately long Cursor session title candidate for th...",
+    titleSource: "first-query",
+  });
+  expect(snapshot.sessions[0]?.title).toHaveLength(80);
 });
 
 test("buildCursorIndex uses newest matching store-db workspace path", async () => {
