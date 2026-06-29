@@ -8,7 +8,7 @@ description: >
 
 # Sessions
 
-Skill-owned CLI for local agent session history — not part of `harness run`.
+Skill-owned CLI for local agent session history.
 
 Use `sessions analyze --provider cursor|codex --include-turns --extract-only`
 for transcript snippets, artifacts, and provenance. Keep interpretation separate
@@ -16,18 +16,31 @@ from extraction.
 
 ## Install launcher
 
-From the harness checkout (after `pnpm install` — needs repo `node_modules`):
+Requires Node >=24 and pnpm or Corepack.
+
+From the loaded or installed skill root:
+
+```bash
+./scripts/install.sh
+```
+
+From a harness checkout:
 
 ```bash
 skills/sessions/scripts/install.sh
 ```
 
+The installer runs `pnpm install --prod --frozen-lockfile` inside the skill
+directory, then symlinks `sessions` into `~/.local/bin` by default. Override the
+bin directory with `SESSIONS_INSTALL_BIN`.
+
 Or manually:
 
 ```bash
+pnpm install --prod --frozen-lockfile
 mkdir -p ~/.local/bin
-ln -sf "$PWD/skills/sessions/scripts/sessions.ts" ~/.local/bin/sessions
-chmod +x skills/sessions/scripts/sessions.ts
+ln -sf "$PWD/scripts/sessions.ts" ~/.local/bin/sessions
+chmod +x scripts/sessions.ts
 ```
 
 Ensure `~/.local/bin` is on `PATH` when using `install.sh`.
@@ -35,7 +48,8 @@ Ensure `~/.local/bin` is on `PATH` when using `install.sh`.
 Direct run without install:
 
 ```bash
-node skills/sessions/scripts/sessions.ts --help
+pnpm install --prod --frozen-lockfile
+node scripts/sessions.ts --help
 ```
 
 Session index cache defaults to `~/.sessions/index` (migrated automatically from
@@ -43,19 +57,21 @@ Session index cache defaults to `~/.sessions/index` (migrated automatically from
 
 ## Workflow
 
-1. Start narrow. Choose `--days`, `--workspace`, `--query`, or repeatable
+1. Refresh the provider index before analysis. Use the provider you will query:
+   `sessions cursor reindex` or `sessions codex reindex`.
+2. Start narrow. Choose `--days`, `--workspace`, `--query`, or repeatable
    `--turn-query` before scanning transcript evidence.
-2. Use `--turn-query` for user-turn text. Starter terms by goal:
+3. Use `--turn-query` for user-turn text. Starter terms by goal:
    [references/turn-queries.md](references/turn-queries.md).
-3. Use `--extract-only` for investigation so index metadata does not bury the
+4. Use `--extract-only` for investigation so index metadata does not bury the
    matching turns.
-4. Scan table output first. Use `--evidence-limit` to keep the table small.
+5. Scan table output first. Use `--evidence-limit` to keep the table small.
    Use `--format json` when handing extracted evidence to another agent.
-5. Inspect `matches`, `matchedQueries`, `artifacts`, `sessionId`, and
+6. Inspect `matches`, `matchedQueries`, `artifacts`, `sessionId`, and
    `turnIndex`.
-6. Open the source only when snippets are not enough:
+7. Open the source only when snippets are not enough:
    `sessions cursor show <sessionId>` or `sessions codex show <sessionId>`.
-7. Report extracted facts first; label any interpretation separately.
+8. Report extracted facts first; label any interpretation separately.
 
 ## Modes
 
@@ -75,6 +91,7 @@ Session index cache defaults to `~/.sessions/index` (migrated automatically from
 Recent workspace scan:
 
 ```bash
+sessions cursor reindex
 sessions analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
 ```
 
@@ -88,6 +105,7 @@ sessions analyze --provider codex --include-turns --extract-only --turn-query "v
 Find turns mentioning verification:
 
 ```bash
+sessions cursor reindex
 sessions analyze --provider cursor --include-turns --extract-only --turn-query "verify"
 ```
 

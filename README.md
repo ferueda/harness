@@ -209,16 +209,24 @@ node bin/harness.ts run change-review --verbose
 
 ## Session Extraction
 
-Install the skill-owned `sessions` CLI from the harness checkout:
+Install the skill-owned `sessions` CLI from the skill directory. The installer
+uses the skill-local `package.json` and runs `pnpm install --prod --frozen-lockfile`
+before linking the launcher:
 
 ```bash
+# From this repository checkout:
 skills/sessions/scripts/install.sh
+
+# From a copied/installed skills/sessions directory:
+./scripts/install.sh
+
 sessions cursor reindex
 sessions analyze --provider cursor --include-turns --extract-only --days 30 --workspace /path/to/repo
 ```
 
-Without install: `node skills/sessions/scripts/sessions.ts <command>`. Index cache
-lives at `~/.sessions/index` (auto-migrated from `~/.harness/session-index`).
+Without install: `cd skills/sessions && pnpm install --prod --frozen-lockfile`,
+then `node scripts/sessions.ts <command>`. Index cache lives at
+`~/.sessions/index` (auto-migrated from `~/.harness/session-index`).
 
 Codex uses a separate provider and cache:
 
@@ -452,7 +460,7 @@ and repeatable `--turn-query` for exact transcript searches.
 - Scoring coordinator routing (e.g. `planning-workflow/references/routing.md` fixtures) against real transcripts
 - Weekly/monthly workflow audits
 
-**Install:** `skills/sessions/scripts/install.sh` from harness checkout.
+**Install:** `skills/sessions/scripts/install.sh` from the skill directory; it installs skill-local production dependencies with pnpm before linking the launcher.
 
 **Audits:** `skills/sessions/references/audit-examples.md` (workflow/skill usage). **Exploration:** `skills/sessions/references/turn-queries.md` (starter `--turn-query` terms).
 
