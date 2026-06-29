@@ -16,18 +16,31 @@ from extraction.
 
 ## Install launcher
 
-From the harness checkout (after `pnpm install` — needs repo `node_modules`):
+Requires Node >=24 and pnpm.
+
+From the loaded or installed skill root:
+
+```bash
+./scripts/install.sh
+```
+
+From a harness checkout:
 
 ```bash
 skills/sessions/scripts/install.sh
 ```
 
+The installer runs `pnpm install --prod --frozen-lockfile` inside the skill
+directory, then symlinks `sessions` into `~/.local/bin` by default. Override the
+bin directory with `SESSIONS_INSTALL_BIN`.
+
 Or manually:
 
 ```bash
+pnpm install --prod --frozen-lockfile
 mkdir -p ~/.local/bin
-ln -sf "$PWD/skills/sessions/scripts/sessions.ts" ~/.local/bin/sessions
-chmod +x skills/sessions/scripts/sessions.ts
+ln -sf "$PWD/scripts/sessions.ts" ~/.local/bin/sessions
+chmod +x scripts/sessions.ts
 ```
 
 Ensure `~/.local/bin` is on `PATH` when using `install.sh`.
@@ -35,7 +48,8 @@ Ensure `~/.local/bin` is on `PATH` when using `install.sh`.
 Direct run without install:
 
 ```bash
-node skills/sessions/scripts/sessions.ts --help
+pnpm install --prod --frozen-lockfile
+node scripts/sessions.ts --help
 ```
 
 Session index cache defaults to `~/.sessions/index` (migrated automatically from
