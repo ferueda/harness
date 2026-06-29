@@ -5,7 +5,18 @@ import type { CursorSession, IndexSnapshot } from "../core/types.ts";
 import { isAutomationSession, isSubagentSession } from "./classify.ts";
 import { buildCursorMetaIndex, readCursorSessionMeta } from "./meta.ts";
 import { globTranscriptFiles, type TranscriptFile, type WorkspacePathResult } from "./paths.ts";
-import { CursorTranscriptParseError, parseTranscriptFile } from "./transcript.ts";
+import {
+  CursorTranscriptParseError,
+  parseTranscriptFile,
+  stripInjectedBlocks,
+} from "./transcript.ts";
+
+type DisplayTitle = {
+  title?: string;
+  titleSource?: CursorSession["titleSource"];
+};
+
+const DISPLAY_TITLE_MAX_LENGTH = 80;
 
 export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSnapshot> {
   const files = globTranscriptFiles(env);
@@ -19,6 +30,7 @@ export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSn
       const meta = await readCursorSessionMeta(metaIndex.get(file.chatId));
       const workspace = resolveWorkspace(file, parsed.workspacePath, meta.workspacePath);
       const firstUserQuery = parsed.firstUserQuery;
+      const displayTitle = deriveDisplayTitle(meta.title, firstUserQuery);
       const updatedAtMs = meta.updatedAtMs ?? statSync(file.jsonlPath).mtimeMs;
       sessions.push({
         schemaVersion: 1,
@@ -29,7 +41,8 @@ export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSn
         workspacePath: workspace.path,
         workspacePathConfidence: workspace.confidence,
         workspacePathSource: workspace.source,
-        title: meta.title,
+        title: displayTitle.title,
+        titleSource: displayTitle.titleSource,
         createdAtMs: meta.createdAtMs,
         updatedAtMs,
         isAutomation: isAutomationSession(firstUserQuery),
@@ -62,6 +75,33 @@ export async function buildCursorIndex(env: SessionEnvironment): Promise<IndexSn
   };
   writeCursorCache(env, snapshot);
   return snapshot;
+}
+
+function deriveDisplayTitle(
+  storeTitle: string | undefined,
+  firstUserQuery: string | undefined,
+): DisplayTitle {
+  if (hasText(storeTitle)) return { title: storeTitle, titleSource: "store-db" };
+
+  const title = truncateDisplayTitle(normalizeDisplayTitle(firstUserQuery));
+  return hasText(title) ? { title, titleSource: "first-query" } : {};
+}
+
+function normalizeDisplayTitle(value: string | undefined): string | undefined {
+  if (!hasText(value)) return undefined;
+  const normalized = stripInjectedBlocks(value).replace(/\s+/g, " ").trim();
+  return hasText(normalized) ? normalized : undefined;
+}
+
+function truncateDisplayTitle(value: string | undefined): string | undefined {
+  if (!hasText(value)) return undefined;
+  return value.length <= DISPLAY_TITLE_MAX_LENGTH
+    ? value
+    : `${value.slice(0, DISPLAY_TITLE_MAX_LENGTH - 3)}...`;
+}
+
+function hasText(value: string | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function resolveWorkspace(
