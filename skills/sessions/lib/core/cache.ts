@@ -19,6 +19,7 @@ const SessionRecordBaseSchema = z
     workspacePathConfidence: z.enum(["explicit", "decoded"]),
     workspacePathSource: z.enum(["transcript", "store-db", "project-key"]).optional(),
     title: z.string().optional(),
+    titleSource: z.enum(["store-db", "first-query"]).optional(),
     createdAtMs: z.number().optional(),
     updatedAtMs: z.number().optional(),
     isAutomation: z.boolean(),
