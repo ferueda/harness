@@ -78,6 +78,21 @@ harness runs prune --older-than 30d
 
 The command targets `<workspace>/.harness/runs/reviews` by default and prints JSON with matched/deleted counts.
 
+## Plan Review
+
+Use plan-review when an implementation plan should be checked against codebase reality before execution:
+
+```bash
+harness run plan-review --plan dev/plans/260630-plan-review-workflow.md --verbose
+```
+
+One invocation runs one read-only `review-spec` pass. `--plan` is required;
+`--base`, `--head`, and `--steps` do not apply. Artifacts are written under
+`.harness/runs/reviews/<run-id>/`, including `summary.md`, `meta.json`, the
+rendered `spec-review.prompt.md`, and structured reviewer JSON. Harness does not
+edit the plan; the caller triages findings, edits the plan, and reruns when the
+plan materially changes.
+
 `harness.json` lives at the target repo root and keeps repo-local defaults:
 
 ```json
@@ -268,14 +283,14 @@ Packaged skills in `skills/` (15). Coordinators route leaf skills; invoke a coor
 
 ### planning-workflow
 
-Coordinate planning from intent to implementation. Routes through shape, diagnose, review-spec, create-plan, implement-plan, and handoff.
+Coordinate planning from intent to implementation. Routes through shape, diagnose, review-spec, create-plan, plan-review, implement-plan, and handoff.
 
 **Use when:**
 - Starting feature work or a non-trivial fix
 - Running the full plan-build cycle
 - Unsure which planning skill to invoke first
 
-**Coordinates:** `shape-requirements`, `diagnose-issue`, `review-spec`, `create-plan`, `implement-plan`, `handoff-work`, then `change-review-workflow`
+**Coordinates:** `shape-requirements`, `diagnose-issue`, `review-spec`, `create-plan`, `plan-review`, `implement-plan`, `handoff-work`, then `change-review-workflow`
 
 **References:** `references/routing.md` (rules, fixtures, pass criteria)
 
