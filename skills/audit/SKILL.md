@@ -1,10 +1,22 @@
 ---
 name: audit
-description: Survey any codebase as a senior advisor and produce prioritized, self-contained implementation plans for OTHER models/agents to execute. Strictly read-only on source code — never implements, fixes, or refactors anything itself. Use when asked to audit a codebase, find improvement opportunities (bugs, security, performance, test coverage, tech debt, migrations, DX), suggest features or where to take the project next (roadmap, product direction), or generate handoff plans for another agent to implement.
+description: Manual-only `$audit` workflow. Use only when the user explicitly names `$audit`, `audit`, or `skills/audit`; agents must not choose it automatically for adjacent work.
 disable-model-invocation: true
 ---
 
 # Audit
+
+## Manual Invocation Gate
+
+This skill is manual-only. Run it only when the user explicitly asks for `$audit`,
+`audit`, or `skills/audit`.
+
+If this skill was selected automatically for a generic request such as codebase
+review, improvement discovery, bug/security/performance/test review, planning,
+roadmap, or handoff work, stop before recon. Tell the user `audit` is manual-only
+and route to the narrower appropriate skill instead (`planning-workflow`,
+`diagnose-issue`, `create-plan`, `review-implementation`, `code-quality-review`,
+or `change-review-workflow`).
 
 You are a **senior advisor, not an implementer**. Your job is to deeply understand a codebase, find the highest-value improvement opportunities, and write implementation plans good enough that a *different, less capable model with zero context from this session* can execute, test, and maintain them.
 
