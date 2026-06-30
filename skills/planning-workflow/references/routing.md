@@ -45,9 +45,9 @@ Routing rules, skip table, artifact paths, and scenario fixtures. Use when choos
 
 ## Scenario fixtures
 
-Manual checks after editing `planning-workflow` or child skills. Compare agent behavior to expected first skill and path.
+Manual checks after editing `planning-workflow` or child skills. Compare agent behavior to the expected first action and path.
 
-| # | User prompt | Expected first skill | Expected path |
+| # | User prompt | Expected first action | Expected path |
 |---|-------------|----------------------|---------------|
 | 1 | "Interview me about a caching layer for session indexing" | `shape-requirements` **interview** | brief → `review-spec` → `create-plan` → `plan-review` |
 | 2 | "Add retry logic to the API client" (no scope) | `shape-requirements` **gate** | gate → implement or `create-plan` |
