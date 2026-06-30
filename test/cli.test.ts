@@ -43,6 +43,12 @@ function createGitWorkspace() {
   return workspace;
 }
 
+function createPlainWorkspace() {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cli-"));
+  writeFileSync(join(workspace, "plan.md"), "# Plan\n\nReview me.\n", "utf8");
+  return workspace;
+}
+
 function expectInitShim(
   workspace: string,
   output: Record<string, unknown>,
@@ -697,15 +703,128 @@ test("harness run change-review dry-run works through the CLI", () => {
   expect(output.requestedSteps).toEqual(["implementation", "quality", "simplify"]);
   expect(output.partial).toBe(false);
   expect(output.workspace).toBe(workspace);
+  expect(output.scope).toMatchObject({ baseRef: "HEAD", headRef: "HEAD" });
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
   expect(output.prompts.simplify).toMatch(/simplify-review\.prompt\.md$/);
+  expect(existsSync(join(output.runDir, "context/diff.patch"))).toBe(true);
 
   const implementationPrompt = readFileSync(output.prompts.implementation, "utf8");
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
   const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
   expectIndependentReviewPrompts(implementationPrompt, qualityPrompt, simplifyPrompt);
 });
+
+test("harness run plan-review help exposes plan-only options", () => {
+  const result = runHarness(["run", "plan-review", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness run plan-review/);
+  expect(result.stdout).toMatch(/--plan <path>/);
+  expect(result.stdout).not.toMatch(/--base/);
+  expect(result.stdout).not.toMatch(/--head/);
+  expect(result.stdout).not.toMatch(/--steps/);
+});
+
+test("harness run plan-review dry-run works in non-git workspaces", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "run",
+    "plan-review",
+    "--workspace",
+    workspace,
+    "--plan",
+    "plan.md",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("dry_run");
+  expect(output.workflow).toBe("plan-review");
+  expect(output.requestedSteps).toEqual(["spec"]);
+  expect(output.prompts.spec).toMatch(/spec-review\.prompt\.md$/);
+  expect(output.scope).toBeUndefined();
+  expect(output.baseRef).toBeUndefined();
+  expect(output.headRef).toBeUndefined();
+  expect(output.mergeBase).toBeUndefined();
+  expect(output.headSha).toBeUndefined();
+
+  expect(readFileSync(join(output.runDir, "context/plan.md"), "utf8")).toBe(
+    "# Plan\n\nReview me.\n",
+  );
+  const prompt = readFileSync(output.prompts.spec, "utf8");
+  expect(prompt).toContain("Plan file:");
+  expect(prompt).toContain("context/plan.md");
+  expect(prompt).not.toContain("Diff file:");
+});
+
+test("harness run plan-review dry-run omits git scope in git workspaces", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(join(workspace, "plan.md"), "# Plan\n\nReview me in git.\n", "utf8");
+  const result = runHarness([
+    "run",
+    "plan-review",
+    "--workspace",
+    workspace,
+    "--plan",
+    "plan.md",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.status).toBe("dry_run");
+  expect(output.workflow).toBe("plan-review");
+  expect(output.scope).toBeUndefined();
+  expect(existsSync(join(output.runDir, "context/diff.patch"))).toBe(false);
+
+  const prompt = readFileSync(output.prompts.spec, "utf8");
+  expect(prompt).toContain("Plan file:");
+  expect(prompt).not.toContain("Diff file:");
+});
+
+test("harness run plan-review requires a plan", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness(["run", "plan-review", "--workspace", workspace, "--dry-run"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/required option.*--plan/i);
+});
+
+test("harness run plan-review rejects missing plan files", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "run",
+    "plan-review",
+    "--workspace",
+    workspace,
+    "--plan",
+    "missing.md",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Plan file does not exist: missing\.md/);
+});
+
+test("harness run plan-review rejects change-review flags", () => {
+  const workspace = createPlainWorkspace();
+  for (const args of [
+    ["--base", "HEAD"],
+    ["--head", "HEAD"],
+    ["--steps", "spec"],
+  ] as const) {
+    const result = runHarness([
+      "run",
+      "plan-review",
+      "--workspace",
+      workspace,
+      "--plan",
+      "plan.md",
+      "--dry-run",
+      ...args,
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/unknown option/i);
+  }
+});
+
 test("harness run change-review writes stdin handoff into run context", () => {
   const workspace = createGitWorkspace();
   const result = runHarness(
