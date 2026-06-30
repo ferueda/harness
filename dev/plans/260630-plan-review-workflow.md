@@ -144,10 +144,12 @@ Repo conventions to match:
 - `test/review-steps.test.ts`
 - `test/workflow-context.test.ts`
 - `test/workflow-events.test.ts`
+- `test/review-prompts.test.ts`
 - `test/cli.test.ts`
 - `skills/planning-workflow/SKILL.md`
 - `skills/planning-workflow/references/routing.md`
 - `README.md`
+- `AGENTS.md`
 - `dev/plans/README.md`
 
 **Out of scope**:
@@ -512,29 +514,30 @@ Both commands exit 0.
 
 All must hold:
 
-- [ ] `node bin/harness.ts run plan-review --help` shows required `--plan` and no
+- [x] `node bin/harness.ts run plan-review --help` shows required `--plan` and no
       `--base`, `--head`, or `--steps`.
-- [ ] `node bin/harness.ts run plan-review --workspace <non-git-temp-dir> --plan plan.md --dry-run`
+- [x] `node bin/harness.ts run plan-review --workspace <non-git-temp-dir> --plan plan.md --dry-run`
       exits 0 and writes `spec-review.prompt.md`, `spec-review.json`, and
       `context/plan.md`.
-- [ ] Plan-review `summary.md` and `meta.json` do not show fake git scope.
-- [ ] Plan-review metadata contains no `baseRef`, `headRef`, `mergeBase`, or
+- [x] Plan-review `summary.md` and `meta.json` do not show fake git scope.
+- [x] Plan-review metadata contains no `baseRef`, `headRef`, `mergeBase`, or
       `headSha`.
-- [ ] Change-review dry runs still include git scope and `context/diff.patch`.
-- [ ] `SPEC_REVIEW_PROMPT` is covered by a drift-guard test for the
+- [x] Change-review dry runs still include git scope and `context/diff.patch`.
+- [x] `SPEC_REVIEW_PROMPT` is covered by a drift-guard test for the
       `review-spec` dimensions and JSON verdict mapping.
-- [ ] `review-output.schema.json` is unchanged unless the executor stopped and
+- [x] `review-output.schema.json` is unchanged unless the executor stopped and
       reported why a schema change is necessary.
-- [ ] `pnpm test -- test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts`
+- [x] `pnpm test -- test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts`
       exits 0.
-- [ ] `pnpm check` exits 0.
-- [ ] `README.md` documents `harness run plan-review`.
-- [ ] `skills/planning-workflow/SKILL.md` and
+- [x] `pnpm check` exits 0.
+- [x] `README.md` documents `harness run plan-review`.
+- [x] `skills/planning-workflow/SKILL.md` and
       `skills/planning-workflow/references/routing.md` route non-trivial
       created plans through `plan-review` before implementation, with direct
       `review-spec` as fallback.
-- [ ] No files outside the in-scope list are modified, except generated ignored
-      `.harness/` run artifacts if manually testing non-dry runs.
+- [x] No files outside the in-scope list are modified, except this plan's status
+      updates and generated ignored `.harness/` run artifacts if manually
+      testing non-dry runs.
 
 ## STOP conditions
 
