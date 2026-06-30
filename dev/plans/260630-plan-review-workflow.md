@@ -1,17 +1,45 @@
 # Plan 260630-plan-review-workflow: Add first-class plan review runs
 
-> **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report - do not improvise.
+> **Execution mode**: This plan has been implemented on the current branch.
+> Treat the steps as historical implementation notes unless rebuilding from
+> `main`. For this branch, verify the done criteria, smoke-test the command, and
+> land the branch; do not re-implement completed steps.
+
+> **Rebuilding from `main`**: ignore the current branch snapshot, uncheck Steps
+> 1-7, and follow the verify blocks sequentially. Interim expected failures in
+> early steps apply only to that rebuild mode.
+
+## Decision
+
+| Mode | Use when | Do this |
+| --- | --- | --- |
+| LAND | You are on `feat/plan-review-workflow` with this implementation present | Run the verification commands, inspect live smoke output, then follow the landing checklist. |
+| REBUILD | You are rebuilding from `main` or another branch without this implementation | Ignore the current branch snapshot, uncheck Steps 1-7, and execute the historical steps in order. |
 
 ## Status
 
+- **Status**: implementation complete on branch; keep in active queue until land
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
 - **Depends on**: none
 - **Category**: dx
+
+## Current branch snapshot
+
+The branch now contains:
+
+- `bin/harness.ts` registering `harness run plan-review` with required `--plan`
+  and without `--base`, `--head`, or `--steps`.
+- `workflows/plan-review.workflow.ts` running the fixed `review-spec` step.
+- `lib/workflow-context.ts` supporting `includeGitScope: false`, `review-spec`,
+  and `specReview` metadata without fake git scope.
+- `lib/prompts/spec-review.ts` exporting the executable `review-spec` prompt.
+- Tests covering CLI shape, non-git and git plan-review dry-runs, prompt drift,
+  event metadata, and scope-less summary/meta export.
+
+Use this section plus `git diff main..HEAD` as the current branch source of
+truth.
 
 ## Why this matters
 
@@ -32,83 +60,11 @@ That command runs one read-only `review-spec` pass against the plan and current
 repo, writes normal harness run artifacts, and exits nonzero when the plan needs
 changes.
 
-## Current state
+## Historical baseline
 
-Relevant files and roles:
-
-- `workflows/change-review.workflow.ts` - existing executable review workflow.
-  It maps step ids to review agents and wraps `runReviewSteps` with run start/end
-  events.
-- `workflows/review-steps.ts` - reusable executor for one or more read-only
-  review steps. It already handles parallel/serial execution, step events,
-  failed reviewers, aggregation, and export.
-- `lib/workflow-context.ts` - hardcoded review runtime context. It owns reviewer
-  configs, prompt generation, schema validation, run artifacts, summaries, and
-  provider invocation.
-- `lib/aggregate.ts` - review verdict aggregation and Markdown summary
-  rendering. Summary headers currently require git diff scope.
-- `lib/workflow-events.ts` - event shape plus `STEP_ID_BY_AGENT`, currently
-  closed over the three change-review reviewer identities.
-- `bin/harness.ts` - CLI entrypoint. It exposes `harness run change-review` via a
-  change-review-specific command builder.
-- `schemas/review-output.schema.json` - structured reviewer output contract:
-  `verdict`, `summary`, and `findings[]` with `must_fix`.
-- `skills/review-spec/SKILL.md` - current human/chat skill definition for spec
-  review against codebase reality.
-
-Current code facts:
-
-- `workflows/change-review.workflow.ts:7-18` defines only
-  `implementation`, `quality`, and `simplify` steps mapped to
-  `review-implementation`, `code-quality-review`, and `simplify`.
-- `workflows/change-review.workflow.ts:20-67` emits workflow-level events and
-  delegates all reviewer execution to `runReviewSteps`.
-- `workflows/review-steps.ts:21-43` defines the reusable `WorkflowContext`
-  interface. It is generic over review steps but uses `ReviewAgentName` from
-  `lib/workflow-context.ts`.
-- `workflows/review-steps.ts:49-92` already handles review execution,
-  aggregation, and failed reviewer preservation.
-- `workflows/review-steps.ts:101-167` emits step start/heartbeat/end events and
-  derives output filenames from each review stage.
-- `lib/workflow-context.ts:49-68` requires `baseRef` and `headRef` in
-  `WorkflowRunOptions`.
-- `lib/workflow-context.ts:118-149` hardcodes exactly three reviewer configs.
-- `lib/workflow-context.ts:160-205` always prepares git scope and always writes a
-  diff artifact.
-- `lib/workflow-context.ts:258-301` always passes `scope` into summary/meta
-  export.
-- `lib/workflow-context.ts:453-475` always renders diff prompt values, and only
-  includes the plan reference for `review-implementation`.
-- `lib/aggregate.ts:42-58` requires `ReviewScope` in the summary header input.
-- `lib/aggregate.ts:130-143` always prints `Scope` and `Head SHA` lines.
-- `lib/workflow-events.ts:6` and `lib/workflow-events.ts:33-37` only know the
-  three change-review reviewer names.
-- `bin/harness.ts:155-160` registers only `change-review`.
-- `bin/harness.ts:218-327` exposes a command builder with `--base`, `--head`,
-  `--steps`, and optional `--plan`; that shape is wrong for `plan-review`.
-- `lib/config.ts:63-89` resolves workspace, agent provider, model, and default
-  git refs. `plan-review` should reuse workspace/agent resolution but must not
-  run git scope preparation.
-- `schemas/review-output.schema.json:1-42` is suitable for plan review:
-  `pass`, `needs_changes`, or `blocked`; findings carry severity, location,
-  issue, recommendation, rationale, and `must_fix`.
-- `skills/review-spec/SKILL.md:8-17` defines the review process; lines 19-30
-  define review dimensions; lines 48-55 require code verification, specificity,
-  prioritization, and smaller plans.
-
-Repo conventions to match:
-
-- TypeScript imports use `.ts` extensions and `import type` for type-only imports,
-  e.g. `workflows/change-review.workflow.ts:1-3`.
-- Config-like maps use `as const` or `satisfies`, e.g.
-  `workflows/change-review.workflow.ts:7-18` and
-  `lib/workflow-events.ts:33-37`.
-- CLI tests use `runHarness([...])` and JSON stdout assertions, e.g.
-  `test/cli.test.ts:679-708`.
-- Workflow context tests create temporary workspaces and fake providers, e.g.
-  `test/workflow-context.test.ts:115-143`.
-- Event tests assert both emitted event metadata and output filenames, e.g.
-  `test/workflow-events.test.ts:169-231`.
+The original pre-implementation baseline was used to create this plan and is no
+longer the active source of truth. Use `git diff main..HEAD`, the current branch
+snapshot above, and the done criteria below when verifying this branch.
 
 ## Commands you will need
 
@@ -118,7 +74,7 @@ Repo conventions to match:
 | Format | `pnpm format:check` | exit 0 |
 | Lint | `pnpm lint` | exit 0 |
 | Typecheck | `pnpm typecheck` | exit 0, no errors |
-| Tests | `pnpm test -- test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts` | all selected tests pass |
+| Tests | `pnpm test -- test/review-prompts.test.ts test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts` | all selected tests pass |
 | Full gate | `pnpm check` | exit 0 |
 
 ## Suggested executor toolkit
@@ -147,7 +103,9 @@ Repo conventions to match:
 - `test/review-prompts.test.ts`
 - `test/cli.test.ts`
 - `skills/planning-workflow/SKILL.md`
+- `skills/planning-workflow/agents/openai.yaml`
 - `skills/planning-workflow/references/routing.md`
+- `skills/review-spec/SKILL.md`
 - `README.md`
 - `AGENTS.md`
 - `dev/plans/README.md`
@@ -170,7 +128,10 @@ Repo conventions to match:
 
 ## Steps
 
-### Step 1: Add the plan-review workflow
+All implementation steps below are complete on the current branch. Do not run
+them as active instructions unless rebuilding from `main`.
+
+### [x] Step 1: Add the plan-review workflow
 
 Create `workflows/plan-review.workflow.ts` modeled after
 `workflows/change-review.workflow.ts:20-67`, with these differences:
@@ -195,7 +156,7 @@ and `events.jsonl` remain familiar.
 `pnpm typecheck` -> expected failure at this point only if `review-spec` is not
 yet part of `ReviewAgentName`; no unrelated syntax errors.
 
-### Step 2: Add the review-spec prompt and reviewer config
+### [x] Step 2: Add the review-spec prompt and reviewer config
 
 Create `lib/prompts/spec-review.ts` and export it from `lib/prompts/index.ts`.
 
@@ -244,7 +205,7 @@ Update `lib/workflow-context.ts`:
 `pnpm test -- test/workflow-context.test.ts` -> expected failure only where
 optional git scope and event-name typing still need follow-up steps.
 
-### Step 3: Make workflow context support diff-less runs
+### [x] Step 3: Make workflow context support diff-less runs
 
 In `lib/workflow-context.ts`, add an option such as
 `includeGitScope?: boolean` to `WorkflowRunOptions`. Default behavior must stay
@@ -287,7 +248,7 @@ In `lib/aggregate.ts`:
 `pnpm test -- test/workflow-context.test.ts` -> all pass after updating tests in
 Step 5.
 
-### Step 4: Add event and metadata support for review-spec
+### [x] Step 4: Add event and metadata support for review-spec
 
 In `lib/workflow-events.ts`:
 
@@ -312,7 +273,7 @@ Do not change `schemas/review-output.schema.json`.
 `pnpm test -- test/workflow-events.test.ts` -> all pass after tests are updated
 in Step 5.
 
-### Step 5: Expose `harness run plan-review`
+### [x] Step 5: Expose `harness run plan-review`
 
 In `bin/harness.ts`:
 
@@ -339,6 +300,9 @@ In `bin/harness.ts`:
   - `--verbose`
 - Reuse the same Codex-only option validation already enforced for
   `change-review`.
+- Validate the resolved `--plan` path before creating workflow context. Missing
+  plan files must fail fast with a clear error instead of rendering a prompt with
+  no plan artifact.
 - Create the workflow context with `includeGitScope: false`.
 - `resolveHarnessOptions` still returns default `baseRef` and `headRef`
   (`lib/config.ts:73-78`). For `plan-review`, those defaults are intentionally
@@ -346,8 +310,8 @@ In `bin/harness.ts`:
   preparation, summaries, metadata, prompts, or artifacts.
 - Call `runPlanReview(ctx)` directly. Do not pass `{ steps: ... }` and do not
   let the command expose or forward a `steps` option.
-- Keep exit behavior: status `0` for `verdict: "pass"` or dry run, otherwise
-  `1`.
+- Keep exit behavior: status `0` for `verdict: "pass"` or dry run; status `1`
+  for `needs_changes`, `blocked`, or failed reviewer runs.
 
 Type cleanup:
 
@@ -371,7 +335,7 @@ Type cleanup:
 `node bin/harness.ts run plan-review --help` -> help includes `--plan` and does
 not include `--base`, `--head`, or `--steps`.
 
-### Step 6: Add focused tests
+### [x] Step 6: Add focused tests
 
 Update existing test helpers for the expanded `ReviewAgentName` union:
 
@@ -401,6 +365,9 @@ Add tests:
     `must_fix`). This is a lightweight drift guard between the skill and prompt.
   - A real export without scope writes `summary.md` with no `Scope` or
     `Head SHA` lines and writes `meta.json` with no `scope` key.
+- `test/review-prompts.test.ts`
+  - `SPEC_REVIEW_PROMPT` includes plan-only placeholders, read-only command
+    guidance, skill-guideline anchors, and no diff/base/head placeholders.
 - `test/workflow-events.test.ts`
   - `STEP_ID_BY_AGENT` includes `review-spec`.
   - `runReviewSteps` emits `stepId: "review-spec"`, `cliStep: "spec"`, and
@@ -415,8 +382,12 @@ Add tests:
     plan-review metadata; resolved default refs from `resolveHarnessOptions`
     must not leak into diff-less artifacts.
   - The generated prompt contains the copied plan reference.
+  - `harness run plan-review --plan plan.md --workspace <git-temp-dir> --dry-run`
+    exits 0 without `scope` metadata or `context/diff.patch`.
   - `harness run plan-review --workspace <dir> --dry-run` exits 2 for missing
     required `--plan`.
+  - `harness run plan-review --workspace <dir> --plan missing.md --dry-run`
+    exits 1 with `Plan file does not exist`.
   - `harness run plan-review --plan plan.md --base HEAD --dry-run` exits 2 for
     unknown option.
   - `harness run plan-review --plan plan.md --steps spec --dry-run` exits 2 for
@@ -425,15 +396,17 @@ Add tests:
 Regression protection:
 
 - Keep existing `change-review` dry-run tests passing, especially
-  `test/cli.test.ts:679-708` and `test/cli.test.ts:735-759`.
-- Keep schema validation tests passing for existing reviewers, e.g.
-  `test/workflow-context.test.ts:169-242`.
+  `harness run change-review dry-run works through the CLI`,
+  `harness run change-review selected-step dry-run omits unrequested prompts`,
+  and `harness run change-review dry-run uses self-contained simplify prompt`.
+- Keep schema validation tests passing for existing reviewers, especially
+  `workflow context validates provider structured output as review output`.
 
 **Verify**:
-`pnpm test -- test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts`
+`pnpm test -- test/review-prompts.test.ts test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts`
 -> all pass.
 
-### Step 7: Document the command
+### [x] Step 7: Document the command
 
 Update `README.md`:
 
@@ -481,6 +454,20 @@ Update `skills/planning-workflow/references/routing.md`:
 Update `dev/plans/README.md` only as needed for plan status. Do not add a
 shipped entry until implementation lands and the plan file is removed.
 
+Update `AGENTS.md`:
+
+- Add `plan-review` to the planning workflow table as the executable
+  `review-spec` path for non-trivial implementation plans.
+- Update the typical chain and handoff guidance so handoff happens after
+  `plan-review` when the plan-review step is not skipped.
+
+Update `skills/review-spec/SKILL.md`:
+
+- Mention `harness run plan-review --plan <path>` as the durable executable path
+  for implementation plans.
+- Keep direct `review-spec` as the chat fallback when harness is unavailable or
+  durable artifacts are unnecessary.
+
 **Verify**:
 `pnpm format:check` -> exit 0.
 
@@ -495,8 +482,9 @@ shipped entry until implementation lands and the plan file is removed.
     validation behavior.
 - CLI tests:
   - `test/cli.test.ts` covers `plan-review` dry-run success in a non-git
-    workspace, missing required `--plan`, and rejection of change-review-only
-    flags.
+    workspace, dry-run success in a git workspace without scope leakage, missing
+    required `--plan`, missing plan path validation, and rejection of
+    change-review-only flags.
 - Regression tests:
   - Existing change-review tests remain passing to prove default git-backed
     review behavior did not drift.
@@ -504,11 +492,18 @@ shipped entry until implementation lands and the plan file is removed.
 Verification:
 
 ```bash
-pnpm test -- test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts
+pnpm test -- test/review-prompts.test.ts test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts
 pnpm check
 ```
 
 Both commands exit 0.
+
+Current branch verification command:
+
+```bash
+pnpm test -- test/review-prompts.test.ts test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts
+pnpm check
+```
 
 ## Done criteria
 
@@ -527,7 +522,7 @@ All must hold:
       `review-spec` dimensions and JSON verdict mapping.
 - [x] `review-output.schema.json` is unchanged unless the executor stopped and
       reported why a schema change is necessary.
-- [x] `pnpm test -- test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts`
+- [x] `pnpm test -- test/review-prompts.test.ts test/review-steps.test.ts test/workflow-context.test.ts test/workflow-events.test.ts test/cli.test.ts`
       exits 0.
 - [x] `pnpm check` exits 0.
 - [x] `README.md` documents `harness run plan-review`.
@@ -535,9 +530,21 @@ All must hold:
       `skills/planning-workflow/references/routing.md` route non-trivial
       created plans through `plan-review` before implementation, with direct
       `review-spec` as fallback.
+- [x] `skills/review-spec/SKILL.md` points agents to `plan-review` when durable
+      harness artifacts are useful.
 - [x] No files outside the in-scope list are modified, except this plan's status
       updates and generated ignored `.harness/` run artifacts if manually
       testing non-dry runs.
+
+## Landing checklist
+
+These are not complete until the branch lands:
+
+- [ ] Open PR from `feat/plan-review-workflow`.
+- [ ] Confirm `pnpm check` passes after final review changes.
+- [ ] Merge the branch.
+- [ ] Remove `dev/plans/260630-plan-review-workflow.md`.
+- [ ] Move the plan row from Active queue to Shipped in `dev/plans/README.md`.
 
 ## STOP conditions
 
