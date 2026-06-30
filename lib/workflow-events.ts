@@ -3,7 +3,11 @@ import { join } from "node:path";
 
 export const WORKFLOW_EVENTS_FILE = "events.jsonl";
 export const DEFAULT_WORKFLOW_HEARTBEAT_MS = 30_000;
-export type WorkflowReviewAgentName = "review-implementation" | "code-quality-review" | "simplify";
+export type WorkflowReviewAgentName =
+  | "review-implementation"
+  | "code-quality-review"
+  | "simplify"
+  | "review-spec";
 
 export type WorkflowStepStatus =
   | "pending"
@@ -34,6 +38,7 @@ export const STEP_ID_BY_AGENT = {
   "review-implementation": "review-implementation",
   "code-quality-review": "code-quality-review",
   simplify: "simplify-review",
+  "review-spec": "review-spec",
 } satisfies Record<WorkflowReviewAgentName, string>;
 
 export function createFileEventSink(runDir: string): WorkflowEventSink {
