@@ -45,12 +45,13 @@ Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/REA
 | `audit` | Codebase survey → prioritized handoff plans | `dev/plans/YYMMDD-short-slug.md` |
 | `create-plan` | Scoped plan from todo/spec/issue | `dev/plans/YYMMDD-short-slug.md` |
 | `review-spec` | Validate plan/spec against codebase; proportionality check; Simplicity as a finding category | advisory findings |
+| `plan-review` | Executable one-pass `review-spec` for non-trivial implementation plans | `.harness/runs/reviews/<run-id>/` |
 | `implement-plan` | Execute approved plan phase-by-phase | reads from `dev/plans/` |
 | `handoff-work` | Transfer context between agents or sessions | inline handoff |
 
 **Shape vs diagnose:** `shape-requirements` when the question is what the user wants. `diagnose-issue` when the question is what is true in the repo. Too vague to investigate → gate only, then diagnose.
 
-**Typical chain** (skip steps per `planning-workflow` routing): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `handoff-work` → `implement-plan` → `change-review-workflow`.
+**Typical chain** (skip steps per `planning-workflow` routing): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `plan-review` → `handoff-work` → `implement-plan` → `change-review-workflow`.
 
 **Routing reference:** `planning-workflow/references/routing.md` — intake, skip rules, scenario fixtures, pass criteria.
 
@@ -80,7 +81,7 @@ Coordinator: **`change-review-workflow`**. Triage (Implement / Adapt / Decline) 
 |-------|------|
 | `handoff-work` | Transfer context to another agent for continuation or review |
 
-Use `handoff-work` when ending a session (done or not) so the next agent can continue without replaying prior context. In the planning chain, hand off after `create-plan` or partial `implement-plan`, and before `change-review-workflow` when implementer ≠ reviewer.
+Use `handoff-work` when ending a session (done or not) so the next agent can continue without replaying prior context. In the planning chain, hand off after `plan-review` (or after `create-plan` when plan-review is skipped per routing) or partial `implement-plan`, and before `change-review-workflow` when implementer ≠ reviewer.
 
 Typical close: `planning-workflow` → `implement-plan` → `handoff-work` (if needed) → `change-review-workflow`.
 
