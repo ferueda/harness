@@ -9,6 +9,7 @@ import {
   createWorkflowContextForTest,
 } from "../lib/workflow-context.ts";
 import type { AgentProviderOptions, AgentRunInput } from "../lib/agents.ts";
+import { SPEC_REVIEW_PROMPT } from "../lib/prompts/index.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 
 function createGitWorkspace() {
@@ -22,11 +23,115 @@ function createGitWorkspace() {
   return workspace;
 }
 
+function createPlainWorkspace() {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
+  writeFileSync(join(workspace, "plan.md"), "# Plan\n\nImplement a thing.\n", "utf8");
+  return workspace;
+}
+
+test("spec review prompt stays aligned with review-spec dimensions and schema verdicts", () => {
+  for (const keyword of [
+    "Architecture",
+    "Feasibility",
+    "Simplicity",
+    "Reliability",
+    "Performance",
+    "Security",
+    "Edge Cases",
+    "Testing",
+    "pass",
+    "needs_changes",
+    "blocked",
+    "must_fix",
+    "YAGNI",
+    "one-call-site abstractions",
+  ]) {
+    expect(SPEC_REVIEW_PROMPT).toContain(keyword);
+  }
+});
+
 test("cleanupOrphanedRunDir removes incomplete run directories", () => {
   const runDir = mkdtempSync(join(tmpdir(), "harness-orphaned-run-"));
   mkdirSync(join(runDir, "context"));
   expect(cleanupOrphanedRunDir(runDir)).toBe(true);
   expect(existsSync(runDir)).toBe(false);
+});
+
+test("workflow context supports spec review dry-runs without git scope", async () => {
+  const workspace = createPlainWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    planPath: "plan.md",
+    runsDir,
+    includeGitScope: false,
+    dryRun: true,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          throw new Error("dry-run should not call provider");
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  await expect(ctx.agent("review-spec")).resolves.toMatchObject({ verdict: "pass" });
+  expect(readFileSync(join(ctx.runDir, "context/plan.md"), "utf8")).toBe(
+    "# Plan\n\nImplement a thing.\n",
+  );
+  expect(existsSync(join(ctx.runDir, "context/diff.patch"))).toBe(false);
+  expect(existsSync(join(ctx.runDir, "spec-review.json"))).toBe(true);
+
+  const prompt = readFileSync(join(ctx.runDir, "spec-review.prompt.md"), "utf8");
+  expect(prompt).toContain("Plan file:");
+  expect(prompt).toContain("context/plan.md");
+  expect(prompt).not.toContain("Diff file:");
+  expect(prompt).not.toContain("{{DIFF_REF}}");
+});
+
+test("workflow context exports spec review summaries without git scope", () => {
+  const workspace = createPlainWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    planPath: "plan.md",
+    runsDir,
+    includeGitScope: false,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          throw new Error("not used");
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  const meta = ctx.export({
+    title: "Plan Review Summary",
+    reviews: [
+      {
+        key: "spec",
+        title: "Spec review",
+        review: { verdict: "pass", summary: "ok", findings: [] },
+      },
+    ],
+    verdict: "pass",
+  });
+
+  expect("scope" in meta).toBe(false);
+
+  const summary = readFileSync(join(ctx.runDir, "summary.md"), "utf8");
+  expect(summary).toContain("# Plan Review Summary");
+  expect(summary).not.toContain("**Scope**");
+  expect(summary).not.toContain("**Head SHA**");
+  const metadata = JSON.parse(readFileSync(join(ctx.runDir, "meta.json"), "utf8"));
+  expect(metadata.scope).toBeUndefined();
+  expect(metadata.reviews).toMatchObject({ spec: { verdict: "pass", findingCount: 0 } });
+  expect(metadata.specReview).toMatchObject({ verdict: "pass", findingCount: 0 });
 });
 test("cleanupOrphanedRunDir preserves runs with metadata", () => {
   const runDir = mkdtempSync(join(tmpdir(), "harness-run-"));
