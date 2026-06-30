@@ -5,7 +5,7 @@
 | File | Status | Summary |
 | ---- | ------ | ------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest |
-| [260630-plan-review-workflow.md](./260630-plan-review-workflow.md) | `planned` | Add `harness run plan-review` for one-pass `review-spec` plan feedback |
+| [260630-plan-review-workflow.md](./260630-plan-review-workflow.md) | `in_progress` | Add `harness run plan-review` for one-pass `review-spec` plan feedback |
 
 **Build next:** handoff Phase 0.6 (`steps.json`).
 
