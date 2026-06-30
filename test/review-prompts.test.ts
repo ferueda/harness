@@ -3,6 +3,7 @@ import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
   SIMPLIFY_REVIEW_PROMPT,
+  SPEC_REVIEW_PROMPT,
 } from "../lib/prompts/index.ts";
 
 test("review prompts include scope placeholders and JSON output contract", () => {
@@ -30,6 +31,24 @@ test("implementation review prompt includes plan context and adversarial guidanc
   expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("Subtract before you add");
   expect(QUALITY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
   expect(SIMPLIFY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
+});
+
+test("spec review prompt includes plan context without diff scope placeholders", () => {
+  expect(SPEC_REVIEW_PROMPT).toContain("{{PLAN_REF}}");
+  expect(SPEC_REVIEW_PROMPT).toContain("{{HANDOFF_SECTION}}");
+  expect(SPEC_REVIEW_PROMPT).toContain("Return JSON matching the provided schema");
+  expect(SPEC_REVIEW_PROMPT).toContain("narrow read-only commands");
+  expect(SPEC_REVIEW_PROMPT).toContain("Skills and Guidelines");
+  expect(SPEC_REVIEW_PROMPT).toContain("SKILL.md");
+  expect(SPEC_REVIEW_PROMPT).toContain("Follow existing patterns");
+  expect(SPEC_REVIEW_PROMPT).toContain("challenge assumptions");
+  expect(SPEC_REVIEW_PROMPT).toContain("prefer smaller plans");
+  expect(SPEC_REVIEW_PROMPT).toContain("YAGNI");
+  expect(SPEC_REVIEW_PROMPT).toContain("one-call-site abstractions");
+  expect(SPEC_REVIEW_PROMPT).not.toContain("{{DIFF_RANGE}}");
+  expect(SPEC_REVIEW_PROMPT).not.toContain("{{BASE_REF}}");
+  expect(SPEC_REVIEW_PROMPT).not.toContain("{{HEAD_REF}}");
+  expect(SPEC_REVIEW_PROMPT).not.toContain("{{DIFF_REF}}");
 });
 
 test("quality and simplify prompts keep reviewer-specific guidance", () => {
