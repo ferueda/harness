@@ -91,7 +91,8 @@ One invocation runs one read-only `review-spec` pass. `--plan` is required;
 `.harness/runs/reviews/<run-id>/`, including `summary.md`, `meta.json`, the
 rendered `spec-review.prompt.md`, and structured reviewer JSON. Harness does not
 edit the plan; the caller triages findings, edits the plan, and reruns when the
-plan materially changes.
+plan materially changes. The command exits `0` for `pass` or `--dry-run`, and
+exits `1` for `needs_changes`, `blocked`, or provider failure.
 
 `harness.json` lives at the target repo root and keeps repo-local defaults:
 
