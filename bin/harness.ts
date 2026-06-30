@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { Command, CommanderError, InvalidArgumentError } from "commander";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AGENT_APPROVAL_POLICIES,
@@ -21,6 +21,7 @@ import {
   run as runChangeReview,
   type ChangeReviewStepId,
 } from "../workflows/change-review.workflow.ts";
+import { run as runPlanReview } from "../workflows/plan-review.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
 import {
   assertNonEmptyHandoffStdin,
@@ -56,6 +57,15 @@ type ReviewOptions = {
   dryRun: boolean;
   verbose: boolean;
   steps?: ChangeReviewStepId[];
+};
+
+type PlanReviewOptions = Omit<ReviewOptions, "base" | "head" | "steps" | "plan"> & {
+  plan: string;
+};
+
+type HandoffCliOptions = {
+  handoff?: string;
+  handoffStdin?: boolean;
 };
 
 type RunsPruneOptions = {
@@ -118,7 +128,7 @@ function parseStepList(value: string): ChangeReviewStepId[] {
   return selectedSteps;
 }
 
-function resolveHandoffText(options: ReviewOptions): string | undefined {
+function resolveHandoffText(options: HandoffCliOptions): string | undefined {
   if (options.handoff && options.handoffStdin) {
     throw new Error(HANDOFF_STDIN_CONFLICT_ERROR);
   }
@@ -128,6 +138,13 @@ function resolveHandoffText(options: ReviewOptions): string | undefined {
   const text = readFileSync(0, "utf8");
   assertNonEmptyHandoffStdin(text);
   return text;
+}
+
+function assertPlanFileExists(workspace: string, planPath: string): void {
+  const resolvedPlanPath = isAbsolute(planPath) ? planPath : join(workspace, planPath);
+  if (!existsSync(resolvedPlanPath)) {
+    throw new Error(`Plan file does not exist: ${planPath}`);
+  }
 }
 
 function buildProgram(): Command {
@@ -158,6 +175,7 @@ function buildProgram(): Command {
     description: "Run implementation, code-quality, and simplify reviewers",
     workflow: runChangeReview,
   });
+  addPlanReviewCommand(run);
 
   const runs = program.command("runs").description("Manage harness run artifacts");
   runs
@@ -213,6 +231,99 @@ function buildProgram(): Command {
     });
 
   return program;
+}
+
+function addPlanReviewCommand(parent: Command): void {
+  parent
+    .command("plan-review")
+    .description("Run a spec reviewer against an implementation plan")
+    .option("--workspace <path>", "target repo")
+    .requiredOption("--plan <path>", "plan file to review")
+    .option("--handoff <path>", "optional handoff file")
+    .option("--handoff-stdin", "read optional handoff text from stdin", false)
+    .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/reviews)")
+    .option("--agent <provider>", "review agent provider: cursor or codex", parseAgentProvider)
+    .option("--codex-executable <path>", "Codex CLI executable override")
+    .option("--model <id>", "agent model override")
+    .option(
+      "--sandbox <mode>",
+      "Codex-only sandbox mode (default for reviews: read-only)",
+      parseSandboxMode,
+    )
+    .option(
+      "--approval-policy <policy>",
+      "Codex-only approval policy (default for reviews: never)",
+      parseApprovalPolicy,
+    )
+    .option(
+      "--reasoning-effort <effort>",
+      "Codex-only reasoning effort: minimal,low,medium,high,xhigh",
+      parseReasoningEffort,
+    )
+    .option(
+      "--max-runtime-ms <ms>",
+      `per-reviewer timeout (default: ${DEFAULT_MAX_RUNTIME_MS})`,
+      positiveNumber,
+      DEFAULT_MAX_RUNTIME_MS,
+    )
+    .option("--dry-run", "prepare context and prompts only", false)
+    .option("--verbose", "emit workflow events as JSONL to stderr", false)
+    .action(async (options: PlanReviewOptions) => {
+      const handoffText = resolveHandoffText(options);
+      const resolvedOptions = resolveHarnessOptions({
+        workspace: options.workspace,
+        planPath: options.plan,
+        handoffPath: options.handoff,
+        handoffText,
+        runsDir: options.runsDir,
+        agentProvider: options.agent,
+        codexPathOverride: options.codexExecutable,
+        model: options.model,
+        sandboxMode: options.sandbox,
+        approvalPolicy: options.approvalPolicy,
+        modelReasoningEffort: options.reasoningEffort,
+        maxRuntimeMs: options.maxRuntimeMs,
+        dryRun: options.dryRun,
+        includeGitScope: false,
+      });
+      assertPlanFileExists(resolvedOptions.workspace, options.plan);
+      if (
+        resolvedOptions.agentProvider !== "codex" &&
+        (options.sandbox || options.approvalPolicy || options.reasoningEffort)
+      ) {
+        throw new Error(
+          "--sandbox, --approval-policy, and --reasoning-effort apply only when --agent codex is active",
+        );
+      }
+      if (resolvedOptions.agentProvider !== "codex" && options.codexExecutable) {
+        throw new Error("--codex-executable applies only when --agent codex is active");
+      }
+
+      const runAbort = new AbortController();
+      const onRunAbort = () => runAbort.abort();
+      process.once("SIGINT", onRunAbort);
+      process.once("SIGTERM", onRunAbort);
+      let meta;
+      try {
+        const ctx = createWorkflowContext({
+          ...resolvedOptions,
+          agentProviderFactory: createAgentProvider,
+          signal: runAbort.signal,
+          eventSink: options.verbose ? writeVerboseWorkflowEvent : undefined,
+        });
+        try {
+          meta = await runPlanReview(ctx);
+        } catch (error) {
+          cleanupOrphanedRunDir(ctx.runDir);
+          throw error;
+        }
+      } finally {
+        process.off("SIGINT", onRunAbort);
+        process.off("SIGTERM", onRunAbort);
+      }
+      console.log(JSON.stringify(meta, null, 2));
+      process.exitCode = meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1;
+    });
 }
 
 function addReviewCommand(

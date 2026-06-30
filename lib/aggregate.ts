@@ -50,7 +50,7 @@ type SummaryHeaderInput = {
   title: string;
   runId: string;
   workspace: string;
-  scope: ReviewScope;
+  scope?: ReviewScope;
   verdict: string;
   startedAt: string;
   durationMs: number;
@@ -61,6 +61,7 @@ const FAILED_REVIEW_TITLES: Record<string, string> = {
   implementation: "Implementation review",
   codeQuality: "Code quality review",
   simplify: "Simplify review",
+  spec: "Spec review",
 };
 
 export function aggregateVerdict(...inputs: (ReviewOutputLike | undefined)[]): ReviewVerdict {
@@ -90,7 +91,7 @@ export function renderSummary(input: {
   title: string;
   runId: string;
   workspace: string;
-  scope: ReviewScope;
+  scope?: ReviewScope;
   reviews: ReviewSection[];
   verdict: string;
   startedAt: string;
@@ -110,7 +111,7 @@ export function renderFailedSummary(input: {
   title: string;
   runId: string;
   workspace: string;
-  scope: ReviewScope;
+  scope?: ReviewScope;
   reviews: ReviewSection[];
   failedReviews: FailedReview[];
   startedAt: string;
@@ -128,18 +129,27 @@ export function renderFailedSummary(input: {
 }
 
 function renderSummaryHeader(input: SummaryHeaderInput): string[] {
-  return [
+  const lines = [
     `# ${input.title}`,
     "",
     `- **Run**: \`${input.runId}\``,
     `- **Workspace**: \`${input.workspace}\``,
-    `- **Scope**: \`${input.scope.baseRef}\` → \`${input.scope.headRef}\` (merge-base \`${input.scope.mergeBase}\`)`,
-    `- **Head SHA**: \`${input.scope.headSha}\``,
+  ];
+
+  if (input.scope) {
+    lines.push(
+      `- **Scope**: \`${input.scope.baseRef}\` → \`${input.scope.headRef}\` (merge-base \`${input.scope.mergeBase}\`)`,
+      `- **Head SHA**: \`${input.scope.headSha}\``,
+    );
+  }
+
+  lines.push(
     `- **Started**: ${input.startedAt}`,
     `- **Duration**: ${Math.round(input.durationMs / 1000)}s`,
     `- **Aggregate verdict**: **${input.verdict}**`,
     "",
-  ];
+  );
+  return lines;
 }
 
 function renderStepSections(steps: WorkflowStepMetadata | undefined): string[] {

@@ -6,6 +6,7 @@ import {
   normalizeChangeReviewSteps,
   run as runChangeReview,
 } from "../workflows/change-review.workflow.ts";
+import { run as runPlanReview } from "../workflows/plan-review.workflow.ts";
 import type { WorkflowContext } from "../workflows/review-steps.ts";
 
 type DeferredReview = {
@@ -35,6 +36,7 @@ function createDeferredReviews(): Record<ReviewAgentName, DeferredReview> {
     "review-implementation": createDeferredReview(),
     "code-quality-review": createDeferredReview(),
     simplify: createDeferredReview(),
+    "review-spec": createDeferredReview(),
   };
 }
 
@@ -71,6 +73,7 @@ function createContext(
           stage: "quality",
         },
         simplify: { key: "simplify", title: "Simplify review", stage: "simplify" },
+        "review-spec": { key: "spec", title: "Spec review", stage: "spec" },
       } satisfies Record<ReviewAgentName, { key: string; title: string; stage: string }>;
       return info[name];
     },
@@ -122,6 +125,25 @@ test("change-review starts all review steps by default before any review resolve
     availableSteps: ["implementation", "quality", "simplify"],
     requestedSteps: ["implementation", "quality", "simplify"],
     executedSteps: ["implementation", "quality", "simplify"],
+    omittedSteps: [],
+    partial: false,
+  });
+});
+
+test("plan-review starts only the spec review step", async () => {
+  const deferred = createDeferredReviews();
+  const harness = createContext(deferred);
+  const run = runPlanReview(harness.ctx);
+
+  expect(harness.started).toEqual(["review-spec"]);
+  deferred["review-spec"].resolve(PASS_REVIEW);
+  await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  expect(harness.exportedReviews?.map((review) => review.key)).toEqual(["spec"]);
+  expect(harness.exportedSteps).toEqual({
+    workflow: "plan-review",
+    availableSteps: ["spec"],
+    requestedSteps: ["spec"],
+    executedSteps: ["spec"],
     omittedSteps: [],
     partial: false,
   });

@@ -5,6 +5,18 @@ description: Review a spec document against codebase reality, identifying gaps a
 
 Review the given spec document by analyzing both the spec AND the referenced codebase.
 
+## Executable Path
+
+For implementation plans where durable artifacts, provider selection, events, or
+reruns matter, prefer:
+
+```bash
+harness run plan-review --plan <path>
+```
+
+Use this direct `review-spec` skill when harness is unavailable or a lightweight
+chat review is enough.
+
 ## Process
 
 1. **Read the spec** — goals, phases, proposed changes
@@ -30,6 +42,11 @@ Evaluate across these areas (focus on what's relevant):
 - **Testing**: Testability, integration strategy, rollback considerations
 
 ## Output Format
+
+`harness run plan-review` writes structured JSON matching
+`schemas/review-output.schema.json`: `verdict`, `summary`, and `findings[]`
+with `must_fix`. The markdown format below applies only to direct chat
+`review-spec` use.
 
 For each finding:
 

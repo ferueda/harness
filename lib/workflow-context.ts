@@ -42,14 +42,15 @@ import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
   SIMPLIFY_REVIEW_PROMPT,
+  SPEC_REVIEW_PROMPT,
 } from "./prompts/index.ts";
 import type { ContextArtifact } from "./context.ts";
 import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schemas.ts";
 
 type WorkflowRunOptions = {
   workspace: string;
-  baseRef: string;
-  headRef: string;
+  baseRef?: string;
+  headRef?: string;
   runsDir?: string;
   agentProvider?: AgentProviderName;
   codexPathOverride?: string;
@@ -62,6 +63,7 @@ type WorkflowRunOptions = {
   modelReasoningEffort?: AgentReasoningEffort;
   maxRuntimeMs: number;
   dryRun?: boolean;
+  includeGitScope?: boolean;
   eventSink?: WorkflowEventSink;
   heartbeatMs?: number;
   signal?: AbortSignal;
@@ -146,6 +148,16 @@ const REVIEWER_CONFIGS = {
     dryRunReview: DRY_RUN_REVIEW,
     stage: "simplify",
   },
+  "review-spec": {
+    title: "Spec review",
+    summaryKey: "spec",
+    promptTemplate: SPEC_REVIEW_PROMPT,
+    promptFile: "spec-review.prompt.md",
+    reviewFile: "spec-review.json",
+    rawFile: "spec-review.raw.json",
+    dryRunReview: DRY_RUN_REVIEW,
+    stage: "spec",
+  },
 };
 
 export function createWorkflowContext(options: WorkflowOptions) {
@@ -166,12 +178,13 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
   const startedAt = new Date();
   const runId = buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/reviews")), runId);
+  const includeGitScope = options.includeGitScope ?? true;
 
   let reviewProvider: Agent;
   let contextArtifacts: PromptContextArtifacts;
-  let scope: Scope;
-  let scopeMeta: ScopeMeta;
-  let diffRef: string;
+  let scope: Scope | undefined;
+  let scopeMeta: ScopeMeta | undefined;
+  let diffRef: string | undefined;
   try {
     mkdirSync(runDir, { recursive: true });
 
@@ -183,15 +196,20 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       provider: options.agentProvider ?? "cursor",
       codexPathOverride: options.codexPathOverride,
     });
-    scope = {
-      ...prepareGitScope(workspace, {
-        baseRef: options.baseRef,
-        headRef: options.headRef,
-      }),
-      baseRef: options.baseRef,
-      headRef: options.headRef,
-    };
-    scopeMeta = buildScopeMeta(scope);
+    if (includeGitScope) {
+      const baseRef = options.baseRef ?? "main";
+      const headRef = options.headRef ?? "HEAD";
+      scope = {
+        ...prepareGitScope(workspace, {
+          baseRef,
+          headRef,
+        }),
+        baseRef,
+        headRef,
+      };
+      scopeMeta = buildScopeMeta(scope);
+      diffRef = buildDiffRef(scope.diff, runDir, workspace);
+    }
 
     contextArtifacts = writeRunContext({
       workspace,
@@ -201,8 +219,6 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       handoffPath: options.handoffPath,
       handoffText: options.handoffText,
     });
-
-    diffRef = buildDiffRef(scope.diff, runDir, workspace);
   } catch (error) {
     cleanupOrphanedRunDir(runDir);
     throw error;
@@ -226,9 +242,9 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       runId,
       status: "dry_run",
       workspace,
-      scope: scopeMeta,
       runDir,
       agent: agentMeta,
+      ...(scopeMeta ? { scope: scopeMeta } : {}),
       ...steps,
       prompts: promptPaths,
     };
@@ -286,7 +302,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       runId,
       workspace,
       agent: agentMeta,
-      scope: scopeMeta,
+      ...(scopeMeta ? { scope: scopeMeta } : {}),
       startedAt: startedAtIso,
       durationMs,
       ...input.steps,
@@ -457,20 +473,22 @@ function buildPromptValues({
   contextArtifacts,
   agentName,
 }: {
-  scope: Scope;
-  diffRef: string;
+  scope?: Scope;
+  diffRef?: string;
   workspace: string;
   contextArtifacts: PromptContextArtifacts;
   agentName: ReviewAgentName;
 }): Record<string, string> {
   return {
-    BASE_REF: scope.baseRef,
-    HEAD_REF: scope.headRef,
-    DIFF_RANGE: `${scope.mergeBase}..${scope.headSha}`,
+    BASE_REF: scope?.baseRef ?? "",
+    HEAD_REF: scope?.headRef ?? "",
+    DIFF_RANGE: scope ? `${scope.mergeBase}..${scope.headSha}` : "",
     PLAN_REF:
-      agentName === "review-implementation" ? buildPlanRef(contextArtifacts.plan, workspace) : "",
+      agentName === "review-implementation" || agentName === "review-spec"
+        ? buildPlanRef(contextArtifacts.plan, workspace)
+        : "",
     HANDOFF_SECTION: buildInlinedHandoffSection(contextArtifacts.handoff),
-    DIFF_REF: diffRef,
+    DIFF_REF: diffRef ?? "",
   };
 }
 
@@ -509,16 +527,19 @@ function buildTopLevelReviewFields(reviewSummaries: ReviewSummaries): {
   implementationReview?: ReviewSummary;
   qualityReview?: ReviewSummary;
   simplifyReview?: ReviewSummary;
+  specReview?: ReviewSummary;
 } {
   const fields: {
     implementationReview?: ReviewSummary;
     qualityReview?: ReviewSummary;
     simplifyReview?: ReviewSummary;
+    specReview?: ReviewSummary;
   } = {};
   const fieldNames = {
     implementation: "implementationReview",
     codeQuality: "qualityReview",
     simplify: "simplifyReview",
+    spec: "specReview",
   } as const;
 
   for (const [key, fieldName] of Object.entries(fieldNames)) {

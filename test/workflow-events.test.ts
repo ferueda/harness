@@ -75,6 +75,7 @@ function reviewInfo(name: ReviewAgentName) {
       stage: "quality",
     },
     simplify: { key: "simplify", title: "Simplify review", stage: "simplify" },
+    "review-spec": { key: "spec", title: "Spec review", stage: "spec" },
   } satisfies Record<ReviewAgentName, { key: string; title: string; stage: string }>;
   return info[name];
 }
@@ -89,6 +90,7 @@ test("STEP_ID_BY_AGENT covers change-review step order", () => {
     "review-implementation": "review-implementation",
     "code-quality-review": "code-quality-review",
     simplify: "simplify-review",
+    "review-spec": "review-spec",
   });
 });
 
@@ -264,6 +266,51 @@ test("runReviewSteps emits failed step events", async () => {
       error: "review failed",
     }),
   );
+});
+
+test("spec review steps emit review-spec events and outputs", async () => {
+  const events: WorkflowEvent[] = [];
+  const ctx: WorkflowContext = {
+    runId: "run-123",
+    eventSink(event) {
+      events.push(event);
+    },
+    async agent() {
+      return PASS_REVIEW;
+    },
+    aggregate() {
+      return "pass";
+    },
+    reviewInfo,
+    export({ verdict }) {
+      return { status: "completed", verdict };
+    },
+    exportFailed() {
+      return { status: "failed" };
+    },
+  };
+
+  await expect(
+    runReviewSteps(ctx, "Plan Review Summary", [{ agentName: "review-spec" }]),
+  ).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  expect(events).toEqual([
+    expect.objectContaining({
+      type: "step:start",
+      stepId: "review-spec",
+      cliStep: "spec",
+    }),
+    expect.objectContaining({
+      type: "step:end",
+      stepId: "review-spec",
+      cliStep: "spec",
+      outputs: [
+        "spec-review.prompt.md",
+        "spec-review.raw.json",
+        "spec-review.json",
+        "spec-review.stream.jsonl",
+      ],
+    }),
+  ]);
 });
 
 test("selected change-review steps emit events only for executed reviewers", async () => {
