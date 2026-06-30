@@ -2,8 +2,9 @@
 name: planning-workflow
 description: >
   Coordinate planning from intent to implementation. Route through shape-requirements,
-  diagnose-issue, review-spec, create-plan, implement-plan, and handoff-work. Use when
-  starting feature work, fixing a non-trivial issue, or running the full plan-build cycle.
+  diagnose-issue, review-spec, create-plan, plan-review, implement-plan, and handoff-work.
+  Use when starting feature work, fixing a non-trivial issue, or running the full
+  plan-build cycle.
 ---
 
 # Planning Workflow
@@ -48,7 +49,8 @@ changes. Harness does not edit plans automatically.
 
 Use `handoff-work` when a different agent or session continues:
 
-- After `create-plan` → executor runs `implement-plan`
+- After `plan-review` → executor runs `implement-plan`
+- After `create-plan` → executor runs `implement-plan` only when `plan-review` is skipped per routing
 - After partial `implement-plan` → reviewer or continuation agent
 - Before `change-review-workflow` when the implementer is not the reviewer
 
