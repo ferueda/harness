@@ -17,7 +17,7 @@ Chat coordinator for intent → validated plan → implementation. Not a `harnes
 | Vague idea, no brief | `shape-requirements` **interview** |
 | Build/fix/plan now but scope or done-ness unclear | `shape-requirements` **gate** |
 | Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |
-| Written brief/spec/plan already exists | `review-spec` or `create-plan` (see step 2) |
+| Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing implementation plans; otherwise `review-spec` or `create-plan` (see step 2) |
 | Approved plan ready to execute | `implement-plan` |
 
 **diagnose-issue** when the question is what is true in the repo. **shape-requirements** when the question is what the user wants.
@@ -33,9 +33,14 @@ Too vague to investigate → `shape-requirements` **gate** only (not interview),
 | Brief or problem definition | `review-spec` when claims must match the codebase |
 | Problem definition with multiple directions | `shape-requirements` **gate** to pick one |
 | Validated spec or brief | `create-plan` when work is multi-step, cross-area, or needs executor handoff |
+| Created non-trivial implementation plan | `harness run plan-review --plan <path>`; direct `review-spec` fallback when harness is unavailable or durable artifacts are unnecessary |
 | Small scoped change after gate | implement directly or skip to step 4 |
 
 Run `review-spec` before `create-plan` when the plan would depend on unverified assumptions.
+After `create-plan`, prefer `plan-review` for non-trivial, cross-area, or
+handoff-ready plans. The planning agent owns triage: accept, adapt, or decline
+reviewer findings, edit the plan, and rerun `plan-review` after material plan
+changes. Harness does not edit plans automatically.
 
 **Done when:** plan approved or direct-implement path confirmed.
 
