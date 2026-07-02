@@ -15,12 +15,13 @@ loops.
   decisions and durable improvement habits.
 - [Architecture map](./architecture.md) - CLI, config, workflow, provider,
   artifact, skill, and automation navigation.
+- [Script and command surface](./script-command-surface.md) - command
+  ownership, mutability, generated-help policy, and inventory rules.
+- [Setup manifest](./setup-manifest.md) - local requirements, install/update
+  behavior, generated artifacts, provider auth, and repo-boundary rules.
 
 ## Planned follow-ups
 
 These pages are planned follow-ups and should not be linked until they exist:
 
 - testing taxonomy (`docs/contributing/testing.md`) - Plan C
-- command and script surface (`docs/contributing/script-command-surface.md`) -
-  Plan B
-- setup/resource manifest (`docs/contributing/setup-manifest.md`) - Plan B
