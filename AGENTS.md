@@ -33,6 +33,13 @@ Felipe's personal agent workflow repo: packaged skills, workflows, runner, autom
 
 Keep this repo standalone. No references, examples, paths, fixtures, or docs tied to private downstream repos — use generic target-repo examples. Layout and usage: `README.md`.
 
+## Contributor docs
+
+- project intent -> `docs/project-intent.md`
+- contributor index -> `docs/contributing/index.md`
+- harness-engineering guide -> `docs/contributing/harness-engineering.md`
+- architecture map -> `docs/contributing/architecture.md`
+
 ## Planning workflow
 
 Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/README.md`**.
