@@ -15,6 +15,12 @@ automations/  Background task definitions
 dev/plans/    Plans and handoffs for this repo
 ```
 
+## Contributor docs
+
+- Project intent: [docs/project-intent.md](docs/project-intent.md)
+- Contributor index: [docs/contributing/index.md](docs/contributing/index.md)
+- Architecture map: [docs/contributing/architecture.md](docs/contributing/architecture.md)
+
 ## Install Harness
 
 Prerequisites: Node 24 or newer, `pnpm` on `PATH`, and a POSIX shell with `bash`.

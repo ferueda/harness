@@ -1,0 +1,67 @@
+# Harness engineering
+
+## Core mindset
+
+The model harness is the AI host around the model: model choice, tools,
+permissions, sessions, browser or MCP surfaces, and execution environment.
+
+The engineering harness is what this repository owns: docs, commands, checks,
+tests, scripts, workflows, providers, artifacts, review loops, and maintenance
+habits.
+
+The model predicts. The engineering harness makes the correct path easy, the
+wrong path visible, and repeated mistakes expensive to keep repeating.
+
+## Source-of-truth boundaries
+
+`AGENTS.md` is a routing map, not an encyclopedia. Keep it short enough to load
+by default and link to focused docs for detail.
+
+Use `README.md` for install, usage, workflows, skills, automations, and
+development commands. Use `docs/contributing/` for contributor decisions and
+agent-facing maintenance guidance.
+
+Current command detail is intentionally high level here. The present final gate
+is `pnpm check` / `make check`. See the
+[contributor index](./index.md#planned-follow-ups) for planned command, script,
+and setup inventory follow-ups.
+
+## Continuous improvement loop
+
+Use the same loop for features, fixes, docs, and harness work:
+
+1. Plan the intent, scope, and acceptance criteria.
+2. Implement the smallest coherent change.
+3. Verify with scoped checks while iterating and the final gate before handoff.
+4. Review with humans or harness reviewers.
+5. Encode durable learning in the repo.
+
+When work teaches the repo something durable, capture it near the source of
+truth before the session ends.
+
+## Promote repeated guidance into enforcement
+
+Repeated advice should escalate from docs -> tests/self-tests -> lint/static guardrails -> scripts/automation.
+
+Start with docs when a rule needs explanation. Add tests when behavior can
+regress. Add lint or structural checks when the mistake is static. Wrap
+repeatable workflows in scripts only when the command makes the next correct
+action clearer.
+
+## Working agreements
+
+- Keep changes scoped and reviewable.
+- Include verification commands in handoffs and PR descriptions.
+- Update the closest source-of-truth doc when workflow behavior changes.
+- Avoid introducing new patterns without documenting when to use them.
+- Prefer boring, explicit commands over hidden agent memory.
+- Keep durable examples generic to this repo and target repositories.
+
+## Maintenance cadence
+
+Periodically remove stale guidance, tighten unclear instructions, and choose
+one repeated review issue to encode mechanically. Once the planned inventory
+exists, keep it current as command surfaces change.
+
+Finished plans leave the active tree according to `dev/plans/README.md`; active
+plans stay in `dev/plans/` until they land.
