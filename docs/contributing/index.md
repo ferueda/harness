@@ -19,9 +19,5 @@ loops.
   ownership, mutability, generated-help policy, and inventory rules.
 - [Setup manifest](./setup-manifest.md) - local requirements, install/update
   behavior, generated artifacts, provider auth, and repo-boundary rules.
-
-## Planned follow-ups
-
-These pages are planned follow-ups and should not be linked until they exist:
-
-- testing taxonomy (`docs/contributing/testing.md`) - Plan C
+- [Testing](./testing.md) - proof layers, test placement, verification commands,
+  drift checks, and hook boundaries.
