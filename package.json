@@ -23,6 +23,7 @@
     "format:check": "oxfmt --check bin lib providers scripts workflows test skills/sessions docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
     "lint": "oxlint -c .oxlintrc.json bin lib providers scripts workflows test skills/sessions package.json tsconfig.json tsconfig.build.json vitest.config.ts",
     "lint:fix": "oxlint -c .oxlintrc.json --fix bin lib providers scripts workflows test skills/sessions package.json tsconfig.json tsconfig.build.json vitest.config.ts",
+    "prepare": "simple-git-hooks",
     "smoke:dist": "node scripts/smoke-dist.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -36,10 +37,21 @@
   },
   "devDependencies": {
     "@types/node": "24.13.2",
+    "lint-staged": "17.0.8",
     "oxfmt": "0.56.0",
     "oxlint": "1.71.0",
+    "simple-git-hooks": "2.13.1",
     "typescript": "6.0.3",
     "vitest": "4.1.9"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged && pnpm typecheck"
+  },
+  "lint-staged": {
+    "{bin,lib,providers,scripts,workflows,test,skills/sessions,docs}/**/*.{ts,js,json,md}": "pnpm exec oxfmt --write",
+    "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts,.oxlintrc.json,.oxfmtrc.json}": "pnpm exec oxfmt --write",
+    "{bin,lib,providers,scripts,workflows,test,skills/sessions}/**/*.{ts,js}": "pnpm exec oxlint -c .oxlintrc.json --fix",
+    "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts}": "pnpm exec oxlint -c .oxlintrc.json --fix"
   },
   "engines": {
     "node": ">=24"

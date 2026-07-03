@@ -35,6 +35,20 @@ and [Setup Manifest](./setup-manifest.md) for generated artifacts and auth.
 invoke reviewers, but it is not as side-effect-free as
 `harness runs prune --dry-run`.
 
+## Commit hygiene hooks
+
+Local pre-commit hooks are owned by `package.json` and installed by
+`simple-git-hooks` during `pnpm install`. They run staged format/lint fixes
+through `lint-staged`, then run `pnpm typecheck`.
+
+Hooks are commit hygiene, not the definition of done. They do not run
+`pnpm check`, tests, smoke-dist, provider calls, network work, DB work, or
+visual checks. Run `pnpm check` before handoff. CI runs `pnpm check:ci`; it does
+not depend on local Git hooks.
+
+Use [Setup Manifest](./setup-manifest.md) for hook activation and generated
+artifact ownership.
+
 ## Do not duplicate generated help
 
 Docs explain command ownership, intent, and mutability. Generated help owns exact

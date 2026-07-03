@@ -64,5 +64,7 @@
 
 ## Maintenance Notes
 
-Plan D owns cheap commit hygiene hooks after these deterministic checks exist.
-Hooks do not replace `pnpm check` as the final verification gate.
+Pre-commit hooks provide cheap commit hygiene after deterministic checks exist:
+they format/lint staged files and run `pnpm typecheck`. They do not run the full
+test suite or smoke-dist, and they do not replace `pnpm check` as the final
+verification gate before handoff.
