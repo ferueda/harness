@@ -417,6 +417,28 @@ test("durable docs do not reference developer-local checkout paths", () => {
   }
 });
 
+test("readme stays a concise entrypoint", () => {
+  const readme = readRepoFile("README.md");
+  const lines = readme.trimEnd().split(/\r?\n/);
+  // Keep the root README near entrypoint size; deep details belong in docs/contributing.
+  expect(lines.length, "README.md should stay a concise user entrypoint").toBeLessThanOrEqual(250);
+  expect(readme).toContain("docs/contributing/index.md");
+  expect(readme).toContain("~/.harness/install");
+  expect(readme).toContain("./install");
+  expect(readme).toContain("path/to/implementation-plan.md");
+  expect(readme).toContain("npx skills add ferueda/harness");
+  expect(readme).toContain("harness skills install");
+  expect(readme).toContain("skills/change-review-workflow/SKILL.md");
+  expect(readme).toContain("docs/contributing/script-command-surface.md");
+  expect(readme).toContain("docs/contributing/setup-manifest.md");
+  expect(readme).toContain("skills/sessions/SKILL.md");
+  expect(readme).not.toContain("## Available Skills");
+  expect(readme).not.toContain("## Session Extraction");
+  expect(readme).not.toContain("dev/plans/");
+  expect(readme).not.toContain("harness run review");
+  expect(readme).not.toMatch(/^### [a-z0-9]+(?:-[a-z0-9]+)+$/m);
+});
+
 test("docs are covered by format and format check scripts", () => {
   const parsed: unknown = JSON.parse(readRepoFile("package.json"));
   expect(isObject(parsed) && isObject(parsed.scripts), "package.json scripts missing").toBe(true);
