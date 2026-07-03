@@ -21,14 +21,14 @@ install_dependencies() {
     local pnpm_major
     pnpm_major="$(pnpm --version | cut -d. -f1)"
     if [[ "$pnpm_major" =~ ^[0-9]+$ && "$pnpm_major" -ge 9 ]]; then
-      (cd "$SKILL_ROOT" && pnpm install --prod --frozen-lockfile)
+      (cd "$SKILL_ROOT" && pnpm install --ignore-workspace --prod --frozen-lockfile)
       return
     fi
   fi
 
   if command -v corepack >/dev/null 2>&1; then
     corepack prepare pnpm@11.9.0 --activate >/dev/null
-    (cd "$SKILL_ROOT" && corepack pnpm install --prod --frozen-lockfile)
+    (cd "$SKILL_ROOT" && corepack pnpm install --ignore-workspace --prod --frozen-lockfile)
     return
   fi
 
