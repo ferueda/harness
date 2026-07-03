@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
   cleanupOrphanedRunDir,
@@ -11,6 +12,8 @@ import {
 import type { AgentProviderOptions, AgentRunInput } from "../lib/agents.ts";
 import { SPEC_REVIEW_PROMPT } from "../lib/prompts/index.ts";
 import { createAgentProvider } from "../providers/registry.ts";
+
+const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 function createGitWorkspace() {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
@@ -34,6 +37,10 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
     "Architecture",
     "Feasibility",
     "Simplicity",
+    "Project Alignment",
+    "intent source",
+    "docs/project-intent.md",
+    "VISION.md",
     "Reliability",
     "Performance",
     "Security",
@@ -48,6 +55,18 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   ]) {
     expect(SPEC_REVIEW_PROMPT).toContain(keyword);
   }
+  expect(SPEC_REVIEW_PROMPT).toContain("For intent-source gaps");
+  expect(SPEC_REVIEW_PROMPT).toContain("docs-architecture");
+  expect(SPEC_REVIEW_PROMPT).toContain("confirmed intent");
+  expect(SPEC_REVIEW_PROMPT).toContain("first step to create a minimal intent source");
+
+  const reviewSpecSkill = readFileSync(join(REPO_ROOT, "skills/review-spec/SKILL.md"), "utf8");
+  expect(reviewSpecSkill).toContain("Project Alignment");
+  expect(reviewSpecSkill).toContain("Intent Source Gate");
+  expect(reviewSpecSkill).toContain("Narrow bug fixes");
+  expect(reviewSpecSkill).toContain("docs-architecture");
+  expect(reviewSpecSkill).toContain("confirmed intent");
+  expect(reviewSpecSkill).toContain("first step to create a minimal intent source");
 });
 
 test("cleanupOrphanedRunDir removes incomplete run directories", () => {
