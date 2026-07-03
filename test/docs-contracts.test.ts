@@ -425,7 +425,7 @@ test("readme stays a concise entrypoint", () => {
   expect(readme).toContain("docs/contributing/index.md");
   expect(readme).toContain("~/.harness/install");
   expect(readme).toContain("./install");
-  expect(readme).toContain("dev/plans/260630-plan-review-workflow.md");
+  expect(readme).toContain("path/to/implementation-plan.md");
   expect(readme).toContain("npx skills add ferueda/harness");
   expect(readme).toContain("harness skills install");
   expect(readme).toContain("skills/change-review-workflow/SKILL.md");
@@ -434,6 +434,7 @@ test("readme stays a concise entrypoint", () => {
   expect(readme).toContain("skills/sessions/SKILL.md");
   expect(readme).not.toContain("## Available Skills");
   expect(readme).not.toContain("## Session Extraction");
+  expect(readme).not.toContain("dev/plans/");
   expect(readme).not.toContain("harness run review");
   expect(readme).not.toMatch(/^### [a-z0-9]+(?:-[a-z0-9]+)+$/m);
 });
