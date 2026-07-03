@@ -68,7 +68,7 @@ printf '%s\n' "$HANDOFF" | harness run change-review --handoff-stdin --verbose
 Review an implementation plan before execution:
 
 ```bash
-harness run plan-review --plan dev/plans/260630-plan-review-workflow.md --verbose
+harness run plan-review --plan path/to/implementation-plan.md --verbose
 ```
 
 Review artifacts are written under
