@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SCRIPT_COMMAND_SURFACE = "docs/contributing/script-command-surface.md";
+const SETUP_MANIFEST = "docs/contributing/setup-manifest.md";
 const TESTING_DOC = "docs/contributing/testing.md";
 const DEVELOPER_CHECKOUT_PATH_PATTERNS = [
   /\/Users\/[^/\s`)"]+\/dev\/(?:clones\/)?[^/\s`)"]+/i,
@@ -301,8 +302,80 @@ test("testing taxonomy documents required proof layers", () => {
   ]) {
     expect(content, `${TESTING_DOC} missing ${layer}`).toContain(layer);
   }
-  expect(content).toContain("Plan D owns cheap commit hygiene hooks");
-  expect(content).toContain("Hooks do not replace `pnpm check`");
+  expect(content).toContain("Pre-commit hooks provide cheap commit hygiene");
+  expect(content).toContain("format/lint staged files");
+  expect(content).toContain("pnpm typecheck");
+  expect(content).toContain("do not replace `pnpm check`");
+});
+
+test("hook docs document activation and gate boundaries", () => {
+  const setup = readRepoFile(SETUP_MANIFEST);
+  expect(setup).toContain("## Hook activation");
+  expect(setup).toContain("package `prepare` script");
+  expect(setup).toContain(".git/hooks/pre-commit");
+  expect(setup).toContain("simple-git-hooks");
+  expect(setup).toContain("pnpm-workspace.yaml");
+  expect(setup).toContain("--ignore-workspace");
+  expect(setup).toContain("pnpm exec simple-git-hooks");
+  expect(setup).toContain("Hooks do not replace `pnpm check`");
+  expect(setup).toContain("CI uses `pnpm check:ci`");
+
+  const commandSurface = readRepoFile(SCRIPT_COMMAND_SURFACE);
+  expect(commandSurface).toContain("## Commit hygiene hooks");
+  expect(commandSurface).toContain("lint-staged");
+  expect(commandSurface).toContain("pnpm typecheck");
+  expect(commandSurface).toMatch(/They do not run\s+`pnpm check`, tests, smoke-dist/);
+  expect(commandSurface).toMatch(/does\s+not depend on local Git hooks/);
+});
+
+test("pre-commit hook config stays scoped to staged hygiene", () => {
+  const parsed: unknown = JSON.parse(readRepoFile("package.json"));
+  expect(isObject(parsed), "package.json must parse to object").toBe(true);
+  if (!isObject(parsed)) return;
+
+  const scripts = isObject(parsed.scripts) ? parsed.scripts : {};
+  expect(scripts.prepare).toBe("simple-git-hooks");
+
+  const hooks = isObject(parsed["simple-git-hooks"]) ? parsed["simple-git-hooks"] : {};
+  expect(hooks["pre-commit"]).toBe("pnpm exec lint-staged && pnpm typecheck");
+
+  const lintStaged = isObject(parsed["lint-staged"]) ? parsed["lint-staged"] : {};
+  expect(Object.keys(lintStaged)).toContain(
+    "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts,.oxlintrc.json,.oxfmtrc.json}",
+  );
+  expect(Object.keys(lintStaged)).toContain(
+    "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts}",
+  );
+  expect(Object.keys(lintStaged)).not.toContain(
+    "{package,tsconfig,tsconfig.build,vitest.config,.oxlintrc,.oxfmtrc}.{json,ts}",
+  );
+  expect(Object.keys(lintStaged)).not.toContain(
+    "{package,tsconfig,tsconfig.build,vitest.config}.{json,ts}",
+  );
+  const lintStagedConfig = JSON.stringify(lintStaged);
+  expect(lintStagedConfig).toContain("pnpm exec oxfmt --write");
+  expect(lintStagedConfig).toContain("pnpm exec oxlint -c .oxlintrc.json --fix");
+  expect(lintStagedConfig).not.toContain("pnpm check");
+  expect(lintStagedConfig).not.toContain("pnpm test");
+  expect(lintStagedConfig).not.toContain("smoke:dist");
+  expect(lintStagedConfig).not.toContain("harness run");
+
+  const workspace = readRepoFile("pnpm-workspace.yaml");
+  expect(workspace).toContain('  - "."');
+  expect(workspace).toContain('  - "!skills/sessions"');
+  expect(workspace).toContain("allowBuilds:");
+  expect(workspace).toContain("  simple-git-hooks: true");
+
+  const sessionsInstaller = readRepoFile("skills/sessions/scripts/install.sh");
+  expect(sessionsInstaller).toContain("pnpm install --ignore-workspace --prod --frozen-lockfile");
+  expect(sessionsInstaller).toContain(
+    "corepack pnpm install --ignore-workspace --prod --frozen-lockfile",
+  );
+
+  const sessionsSkill = readRepoFile("skills/sessions/SKILL.md");
+  expect(sessionsSkill).toContain("pnpm install --ignore-workspace --prod --frozen-lockfile");
+  const setup = readRepoFile(SETUP_MANIFEST);
+  expect(setup).toContain("skill-local `pnpm install --ignore-workspace --prod --frozen-lockfile`");
 });
 
 test("command parser extracts Make and pnpm commands from ownership table", () => {
