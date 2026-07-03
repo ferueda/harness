@@ -35,11 +35,19 @@ Evaluate across these areas (focus on what's relevant):
 - **Architecture**: Component boundaries, data flow, API contracts, separation of concerns
 - **Feasibility**: Implementation complexity, technology trade-offs, effort estimation
 - **Simplicity**: Overengineering, unnecessary phases, speculative abstractions, simpler equivalent shapes. Ask: does phase count and abstraction count match the problem? Any YAGNI (registry, plugin layer, future-proof hook without a current caller)? Could existing code do this with less surface? Phases that only defer thinking without a deliverable? Flag when: one-call-site abstractions, workflow/registry for a single use case, mergeable phases, patterns oversized for this repo, nice-to-haves without a named constraint.
+- **Project Alignment**: Fit with the target repo's documented intent source, audience, non-goals, hard invariants, source-of-truth boundaries, and current-vs-planned behavior. Look first for `docs/project-intent.md`, then root `VISION.md`, then explicit intent docs named from `AGENTS.md`, `README.md`, or contributor docs. If no intent source exists, narrow bug fixes and local refactors may proceed with a note; plans that make product, architecture, docs-architecture, data/tenancy, provider, public API, or workflow-wide decisions should include confirmed intent or a first step to create a minimal intent source.
 - **Reliability**: Error handling, retries, idempotency, graceful degradation
 - **Performance**: Bottlenecks, caching, query patterns, scaling approach
 - **Security**: Auth, data protection, input validation, audit logging
 - **Edge Cases**: Null handling, limits, timeouts, race conditions, partial failures
 - **Testing**: Testability, integration strategy, rollback considerations
+
+### Intent Source Gate
+
+- Use a High `must_fix` finding when a plan makes product, architecture, boundary, public API, data/tenancy, provider, docs-architecture, or workflow-wide decisions without an intent source or confirmed substitute.
+- Use a Medium finding when a known intent source exists but the plan does not inline the relevant constraints for the executor.
+- Use a Low advisory finding when narrow work can proceed but the repo would benefit from adding an intent source later.
+- Narrow bug fixes and local refactors may proceed without an intent source when the plan notes that none was found and the work does not make project-level direction or boundary decisions.
 
 ## Output Format
 
@@ -53,7 +61,7 @@ For each finding:
 ```
 ### [Finding Title]
 
-**Category**: Architecture | Feasibility | Simplicity | Reliability | Performance | Security | Edge Case | Testing
+**Category**: Architecture | Feasibility | Simplicity | Project Alignment | Reliability | Performance | Security | Edge Case | Testing
 **Severity**: Critical | High | Medium | Low
 **Section**: [Spec section or phase]
 
