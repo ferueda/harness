@@ -1,0 +1,6 @@
+packages:
+  - "."
+  - "!skills/sessions"
+
+allowBuilds:
+  simple-git-hooks: true
