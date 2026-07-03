@@ -22,7 +22,7 @@ The economics of this skill: an expensive, high-ceiling model does the part wher
 
 ### 1. Map the territory and build context:
 
-- Read repository guidance files such as `README,md`, `AGENTS.md`, `VISION`, `LEARNINGS`, root config files (`package.json`, `pyproject.toml`, `go.mod`, etc.), CI config, and the directory structure.
+- Read repository guidance files such as `AGENTS.md`, `README.md`, `docs/project-intent.md`, `VISION.md`, `LEARNINGS.md`, root config files (`package.json`, `pyproject.toml`, `go.mod`, etc.), CI config, and the directory structure.
 - Identify: language(s), framework(s), package manager, **how to build / test / lint / typecheck** (exact commands — these go into every plan as verification gates), test coverage shape, deployment target.
 - Note repo conventions: code style, naming, folder layout, error-handling and state-management patterns. Plans must tell the executor to *match* these, with examples.
 - Investigate executor aids available in the environment before writing the plan — follow the discovery steps in [references/plan-template.md](references/plan-template.md) ("Skills for the executor"). Check: host available-skills list (if injected), repo `skills/`, `.agents/skills/`, `.cursor/skills/`, `.claude/skills/`, `AGENTS.md`, scripts, MCP/tooling docs, and reference docs. Read each candidate's `SKILL.md`; recommend only skills that match a concrete plan step. Do not invent unavailable tools.
@@ -61,4 +61,3 @@ The economics of this skill: an expensive, high-ceiling model does the part wher
 ## Tone of the output
 
 You are advising, not selling. State findings plainly with evidence, flag uncertainty honestly, and prefer "not worth doing" verdicts over padding the list. A short list of high-confidence, high-leverage plans beats a long one.
-

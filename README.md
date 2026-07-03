@@ -369,7 +369,7 @@ Review a spec document against codebase reality. Identifies gaps, risks, overeng
 - "Check this plan..."
 - Validating a plan before implementation
 
-**Evaluates:** Architecture, Feasibility, Simplicity, Reliability, Performance, Security, Edge Cases, Testing — includes proportionality check; Simplicity issues are standard findings (no separate summary block)
+**Evaluates:** Architecture, Feasibility, Simplicity, Project Alignment, Reliability, Performance, Security, Edge Cases, Testing — includes proportionality check; Simplicity issues are standard findings (no separate summary block)
 
 ---
 

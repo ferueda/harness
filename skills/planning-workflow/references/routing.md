@@ -15,6 +15,8 @@ Routing rules, skip table, artifact paths, and scenario fixtures. Use when choos
 
 **shape-requirements** when the question is what the user wants. **diagnose-issue** when the question is what is true in the repo. Too vague to investigate → **gate** only (not interview), then `diagnose-issue`.
 
+Intent-aware review: when work affects product direction, architecture boundaries, docs-architecture, data/tenancy, provider contracts, public APIs, or workflow-wide behavior, validate it against the target repo's intent source (`docs/project-intent.md`, root `VISION.md`, or explicit intent docs linked from repo guidance).
+
 ## shape ↔ diagnose handoffs
 
 | Question | Skill |
@@ -58,6 +60,7 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 | 7 | "Add logging" (nothing else) | `shape-requirements` **gate** | gate only — no implement/plan before approval |
 | 8 | Three diagnose directions; pick one | `shape-requirements` **gate** | gate → `create-plan` → `plan-review` |
 | 9 | Greenfield brief, no code-truth claims | `shape-requirements` **interview** | brief → `create-plan` → `plan-review` (skip diagnose) |
+| 10 | "Plan a new public API shape for this project" | `shape-requirements` **gate** when intent is unclear; otherwise `review-spec` or `create-plan` | confirm intent source → `create-plan` → `plan-review` validates project alignment |
 
 ### Pass criteria
 

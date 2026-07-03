@@ -38,6 +38,11 @@ Too vague to investigate → `shape-requirements` **gate** only (not interview),
 | Small scoped change after gate | implement directly or skip to step 4 |
 
 Run `review-spec` before `create-plan` when the plan would depend on unverified assumptions.
+When a brief, problem definition, or plan affects product direction,
+architecture boundaries, docs-architecture, data/tenancy, provider contracts,
+public APIs, or workflow-wide behavior, have `review-spec` validate it against
+the target repo's intent source (`docs/project-intent.md`, root `VISION.md`, or
+explicit intent docs linked from repo guidance).
 After `create-plan`, prefer `plan-review` for non-trivial, cross-area, or
 handoff-ready plans. The planning agent owns triage: accept, adapt, or decline
 reviewer findings, edit the plan, and rerun `plan-review` after material plan

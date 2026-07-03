@@ -57,9 +57,13 @@ The facts the executor needs, inlined — never "as discussed" or "see audit":
 - The repo conventions that apply here, with a pointer to one exemplar file:
   "Error handling follows the Result pattern — see `src/lib/result.ts` and its
   use in `src/users/api.ts:40-60`. Match it."
-- Any documented vocabulary or design constraints the plan must honor, inlined
-  from the intent/design docs: the relevant terms the executor should use in names 
-  and comments, design tokens/components, etc.
+- Any documented vocabulary, intent, hard invariants, or design constraints the
+  plan must honor, inlined from the target repo's intent/design docs. For
+  product, architecture, docs-architecture, data/tenancy, provider, public API,
+  or workflow-wide decisions, look first for `docs/project-intent.md`, then root
+  `VISION.md`, then explicit intent docs named from `AGENTS.md`, `README.md`,
+  or contributor docs. Inline the relevant constraints so the executor does not
+  need prior chat context.
 
 ## Commands you will need
 
@@ -159,5 +163,4 @@ For the human/agent who owns this code after the change lands:
 - Would a reviewer reading only "Why this matters" + "Done criteria" understand what they're approving?
 - No secret values anywhere in the file — locations and credential types only.
 - "Skills for the executor" lists only skills you verified exist; each row ties a skill to a specific step; no invented names.
-
 
