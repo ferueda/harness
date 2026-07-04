@@ -10,16 +10,16 @@ and [Setup Manifest](./setup-manifest.md) for generated artifacts and auth.
 
 ## Command ownership
 
-| Surface                     | Owner file                   | Public commands                                                                                                                                                                                                | Use when                                                                                                                                               |
-| --------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Make targets                | `Makefile`                   | `make help`, `make check`, `make check-v`, `make check-ci`, `make format`, `make fix`, `make lint`, `make typecheck`, `make test`, `make smoke-dist`, `make build`, `make ensure-node`                         | Local development gates and wrappers around package scripts.                                                                                           |
-| pnpm scripts                | `package.json`               | `pnpm check`, `pnpm check:v`, `pnpm check:ci`, `pnpm format`, `pnpm fix`, `pnpm format:check`, `pnpm lint`, `pnpm lint:fix`, `pnpm typecheck`, `pnpm test`, `pnpm test:watch`, `pnpm build`, `pnpm smoke:dist` | Direct package-level commands under Make targets.                                                                                                      |
-| Source CLI                  | `bin/harness.ts`             | `harness init`, `harness run change-review`, `harness run plan-review`, `harness runs prune`, `harness models`, `harness skills install`                                                                       | User-facing harness workflow commands. Workflow implementations live in `workflows/change-review.workflow.ts` and `workflows/plan-review.workflow.ts`. |
-| Dist smoke test             | `scripts/smoke-dist.ts`      | `pnpm smoke:dist`, `make smoke-dist`                                                                                                                                                                           | Verify built CLI behavior, init shim creation, skills install, dry-run review metadata, and handoff artifacts.                                         |
-| Sessions skill CLI          | `skills/sessions/scripts/`   | `sessions ...` after `skills/sessions/scripts/install.sh`                                                                                                                                                      | Browse and index local Cursor or Codex session history.                                                                                                |
-| Cursor delegation skill CLI | `skills/cursor-cli/scripts/` | `cursor-cli ...` after `skills/cursor-cli/scripts/install.sh`                                                                                                                                                  | Run ad-hoc Cursor delegation outside harness review workflows.                                                                                         |
-| User install shim           | `install`                    | `harness ...` from the installed user-level shim                                                                                                                                                               | Install or refresh the user command, usually under `~/.local/bin/harness`.                                                                             |
-| Target-repo shim            | `harness init`               | `.harness/bin/harness ...` inside the target repo                                                                                                                                                              | Pin a target repo to the harness checkout that initialized it.                                                                                         |
+| Surface                     | Owner file                   | Public commands                                                                                                                                                                                                | Use when                                                                                                                                                       |
+| --------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Make targets                | `Makefile`                   | `make help`, `make check`, `make check-v`, `make check-ci`, `make format`, `make fix`, `make lint`, `make typecheck`, `make test`, `make smoke-dist`, `make build`, `make ensure-node`                         | Local development gates and wrappers around package scripts. Wrapped gate targets use `scripts/run-gate-step.ts` for quiet success and bounded failure output. |
+| pnpm scripts                | `package.json`               | `pnpm check`, `pnpm check:v`, `pnpm check:ci`, `pnpm format`, `pnpm fix`, `pnpm format:check`, `pnpm lint`, `pnpm lint:fix`, `pnpm typecheck`, `pnpm test`, `pnpm test:watch`, `pnpm build`, `pnpm smoke:dist` | Direct package-level commands under Make targets.                                                                                                              |
+| Source CLI                  | `bin/harness.ts`             | `harness init`, `harness run change-review`, `harness run plan-review`, `harness runs prune`, `harness models`, `harness skills install`                                                                       | User-facing harness workflow commands. Workflow implementations live in `workflows/change-review.workflow.ts` and `workflows/plan-review.workflow.ts`.         |
+| Dist smoke test             | `scripts/smoke-dist.ts`      | `pnpm smoke:dist`, `make smoke-dist`                                                                                                                                                                           | Verify built CLI behavior, init shim creation, skills install, dry-run review metadata, and handoff artifacts.                                                 |
+| Sessions skill CLI          | `skills/sessions/scripts/`   | `sessions ...` after `skills/sessions/scripts/install.sh`                                                                                                                                                      | Browse and index local Cursor or Codex session history.                                                                                                        |
+| Cursor delegation skill CLI | `skills/cursor-cli/scripts/` | `cursor-cli ...` after `skills/cursor-cli/scripts/install.sh`                                                                                                                                                  | Run ad-hoc Cursor delegation outside harness review workflows.                                                                                                 |
+| User install shim           | `install`                    | `harness ...` from the installed user-level shim                                                                                                                                                               | Install or refresh the user command, usually under `~/.local/bin/harness`.                                                                                     |
+| Target-repo shim            | `harness init`               | `.harness/bin/harness ...` inside the target repo                                                                                                                                                              | Pin a target repo to the harness checkout that initialized it.                                                                                                 |
 
 ## Read-only vs mutating commands
 
@@ -34,6 +34,14 @@ and [Setup Manifest](./setup-manifest.md) for generated artifacts and auth.
 `harness run ... --dry-run` is lower risk than a live review because it does not
 invoke reviewers, but it is not as side-effect-free as
 `harness runs prune --dry-run`.
+
+## Gate output runner
+
+Wrapped Make targets call `scripts/run-gate-step.ts` for quiet success output,
+saved local failure logs, bounded failure tails, and verbose rerun hints. The
+runner is an implementation detail behind Make-owned public targets, not a new
+public command row. Use `make check-v` or `VERBOSE=1 make <target>` for full
+live command output.
 
 ## Commit hygiene hooks
 
@@ -66,7 +74,8 @@ mutability model changes.
 
 - Treat `install`, `bin/harness.ts`, `scripts/*`, `workflows/*.ts`,
   and `skills/*/scripts/*` as executable command surfaces.
-  `scripts/smoke-dist.ts` is the current concrete script entry.
+  Current concrete root script entries include `scripts/smoke-dist.ts` for dist
+  smoke coverage and `scripts/run-gate-step.ts` for wrapped Make gate output.
 - Treat `skills/*/SKILL.md`, `skills/*/agents/openai.yaml`, and
   `skills/*/references/*.md` as skill instructions or reference material, not
   command rows.
