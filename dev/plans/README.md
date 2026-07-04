@@ -38,6 +38,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Project alignment rubric                      | [#54](https://github.com/ferueda/harness/pull/54) |
 | —     | README slimdown                               | [#55](https://github.com/ferueda/harness/pull/55) |
 | —     | Commit hygiene hooks                          | [#56](https://github.com/ferueda/harness/pull/56) |
+| —     | Gate output runner                            | [#58](https://github.com/ferueda/harness/pull/58) |
 
 ---
 
