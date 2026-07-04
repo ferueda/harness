@@ -35,7 +35,8 @@ The harness repo owns the reusable workflow system:
 - `.agents/skills/` - repo-local development skills for this checkout.
 - `automations/` - background task definitions.
 - `schemas/` - exported JSON schema artifacts.
-- `scripts/` - local helper scripts such as the dist smoke test.
+- `scripts/` - local helper scripts such as the dist smoke test and Make gate
+  output runner (`scripts/run-gate-step.ts`).
 - `dev/plans/` - active plans and handoffs.
 
 Reviewer prompt templates live under `lib/prompts/` and are loaded through the
