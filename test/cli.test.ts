@@ -198,6 +198,26 @@ test("harness run factory-triage help exposes item-only options", () => {
   expect(result.stdout).not.toMatch(/--handoff/);
   expect(result.stdout).not.toMatch(/--steps/);
 });
+test("harness factory help exits cleanly", () => {
+  const result = runHarness(["factory", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/Usage: harness factory/);
+  expect(result.stdout).toMatch(/status/);
+  expect(result.stdout).toMatch(/dispatch/);
+});
+test("harness factory status help exits cleanly", () => {
+  const result = runHarness(["factory", "status", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory status/);
+  expect(result.stdout).toMatch(/--inbox-dir/);
+});
+test("harness factory dispatch help exits cleanly", () => {
+  const result = runHarness(["factory", "dispatch", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory dispatch/);
+  expect(result.stdout).toMatch(/--dry-run/);
+  expect(result.stdout).toMatch(/--inbox-dir/);
+});
 test("harness run rejects removed review commands", () => {
   for (const workflow of ["review", "review-full"]) {
     const result = runHarness(["run", workflow]);
@@ -1031,6 +1051,103 @@ test("harness run factory-triage rejects review workflow flags", () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(/unknown option/i);
   }
+});
+
+test("harness factory status lists local inbox items", () => {
+  const workspace = createPlainWorkspace();
+  const inboxDir = join(workspace, ".harness/inbox/factory");
+  mkdirSync(inboxDir, { recursive: true });
+  writeFileSync(
+    join(inboxDir, "001-item.json"),
+    JSON.stringify({
+      id: "local-1",
+      source: "file",
+      title: "Queued item",
+      body: "Ready for local dispatch.",
+    }),
+    "utf8",
+  );
+
+  const result = runHarness(["factory", "status", "--workspace", workspace]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    workspace,
+    inboxDir,
+    pendingCount: 1,
+    processedCount: 0,
+    failedCount: 0,
+    pending: [
+      {
+        file: "001-item.json",
+        id: "local-1",
+        source: "file",
+        title: "Queued item",
+      },
+    ],
+  });
+  expect(existsSync(join(workspace, ".harness/runs/factory"))).toBe(false);
+});
+
+test("harness factory status resolves relative inbox-dir against workspace", () => {
+  const workspace = createPlainWorkspace();
+  const inboxDir = join(workspace, "custom-inbox");
+  mkdirSync(inboxDir, { recursive: true });
+  writeFileSync(
+    join(inboxDir, "001-item.json"),
+    JSON.stringify({
+      id: "local-1",
+      source: "file",
+      title: "Queued item",
+      body: "Ready for local dispatch.",
+    }),
+    "utf8",
+  );
+
+  const result = runHarness(
+    ["factory", "status", "--workspace", workspace, "--inbox-dir", "custom-inbox"],
+    { cwd: tmpdir() },
+  );
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    workspace,
+    inboxDir,
+    pendingCount: 1,
+  });
+});
+
+test("harness factory dispatch dry-run leaves inbox files unmoved", () => {
+  const workspace = createPlainWorkspace();
+  const inboxDir = join(workspace, ".harness/inbox/factory");
+  mkdirSync(inboxDir, { recursive: true });
+  writeFileSync(
+    join(inboxDir, "001-item.json"),
+    JSON.stringify({
+      id: "local-1",
+      source: "file",
+      title: "Queued item",
+      body: "Ready for local dispatch.",
+    }),
+    "utf8",
+  );
+
+  const result = runHarness(["factory", "dispatch", "--workspace", workspace, "--dry-run"]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    workspace,
+    dryRun: true,
+    pendingCount: 1,
+    processedCount: 1,
+    failedCount: 0,
+  });
+  expect(output.processed[0]).toMatchObject({
+    file: "001-item.json",
+    status: "dry_run",
+  });
+  expect(existsSync(join(inboxDir, "001-item.json"))).toBe(true);
+  expect(existsSync(join(inboxDir, "processed"))).toBe(false);
 });
 
 test("harness run change-review writes stdin handoff into run context", () => {

@@ -235,9 +235,9 @@ Build this as small vertical slices, not as a full factory rewrite.
    live LLM calls. Dry-run should materialize prompt/meta/summary artifacts.
 5. **Live provider fifth.** Only after schema, prompt, fake workflow, and CLI
    dry-run pass, allow real provider execution.
-6. **Local inbox sixth.** Add file-backed dispatch after one-item triage is
-   reliable. The inbox is the local precursor to tracker webhooks or scheduled
-   polling.
+6. **Local inbox sixth.** Add file-backed status and dispatch after one-item
+   triage is reliable. The inbox is the local precursor to tracker webhooks or
+   scheduled polling.
 7. **Tracker adapter seventh.** Add GitHub Issues as the first adapter in a
    follow-up plan. It should convert issue data into `FactoryWorkItem`, then
    pass through the same core route logic.
@@ -273,7 +273,7 @@ Do not land this as one giant PR. Implement as scoped, sequential PRs:
 | PR  | Scope                        | Ships                                                                                                                                        |
 | --- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Contract and single-item CLI | Schemas, route helpers, fixtures, prompt, dedicated factory workflow, `harness run factory-triage`, docs for current file-backed behavior.   |
-| 2   | Local inbox dispatch         | `.harness/inbox/factory/` dispatcher, processed/failed moves, command-surface docs. Depends on PR 1.                                         |
+| 2   | Local inbox status/dispatch  | `.harness/inbox/factory/` status listing, dispatcher, processed/failed moves, command-surface docs. Depends on PR 1.                         |
 | 3   | Packaged operating skill     | `skills/factory-triage-workflow/SKILL.md` documenting how to operate the shipped CLI. Depends on PR 1; may follow PR 2.                      |
 | 4   | GitHub Issue adapter         | GitHub issue -> `FactoryWorkItem`, dry-run intended labels/comments, optional live deterministic label/comment application. Depends on PR 1. |
 | 5   | Orchestrator                 | Inngest function over the stable route graph after `steps.json` and inbox semantics are stable. Depends on durability/inbox work.            |
@@ -928,13 +928,19 @@ Before opening PR 1, confirm:
 
 **Verify**: `pnpm check` -> full gate passes for PR 1.
 
-### Step 6: Follow-up PR 2: add local inbox dispatch without tracker mutation
+### Step 6: Follow-up PR 2: add local inbox status and dispatch without tracker mutation
 
 After PR 1 lands, add a file-backed dispatcher helper, not a hosted daemon:
 
 - Inbox path: `<workspace>/.harness/inbox/factory/*.json`.
 - Each inbox JSON is a `FactoryWorkItem`.
-- New command:
+- New read-only status command:
+
+```bash
+harness factory status --workspace /path/to/repo
+```
+
+- New dispatch command:
 
 ```bash
 harness factory dispatch --workspace /path/to/repo --dry-run
@@ -943,6 +949,33 @@ harness factory dispatch --workspace /path/to/repo --dry-run
 If adding a top-level `factory` command feels too broad, add only a helper
 function and defer the command. Do not force this into `harness run` if it reads
 multiple inbox items; `harness run` should remain one workflow execution.
+
+Status behavior:
+
+- Do not move files, invoke providers, create run directories, or mutate tracker
+  state.
+- Read pending items from `.harness/inbox/factory/*.json`, sorted by filename.
+- Report processed count from `.harness/inbox/factory/processed/*.json`.
+- Report failed items from `.harness/inbox/factory/failed/*.json`, including
+  sibling `.error.json` summaries when present.
+- Output JSON by default, consistent with other harness CLI commands:
+
+```json
+{
+  "workspace": "/path/to/repo",
+  "inboxDir": "/path/to/repo/.harness/inbox/factory",
+  "pending": [
+    { "file": "001-add-export-shortcut.json", "id": "local-1", "title": "Add export shortcut" }
+  ],
+  "processedCount": 4,
+  "failed": [
+    {
+      "file": "20260704-123000-abc-002-bad-item.json",
+      "error": "Invalid factory work item: title: Too small..."
+    }
+  ]
+}
+```
 
 Dispatcher behavior:
 
@@ -968,9 +1001,12 @@ Inbox relationship to existing roadmap:
 **Verify**:
 
 - `pnpm test -- test/factory-intake.test.ts test/cli.test.ts` -> dispatcher
-  tests pass.
+  and status CLI tests pass.
 - `pnpm test -- test/factory-dispatch.test.ts` -> inbox move/retain behavior
-  passes if dispatcher tests are split into their own file.
+  and status listing behavior pass if dispatcher tests are split into their own
+  file.
+- Manual status in a temp workspace lists pending/processed/failed files without
+  moving inbox files or creating run directories.
 - Manual dry run in a temp workspace leaves inbox files unmoved.
 
 ### Step 7: Follow-up PR 3: add operating skill after runtime behavior exists
@@ -1013,7 +1049,8 @@ enforces a README size ceiling.
 - Update `docs/contributing/script-command-surface.md`:
   - Add `harness run factory-triage`.
   - Document dry-run mutability and factory run artifact paths.
-  - Add `harness factory dispatch` only in PR 2, not PR 1.
+  - Add `harness factory status` and `harness factory dispatch` only in PR 2,
+    not PR 1.
 - Update `docs/contributing/setup-manifest.md`:
   - Add `.harness/runs/factory/<run-id>/`.
   - Document ownership/mutability parallel to review runs.

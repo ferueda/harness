@@ -14,6 +14,8 @@ CLI (bin/harness.ts)
 Current public CLI surfaces:
 
 - `harness init`
+- `harness factory dispatch`
+- `harness factory status`
 - `harness run change-review`
 - `harness run factory-triage`
 - `harness run plan-review`
@@ -51,6 +53,7 @@ Target repositories own their local harness state:
 
 - `harness.json` for repo-local defaults.
 - `.harness/bin/harness` as an ignored shim written by `harness init`.
+- `.harness/inbox/factory/*.json` for local factory intake queue items.
 - `.harness/runs/reviews/<run-id>/` for review artifacts.
 - `.harness/runs/factory/<run-id>/` for factory intake artifacts.
 - local `.agents/skills/` installs when a target repo chooses to install skills.
@@ -85,6 +88,12 @@ git scope is included for each workflow.
 copies `context/work-item.json`, resolves the harness-owned factory triage JSON
 schema, invokes the selected provider, and writes route artifacts. It does not
 include git diff scope and does not mutate trackers.
+
+`lib/factory-dispatch.ts` owns local factory inbox inspection and dispatch.
+`harness factory status` reads `.harness/inbox/factory/` without moving files or
+creating runs. `harness factory dispatch` processes pending inbox JSON files
+through the same `factory-triage` workflow, then moves live-run successes to
+`processed/` and failures to `failed/` with sibling error JSON.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these
@@ -153,6 +162,24 @@ Current artifacts include:
 `--dry-run` writes placeholder triage and route artifacts but does not invoke a
 provider and does not write `events.jsonl`.
 
+## Factory inbox lifecycle
+
+Local factory inbox items live under `.harness/inbox/factory/*.json`. Each
+pending file must parse as a `FactoryWorkItem`.
+
+Current inbox paths:
+
+- `.harness/inbox/factory/*.json` for pending items.
+- `.harness/inbox/factory/processed/<run-id>-<basename>.json` for dispatched
+  successes.
+- `.harness/inbox/factory/failed/<run-id>-<basename>.json` for dispatched
+  failures.
+- `.harness/inbox/factory/failed/<run-id>-<basename>.error.json` for failure
+  summaries.
+
+`harness factory status` is read-only and reports pending, processed, and failed
+state as JSON. `harness factory dispatch --dry-run` leaves inbox files unmoved.
+
 ## Provider boundary
 
 Provider-specific auth, model, streaming, and sandbox behavior should stay in
@@ -164,6 +191,6 @@ instantiates the selected adapter.
 ## What is not in this map yet
 
 Active runtime roadmap items such as `steps.json`, graders, tracker mutation,
-GitHub/Linear/Jira adapters, trigger inboxes, and Inngest are future work. They
-should be added to this map only after they describe current behavior in the
-repo.
+GitHub/Linear/Jira adapters, hosted trigger inboxes, and Inngest are future
+work. They should be added to this map only after they describe current
+behavior in the repo.
