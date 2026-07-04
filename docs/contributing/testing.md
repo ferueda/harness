@@ -17,6 +17,7 @@
 - Provider SDK behavior belongs under `providers/*/*.test.ts` and related root
   tests.
 - Dist smoke coverage lives in `scripts/smoke-dist.ts` and `pnpm smoke:dist`.
+- Gate-output behavior lives in `test/gate-output.test.ts`.
 - Skill-owned suites stay inside the owning skill directory, such as
   `skills/sessions/test/**` and `skills/cursor-cli/**/*.test.ts`.
 - Harness self-tests cover docs, command surfaces, script inventories, and
@@ -50,6 +51,8 @@
   script.
 - Script inventory drift uses actual executable and script surfaces as source
   truth.
+- Gate-output drift checks guard Make runner wiring and contributor-doc links to
+  `scripts/run-gate-step.ts`.
 - Absolute developer-checkout path scans cover durable non-skill docs, not
   planning artifacts.
 - `automations/*.md` is included in private-reference scans but is not part of

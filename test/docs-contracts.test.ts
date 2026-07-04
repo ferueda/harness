@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const ARCHITECTURE_DOC = "docs/contributing/architecture.md";
 const SCRIPT_COMMAND_SURFACE = "docs/contributing/script-command-surface.md";
 const SETUP_MANIFEST = "docs/contributing/setup-manifest.md";
 const TESTING_DOC = "docs/contributing/testing.md";
@@ -297,6 +298,7 @@ test("testing taxonomy documents required proof layers", () => {
     "workflows",
     "test/cli.test.ts",
     "scripts/smoke-dist.ts",
+    "test/gate-output.test.ts",
     "skills/sessions/test",
     "target-repo",
   ]) {
@@ -326,6 +328,42 @@ test("hook docs document activation and gate boundaries", () => {
   expect(commandSurface).toContain("pnpm typecheck");
   expect(commandSurface).toMatch(/They do not run\s+`pnpm check`, tests, smoke-dist/);
   expect(commandSurface).toMatch(/does\s+not depend on local Git hooks/);
+});
+
+test("gate output docs document runner wiring and local logs", () => {
+  const makefile = readRepoFile("Makefile");
+  expect(makefile).toContain("scripts/run-gate-step.ts");
+  expect(makefile).toContain("GATE_STEP_COMMAND");
+  expect(makefile).toContain("GATE_STEP_NAME");
+  expect(makefile).toContain("GATE_STEP_RERUN");
+
+  const harnessEngineering = readRepoFile("docs/contributing/harness-engineering.md");
+  expect(harnessEngineering).toContain("## Gate output contract");
+  expect(harnessEngineering).toContain("PASS");
+  expect(harnessEngineering).toContain("FAIL");
+  expect(harnessEngineering).toContain("log path");
+  expect(harnessEngineering).toContain("Log:");
+  expect(harnessEngineering).toContain("--- last");
+  expect(harnessEngineering).toContain("Rerun with full logs:");
+  expect(harnessEngineering).toContain("bounded");
+  expect(harnessEngineering).toContain("rerun hint");
+
+  const commandSurface = readRepoFile(SCRIPT_COMMAND_SURFACE);
+  expect(commandSurface).toContain("## Gate output runner");
+  expect(commandSurface).toContain("scripts/run-gate-step.ts");
+  expect(commandSurface).toMatch(/implementation detail behind Make-owned public targets/);
+
+  const setup = readRepoFile(SETUP_MANIFEST);
+  expect(setup).toContain("harness-gate-");
+  expect(setup).toContain("GATE_LOG_DIR");
+  expect(setup).toContain("KEEP_GATE_LOGS");
+
+  const testing = readRepoFile(TESTING_DOC);
+  expect(testing).toContain("test/gate-output.test.ts");
+  expect(testing).toContain("scripts/run-gate-step.ts");
+
+  const architecture = readRepoFile(ARCHITECTURE_DOC);
+  expect(architecture).toContain("scripts/run-gate-step.ts");
 });
 
 test("pre-commit hook config stays scoped to staged hygiene", () => {
