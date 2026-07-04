@@ -2,9 +2,10 @@
 
 ## Active queue
 
-| File                                                                 | Status        | Summary                                           |
-| -------------------------------------------------------------------- | ------------- | ------------------------------------------------- |
-| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md) | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest |
+| File                                                                   | Status        | Summary                                                   |
+| ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
+| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
+| [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `planned`     | Factory intake triage, deterministic routing, local inbox |
 
 **Build next:** handoff Phase 0.6 (`steps.json`).
 
