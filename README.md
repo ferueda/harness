@@ -99,6 +99,19 @@ Factory artifacts are written under
 and `meta.json`. The route is one of `ready-to-implement`, `ready-to-plan`,
 `needs-info`, or `wait-to-implement`.
 
+Process a local factory inbox:
+
+```bash
+harness factory status --workspace /path/to/repo
+harness factory dispatch --workspace /path/to/repo --dry-run
+```
+
+Inbox files live under `<workspace>/.harness/inbox/factory/*.json`.
+Use `factory-triage` for one ad hoc item file; use `factory dispatch` for sorted
+batch processing of the local inbox. `status` is read-only. `dispatch --dry-run`
+writes factory run artifacts and reports logical outcomes while leaving inbox
+files unmoved; live dispatch moves items to `processed/` or `failed/`.
+
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).
 For review artifact cleanup, use `harness runs prune --help`. The prune default
