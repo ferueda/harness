@@ -3,7 +3,8 @@ MAKEFLAGS += --no-print-directory --output-sync=target
 VERBOSE ?= 0
 
 define RUN
-@if [ "$(VERBOSE)" = "1" ]; then $(1); else tmp="$$(mktemp)"; if ( $(1) ) >"$$tmp" 2>&1; then rm -f "$$tmp"; else cat "$$tmp"; rm -f "$$tmp"; exit 1; fi; fi
+@# Commands with single quotes need an explicit RUN transport update before wrapping.
+@VERBOSE="$(VERBOSE)" GATE_STEP_NAME="$(if $(2),$(2),$@)" GATE_STEP_RERUN="$(if $(3),$(3),VERBOSE=1 make $@)" GATE_STEP_COMMAND='$(1)' node scripts/run-gate-step.ts
 endef
 
 .PHONY: help ensure-node build lint typecheck test smoke-dist format check-format fix check check-v check-ci
