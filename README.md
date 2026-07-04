@@ -101,8 +101,10 @@ and `meta.json`. The route is one of `ready-to-implement`, `ready-to-plan`,
 
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).
-For artifact cleanup, use `harness runs prune --help`. For command ownership
-and mutability, read
+For review artifact cleanup, use `harness runs prune --help`. The prune default
+targets `.harness/runs/reviews`; factory run cleanup currently needs
+`--runs-dir <workspace>/.harness/runs/factory` or manual deletion. For command
+ownership and mutability, read
 [docs/contributing/script-command-surface.md](docs/contributing/script-command-surface.md).
 
 ## Configure Providers
