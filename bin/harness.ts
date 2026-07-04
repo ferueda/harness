@@ -4,6 +4,8 @@ import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertCodexOnlyAgentOptions } from "./cli-validation.ts";
+import { addFactoryCommands } from "./factory-commands.ts";
 import {
   AGENT_APPROVAL_POLICIES,
   AGENT_MODEL_CATALOG,
@@ -236,6 +238,16 @@ function buildProgram(): Command {
       console.log(JSON.stringify(result, null, 2));
     });
 
+  addFactoryCommands(program, {
+    parseAgentProvider,
+    parseSandboxMode,
+    parseApprovalPolicy,
+    parseReasoningEffort,
+    positiveNumber,
+    defaultMaxRuntimeMs: DEFAULT_MAX_RUNTIME_MS,
+    writeVerboseWorkflowEvent,
+  });
+
   program
     .command("models")
     .description("List known agent models and defaults")
@@ -311,17 +323,12 @@ function addFactoryTriageCommand(parent: Command): void {
         includeGitScope: false,
       });
       const itemPath = assertItemFileExists(resolvedOptions.workspace, options.itemFile);
-      if (
-        resolvedOptions.agentProvider !== "codex" &&
-        (options.sandbox || options.approvalPolicy || options.reasoningEffort)
-      ) {
-        throw new Error(
-          "--sandbox, --approval-policy, and --reasoning-effort apply only when --agent codex is active",
-        );
-      }
-      if (resolvedOptions.agentProvider !== "codex" && options.codexExecutable) {
-        throw new Error("--codex-executable applies only when --agent codex is active");
-      }
+      assertCodexOnlyAgentOptions(resolvedOptions.agentProvider, {
+        codexExecutable: options.codexExecutable,
+        sandbox: options.sandbox,
+        approvalPolicy: options.approvalPolicy,
+        reasoningEffort: options.reasoningEffort,
+      });
 
       const workItem = readFactoryWorkItemFile(itemPath);
       const runAbort = new AbortController();
