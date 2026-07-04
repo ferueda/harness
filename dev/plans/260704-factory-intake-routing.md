@@ -244,6 +244,28 @@ Build this as small vertical slices, not as a full factory rewrite.
 8. **Hosted orchestration last.** Add Inngest only after local runs, step
    durability, and inbox semantics are stable.
 
+## CLI namespace rule
+
+Use `harness run <workflow>` for one named workflow execution. Use
+`harness factory <command>` for factory management, adapters, dispatch, queue
+state, and multi-item operations.
+
+Examples:
+
+```bash
+harness run factory-triage --item-file item.json
+harness factory dispatch
+harness factory linear fetch TEAM-123
+harness factory github fetch 123
+harness factory status
+```
+
+`factory-triage` is intentionally named with the `factory-` prefix. Do not name
+the workflow only `triage`; that is too broad and can collide with issue
+triage, review finding triage, plan triage, bug triage, or audit triage. The
+name should identify the factory intake station the same way `change-review`
+and `plan-review` identify review workflows.
+
 ## Implementation PR split
 
 Do not land this as one giant PR. Implement as scoped, sequential PRs:

@@ -30,6 +30,26 @@ Agents recommend. Harness moves.
 Agent JSON -> Zod parse -> route plan -> deterministic transition
 ```
 
+## CLI namespace rule
+
+Use `harness run <workflow>` for one named workflow execution. Use
+`harness factory <command>` for factory management, adapters, dispatch, queue
+state, and multi-item operations.
+
+Examples:
+
+```bash
+harness run factory-triage --item-file item.json
+harness factory dispatch
+harness factory linear fetch TEAM-123
+harness factory github fetch 123
+harness factory status
+```
+
+Keep the workflow name `factory-triage`, not `triage`. `triage` is too generic:
+the repo can have issue triage, review finding triage, plan triage, bug triage,
+or audit triage. `factory-triage` names the factory intake station.
+
 ## What the local inbox is
 
 The inbox is a local file queue, not the factory itself:
