@@ -186,6 +186,18 @@ test("harness run change-review help exits cleanly", () => {
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).toMatch(/--verbose/);
 });
+test("harness run factory-triage help exposes item-only options", () => {
+  const result = runHarness(["run", "factory-triage", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness run factory-triage/);
+  expect(result.stdout).toMatch(/--item-file <path>/);
+  expect(result.stdout).toMatch(/--dry-run/);
+  expect(result.stdout).not.toMatch(/--base/);
+  expect(result.stdout).not.toMatch(/--head/);
+  expect(result.stdout).not.toMatch(/--plan/);
+  expect(result.stdout).not.toMatch(/--handoff/);
+  expect(result.stdout).not.toMatch(/--steps/);
+});
 test("harness run rejects removed review commands", () => {
   for (const workflow of ["review", "review-full"]) {
     const result = runHarness(["run", workflow]);
@@ -817,6 +829,202 @@ test("harness run plan-review rejects change-review flags", () => {
       workspace,
       "--plan",
       "plan.md",
+      "--dry-run",
+      ...args,
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/unknown option/i);
+  }
+});
+
+test("harness run factory-triage dry-run works in non-git workspaces", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify(
+      {
+        id: "local-1",
+        source: "file",
+        title: "Clarify export shortcut",
+        body: "Should export have a keyboard shortcut?",
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "run",
+    "factory-triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    workflow: "factory-triage",
+    status: "dry_run",
+    workspace,
+    workItem: {
+      id: "local-1",
+      source: "file",
+      title: "Clarify export shortcut",
+    },
+    route: "needs-info",
+    nextAction: "ask-human",
+    summaryPath: "summary.md",
+    triagePath: "factory-triage.json",
+    routePath: "factory-route.json",
+    routeSummaryPath: "factory-route.md",
+  });
+  expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
+  expect(existsSync(join(output.runDir, "context/diff.patch"))).toBe(false);
+  expect(readFileSync(join(output.runDir, "context/work-item.json"), "utf8")).toContain(
+    "Clarify export shortcut",
+  );
+  expect(readFileSync(join(output.runDir, "factory-triage.prompt.md"), "utf8")).toContain(
+    "Work item JSON",
+  );
+  expect(readFileSync(join(output.runDir, "factory-route.md"), "utf8")).toContain(
+    "# Factory Route",
+  );
+});
+
+test("harness run factory-triage accepts absolute item-file paths", () => {
+  const workspace = createPlainWorkspace();
+  const itemPath = join(workspace, "item.json");
+  writeFileSync(
+    itemPath,
+    JSON.stringify({
+      id: "local-absolute",
+      source: "file",
+      title: "Absolute item path",
+      body: "Route an item loaded by absolute path.",
+    }),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "run",
+    "factory-triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    itemPath,
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.workItem).toMatchObject({
+    id: "local-absolute",
+    source: "file",
+    title: "Absolute item path",
+  });
+});
+
+test("harness run factory-triage requires an item file", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness(["run", "factory-triage", "--workspace", workspace, "--dry-run"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/required option.*--item-file/i);
+});
+
+test("harness run factory-triage rejects missing item files", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "run",
+    "factory-triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "missing.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Factory item file does not exist: missing\.json/);
+});
+
+test("harness run factory-triage rejects invalid item JSON", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(join(workspace, "item.json"), "{ nope", "utf8");
+  const result = runHarness([
+    "run",
+    "factory-triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Invalid factory work item JSON/);
+});
+
+test("harness run factory-triage preserves post-bootstrap failure artifacts", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({
+      id: "local-fail",
+      source: "file",
+      title: "Provider failure",
+      body: "Force provider failure after context bootstrap.",
+    }),
+    "utf8",
+  );
+  const result = runHarness(
+    [
+      "run",
+      "factory-triage",
+      "--workspace",
+      workspace,
+      "--item-file",
+      "item.json",
+      "--max-runtime-ms",
+      "1000",
+    ],
+    { env: { CURSOR_API_KEY: "" } },
+  );
+  expect(result.status).toBe(1);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    workflow: "factory-triage",
+    status: "failed",
+    workItem: {
+      id: "local-fail",
+      source: "file",
+      title: "Provider failure",
+    },
+  });
+  expect(existsSync(join(output.runDir, "factory-triage.prompt.md"))).toBe(true);
+  expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain('"status": "failed"');
+});
+
+test("harness run factory-triage rejects review workflow flags", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "local-1", source: "file", title: "Task", body: "" }),
+    "utf8",
+  );
+  for (const args of [
+    ["--base", "HEAD"],
+    ["--head", "HEAD"],
+    ["--plan", "plan.md"],
+    ["--handoff", "handoff.md"],
+    ["--steps", "implementation"],
+  ] as const) {
+    const result = runHarness([
+      "run",
+      "factory-triage",
+      "--workspace",
+      workspace,
+      "--item-file",
+      "item.json",
       "--dry-run",
       ...args,
     ]);
