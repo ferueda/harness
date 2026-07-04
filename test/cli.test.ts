@@ -186,6 +186,18 @@ test("harness run change-review help exits cleanly", () => {
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).toMatch(/--verbose/);
 });
+test("harness run factory-triage help exposes item-only options", () => {
+  const result = runHarness(["run", "factory-triage", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness run factory-triage/);
+  expect(result.stdout).toMatch(/--item-file <path>/);
+  expect(result.stdout).toMatch(/--dry-run/);
+  expect(result.stdout).not.toMatch(/--base/);
+  expect(result.stdout).not.toMatch(/--head/);
+  expect(result.stdout).not.toMatch(/--plan/);
+  expect(result.stdout).not.toMatch(/--handoff/);
+  expect(result.stdout).not.toMatch(/--steps/);
+});
 test("harness run rejects removed review commands", () => {
   for (const workflow of ["review", "review-full"]) {
     const result = runHarness(["run", workflow]);
@@ -817,6 +829,113 @@ test("harness run plan-review rejects change-review flags", () => {
       workspace,
       "--plan",
       "plan.md",
+      "--dry-run",
+      ...args,
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/unknown option/i);
+  }
+});
+
+test("harness run factory-triage dry-run works in non-git workspaces", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify(
+      {
+        id: "local-1",
+        source: "file",
+        title: "Clarify export shortcut",
+        body: "Should export have a keyboard shortcut?",
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "run",
+    "factory-triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    workflow: "factory-triage",
+    status: "dry_run",
+    workspace,
+    workItem: {
+      id: "local-1",
+      source: "file",
+      title: "Clarify export shortcut",
+    },
+    route: "needs-info",
+    nextAction: "ask-human",
+    summaryPath: "summary.md",
+    triagePath: "factory-triage.json",
+    routePath: "factory-route.json",
+    routeSummaryPath: "factory-route.md",
+  });
+  expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
+  expect(readFileSync(join(output.runDir, "context/work-item.json"), "utf8")).toContain(
+    "Clarify export shortcut",
+  );
+  expect(readFileSync(join(output.runDir, "factory-triage.prompt.md"), "utf8")).toContain(
+    "Work item JSON",
+  );
+  expect(readFileSync(join(output.runDir, "factory-route.md"), "utf8")).toContain(
+    "# Factory Route",
+  );
+});
+
+test("harness run factory-triage requires an item file", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness(["run", "factory-triage", "--workspace", workspace, "--dry-run"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/required option.*--item-file/i);
+});
+
+test("harness run factory-triage rejects missing item files", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "run",
+    "factory-triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "missing.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Factory item file does not exist: missing\.json/);
+});
+
+test("harness run factory-triage rejects review workflow flags", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "local-1", source: "file", title: "Task", body: "" }),
+    "utf8",
+  );
+  for (const args of [
+    ["--base", "HEAD"],
+    ["--head", "HEAD"],
+    ["--plan", "plan.md"],
+    ["--handoff", "handoff.md"],
+    ["--steps", "implementation"],
+  ] as const) {
+    const result = runHarness([
+      "run",
+      "factory-triage",
+      "--workspace",
+      workspace,
+      "--item-file",
+      "item.json",
       "--dry-run",
       ...args,
     ]);

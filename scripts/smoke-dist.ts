@@ -43,6 +43,13 @@ function runHarness(args: string[], input?: string): string {
 }
 
 runHarness(["--help"]);
+const factoryHelp = runHarness(["run", "factory-triage", "--help"]);
+if (!factoryHelp.includes("harness run factory-triage")) {
+  throw new Error("Expected factory-triage help to include command usage");
+}
+if (!factoryHelp.includes("--item-file <path>")) {
+  throw new Error("Expected factory-triage help to include --item-file");
+}
 
 const initWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-init-"));
 const initOutput = runHarness(["init", "--workspace", initWorkspace]);

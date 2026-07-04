@@ -81,6 +81,24 @@ harness run change-review --help
 harness run plan-review --help
 ```
 
+## Run Factory Intake
+
+Route one local work item into the next factory station:
+
+```bash
+harness run factory-triage --item-file path/to/work-item.json --verbose
+```
+
+The item file is JSON with `id`, `source`, `title`, and `body`. PR 1 supports
+file-backed intake only; GitHub, Linear, Jira, and Inngest adapters are future
+layers over the same work-item contract.
+
+Factory artifacts are written under
+`<workspace>/.harness/runs/factory/<run-id>/`, including
+`factory-triage.json`, `factory-route.json`, `factory-route.md`, `summary.md`,
+and `meta.json`. The route is one of `ready-to-implement`, `ready-to-plan`,
+`needs-info`, or `wait-to-implement`.
+
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).
 For artifact cleanup, use `harness runs prune --help`. For command ownership

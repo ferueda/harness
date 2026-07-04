@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FactoryTriageOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["route", "confidence", "rationale", "evidence", "suggestedNext"],
+  "properties": {
+    "route": {
+      "type": "string",
+      "enum": ["ready-to-implement", "ready-to-plan", "needs-info", "wait-to-implement"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "summary"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["tracker", "code", "docs", "test", "repo-state"]
+          },
+          "path": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reconsiderWhen": {
+      "type": "string"
+    },
+    "suggestedNext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["implement-directly", "create-plan", "ask-human", "park"]
+        },
+        "command": {
+          "type": "string"
+        },
+        "artifact": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

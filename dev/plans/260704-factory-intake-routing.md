@@ -1094,22 +1094,22 @@ and rerun relevant tests.
 
 ALL must hold:
 
-- [ ] `harness run factory-triage --help` exits 0.
-- [ ] `harness run factory-triage --workspace <tmp-repo> --item-file <tmp-json> --dry-run`
+- [x] `harness run factory-triage --help` exits 0.
+- [x] `harness run factory-triage --workspace <tmp-repo> --item-file <tmp-json> --dry-run`
       writes a run under `<tmp-repo>/.harness/runs/factory/<run-id>/`.
-- [ ] `factory-triage.json` and `factory-route.json` exist for a dry run.
-- [ ] `FactoryTriageOutputSchema` rejects malformed route output.
-- [ ] At least one test covers each route.
-- [ ] `test/factory-triage.workflow.test.ts` exists and uses
+- [x] `factory-triage.json` and `factory-route.json` exist for a dry run.
+- [x] `FactoryTriageOutputSchema` rejects malformed route output.
+- [x] At least one test covers each route.
+- [x] `test/factory-triage.workflow.test.ts` exists and uses
       `createFactoryRunContextForTest`.
-- [ ] PR 1 contains only contract/helpers, prompt, one-item workflow/CLI, tests,
+- [x] PR 1 contains only contract/helpers, prompt, one-item workflow/CLI, tests,
       and docs for current behavior.
-- [ ] No tracker labels, comments, branches, commits, or PRs are mutated by
+- [x] No tracker labels, comments, branches, commits, or PRs are mutated by
       factory triage.
-- [ ] `README.md` and `docs/contributing/architecture.md` describe only shipped
+- [x] `README.md` and `docs/contributing/architecture.md` describe only shipped
       factory behavior.
-- [ ] `pnpm check` exits 0.
-- [ ] `dev/plans/README.md` remains consistent with this active plan.
+- [x] `pnpm check` exits 0.
+- [x] `dev/plans/README.md` remains consistent with this active plan.
 
 ## STOP conditions
 
