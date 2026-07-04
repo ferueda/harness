@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatZodError } from "./schemas.ts";
 
 export const FACTORY_WORK_ITEM_SOURCES = ["file", "github", "linear", "jira", "manual"] as const;
 export const FACTORY_ROUTES = [
@@ -141,19 +142,17 @@ export type FactoryRoutePlan = z.infer<typeof FactoryRoutePlanSchema>;
 export function parseFactoryWorkItem(value: unknown): FactoryWorkItem {
   const result = FactoryWorkItemSchema.safeParse(value);
   if (result.success) return result.data;
-  throw new FactoryTriageError(
-    `Invalid factory work item: ${formatFactoryZodError(result.error)}`,
-    { cause: result.error },
-  );
+  throw new FactoryTriageError(`Invalid factory work item: ${formatZodError(result.error)}`, {
+    cause: result.error,
+  });
 }
 
 export function parseFactoryTriageOutput(value: unknown): FactoryTriageOutput {
   const result = FactoryTriageOutputSchema.safeParse(value);
   if (result.success) return result.data;
-  throw new FactoryTriageError(
-    `Invalid factory triage output: ${formatFactoryZodError(result.error)}`,
-    { cause: result.error },
-  );
+  throw new FactoryTriageError(`Invalid factory triage output: ${formatZodError(result.error)}`, {
+    cause: result.error,
+  });
 }
 
 function requireAction(
@@ -167,8 +166,4 @@ function requireAction(
     path: ["suggestedNext", "action"],
     message: `${output.route} requires suggestedNext.action=${expected}`,
   });
-}
-
-function formatFactoryZodError(error: z.ZodError): string {
-  return error.issues.map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`).join("; ");
 }

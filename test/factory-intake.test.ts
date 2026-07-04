@@ -133,3 +133,48 @@ test("factory route and summary markdown include stable operator sections", () =
   expect(summary).toContain("# Factory Triage Summary");
   expect(summary).toContain("## Operator Next Step");
 });
+
+test("factory route markdown includes route-specific operator guidance", () => {
+  const cases = [
+    {
+      route: "ready-to-implement",
+      action: "implement-directly",
+      questions: undefined,
+      reconsiderWhen: undefined,
+      expected: "no harness command in PR 1",
+    },
+    {
+      route: "ready-to-plan",
+      action: "create-plan",
+      questions: undefined,
+      reconsiderWhen: undefined,
+      expected: "planning-workflow coordinator",
+    },
+    {
+      route: "needs-info",
+      action: "ask-human",
+      questions: ["Which export formats are in scope?"],
+      reconsiderWhen: undefined,
+      expected: "Ask the emitted questions[]",
+    },
+    {
+      route: "wait-to-implement",
+      action: "park",
+      questions: undefined,
+      reconsiderWhen: "Roadmap includes export shortcuts.",
+      expected: "Park until reconsiderWhen is true",
+    },
+  ] as const;
+
+  for (const item of cases) {
+    const triage = parseFactoryTriageOutput({
+      ...BASE_TRIAGE,
+      route: item.route,
+      questions: item.questions,
+      reconsiderWhen: item.reconsiderWhen,
+      suggestedNext: { action: item.action },
+    });
+    const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
+    expect(renderFactoryRouteMarkdown(WORK_ITEM, triage, routePlan)).toContain(item.expected);
+  }
+});

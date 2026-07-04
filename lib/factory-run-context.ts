@@ -142,12 +142,13 @@ function createFactoryRunContextInternal(
   const startedAt = new Date();
   const runId = buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/factory")), runId);
+  const prompt = renderPrompt(options.workItem);
   let triageProvider: Agent;
   try {
     mkdirSync(runDir, { recursive: true });
     mkdirSync(join(runDir, "context"), { recursive: true });
     writeJson(join(runDir, "context/work-item.json"), options.workItem);
-    writeFileSync(join(runDir, "factory-triage.prompt.md"), renderPrompt(options.workItem), "utf8");
+    writeFileSync(join(runDir, "factory-triage.prompt.md"), prompt, "utf8");
 
     const agentProviderFactory = options.agentProviderFactory;
     if (!agentProviderFactory) {
@@ -192,7 +193,7 @@ function createFactoryRunContextInternal(
       try {
         result = await triageProvider.run({
           workspace,
-          prompt: renderPrompt(options.workItem),
+          prompt,
           schemaPath: FACTORY_TRIAGE_SCHEMA_PATH,
           model: resolvedAgentModel(triageProvider.name, options),
           ...agentPolicyMeta,

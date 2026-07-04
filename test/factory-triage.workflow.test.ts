@@ -57,6 +57,7 @@ test("factory triage dry-run writes placeholder artifacts without calling provid
   expect(meta.nextAction).toBe("ask-human");
   expect(existsSync(join(ctx.runDir, "events.jsonl"))).toBe(false);
   expect(existsSync(join(ctx.runDir, "context/work-item.json"))).toBe(true);
+  expect(existsSync(join(ctx.runDir, "context/diff.patch"))).toBe(false);
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("# Factory Route");
   expect(JSON.parse(readFileSync(join(ctx.runDir, "factory-route.json"), "utf8"))).toMatchObject({
     route: "needs-info",
@@ -171,6 +172,44 @@ test("factory triage provider failure writes failed metadata and returns without
   expect(existsSync(join(ctx.runDir, "meta.json"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "factory-triage.raw.json"))).toBe(true);
   expect(events.at(-1)).toMatchObject({ type: "run:end", status: "failed" });
+});
+
+test("factory triage invalid provider output writes failed metadata and preserves raw artifacts", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-runs-"));
+  const ctx = createFactoryRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return {
+            ok: true,
+            structuredOutput: {
+              ...TRIAGE_OUTPUT,
+              suggestedNext: { action: "implement-directly" },
+            },
+            raw: { finalResponse: "route/action mismatch" },
+          };
+        },
+      };
+    },
+  });
+
+  const meta = await runFactoryTriage(ctx);
+  expect(meta.status).toBe("failed");
+  expect(meta.error).toContain("Invalid factory triage output");
+  expect(readFileSync(join(ctx.runDir, "meta.json"), "utf8")).toContain('"status": "failed"');
+  expect(readFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "utf8")).toContain(
+    "Work item JSON",
+  );
+  expect(readFileSync(join(ctx.runDir, "factory-triage.raw.json"), "utf8")).toContain(
+    "route/action mismatch",
+  );
+  expect(existsSync(join(ctx.runDir, "factory-triage.json"))).toBe(false);
 });
 
 test("factory work item fixture parses through runtime reader", () => {
