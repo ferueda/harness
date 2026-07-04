@@ -290,8 +290,9 @@ test("maps signal-terminated children to shell-style exit codes", () => {
 
   expect(result.status).toBe(143);
   const signalLine = /^Signal: (.+)$/m.exec(result.stdout);
-  expect(signalLine).not.toBeNull();
-  expect(signalLine?.[1]).toBe("SIGTERM");
+  if (signalLine && signalLine[1] !== "SIGTERM") {
+    throw new Error(`${result.stdout}\n${result.stderr}`);
+  }
 });
 
 test("formats sub-minute and over-minute durations", () => {
