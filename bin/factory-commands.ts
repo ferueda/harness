@@ -1,17 +1,12 @@
 import type { Command } from "commander";
-import { assertCodexOnlyAgentOptions } from "./cli-validation.ts";
+import { assertItemFileExists, factoryTriageCliOutput } from "./factory-triage-cli.ts";
+import { resolveFactoryRoleAgent, resolveHarnessOptions } from "../lib/config.ts";
+import { factoryInboxStatus } from "../lib/factory-inbox.ts";
 import {
-  type AgentApprovalPolicy,
-  type AgentProviderName,
-  type AgentReasoningEffort,
-  type AgentSandboxMode,
-} from "../lib/agents.ts";
-import { resolveHarnessOptions } from "../lib/config.ts";
-import {
-  dispatchFactoryInbox,
-  factoryInboxStatus,
-  type FactoryDispatchResult,
-} from "../lib/factory-dispatch.ts";
+  createFactoryRunContext,
+  readFactoryWorkItemFile,
+  type FactoryRunMeta,
+} from "../lib/factory-run-context.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
@@ -21,30 +16,17 @@ type FactoryStatusOptions = {
   inboxDir?: string;
 };
 
-type FactoryDispatchCliOptions = {
+type FactoryTriageStationOptions = {
   workspace?: string;
-  inboxDir?: string;
+  itemFile: string;
   runsDir?: string;
-  agent?: AgentProviderName;
-  codexExecutable?: string;
-  model?: string;
-  sandbox?: AgentSandboxMode;
-  approvalPolicy?: AgentApprovalPolicy;
-  reasoningEffort?: AgentReasoningEffort;
   maxRuntimeMs: number;
   dryRun: boolean;
   verbose: boolean;
 };
 
-type FactoryCommandParsers = {
-  parseAgentProvider: (value: string) => AgentProviderName;
-  parseSandboxMode: (value: string) => AgentSandboxMode;
-  parseApprovalPolicy: (value: string) => AgentApprovalPolicy;
-  parseReasoningEffort: (value: string) => AgentReasoningEffort;
+type FactoryCommandOptions = {
   positiveNumber: (value: string) => number;
-};
-
-type FactoryCommandOptions = FactoryCommandParsers & {
   defaultMaxRuntimeMs: number;
   writeVerboseWorkflowEvent: (event: WorkflowEvent) => void;
 };
@@ -52,7 +34,7 @@ type FactoryCommandOptions = FactoryCommandParsers & {
 export function addFactoryCommands(parent: Command, options: FactoryCommandOptions): void {
   const factory = parent.command("factory").description("Manage local factory intake");
   addFactoryStatusCommand(factory);
-  addFactoryDispatchCommand(factory, options);
+  addFactoryTriageStationCommand(factory, options);
 }
 
 function addFactoryStatusCommand(parent: Command): void {
@@ -76,95 +58,58 @@ function addFactoryStatusCommand(parent: Command): void {
     });
 }
 
-function addFactoryDispatchCommand(parent: Command, config: FactoryCommandOptions): void {
+function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandOptions): void {
   parent
-    .command("dispatch")
-    .description("Dispatch local factory inbox items through factory triage")
+    .command("triage")
+    .description("Run one factory work item through the triage station")
     .option("--workspace <path>", "target repo")
-    .option(
-      "--inbox-dir <path>",
-      "factory inbox root (default: <workspace>/.harness/inbox/factory)",
-    )
+    .requiredOption("--item-file <path>", "factory work item JSON file")
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/factory)")
     .option(
-      "--agent <provider>",
-      "triage agent provider: cursor or codex",
-      config.parseAgentProvider,
-    )
-    .option("--codex-executable <path>", "Codex CLI executable override")
-    .option("--model <id>", "agent model override")
-    .option(
-      "--sandbox <mode>",
-      "Codex-only sandbox mode (default for factory triage: read-only)",
-      config.parseSandboxMode,
-    )
-    .option(
-      "--approval-policy <policy>",
-      "Codex-only approval policy (default for factory triage: never)",
-      config.parseApprovalPolicy,
-    )
-    .option(
-      "--reasoning-effort <effort>",
-      "Codex-only reasoning effort: minimal,low,medium,high,xhigh",
-      config.parseReasoningEffort,
-    )
-    .option(
       "--max-runtime-ms <ms>",
-      `triage timeout per inbox item (default: ${config.defaultMaxRuntimeMs})`,
+      `triage timeout (default: ${config.defaultMaxRuntimeMs})`,
       config.positiveNumber,
       config.defaultMaxRuntimeMs,
     )
-    .option("--dry-run", "process items without moving inbox files", false)
+    .option("--dry-run", "prepare context and placeholder routing only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
-    .action(async (options: FactoryDispatchCliOptions) => {
-      const resolvedOptions = resolveHarnessOptions({
+    .action(async (options: FactoryTriageStationOptions) => {
+      const role = resolveFactoryRoleAgent({
         workspace: options.workspace,
-        runsDir: options.runsDir,
-        agentProvider: options.agent,
-        codexPathOverride: options.codexExecutable,
-        model: options.model,
-        sandboxMode: options.sandbox,
-        approvalPolicy: options.approvalPolicy,
-        modelReasoningEffort: options.reasoningEffort,
-        maxRuntimeMs: options.maxRuntimeMs,
-        dryRun: options.dryRun,
-        includeGitScope: false,
+        station: "triage",
+        role: "triager",
       });
-      assertCodexOnlyAgentOptions(resolvedOptions.agentProvider, {
-        codexExecutable: options.codexExecutable,
-        sandbox: options.sandbox,
-        approvalPolicy: options.approvalPolicy,
-        reasoningEffort: options.reasoningEffort,
-      });
+      const itemPath = assertItemFileExists(role.workspace, options.itemFile);
+      const workItem = readFactoryWorkItemFile(itemPath);
 
       const runAbort = new AbortController();
       const onRunAbort = () => runAbort.abort();
       process.once("SIGINT", onRunAbort);
       process.once("SIGTERM", onRunAbort);
-      let result: FactoryDispatchResult;
+      let meta: FactoryRunMeta;
       try {
-        result = await dispatchFactoryInbox({
-          workspace: resolvedOptions.workspace,
-          runsDir: resolvedOptions.runsDir,
-          agentProvider: resolvedOptions.agentProvider,
-          codexPathOverride: resolvedOptions.codexPathOverride,
-          model: resolvedOptions.model,
-          sandboxMode: resolvedOptions.sandboxMode,
-          approvalPolicy: resolvedOptions.approvalPolicy,
-          modelReasoningEffort: resolvedOptions.modelReasoningEffort,
-          maxRuntimeMs: resolvedOptions.maxRuntimeMs,
-          dryRun: resolvedOptions.dryRun,
-          inboxDir: options.inboxDir,
-          runFactoryTriage,
-          agentProviderFactory: createAgentProvider,
+        const ctx = createFactoryRunContext({
+          workspace: role.workspace,
+          runsDir: options.runsDir,
+          workItem,
+          agentProvider: role.agent,
+          codexPathOverride: role.codexPathOverride,
+          model: role.model,
+          sandboxMode: role.sandboxMode,
+          approvalPolicy: role.approvalPolicy,
+          modelReasoningEffort: role.modelReasoningEffort,
+          maxRuntimeMs: options.maxRuntimeMs,
+          dryRun: options.dryRun,
           signal: runAbort.signal,
           eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
+          agentProviderFactory: createAgentProvider,
         });
+        meta = await runFactoryTriage(ctx);
       } finally {
         process.off("SIGINT", onRunAbort);
         process.off("SIGTERM", onRunAbort);
       }
-      console.log(JSON.stringify(result, null, 2));
-      process.exitCode = result.failedCount > 0 ? 1 : 0;
+      console.log(JSON.stringify(factoryTriageCliOutput(meta), null, 2));
+      process.exitCode = meta.status === "failed" ? 1 : 0;
     });
 }

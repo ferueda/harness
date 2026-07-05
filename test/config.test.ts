@@ -19,6 +19,8 @@ import {
   type InitHarnessOptions,
   findHarnessConfig,
   initHarnessConfig,
+  resolveFactoryPlanningSettings,
+  resolveFactoryRoleAgent,
   resolveHarnessOptions,
 } from "../lib/config.ts";
 const TEST_HARNESS_ENTRYPOINT = "/opt/harness/dist/bin/harness.js";
@@ -38,6 +40,10 @@ function expectHarnessShim(workspace: string): string {
   expect(content).toContain(TEST_HARNESS_ENTRYPOINT);
   expect(statSync(shimPath).mode & 0o111).not.toBe(0);
   return shimPath;
+}
+
+function writeHarnessJson(workspace: string, value: unknown): void {
+  writeFileSync(join(workspace, "harness.json"), `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 test("findHarnessConfig walks up from nested directories", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
@@ -113,6 +119,209 @@ test("resolveHarnessOptions applies provider model defaults", () => {
   expect(codexOptions.agentProvider).toBe("codex");
   expect(codexOptions.model).toBe("gpt-5.5");
   expect(codexOptions.modelReasoningEffort).toBe("high");
+});
+
+test("resolveFactoryRoleAgent resolves absent factory through defaultAgent then cursor", () => {
+  const codexWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(codexWorkspace, {
+    defaultAgent: "codex",
+    agents: { codex: { model: "gpt-custom" } },
+  });
+  expect(
+    resolveFactoryRoleAgent({ workspace: codexWorkspace, station: "triage", role: "triager" }, "/"),
+  ).toMatchObject({
+    workspace: codexWorkspace,
+    agent: "codex",
+    model: "gpt-custom",
+    modelReasoningEffort: "high",
+  });
+
+  const cursorWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  expect(
+    resolveFactoryRoleAgent(
+      { workspace: cursorWorkspace, station: "triage", role: "triager" },
+      "/",
+    ),
+  ).toMatchObject({
+    workspace: cursorWorkspace,
+    agent: "cursor",
+    model: "composer-2.5",
+  });
+});
+
+test("resolveFactoryRoleAgent reads triage role model override", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    agents: { cursor: { model: "composer-2.5" } },
+    factory: {
+      triage: {
+        roles: {
+          triager: { agent: "cursor", model: "claude-opus-4-8" },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "triage", role: "triager" }, "/"),
+  ).toMatchObject({
+    agent: "cursor",
+    model: "claude-opus-4-8",
+  });
+});
+
+test("resolveFactoryRoleAgent resolves planning roles independently", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    defaultAgent: "cursor",
+    agents: {
+      cursor: { model: "composer-2.5" },
+      codex: {
+        model: "gpt-config",
+        executable: "/opt/codex",
+        sandboxMode: "workspace-write",
+        approvalPolicy: "on-request",
+        modelReasoningEffort: "medium",
+      },
+    },
+    factory: {
+      planning: {
+        roles: {
+          planner: { model: "claude-opus-4-8" },
+          reviewer: { agent: "codex" },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "planning", role: "planner" }, "/"),
+  ).toMatchObject({
+    agent: "cursor",
+    model: "claude-opus-4-8",
+  });
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "planning", role: "reviewer" }, "/"),
+  ).toMatchObject({
+    agent: "codex",
+    model: "gpt-config",
+    codexPathOverride: "/opt/codex",
+    sandboxMode: "workspace-write",
+    approvalPolicy: "on-request",
+    modelReasoningEffort: "medium",
+  });
+});
+
+test("resolveFactoryPlanningSettings reads configured value and defaults to three", () => {
+  const configuredWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(configuredWorkspace, {
+    factory: { planning: { maxReviewIterations: 5 } },
+  });
+  expect(resolveFactoryPlanningSettings({ workspace: configuredWorkspace }, "/")).toMatchObject({
+    workspace: configuredWorkspace,
+    maxReviewIterations: 5,
+  });
+
+  const defaultWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  expect(resolveFactoryPlanningSettings({ workspace: defaultWorkspace }, "/")).toMatchObject({
+    workspace: defaultWorkspace,
+    maxReviewIterations: 3,
+  });
+});
+
+test("resolveFactoryRoleAgent resolves missing role entries through fallback", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    defaultAgent: "cursor",
+    factory: {
+      planning: {
+        roles: {
+          reviewer: { agent: "codex", model: "gpt-review" },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "planning", role: "planner" }, "/"),
+  ).toMatchObject({
+    agent: "cursor",
+    model: "composer-2.5",
+  });
+});
+
+test("factory config rejects unknown station, role, and role fields", () => {
+  const cases = [
+    [{ factory: { implementation: {} } }, /factory: Unrecognized key/],
+    [
+      { factory: { triage: { roles: { reviewer: {} } } } },
+      /factory\.triage\.roles: Unrecognized key/,
+    ],
+    [
+      { factory: { planning: { roles: { reviwer: {} } } } },
+      /factory\.planning\.roles: Unrecognized key/,
+    ],
+    [
+      { factory: { triage: { roles: { triager: { temperature: 0 } } } } },
+      /factory\.triage\.roles\.triager: Unrecognized key/,
+    ],
+  ] as const;
+
+  for (const [config, pattern] of cases) {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+    writeHarnessJson(workspace, config);
+    expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(pattern);
+  }
+});
+
+test("factory config rejects Codex-only fields on effective Cursor roles", () => {
+  const cases = [
+    {
+      defaultAgent: "cursor",
+      factory: {
+        triage: { roles: { triager: { agent: "cursor", modelReasoningEffort: "high" } } },
+      },
+    },
+    {
+      defaultAgent: "cursor",
+      factory: { planning: { roles: { reviewer: { sandboxMode: "read-only" } } } },
+    },
+    {
+      factory: { planning: { roles: { planner: { approvalPolicy: "never" } } } },
+    },
+  ];
+
+  for (const config of cases) {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+    writeHarnessJson(workspace, config);
+    expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(
+      /applies only when role agent is codex/,
+    );
+  }
+});
+
+test("factory config rejects unsupported Cursor models and keeps Codex models permissive", () => {
+  const cursorWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(cursorWorkspace, {
+    factory: { triage: { roles: { triager: { agent: "cursor", model: "unknown-cursor" } } } },
+  });
+  expect(() => resolveHarnessOptions({ workspace: cursorWorkspace }, "/")).toThrow(
+    /Unsupported Cursor model: unknown-cursor/,
+  );
+
+  const codexWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(codexWorkspace, {
+    factory: { planning: { roles: { reviewer: { agent: "codex", model: "future-codex" } } } },
+  });
+  expect(
+    resolveFactoryRoleAgent(
+      { workspace: codexWorkspace, station: "planning", role: "reviewer" },
+      "/",
+    ),
+  ).toMatchObject({
+    agent: "codex",
+    model: "future-codex",
+  });
 });
 test("resolveHarnessOptions rejects legacy Cursor runtime cli config", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));

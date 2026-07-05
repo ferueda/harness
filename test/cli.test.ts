@@ -203,7 +203,8 @@ test("harness factory help exits cleanly", () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/Usage: harness factory/);
   expect(result.stdout).toMatch(/status/);
-  expect(result.stdout).toMatch(/dispatch/);
+  expect(result.stdout).toMatch(/triage/);
+  expect(result.stdout).not.toMatch(/dispatch/);
 });
 test("harness factory status help exits cleanly", () => {
   const result = runHarness(["factory", "status", "--help"]);
@@ -211,12 +212,27 @@ test("harness factory status help exits cleanly", () => {
   expect(result.stdout).toMatch(/harness factory status/);
   expect(result.stdout).toMatch(/--inbox-dir/);
 });
-test("harness factory dispatch help exits cleanly", () => {
-  const result = runHarness(["factory", "dispatch", "--help"]);
+test("harness factory triage help exits cleanly without direct agent flags", () => {
+  const result = runHarness(["factory", "triage", "--help"]);
   expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/harness factory dispatch/);
+  expect(result.stdout).toMatch(/harness factory triage/);
+  expect(result.stdout).toMatch(/--item-file <path>/);
   expect(result.stdout).toMatch(/--dry-run/);
-  expect(result.stdout).toMatch(/--inbox-dir/);
+  expect(result.stdout).not.toMatch(/--agent/);
+  expect(result.stdout).not.toMatch(/--model/);
+  expect(result.stdout).not.toMatch(/--codex-executable/);
+  expect(result.stdout).not.toMatch(/--sandbox/);
+  expect(result.stdout).not.toMatch(/--approval-policy/);
+  expect(result.stdout).not.toMatch(/--reasoning-effort/);
+});
+test("harness factory dispatch is not a command", () => {
+  const result = runHarness(["factory", "dispatch"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown command.*dispatch/i);
+
+  const help = runHarness(["factory", "dispatch", "--help"]);
+  expect(help.status).toBe(0);
+  expect(help.stdout).not.toMatch(/factory dispatch/);
 });
 test("harness run rejects removed review commands", () => {
   for (const workflow of ["review", "review-full"]) {
@@ -1063,7 +1079,7 @@ test("harness factory status lists local inbox items", () => {
       id: "local-1",
       source: "file",
       title: "Queued item",
-      body: "Ready for local dispatch.",
+      body: "Ready for local triage.",
     }),
     "utf8",
   );
@@ -1099,7 +1115,7 @@ test("harness factory status resolves relative inbox-dir against workspace", () 
       id: "local-1",
       source: "file",
       title: "Queued item",
-      body: "Ready for local dispatch.",
+      body: "Ready for local triage.",
     }),
     "utf8",
   );
@@ -1117,7 +1133,7 @@ test("harness factory status resolves relative inbox-dir against workspace", () 
   });
 });
 
-test("harness factory dispatch dry-run leaves inbox files unmoved", () => {
+test("harness factory triage dry-run handles one item file", () => {
   const workspace = createPlainWorkspace();
   const inboxDir = join(workspace, ".harness/inbox/factory");
   mkdirSync(inboxDir, { recursive: true });
@@ -1127,27 +1143,238 @@ test("harness factory dispatch dry-run leaves inbox files unmoved", () => {
       id: "local-1",
       source: "file",
       title: "Queued item",
-      body: "Ready for local dispatch.",
+      body: "Ready for local triage.",
     }),
     "utf8",
   );
 
-  const result = runHarness(["factory", "dispatch", "--workspace", workspace, "--dry-run"]);
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    ".harness/inbox/factory/001-item.json",
+    "--dry-run",
+  ]);
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output).toMatchObject({
     workspace,
-    dryRun: true,
-    pendingCount: 1,
-    processedCount: 1,
-    failedCount: 0,
-  });
-  expect(output.processed[0]).toMatchObject({
-    file: "001-item.json",
+    workflow: "factory-triage",
     status: "dry_run",
+    workItem: {
+      id: "local-1",
+      source: "file",
+      title: "Queued item",
+    },
   });
   expect(existsSync(join(inboxDir, "001-item.json"))).toBe(true);
   expect(existsSync(join(inboxDir, "processed"))).toBe(false);
+});
+
+test("harness factory triage honors factory triager role config", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify(
+      {
+        factory: {
+          triage: {
+            roles: {
+              triager: {
+                agent: "cursor",
+                model: "claude-opus-4-8",
+              },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({
+      id: "configured-triage",
+      source: "file",
+      title: "Configured triage",
+      body: "Dry-run should still record the configured station role.",
+    }),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  const meta = JSON.parse(readFileSync(join(output.runDir, "meta.json"), "utf8"));
+  expect(meta.agent).toMatchObject({
+    name: "cursor",
+    model: "claude-opus-4-8",
+  });
+});
+
+test("harness factory triage accepts absolute item-file paths", () => {
+  const workspace = createPlainWorkspace();
+  const itemPath = join(workspace, "item.json");
+  writeFileSync(
+    itemPath,
+    JSON.stringify({
+      id: "station-absolute",
+      source: "file",
+      title: "Station absolute item path",
+      body: "Route a station item loaded by absolute path.",
+    }),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    itemPath,
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output.workItem).toMatchObject({
+    id: "station-absolute",
+    source: "file",
+    title: "Station absolute item path",
+  });
+});
+
+test("harness factory triage requires an item file", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness(["factory", "triage", "--workspace", workspace, "--dry-run"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/required option.*--item-file/i);
+});
+
+test("harness factory triage rejects missing item files", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "missing.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Factory item file does not exist: missing\.json/);
+});
+
+test("harness factory triage rejects invalid item JSON", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(join(workspace, "item.json"), "{ nope", "utf8");
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Invalid factory work item JSON/);
+});
+
+test("harness factory triage rejects invalid factory role config", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify({
+      defaultAgent: "cursor",
+      factory: {
+        triage: {
+          roles: {
+            triager: {
+              sandboxMode: "read-only",
+            },
+          },
+        },
+      },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "bad-config", source: "file", title: "Bad config", body: "" }),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Invalid harness\.json/);
+  expect(result.stderr).toMatch(/sandboxMode applies only when role agent is codex/);
+});
+
+test("harness factory triage preserves post-bootstrap failure artifacts", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({
+      id: "station-fail",
+      source: "file",
+      title: "Station provider failure",
+      body: "Force provider failure after context bootstrap.",
+    }),
+    "utf8",
+  );
+  const result = runHarness(
+    [
+      "factory",
+      "triage",
+      "--workspace",
+      workspace,
+      "--item-file",
+      "item.json",
+      "--max-runtime-ms",
+      "1000",
+    ],
+    { env: { CURSOR_API_KEY: "" } },
+  );
+
+  expect(result.status).toBe(1);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    workflow: "factory-triage",
+    status: "failed",
+    workItem: {
+      id: "station-fail",
+      source: "file",
+      title: "Station provider failure",
+    },
+  });
+  expect(output.summaryPath).toBeUndefined();
+  expect(output.triagePath).toBeUndefined();
+  expect(existsSync(join(output.runDir, "factory-triage.prompt.md"))).toBe(true);
+  expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain('"status": "failed"');
 });
 
 test("harness run change-review writes stdin handoff into run context", () => {

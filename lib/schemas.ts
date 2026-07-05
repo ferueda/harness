@@ -4,7 +4,56 @@ import {
   AGENT_PROVIDERS,
   AGENT_REASONING_EFFORTS,
   AGENT_SANDBOX_MODES,
+  CURSOR_SDK_MODEL_MODES,
+  type AgentProviderName,
 } from "./agents.ts";
+
+const CodexOnlyRoleFields = [
+  "executable",
+  "sandboxMode",
+  "approvalPolicy",
+  "modelReasoningEffort",
+] as const;
+
+const FactoryRoleSchema = z
+  .object({
+    agent: z.enum(AGENT_PROVIDERS).optional(),
+    model: z.string().optional(),
+    executable: z.string().optional(),
+    sandboxMode: z.enum(AGENT_SANDBOX_MODES).optional(),
+    approvalPolicy: z.enum(AGENT_APPROVAL_POLICIES).optional(),
+    modelReasoningEffort: z.enum(AGENT_REASONING_EFFORTS).optional(),
+  })
+  .strict();
+
+const FactoryConfigSchema = z
+  .object({
+    triage: z
+      .object({
+        roles: z
+          .object({
+            triager: FactoryRoleSchema.optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    planning: z
+      .object({
+        maxReviewIterations: z.number().int().positive().optional(),
+        roles: z
+          .object({
+            planner: FactoryRoleSchema.optional(),
+            reviewer: FactoryRoleSchema.optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 export const HarnessConfigSchema = z
   .object({
@@ -31,20 +80,42 @@ export const HarnessConfigSchema = z
       })
       .passthrough()
       .optional(),
+    factory: FactoryConfigSchema.optional(),
   })
   .passthrough()
   .superRefine((config, ctx) => {
     const runtime = config.agents?.cursor?.runtime;
-    if (runtime === undefined) return;
-    ctx.addIssue({
-      code: "custom",
-      path: ["agents", "cursor", "runtime"],
-      message:
-        "agents.cursor.runtime is no longer supported; harness reviews always use the Cursor SDK. Remove agents.cursor.runtime from harness.json.",
-    });
+    if (runtime !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["agents", "cursor", "runtime"],
+        message:
+          "agents.cursor.runtime is no longer supported; harness reviews always use the Cursor SDK. Remove agents.cursor.runtime from harness.json.",
+      });
+    }
+
+    validateFactoryRole(
+      config,
+      ctx,
+      ["factory", "triage", "roles", "triager"],
+      config.factory?.triage?.roles?.triager,
+    );
+    validateFactoryRole(
+      config,
+      ctx,
+      ["factory", "planning", "roles", "planner"],
+      config.factory?.planning?.roles?.planner,
+    );
+    validateFactoryRole(
+      config,
+      ctx,
+      ["factory", "planning", "roles", "reviewer"],
+      config.factory?.planning?.roles?.reviewer,
+    );
   });
 
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
+export type FactoryRoleConfig = z.infer<typeof FactoryRoleSchema>;
 
 export const ReviewOutputSchema = z
   .object({
@@ -70,4 +141,37 @@ export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
 
 export function formatZodError(error: z.ZodError): string {
   return error.issues.map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`).join("; ");
+}
+
+function validateFactoryRole(
+  config: { defaultAgent?: AgentProviderName },
+  ctx: z.RefinementCtx,
+  path: string[],
+  role: FactoryRoleConfig | undefined,
+): void {
+  if (!role) return;
+
+  const effectiveAgent = role.agent ?? config.defaultAgent ?? "cursor";
+  if (effectiveAgent !== "codex") {
+    for (const field of CodexOnlyRoleFields) {
+      if (role[field] === undefined) continue;
+      ctx.addIssue({
+        code: "custom",
+        path: [...path, field],
+        message: `${field} applies only when role agent is codex`,
+      });
+    }
+  }
+
+  if (effectiveAgent === "cursor" && role.model && !isCursorModel(role.model)) {
+    ctx.addIssue({
+      code: "custom",
+      path: [...path, "model"],
+      message: `Unsupported Cursor model: ${role.model}`,
+    });
+  }
+}
+
+function isCursorModel(model: string): boolean {
+  return CURSOR_SDK_MODEL_MODES.some((knownModel) => knownModel === model);
 }

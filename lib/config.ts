@@ -9,7 +9,12 @@ import {
   type AgentReasoningEffort,
   type AgentSandboxMode,
 } from "./agents.ts";
-import { HarnessConfigSchema, formatZodError } from "./schemas.ts";
+import {
+  HarnessConfigSchema,
+  formatZodError,
+  type FactoryRoleConfig,
+  type HarnessConfig,
+} from "./schemas.ts";
 
 const CONFIG_FILE = "harness.json";
 export const HARNESS_GITIGNORE_ENTRY = ".harness/";
@@ -60,6 +65,34 @@ export type InitHarnessResult = {
   shimUpdated: boolean;
 };
 
+type FactoryStationName = "triage" | "planning";
+type FactoryStationRole = "triager" | "planner" | "reviewer";
+
+export type FactoryRoleAgent = {
+  agent: AgentProviderName;
+  model?: string;
+  codexPathOverride?: string;
+  sandboxMode?: AgentSandboxMode;
+  approvalPolicy?: AgentApprovalPolicy;
+  modelReasoningEffort?: AgentReasoningEffort;
+};
+
+export type FactoryPlanningSettings = {
+  maxReviewIterations: number;
+};
+
+type ResolveFactoryRoleAgentInput =
+  | {
+      workspace?: string;
+      station: Extract<FactoryStationName, "triage">;
+      role: Extract<FactoryStationRole, "triager">;
+    }
+  | {
+      workspace?: string;
+      station: Extract<FactoryStationName, "planning">;
+      role: Extract<FactoryStationRole, "planner" | "reviewer">;
+    };
+
 export function resolveHarnessOptions<T extends HarnessOptions>(
   options: T,
   cwd = process.cwd(),
@@ -85,6 +118,48 @@ export function resolveHarnessOptions<T extends HarnessOptions>(
       (agentProvider === "codex"
         ? (codexConfig?.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT)
         : undefined),
+  };
+}
+
+export function resolveFactoryRoleAgent(
+  input: ResolveFactoryRoleAgentInput,
+  cwd = process.cwd(),
+): FactoryRoleAgent & { workspace: string } {
+  const workspace = resolveHarnessWorkspace(input.workspace, cwd);
+  const config = readHarnessConfig(workspace);
+  const roleConfig = factoryRoleConfig(config, input);
+  const agent = roleConfig?.agent ?? config.defaultAgent ?? "cursor";
+  const agentConfig = config.agents?.[agent] ?? {};
+  const codexConfig = agent === "codex" ? config.agents?.codex : undefined;
+
+  return {
+    workspace,
+    agent,
+    model: roleConfig?.model ?? agentConfig.model ?? DEFAULT_AGENT_MODELS[agent],
+    codexPathOverride:
+      agent === "codex" ? (roleConfig?.executable ?? codexConfig?.executable) : undefined,
+    sandboxMode:
+      agent === "codex" ? (roleConfig?.sandboxMode ?? codexConfig?.sandboxMode) : undefined,
+    approvalPolicy:
+      agent === "codex" ? (roleConfig?.approvalPolicy ?? codexConfig?.approvalPolicy) : undefined,
+    modelReasoningEffort:
+      agent === "codex"
+        ? (roleConfig?.modelReasoningEffort ??
+          codexConfig?.modelReasoningEffort ??
+          DEFAULT_CODEX_REASONING_EFFORT)
+        : undefined,
+  };
+}
+
+export function resolveFactoryPlanningSettings(
+  options: { workspace?: string },
+  cwd = process.cwd(),
+): FactoryPlanningSettings & { workspace: string } {
+  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
+  const config = readHarnessConfig(workspace);
+  return {
+    workspace,
+    maxReviewIterations: config.factory?.planning?.maxReviewIterations ?? 3,
   };
 }
 
@@ -160,7 +235,7 @@ export function resolveHarnessWorkspace(
   return resolveGitRoot(cwd);
 }
 
-function readHarnessConfig(workspace: string) {
+function readHarnessConfig(workspace: string): HarnessConfig {
   const configPath = join(workspace, CONFIG_FILE);
   if (!existsSync(configPath)) return {};
 
@@ -178,6 +253,16 @@ function readHarnessConfig(workspace: string) {
   }
 
   return result.data;
+}
+
+function factoryRoleConfig(
+  config: HarnessConfig,
+  input: ResolveFactoryRoleAgentInput,
+): FactoryRoleConfig | undefined {
+  if (input.station === "triage") {
+    return config.factory?.triage?.roles?.triager;
+  }
+  return config.factory?.planning?.roles?.[input.role];
 }
 
 function resolveGitRoot(cwd: string): string {

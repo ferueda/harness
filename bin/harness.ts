@@ -6,6 +6,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertCodexOnlyAgentOptions } from "./cli-validation.ts";
 import { addFactoryCommands } from "./factory-commands.ts";
+import { assertItemFileExists, factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import {
   AGENT_APPROVAL_POLICIES,
   AGENT_MODEL_CATALOG,
@@ -170,14 +171,6 @@ function assertPlanFileExists(workspace: string, planPath: string): void {
   }
 }
 
-function assertItemFileExists(workspace: string, itemFile: string): string {
-  const resolvedItemPath = isAbsolute(itemFile) ? itemFile : join(workspace, itemFile);
-  if (!existsSync(resolvedItemPath)) {
-    throw new Error(`Factory item file does not exist: ${itemFile}`);
-  }
-  return resolvedItemPath;
-}
-
 function buildProgram(): Command {
   const program = new Command();
   program.name("harness").description("Agent workflow harness").showHelpAfterError().exitOverride();
@@ -239,10 +232,6 @@ function buildProgram(): Command {
     });
 
   addFactoryCommands(program, {
-    parseAgentProvider,
-    parseSandboxMode,
-    parseApprovalPolicy,
-    parseReasoningEffort,
     positiveNumber,
     defaultMaxRuntimeMs: DEFAULT_MAX_RUNTIME_MS,
     writeVerboseWorkflowEvent,
@@ -445,23 +434,6 @@ function addPlanReviewCommand(parent: Command): void {
       console.log(JSON.stringify(meta, null, 2));
       process.exitCode = meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1;
     });
-}
-
-function factoryTriageCliOutput(meta: FactoryRunMeta) {
-  return {
-    runId: meta.runId,
-    workflow: meta.workflow,
-    status: meta.status,
-    workspace: meta.workspace,
-    runDir: meta.runDir,
-    workItem: meta.workItem,
-    route: meta.route,
-    nextAction: meta.nextAction,
-    summaryPath: meta.artifacts?.summary,
-    triagePath: meta.artifacts?.triage,
-    routePath: meta.artifacts?.route,
-    routeSummaryPath: meta.artifacts?.routeSummary,
-  };
 }
 
 function addReviewCommand(

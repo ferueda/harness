@@ -2,10 +2,14 @@
 
 ## Active queue
 
-| File                                                                   | Status        | Summary                                                   |
-| ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
-| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
-| [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
+| File                                                                                     | Status        | Summary                                                   |
+| ---------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
+| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)                     | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
+| [260704-factory-intake-routing.md](./260704-factory-intake-routing.md)                   | `in_progress` | Factory intake triage, deterministic routing, local inbox |
+| [260705-factory-station-api-role-config.md](./260705-factory-station-api-role-config.md) | `planned`     | Factory station commands and role-based agent config      |
+| [260705-agent-session-continuation.md](./260705-agent-session-continuation.md)           | `planned`     | Shared provider session resume for Cursor and Codex       |
+| [260705-factory-planning-station.md](./260705-factory-planning-station.md)               | `planned`     | Single-item planning station with plan-review loop        |
+| [260705-factory-operating-docs-smoke.md](./260705-factory-operating-docs-smoke.md)       | `planned`     | Factory operating docs, packaged skill, and smoke checks  |
 
 **Build next:** handoff Phase 0.6 (`steps.json`).
 
