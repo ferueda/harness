@@ -139,7 +139,7 @@ ready-to-plan work item
   -> harness runs plan-review
   -> planner receives review findings
   -> planner decides implement/adapt/decline for each finding
-  -> planner outputs revised plan + decision rationale
+  -> planner edits draft in place + outputs decision rationale
   -> harness runs plan-review again when needed
   -> plan-approved | plan-needs-human | plan-review-unresolved | planning-failed
 ```
@@ -497,9 +497,7 @@ Revision output:
       "decision": "decline",
       "rationale": "The abstraction has one caller in this slice; adding a registry now is premature."
     }
-  ],
-  "needsHuman": false,
-  "questions": []
+  ]
 }
 ```
 
@@ -709,7 +707,7 @@ or stay only under `.harness/runs/factory/<run-id>/` until approved.
 Preference for first slice:
 
 - Keep iterations under `.harness/runs/factory/<run-id>/`.
-- Pass `harness run plan-review --plan` the draft plan path under
+- Pass `harness run plan-review --plan` the iteration snapshot under
   `.harness/runs/factory/<run-id>/iterations/<n>/plan.md`.
 - Write final plan to `dev/plans/` only after `plan-approved`.
 

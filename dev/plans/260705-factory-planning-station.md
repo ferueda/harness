@@ -56,7 +56,7 @@ ready-to-plan work item
   -> harness runs plan-review
   -> planner receives review findings
   -> planner decides implement/adapt/decline for each finding
-  -> planner outputs revised plan + decision rationale
+  -> planner edits draft in place + outputs decision rationale
   -> harness runs plan-review again when needed
   -> plan-approved | plan-needs-human | plan-review-unresolved | planning-failed
 ```
@@ -423,7 +423,7 @@ Responsibilities:
      Do not pass a workspace-relative schema path.
 3. Parse planner JSON.
 4. If `needs-human`, write artifacts and finish `plan-needs-human`.
-5. Write `iterations/<n>/plan.md`.
+5. Snapshot `planning/draft.md` to `iterations/<n>/plan.md`.
 6. Run plan-review using `factory.planning.roles.reviewer`.
 7. If plan-review passes, write final approved plan.
 8. If plan-review is blocked, finish `plan-needs-human`.
@@ -469,8 +469,10 @@ Rules:
 - Revision turns pass the captured `AgentSessionRef` as `session`.
 - If a review needs revision and no planner session was captured, finish
   `planning-failed`.
-- Write `planner.prompt.md`, `planner.raw.json`, `planner.json`, and `plan.md`
-  under the current iteration directory before invoking plan-review.
+- Write `planner.prompt.md`, `planner.raw.json`, and `planner.json` under the
+  current iteration directory.
+- Snapshot the current draft file to `iterations/<n>/plan.md` before invoking
+  plan-review.
 
 Iteration directories:
 

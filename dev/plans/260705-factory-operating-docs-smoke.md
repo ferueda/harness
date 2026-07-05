@@ -270,7 +270,9 @@ Required content:
 - artifact locations:
   - triage and planning station run artifacts under
     `.harness/runs/factory/<run-id>/`;
-  - planning station drafts under
+  - planning station live draft under
+    `.harness/runs/factory/<run-id>/planning/draft.md`;
+  - planning station review snapshots under
     `.harness/runs/factory/<run-id>/iterations/<n>/plan.md`;
   - planning review references under
     `.harness/runs/factory/<run-id>/iterations/<n>/plan-review-ref.json`;
@@ -291,8 +293,9 @@ artifact subsection:
 - public CLI list uses `harness factory status`, `harness factory triage`,
   `harness factory planning`, `harness run factory-triage`, and
   `harness run plan-review`;
-- planning runs write `iterations/<n>/planner.*`, `plan.md`,
-  `plan-review-ref.json`, and `review-findings.json`;
+- planning runs write `planning/draft.md`, `iterations/<n>/planner.*`,
+  `iterations/<n>/plan.md`, `plan-review-ref.json`, and
+  `review-findings.json`;
 - planning statuses include `plan-approved`, `plan-needs-human`,
   `plan-review-unresolved`, and `planning-failed`.
 
@@ -354,6 +357,8 @@ harness run plan-review --plan dev/plans/example.md
 - Artifact locations.
   - triage/planning run root:
     `.harness/runs/factory/<run-id>/`;
+  - planning live draft:
+    `.harness/runs/factory/<run-id>/planning/draft.md`;
   - planning iterations:
     `.harness/runs/factory/<run-id>/iterations/<n>/`;
   - review run references:

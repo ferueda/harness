@@ -183,6 +183,7 @@ provider and does not write `events.jsonl`.
 Factory planning artifacts include:
 
 - `context/work-item.json`
+- `planning/draft.md`
 - `iterations/<n>/planner.prompt.md`
 - `iterations/<n>/planner.raw.json`
 - `iterations/<n>/planner.json`
