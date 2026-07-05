@@ -114,11 +114,13 @@ Provider capabilities confirmed in
 **In scope**:
 
 - `lib/agents.ts`
+- `lib/agent-session.ts`
 - `providers/codex/codex-agent.ts`
 - `providers/codex/codex-agent.test.ts`
 - `providers/cursor/cursor-sdk-agent.ts`
 - `providers/cursor/cursor-sdk-agent.test.ts`
 - `test/agent-provider.test.ts` if result shape assertions exist there
+- `test/agent-session.test.ts`
 - any focused type updates in workflows/tests caused by replacing `sessionId`
 
 **Out of scope**:

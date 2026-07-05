@@ -36,6 +36,8 @@ const REVIEW_SCHEMA_PATH = join(
 );
 
 type FakeSdkOptions = {
+  agentId?: string;
+  resumedAgentId?: string;
   result?: {
     status: "finished" | "error" | "cancelled";
     result?: string;
@@ -84,6 +86,8 @@ function createSchemaFile(workspace: string): string {
 }
 
 function createFakeSdk({
+  agentId = "agent-123",
+  resumedAgentId = "agent-resumed",
   result = { status: "finished", result: '{"verdict":"pass"}' },
   createError,
   sendError,
@@ -99,88 +103,110 @@ function createFakeSdk({
 }: FakeSdkOptions = {}) {
   const calls: {
     options?: Parameters<NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]>>[0];
+    resumeOptions?: Parameters<NonNullable<CursorSdkAgentFactoryOptions["resumeSdkAgent"]>>[1];
+    resumeAgentId?: string;
     prompt?: string;
     cancelled: boolean;
     disposed: boolean;
     closed: boolean;
     streamed: boolean;
+    createCount: number;
+    resumeCount: number;
   } = {
     cancelled: false,
     disposed: false,
     closed: false,
     streamed: false,
+    createCount: 0,
+    resumeCount: 0,
   };
+
+  const createAgent = (
+    agentId: string,
+    options: Parameters<NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]>>[0],
+  ) => ({
+    agentId,
+    model: options.model,
+    async send(prompt: string) {
+      calls.prompt = prompt;
+      if (sendError) throw sendError;
+      return {
+        id: "run-123",
+        requestId: "req-123",
+        agentId,
+        supports: (operation: string) => operation !== "stream" || supportsStream,
+        unsupportedReason: (operation: string) =>
+          operation === "stream" && !supportsStream ? "not available" : undefined,
+        async *stream() {
+          calls.streamed = true;
+          for (const event of streamEvents) {
+            yield event;
+          }
+          if (streamForever) await new Promise<never>(() => {});
+          if (streamError) throw streamError;
+        },
+        async conversation() {
+          return [];
+        },
+        wait() {
+          onWait?.();
+          if (waitRejectAfterMs !== undefined) {
+            return new Promise((_, reject) => {
+              setTimeout(() => reject(waitError ?? new Error("wait failed")), waitRejectAfterMs);
+            });
+          }
+          if (waitError) throw waitError;
+          if (waitForever) return new Promise<never>(() => {});
+          return Promise.resolve({
+            id: "run-123",
+            requestId: "req-result-123",
+            durationMs: 25,
+            ...result,
+          });
+        },
+        async cancel() {
+          calls.cancelled = true;
+        },
+        status: "finished",
+        onDidChangeStatus: () => () => undefined,
+      } as never;
+    },
+    close() {
+      calls.closed = true;
+    },
+    async reload() {},
+    async listArtifacts() {
+      return [];
+    },
+    async downloadArtifact() {
+      return Buffer.from("");
+    },
+    async [Symbol.asyncDispose]() {
+      if (disposeError) throw disposeError;
+      calls.disposed = true;
+    },
+  });
 
   const createSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]> = async (
     options,
   ) => {
+    calls.createCount += 1;
     calls.options = options;
     if (createError) throw createError;
-    return {
-      agentId: "agent-123",
-      model: options.model,
-      async send(prompt: string) {
-        calls.prompt = prompt;
-        if (sendError) throw sendError;
-        return {
-          id: "run-123",
-          requestId: "req-123",
-          agentId: "agent-123",
-          supports: (operation: string) => operation !== "stream" || supportsStream,
-          unsupportedReason: (operation: string) =>
-            operation === "stream" && !supportsStream ? "not available" : undefined,
-          async *stream() {
-            calls.streamed = true;
-            for (const event of streamEvents) {
-              yield event;
-            }
-            if (streamForever) await new Promise<never>(() => {});
-            if (streamError) throw streamError;
-          },
-          async conversation() {
-            return [];
-          },
-          wait() {
-            onWait?.();
-            if (waitRejectAfterMs !== undefined) {
-              return new Promise((_, reject) => {
-                setTimeout(() => reject(waitError ?? new Error("wait failed")), waitRejectAfterMs);
-              });
-            }
-            if (waitError) throw waitError;
-            if (waitForever) return new Promise<never>(() => {});
-            return Promise.resolve({
-              id: "run-123",
-              requestId: "req-result-123",
-              durationMs: 25,
-              ...result,
-            });
-          },
-          async cancel() {
-            calls.cancelled = true;
-          },
-          status: "finished",
-          onDidChangeStatus: () => () => undefined,
-        } as never;
-      },
-      close() {
-        calls.closed = true;
-      },
-      async reload() {},
-      async listArtifacts() {
-        return [];
-      },
-      async downloadArtifact() {
-        return Buffer.from("");
-      },
-      async [Symbol.asyncDispose]() {
-        if (disposeError) throw disposeError;
-        calls.disposed = true;
-      },
-    } as never;
+    return createAgent(agentId, options) as never;
   };
 
-  return { calls, createSdkAgent };
+  const resumeSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["resumeSdkAgent"]> = async (
+    agentId,
+    options,
+  ) => {
+    calls.resumeCount += 1;
+    calls.resumeAgentId = agentId;
+    calls.resumeOptions = options;
+    return createAgent(resumedAgentId, options) as never;
+  };
+
+  return { calls, createSdkAgent, resumeSdkAgent };
 }
 
 function readJsonLines(path: string): unknown[] {
@@ -209,7 +235,11 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(result.structuredOutput).toEqual({ verdict: "pass" });
-  expect(result.sessionId).toBe("agent-123");
+  expect(result.session).toEqual({
+    provider: "cursor",
+    id: "agent-123",
+    raw: { kind: "cursor-agent" },
+  });
   expect(calls.options).toMatchObject({
     apiKey: "cursor-key",
     model: {
@@ -231,6 +261,202 @@ test("createCursorSdkAgent sends wrapped prompt and parses structured output", a
   expect(calls.prompt).toContain("review this");
   expect(calls.disposed).toBe(true);
   expect(calls.closed).toBe(false);
+  expect(calls.createCount).toBe(1);
+  expect(calls.resumeCount).toBe(0);
+});
+
+test("createCursorSdkAgent resumes a matching Cursor session", async () => {
+  const workspace = createGitWorkspace();
+  const schemaPath = createSchemaFile(workspace);
+  const { calls, createSdkAgent, resumeSdkAgent } = createFakeSdk();
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+    resumeSdkAgent,
+  }).run({
+    workspace,
+    prompt: "continue review",
+    schemaPath,
+    model: "gpt-5.5",
+    session: { provider: "cursor", id: " agent-123 " },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.session).toEqual({
+    provider: "cursor",
+    id: "agent-resumed",
+    raw: { kind: "cursor-agent" },
+  });
+  expect(calls.createCount).toBe(0);
+  expect(calls.resumeCount).toBe(1);
+  expect(calls.resumeAgentId).toBe("agent-123");
+  expect(calls.resumeOptions).toMatchObject({
+    apiKey: "cursor-key",
+    model: {
+      id: "gpt-5.5",
+      params: [
+        { id: "context", value: "272k" },
+        { id: "reasoning", value: "high" },
+        { id: "fast", value: "false" },
+      ],
+    },
+    mode: "agent",
+    local: {
+      cwd: workspace,
+      settingSources: [],
+      autoReview: true,
+    },
+  });
+  expect(calls.prompt).toContain("continue review");
+  expect(calls.disposed).toBe(true);
+});
+
+test("createCursorSdkAgent omits session when Cursor returns no agent id", async () => {
+  const workspace = createGitWorkspace();
+  const { createSdkAgent } = createFakeSdk({ agentId: "" });
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+  }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.session).toBeUndefined();
+});
+
+test("createCursorSdkAgent omits session when resumed Cursor agent returns no id", async () => {
+  const workspace = createGitWorkspace();
+  const { createSdkAgent, resumeSdkAgent } = createFakeSdk({ resumedAgentId: "" });
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+    resumeSdkAgent,
+  }).run({
+    workspace,
+    prompt: "continue review",
+    session: { provider: "cursor", id: "agent-123" },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.session).toBeUndefined();
+});
+
+test("createCursorSdkAgent rejects mismatched session provider before SDK use", async () => {
+  const workspace = createGitWorkspace();
+  let createCalled = false;
+  let resumeCalled = false;
+  const createSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]> = async () => {
+    createCalled = true;
+    throw new Error("should not create");
+  };
+  const resumeSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["resumeSdkAgent"]> = async () => {
+    resumeCalled = true;
+    throw new Error("should not resume");
+  };
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+    resumeSdkAgent,
+  }).run({
+    workspace,
+    prompt: "review this",
+    session: { provider: "codex", id: "thread-123" },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toBe("Cannot resume cursor agent from codex session");
+  expect(result.exitCode).toBe(1);
+  expect(createCalled).toBe(false);
+  expect(resumeCalled).toBe(false);
+});
+
+test("createCursorSdkAgent rejects blank session ids before SDK use", async () => {
+  const workspace = createGitWorkspace();
+  let createCalled = false;
+  let resumeCalled = false;
+  const createSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]> = async () => {
+    createCalled = true;
+    throw new Error("should not create");
+  };
+  const resumeSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["resumeSdkAgent"]> = async () => {
+    resumeCalled = true;
+    throw new Error("should not resume");
+  };
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+    resumeSdkAgent,
+  }).run({
+    workspace,
+    prompt: "review this",
+    session: { provider: "cursor", id: " " },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toBe("Cannot resume cursor agent with blank session id");
+  expect(result.exitCode).toBe(1);
+  expect(createCalled).toBe(false);
+  expect(resumeCalled).toBe(false);
+});
+
+test("createCursorSdkAgent reports resume failures with raw error artifacts", async () => {
+  const workspace = createGitWorkspace();
+  const sdkError = Object.assign(new Error("resume failed"), {
+    name: "NetworkError",
+    code: "unavailable",
+    status: 503,
+    requestId: "req-resume-503",
+    operation: "resume",
+  });
+  const { calls, createSdkAgent } = createFakeSdk();
+  const resumeSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["resumeSdkAgent"]> = async () => {
+    calls.resumeCount += 1;
+    throw sdkError;
+  };
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+    resumeSdkAgent,
+  }).run({
+    workspace,
+    prompt: "continue review",
+    session: { provider: "cursor", id: "agent-123" },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toBe("Cursor SDK agent failed: resume failed");
+  expect(result.exitCode).toBe(1);
+  expect(calls.createCount).toBe(0);
+  expect(calls.resumeCount).toBe(1);
+  expect(result.raw).toMatchObject({
+    error: {
+      name: "NetworkError",
+      code: "unavailable",
+      status: 503,
+      requestId: "req-resume-503",
+      operation: "resume",
+    },
+  });
 });
 
 test("createCursorSdkAgent parses prose-prefixed review JSON with findings", async () => {
@@ -808,6 +1034,61 @@ test("createCursorSdkAgent bounds Agent.create with maxRuntimeMs", async () => {
   if (result.ok) return;
   expect(result.exitCode).toBe(124);
   expect(result.error).toMatch(/timed out/);
+});
+
+test("createCursorSdkAgent bounds Agent.resume with maxRuntimeMs and disposes late agents", async () => {
+  const workspace = createGitWorkspace();
+  const calls = { disposed: false, createCalled: false };
+  const createSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["createSdkAgent"]> = async () => {
+    calls.createCalled = true;
+    throw new Error("should not create");
+  };
+  const resumeSdkAgent: NonNullable<CursorSdkAgentFactoryOptions["resumeSdkAgent"]> = async (
+    _agentId,
+    options,
+  ) =>
+    new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          agentId: "agent-resumed",
+          model: options.model,
+          async send() {
+            throw new Error("should not send after timeout");
+          },
+          close() {},
+          async reload() {},
+          async listArtifacts() {
+            return [];
+          },
+          async downloadArtifact() {
+            return Buffer.from("");
+          },
+          async [Symbol.asyncDispose]() {
+            calls.disposed = true;
+          },
+        } as never);
+      }, 20);
+    });
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+    resumeSdkAgent,
+  }).run({
+    workspace,
+    prompt: "continue review",
+    session: { provider: "cursor", id: "agent-123" },
+    maxRuntimeMs: 1,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(124);
+  expect(result.error).toMatch(/timed out/);
+  expect(calls.createCalled).toBe(false);
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(calls.disposed).toBe(true);
 });
 
 test("createCursorSdkAgent bounds send with maxRuntimeMs and disposes the agent", async () => {

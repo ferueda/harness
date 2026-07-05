@@ -10,6 +10,14 @@ export type AgentApprovalPolicy = (typeof AGENT_APPROVAL_POLICIES)[number];
 export type AgentReasoningEffort = (typeof AGENT_REASONING_EFFORTS)[number];
 export type CursorSdkModelMode = (typeof CURSOR_SDK_MODEL_MODES)[number];
 
+export type AgentSessionRef = {
+  provider: AgentProviderName;
+  /** Session ids must be nonblank after trim before provider resume. */
+  id: string;
+  /** Optional provider metadata or provenance. Consumers should prefer provider + id. */
+  raw?: unknown;
+};
+
 const DEFAULT_CURSOR_MODEL = CURSOR_SDK_MODEL_MODES[0] satisfies CursorSdkModelMode;
 
 export const DEFAULT_AGENT_MODELS = {
@@ -47,6 +55,7 @@ export type AgentRunInput = {
   sandboxMode?: AgentSandboxMode;
   approvalPolicy?: AgentApprovalPolicy;
   modelReasoningEffort?: AgentReasoningEffort;
+  session?: AgentSessionRef;
   maxRuntimeMs: number;
   logPath?: string;
   signal?: AbortSignal;
@@ -57,7 +66,7 @@ export type AgentRunResult =
       ok: true;
       structuredOutput?: unknown;
       raw: unknown;
-      sessionId?: string;
+      session?: AgentSessionRef;
       usage?: unknown;
     }
   | {
