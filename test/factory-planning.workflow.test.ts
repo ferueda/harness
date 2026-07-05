@@ -17,6 +17,7 @@ import {
   createWorkspace,
   draft,
   okPlanner,
+  writeDraftPlan,
   writeReview,
 } from "./factory-planning-test-helpers.ts";
 
@@ -67,7 +68,9 @@ test("factory planning approves a reviewed plan and writes final dev plan", asyn
   const reviews: FactoryPlanningReviewContext[] = [];
   const events: WorkflowEvent[] = [];
   const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
-  const plannerOutput = draft("approved-plan", "# Approved Plan\n\nImplement the fix.\n");
+  const planMarkdown = "# Approved Plan\n\nImplement the fix.\n";
+  const plannerOutput = draft();
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -85,6 +88,7 @@ test("factory planning approves a reviewed plan and writes final dev plan", asyn
         name: options.provider,
         async run(input) {
           calls.push(input);
+          writeDraftPlan(draftPath, planMarkdown);
           return okPlanner(plannerOutput, session);
         },
       };
@@ -100,12 +104,13 @@ test("factory planning approves a reviewed plan and writes final dev plan", asyn
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
   expect(meta.status).toBe("plan-approved");
   expect(meta.outputPlan).toBe(join(workspace, outputPlan));
-  expect(readFileSync(join(workspace, outputPlan), "utf8")).toBe(plannerOutput.planMarkdown);
+  expect(readFileSync(join(workspace, outputPlan), "utf8")).toBe(planMarkdown);
   expect(meta.iterations).toHaveLength(1);
   expect(meta.iterations[0]?.review).toMatchObject({ status: "completed", verdict: "pass" });
   expect(meta.plannerSession).toEqual(session);
@@ -128,10 +133,15 @@ test("factory planning loops on needs_changes and resumes the same planner sessi
   const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
   const calls: AgentRunInput[] = [];
   let reviewCount = 0;
+  let draftPath = "";
+  const planMarkdowns = [
+    "# Loop Plan\n\nInitial draft.\n",
+    "# Loop Plan\n\nRevised draft with tests.\n",
+  ];
   const outputs = [
-    draft("loop-plan", "# Loop Plan\n\nInitial draft.\n"),
+    draft(),
     {
-      ...draft("loop-plan", "# Loop Plan\n\nRevised draft with tests.\n"),
+      ...draft(),
       findingDecisions: [
         {
           findingId: "spec-001",
@@ -155,6 +165,7 @@ test("factory planning loops on needs_changes and resumes the same planner sessi
         name: options.provider,
         async run(input) {
           calls.push(input);
+          writeDraftPlan(draftPath, planMarkdowns[calls.length - 1] ?? "# Unexpected Plan\n");
           const output = outputs[calls.length - 1];
           if (!output) throw new Error("unexpected planner call");
           return okPlanner(output, session);
@@ -172,6 +183,7 @@ test("factory planning loops on needs_changes and resumes the same planner sessi
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -186,6 +198,7 @@ test("factory planning loops on needs_changes and resumes the same planner sessi
   expect(readFileSync(join(ctx.runDir, "iterations/2/planner.json"), "utf8")).toContain(
     "findingDecisions",
   );
+  expect(calls[1]?.prompt).not.toContain("Initial draft.");
 });
 
 test("factory planning needs-human skips plan-review and preserves planner iteration", async () => {
@@ -235,11 +248,9 @@ test("factory planning fails when revision omits required finding decisions", as
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
   const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
-  const outputs = [
-    draft("missing-decision-plan", "# Initial Plan\n"),
-    draft("missing-decision-plan", "# Revised Plan\n"),
-  ];
+  const outputs = [draft(), draft()];
   let callCount = 0;
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -253,6 +264,7 @@ test("factory planning fails when revision omits required finding decisions", as
         name: options.provider,
         async run() {
           const output = outputs[callCount];
+          writeDraftPlan(draftPath, callCount === 0 ? "# Initial Plan\n" : "# Revised Plan\n");
           callCount += 1;
           if (!output) throw new Error("unexpected planner call");
           return okPlanner(output, session);
@@ -269,6 +281,7 @@ test("factory planning fails when revision omits required finding decisions", as
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -283,9 +296,9 @@ test("factory planning fails when revision includes unknown finding decision", a
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
   const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
   const outputs = [
-    draft("unknown-decision-plan", "# Initial Plan\n"),
+    draft(),
     {
-      ...draft("unknown-decision-plan", "# Revised Plan\n"),
+      ...draft(),
       findingDecisions: [
         { findingId: "spec-001", decision: "implement", rationale: "Covered." },
         { findingId: "spec-999", decision: "decline", rationale: "Unknown." },
@@ -293,6 +306,7 @@ test("factory planning fails when revision includes unknown finding decision", a
     },
   ] satisfies FactoryPlanningOutput[];
   let callCount = 0;
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -306,6 +320,7 @@ test("factory planning fails when revision includes unknown finding decision", a
         name: options.provider,
         async run() {
           const output = outputs[callCount];
+          writeDraftPlan(draftPath, callCount === 0 ? "# Initial Plan\n" : "# Revised Plan\n");
           callCount += 1;
           if (!output) throw new Error("unexpected planner call");
           return okPlanner(output, session);
@@ -322,6 +337,7 @@ test("factory planning fails when revision includes unknown finding decision", a
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -334,9 +350,9 @@ test("factory planning fails when revision duplicates finding decision", async (
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
   const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
   const outputs = [
-    draft("duplicate-decision-plan", "# Initial Plan\n"),
+    draft(),
     {
-      ...draft("duplicate-decision-plan", "# Revised Plan\n"),
+      ...draft(),
       findingDecisions: [
         { findingId: "spec-001", decision: "implement", rationale: "Covered once." },
         { findingId: "spec-001", decision: "adapt", rationale: "Covered twice." },
@@ -344,6 +360,7 @@ test("factory planning fails when revision duplicates finding decision", async (
     },
   ] satisfies FactoryPlanningOutput[];
   let callCount = 0;
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -357,6 +374,7 @@ test("factory planning fails when revision duplicates finding decision", async (
         name: options.provider,
         async run() {
           const output = outputs[callCount];
+          writeDraftPlan(draftPath, callCount === 0 ? "# Initial Plan\n" : "# Revised Plan\n");
           callCount += 1;
           if (!output) throw new Error("unexpected planner call");
           return okPlanner(output, session);
@@ -373,6 +391,7 @@ test("factory planning fails when revision duplicates finding decision", async (
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -384,6 +403,7 @@ test("factory planning fails when planner session is missing before revision", a
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
   const calls: AgentRunInput[] = [];
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -397,7 +417,8 @@ test("factory planning fails when planner session is missing before revision", a
         name: options.provider,
         async run(input) {
           calls.push(input);
-          return okPlanner(draft("missing-session-plan", "# Missing Session Plan\n"));
+          writeDraftPlan(draftPath, "# Missing Session Plan\n");
+          return okPlanner(draft());
         },
       };
     },
@@ -411,6 +432,7 @@ test("factory planning fails when planner session is missing before revision", a
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 

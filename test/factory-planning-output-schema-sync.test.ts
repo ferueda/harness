@@ -15,8 +15,6 @@ const FACTORY_PLANNING_SCHEMA = loadSchema({ schemaPath: FACTORY_PLANNING_SCHEMA
 const VALID_DRAFT = {
   outcome: "draft-ready",
   summary: "Plan is ready for review.",
-  shortSlug: "fix-export-crash",
-  planMarkdown: "# Plan\n\nImplement the fix.\n",
   findingDecisions: [
     {
       findingId: "spec-001",
@@ -38,6 +36,8 @@ test("factory planning JSON schema file defines expected root shape", () => {
   expect(
     FACTORY_PLANNING_SCHEMA.properties?.findingDecisions?.items?.properties?.decision?.enum,
   ).toEqual([...FACTORY_PLANNING_FINDING_DECISIONS]);
+  expect(FACTORY_PLANNING_SCHEMA.properties?.shortSlug).toBeUndefined();
+  expect(FACTORY_PLANNING_SCHEMA.properties?.planMarkdown).toBeUndefined();
   expect(FACTORY_PLANNING_SCHEMA.properties?.findingDecisions?.items?.additionalProperties).toBe(
     false,
   );
@@ -65,13 +65,6 @@ test("invalid decision enum fails JSON schema and Zod", () => {
     findingDecisions: [{ findingId: "spec-001", decision: "ignore", rationale: "Nope." }],
   };
   expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(false);
-  expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
-});
-
-test("missing planMarkdown for draft-ready is rejected by Zod", () => {
-  const payload = { ...VALID_DRAFT };
-  delete (payload as Partial<typeof VALID_DRAFT>).planMarkdown;
-  expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(true);
   expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
 });
 

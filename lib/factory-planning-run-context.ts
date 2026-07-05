@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -111,6 +119,7 @@ export type FactoryPlanningRunContextOptions = {
 export type FactoryPlanningRunContext = {
   runId: string;
   runDir: string;
+  draftPath: string;
   workspace: string;
   startedAt: Date;
   workItem: FactoryWorkItem;
@@ -133,11 +142,10 @@ export type FactoryPlanningRunContext = {
     prompt: string;
     raw: unknown;
     output: FactoryPlanningOutput;
-    planMarkdown?: string;
   }): string | undefined;
   writeReviewRef(index: number, review: FactoryPlanningReviewRef): void;
   writeReviewFindings(index: number, findings: unknown): void;
-  writeFinalPlan(shortSlug: string, planMarkdown: string): string;
+  writeFinalPlan(planPath: string): string;
   removeFinalPlan(path: string): void;
   export(input: {
     status: FactoryPlanningRunStatus;
@@ -186,11 +194,13 @@ function createFactoryPlanningRunContextInternal(
   const startedAt = new Date();
   const runId = buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/factory")), runId);
+  const draftPath = join(runDir, "planning", "draft.md");
   let plannerProvider: Agent | undefined;
 
   try {
     mkdirSync(runDir, { recursive: true });
     mkdirSync(join(runDir, "context"), { recursive: true });
+    mkdirSync(dirname(draftPath), { recursive: true });
     writeJson(join(runDir, "context/work-item.json"), options.workItem);
   } catch (error) {
     cleanupOrphanedFactoryPlanningRunDir(runDir);
@@ -208,6 +218,7 @@ function createFactoryPlanningRunContextInternal(
   return {
     runId,
     runDir,
+    draftPath,
     workspace,
     startedAt,
     workItem: options.workItem,
@@ -244,10 +255,11 @@ function createFactoryPlanningRunContextInternal(
       writeFileSync(join(iterationDir, "planner.prompt.md"), input.prompt, "utf8");
       writeJson(join(iterationDir, "planner.raw.json"), input.raw);
       writeJson(join(iterationDir, "planner.json"), input.output);
-      if (!input.planMarkdown) return undefined;
+      if (input.output.outcome !== "draft-ready") return undefined;
+      validateDraftPath(draftPath);
 
       const planPath = join(iterationDir, "plan.md");
-      writeFileSync(planPath, input.planMarkdown, "utf8");
+      copyFileSync(draftPath, planPath);
       return planPath;
     },
     writeReviewRef(index, review): void {
@@ -256,18 +268,19 @@ function createFactoryPlanningRunContextInternal(
     writeReviewFindings(index, findings): void {
       writeJson(join(this.iterationDir(index), "review-findings.json"), findings);
     },
-    writeFinalPlan(shortSlug, planMarkdown): string {
+    writeFinalPlan(planPath): string {
       const outputPlan = resolveOutputPlan({
         workspace,
         outputPlan: options.outputPlan,
         startedAt,
-        shortSlug,
+        slug: deriveWorkItemSlug(options.workItem),
       });
       mkdirSync(dirname(outputPlan), { recursive: true });
       if (existsSync(outputPlan)) {
         throw new FactoryPlanningError(`Output plan already exists: ${outputPlan}`);
       }
-      writeFileSync(outputPlan, planMarkdown, "utf8");
+      validateDraftPath(planPath);
+      copyFileSync(planPath, outputPlan);
       return outputPlan;
     },
     removeFinalPlan(path): void {
@@ -394,17 +407,13 @@ function resolveOutputPlan(input: {
   workspace: string;
   outputPlan?: string;
   startedAt: Date;
-  shortSlug: string;
+  slug: string;
 }): string {
   const planPath = input.outputPlan
     ? isAbsolute(input.outputPlan)
       ? resolve(input.outputPlan)
       : resolve(input.workspace, input.outputPlan)
-    : join(
-        input.workspace,
-        "dev/plans",
-        `${dateSlug(input.startedAt)}-${safeSlug(input.shortSlug)}.md`,
-      );
+    : join(input.workspace, "dev/plans", `${dateSlug(input.startedAt)}-${safeSlug(input.slug)}.md`);
   const rel = relative(input.workspace, planPath);
   if (rel.startsWith("..") || rel === "" || isAbsolute(rel)) {
     throw new FactoryPlanningError(`Output plan must be inside workspace: ${planPath}`);
@@ -428,8 +437,20 @@ function safeSlug(slug: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  if (!sanitized) throw new FactoryPlanningError("shortSlug must contain a path-safe character");
+  if (!sanitized) throw new FactoryPlanningError("Plan slug must contain a path-safe character");
   return sanitized;
+}
+
+function deriveWorkItemSlug(workItem: FactoryWorkItem): string {
+  return workItem.title || workItem.id;
+}
+
+function validateDraftPath(path: string): void {
+  if (!existsSync(path))
+    throw new FactoryPlanningError(`Planner did not write draft plan: ${path}`);
+  const stats = statSync(path);
+  if (!stats.isFile()) throw new FactoryPlanningError(`Planner draft is not a file: ${path}`);
+  if (stats.size === 0) throw new FactoryPlanningError(`Planner draft is empty: ${path}`);
 }
 
 function cleanupOrphanedFactoryPlanningRunDir(runDir: string): boolean {

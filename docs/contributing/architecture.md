@@ -92,8 +92,9 @@ include git diff scope and does not mutate trackers.
 
 `lib/factory-planning-run-context.ts` creates local file-backed factory planning
 runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
-schema, writes per-iteration planner artifacts, and writes an approved final
-plan under `dev/plans/` when the planning station finishes successfully.
+schema, creates `planning/draft.md`, snapshots per-iteration planner artifacts,
+and writes an approved final plan under `dev/plans/` when the planning station
+finishes successfully.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
@@ -116,9 +117,11 @@ one route plan. Current input is `--item-file`; future GitHub, Linear, Jira, or
 orchestrator adapters should feed the same `FactoryWorkItem` contract.
 
 `workflows/factory-planning.workflow.ts` runs one planning station loop. The
-planner returns structured planning JSON, harness runs `plan-review`, and
-revision turns reuse the captured planner session until the plan is approved,
-needs human input, fails, or reaches the review-iteration limit.
+planner writes/edits the run draft file and returns small structured metadata.
+Harness snapshots the draft, runs `plan-review` against that snapshot, guards
+against tracked source edits during planner turns, and reuses the captured
+planner session for revisions until the plan is approved, needs human input,
+fails, or reaches the review-iteration limit.
 
 `workflows/plan-review.workflow.ts` runs one fixed spec-review step. The
 plan-review command/runtime omits git diff scope and relies on `context/plan.md`

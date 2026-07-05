@@ -1,6 +1,6 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { AgentRunResult, AgentSessionRef } from "../lib/agents.ts";
 import type { FactoryPlanningReviewContext } from "../lib/factory-planning-run-context.ts";
 import type { FactoryPlanningOutput } from "../lib/factory-planning-schemas.ts";
@@ -45,14 +45,18 @@ export function createWorkspace(): string {
   return mkdtempSync(join(tmpdir(), "harness-factory-planning-workspace-"));
 }
 
-export function draft(shortSlug: string, planMarkdown: string): FactoryPlanningOutput {
+export function draft(overrides: Partial<FactoryPlanningOutput> = {}): FactoryPlanningOutput {
   return {
     outcome: "draft-ready",
     summary: "Plan is ready for review.",
-    shortSlug,
-    planMarkdown,
     findingDecisions: [],
+    ...overrides,
   };
+}
+
+export function writeDraftPlan(draftPath: string, planMarkdown: string): void {
+  mkdirSync(dirname(draftPath), { recursive: true });
+  writeFileSync(draftPath, planMarkdown, "utf8");
 }
 
 export function okPlanner(

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,7 @@ import {
   createWorkspace,
   draft,
   okPlanner,
+  writeDraftPlan,
   writeReview,
 } from "./factory-planning-test-helpers.ts";
 
@@ -20,6 +22,7 @@ test("factory planning preserves prior iteration when revision planner fails", a
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
   const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
   const calls: AgentRunInput[] = [];
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -35,7 +38,8 @@ test("factory planning preserves prior iteration when revision planner fails", a
         async run(input) {
           calls.push(input);
           if (calls.length === 1) {
-            return okPlanner(draft("provider-fail", "# Provider Fail Plan\n"), session);
+            writeDraftPlan(draftPath, "# Provider Fail Plan\n");
+            return okPlanner(draft(), session);
           }
           return { ok: false, error: "planner crashed", exitCode: 1 };
         },
@@ -51,6 +55,7 @@ test("factory planning preserves prior iteration when revision planner fails", a
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -64,6 +69,7 @@ test("factory planning preserves prior iteration when revision planner fails", a
 test("factory planning maps failed plan-review to planning-failed", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -77,7 +83,8 @@ test("factory planning maps failed plan-review to planning-failed", async () => 
       return {
         name: options.provider,
         async run() {
-          return okPlanner(draft("failed-review", "# Failed Review Plan\n"), {
+          writeDraftPlan(draftPath, "# Failed Review Plan\n");
+          return okPlanner(draft(), {
             provider: "cursor",
             id: "planner-session-1",
           });
@@ -88,6 +95,7 @@ test("factory planning maps failed plan-review to planning-failed", async () => 
       return { runId: reviewCtx.runId, runDir: reviewCtx.runDir, status: "failed" };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -100,6 +108,7 @@ test("factory planning maps failed plan-review to planning-failed", async () => 
 test("factory planning maps thrown plan-review to planning-failed", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -113,7 +122,8 @@ test("factory planning maps thrown plan-review to planning-failed", async () => 
       return {
         name: options.provider,
         async run() {
-          return okPlanner(draft("thrown-review", "# Thrown Review Plan\n"), {
+          writeDraftPlan(draftPath, "# Thrown Review Plan\n");
+          return okPlanner(draft(), {
             provider: "cursor",
             id: "planner-session-1",
           });
@@ -124,6 +134,7 @@ test("factory planning maps thrown plan-review to planning-failed", async () => 
       throw new Error("review provider unavailable");
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -137,6 +148,7 @@ test("factory planning maps thrown plan-review to planning-failed", async () => 
 test("factory planning allows explicit operator runs without triage metadata", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -150,7 +162,8 @@ test("factory planning allows explicit operator runs without triage metadata", a
       return {
         name: options.provider,
         async run() {
-          return okPlanner(draft("no-metadata-plan", "# No Metadata Plan\n"), {
+          writeDraftPlan(draftPath, "# No Metadata Plan\n");
+          return okPlanner(draft(), {
             provider: "cursor",
             id: "planner-session-1",
           });
@@ -167,6 +180,7 @@ test("factory planning allows explicit operator runs without triage metadata", a
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -177,6 +191,7 @@ test("factory planning allows explicit operator runs without triage metadata", a
 test("factory planning derives final dev plan path when outputPlan is omitted", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -189,7 +204,8 @@ test("factory planning derives final dev plan path when outputPlan is omitted", 
       return {
         name: options.provider,
         async run() {
-          return okPlanner(draft("Derived Plan", "# Derived Plan\n"), {
+          writeDraftPlan(draftPath, "# Derived Plan\n");
+          return okPlanner(draft(), {
             provider: "cursor",
             id: "planner-session-1",
           });
@@ -206,11 +222,12 @@ test("factory planning derives final dev plan path when outputPlan is omitted", 
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
   expect(meta.status).toBe("plan-approved");
-  expect(meta.outputPlan).toMatch(/\/dev\/plans\/\d{6}-derived-plan\.md$/);
+  expect(meta.outputPlan).toMatch(/\/dev\/plans\/\d{6}-fix-export-crash\.md$/);
   expect(existsSync(meta.outputPlan!)).toBe(true);
 });
 
@@ -220,6 +237,7 @@ test("factory planning fails without overwriting an existing output plan", async
   const outputPlan = join(workspace, "dev/plans/260705-duplicate-plan.md");
   mkdirSync(join(workspace, "dev/plans"), { recursive: true });
   writeFileSync(outputPlan, "# Existing Plan\n", "utf8");
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -233,7 +251,8 @@ test("factory planning fails without overwriting an existing output plan", async
       return {
         name: options.provider,
         async run() {
-          return okPlanner(draft("duplicate-plan", "# Replacement Plan\n"), {
+          writeDraftPlan(draftPath, "# Replacement Plan\n");
+          return okPlanner(draft(), {
             provider: "cursor",
             id: "planner-session-1",
           });
@@ -250,6 +269,7 @@ test("factory planning fails without overwriting an existing output plan", async
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -259,11 +279,50 @@ test("factory planning fails without overwriting an existing output plan", async
   expect(readFileSync(outputPlan, "utf8")).toBe("# Existing Plan\n");
 });
 
+test("factory planning fails when planner mutates tracked workspace files", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  writeFileSync(join(workspace, "README.md"), "# Repo\n", "utf8");
+  execFileSync("git", ["-C", workspace, "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", workspace, "add", "README.md"], { stdio: "ignore" });
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 1,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeDraftPlan(draftPath, "# Guarded Plan\n");
+          writeFileSync(join(workspace, "README.md"), "# Mutated\n", "utf8");
+          return okPlanner(draft(), { provider: "cursor", id: "planner-session-1" });
+        },
+      };
+    },
+    async planReviewRunner() {
+      throw new Error("plan-review should not run");
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Planner modified tracked workspace files");
+  expect(existsSync(join(workspace, "dev/plans"))).toBe(false);
+});
+
 test("factory planning stops unresolved after max completed review iterations", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
   const calls: AgentRunInput[] = [];
   const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -278,7 +337,8 @@ test("factory planning stops unresolved after max completed review iterations", 
         name: options.provider,
         async run(input) {
           calls.push(input);
-          return okPlanner(draft("unresolved-plan", "# Unresolved Plan\n"), session);
+          writeDraftPlan(draftPath, "# Unresolved Plan\n");
+          return okPlanner(draft(), session);
         },
       };
     },
@@ -292,6 +352,7 @@ test("factory planning stops unresolved after max completed review iterations", 
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 
@@ -307,6 +368,7 @@ test("factory planning maps blocked plan-review to needs-human", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
   const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
+  let draftPath = "";
   const ctx = createFactoryPlanningRunContextForTest({
     workspace,
     runsDir,
@@ -320,7 +382,8 @@ test("factory planning maps blocked plan-review to needs-human", async () => {
       return {
         name: options.provider,
         async run() {
-          return okPlanner(draft("blocked-plan", "# Blocked Plan\n"), session);
+          writeDraftPlan(draftPath, "# Blocked Plan\n");
+          return okPlanner(draft(), session);
         },
       };
     },
@@ -334,6 +397,7 @@ test("factory planning maps blocked plan-review to needs-human", async () => {
       };
     },
   });
+  draftPath = ctx.draftPath;
 
   const meta = await runFactoryPlanning(ctx);
 

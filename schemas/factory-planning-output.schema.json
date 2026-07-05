@@ -12,12 +12,6 @@
     "summary": {
       "type": "string"
     },
-    "shortSlug": {
-      "type": "string"
-    },
-    "planMarkdown": {
-      "type": "string"
-    },
     "humanQuestions": {
       "type": "array",
       "items": {

@@ -1,17 +1,20 @@
 export type FactoryPlanningInitialPromptInput = {
   workItemJson: string;
+  draftPath: string;
   currentDate: string;
 };
 
-export type FactoryPlanningRevisionPromptInput = FactoryPlanningInitialPromptInput & {
-  previousPlanMarkdown: string;
+export type FactoryPlanningRevisionPromptInput = {
+  draftPath: string;
+  currentDate: string;
   reviewFindingsJson: string;
 };
 
 const PLANNING_RULES = `Return only structured JSON matching schemas/factory-planning-output.schema.json.
-Do not mutate files, branches, labels, issues, pull requests, or tracker state.
-The harness writes final files. You only return JSON.
-When outcome is draft-ready, return a complete implementation plan in planMarkdown, not a diff.
+Do not mutate files, branches, labels, issues, pull requests, tracker state, or any file except the draft path.
+Write or edit the complete implementation plan directly at the draft path.
+The harness snapshots, reviews, and copies the final approved plan. You only own the draft file and small JSON metadata.
+When outcome is draft-ready, the draft path must exist and contain the complete current plan.
 When outcome is needs-human, return humanQuestions with the exact missing decisions.
 
 Plan requirements:
@@ -31,6 +34,12 @@ You are the planner for one factory work item in the target repository.
 Current date: ${input.currentDate}
 
 ${PLANNING_RULES}
+
+Draft path:
+
+\`\`\`text
+${input.draftPath}
+\`\`\`
 
 Work item JSON:
 
@@ -52,7 +61,7 @@ Current date: ${input.currentDate}
 ${PLANNING_RULES}
 
 Revision rules:
-- Return a full revised plan in planMarkdown, not a patch or partial section.
+- Edit the draft path in place. Do not return the plan markdown in JSON.
 - The latest review findings below have synthetic ids.
 - Return exactly one findingDecisions entry for every latest finding id.
 - Use decision "implement" when applying the recommendation directly.
@@ -60,16 +69,10 @@ Revision rules:
 - Use decision "decline" only when the finding is not applicable, and explain why.
 - Do not include decisions for old or unknown findings.
 
-Work item JSON:
+Draft path:
 
-\`\`\`json
-${input.workItemJson}
-\`\`\`
-
-Previous plan:
-
-\`\`\`markdown
-${input.previousPlanMarkdown}
+\`\`\`text
+${input.draftPath}
 \`\`\`
 
 Latest review findings:

@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Agent,
@@ -37,10 +38,10 @@ const FACTORY_PLANNING_APPROVAL_POLICY = "never" as const;
 const DRY_RUN_PLANNING = {
   outcome: "draft-ready",
   summary: "(dry-run placeholder)",
-  shortSlug: "dry-run-plan",
-  planMarkdown: "# Dry Run Plan\n\nProviders and reviewers were not called.\n",
   findingDecisions: [],
 } satisfies FactoryPlanningOutput;
+
+const DRY_RUN_PLAN_MARKDOWN = "# Dry Run Plan\n\nProviders and reviewers were not called.\n";
 
 type PlanningIteration = FactoryPlanningRunMeta["iterations"][number];
 type ReviewMeta = FactoryPlanningReviewMeta;
@@ -105,7 +106,6 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
 
   const iterations: PlanningIteration[] = [];
   let plannerSession: AgentSessionRef | undefined;
-  let previousPlanMarkdown: string | undefined;
   let latestFindings: EnrichedFinding[] | undefined;
   let completedReviews = 0;
 
@@ -115,11 +115,12 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
         index === 1
           ? renderFactoryPlanningInitialPrompt(planningPromptContext(ctx))
           : renderFactoryPlanningRevisionPrompt({
-              ...planningPromptContext(ctx),
-              previousPlanMarkdown: previousPlanMarkdown ?? "",
+              draftPath: ctx.draftPath,
+              currentDate: ctx.startedAt.toISOString().slice(0, 10),
               reviewFindingsJson: JSON.stringify(latestFindings ?? [], null, 2),
             });
 
+      const trackedStatusBefore = readTrackedStatus(ctx.workspace);
       const plannerResult = await invokePlanner({
         ctx,
         planner,
@@ -128,6 +129,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
         prompt,
         session: index === 1 ? undefined : plannerSession,
       });
+      assertTrackedStatusUnchanged(ctx.workspace, trackedStatusBefore);
       if (index === 1) plannerSession = plannerResult.session;
       const output = parseFactoryPlanningOutput(plannerResult.structuredOutput);
       if (index > 1) validateFindingDecisions(output, latestFindings ?? []);
@@ -137,7 +139,6 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
         prompt,
         raw: rawAgentArtifact(plannerResult),
         output,
-        planMarkdown: output.planMarkdown,
       });
 
       if (output.outcome === "needs-human") {
@@ -149,7 +150,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
         });
       }
 
-      if (!output.shortSlug || !output.planMarkdown || !planPath) {
+      if (!planPath) {
         return ctx.export({
           status: "planning-failed",
           iterations: [...iterations, planPath ? { index, planPath } : { index }],
@@ -158,7 +159,6 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
         });
       }
 
-      previousPlanMarkdown = output.planMarkdown;
       const iteration: PlanningIteration = { index, planPath };
       iterations.push(iteration);
 
@@ -177,7 +177,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
       if (review.meta.verdict === "pass") {
         let outputPlan: string | undefined;
         try {
-          outputPlan = ctx.writeFinalPlan(output.shortSlug, output.planMarkdown);
+          outputPlan = ctx.writeFinalPlan(planPath);
           return ctx.export({
             status: "plan-approved",
             iterations,
@@ -223,12 +223,12 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
 
 function runDryRun(ctx: FactoryPlanningRunContext): FactoryPlanningRunMeta {
   const prompt = renderFactoryPlanningInitialPrompt(planningPromptContext(ctx));
+  writeFileSync(ctx.draftPath, DRY_RUN_PLAN_MARKDOWN, "utf8");
   const planPath = ctx.writePlannerArtifacts({
     index: 1,
     prompt,
     raw: DRY_RUN_PLANNING,
     output: DRY_RUN_PLANNING,
-    planMarkdown: DRY_RUN_PLANNING.planMarkdown,
   });
   return ctx.export({
     status: "dry_run",
@@ -334,10 +334,12 @@ function isFailedTerminalStatus(status: FactoryPlanningRunMeta["status"]): boole
 
 function planningPromptContext(ctx: FactoryPlanningRunContext): {
   workItemJson: string;
+  draftPath: string;
   currentDate: string;
 } {
   return {
     workItemJson: JSON.stringify(ctx.workItem, null, 2),
+    draftPath: ctx.draftPath,
     currentDate: ctx.startedAt.toISOString().slice(0, 10),
   };
 }
@@ -435,4 +437,28 @@ function isReviewVerdict(value: unknown): value is FactoryPlanningReviewRef["ver
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function readTrackedStatus(workspace: string): string | undefined {
+  try {
+    execFileSync("git", ["-C", workspace, "rev-parse", "--is-inside-work-tree"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return execFileSync("git", ["-C", workspace, "status", "--porcelain", "--untracked-files=no"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function assertTrackedStatusUnchanged(workspace: string, before: string | undefined): void {
+  if (before === undefined) return;
+  const after = readTrackedStatus(workspace);
+  if (after === undefined || after === before) return;
+  throw new FactoryPlanningError(
+    `Planner modified tracked workspace files outside the draft path:\n${after}`,
+  );
 }

@@ -209,7 +209,8 @@ Use the implemented names from those plans. Do not invent duplicate wrappers.
 
 Create `lib/factory-planning-schemas.ts`.
 
-Add strict Zod schema:
+Add strict Zod schema. Keep markdown out of JSON; the planner writes the plan
+to the run draft file and returns only metadata.
 
 ```ts
 export const FACTORY_PLANNING_OUTCOMES = ["draft-ready", "needs-human"] as const;
@@ -219,8 +220,6 @@ export const FactoryPlanningOutputSchema = z
   .object({
     outcome: z.enum(FACTORY_PLANNING_OUTCOMES),
     summary: z.string().min(1),
-    shortSlug: z.string().min(1).optional(),
-    planMarkdown: z.string().min(1).optional(),
     humanQuestions: z.array(z.string().min(1)).optional(),
     findingDecisions: z.array(
       z.object({
@@ -236,7 +235,8 @@ export const FactoryPlanningOutputSchema = z
 
 Cross-field rules:
 
-- `draft-ready` requires `shortSlug` and `planMarkdown`.
+- `draft-ready` means the planner wrote a non-empty draft file; filesystem
+  validation owns that check.
 - `needs-human` requires at least one `humanQuestions` item.
 
 Add:
@@ -256,7 +256,7 @@ Add `test/factory-planning-output-schema-sync.test.ts` covering:
 - valid draft and needs-human payloads pass JSON schema and Zod;
 - extra field fails both;
 - invalid decision enum fails both;
-- missing `planMarkdown` for `draft-ready` is rejected by Zod.
+- schema does not expose `shortSlug` or `planMarkdown`.
 
 **Verify**: `pnpm test -- test/factory-planning-output-schema-sync.test.ts`
 -> all pass.
@@ -269,11 +269,13 @@ Create `lib/prompts/factory-planning.ts` and export it from
 Prompt requirements:
 
 - JSON only, matching `schemas/factory-planning-output.schema.json`;
-- planner must not mutate files; harness writes files;
-- planner must produce a full plan, not a diff;
+- planner may mutate only the provided draft path;
+- planner must write the full plan to the draft path, not return markdown JSON;
 - plan must follow create-plan principles: current-state verification, scope,
   commands, tests, done criteria, STOP conditions, and verified executor skills;
-- prompt must include work item JSON and current date;
+- initial prompt must include work item JSON, current date, and draft path;
+- revision prompt must include draft path and current date, but not resend the
+  previous full plan markdown;
 - revision prompt must include latest review findings with synthetic ids;
 - planner must return exactly one `findingDecisions` entry per latest finding;
 - planner can implement, adapt, or decline findings with rationale.
@@ -557,13 +559,20 @@ Revision validation:
 - Planner output must include exactly one decision for every latest id.
 - Duplicate, missing, or unknown ids make the station `planning-failed`.
 - Harness must not edit plan markdown based on findings.
+- Harness must snapshot the draft file to `iterations/<n>/plan.md` after each
+  planner turn and before plan-review.
+- Harness must validate the draft exists, is a file, and is non-empty before
+  snapshotting.
+- In Git workspaces, capture tracked status before each planner turn and fail
+  if tracked source changes after the turn. The draft path lives under
+  `.harness/runs/factory/<run-id>/planning/draft.md`.
 
 Final plan path:
 
 - If `--output-plan` is provided, resolve it under the workspace and require it
   to be in `dev/plans/`.
 - If omitted, derive `dev/plans/YYMMDD-short-slug.md` from run start date and
-  planner `shortSlug`.
+  the work item title, falling back to the work item id.
 - Format `YYMMDD` in UTC with a two-digit year, zero-padded month, and
   zero-padded day. Example: July 5, 2026 -> `260705`.
 - Validate `--output-plan` by resolving relative to workspace, rejecting paths
