@@ -244,6 +244,60 @@ test("factory planning needs-human skips plan-review and preserves planner itera
   );
 });
 
+test("factory planning allows revision turn to request human input", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
+  const calls: AgentRunInput[] = [];
+  let draftPath = "";
+  const revisionNeedsHuman = {
+    outcome: "needs-human",
+    summary: "Need a product decision before revising.",
+    humanQuestions: ["Should the plan preserve backward compatibility?"],
+    findingDecisions: [],
+  } satisfies FactoryPlanningOutput;
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          calls.push(input);
+          if (calls.length === 1) {
+            writeDraftPlan(draftPath, "# Initial Plan\n");
+            return okPlanner(draft(), session);
+          }
+          return okPlanner(revisionNeedsHuman, session);
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, NEEDS_CHANGES_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "needs_changes",
+      };
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("plan-needs-human");
+  expect(meta.humanQuestions).toEqual(["Should the plan preserve backward compatibility?"]);
+  expect(calls).toHaveLength(2);
+  expect(calls[1]?.session).toEqual(session);
+  expect(meta.iterations).toEqual([expect.objectContaining({ index: 1 }), { index: 2 }]);
+});
+
 test("factory planning fails when revision omits required finding decisions", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));

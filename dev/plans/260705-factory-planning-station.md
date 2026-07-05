@@ -469,6 +469,9 @@ Rules:
 - Revision turns pass the captured `AgentSessionRef` as `session`.
 - If a review needs revision and no planner session was captured, finish
   `planning-failed`.
+- If the planner role resolves to Codex, its sandbox must allow writing the run
+  draft file. The resolver defaults Codex planner roles to `workspace-write`
+  unless the planner role explicitly overrides `sandboxMode`.
 - Write `planner.prompt.md`, `planner.raw.json`, and `planner.json` under the
   current iteration directory.
 - Snapshot the current draft file to `iterations/<n>/plan.md` before invoking

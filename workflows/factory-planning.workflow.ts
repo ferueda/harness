@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -26,13 +25,14 @@ import {
   renderFactoryPlanningInitialPrompt,
   renderFactoryPlanningRevisionPrompt,
 } from "../lib/prompts/index.ts";
+import { readWorkspaceStatus } from "../lib/review-guard.ts";
 import { ReviewOutputSchema, type ReviewOutput } from "../lib/schemas.ts";
 import { createWorkflowContext } from "../lib/workflow-context.ts";
 import { run as runPlanReview } from "./plan-review.workflow.ts";
 
 export const meta = { name: "factory-planning" };
 
-const FACTORY_PLANNING_SANDBOX_MODE = "read-only" as const;
+const FACTORY_PLANNING_SANDBOX_MODE = "workspace-write" as const;
 const FACTORY_PLANNING_APPROVAL_POLICY = "never" as const;
 
 const DRY_RUN_PLANNING = {
@@ -132,7 +132,9 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
       assertTrackedStatusUnchanged(ctx.workspace, trackedStatusBefore);
       if (index === 1) plannerSession = plannerResult.session;
       const output = parseFactoryPlanningOutput(plannerResult.structuredOutput);
-      if (index > 1) validateFindingDecisions(output, latestFindings ?? []);
+      if (index > 1 && output.outcome === "draft-ready") {
+        validateFindingDecisions(output, latestFindings ?? []);
+      }
 
       const planPath = ctx.writePlannerArtifacts({
         index,
@@ -440,25 +442,13 @@ function errorMessage(error: unknown): string {
 }
 
 function readTrackedStatus(workspace: string): string | undefined {
-  try {
-    execFileSync("git", ["-C", workspace, "rev-parse", "--is-inside-work-tree"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return execFileSync("git", ["-C", workspace, "status", "--porcelain", "--untracked-files=no"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  } catch {
-    return undefined;
-  }
+  const status = readWorkspaceStatus(workspace);
+  return status.ok ? status.value : undefined;
 }
 
 function assertTrackedStatusUnchanged(workspace: string, before: string | undefined): void {
   if (before === undefined) return;
   const after = readTrackedStatus(workspace);
   if (after === undefined || after === before) return;
-  throw new FactoryPlanningError(
-    `Planner modified tracked workspace files outside the draft path:\n${after}`,
-  );
+  throw new FactoryPlanningError(`Planner modified tracked workspace files:\n${after}`);
 }

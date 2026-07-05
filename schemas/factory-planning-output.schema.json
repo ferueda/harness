@@ -10,7 +10,8 @@
       "enum": ["draft-ready", "needs-human"]
     },
     "summary": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "humanQuestions": {
       "type": "array",

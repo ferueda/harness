@@ -105,6 +105,102 @@ test("factory planning maps failed plan-review to planning-failed", async () => 
   expect(existsSync(join(workspace, "dev/plans/260705-failed-review.md"))).toBe(false);
 });
 
+test("factory planning fails when planner does not write draft file", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 1,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return okPlanner(draft(), { provider: "cursor", id: "planner-session-1" });
+        },
+      };
+    },
+    async planReviewRunner() {
+      throw new Error("plan-review should not run");
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Planner did not write draft plan");
+});
+
+test("factory planning fails when planner writes empty draft file", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 1,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeFileSync(draftPath, "", "utf8");
+          return okPlanner(draft(), { provider: "cursor", id: "planner-session-1" });
+        },
+      };
+    },
+    async planReviewRunner() {
+      throw new Error("plan-review should not run");
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Planner draft is empty");
+});
+
+test("factory planning fails when planner draft path is a directory", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 1,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          mkdirSync(draftPath);
+          return okPlanner(draft(), { provider: "cursor", id: "planner-session-1" });
+        },
+      };
+    },
+    async planReviewRunner() {
+      throw new Error("plan-review should not run");
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Planner draft is not a file");
+});
+
 test("factory planning maps thrown plan-review to planning-failed", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));

@@ -68,6 +68,12 @@ test("invalid decision enum fails JSON schema and Zod", () => {
   expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
 });
 
+test("empty summary fails JSON schema and Zod", () => {
+  const payload = { ...VALID_DRAFT, summary: "" };
+  expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(false);
+  expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
+});
+
 test("missing humanQuestions for needs-human is rejected by Zod", () => {
   const payload = { ...VALID_NEEDS_HUMAN };
   delete (payload as Partial<typeof VALID_NEEDS_HUMAN>).humanQuestions;

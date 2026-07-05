@@ -64,6 +64,19 @@ if (!factoryTriageStationHelp.includes("--item-file <path>")) {
 if (!factoryTriageStationHelp.includes("--dry-run")) {
   throw new Error("Expected factory triage help to include --dry-run");
 }
+const factoryPlanningStationHelp = runHarness(["factory", "planning", "--help"]);
+if (!factoryPlanningStationHelp.includes("harness factory planning")) {
+  throw new Error("Expected factory planning help to include command usage");
+}
+if (!factoryPlanningStationHelp.includes("--item-file <path>")) {
+  throw new Error("Expected factory planning help to include --item-file");
+}
+if (!factoryPlanningStationHelp.includes("--output-plan <path>")) {
+  throw new Error("Expected factory planning help to include --output-plan");
+}
+if (!factoryPlanningStationHelp.includes("--dry-run")) {
+  throw new Error("Expected factory planning help to include --dry-run");
+}
 
 const initWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-init-"));
 const initOutput = runHarness(["init", "--workspace", initWorkspace]);

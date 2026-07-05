@@ -269,6 +269,11 @@ Important detail: when a role sets `agent`, that role inherits from
 `agents.codex.modelReasoningEffort` even when `defaultAgent` is `cursor`.
 `defaultAgent` is used only when the role omits `agent`.
 
+Codex planning has one special default: `factory.planning.roles.planner` needs
+to write `planning/draft.md`, so a Codex planner defaults to
+`sandboxMode: "workspace-write"` unless the planner role explicitly sets a
+different sandbox. Codex reviewers and other Codex roles can remain read-only.
+
 Do not overload current `resolveHarnessOptions` for this. Add a small per-role
 resolver that returns one resolved bundle per station role:
 

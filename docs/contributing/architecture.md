@@ -92,9 +92,9 @@ include git diff scope and does not mutate trackers.
 
 `lib/factory-planning-run-context.ts` creates local file-backed factory planning
 runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
-schema, creates `planning/draft.md`, snapshots per-iteration planner artifacts,
-and writes an approved final plan under `dev/plans/` when the planning station
-finishes successfully.
+schema, prepares `planning/draft.md` for planner writes, snapshots
+per-iteration planner artifacts, and writes an approved final plan under
+`dev/plans/` when the planning station finishes successfully.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
