@@ -12,6 +12,8 @@ type FakeTurnInput = {
   runError?: Error;
   streamEvents?: ThreadEvent[];
   streamError?: Error;
+  threadId?: string | null;
+  resumedThreadId?: string | null;
 };
 
 function createGitWorkspace() {
@@ -44,55 +46,72 @@ function createFakeCodex({
   runError,
   streamEvents,
   streamError,
+  threadId = "thread-123",
+  resumedThreadId = "thread-resumed",
 }: FakeTurnInput = {}) {
   const calls: {
     codexOptions?: CodexOptions;
     threadOptions?: ThreadOptions;
+    resumeThreadOptions?: ThreadOptions;
+    resumeThreadId?: string;
     prompt?: string;
     streamedPrompt?: string;
     turnOptions?: TurnOptions;
     runStreamed: boolean;
+    startThreadCount: number;
+    resumeThreadCount: number;
   } = {
     runStreamed: false,
+    startThreadCount: 0,
+    resumeThreadCount: 0,
   };
+
+  const createThread = (id: string | null) => ({
+    id,
+    async run(prompt: string, turnOptions: TurnOptions) {
+      calls.prompt = prompt;
+      calls.turnOptions = turnOptions;
+      if (runError) throw runError;
+      return {
+        finalResponse,
+        items: [],
+        usage: {
+          input_tokens: 1,
+          cached_input_tokens: 0,
+          output_tokens: 2,
+          reasoning_output_tokens: 0,
+        },
+      };
+    },
+    async runStreamed(prompt: string, turnOptions: TurnOptions) {
+      calls.runStreamed = true;
+      calls.streamedPrompt = prompt;
+      calls.turnOptions = turnOptions;
+      if (runError) throw runError;
+      return {
+        events: (async function* () {
+          for (const event of streamEvents ?? codexSuccessStream(finalResponse)) {
+            yield event;
+          }
+          if (streamError) throw streamError;
+        })(),
+      };
+    },
+  });
 
   const codexFactory = (codexOptions: CodexOptions) => {
     calls.codexOptions = codexOptions;
     return {
       startThread(threadOptions: ThreadOptions) {
+        calls.startThreadCount += 1;
         calls.threadOptions = threadOptions;
-        return {
-          id: "thread-123",
-          async run(prompt: string, turnOptions: TurnOptions) {
-            calls.prompt = prompt;
-            calls.turnOptions = turnOptions;
-            if (runError) throw runError;
-            return {
-              finalResponse,
-              items: [],
-              usage: {
-                input_tokens: 1,
-                cached_input_tokens: 0,
-                output_tokens: 2,
-                reasoning_output_tokens: 0,
-              },
-            };
-          },
-          async runStreamed(prompt: string, turnOptions: TurnOptions) {
-            calls.runStreamed = true;
-            calls.streamedPrompt = prompt;
-            calls.turnOptions = turnOptions;
-            if (runError) throw runError;
-            return {
-              events: (async function* () {
-                for (const event of streamEvents ?? codexSuccessStream(finalResponse)) {
-                  yield event;
-                }
-                if (streamError) throw streamError;
-              })(),
-            };
-          },
-        };
+        return createThread(threadId);
+      },
+      resumeThread(id: string, threadOptions?: ThreadOptions) {
+        calls.resumeThreadCount += 1;
+        calls.resumeThreadId = id;
+        calls.resumeThreadOptions = threadOptions;
+        return createThread(resumedThreadId);
       },
     };
   };
@@ -147,7 +166,11 @@ test("createCodexAgent runs Codex with schema and review defaults", async () => 
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(result.structuredOutput).toEqual({ verdict: "pass" });
-  expect(result.sessionId).toBe("thread-123");
+  expect(result.session).toEqual({
+    provider: "codex",
+    id: "thread-123",
+    raw: { kind: "codex-thread" },
+  });
   expect(result.usage).toEqual({
     input_tokens: 1,
     cached_input_tokens: 0,
@@ -162,10 +185,173 @@ test("createCodexAgent runs Codex with schema and review defaults", async () => 
     approvalPolicy: "never",
     modelReasoningEffort: "high",
   });
+  expect(calls.startThreadCount).toBe(1);
+  expect(calls.resumeThreadCount).toBe(0);
   expect(calls.prompt).toBe("review this");
   expect(calls.runStreamed).toBe(false);
   expect(calls.turnOptions?.outputSchema).toEqual(JSON.parse(readFileSync(schemaPath, "utf8")));
   expect(calls.turnOptions?.signal).toBeInstanceOf(AbortSignal);
+});
+
+test("createCodexAgent resumes a matching Codex session", async () => {
+  const workspace = createGitWorkspace();
+  const { calls, codexFactory } = createFakeCodex();
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "continue review",
+    session: { provider: "codex", id: " thread-123 " },
+    model: "gpt-test",
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
+    modelReasoningEffort: "high",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.session).toEqual({
+    provider: "codex",
+    id: "thread-resumed",
+    raw: { kind: "codex-thread" },
+  });
+  expect(calls.startThreadCount).toBe(0);
+  expect(calls.resumeThreadCount).toBe(1);
+  expect(calls.resumeThreadId).toBe("thread-123");
+  expect(calls.resumeThreadOptions).toMatchObject({
+    workingDirectory: workspace,
+    model: "gpt-test",
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
+    modelReasoningEffort: "high",
+  });
+  expect(calls.prompt).toBe("continue review");
+});
+
+test("createCodexAgent omits session when Codex returns no thread id", async () => {
+  const workspace = createGitWorkspace();
+  const { codexFactory } = createFakeCodex({ threadId: null });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.session).toBeUndefined();
+});
+
+test("createCodexAgent omits session when resumed Codex thread returns no id", async () => {
+  const workspace = createGitWorkspace();
+  const { codexFactory } = createFakeCodex({ resumedThreadId: null });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "continue review",
+    session: { provider: "codex", id: "thread-123" },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.session).toBeUndefined();
+});
+
+test("createCodexAgent omits session when Codex returns a blank thread id", async () => {
+  const workspace = createGitWorkspace();
+  const { codexFactory } = createFakeCodex({ threadId: " " });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.session).toBeUndefined();
+});
+
+test("createCodexAgent rejects mismatched session provider before SDK use", async () => {
+  const workspace = createGitWorkspace();
+  let factoryCalled = false;
+
+  const result = await createCodexAgent({
+    codexFactory: () => {
+      factoryCalled = true;
+      throw new Error("should not create codex client");
+    },
+  }).run({
+    workspace,
+    prompt: "review this",
+    session: { provider: "cursor", id: "agent-123" },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toBe("Cannot resume codex agent from cursor session");
+  expect(result.exitCode).toBe(1);
+  expect(factoryCalled).toBe(false);
+});
+
+test("createCodexAgent rejects blank session ids before SDK use", async () => {
+  const workspace = createGitWorkspace();
+  let factoryCalled = false;
+
+  const result = await createCodexAgent({
+    codexFactory: () => {
+      factoryCalled = true;
+      throw new Error("should not create codex client");
+    },
+  }).run({
+    workspace,
+    prompt: "review this",
+    session: { provider: "codex", id: " " },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toBe("Cannot resume codex agent with blank session id");
+  expect(result.exitCode).toBe(1);
+  expect(factoryCalled).toBe(false);
+});
+
+test("createCodexAgent reports resume failures with stream log metadata", async () => {
+  const workspace = createGitWorkspace();
+  const logPath = join(workspace, ".harness", "codex.stream.jsonl");
+  const codexFactory = () => ({
+    startThread() {
+      throw new Error("should not start thread");
+    },
+    resumeThread() {
+      throw new Error("resume unavailable");
+    },
+  });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "continue review",
+    logPath,
+    session: { provider: "codex", id: "thread-123" },
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toBe("Codex agent failed: resume unavailable");
+  expect(result.raw).toMatchObject({
+    message: "resume unavailable",
+    streamLog: {
+      path: logPath,
+      provider: "codex",
+      format: "codex-thread-event",
+      status: "missing",
+    },
+  });
 });
 
 test("createCodexAgent streams Codex thread events to logPath", async () => {
@@ -183,7 +369,11 @@ test("createCodexAgent streams Codex thread events to logPath", async () => {
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(result.structuredOutput).toEqual({ verdict: "pass" });
-  expect(result.sessionId).toBe("thread-123");
+  expect(result.session).toEqual({
+    provider: "codex",
+    id: "thread-123",
+    raw: { kind: "codex-thread" },
+  });
   expect(result.usage).toEqual({
     input_tokens: 1,
     cached_input_tokens: 0,
@@ -493,6 +683,9 @@ test("createCodexAgent returns aborted without starting a pre-aborted run", asyn
       startThread() {
         throw new Error("should not start thread");
       },
+      resumeThread() {
+        throw new Error("should not resume thread");
+      },
     };
   };
 
@@ -527,6 +720,9 @@ test("createCodexAgent returns aborted when external signal aborts a pending run
           return new Promise<never>(() => {});
         },
       };
+    },
+    resumeThread() {
+      throw new Error("should not resume thread");
     },
   });
 
@@ -583,6 +779,9 @@ test("createCodexAgent returns timeout failures through AbortSignal", async () =
         },
       };
     },
+    resumeThread() {
+      throw new Error("should not resume thread");
+    },
   });
 
   const result = await createCodexAgent({ codexFactory }).run({
@@ -623,6 +822,9 @@ test("createCodexAgent keeps partial stream logs on timeout", async () => {
           };
         },
       };
+    },
+    resumeThread() {
+      throw new Error("should not resume thread");
     },
   });
 
@@ -677,6 +879,9 @@ test("createCodexAgent keeps partial stream logs on external abort", async () =>
         },
       };
     },
+    resumeThread() {
+      throw new Error("should not resume thread");
+    },
   });
 
   const result = await createCodexAgent({ codexFactory }).run({
@@ -727,6 +932,9 @@ test("createCodexAgent does not return success when a turn resolves after extern
         },
       };
     },
+    resumeThread() {
+      throw new Error("should not resume thread");
+    },
   });
 
   const result = await createCodexAgent({ codexFactory }).run({
@@ -761,6 +969,9 @@ test("createCodexAgent observes delayed run rejection after timeout", async () =
           });
         },
       };
+    },
+    resumeThread() {
+      throw new Error("should not resume thread");
     },
   });
 
@@ -802,6 +1013,9 @@ test("createCodexAgent observes delayed run rejection after external abort", asy
           });
         },
       };
+    },
+    resumeThread() {
+      throw new Error("should not resume thread");
     },
   });
 
@@ -861,6 +1075,9 @@ test("createCodexAgent fails when workspace porcelain changes during run", async
             return thread.run(prompt, turnOptions);
           },
         };
+      },
+      resumeThread() {
+        throw new Error("should not resume thread");
       },
     };
   };

@@ -9,7 +9,16 @@ import {
   type TurnOptions,
   type Usage,
 } from "@openai/codex-sdk";
-import type { Agent, AgentRunInput, AgentRunResult } from "../../lib/agents.ts";
+import {
+  type Agent,
+  type AgentRunInput,
+  type AgentRunResult,
+  type AgentSessionRef,
+} from "../../lib/agents.ts";
+import {
+  createAgentSessionRef,
+  normalizeAgentSessionForProvider,
+} from "../../lib/agent-session.ts";
 import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent-stream-log.ts";
 import {
   createAbortedAgentResult,
@@ -28,6 +37,7 @@ type CodexThread = {
 };
 type CodexClient = {
   startThread(options: ThreadOptions): CodexThread;
+  resumeThread(id: string, options?: ThreadOptions): CodexThread;
 };
 type CodexFactory = (options: CodexOptions) => CodexClient;
 type CodexTurn = RunResult & { streamLog?: AgentStreamLogSummary };
@@ -55,6 +65,9 @@ async function invokeCodexAgent(
   codexPathOverride: string | undefined,
   input: AgentRunInput,
 ): Promise<AgentRunResult> {
+  const sessionResult = normalizeAgentSessionForProvider("codex", input.session);
+  if (!sessionResult.ok) return sessionResult.error;
+
   let outputSchema;
   try {
     outputSchema = input.schemaPath ? loadSchema({ schemaPath: input.schemaPath }) : undefined;
@@ -96,7 +109,8 @@ async function invokeCodexAgent(
     const codex = createCodex({
       codexPathOverride: codexPathOverride ?? process.env.CODEX_EXECUTABLE,
     });
-    const thread = codex.startThread(buildThreadOptions(input));
+    const threadOptions = buildThreadOptions(input);
+    const thread = openCodexThread(codex, sessionResult.session, threadOptions);
     const turnOptions = {
       outputSchema,
       signal: signalState.signal,
@@ -142,7 +156,7 @@ async function invokeCodexAgent(
         ok: true,
         structuredOutput: parsed.value,
         raw: turn,
-        sessionId: thread.id ?? undefined,
+        session: createAgentSessionRef("codex", thread.id),
         usage: turn.usage ?? undefined,
       },
       input.workspace,
@@ -183,6 +197,15 @@ function buildThreadOptions(input: AgentRunInput): ThreadOptions {
     approvalPolicy: input.approvalPolicy,
     modelReasoningEffort: input.modelReasoningEffort,
   };
+}
+
+function openCodexThread(
+  codex: CodexClient,
+  session: AgentSessionRef | undefined,
+  threadOptions: ThreadOptions,
+): CodexThread {
+  if (!session) return codex.startThread(threadOptions);
+  return codex.resumeThread(session.id, threadOptions);
 }
 
 async function runCodexTurnStreamed(
