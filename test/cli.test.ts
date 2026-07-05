@@ -204,6 +204,7 @@ test("harness factory help exits cleanly", () => {
   expect(result.stdout).toMatch(/Usage: harness factory/);
   expect(result.stdout).toMatch(/status/);
   expect(result.stdout).toMatch(/triage/);
+  expect(result.stdout).toMatch(/planning/);
   expect(result.stdout).not.toMatch(/dispatch/);
 });
 test("harness factory status help exits cleanly", () => {
@@ -224,6 +225,26 @@ test("harness factory triage help exits cleanly without direct agent flags", () 
   expect(result.stdout).not.toMatch(/--sandbox/);
   expect(result.stdout).not.toMatch(/--approval-policy/);
   expect(result.stdout).not.toMatch(/--reasoning-effort/);
+});
+test("harness factory planning help exits cleanly without direct agent flags", () => {
+  const result = runHarness(["factory", "planning", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory planning/);
+  expect(result.stdout).toMatch(/--item-file <path>/);
+  expect(result.stdout).toMatch(/--output-plan <path>/);
+  expect(result.stdout).toMatch(/--max-review-iterations <count>/);
+  expect(result.stdout).toMatch(/--dry-run/);
+  expect(result.stdout).not.toMatch(/--agent/);
+  expect(result.stdout).not.toMatch(/--model/);
+  expect(result.stdout).not.toMatch(/--codex-executable/);
+  expect(result.stdout).not.toMatch(/--sandbox/);
+  expect(result.stdout).not.toMatch(/--approval-policy/);
+  expect(result.stdout).not.toMatch(/--reasoning-effort/);
+});
+test("harness run factory-planning is not a command", () => {
+  const result = runHarness(["run", "factory-planning"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown command.*factory-planning/i);
 });
 test("harness factory dispatch is not a command", () => {
   const result = runHarness(["factory", "dispatch"]);
@@ -1293,6 +1314,158 @@ test("harness factory triage rejects invalid item JSON", () => {
   ]);
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/Invalid factory work item JSON/);
+});
+
+test("harness factory planning dry-run works in non-git workspaces", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify(
+      {
+        id: "plan-local-1",
+        source: "file",
+        title: "Plan export shortcut",
+        body: "Design the keyboard shortcut implementation.",
+        metadata: {
+          factoryRoute: "ready-to-plan",
+          factoryNextAction: "create-plan",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "planning",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    workflow: "factory-planning",
+    status: "dry_run",
+    workspace,
+    workItem: {
+      id: "plan-local-1",
+      source: "file",
+      title: "Plan export shortcut",
+    },
+    iterations: 1,
+  });
+  expect(output.outputPlan).toBeUndefined();
+  expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
+  expect(readFileSync(join(output.runDir, "context/work-item.json"), "utf8")).toContain(
+    "Plan export shortcut",
+  );
+  expect(readFileSync(join(output.runDir, "iterations/1/planner.prompt.md"), "utf8")).toContain(
+    "Factory Planning",
+  );
+  expect(readFileSync(join(output.runDir, "iterations/1/plan.md"), "utf8")).toContain(
+    "Dry Run Plan",
+  );
+  expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain(
+    '"workflow": "factory-planning"',
+  );
+});
+
+test("harness factory planning rejects missing item files", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "factory",
+    "planning",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "missing.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Factory item file does not exist: missing\.json/);
+});
+
+test("harness factory planning rejects invalid item JSON", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(join(workspace, "item.json"), "{ nope", "utf8");
+  const result = runHarness([
+    "factory",
+    "planning",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Invalid factory work item JSON/);
+});
+
+test("harness factory planning rejects unknown flags", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "planning-flags", source: "file", title: "Flags", body: "" }),
+    "utf8",
+  );
+  const result = runHarness([
+    "factory",
+    "planning",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+    "--base",
+    "HEAD",
+  ]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown option/i);
+});
+
+test("harness factory planning rejects invalid factory role config", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify({
+      defaultAgent: "cursor",
+      factory: {
+        planning: {
+          roles: {
+            planner: {
+              sandboxMode: "read-only",
+            },
+          },
+        },
+      },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "bad-planning-config", source: "file", title: "Bad config", body: "" }),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "planning",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/Invalid harness\.json/);
+  expect(result.stderr).toMatch(/sandboxMode applies only when role agent is codex/);
 });
 
 test("harness factory triage rejects invalid factory role config", () => {

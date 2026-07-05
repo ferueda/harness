@@ -9,6 +9,7 @@
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
+- **Implementation**: complete in `codex/factory-planning-station`
 - **Depends on**:
   - `dev/plans/260705-factory-station-api-role-config.md`
   - `dev/plans/260705-agent-session-continuation.md`
@@ -746,28 +747,28 @@ Expected:
 
 ## Done criteria
 
-- [ ] `harness factory planning --item-file <path> --dry-run` creates planning
+- [x] `harness factory planning --item-file <path> --dry-run` creates planning
       artifacts and calls no provider/reviewer.
-- [ ] Live planning uses `factory.planning.roles.planner`.
-- [ ] Plan-review uses `factory.planning.roles.reviewer`.
-- [ ] Revision turns reuse the initial planner `AgentSessionRef`.
-- [ ] Review findings are presented to planner with ids like `spec-001`.
-- [ ] Planner decisions are validated, but harness does not apply findings.
-- [ ] Approved final plan is written to `dev/plans/YYMMDD-short-slug.md` or
+- [x] Live planning uses `factory.planning.roles.planner`.
+- [x] Plan-review uses `factory.planning.roles.reviewer`.
+- [x] Revision turns reuse the initial planner `AgentSessionRef`.
+- [x] Review findings are presented to planner with ids like `spec-001`.
+- [x] Planner decisions are validated, but harness does not apply findings.
+- [x] Approved final plan is written to `dev/plans/YYMMDD-short-slug.md` or
       validated `--output-plan`.
-- [ ] Draft iterations stay under `.harness/runs/factory/<run-id>/`.
-- [ ] Plan-review artifacts stay under `.harness/runs/reviews/<run-id>/` and are
+- [x] Draft iterations stay under `.harness/runs/factory/<run-id>/`.
+- [x] Plan-review artifacts stay under `.harness/runs/reviews/<run-id>/` and are
       referenced from factory artifacts.
-- [ ] Full review findings are read from `spec-review.json` and persisted with
+- [x] Full review findings are read from `spec-review.json` and persisted with
       synthetic ids before revision prompts are rendered.
-- [ ] `plan-review-ref.json` includes `runId`, captured `runDir`,
+- [x] `plan-review-ref.json` includes `runId`, captured `runDir`,
       `specReviewPath`, and verdict/status fields.
-- [ ] Reviewer `blocked` maps to `plan-needs-human`, while review workflow
+- [x] Reviewer `blocked` maps to `plan-needs-human`, while review workflow
       failure maps to `planning-failed`.
-- [ ] Max review iterations count completed plan-review executions.
-- [ ] Existing `harness run plan-review` and `harness run factory-triage`
+- [x] Max review iterations count completed plan-review executions.
+- [x] Existing `harness run plan-review` and `harness run factory-triage`
       behavior remains unchanged.
-- [ ] `pnpm check` exits 0.
+- [x] `pnpm check` exits 0.
 
 ## STOP conditions
 

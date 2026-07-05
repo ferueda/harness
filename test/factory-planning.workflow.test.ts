@@ -1,0 +1,420 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, test } from "vitest";
+import type { AgentRunInput, AgentSessionRef } from "../lib/agents.ts";
+import {
+  createFactoryPlanningRunContextForTest,
+  type FactoryPlanningReviewContext,
+} from "../lib/factory-planning-run-context.ts";
+import type { FactoryPlanningOutput } from "../lib/factory-planning-schemas.ts";
+import type { WorkflowEvent } from "../lib/workflow-events.ts";
+import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
+import {
+  NEEDS_CHANGES_REVIEW,
+  PASS_REVIEW,
+  WORK_ITEM,
+  createWorkspace,
+  draft,
+  okPlanner,
+  writeReview,
+} from "./factory-planning-test-helpers.ts";
+
+test("factory planning dry-run writes placeholder artifacts without provider or reviewer calls", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let providerCalls = 0;
+  let reviewCalls = 0;
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    dryRun: true,
+    maxReviewIterations: 1,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      providerCalls += 1;
+      return {
+        name: options.provider,
+        async run() {
+          throw new Error("dry-run should not call provider");
+        },
+      };
+    },
+    async planReviewRunner() {
+      reviewCalls += 1;
+      throw new Error("dry-run should not call plan-review");
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("dry_run");
+  expect(meta.iterations).toHaveLength(1);
+  expect(providerCalls).toBe(0);
+  expect(reviewCalls).toBe(0);
+  expect(existsSync(join(ctx.runDir, "events.jsonl"))).toBe(false);
+  expect(readFileSync(join(ctx.runDir, "iterations/1/plan.md"), "utf8")).toContain("Dry Run Plan");
+});
+
+test("factory planning approves a reviewed plan and writes final dev plan", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const outputPlan = "dev/plans/260705-approved-plan.md";
+  const calls: AgentRunInput[] = [];
+  const reviews: FactoryPlanningReviewContext[] = [];
+  const events: WorkflowEvent[] = [];
+  const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
+  const plannerOutput = draft("approved-plan", "# Approved Plan\n\nImplement the fix.\n");
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor", model: "composer-2.5" },
+    reviewerRole: { agent: "codex", model: "gpt-5.5", modelReasoningEffort: "high" },
+    outputPlan,
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    eventSink(event) {
+      events.push(event);
+    },
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          calls.push(input);
+          return okPlanner(plannerOutput, session);
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      reviews.push(reviewCtx);
+      writeReview(reviewCtx, PASS_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "pass",
+      };
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("plan-approved");
+  expect(meta.outputPlan).toBe(join(workspace, outputPlan));
+  expect(readFileSync(join(workspace, outputPlan), "utf8")).toBe(plannerOutput.planMarkdown);
+  expect(meta.iterations).toHaveLength(1);
+  expect(meta.iterations[0]?.review).toMatchObject({ status: "completed", verdict: "pass" });
+  expect(meta.plannerSession).toEqual(session);
+  expect(meta.plannerAgent).toMatchObject({ name: "cursor", model: "composer-2.5" });
+  expect(meta.reviewerAgent).toMatchObject({ name: "codex", model: "gpt-5.5" });
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.schemaPath).toMatch(/schemas\/factory-planning-output\.schema\.json$/);
+  expect(calls[0]?.logPath).toBe(join(ctx.runDir, "iterations/1/planner.stream.jsonl"));
+  expect(existsSync(join(ctx.runDir, "iterations/1"))).toBe(true);
+  expect(reviews).toHaveLength(1);
+  expect(reviews[0]?.runDir).toContain(".harness/runs/reviews");
+  expect(readFileSync(join(ctx.runDir, "summary.md"), "utf8")).toContain("plan-approved");
+  expect(events.map((event) => event.type)).toContain("run:start");
+  expect(events.map((event) => event.type)).toContain("run:end");
+});
+
+test("factory planning loops on needs_changes and resumes the same planner session", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
+  const calls: AgentRunInput[] = [];
+  let reviewCount = 0;
+  const outputs = [
+    draft("loop-plan", "# Loop Plan\n\nInitial draft.\n"),
+    {
+      ...draft("loop-plan", "# Loop Plan\n\nRevised draft with tests.\n"),
+      findingDecisions: [
+        {
+          findingId: "spec-001",
+          decision: "implement",
+          rationale: "The revised plan adds the missing regression test.",
+        },
+      ],
+    },
+  ] satisfies FactoryPlanningOutput[];
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor", model: "composer-2.5" },
+    reviewerRole: { agent: "cursor", model: "composer-2.5" },
+    outputPlan: "dev/plans/260705-loop-plan.md",
+    maxReviewIterations: 3,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          calls.push(input);
+          const output = outputs[calls.length - 1];
+          if (!output) throw new Error("unexpected planner call");
+          return okPlanner(output, session);
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      reviewCount += 1;
+      writeReview(reviewCtx, reviewCount === 1 ? NEEDS_CHANGES_REVIEW : PASS_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: reviewCount === 1 ? "needs_changes" : "pass",
+      };
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("plan-approved");
+  expect(meta.iterations).toHaveLength(2);
+  expect(calls).toHaveLength(2);
+  expect(calls[0]?.session).toBeUndefined();
+  expect(calls[1]?.session).toEqual(session);
+  expect(readFileSync(join(ctx.runDir, "iterations/1/review-findings.json"), "utf8")).toContain(
+    "spec-001",
+  );
+  expect(readFileSync(join(ctx.runDir, "iterations/2/planner.json"), "utf8")).toContain(
+    "findingDecisions",
+  );
+});
+
+test("factory planning needs-human skips plan-review and preserves planner iteration", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let reviewCalls = 0;
+  const humanOutput = {
+    outcome: "needs-human",
+    summary: "Need one product decision.",
+    humanQuestions: ["Should export overwrite existing files?"],
+    findingDecisions: [],
+  } satisfies FactoryPlanningOutput;
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return okPlanner(humanOutput, { provider: "cursor", id: "planner-session-1" });
+        },
+      };
+    },
+    async planReviewRunner() {
+      reviewCalls += 1;
+      throw new Error("plan-review should not run");
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("plan-needs-human");
+  expect(meta.humanQuestions).toEqual(["Should export overwrite existing files?"]);
+  expect(meta.iterations).toEqual([{ index: 1 }]);
+  expect(reviewCalls).toBe(0);
+  expect(readFileSync(join(ctx.runDir, "iterations/1/planner.json"), "utf8")).toContain(
+    "needs-human",
+  );
+});
+
+test("factory planning fails when revision omits required finding decisions", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
+  const outputs = [
+    draft("missing-decision-plan", "# Initial Plan\n"),
+    draft("missing-decision-plan", "# Revised Plan\n"),
+  ];
+  let callCount = 0;
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          const output = outputs[callCount];
+          callCount += 1;
+          if (!output) throw new Error("unexpected planner call");
+          return okPlanner(output, session);
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, NEEDS_CHANGES_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "needs_changes",
+      };
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Missing finding decision id: spec-001");
+  expect(meta.iterations).toHaveLength(1);
+  expect(meta.iterations[0]?.review).toMatchObject({ verdict: "needs_changes" });
+});
+
+test("factory planning fails when revision includes unknown finding decision", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
+  const outputs = [
+    draft("unknown-decision-plan", "# Initial Plan\n"),
+    {
+      ...draft("unknown-decision-plan", "# Revised Plan\n"),
+      findingDecisions: [
+        { findingId: "spec-001", decision: "implement", rationale: "Covered." },
+        { findingId: "spec-999", decision: "decline", rationale: "Unknown." },
+      ],
+    },
+  ] satisfies FactoryPlanningOutput[];
+  let callCount = 0;
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          const output = outputs[callCount];
+          callCount += 1;
+          if (!output) throw new Error("unexpected planner call");
+          return okPlanner(output, session);
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, NEEDS_CHANGES_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "needs_changes",
+      };
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Unknown finding decision id: spec-999");
+});
+
+test("factory planning fails when revision duplicates finding decision", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const session = { provider: "cursor", id: "planner-session-1" } satisfies AgentSessionRef;
+  const outputs = [
+    draft("duplicate-decision-plan", "# Initial Plan\n"),
+    {
+      ...draft("duplicate-decision-plan", "# Revised Plan\n"),
+      findingDecisions: [
+        { findingId: "spec-001", decision: "implement", rationale: "Covered once." },
+        { findingId: "spec-001", decision: "adapt", rationale: "Covered twice." },
+      ],
+    },
+  ] satisfies FactoryPlanningOutput[];
+  let callCount = 0;
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          const output = outputs[callCount];
+          callCount += 1;
+          if (!output) throw new Error("unexpected planner call");
+          return okPlanner(output, session);
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, NEEDS_CHANGES_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "needs_changes",
+      };
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Duplicate finding decision id: spec-001");
+});
+
+test("factory planning fails when planner session is missing before revision", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const calls: AgentRunInput[] = [];
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          calls.push(input);
+          return okPlanner(draft("missing-session-plan", "# Missing Session Plan\n"));
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, NEEDS_CHANGES_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "needs_changes",
+      };
+    },
+  });
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Planner session was not captured");
+  expect(calls).toHaveLength(1);
+});

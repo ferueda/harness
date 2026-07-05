@@ -1,7 +1,15 @@
-import type { Command } from "commander";
+import { InvalidArgumentError, type Command } from "commander";
 import { assertItemFileExists, factoryTriageCliOutput } from "./factory-triage-cli.ts";
-import { resolveFactoryRoleAgent, resolveHarnessOptions } from "../lib/config.ts";
+import {
+  resolveFactoryPlanningSettings,
+  resolveFactoryRoleAgent,
+  resolveHarnessOptions,
+} from "../lib/config.ts";
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
+import {
+  createFactoryPlanningRunContext,
+  type FactoryPlanningRunMeta,
+} from "../lib/factory-planning-run-context.ts";
 import {
   createFactoryRunContext,
   readFactoryWorkItemFile,
@@ -9,6 +17,7 @@ import {
 } from "../lib/factory-run-context.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
+import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
 import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
 
 type FactoryStatusOptions = {
@@ -25,6 +34,17 @@ type FactoryTriageStationOptions = {
   verbose: boolean;
 };
 
+type FactoryPlanningStationOptions = {
+  workspace?: string;
+  itemFile: string;
+  runsDir?: string;
+  outputPlan?: string;
+  maxReviewIterations?: number;
+  maxRuntimeMs: number;
+  dryRun: boolean;
+  verbose: boolean;
+};
+
 type FactoryCommandOptions = {
   positiveNumber: (value: string) => number;
   defaultMaxRuntimeMs: number;
@@ -35,6 +55,7 @@ export function addFactoryCommands(parent: Command, options: FactoryCommandOptio
   const factory = parent.command("factory").description("Manage local factory intake");
   addFactoryStatusCommand(factory);
   addFactoryTriageStationCommand(factory, options);
+  addFactoryPlanningStationCommand(factory, options);
 }
 
 function addFactoryStatusCommand(parent: Command): void {
@@ -56,6 +77,96 @@ function addFactoryStatusCommand(parent: Command): void {
       });
       console.log(JSON.stringify(result, null, 2));
     });
+}
+
+function addFactoryPlanningStationCommand(parent: Command, config: FactoryCommandOptions): void {
+  parent
+    .command("planning")
+    .description("Run one factory work item through the planning station")
+    .option("--workspace <path>", "target repo")
+    .requiredOption("--item-file <path>", "factory work item JSON file")
+    .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/factory)")
+    .option("--output-plan <path>", "final plan path under dev/plans")
+    .option(
+      "--max-review-iterations <count>",
+      "maximum plan-review loops (default: factory.planning.maxReviewIterations or 3)",
+      positiveInteger,
+    )
+    .option(
+      "--max-runtime-ms <ms>",
+      `per-agent timeout (default: ${config.defaultMaxRuntimeMs})`,
+      config.positiveNumber,
+      config.defaultMaxRuntimeMs,
+    )
+    .option("--dry-run", "prepare context and placeholder plan only", false)
+    .option("--verbose", "emit workflow events as JSONL to stderr", false)
+    .action(async (options: FactoryPlanningStationOptions) => {
+      const settings = resolveFactoryPlanningSettings({ workspace: options.workspace });
+      const plannerRole = resolveFactoryRoleAgent({
+        workspace: settings.workspace,
+        station: "planning",
+        role: "planner",
+      });
+      const reviewerRole = resolveFactoryRoleAgent({
+        workspace: settings.workspace,
+        station: "planning",
+        role: "reviewer",
+      });
+      const itemPath = assertItemFileExists(settings.workspace, options.itemFile);
+      const workItem = readFactoryWorkItemFile(itemPath);
+
+      const runAbort = new AbortController();
+      const onRunAbort = () => runAbort.abort();
+      process.once("SIGINT", onRunAbort);
+      process.once("SIGTERM", onRunAbort);
+      let meta: FactoryPlanningRunMeta;
+      try {
+        const ctx = createFactoryPlanningRunContext({
+          workspace: settings.workspace,
+          runsDir: options.runsDir,
+          workItem,
+          plannerRole,
+          reviewerRole,
+          outputPlan: options.outputPlan,
+          maxReviewIterations: options.maxReviewIterations ?? settings.maxReviewIterations,
+          maxRuntimeMs: options.maxRuntimeMs,
+          dryRun: options.dryRun,
+          signal: runAbort.signal,
+          eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
+          agentProviderFactory: createAgentProvider,
+        });
+        meta = await runFactoryPlanning(ctx);
+      } finally {
+        process.off("SIGINT", onRunAbort);
+        process.off("SIGTERM", onRunAbort);
+      }
+      console.log(JSON.stringify(factoryPlanningCliOutput(meta), null, 2));
+      process.exitCode =
+        meta.status === "planning-failed" || meta.status === "plan-review-unresolved" ? 1 : 0;
+    });
+}
+
+function positiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError("must be a positive integer");
+  }
+  return parsed;
+}
+
+function factoryPlanningCliOutput(meta: FactoryPlanningRunMeta) {
+  return {
+    runId: meta.runId,
+    workflow: meta.workflow,
+    status: meta.status,
+    workspace: meta.workspace,
+    runDir: meta.runDir,
+    workItem: meta.workItem,
+    outputPlan: meta.outputPlan,
+    iterations: meta.iterations.length,
+    summaryPath: meta.summaryPath,
+    metaPath: meta.metaPath,
+  };
 }
 
 function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandOptions): void {
