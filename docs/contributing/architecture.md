@@ -14,8 +14,8 @@ CLI (bin/harness.ts)
 Current public CLI surfaces:
 
 - `harness init`
-- `harness factory dispatch`
 - `harness factory status`
+- `harness factory triage`
 - `harness run change-review`
 - `harness run factory-triage`
 - `harness run plan-review`
@@ -89,11 +89,11 @@ copies `context/work-item.json`, resolves the harness-owned factory triage JSON
 schema, invokes the selected provider, and writes route artifacts. It does not
 include git diff scope and does not mutate trackers.
 
-`lib/factory-dispatch.ts` owns local factory inbox inspection and dispatch.
-`harness factory status` reads `.harness/inbox/factory/` without moving files or
-creating runs. `harness factory dispatch` processes pending inbox JSON files
-through the same `factory-triage` workflow, then moves live-run successes to
-`processed/` and failures to `failed/` with sibling error JSON.
+`lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
+status` reads `.harness/inbox/factory/` without moving files or creating runs.
+`harness factory triage --item-file ...` runs one work item through the
+station-level triage command and uses `factory.triage.roles.triager` config for
+agent and model selection.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these
@@ -170,23 +170,27 @@ pending file must parse as a `FactoryWorkItem`.
 Current inbox paths:
 
 - `.harness/inbox/factory/*.json` for pending items.
-- `.harness/inbox/factory/processed/<run-id>-<basename>.json` for dispatched
-  successes.
-- `.harness/inbox/factory/failed/<run-id>-<basename>.json` for dispatched
-  failures.
+- `.harness/inbox/factory/processed/*.json` for historical processed items from
+  earlier experimental batch runs.
+- `.harness/inbox/factory/failed/*.json` for historical failed items.
 - `.harness/inbox/factory/failed/<run-id>-<basename>.error.json` for failure
   summaries.
 
 `harness factory status` is read-only and reports pending, processed, and failed
-state as JSON. `harness factory dispatch --dry-run` leaves inbox files unmoved.
+state as JSON. Current factory station commands do not batch-process every inbox
+file or move inbox files.
 
 ## Provider boundary
 
 Provider-specific auth, model, streaming, and sandbox behavior should stay in
 provider adapters or provider-scoped config. Workflow definitions should depend
 on the shared review interface, not on provider implementation details.
-`lib/config.ts` resolves provider selection and defaults; `providers/registry.ts`
-instantiates the selected adapter.
+`lib/config.ts` resolves provider selection and defaults. Factory station roles
+use `harness.json` `factory.<station>.roles` config with the same provider
+identifiers as top-level harness config, such as `cursor` and `codex`.
+`resolveFactoryRoleAgent` falls back through `defaultAgent` and
+`agents.<provider>`, and `providers/registry.ts` instantiates the selected
+adapter.
 
 ## What is not in this map yet
 

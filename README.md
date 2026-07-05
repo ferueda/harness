@@ -83,7 +83,7 @@ harness run plan-review --help
 
 ## Run Factory Intake
 
-Route one local work item into the next factory station:
+Route one local work item through the low-level factory triage workflow:
 
 ```bash
 harness run factory-triage --item-file path/to/work-item.json --verbose
@@ -99,18 +99,19 @@ Factory artifacts are written under
 and `meta.json`. The route is one of `ready-to-implement`, `ready-to-plan`,
 `needs-info`, or `wait-to-implement`.
 
-Process a local factory inbox:
+Inspect a local factory inbox and run one item through the station-level triage
+command:
 
 ```bash
 harness factory status --workspace /path/to/repo
-harness factory dispatch --workspace /path/to/repo --dry-run
+harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
 ```
 
 Inbox files live under `<workspace>/.harness/inbox/factory/*.json`.
-Use `factory-triage` for one ad hoc item file; use `factory dispatch` for sorted
-batch processing of the local inbox. `status` is read-only. `dispatch --dry-run`
-writes factory run artifacts and reports logical outcomes while leaving inbox
-files unmoved; live dispatch moves items to `processed/` or `failed/`.
+Use `harness run factory-triage` as the low-level workflow primitive. Use
+`harness factory triage --item-file ...` as the operator-facing station command.
+`status` is read-only. Factory station agent and model selection comes from
+`harness.json` role config under `factory.<station>.roles`.
 
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).
@@ -137,6 +138,16 @@ ownership and mutability, read
       "sandboxMode": "read-only",
       "approvalPolicy": "never",
       "modelReasoningEffort": "high"
+    }
+  },
+  "factory": {
+    "triage": {
+      "roles": {
+        "triager": {
+          "agent": "cursor",
+          "model": "claude-opus-4-8"
+        }
+      }
     }
   }
 }
