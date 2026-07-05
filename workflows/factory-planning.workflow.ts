@@ -32,7 +32,6 @@ import { run as runPlanReview } from "./plan-review.workflow.ts";
 
 export const meta = { name: "factory-planning" };
 
-const FACTORY_PLANNING_SANDBOX_MODE = "workspace-write" as const;
 const FACTORY_PLANNING_APPROVAL_POLICY = "never" as const;
 
 const DRY_RUN_PLANNING = {
@@ -146,19 +145,16 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
       if (output.outcome === "needs-human") {
         return ctx.export({
           status: "plan-needs-human",
-          iterations: [...iterations, planPath ? { index, planPath } : { index }],
+          iterations: [...iterations, { index }],
           plannerSession,
           humanQuestions: output.humanQuestions,
         });
       }
 
       if (!planPath) {
-        return ctx.export({
-          status: "planning-failed",
-          iterations: [...iterations, planPath ? { index, planPath } : { index }],
-          plannerSession,
-          error: "Planner draft-ready output did not include a plan",
-        });
+        throw new FactoryPlanningError(
+          "Planner draft-ready output did not produce a plan snapshot",
+        );
       }
 
       const iteration: PlanningIteration = { index, planPath };
@@ -196,7 +192,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
           status: "plan-needs-human",
           iterations,
           plannerSession,
-          humanQuestions: ["Plan review returned blocked."],
+          humanQuestions: blockedReviewQuestions(review.ref),
         });
       }
       if (review.meta.verdict !== "needs_changes") {
@@ -422,10 +418,21 @@ function plannerPolicyOptions(
 ): Pick<AgentRunInput, "sandboxMode" | "approvalPolicy" | "modelReasoningEffort"> {
   if (providerName !== "codex") return {};
   return {
-    sandboxMode: role.sandboxMode ?? FACTORY_PLANNING_SANDBOX_MODE,
+    sandboxMode: role.sandboxMode,
     approvalPolicy: role.approvalPolicy ?? FACTORY_PLANNING_APPROVAL_POLICY,
     modelReasoningEffort: role.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
   };
+}
+
+function blockedReviewQuestions(review: FactoryPlanningReviewRef): string[] {
+  const specReview = readSpecReview(review.specReviewPath);
+  const questions = [
+    `Plan review blocked: ${specReview.summary}`,
+    ...specReview.findings
+      .filter((finding) => finding.must_fix)
+      .map((finding) => `${finding.title}: ${finding.recommendation}`),
+  ].filter((question) => question.trim().length > 0);
+  return questions.length ? questions : ["Plan review returned blocked."];
 }
 
 function rawAgentArtifact(result: AgentRunResult): unknown {

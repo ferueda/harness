@@ -127,6 +127,46 @@ test("factory planning approves a reviewed plan and writes final dev plan", asyn
   expect(events.map((event) => event.type)).toContain("run:end");
 });
 
+test("factory planning allows explicit operator runs without triage metadata", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: { ...WORK_ITEM, metadata: undefined },
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    outputPlan: "dev/plans/260705-no-metadata-plan.md",
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeDraftPlan(draftPath, "# No Metadata Plan\n");
+          return okPlanner(draft(), { provider: "cursor", id: "planner-session-1" });
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, PASS_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "pass",
+      };
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("plan-approved");
+  expect(meta.outputPlan).toBe(join(workspace, "dev/plans/260705-no-metadata-plan.md"));
+});
+
 test("factory planning loops on needs_changes and resumes the same planner session", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));

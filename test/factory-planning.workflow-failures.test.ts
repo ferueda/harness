@@ -241,49 +241,6 @@ test("factory planning maps thrown plan-review to planning-failed", async () => 
   expect(existsSync(join(workspace, "dev/plans/260705-thrown-review.md"))).toBe(false);
 });
 
-test("factory planning allows explicit operator runs without triage metadata", async () => {
-  const workspace = createWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
-  let draftPath = "";
-  const ctx = createFactoryPlanningRunContextForTest({
-    workspace,
-    runsDir,
-    workItem: { ...WORK_ITEM, metadata: undefined },
-    plannerRole: { agent: "cursor" },
-    reviewerRole: { agent: "cursor" },
-    outputPlan: "dev/plans/260705-no-metadata-plan.md",
-    maxReviewIterations: 2,
-    maxRuntimeMs: 1_000,
-    agentProviderFactory(options) {
-      return {
-        name: options.provider,
-        async run() {
-          writeDraftPlan(draftPath, "# No Metadata Plan\n");
-          return okPlanner(draft(), {
-            provider: "cursor",
-            id: "planner-session-1",
-          });
-        },
-      };
-    },
-    async planReviewRunner(reviewCtx) {
-      writeReview(reviewCtx, PASS_REVIEW);
-      return {
-        runId: reviewCtx.runId,
-        runDir: reviewCtx.runDir,
-        status: "completed",
-        verdict: "pass",
-      };
-    },
-  });
-  draftPath = ctx.draftPath;
-
-  const meta = await runFactoryPlanning(ctx);
-
-  expect(meta.status).toBe("plan-approved");
-  expect(existsSync(join(workspace, "dev/plans/260705-no-metadata-plan.md"))).toBe(true);
-});
-
 test("factory planning derives final dev plan path when outputPlan is omitted", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
@@ -498,7 +455,10 @@ test("factory planning maps blocked plan-review to needs-human", async () => {
   const meta = await runFactoryPlanning(ctx);
 
   expect(meta.status).toBe("plan-needs-human");
-  expect(meta.humanQuestions).toEqual(["Plan review returned blocked."]);
+  expect(meta.humanQuestions).toEqual([
+    "Plan review blocked: Plan needs one correction.",
+    "Add a test gate: Add a focused regression test step.",
+  ]);
   expect(meta.iterations[0]?.review).toMatchObject({ verdict: "blocked" });
 });
 

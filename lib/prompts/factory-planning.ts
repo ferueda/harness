@@ -63,7 +63,8 @@ ${PLANNING_RULES}
 Revision rules:
 - Edit the draft path in place. Do not return the plan markdown in JSON.
 - The latest review findings below have synthetic ids.
-- Return exactly one findingDecisions entry for every latest finding id.
+- When outcome is draft-ready, return exactly one findingDecisions entry for every latest finding id.
+- When outcome is needs-human, return humanQuestions; findingDecisions may be empty.
 - Use decision "implement" when applying the recommendation directly.
 - Use decision "adapt" when solving the underlying issue differently.
 - Use decision "decline" only when the finding is not applicable, and explain why.
