@@ -30,19 +30,19 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@cursor/sdk": "1.0.21",
-    "@openai/codex-sdk": "0.142.0",
+    "@cursor/sdk": "1.0.23",
+    "@openai/codex-sdk": "0.142.5",
     "commander": "15.0.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "24.13.2",
     "lint-staged": "17.0.8",
-    "oxfmt": "0.56.0",
-    "oxlint": "1.71.0",
+    "oxfmt": "0.57.0",
+    "oxlint": "1.72.0",
     "simple-git-hooks": "2.13.1",
     "typescript": "6.0.3",
-    "vitest": "4.1.9"
+    "vitest": "4.1.10"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm exec lint-staged && pnpm typecheck"
