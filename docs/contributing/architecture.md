@@ -256,6 +256,6 @@ adapter.
 ## What is not in this map yet
 
 Active runtime roadmap items such as `steps.json`, graders, tracker mutation,
-GitHub/Linear/Jira adapters, hosted trigger inboxes, and Inngest are future
-work. They should be added to this map only after they describe current
-behavior in the repo.
+Linear-backed triage/planning apply modes, GitHub/Jira adapters, hosted trigger
+inboxes, and Inngest are future work. They should be added to this map only
+after they describe current behavior in the repo.

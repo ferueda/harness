@@ -71,6 +71,17 @@ const factoryStatusHelp = runHarness(["factory", "status", "--help"]);
 if (!factoryStatusHelp.includes("harness factory status")) {
   throw new Error("Expected factory status help to include command usage");
 }
+const factoryLinearHelp = runHarness(["factory", "linear", "--help"]);
+if (!factoryLinearHelp.includes("harness factory linear")) {
+  throw new Error("Expected factory linear help to include command usage");
+}
+const factoryLinearFetchHelp = runHarness(["factory", "linear", "fetch", "--help"]);
+if (!factoryLinearFetchHelp.includes("harness factory linear fetch")) {
+  throw new Error("Expected factory linear fetch help to include command usage");
+}
+if (!factoryLinearFetchHelp.includes("TEAM-123")) {
+  throw new Error("Expected factory linear fetch help to include issue identifier guidance");
+}
 const factoryTriageStationHelp = runHarness(["factory", "triage", "--help"]);
 if (!factoryTriageStationHelp.includes("harness factory triage")) {
   throw new Error("Expected factory triage help to include command usage");
