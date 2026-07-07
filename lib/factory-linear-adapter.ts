@@ -581,6 +581,7 @@ function projectIdForIssue(
   issue: LinearIssueLike,
   project: LinearProjectLike | undefined,
 ): string | undefined {
+  // Prefer Linear's scalar projectId; fall back to the expanded relation for partial SDK payloads.
   return issue.projectId ?? project?.id ?? undefined;
 }
 

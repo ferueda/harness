@@ -153,9 +153,9 @@ Linear team and project serve different purposes:
 - `projectId` scopes the target repo. Use it when multiple repo projects share
   one Linear team.
 
-When `projectId` is configured, Linear fetch, triage, planning input, and
+When `projectId` is configured, Linear-backed fetch, triage, planning input, and
 triage apply reject issues outside that project before running station work or
-mutating Linear.
+mutating Linear. Local `--item-file` inputs are not revalidated against Linear.
 
 The triage station can also fetch Linear directly:
 
