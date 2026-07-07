@@ -185,6 +185,9 @@ harness models
 Setup and generated-artifact details live in
 [docs/contributing/setup-manifest.md](docs/contributing/setup-manifest.md).
 
+For Codex request-size inspection, run `pnpm codex:proxy`; details live in
+[docs/contributing/script-command-surface.md](docs/contributing/script-command-surface.md).
+
 ## Develop Harness
 
 Harness source is TypeScript under `bin/`, `lib/`, `providers/`, and
