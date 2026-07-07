@@ -9,12 +9,11 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**:
-  - `dev/plans/260705-factory-station-api-role-config.md`
-  - `dev/plans/260705-agent-session-continuation.md`
-  - `dev/plans/260705-factory-planning-station.md`
+- **Implementation**: complete in `codex/factory-operating-docs-smoke`
+- **Depends on**: shipped PR [#64](https://github.com/ferueda/harness/pull/64)
 - **Category**: docs
-- **Execution gate**: do not implement until all dependency plans are merged.
+- **Execution gate**: dependency PR #64 is merged; this branch performs the
+  final docs/smoke pass.
 
 ## Why this matters
 
@@ -124,22 +123,19 @@ workflow primitives.
 
 ### Step 1: Verify dependency command surface
 
-Do not start this plan until all three dependency plans have merged. Re-run the
-checks below against merged code before editing docs.
+PR #64 must be merged before this plan runs. Re-run the checks below against
+merged code before editing docs.
 
 Preflight checklist:
 
-- `dev/plans/260705-factory-station-api-role-config.md` has merged:
-  - `bin/factory-commands.ts` registers `harness factory triage`;
-  - `harness factory dispatch` is gone;
-  - `lib/config.ts` exposes factory role/settings resolution.
-- `dev/plans/260705-agent-session-continuation.md` has merged:
-  - `lib/agents.ts` exposes `AgentSessionRef`;
-  - provider tests no longer reference `sessionId`.
-- `dev/plans/260705-factory-planning-station.md` has merged:
-  - `bin/factory-commands.ts` registers `harness factory planning`;
-  - `workflows/factory-planning.workflow.ts` exists;
-  - `schemas/factory-planning-output.schema.json` exists.
+- `bin/factory-commands.ts` registers `harness factory triage`.
+- `harness factory dispatch` is gone.
+- `lib/config.ts` exposes factory role/settings resolution.
+- `lib/agents.ts` exposes `AgentSessionRef`.
+- Provider tests no longer reference `sessionId`.
+- `bin/factory-commands.ts` registers `harness factory planning`.
+- `workflows/factory-planning.workflow.ts` exists.
+- `schemas/factory-planning-output.schema.json` exists.
 
 Run:
 
@@ -485,15 +481,15 @@ Expected:
 
 ## Done criteria
 
-- [ ] README explains current factory triage and planning station usage.
-- [ ] Contributor docs explain `harness run` vs `harness factory`.
-- [ ] Current docs do not present `harness factory dispatch` as a valid command.
-- [ ] Public factory config examples use `factory.<station>.roles.<role>.agent`.
-- [ ] Packaged `factory-operator` skill exists and documents the one-item flow.
-- [ ] Smoke checks include `factory triage` and `factory planning`.
-- [ ] Future GitHub/Inngest architecture is described as future integration, not
+- [x] README explains current factory triage and planning station usage.
+- [x] Contributor docs explain `harness run` vs `harness factory`.
+- [x] Current docs do not present `harness factory dispatch` as a valid command.
+- [x] Public factory config examples use `factory.<station>.roles.<role>.agent`.
+- [x] Packaged `factory-operator` skill exists and documents the one-item flow.
+- [x] Smoke checks include `factory triage` and `factory planning`.
+- [x] Future GitHub/Inngest architecture is described as future integration, not
       shipped runtime.
-- [ ] `pnpm check` exits 0.
+- [x] `pnpm check` exits 0.
 
 ## STOP conditions
 

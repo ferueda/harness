@@ -83,24 +83,7 @@ harness run plan-review --help
 
 ## Run Factory Intake
 
-Route one local work item through the low-level factory triage workflow:
-
-```bash
-harness run factory-triage --item-file path/to/work-item.json --verbose
-```
-
-The item file is JSON with `id`, `source`, `title`, and `body`. PR 1 supports
-file-backed intake only; GitHub, Linear, Jira, and Inngest adapters are future
-layers over the same work-item contract.
-
-Factory artifacts are written under
-`<workspace>/.harness/runs/factory/<run-id>/`, including
-`factory-triage.json`, `factory-route.json`, `factory-route.md`, `summary.md`,
-and `meta.json`. The route is one of `ready-to-implement`, `ready-to-plan`,
-`needs-info`, or `wait-to-implement`.
-
-Inspect a local factory inbox and run one item through the station-level triage
-or planning command:
+Route one local work item through factory triage or planning:
 
 ```bash
 harness factory status --workspace /path/to/repo
@@ -108,13 +91,26 @@ harness factory triage --workspace /path/to/repo --item-file .harness/inbox/fact
 harness factory planning --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
 ```
 
-Inbox files live under `<workspace>/.harness/inbox/factory/*.json`.
-Use `harness run factory-triage` as the low-level workflow primitive. Use
-`harness factory triage --item-file ...` and
-`harness factory planning --item-file ...` as operator-facing station commands
-for one work item. `status` is read-only. Factory station agent and model
-selection comes from `harness.json` role config under
-`factory.<station>.roles`.
+The item file is JSON with `id`, `source`, `title`, and `body`. `status` is
+read-only. Station commands process one explicit item and do not move inbox
+files.
+
+Factory artifacts are written under
+`<workspace>/.harness/runs/factory/<run-id>/`. Triage routes are
+`ready-to-implement`, `ready-to-plan`, `needs-info`, or `wait-to-implement`.
+Planning writes reviewed plans into the target repo only after approval.
+
+Use low-level workflow primitives when you need direct workflow execution:
+
+```bash
+harness run factory-triage --item-file path/to/work-item.json --verbose
+harness run plan-review --plan path/to/implementation-plan.md --verbose
+```
+
+Factory station agent and model selection comes from `harness.json` role config
+under `factory.<station>.roles`. GitHub, Linear, Jira, and Inngest adapters are
+future layers over the same work-item contract. For the full operator model,
+read [docs/contributing/factory.md](docs/contributing/factory.md).
 
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).
@@ -148,7 +144,18 @@ ownership and mutability, read
       "roles": {
         "triager": {
           "agent": "cursor",
-          "model": "claude-opus-4-8"
+          "model": "composer-2.5"
+        }
+      }
+    },
+    "planning": {
+      "maxReviewIterations": 3,
+      "roles": {
+        "planner": { "agent": "cursor", "model": "composer-2.5" },
+        "reviewer": {
+          "agent": "codex",
+          "model": "gpt-5.5",
+          "modelReasoningEffort": "high"
         }
       }
     }

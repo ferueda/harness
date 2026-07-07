@@ -550,6 +550,14 @@ test("readme stays a concise entrypoint", () => {
   expect(readme).not.toMatch(/^### [a-z0-9]+(?:-[a-z0-9]+)+$/m);
 });
 
+test("factory operator guide stays linked from entrypoints", () => {
+  expect(existsSync(join(REPO_ROOT, "docs/contributing/factory.md"))).toBe(true);
+  expect(readRepoFile("README.md")).toContain("docs/contributing/factory.md");
+  expect(readRepoFile("docs/contributing/index.md")).toContain("./factory.md");
+  expect(readRepoFile("docs/contributing/architecture.md")).toContain("./factory.md");
+  expect(readRepoFile("docs/contributing/script-command-surface.md")).toContain("./factory.md");
+});
+
 test("docs are covered by format and format check scripts", () => {
   const parsed: unknown = JSON.parse(readRepoFile("package.json"));
   expect(isObject(parsed) && isObject(parsed.scripts), "package.json scripts missing").toBe(true);

@@ -42,6 +42,16 @@ function runHarness(args: string[], input?: string): string {
   return result.stdout;
 }
 
+function runHarnessAllowFailure(args: string[]) {
+  if (!existsSync(BIN)) {
+    throw new Error(`Built harness CLI not found: ${BIN}`);
+  }
+  return spawnSync(process.execPath, [BIN, ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+}
+
 runHarness(["--help"]);
 const factoryHelp = runHarness(["run", "factory-triage", "--help"]);
 if (!factoryHelp.includes("harness run factory-triage")) {
@@ -49,6 +59,13 @@ if (!factoryHelp.includes("harness run factory-triage")) {
 }
 if (!factoryHelp.includes("--item-file <path>")) {
   throw new Error("Expected factory-triage help to include --item-file");
+}
+const planReviewHelp = runHarness(["run", "plan-review", "--help"]);
+if (!planReviewHelp.includes("harness run plan-review")) {
+  throw new Error("Expected plan-review help to include command usage");
+}
+if (!planReviewHelp.includes("--plan <path>")) {
+  throw new Error("Expected plan-review help to include --plan");
 }
 const factoryStatusHelp = runHarness(["factory", "status", "--help"]);
 if (!factoryStatusHelp.includes("harness factory status")) {
@@ -76,6 +93,16 @@ if (!factoryPlanningStationHelp.includes("--output-plan <path>")) {
 }
 if (!factoryPlanningStationHelp.includes("--dry-run")) {
   throw new Error("Expected factory planning help to include --dry-run");
+}
+const factoryDispatchHelp = runHarnessAllowFailure(["factory", "dispatch", "--help"]);
+const factoryDispatchHelpText = `${factoryDispatchHelp.stderr}\n${factoryDispatchHelp.stdout}`;
+if (/factory dispatch/i.test(factoryDispatchHelpText)) {
+  throw new Error("Expected factory dispatch to be absent from factory help");
+}
+const factoryDispatch = runHarnessAllowFailure(["factory", "dispatch"]);
+const factoryDispatchText = `${factoryDispatch.stderr}\n${factoryDispatch.stdout}`;
+if (factoryDispatch.status === 0 || !/unknown command.*dispatch/i.test(factoryDispatchText)) {
+  throw new Error("Expected removed factory dispatch command to report unknown command");
 }
 
 const initWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-init-"));

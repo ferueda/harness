@@ -97,8 +97,9 @@ include git diff scope and does not mutate trackers.
 `lib/factory-planning-run-context.ts` creates local file-backed factory planning
 runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
 schema, prepares `planning/draft.md` for planner writes, snapshots
-per-iteration planner artifacts, and writes an approved final plan under
-`dev/plans/` when the planning station finishes successfully.
+per-iteration planner artifacts, writes `factoryMetadata` into `meta.json`, and
+writes an approved final plan under `dev/plans/` when the planning station
+finishes successfully.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
@@ -204,6 +205,13 @@ the final tracked plan file under `dev/plans/`. `--dry-run` writes placeholder
 planning artifacts but does not invoke providers or reviewers and does not write
 `events.jsonl`.
 
+Planning `meta.json` includes `factoryMetadata` with reserved handoff keys such
+as `tracker`, `factoryRoute`, `factoryNextAction`, `factoryStage`,
+`factoryRunId`, `approvedPlanPath`, and `approvedPlanCommit`. Default approved
+plan filenames include tracker identity when `metadata.tracker` exists, for
+example `dev/plans/260707-gh-123-export-shortcut.md`; local/manual items fall
+back to title-derived slugs.
+
 ## Factory inbox lifecycle
 
 Local factory inbox items live under `.harness/inbox/factory/*.json`. Each
@@ -221,6 +229,10 @@ Current inbox paths:
 `harness factory status` is read-only and reports pending, processed, and failed
 state as JSON. Current factory station commands do not batch-process every inbox
 file or move inbox files.
+
+See [Factory operation](./factory.md) for the current one-item operator flow,
+role config examples, artifact references, and future GitHub/Linear/Inngest
+boundary.
 
 ## Provider boundary
 

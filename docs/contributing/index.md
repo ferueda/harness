@@ -15,6 +15,8 @@ loops.
   decisions and durable improvement habits.
 - [Architecture map](./architecture.md) - CLI, config, workflow, provider,
   artifact, skill, and automation navigation.
+- [Factory operation](./factory.md) - current local factory station commands,
+  role config, artifacts, and future tracker/orchestrator boundaries.
 - [Script and command surface](./script-command-surface.md) - command
   ownership, mutability, generated-help policy, and inventory rules.
 - [Setup manifest](./setup-manifest.md) - local requirements, install/update

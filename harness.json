@@ -11,5 +11,29 @@
       "sandboxMode": "read-only",
       "approvalPolicy": "never"
     }
+  },
+  "factory": {
+    "triage": {
+      "roles": {
+        "triager": {
+          "agent": "cursor",
+          "model": "composer-2.5"
+        }
+      }
+    },
+    "planning": {
+      "maxReviewIterations": 3,
+      "roles": {
+        "planner": {
+          "agent": "cursor",
+          "model": "composer-2.5"
+        },
+        "reviewer": {
+          "agent": "codex",
+          "model": "gpt-5.5",
+          "modelReasoningEffort": "high"
+        }
+      }
+    }
   }
 }

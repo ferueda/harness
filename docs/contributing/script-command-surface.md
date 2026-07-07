@@ -6,7 +6,8 @@ surface; use generated help for exact flags and target text.
 
 See [Architecture](./architecture.md) for runtime flow and artifact lifecycle,
 [Harness engineering](./harness-engineering.md) for the workflow-quality loop,
-and [Setup Manifest](./setup-manifest.md) for generated artifacts and auth.
+[Factory operation](./factory.md) for station operation, and
+[Setup Manifest](./setup-manifest.md) for generated artifacts and auth.
 
 ## Command ownership
 
