@@ -185,28 +185,8 @@ harness models
 Setup and generated-artifact details live in
 [docs/contributing/setup-manifest.md](docs/contributing/setup-manifest.md).
 
-## Inspect Codex Requests
-
-Run the local Responses API logging proxy:
-
-```bash
-pnpm codex:proxy
-```
-
-Point Codex CLI at it in another terminal:
-
-```bash
-codex exec \
-  -c 'model_provider="openai-proxy"' \
-  -c 'model_providers.openai-proxy={name="OpenAI Proxy", base_url="http://127.0.0.1:8787", wire_api="responses", requires_openai_auth=true, supports_websockets=false}' \
-  'Say hi'
-```
-
-Each `POST /responses` request writes a readable Markdown audit under
-`logs/codex-proxy/`, led by a ranked tool-size table. Set
-`CODEX_PROXY_WRITE_RAW=1` to also write the parsed raw request JSON.
-By default the proxy forwards to Codex's ChatGPT backend. API-key users can set
-`CODEX_PROXY_UPSTREAM_ORIGIN=https://api.openai.com/v1`.
+For Codex request-size inspection, run `pnpm codex:proxy`; details live in
+[docs/contributing/script-command-surface.md](docs/contributing/script-command-surface.md).
 
 ## Develop Harness
 
