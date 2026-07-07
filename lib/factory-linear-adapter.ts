@@ -581,6 +581,11 @@ function projectIdForIssue(
   issue: LinearIssueLike,
   project: LinearProjectLike | undefined,
 ): string | undefined {
+  if (issue.projectId && project?.id && issue.projectId !== project.id) {
+    throw new Error(
+      `Linear issue ${issue.identifier} returned inconsistent project data: projectId ${issue.projectId}, project relation ${project.name} (${project.id}).`,
+    );
+  }
   // Prefer Linear's scalar projectId; fall back to the expanded relation for partial SDK payloads.
   return issue.projectId ?? project?.id ?? undefined;
 }
