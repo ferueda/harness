@@ -24,6 +24,6 @@ export function assertFactoryPlanningLinearEntry(input: FactoryResolvedWorkItemI
 
   const status = typeof metadata.linearStatus === "string" ? ` (${metadata.linearStatus})` : "";
   throw new FactoryPlanningError(
-    `Linear issue is in ${String(metadata.factoryStage ?? "unknown")}${status}; planning accepts Needs Plan, planning Needs Info, or Planning Failed.`,
+    `Linear issue is in ${String(metadata.factoryStage ?? "unknown")}${status}; planning accepts Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed.`,
   );
 }

@@ -171,13 +171,14 @@ export function assertLinearPlanningApplyAllowed(
   const allowed = [
     settings.statuses.needsPlan,
     settings.statuses.needsInfo,
+    settings.statuses.needsPlanReview,
     settings.statuses.planningFailed,
   ].map(normalizeStatus);
-  // The station input gate is the authoritative filter for Needs Info:
-  // only planning-attention markers may reach this adapter apply step.
+  // The station input gate is the authoritative filter for needsInfo:
+  // only planner-question markers may reach this adapter apply step.
   if (allowed.includes(normalizeStatus(statusName))) return;
   throw new Error(
-    `Linear issue is in ${statusName}; planning --apply only accepts ${settings.statuses.needsPlan}, ${settings.statuses.needsInfo}, or ${settings.statuses.planningFailed}.`,
+    `Linear issue is in ${statusName}; planning --apply only accepts ${settings.statuses.needsPlan}, ${settings.statuses.needsInfo}, ${settings.statuses.needsPlanReview}, or ${settings.statuses.planningFailed}.`,
   );
 }
 
@@ -189,8 +190,9 @@ export function linearPlanningTargetStatus(
     case "plan-approved":
       return settings.statuses.planning;
     case "plan-needs-human":
-    case "plan-review-unresolved":
       return settings.statuses.needsInfo;
+    case "plan-review-unresolved":
+      return settings.statuses.needsPlanReview;
     case "planning-failed":
       return settings.statuses.planningFailed;
     case "dry_run":

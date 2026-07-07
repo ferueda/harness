@@ -7,7 +7,8 @@ export const LINEAR_SETTINGS = {
   statuses: {
     intake: "Backlog",
     parked: "Parked",
-    needsInfo: "Needs Info",
+    needsInfo: "Needs Clarification",
+    needsPlanReview: "Plan Needs Review",
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
     triaging: "Triaging",

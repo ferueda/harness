@@ -638,9 +638,11 @@ function factoryStageForStatus(
   if (normalized === normalizeName(statuses.intake)) return "incoming";
   if (normalized === normalizeName(statuses.triaging)) return "triaging";
   if (normalized === normalizeName(statuses.needsInfo)) {
-    return linearPlanningAttentionStageFromComments(comments) ?? "needs-info";
+    const stage = linearPlanningAttentionStageFromComments(comments);
+    return stage === "plan-needs-human" ? stage : "needs-info";
   }
   if (normalized === normalizeName(statuses.needsPlan)) return "ready-to-plan";
+  if (normalized === normalizeName(statuses.needsPlanReview)) return "plan-review-unresolved";
   if (normalized === normalizeName(statuses.readyToImplement)) return "ready-to-implement";
   if (normalized === normalizeName(statuses.parked)) return "wait-to-implement";
   if (normalized === normalizeName(statuses.planning)) return "planning";

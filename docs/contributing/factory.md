@@ -102,8 +102,9 @@ Factory station roles use `harness.json`:
       "statuses": {
         "intake": "Backlog",
         "parked": "Parked",
-        "needsInfo": "Needs Info",
+        "needsInfo": "Needs Clarification",
         "needsPlan": "Needs Plan",
+        "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
         "triaging": "Triaging",
         "planning": "Planning",
@@ -179,50 +180,53 @@ LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --line
 
 Linear-backed planning performs a live Linear read, validates configured project
 scope when set, validates that the issue maps to `Needs Plan` or
-`Planning Failed` or a planning-attention `Needs Info`, then runs the existing
-planning station from the fetched `FactoryWorkItem`. It writes local factory
-artifacts and, for live approved runs, the reviewed plan under
+`Planning Failed`, `Needs Clarification`, or `Plan Needs Review`, then runs the
+existing planning station from the fetched `FactoryWorkItem`. It writes local
+factory artifacts and, for live approved runs, the reviewed plan under
 `dev/plans/<issue-key>.md`.
 
 Planning `--apply` is Linear-only and cannot be combined with `--item-file` or
-`--dry-run`. It moves allowed entry statuses (`Needs Plan`, planning-attention
-`Needs Info`, or `Planning Failed`) to `Planning`, runs the station, posts one
-deterministic planning outcome comment, and moves human-attention outcomes to
-`Needs Info` while reserving `Planning Failed` for station/runtime failures.
+`--dry-run`. It moves allowed entry statuses (`Needs Plan`,
+`Needs Clarification`, `Plan Needs Review`, or `Planning Failed`) to
+`Planning`, runs the station, posts one deterministic planning outcome comment,
+and moves human questions to `Needs Clarification`, unresolved reviews to
+`Plan Needs Review`, and station/runtime failures to `Planning Failed`.
 It never moves Linear to `Ready to Implement`; that happens only after the plan
 PR is opened, merged, and recorded by the plan-merge handoff.
 
 Triage `--apply` is also Linear-only and cannot be combined with `--item-file`
-or `--dry-run`. It moves allowed entry statuses (`Backlog`, `Needs Info`, or
-`Triage Failed`) to `Triaging`, runs the station, then moves to the terminal
-status and writes one marker comment:
+or `--dry-run`. It moves allowed entry statuses (`Backlog`,
+`Needs Clarification`, or `Triage Failed`) to `Triaging`, runs the station,
+then moves to the terminal status and writes one marker comment:
 
 - `ready-to-implement` -> `Ready to Implement`
 - `ready-to-plan` -> `Needs Plan`
-- `needs-info` -> `Needs Info`
+- `needs-info` -> `Needs Clarification`
 - `wait-to-implement` -> `Parked`
 - triage failure -> `Triage Failed`
 
 Comment dedupe and planning-attention detection check the most recent Linear
 comments fetched by the adapter (currently 20). If the relevant marker is older
 than that window, a retry may post another marker comment or classify
-`Needs Info` as generic human input instead of a planning re-entry state.
+`Needs Clarification` as generic human input instead of a planning re-entry
+state.
 
 Linear status is human board state. Harness metadata is finer-grained factory
 state. The adapter maps:
 
 - `Backlog` -> `incoming`
 - `Triaging` -> `triaging`
-- `Needs Info` -> `needs-info`
+- `Needs Clarification` -> `needs-info`
+- `Plan Needs Review` -> `plan-review-unresolved`
 - `Needs Plan` -> `ready-to-plan`
 - `Ready to Implement` -> `ready-to-implement`
 - `Parked` -> `wait-to-implement`
 - `Planning` -> `planning`
 - `Planning Failed` -> `planning-failed`
 
-When `Needs Info` carries the latest factory planning marker for
-`plan-needs-human` or `plan-review-unresolved`, the adapter preserves that
-planning-attention stage in metadata so planning can rerun from the issue.
+When `Needs Clarification` carries the latest factory planning marker for
+`plan-needs-human`, the adapter preserves that planning-attention stage in
+metadata so planning can rerun from the issue.
 
 `Triage Failed` is kept as `metadata.linearStatus`; it is not a `factoryStage`
 today.
@@ -272,16 +276,17 @@ harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --
 
 `--item-file` and `--linear-issue` are mutually exclusive. Linear-backed
 planning requires `LINEAR_API_KEY` and `factory.linear` config. It accepts
-issues in `Needs Plan`, `Planning Failed`, or `Needs Info` when the latest
-factory planning marker identifies `plan-needs-human` or
-`plan-review-unresolved`; other Linear statuses are rejected before a factory
-run directory is created. Dry-run still performs the live Linear read but does
-not mutate Linear.
+issues in `Needs Plan`, `Needs Clarification` when the latest factory planning
+marker identifies `plan-needs-human`, `Plan Needs Review`, or
+`Planning Failed`; other Linear statuses are rejected before a factory run
+directory is created. Dry-run still performs the live Linear read but does not
+mutate Linear.
 
 With `--apply`, planning moves the Linear issue to `Planning` before planner
 work starts. Terminal outcomes post one marker comment: approved plans stay in
-`Planning`, human questions and unresolved reviews move to `Needs Info`, and
-station/runtime failures move to `Planning Failed`.
+`Planning`, human questions move to `Needs Clarification`, unresolved reviews
+move to `Plan Needs Review`, and station/runtime failures move to
+`Planning Failed`.
 
 The planner writes a draft file, the harness snapshots it, `plan-review`
 reviews the snapshot, and the same planner session handles review findings

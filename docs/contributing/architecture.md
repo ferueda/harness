@@ -145,10 +145,11 @@ agent and model selection.
 station-level planning command and uses `factory.planning.roles.planner` and
 `factory.planning.roles.reviewer` config for agent and model selection.
 Linear-backed planning input performs a live read. With `--apply`, it moves
-`Needs Plan`, planning-attention `Needs Info`, or `Planning Failed` to
-`Planning`, runs the planning loop, then posts one outcome comment and moves
-human-attention outcomes to `Needs Info` while reserving `Planning Failed` for
-station/runtime failures. It does not move issues to `Ready to Implement`.
+`Needs Plan`, planning-attention `Needs Clarification`, `Plan Needs Review`, or
+`Planning Failed` to `Planning`, runs the planning loop, then posts one outcome
+comment. Human questions move to `Needs Clarification`, unresolved reviews move
+to `Plan Needs Review`, and station/runtime failures move to `Planning Failed`.
+It does not move issues to `Ready to Implement`.
 `harness factory planning --item-file ...` and
 `harness factory planning --linear-issue ...` remain default-subcommand aliases
 for the run command. `harness factory planning publish` and

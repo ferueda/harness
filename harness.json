@@ -41,8 +41,9 @@
       "statuses": {
         "intake": "Backlog",
         "parked": "Parked",
-        "needsInfo": "Needs Info",
+        "needsInfo": "Needs Clarification",
         "needsPlan": "Needs Plan",
+        "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
         "triaging": "Triaging",
         "planning": "Planning",

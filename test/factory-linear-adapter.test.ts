@@ -26,7 +26,8 @@ const LINEAR_SETTINGS = {
   statuses: {
     intake: "Backlog",
     parked: "Parked",
-    needsInfo: "Needs Info",
+    needsInfo: "Needs Clarification",
+    needsPlanReview: "Plan Needs Review",
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
     triaging: "Triaging",
@@ -162,18 +163,27 @@ test("Linear planning comments include stable markers and plan handoff links", (
 
 test("Linear planning apply helpers map statuses and render concise comments", () => {
   expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-approved")).toBe("Planning");
-  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-needs-human")).toBe("Needs Info");
-  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-review-unresolved")).toBe("Needs Info");
+  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-needs-human")).toBe(
+    "Needs Clarification",
+  );
+  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-review-unresolved")).toBe(
+    "Plan Needs Review",
+  );
   expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "planning-failed")).toBe("Planning Failed");
   expect(() => linearPlanningTargetStatus(LINEAR_SETTINGS, "dry_run")).toThrow(
     /cannot be used with dry-run/,
   );
   expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Needs Plan")).not.toThrow();
-  expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Needs Info")).not.toThrow();
+  expect(() =>
+    assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Needs Clarification"),
+  ).not.toThrow();
+  expect(() =>
+    assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Plan Needs Review"),
+  ).not.toThrow();
   expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Planning Failed")).not.toThrow();
   for (const status of ["Backlog", "Ready to Implement", "Planning"]) {
     expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, status)).toThrow(
-      /only accepts Needs Plan, Needs Info, or Planning Failed/,
+      /only accepts Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed/,
     );
   }
 
@@ -232,7 +242,7 @@ test("Linear triage helpers map routes and render concise comments", () => {
     "Ready to Implement",
   );
   expect(linearTriageTargetStatus(LINEAR_SETTINGS, "ready-to-plan")).toBe("Needs Plan");
-  expect(linearTriageTargetStatus(LINEAR_SETTINGS, "needs-info")).toBe("Needs Info");
+  expect(linearTriageTargetStatus(LINEAR_SETTINGS, "needs-info")).toBe("Needs Clarification");
   expect(linearTriageTargetStatus(LINEAR_SETTINGS, "wait-to-implement")).toBe("Parked");
   expect(() => assertLinearTriageApplyAllowed(LINEAR_SETTINGS, "Backlog")).not.toThrow();
   for (const status of [
@@ -244,7 +254,7 @@ test("Linear triage helpers map routes and render concise comments", () => {
     "Planning Failed",
   ]) {
     expect(() => assertLinearTriageApplyAllowed(LINEAR_SETTINGS, status)).toThrow(
-      /only accepts Backlog, Needs Info, or Triage Failed/,
+      /only accepts Backlog, Needs Clarification, or Triage Failed/,
     );
   }
 
@@ -253,7 +263,7 @@ test("Linear triage helpers map routes and render concise comments", () => {
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
       route: "needs-info",
-      targetStatus: "Needs Info",
+      targetStatus: "Needs Clarification",
       questions: ["Which provider should own this?"],
     }),
   ).toContain("<!-- harness-factory:triage:run-1 -->");
@@ -498,7 +508,7 @@ test("Linear adapter validates configured statuses against team states", async (
   });
 
   await expect(adapter.validateStatusMap()).rejects.toThrow(
-    /missing configured statuses: Parked, Needs Info/,
+    /missing configured statuses: Parked, Needs Clarification/,
   );
 });
 
@@ -515,7 +525,7 @@ test("Linear adapter validates status map during fetch", async () => {
   });
 
   await expect(adapter.fetchWorkItem("ENG-123")).rejects.toThrow(
-    /missing configured statuses: Parked, Needs Info/,
+    /missing configured statuses: Parked, Needs Clarification/,
   );
 });
 
@@ -625,28 +635,14 @@ test("Linear adapter sorts comments and records truncation", async () => {
   });
 });
 
-test("Linear adapter preserves planning attention stage from Needs Info comments", async () => {
+test("Linear adapter maps Plan Needs Review to unresolved planning", async () => {
   const adapter = createLinearFactoryAdapterForClient({
     client: fakeClient({
       issues: async () => ({
         nodes: [
           {
             ...ISSUE,
-            state: Promise.resolve({ id: "state-Needs Info", name: "Needs Info" }),
-            comments: async () => ({
-              nodes: [
-                {
-                  body: [
-                    "<!-- harness-factory:planning-apply:run-1 -->",
-                    "",
-                    "Factory plan needs human review.",
-                    "",
-                    "Status: plan-review-unresolved",
-                  ].join("\n"),
-                  createdAt: new Date("2026-07-07T12:00:00Z"),
-                },
-              ],
-            }),
+            state: Promise.resolve({ id: "state-Plan Needs Review", name: "Plan Needs Review" }),
           },
         ],
       }),
@@ -658,18 +654,21 @@ test("Linear adapter preserves planning attention stage from Needs Info comments
 
   expect(item.metadata).toMatchObject({
     factoryStage: "plan-review-unresolved",
-    linearStatus: "Needs Info",
+    linearStatus: "Plan Needs Review",
   });
 });
 
-test("Linear adapter keeps generic Needs Info without planning marker", async () => {
+test("Linear adapter keeps generic Needs Clarification without planning marker", async () => {
   const adapter = createLinearFactoryAdapterForClient({
     client: fakeClient({
       issues: async () => ({
         nodes: [
           {
             ...ISSUE,
-            state: Promise.resolve({ id: "state-Needs Info", name: "Needs Info" }),
+            state: Promise.resolve({
+              id: "state-Needs Clarification",
+              name: "Needs Clarification",
+            }),
             comments: async () => ({
               nodes: [
                 {
@@ -689,7 +688,47 @@ test("Linear adapter keeps generic Needs Info without planning marker", async ()
 
   expect(item.metadata).toMatchObject({
     factoryStage: "needs-info",
-    linearStatus: "Needs Info",
+    linearStatus: "Needs Clarification",
+  });
+});
+
+test("Linear adapter preserves needs-human stage from Needs Clarification comments", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({
+              id: "state-Needs Clarification",
+              name: "Needs Clarification",
+            }),
+            comments: async () => ({
+              nodes: [
+                {
+                  body: [
+                    "<!-- harness-factory:planning-apply:run-1 -->",
+                    "",
+                    "Factory planning needs human input.",
+                    "",
+                    "Status: plan-needs-human",
+                  ].join("\n"),
+                  createdAt: new Date("2026-07-07T12:00:00Z"),
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const item = await adapter.fetchWorkItem("ENG-123");
+
+  expect(item.metadata).toMatchObject({
+    factoryStage: "plan-needs-human",
+    linearStatus: "Needs Clarification",
   });
 });
 
@@ -710,7 +749,7 @@ test("Linear adapter reports missing and ambiguous human issue identifiers", asy
 });
 
 test("Linear adapter applies triage started status from allowed entry states", async () => {
-  for (const statusName of ["Backlog", "Needs Info", "Triage Failed"]) {
+  for (const statusName of ["Backlog", "Needs Clarification", "Triage Failed"]) {
     const updates: Array<{ id: string; input: { stateId: string } }> = [];
     const adapter = createLinearFactoryAdapterForClient({
       client: fakeClient({
@@ -764,7 +803,7 @@ test("Linear adapter rejects triage apply from terminal statuses before mutation
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
     }),
-  ).rejects.toThrow(/only accepts Backlog, Needs Info, or Triage Failed/);
+  ).rejects.toThrow(/only accepts Backlog, Needs Clarification, or Triage Failed/);
   expect(updates).toEqual([]);
 });
 
@@ -884,7 +923,12 @@ test("Linear adapter rejects terminal triage apply outside configured project be
 });
 
 test("Linear adapter applies planning started status from allowed entry states", async () => {
-  for (const statusName of ["Needs Plan", "Needs Info", "Planning Failed"]) {
+  for (const statusName of [
+    "Needs Plan",
+    "Needs Clarification",
+    "Plan Needs Review",
+    "Planning Failed",
+  ]) {
     const updates: Array<{ id: string; input: { stateId: string } }> = [];
     const adapter = createLinearFactoryAdapterForClient({
       client: fakeClient({
@@ -946,7 +990,9 @@ test("Linear adapter rejects planning apply from disallowed statuses before muta
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
     }),
-  ).rejects.toThrow(/only accepts Needs Plan, Needs Info, or Planning Failed/);
+  ).rejects.toThrow(
+    /only accepts Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed/,
+  );
   expect(updates).toEqual([]);
 });
 
@@ -1020,13 +1066,13 @@ test.each([
   },
   {
     status: "plan-needs-human" as const,
-    targetStatus: "Needs Info",
+    targetStatus: "Needs Clarification",
     expectedBody: "- Which scope should we use?",
     extra: { humanQuestions: ["Which scope should we use?"] },
   },
   {
     status: "plan-review-unresolved" as const,
-    targetStatus: "Needs Info",
+    targetStatus: "Plan Needs Review",
     expectedBody: "Factory plan needs human review.",
     extra: {
       draftPlanPath: ".harness/runs/factory/run-1/iterations/3/plan.md",
@@ -1262,7 +1308,7 @@ test.each([
   },
   {
     route: "needs-info" as const,
-    targetStatus: "Needs Info",
+    targetStatus: "Needs Clarification",
     triageExtra: { questions: ["Which provider should own this?"] },
     expectedBody: "- Which provider should own this?",
   },
