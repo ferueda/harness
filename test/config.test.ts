@@ -249,6 +249,7 @@ test("resolveFactoryLinearSettings reads configured Linear tracker mapping", () 
     factory: {
       linear: {
         teamKey: "ENG",
+        projectId: "project-1",
         statuses: LINEAR_STATUSES,
       },
     },
@@ -257,6 +258,7 @@ test("resolveFactoryLinearSettings reads configured Linear tracker mapping", () 
   expect(resolveFactoryLinearSettings({ workspace }, "/")).toEqual({
     workspace,
     teamKey: "ENG",
+    projectId: "project-1",
     statuses: LINEAR_STATUSES,
   });
 });
