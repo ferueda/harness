@@ -22,6 +22,7 @@ Station commands:
 harness factory status --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file work-item.json
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory planning --workspace /path/to/repo --item-file work-item.json
 ```
 
@@ -89,8 +90,8 @@ LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/rep
 
 This command is read-only. It validates the configured Linear team statuses,
 then prints a work item with issue description, labels, recent comments, and
-tracker metadata. Redirect the output to an item file before running triage or
-planning.
+tracker metadata. Redirect the output to an item file before planning, or pass
+the issue directly to triage with `--linear-issue`.
 
 ## Triage
 
@@ -98,7 +99,12 @@ Run:
 
 ```bash
 harness factory triage --workspace /path/to/repo --item-file work-item.json
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 ```
+
+`--linear-issue` uses Linear as the input source only. It requires
+`LINEAR_API_KEY` and `factory.linear` config, writes local factory artifacts,
+and does not mutate Linear.
 
 Routes:
 

@@ -34,6 +34,20 @@
           "modelReasoningEffort": "high"
         }
       }
+    },
+    "linear": {
+      "teamKey": "FER",
+      "statuses": {
+        "intake": "Backlog",
+        "parked": "Parked",
+        "needsInfo": "Needs Info",
+        "needsPlan": "Needs Plan",
+        "readyToImplement": "Ready to Implement",
+        "triaging": "Triaging",
+        "planning": "Planning",
+        "triageFailed": "Triage Failed",
+        "planningFailed": "Planning Failed"
+      }
     }
   }
 }
