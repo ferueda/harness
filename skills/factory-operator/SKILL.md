@@ -23,6 +23,7 @@ harness factory status --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
@@ -103,12 +104,19 @@ Run:
 ```bash
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 ```
 
-`--linear-issue` uses Linear as the input source only. It requires
+`--linear-issue` uses Linear as the input source by default. It requires
 `LINEAR_API_KEY` and `factory.linear` config. Every `--linear-issue` triage run
 performs a live Linear read before writing local factory artifacts, including
-dry-runs. It does not mutate Linear.
+dry-runs. Add `--apply` to move allowed entry statuses to `Triaging`, then to
+the terminal triage status, and write one marker comment. `--apply` cannot be
+combined with `--dry-run` or `--item-file`.
+
+If an apply run leaves Linear in `Triaging`, inspect `summary.md` and
+`meta.json`, then manually move the issue to `Triage Failed`, `Backlog`, or
+another intentional status before rerunning.
 
 Routes:
 
@@ -164,7 +172,8 @@ Stop before proceeding if the task requires:
 
 - running or restoring `harness factory dispatch`
 - batch-moving every inbox item
-- mutating GitHub, Linear, Jira, or Inngest
+- mutating GitHub, Jira, or Inngest
+- mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked source files

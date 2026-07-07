@@ -1,12 +1,16 @@
 import { expect, test } from "vitest";
 import type { FactoryLinearSettings } from "../lib/config.ts";
 import {
+  assertLinearTriageApplyAllowed,
   createLinearFactoryAdapterForClient,
+  linearTriageTargetStatus,
   parseLinearIssueIdentifier,
   renderLinearPlanningApprovedComment,
   renderLinearPlanningReadyComment,
+  renderLinearTriageCompleteComment,
   type LinearClientLike,
 } from "../lib/factory-linear-adapter.ts";
+import type { FactoryTriageOutput } from "../lib/factory-schemas.ts";
 
 const LINEAR_SETTINGS = {
   teamKey: "ENG",
@@ -68,9 +72,19 @@ function fakeClient(overrides: Partial<LinearClientLike> = {}): LinearClientLike
     issue: async () => ISSUE,
     issues: async () => ({ nodes: [ISSUE] }),
     teams: async () => ({ nodes: [TEAM] }),
+    updateIssue: async () => ({ success: true }),
+    createComment: async () => ({ success: true }),
     ...overrides,
   };
 }
+
+const TRIAGE_READY_TO_PLAN = {
+  route: "ready-to-plan",
+  confidence: "high",
+  rationale: "Needs a reviewed plan.",
+  evidence: [{ kind: "tracker", summary: "Issue asks for a larger workflow." }],
+  suggestedNext: { action: "create-plan" },
+} satisfies FactoryTriageOutput;
 
 test("parseLinearIssueIdentifier accepts human issue ids", () => {
   expect(parseLinearIssueIdentifier("eng-123")).toEqual({ teamKey: "ENG", number: 123 });
@@ -95,6 +109,38 @@ test("Linear planning comments include stable markers and plan handoff links", (
       runDir: ".harness/runs/factory/20260707-120000",
     }),
   ).toContain("Commit: `abc1234`");
+});
+
+test("Linear triage helpers map routes and render concise comments", () => {
+  expect(linearTriageTargetStatus(LINEAR_SETTINGS, "ready-to-implement")).toBe(
+    "Ready to Implement",
+  );
+  expect(linearTriageTargetStatus(LINEAR_SETTINGS, "ready-to-plan")).toBe("Needs Plan");
+  expect(linearTriageTargetStatus(LINEAR_SETTINGS, "needs-info")).toBe("Needs Info");
+  expect(linearTriageTargetStatus(LINEAR_SETTINGS, "wait-to-implement")).toBe("Parked");
+  expect(() => assertLinearTriageApplyAllowed(LINEAR_SETTINGS, "Backlog")).not.toThrow();
+  for (const status of [
+    "Needs Plan",
+    "Ready to Implement",
+    "Parked",
+    "Triaging",
+    "Planning",
+    "Planning Failed",
+  ]) {
+    expect(() => assertLinearTriageApplyAllowed(LINEAR_SETTINGS, status)).toThrow(
+      /only accepts Backlog, Needs Info, or Triage Failed/,
+    );
+  }
+
+  expect(
+    renderLinearTriageCompleteComment({
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+      route: "needs-info",
+      targetStatus: "Needs Info",
+      questions: ["Which provider should own this?"],
+    }),
+  ).toContain("<!-- harness-factory:triage:run-1 -->");
 });
 
 test("Linear adapter fetches an issue as a factory work item", async () => {
@@ -312,4 +358,193 @@ test("Linear adapter reports missing and ambiguous human issue identifiers", asy
   await expect(ambiguous.fetchWorkItem("ENG-123")).rejects.toThrow(
     /Linear issue lookup was ambiguous: ENG-123/,
   );
+});
+
+test("Linear adapter applies triage started status from allowed entry states", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Backlog", name: "Backlog", type: "backlog" }),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.applyTriageStarted({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+  });
+
+  expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Triaging" } }]);
+  expect(result).toMatchObject({
+    issueIdentifier: "ENG-123",
+    stage: "start",
+    fromStatus: "Backlog",
+    targetStatus: "Triaging",
+  });
+});
+
+test("Linear adapter rejects triage apply from terminal statuses before mutation", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+    }),
+  ).rejects.toThrow(/only accepts Backlog, Needs Info, or Triage Failed/);
+  expect(updates).toEqual([]);
+});
+
+test("Linear adapter applies completed triage status and comment", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Triaging", name: "Triaging", type: "started" }),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.applyTriageCompleted({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    triage: TRIAGE_READY_TO_PLAN,
+    routePlan: {
+      route: "ready-to-plan",
+      nextAction: "create-plan",
+      statusLabel: "ready-to-plan",
+      artifactRelPath: "factory-route.md",
+      humanSummary: "Needs a plan.",
+    },
+  });
+
+  expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Needs Plan" } }]);
+  expect(comments).toHaveLength(1);
+  expect(comments[0].body).toContain("Route: ready-to-plan");
+  expect(result).toMatchObject({
+    stage: "complete",
+    fromStatus: "Triaging",
+    targetStatus: "Needs Plan",
+    commentMarker: "<!-- harness-factory:triage:run-1 -->",
+  });
+});
+
+test("Linear adapter skips duplicate triage comments", async () => {
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Triaging", name: "Triaging", type: "started" }),
+            comments: async () => ({
+              nodes: [{ body: "<!-- harness-factory:triage:run-1 -->\nAlready posted." }],
+            }),
+          },
+        ],
+      }),
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyTriageCompleted({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    triage: TRIAGE_READY_TO_PLAN,
+    routePlan: {
+      route: "ready-to-plan",
+      nextAction: "create-plan",
+      statusLabel: "ready-to-plan",
+      artifactRelPath: "factory-route.md",
+      humanSummary: "Needs a plan.",
+    },
+  });
+
+  expect(comments).toEqual([]);
+});
+
+test("Linear adapter applies failed triage status and comment", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Triaging", name: "Triaging", type: "started" }),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.applyTriageFailed({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    error: "agent timeout",
+  });
+
+  expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Triage Failed" } }]);
+  expect(comments[0].body).toContain("Error: agent timeout");
+  expect(result).toMatchObject({
+    stage: "failed",
+    fromStatus: "Triaging",
+    targetStatus: "Triage Failed",
+    commentMarker: "<!-- harness-factory:triage-failed:run-1 -->",
+  });
 });
