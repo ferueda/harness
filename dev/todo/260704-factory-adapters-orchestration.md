@@ -365,15 +365,18 @@ Keep Linear implementation in scoped slices:
    status map validation, issue identifier lookup, issue/comment conversion to
    `FactoryWorkItem`, and `harness factory linear fetch TEAM-123`. No Linear
    mutation.
-2. **Triage integration.** Add `--linear-issue` to `harness factory triage`,
-   keep it mutually exclusive with `--item-file`, support `--dry-run` previews,
-   and make `--apply` move from an allowed entry status to `Triaging`, then to
-   the terminal triage status with idempotent comments.
-3. **Planning integration.** Add `--linear-issue` to `harness factory planning`,
+2. **Triage input integration.** Add `--linear-issue` to
+   `harness factory triage`, keep it mutually exclusive with `--item-file`, and
+   run the existing triage station from a Linear-derived `FactoryWorkItem`. This
+   slice is read-only toward Linear and does not add `--apply`.
+3. **Triage apply integration.** Add `--apply` for Linear-backed triage. Move
+   from an allowed entry status to `Triaging`, then to the terminal triage
+   status with idempotent comments.
+4. **Planning integration.** Add `--linear-issue` to `harness factory planning`,
    guard entry from `Needs Plan | Planning Failed`, support dry-run previews, and
    make `--apply` move through `Planning` to `Ready to Implement`, `Needs Info`,
    or `Planning Failed` with approved-plan comments when applicable.
-4. **Backlog listing.** Later, add a read-only command that lists issues in the
+5. **Backlog listing.** Later, add a read-only command that lists issues in the
    configured intake status and prints candidate station commands. Do not batch
    run work in the first Linear adapter pass.
 

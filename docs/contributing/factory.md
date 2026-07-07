@@ -19,6 +19,7 @@ harness run plan-review --plan path/to/implementation-plan.md
 harness factory status --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file work-item.json
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory planning --workspace /path/to/repo --item-file work-item.json
 ```
 
@@ -134,9 +135,19 @@ Use Linear fetch to normalize one issue into a `FactoryWorkItem`:
 LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/repo
 ```
 
-The command is read-only. It validates `factory.linear.statuses` against the
-configured team workflow, fetches the issue description, labels, and recent
+The fetch command is read-only. It validates `factory.linear.statuses` against
+the configured team workflow, fetches the issue description, labels, and recent
 comments, then prints JSON suitable for `--item-file`.
+
+The triage station can also fetch Linear directly:
+
+```bash
+LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+```
+
+`--linear-issue` and `--item-file` are mutually exclusive. Linear-backed triage
+currently uses Linear only as the input source; it writes normal factory run
+artifacts and does not move Linear statuses or write comments.
 
 Linear status is human board state. Harness metadata is finer-grained factory
 state. The adapter maps:
@@ -160,6 +171,7 @@ Use triage to classify an idea or issue into one deterministic route:
 
 ```bash
 harness factory triage --workspace /path/to/repo --item-file work-item.json
+harness factory triage --workspace /path/to/repo --linear-issue ENG-123
 ```
 
 Routes:

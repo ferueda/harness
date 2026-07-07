@@ -108,9 +108,12 @@ status` reads `.harness/inbox/factory/` without moving files or creating runs.
 `lib/factory-linear-adapter.ts` owns read-only Linear issue import.
 `harness factory linear fetch TEAM-123` validates `factory.linear` status
 mapping, reads one Linear issue through `@linear/sdk`, and prints a normalized
-`FactoryWorkItem` JSON object. It does not mutate Linear.
+`FactoryWorkItem` JSON object. `harness factory triage --linear-issue TEAM-123`
+uses the same adapter as an input source before running the station. Neither
+path mutates Linear.
 
-`harness factory triage --item-file ...` runs one work item through the
+`harness factory triage --item-file ...` or
+`harness factory triage --linear-issue ...` runs one work item through the
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
@@ -257,5 +260,6 @@ adapter.
 
 Active runtime roadmap items such as `steps.json`, graders, tracker mutation,
 Linear-backed triage/planning apply modes, GitHub/Jira adapters, hosted trigger
-inboxes, and Inngest are future work. They should be added to this map only
+inboxes, and Inngest are future work. Linear-backed triage input is current;
+Linear status/comment mutation is not. Future items should be added to this map only
 after they describe current behavior in the repo.
