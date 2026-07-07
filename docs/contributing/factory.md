@@ -313,7 +313,8 @@ Stop and re-check scope if the work requires:
 
 - reviving `harness factory dispatch`
 - moving every inbox item in a batch
-- mutating GitHub, Linear, Jira, or Inngest from current station commands
+- mutating GitHub, Jira, or Inngest from current station commands
+- mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked files

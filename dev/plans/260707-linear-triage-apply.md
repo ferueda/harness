@@ -634,7 +634,7 @@ Docs tests:
 - [x] `pnpm exec vitest run test/cli.test.ts --testNamePattern "Linear"` exits 0.
 - [x] `pnpm exec vitest run test/docs-contracts.test.ts` exits 0.
 - [x] `pnpm check` exits 0.
-- [ ] Live smoke result is documented in the PR body, including which disposable
+- [x] Live smoke result is documented in the PR body, including which disposable
       issue was used or why live smoke was skipped.
 - [x] `dev/plans/README.md` row is updated.
 
