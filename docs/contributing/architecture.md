@@ -5,7 +5,7 @@
 ```text
 CLI (bin/harness.ts)
   -> workspace/config resolution (lib/config.ts, harness.json)
-  -> workflow context (lib/workflow-context.ts or lib/factory-run-context.ts)
+  -> workflow context (lib/workflow-context.ts, lib/factory-run-context.ts, or lib/factory-planning-run-context.ts)
   -> provider selection (providers/registry.ts and provider adapters)
   -> workflow definition (workflows/*.workflow.ts)
   -> artifacts (.harness/runs/reviews/<run-id>/ or .harness/runs/factory/<run-id>/)
@@ -16,6 +16,7 @@ Current public CLI surfaces:
 - `harness init`
 - `harness factory status`
 - `harness factory triage`
+- `harness factory planning`
 - `harness run change-review`
 - `harness run factory-triage`
 - `harness run plan-review`
@@ -41,11 +42,15 @@ The harness repo owns the reusable workflow system:
 - `dev/plans/` - active plans and handoffs.
 
 Prompt templates live under `lib/prompts/`. Review prompts are loaded through
-`lib/workflow-context.ts`; factory triage uses `lib/factory-run-context.ts`.
+`lib/workflow-context.ts`; factory triage uses `lib/factory-run-context.ts`;
+factory planning uses `lib/factory-planning-run-context.ts`.
 
 Runtime Zod validation lives in `lib/schemas.ts` for reviews and
-`lib/factory-schemas.ts` for factory intake. `schemas/` owns exported JSON
-schema artifacts. Changes to one side may require checking the other.
+`lib/factory-schemas.ts` for factory intake and
+`lib/factory-planning-schemas.ts` for factory planning. `schemas/` owns
+exported JSON schema artifacts such as `factory-triage-output.schema.json` and
+`factory-planning-output.schema.json`. Changes to one side may require checking
+the other.
 
 ## Target repo responsibilities
 
@@ -89,11 +94,21 @@ copies `context/work-item.json`, resolves the harness-owned factory triage JSON
 schema, invokes the selected provider, and writes route artifacts. It does not
 include git diff scope and does not mutate trackers.
 
+`lib/factory-planning-run-context.ts` creates local file-backed factory planning
+runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
+schema, prepares `planning/draft.md` for planner writes, snapshots
+per-iteration planner artifacts, and writes an approved final plan under
+`dev/plans/` when the planning station finishes successfully.
+
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
 `harness factory triage --item-file ...` runs one work item through the
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
+
+`harness factory planning --item-file ...` runs one work item through the
+station-level planning command and uses `factory.planning.roles.planner` and
+`factory.planning.roles.reviewer` config for agent and model selection.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these
@@ -104,6 +119,13 @@ may request a subset of reviewers.
 returns structured triage JSON; deterministic harness code maps that output to
 one route plan. Current input is `--item-file`; future GitHub, Linear, Jira, or
 orchestrator adapters should feed the same `FactoryWorkItem` contract.
+
+`workflows/factory-planning.workflow.ts` runs one planning station loop. The
+planner writes/edits the run draft file and returns small structured metadata.
+Harness snapshots the draft, runs `plan-review` against that snapshot, guards
+against tracked source edits during planner turns, and reuses the captured
+planner session for revisions until the plan is approved, needs human input,
+fails, or reaches the review-iteration limit.
 
 `workflows/plan-review.workflow.ts` runs one fixed spec-review step. The
 plan-review command/runtime omits git diff scope and relies on `context/plan.md`
@@ -144,10 +166,10 @@ scope by default and may also include a plan or handoff.
 
 ## Factory artifact lifecycle
 
-Each factory triage run creates `.harness/runs/factory/<run-id>/` under the
+Each factory station run creates `.harness/runs/factory/<run-id>/` under the
 selected workspace or explicit runs directory.
 
-Current artifacts include:
+Factory triage artifacts include:
 
 - `context/work-item.json`
 - `factory-triage.prompt.md`
@@ -161,6 +183,26 @@ Current artifacts include:
 
 `--dry-run` writes placeholder triage and route artifacts but does not invoke a
 provider and does not write `events.jsonl`.
+
+Factory planning artifacts include:
+
+- `context/work-item.json`
+- `planning/draft.md`
+- `iterations/<n>/planner.prompt.md`
+- `iterations/<n>/planner.raw.json`
+- `iterations/<n>/planner.json`
+- `iterations/<n>/plan.md` when the planner produced a draft
+- `iterations/<n>/plan-review-ref.json` when a review ran
+- `iterations/<n>/review-findings.json` when review findings need revision
+- `summary.md`
+- `meta.json`
+- `events.jsonl` for live runs
+
+Live planning runs create nested plan-review runs under
+`.harness/runs/reviews/<run-id>/`. When a plan is approved, the station writes
+the final tracked plan file under `dev/plans/`. `--dry-run` writes placeholder
+planning artifacts but does not invoke providers or reviewers and does not write
+`events.jsonl`.
 
 ## Factory inbox lifecycle
 

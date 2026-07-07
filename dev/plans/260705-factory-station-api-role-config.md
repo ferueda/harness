@@ -284,6 +284,10 @@ Important:
 
 - If `factory.planning.roles.reviewer.agent` is `codex`, reviewer inherits
   from `agents.codex`, even when `defaultAgent` is `cursor`.
+- `factory.planning.roles.planner` is a write-capable station role. If it
+  resolves to Codex and the planner role does not explicitly set
+  `sandboxMode`, default it to `workspace-write` so the planner can write the
+  run draft file. Keep reviewer defaults read-only through `agents.codex`.
 - If a station exists but omits a role entry, resolve that missing role exactly
   like an absent factory block. For example, `factory.planning.roles` may
   configure only `reviewer`; `planner` still falls back through

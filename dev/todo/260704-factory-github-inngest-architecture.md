@@ -169,11 +169,16 @@ draft iterations:
   .harness/runs/factory/<run-id>/iterations/*
 
 final approved plan:
-  dev/plans/YYMMDD-short-slug.md
+  dev/plans/YYMMDD-<tracker-key>-short-slug.md
+  dev/plans/YYMMDD-short-slug.md              # local/manual fallback
 
 plan-review artifacts:
   .harness/runs/reviews/<run-id>/
 ```
+
+The repo file is the canonical approved plan. The tracker issue is an index and
+state surface. Do not make a GitHub issue body/comment the source of truth for
+the full plan.
 
 Implementation artifacts:
 
@@ -192,10 +197,48 @@ GitHub issue comments should contain concise status summaries:
 ```text
 Factory plan approved.
 
-Plan: dev/plans/260704-factory-planner-station.md
+Plan: dev/plans/260707-gh-123-export-shortcut.md
 Run: .harness/runs/factory/20260704-...
 Next: ready-to-implement
 ```
+
+## Metadata contract
+
+Before adding tracker adapters or Inngest functions, keep one metadata contract
+that connects tracker item -> factory station -> approved plan ->
+implementation. This belongs on `FactoryWorkItem.metadata` and run `meta.json`.
+Adapters may add provider-specific keys, but these names are reserved:
+
+```json
+{
+  "tracker": {
+    "source": "github",
+    "id": "owner/repo#123",
+    "url": "https://github.com/owner/repo/issues/123"
+  },
+  "factoryRoute": "ready-to-plan",
+  "factoryNextAction": "create-plan",
+  "factoryStage": "plan-approved",
+  "factoryRunId": "20260707-120000",
+  "approvedPlanPath": "dev/plans/260707-gh-123-export-shortcut.md",
+  "approvedPlanCommit": "abc1234"
+}
+```
+
+Field meaning:
+
+- `tracker`: original external work item identity. This is optional for local
+  file/manual items.
+- `factoryRoute`: triage route such as `ready-to-plan`.
+- `factoryNextAction`: deterministic next action such as `create-plan`.
+- `factoryStage`: current station stage, independent of tracker labels/status.
+- `factoryRunId`: latest harness factory run that changed the item.
+- `approvedPlanPath`: canonical repo-relative plan path after approval.
+- `approvedPlanCommit`: optional commit pin once the plan is committed.
+
+Implementation should resolve `approvedPlanPath`, verify the file exists, and
+prefer `approvedPlanCommit` when present. If the tracker says a plan is approved
+but the path is missing or stale, fail closed instead of guessing.
 
 If factory workers run outside the developer machine, `.harness/runs/*` needs a
 durable backend. Options:
@@ -327,7 +370,7 @@ require GitHub or Inngest to run one work item end to end.
    stations?
 6. What is the retry policy for failed agent/provider runs vs deterministic
    schema failures?
-7. How should GitHub issue edits/comments be folded back into
-   `FactoryWorkItem.metadata` for reruns?
+7. Which tracker fields/comments should map back into the reserved
+   `FactoryWorkItem.metadata` keys on reruns?
 8. Should `ready-to-implement` automatically start implementation, or should it
    wait for a human/applied label in early versions?

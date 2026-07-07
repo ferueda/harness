@@ -100,18 +100,21 @@ and `meta.json`. The route is one of `ready-to-implement`, `ready-to-plan`,
 `needs-info`, or `wait-to-implement`.
 
 Inspect a local factory inbox and run one item through the station-level triage
-command:
+or planning command:
 
 ```bash
 harness factory status --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
+harness factory planning --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
 ```
 
 Inbox files live under `<workspace>/.harness/inbox/factory/*.json`.
 Use `harness run factory-triage` as the low-level workflow primitive. Use
-`harness factory triage --item-file ...` as the operator-facing station command.
-`status` is read-only. Factory station agent and model selection comes from
-`harness.json` role config under `factory.<station>.roles`.
+`harness factory triage --item-file ...` and
+`harness factory planning --item-file ...` as operator-facing station commands
+for one work item. `status` is read-only. Factory station agent and model
+selection comes from `harness.json` role config under
+`factory.<station>.roles`.
 
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).

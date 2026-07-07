@@ -229,6 +229,42 @@ test("resolveFactoryPlanningSettings reads configured value and defaults to thre
   });
 });
 
+test("resolveFactoryRoleAgent defaults Codex planning planner to workspace-write", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    defaultAgent: "codex",
+    agents: {
+      codex: {
+        sandboxMode: "read-only",
+        approvalPolicy: "never",
+      },
+    },
+    factory: {
+      planning: {
+        roles: {
+          planner: { agent: "codex" },
+          reviewer: { agent: "codex" },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "planning", role: "planner" }, "/"),
+  ).toMatchObject({
+    agent: "codex",
+    sandboxMode: "workspace-write",
+    approvalPolicy: "never",
+  });
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "planning", role: "reviewer" }, "/"),
+  ).toMatchObject({
+    agent: "codex",
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
+  });
+});
+
 test("resolveFactoryRoleAgent resolves missing role entries through fallback", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeHarnessJson(workspace, {

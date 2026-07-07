@@ -139,7 +139,7 @@ ready-to-plan work item
   -> harness runs plan-review
   -> planner receives review findings
   -> planner decides implement/adapt/decline for each finding
-  -> planner outputs revised plan + decision rationale
+  -> planner edits draft in place + outputs decision rationale
   -> harness runs plan-review again when needed
   -> plan-approved | plan-needs-human | plan-review-unresolved | planning-failed
 ```
@@ -269,6 +269,11 @@ Important detail: when a role sets `agent`, that role inherits from
 `agents.codex.modelReasoningEffort` even when `defaultAgent` is `cursor`.
 `defaultAgent` is used only when the role omits `agent`.
 
+Codex planning has one special default: `factory.planning.roles.planner` needs
+to write `planning/draft.md`, so a Codex planner defaults to
+`sandboxMode: "workspace-write"` unless the planner role explicitly sets a
+different sandbox. Codex reviewers and other Codex roles can remain read-only.
+
 Do not overload current `resolveHarnessOptions` for this. Add a small per-role
 resolver that returns one resolved bundle per station role:
 
@@ -350,10 +355,10 @@ if plan-review verdict == blocked:
 if plan-review workflow fails:
   stop as planning-failed
 
-if planner says needsHuman:
+if planner outcome == needs-human:
   stop as plan-needs-human
 
-if planner returns readyForReview:
+if planner outcome == draft-ready:
   run plan-review again
 
 if max iterations reached:
@@ -421,31 +426,72 @@ fragile.
 
 ## Planner output contract
 
-The planner should return structured output, not free-form filesystem writes.
-Harness writes files deterministically after validation.
+Decision after review: planning is a document workflow, not a pure structured
+output workflow. Triage should stay structured JSON because it is
+classification/routing. Planning should use a draft file for the markdown plan
+and structured JSON only for small metadata.
+
+The old design required the planner to return full `planMarkdown` and a
+`shortSlug` on every pass. Decline that design:
+
+- It makes long markdown a JSON payload.
+- It forces the revision pass to reserialize the full plan.
+- It tempts the harness to resend the previous full plan even though the same
+  planner session already has context.
+- It does not match the manual planning workflow, where the planner edits the
+  plan file in place.
+
+The better boundary:
+
+- Harness creates one draft path per factory planning run:
+
+  ```text
+  .harness/runs/factory/<run-id>/planning/draft.md
+  ```
+
+- Planner writes/edits only that draft path.
+- Planner returns only small structured metadata.
+- Harness snapshots the draft after every planner turn.
+- `plan-review` reviews the snapshot, not the live draft.
+- Harness owns the final copy to `dev/plans/`.
+- Harness derives the default final filename slug from the work item title/id;
+  the planner does not output filenames.
+
+Initial planner input:
+
+- Work item JSON.
+- Draft path to write.
+- Current date.
+- Planning instructions and output schema.
 
 Initial planning output:
 
 ```json
 {
-  "status": "ready-for-review",
-  "planSlug": "factory-planner-station",
-  "planMarkdown": "# Plan ...",
-  "summary": "Creates a factory planning station...",
-  "needsHuman": false,
-  "questions": []
+  "outcome": "draft-ready",
+  "summary": "Created an implementation plan for the work item.",
+  "humanQuestions": [],
+  "findingDecisions": []
 }
 ```
+
+Revision planner input:
+
+- Draft path to edit in place.
+- Latest review findings with synthetic ids.
+- Output schema.
+- No previous full plan markdown.
+- No repeated full work item JSON unless we later find provider session reuse is
+  unreliable.
 
 Revision output:
 
 ```json
 {
-  "status": "ready-for-review",
-  "planSlug": "factory-planner-station",
-  "planMarkdown": "# Revised Plan ...",
   "summary": "Addressed review findings around session reuse.",
-  "reviewDecisions": [
+  "outcome": "draft-ready",
+  "humanQuestions": [],
+  "findingDecisions": [
     {
       "findingId": "spec-001",
       "decision": "adapt",
@@ -456,21 +502,32 @@ Revision output:
       "decision": "decline",
       "rationale": "The abstraction has one caller in this slice; adding a registry now is premature."
     }
-  ],
-  "needsHuman": false,
-  "questions": []
+  ]
 }
 ```
 
 Possible planner statuses:
 
 ```text
-ready-for-review
+draft-ready
 needs-human
-failed
 ```
 
 The factory station translates those into station states.
+
+Minimum guardrails for letting the planner write the draft:
+
+- Prompt says to mutate only the draft path.
+- Harness validates the draft exists, is a file, and is non-empty before each
+  snapshot.
+- Harness snapshots to `iterations/<n>/plan.md` before review.
+- Harness compares tracked Git status before and after each planner turn, when
+  the workspace is a Git repository, and fails if tracked source changes.
+- Harness final `dev/plans` write is a deterministic copy after approval, not a
+  planner write.
+
+Defer hard provider-level writable-root enforcement to a separate slice. It is
+desirable, but the first PR can use post-turn validation and Git status checks.
 
 ## Station states
 
@@ -604,6 +661,8 @@ Candidate layout:
 ```text
 .harness/runs/factory/<run-id>/
   context/work-item.json
+  planning/
+    draft.md
   planner-session.json
   iterations/
     001/
@@ -642,7 +701,19 @@ The final approved plan should be written to:
 
 ```text
 dev/plans/YYMMDD-short-slug.md
+dev/plans/YYMMDD-<tracker-key>-short-slug.md  # when tracker metadata exists
 ```
+
+Default `short-slug` is harness-derived from the work item title, falling back
+to the work item id. If `FactoryWorkItem.metadata.tracker` exists, the default
+filename should include a source-prefixed tracker key before the title slug,
+for example `260707-gh-123-export-shortcut.md` or
+`260707-linear-team-123-export-shortcut.md`. `--output-plan` remains the
+explicit operator override.
+
+The approved plan path is the canonical implementation input. Tracker issues
+should point to it through comments/fields; they should not store the full plan
+as the source of truth.
 
 Open decision: whether draft iterations should write directly to `dev/plans/`
 or stay only under `.harness/runs/factory/<run-id>/` until approved.
@@ -650,7 +721,7 @@ or stay only under `.harness/runs/factory/<run-id>/` until approved.
 Preference for first slice:
 
 - Keep iterations under `.harness/runs/factory/<run-id>/`.
-- Pass `harness run plan-review --plan` the draft plan path under
+- Pass `harness run plan-review --plan` the iteration snapshot under
   `.harness/runs/factory/<run-id>/iterations/<n>/plan.md`.
 - Write final plan to `dev/plans/` only after `plan-approved`.
 
@@ -660,6 +731,32 @@ Provider workspace guards should run around agent turns, not around harness
 artifact writes. The planning station must write `.harness` iteration artifacts
 outside the guarded provider call so those writes do not make the provider run
 look like it mutated the workspace.
+
+## Station metadata contract
+
+The planner station should preserve and update reserved factory metadata in run
+`meta.json` so future tracker adapters and implementation stations can continue
+without reinterpreting comments or filenames:
+
+```json
+{
+  "tracker": {
+    "source": "github",
+    "id": "owner/repo#123",
+    "url": "https://github.com/owner/repo/issues/123"
+  },
+  "factoryRoute": "ready-to-plan",
+  "factoryNextAction": "create-plan",
+  "factoryStage": "plan-approved",
+  "factoryRunId": "20260707-120000",
+  "approvedPlanPath": "dev/plans/260707-gh-123-export-shortcut.md",
+  "approvedPlanCommit": "abc1234"
+}
+```
+
+`approvedPlanCommit` is optional until the plan file is committed. The
+implementation station should fail closed when metadata points to a missing
+plan, and should prefer the commit pin when it exists.
 
 ## Dry-run behavior
 
