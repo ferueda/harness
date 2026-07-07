@@ -90,7 +90,9 @@ harness factory status --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
-harness factory planning --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
+harness factory planning run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
+harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 ```
 
 The item file is JSON with `id`, `source`, `title`, and `body`. `status` is
@@ -100,7 +102,10 @@ files.
 Factory artifacts are written under
 `<workspace>/.harness/runs/factory/<run-id>/`. Triage routes are
 `ready-to-implement`, `ready-to-plan`, `needs-info`, or `wait-to-implement`.
-Planning writes reviewed plans into the target repo only after approval.
+Planning writes reviewed plans into the target repo only after approval. For
+tracker-backed work, publish the plan file through a plan PR, then register the
+PR URL and merge commit with the planning publication commands before treating
+the tracker item as ready to implement.
 
 Use low-level workflow primitives when you need direct workflow execution:
 

@@ -288,6 +288,20 @@ test("harness factory planning help exits cleanly without direct agent flags", (
   const result = runHarness(["factory", "planning", "--help"]);
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness factory planning/);
+  expect(result.stdout).toMatch(/run/);
+  expect(result.stdout).toMatch(/publish/);
+  expect(result.stdout).toMatch(/mark-plan-merged/);
+  expect(result.stdout).not.toMatch(/--agent/);
+  expect(result.stdout).not.toMatch(/--model/);
+  expect(result.stdout).not.toMatch(/--codex-executable/);
+  expect(result.stdout).not.toMatch(/--sandbox/);
+  expect(result.stdout).not.toMatch(/--approval-policy/);
+  expect(result.stdout).not.toMatch(/--reasoning-effort/);
+});
+test("harness factory planning run help exits cleanly without direct agent flags", () => {
+  const result = runHarness(["factory", "planning", "run", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory planning run/);
   expect(result.stdout).toMatch(/--item-file <path>/);
   expect(result.stdout).toMatch(/--output-plan <path>/);
   expect(result.stdout).toMatch(/--max-review-iterations <count>/);
@@ -298,6 +312,19 @@ test("harness factory planning help exits cleanly without direct agent flags", (
   expect(result.stdout).not.toMatch(/--sandbox/);
   expect(result.stdout).not.toMatch(/--approval-policy/);
   expect(result.stdout).not.toMatch(/--reasoning-effort/);
+});
+test("harness factory planning publication help exits cleanly", () => {
+  const publish = runHarness(["factory", "planning", "publish", "--help"]);
+  expect(publish.status).toBe(0);
+  expect(publish.stdout).toMatch(/harness factory planning publish/);
+  expect(publish.stdout).toMatch(/--run-dir <path>/);
+  expect(publish.stdout).toMatch(/--pr-url <url>/);
+
+  const merged = runHarness(["factory", "planning", "mark-plan-merged", "--help"]);
+  expect(merged.status).toBe(0);
+  expect(merged.stdout).toMatch(/harness factory planning mark-plan-merged/);
+  expect(merged.stdout).toMatch(/--run-dir <path>/);
+  expect(merged.stdout).toMatch(/--commit <sha>/);
 });
 test("harness run factory-planning is not a command", () => {
   const result = runHarness(["run", "factory-planning"]);
@@ -1498,6 +1525,79 @@ test("harness factory planning dry-run works in non-git workspaces", () => {
   );
   expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain(
     '"workflow": "factory-planning"',
+  );
+});
+
+test("harness factory planning publication commands patch run metadata", () => {
+  const workspace = createPlainWorkspace();
+  const runDir = mkdtempSync(join(tmpdir(), "harness-cli-planning-run-"));
+  mkdirSync(join(workspace, "dev/plans"), { recursive: true });
+  writeFileSync(join(workspace, "dev/plans/FER-123.md"), "# Plan\n", "utf8");
+  writeFileSync(
+    join(runDir, "meta.json"),
+    JSON.stringify(
+      {
+        runId: "20260707-120000",
+        workflow: "factory-planning",
+        status: "plan-approved",
+        workspace,
+        runDir,
+        workItem: { id: "linear:FER-123", source: "linear", title: "Plan issue" },
+        outputPlan: join(workspace, "dev/plans/FER-123.md"),
+        factoryMetadata: {
+          factoryStage: "plan-pr-open",
+          approvedPlanPath: "dev/plans/FER-123.md",
+        },
+        iterations: [{ index: 1 }],
+        plannerAgent: { name: "cursor", model: "composer-2.5" },
+        reviewerAgent: { name: "cursor", model: "composer-2.5" },
+        summaryPath: join(runDir, "summary.md"),
+        metaPath: join(runDir, "meta.json"),
+        startedAt: "2026-07-07T12:00:00.000Z",
+        durationMs: 1,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  writeFileSync(join(runDir, "summary.md"), "# Old Summary\n", "utf8");
+
+  const publish = runHarness([
+    "factory",
+    "planning",
+    "publish",
+    "--run-dir",
+    runDir,
+    "--pr-url",
+    "https://github.com/owner/repo/pull/123",
+  ]);
+  expect(publish.status).toBe(0);
+  const published = JSON.parse(publish.stdout);
+  expect(published.factoryMetadata).toMatchObject({
+    factoryStage: "plan-pr-open",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+  });
+  expect(published.linearComment).toContain("Factory plan ready.");
+
+  const merged = runHarness([
+    "factory",
+    "planning",
+    "mark-plan-merged",
+    "--run-dir",
+    runDir,
+    "--commit",
+    "abc1234",
+  ]);
+  expect(merged.status).toBe(0);
+  const output = JSON.parse(merged.stdout);
+  expect(output.factoryMetadata).toMatchObject({
+    factoryStage: "plan-approved",
+    approvedPlanCommit: "abc1234",
+  });
+  expect(output.linearComment).toContain("Factory plan approved.");
+  expect(readFileSync(join(runDir, "summary.md"), "utf8")).toContain(
+    "Ready for future tracker move",
   );
 });
 

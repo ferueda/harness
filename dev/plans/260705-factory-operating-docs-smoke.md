@@ -63,7 +63,7 @@ harness run plan-review --plan dev/plans/example.md
 
 harness factory status
 harness factory triage --item-file work-item.json
-harness factory planning --item-file work-item.json
+harness factory planning run --item-file work-item.json
 ```
 
 Factory commands are station operators. `harness run ...` commands are low-level
@@ -338,7 +338,7 @@ Required skill sections:
 
 ```bash
 harness factory triage --item-file work-item.json
-harness factory planning --item-file work-item.json
+harness factory planning run --item-file work-item.json
 harness factory status
 ```
 

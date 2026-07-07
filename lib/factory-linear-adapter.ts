@@ -89,6 +89,17 @@ type LinearIssueIdentifier = {
   number: number;
 };
 
+export type LinearPlanningReadyCommentInput = {
+  runId: string;
+  approvedPlanPath: string;
+  approvedPlanPrUrl: string;
+  runDir: string;
+};
+
+export type LinearPlanningApprovedCommentInput = LinearPlanningReadyCommentInput & {
+  approvedPlanCommit: string;
+};
+
 export function createLinearFactoryAdapter(input: {
   apiKey: string;
   settings: FactoryLinearSettings;
@@ -117,6 +128,36 @@ export function parseLinearIssueIdentifier(issueRef: string): LinearIssueIdentif
     teamKey: match[1].toUpperCase(),
     number: Number(match[2]),
   };
+}
+
+export function renderLinearPlanningReadyComment(input: LinearPlanningReadyCommentInput): string {
+  return [
+    `<!-- harness-factory:planning:${input.runId} -->`,
+    "",
+    "Factory plan ready.",
+    "",
+    `Plan: \`${input.approvedPlanPath}\``,
+    `Plan PR: ${input.approvedPlanPrUrl}`,
+    `Run: \`${input.runDir}\``,
+    "Next: merge plan PR, then move to Ready to Implement.",
+    "",
+  ].join("\n");
+}
+
+export function renderLinearPlanningApprovedComment(
+  input: LinearPlanningApprovedCommentInput,
+): string {
+  return [
+    `<!-- harness-factory:planning-approved:${input.runId} -->`,
+    "",
+    "Factory plan approved.",
+    "",
+    `Plan: \`${input.approvedPlanPath}\``,
+    `Merged PR: ${input.approvedPlanPrUrl}`,
+    `Commit: \`${input.approvedPlanCommit}\``,
+    "Next: Ready to Implement.",
+    "",
+  ].join("\n");
 }
 
 async function fetchWorkItem(

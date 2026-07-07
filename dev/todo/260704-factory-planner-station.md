@@ -54,7 +54,7 @@ initial development phase, run stations for one work item at a time:
 harness factory status
 
 harness factory triage --item-file item.json
-harness factory planning --item-file item.json
+harness factory planning run --item-file item.json
 ```
 
 Rules:
@@ -147,7 +147,7 @@ ready-to-plan work item
 Initial CLI shape:
 
 ```bash
-harness factory planning --workspace /path/to/repo --item-file work-item.json
+harness factory planning run --workspace /path/to/repo --item-file work-item.json
 ```
 
 Likely options:
@@ -821,7 +821,7 @@ Do not jump straight to a full planning station. Build the enabling slices:
      context survives a fresh harness run/process when credentials are present.
 
 3. **Factory planning station, one item**
-   - Add `harness factory planning --item-file`.
+   - Add `harness factory planning run --item-file`.
    - Add planner output schema.
    - Add planner prompt based on `create-plan` principles.
    - Write per-iteration artifacts.

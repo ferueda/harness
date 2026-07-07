@@ -335,19 +335,134 @@ test("factory planning includes tracker identity in derived plan path and metada
   const meta = await runFactoryPlanning(ctx);
 
   expect(meta.status).toBe("plan-approved");
-  expect(meta.outputPlan).toMatch(/\/dev\/plans\/\d{6}-gh-123-fix-export-crash\.md$/);
+  expect(meta.outputPlan).toBe(join(workspace, "dev/plans/GH-123.md"));
   expect(meta.factoryMetadata).toMatchObject({
     factoryRoute: "ready-to-plan",
     factoryNextAction: "create-plan",
-    factoryStage: "plan-approved",
+    factoryStage: "plan-pr-open",
     factoryRunId: meta.runId,
-    approvedPlanPath: expect.stringMatching(/^dev\/plans\/\d{6}-gh-123-fix-export-crash\.md$/),
+    approvedPlanPath: "dev/plans/GH-123.md",
     tracker: {
       source: "github",
       id: "ferueda/harness#123",
       url: "https://github.com/ferueda/harness/issues/123",
     },
   });
+});
+
+test("factory planning derives Linear tracker plan path and keeps plan PR gate with output override", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: {
+      ...WORK_ITEM,
+      id: "linear:eng-123",
+      source: "linear",
+      metadata: {
+        ...WORK_ITEM.metadata,
+        tracker: {
+          source: "linear",
+          id: "eng-123",
+          url: "https://linear.app/acme/issue/ENG-123",
+        },
+      },
+    },
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    outputPlan: "dev/plans/custom-replan.md",
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeDraftPlan(draftPath, "# Linear Tracker Plan\n");
+          return okPlanner(draft(), {
+            provider: "cursor",
+            id: "planner-session-1",
+          });
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, PASS_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "pass",
+      };
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("plan-approved");
+  expect(meta.outputPlan).toBe(join(workspace, "dev/plans/custom-replan.md"));
+  expect(meta.factoryMetadata).toMatchObject({
+    factoryStage: "plan-pr-open",
+    approvedPlanPath: "dev/plans/custom-replan.md",
+    tracker: {
+      source: "linear",
+      id: "eng-123",
+    },
+  });
+});
+
+test("factory planning fails closed for invalid GitHub tracker path metadata", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: {
+      ...WORK_ITEM,
+      metadata: {
+        ...WORK_ITEM.metadata,
+        tracker: {
+          source: "github",
+          id: "repo#123",
+        },
+      },
+    },
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeDraftPlan(draftPath, "# Invalid Tracker Plan\n");
+          return okPlanner(draft(), {
+            provider: "cursor",
+            id: "planner-session-1",
+          });
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, PASS_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "pass",
+      };
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Invalid GitHub tracker id for plan path");
+  expect(existsSync(join(workspace, "dev/plans"))).toBe(false);
 });
 
 test("factory planning fails without overwriting an existing output plan", async () => {

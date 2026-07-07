@@ -7,7 +7,7 @@
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)               | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md)             | `in_progress` | Factory intake triage, deterministic routing, local inbox |
 | [260705-factory-operating-docs-smoke.md](./260705-factory-operating-docs-smoke.md) | `in_progress` | Factory operating docs, packaged skill, and smoke checks  |
-| [260707-linear-plan-pr-handoff.md](./260707-linear-plan-pr-handoff.md)             | `planned`     | Linear planning handoff through repo plan PRs             |
+| [260707-linear-plan-pr-handoff.md](./260707-linear-plan-pr-handoff.md)             | `in_progress` | Linear planning handoff through repo plan PRs             |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
