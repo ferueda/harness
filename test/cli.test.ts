@@ -311,6 +311,7 @@ test("harness factory planning run help exits cleanly without direct agent flags
   expect(result.stdout).toMatch(/--linear-issue <issue>/);
   expect(result.stdout).toMatch(/--output-plan <path>/);
   expect(result.stdout).toMatch(/--max-review-iterations <count>/);
+  expect(result.stdout).toMatch(/--apply/);
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).not.toMatch(/--agent/);
   expect(result.stdout).not.toMatch(/--model/);
@@ -1625,6 +1626,64 @@ test("harness factory planning rejects multiple input sources before role config
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/--item-file and --linear-issue are mutually exclusive/);
   expect(result.stderr).not.toMatch(/sandboxMode applies only when role agent is codex/);
+});
+
+test("harness factory planning apply rejects item-file mode before role config resolution", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify({
+      defaultAgent: "cursor",
+      factory: {
+        planning: {
+          roles: {
+            planner: {
+              sandboxMode: "read-only",
+            },
+          },
+        },
+      },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "plan-local-1", source: "file", title: "Plan", body: "" }),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "planning",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--apply",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply cannot be used with --item-file/);
+  expect(result.stderr).not.toMatch(/sandboxMode applies only when role agent is codex/);
+});
+
+test("harness factory planning apply rejects dry-run before Linear config resolution", () => {
+  const workspace = createPlainWorkspace();
+
+  const result = runHarness([
+    "factory",
+    "planning",
+    "--workspace",
+    workspace,
+    "--linear-issue",
+    "ENG-123",
+    "--apply",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply cannot be combined with --dry-run/);
+  expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
 test("harness factory planning with Linear input requires Linear config", () => {
