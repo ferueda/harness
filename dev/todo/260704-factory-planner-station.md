@@ -453,7 +453,9 @@ The better boundary:
 - Planner returns only small structured metadata.
 - Harness snapshots the draft after every planner turn.
 - `plan-review` reviews the snapshot, not the live draft.
-- Harness owns the final copy to `dev/plans/`.
+- Harness owns the final copy to `dev/plans/`. Tracker-backed planning should
+  publish that copy through a plan PR before the tracker item is considered
+  ready to implement.
 - Harness derives the default final filename slug from the work item title/id;
   the planner does not output filenames.
 
@@ -700,20 +702,22 @@ review artifacts can come later if needed.
 The final approved plan should be written to:
 
 ```text
+dev/plans/<tracker-key>.md                    # tracker-backed default, e.g. FER-123.md
 dev/plans/YYMMDD-short-slug.md
-dev/plans/YYMMDD-<tracker-key>-short-slug.md  # when tracker metadata exists
+dev/plans/YYMMDD-<tracker-key>-short-slug.md  # optional explicit override
 ```
 
-Default `short-slug` is harness-derived from the work item title, falling back
-to the work item id. If `FactoryWorkItem.metadata.tracker` exists, the default
-filename should include a source-prefixed tracker key before the title slug,
-for example `260707-gh-123-export-shortcut.md` or
-`260707-linear-team-123-export-shortcut.md`. `--output-plan` remains the
-explicit operator override.
+For tracker-backed work, the default filename should be the tracker key so the
+artifact is stable and obvious, for example `dev/plans/FER-123.md`. For local
+or manual work, default `short-slug` is harness-derived from the work item
+title, falling back to the work item id. `--output-plan` remains the explicit
+operator override.
 
-The approved plan path is the canonical implementation input. Tracker issues
-should point to it through comments/fields; they should not store the full plan
-as the source of truth.
+The approved plan path is the canonical implementation input only after it is
+committed/merged. Tracker issues should point to the path and plan PR through
+comments/fields; they should not store the full plan as the source of truth.
+Linear should move planned work to `Ready to Implement` only after the plan PR
+has merged.
 
 Open decision: whether draft iterations should write directly to `dev/plans/`
 or stay only under `.harness/runs/factory/<run-id>/` until approved.
@@ -724,6 +728,8 @@ Preference for first slice:
 - Pass `harness run plan-review --plan` the iteration snapshot under
   `.harness/runs/factory/<run-id>/iterations/<n>/plan.md`.
 - Write final plan to `dev/plans/` only after `plan-approved`.
+- For tracker-backed runs, open a plan PR and wait for merge before treating
+  the work item as `Ready to Implement`.
 
 This avoids leaving unapproved plan churn in tracked source.
 
@@ -749,12 +755,14 @@ without reinterpreting comments or filenames:
   "factoryNextAction": "create-plan",
   "factoryStage": "plan-approved",
   "factoryRunId": "20260707-120000",
-  "approvedPlanPath": "dev/plans/260707-gh-123-export-shortcut.md",
+  "approvedPlanPath": "dev/plans/GH-123.md",
+  "approvedPlanPrUrl": "https://github.com/owner/repo/pull/123",
   "approvedPlanCommit": "abc1234"
 }
 ```
 
-`approvedPlanCommit` is optional until the plan file is committed. The
+`approvedPlanPrUrl` is present while the plan PR is open. `approvedPlanCommit`
+is required before planned work moves to `Ready to Implement`. The
 implementation station should fail closed when metadata points to a missing
 plan, and should prefer the commit pin when it exists.
 
@@ -846,8 +854,7 @@ Do not jump straight to a full planning station. Build the enabling slices:
 1. Should provider session continuation be implemented as a generic agent
    abstraction before the planning station, or should the planning station call
    provider-specific APIs directly?
-2. Should the final approved plan be the only tracked `dev/plans/` write, or
-   should draft iterations also be checked in?
+2. How much plan PR automation belongs in the first Linear planning apply slice?
 3. Should `plan-review` artifacts remain in normal review run directories, or
    be nested/copied under the factory run directory?
 4. What should happen when the planner declines a must-fix finding and the

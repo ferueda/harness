@@ -100,7 +100,8 @@ runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
 schema, prepares `planning/draft.md` for planner writes, snapshots
 per-iteration planner artifacts, writes `factoryMetadata` into `meta.json`, and
 writes an approved final plan under `dev/plans/` when the planning station
-finishes successfully.
+finishes successfully. Tracker-backed plans should be published through a plan
+PR before tracker status moves to `Ready to Implement`.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
@@ -211,16 +212,17 @@ Factory planning artifacts include:
 
 Live planning runs create nested plan-review runs under
 `.harness/runs/reviews/<run-id>/`. When a plan is approved, the station writes
-the final tracked plan file under `dev/plans/`. `--dry-run` writes placeholder
-planning artifacts but does not invoke providers or reviewers and does not write
-`events.jsonl`.
+the final tracked plan file under `dev/plans/`. Tracker-backed flows should
+publish that file through a plan PR before implementation starts. `--dry-run`
+writes placeholder planning artifacts but does not invoke providers or reviewers
+and does not write `events.jsonl`.
 
 Planning `meta.json` includes `factoryMetadata` with reserved handoff keys such
 as `tracker`, `factoryRoute`, `factoryNextAction`, `factoryStage`,
-`factoryRunId`, `approvedPlanPath`, and `approvedPlanCommit`. Default approved
-plan filenames include tracker identity when `metadata.tracker` exists, for
-example `dev/plans/260707-gh-123-export-shortcut.md`; local/manual items fall
-back to title-derived slugs.
+`factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
+`approvedPlanCommit`. Tracker-backed approved plan filenames should use the
+tracker key, for example `dev/plans/FER-123.md`; local/manual items fall back to
+title-derived slugs.
 
 ## Factory inbox lifecycle
 

@@ -24,6 +24,7 @@ export const FACTORY_STAGES = [
   "needs-info",
   "wait-to-implement",
   "planning",
+  "plan-pr-open",
   "plan-reviewing",
   "plan-needs-revision",
   "plan-approved",
@@ -95,6 +96,7 @@ export const FactoryWorkItemMetadataSchema = z
     factoryStage: FactoryStageSchema.optional(),
     factoryRunId: z.string().min(1).optional(),
     approvedPlanPath: z.string().min(1).optional(),
+    approvedPlanPrUrl: z.url().optional(),
     approvedPlanCommit: z.string().min(1).optional(),
   })
   .catchall(JsonValueSchema);

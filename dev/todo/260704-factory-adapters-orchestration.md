@@ -113,16 +113,19 @@ file-backed local runs, GitHub/Linear, Inngest, and implementation:
   },
   "factoryRoute": "ready-to-plan",
   "factoryNextAction": "create-plan",
-  "factoryStage": "plan-approved",
+  "factoryStage": "plan-pr-open",
   "factoryRunId": "20260707-120000",
-  "approvedPlanPath": "dev/plans/260707-linear-team-123-export-shortcut.md",
+  "approvedPlanPath": "dev/plans/TEAM-123.md",
+  "approvedPlanPrUrl": "https://github.com/acme/repo/pull/123",
   "approvedPlanCommit": "abc1234"
 }
 ```
 
 Trackers should store board state, summaries, and links. The canonical approved
-plan should be a repo file at `approvedPlanPath`. Tracker comments should not
-be the source of truth for the full plan.
+plan should be a repo file at `approvedPlanPath`, but tracker-backed planning
+must publish that file through a plan PR before the tracker moves to
+`Ready to Implement`. Tracker comments should link the plan path and plan PR;
+they should not be the source of truth for the full plan.
 
 Keep two related but distinct concepts:
 
@@ -131,9 +134,10 @@ Keep two related but distinct concepts:
 - Linear status is the coarse human board state such as `Ready to Implement`,
   `Needs Info`, or `Planning Failed`.
 
-For example, an internally approved planning run may keep
-`factoryStage=plan-approved` in metadata while Linear moves the issue to
-`Ready to Implement`.
+For example, an internally approved planning run may first keep
+`factoryStage=plan-pr-open` in metadata while Linear remains in `Planning`.
+After the plan PR merges, metadata moves to `factoryStage=plan-approved` and
+Linear moves to `Ready to Implement`.
 
 ## Work item stages
 
@@ -266,9 +270,10 @@ Duplicate
 ```
 
 Do not add `Plan Approved` as a Linear status. A successful planning station
-moves the issue to `Ready to Implement` and writes a concise comment with the
-approved plan path. The board should answer what needs attention or work now;
-the plan artifact answers what implementation should follow.
+writes the approved plan to `dev/plans/<tracker-key>.md`, opens or expects a
+plan PR, and writes a concise comment with the plan path and PR link. The issue
+should move to `Ready to Implement` only after the plan PR merges, so the board
+answers what can actually be implemented from `main`.
 
 Example route mapping:
 
@@ -278,7 +283,8 @@ ready-to-plan      -> Linear status: Needs Plan
 needs-info         -> Linear status: Needs Info + comment with questions
 wait-to-implement  -> Linear status: Parked + comment with reconsiderWhen
 triage failure     -> Linear status: Triage Failed + error comment
-planning success   -> Linear status: Ready to Implement + approved plan path comment
+planning success   -> Linear status: Planning + plan path / plan PR comment
+plan PR merged     -> Linear status: Ready to Implement + approved plan path comment
 plan-needs-human   -> Linear status: Needs Info + questions/comment
 review unresolved  -> Linear status: Planning Failed + unresolved review comment
 planning failure   -> Linear status: Planning Failed + error comment
@@ -349,9 +355,11 @@ Recommended Linear sequence:
    ```
 
    When the internal planning outcome is approved, writes the approved plan to
-   `dev/plans/`, records `approvedPlanPath` in metadata, moves Linear to
-   `Ready to Implement`, and adds a concise summary with the plan path. Linear
-   comments should not contain the full plan.
+   `dev/plans/<tracker-key>.md`, records `approvedPlanPath` and
+   `approvedPlanPrUrl` in metadata, and adds a concise summary with the plan
+   path and plan PR. Linear should move to `Ready to Implement` only after the
+   plan PR merges and `approvedPlanCommit` is known. Linear comments should not
+   contain the full plan.
 
 6. Linear inbox:
 
@@ -407,14 +415,16 @@ Initial implementation slice should prefer Linear before the implementation
 station if we want to validate the factory against real tracker state first:
 
 ```text
-Linear issue -> triage -> ready-to-plan -> planning -> approved plan artifact -> ready-to-implement
+Linear issue -> triage -> ready-to-plan -> planning -> plan PR -> ready-to-implement
 ```
 
 This gives the future implementation station a concrete input contract:
 consume Linear issues in `Ready to Implement`. If `approvedPlanPath` exists,
-the implementer must follow it. If no `approvedPlanPath` exists, it is a
-triage-direct item and the implementation station should require an explicit
-direct-implementation route marker.
+the implementer must follow the plan at that path on `main`; if
+`approvedPlanCommit` exists, the implementer should prefer that commit as the
+pin. If no `approvedPlanPath` exists, it is a triage-direct item and the
+implementation station should require an explicit direct-implementation route
+marker.
 
 ## Linear SDK notes
 
@@ -481,9 +491,10 @@ For planning:
 <!-- harness-factory:planning:<run-id> -->
 Factory plan ready.
 
-Plan: dev/plans/260707-linear-team-123-export-shortcut.md
+Plan: dev/plans/TEAM-123.md
+Plan PR: https://github.com/acme/repo/pull/123
 Run: .harness/runs/factory/<run-id>
-Next: Ready to Implement
+Next: merge plan PR, then Ready to Implement
 ```
 
 The adapter should avoid duplicate comments for the same run id and skip writes
@@ -662,9 +673,12 @@ Later:
 Linear status: Needs Plan
   -> Inngest event: factory/work_item.ready_to_plan
   -> Harness planning workflow
+  -> Linear status: Planning
+  -> Linear comment with approved plan path + plan PR
+  -> Work item metadata gets approvedPlanPath, approvedPlanPrUrl, factoryStage=plan-pr-open
+  -> Plan PR merged event
   -> Linear status: Ready to Implement
-  -> Linear comment with approved plan path
-  -> Work item metadata gets approvedPlanPath and factoryStage=plan-approved
+  -> Work item metadata gets approvedPlanCommit and factoryStage=plan-approved
 ```
 
 ## Boundary rule

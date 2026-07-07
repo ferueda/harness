@@ -172,16 +172,18 @@ draft iterations:
   .harness/runs/factory/<run-id>/iterations/*
 
 final approved plan:
-  dev/plans/YYMMDD-<tracker-key>-short-slug.md
+  dev/plans/<tracker-key>.md
   dev/plans/YYMMDD-short-slug.md              # local/manual fallback
 
 plan-review artifacts:
   .harness/runs/reviews/<run-id>/
 ```
 
-The repo file is the canonical approved plan. The tracker issue is an index and
-state surface. Do not make a GitHub issue body/comment the source of truth for
-the full plan.
+The repo file is the canonical approved plan. For tracker-backed work, the plan
+must land through a plan PR before the tracker item moves to
+`Ready to Implement`. The tracker issue is an index and state surface. Do not
+make a GitHub or Linear issue body/comment the source of truth for the full
+plan.
 
 Implementation artifacts:
 
@@ -200,9 +202,10 @@ GitHub issue comments should contain concise status summaries:
 ```text
 Factory plan approved.
 
-Plan: dev/plans/260707-gh-123-export-shortcut.md
+Plan: dev/plans/GH-123.md
+Plan PR: https://github.com/owner/repo/pull/123
 Run: .harness/runs/factory/20260704-...
-Next: ready-to-implement
+Next: merge plan PR, then ready-to-implement
 ```
 
 ## Metadata contract
@@ -221,9 +224,10 @@ Adapters may add provider-specific keys, but these names are reserved:
   },
   "factoryRoute": "ready-to-plan",
   "factoryNextAction": "create-plan",
-  "factoryStage": "plan-approved",
+  "factoryStage": "plan-pr-open",
   "factoryRunId": "20260707-120000",
-  "approvedPlanPath": "dev/plans/260707-gh-123-export-shortcut.md",
+  "approvedPlanPath": "dev/plans/GH-123.md",
+  "approvedPlanPrUrl": "https://github.com/owner/repo/pull/123",
   "approvedPlanCommit": "abc1234"
 }
 ```
@@ -236,12 +240,14 @@ Field meaning:
 - `factoryNextAction`: deterministic next action such as `create-plan`.
 - `factoryStage`: current station stage, independent of tracker labels/status.
 - `factoryRunId`: latest harness factory run that changed the item.
-- `approvedPlanPath`: canonical repo-relative plan path after approval.
-- `approvedPlanCommit`: optional commit pin once the plan is committed.
+- `approvedPlanPath`: canonical repo-relative plan path.
+- `approvedPlanPrUrl`: plan PR that publishes the plan path.
+- `approvedPlanCommit`: commit pin once the plan PR has merged.
 
 Implementation should resolve `approvedPlanPath`, verify the file exists, and
-prefer `approvedPlanCommit` when present. If the tracker says a plan is approved
-but the path is missing or stale, fail closed instead of guessing.
+prefer `approvedPlanCommit` when present. If the tracker says
+`Ready to Implement` for planned work but the path or commit is missing, fail
+closed instead of guessing.
 
 If factory workers run outside the developer machine, `.harness/runs/*` needs a
 durable backend. Options:
@@ -367,8 +373,8 @@ require GitHub or Inngest to run one work item end to end.
    artifacts, or selected repo commits?
 3. What is the minimum comment policy that keeps humans informed without noisy
    issue spam?
-4. Should approved plans be committed directly to the implementation branch, a
-   separate planning PR, or both depending on task size?
+4. What is the minimum plan PR automation needed before Linear/GitHub apply
+   mode can move planned work to `Ready to Implement`?
 5. How should Inngest lock a work item so two events do not run competing
    stations?
 6. What is the retry policy for failed agent/provider runs vs deterministic

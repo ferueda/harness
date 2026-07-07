@@ -145,7 +145,11 @@ Factory run root:
 
 Read `summary.md` and `meta.json` first. Planning snapshots live under
 `iterations/<n>/`, plan-review artifacts live under `.harness/runs/reviews/`,
-and approved plans live under `dev/plans/`. Do not commit `.harness/runs/*`.
+and approved plans live under `dev/plans/`. Tracker-backed approved plans
+should be published through a plan PR before the tracker moves to
+`Ready to Implement`. During manual publication, `factoryStage: "plan-pr-open"`
+can exist before `approvedPlanPrUrl`; record the URL when the plan PR exists.
+Do not commit `.harness/runs/*`.
 
 ## Stop Conditions
 

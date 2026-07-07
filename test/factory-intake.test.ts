@@ -52,9 +52,10 @@ test("work item metadata reserves factory tracker and handoff keys", () => {
     },
     factoryRoute: "ready-to-plan",
     factoryNextAction: "create-plan",
-    factoryStage: "plan-approved",
+    factoryStage: "plan-pr-open",
     factoryRunId: "20260707-120000",
-    approvedPlanPath: "dev/plans/260707-gh-123-export-shortcut.md",
+    approvedPlanPath: "dev/plans/GH-123.md",
+    approvedPlanPrUrl: "https://github.com/ferueda/harness/pull/123",
     approvedPlanCommit: "abc1234",
     adapterSpecificField: { project: "Factory" },
   });
