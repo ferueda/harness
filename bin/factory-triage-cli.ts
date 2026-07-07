@@ -1,5 +1,4 @@
 import type { FactoryRunMeta } from "../lib/factory-run-context.ts";
-export { assertFactoryItemFileExists as assertItemFileExists } from "../lib/factory-triage-input.ts";
 
 export type FactoryTriageCliOutput = {
   runId: FactoryRunMeta["runId"];
@@ -14,9 +13,13 @@ export type FactoryTriageCliOutput = {
   triagePath?: string;
   routePath?: string;
   routeSummaryPath?: string;
+  linearApplied?: false;
 };
 
-export function factoryTriageCliOutput(meta: FactoryRunMeta): FactoryTriageCliOutput {
+export function factoryTriageCliOutput(
+  meta: FactoryRunMeta,
+  options: { linearApplied?: false } = {},
+): FactoryTriageCliOutput {
   return {
     runId: meta.runId,
     workflow: meta.workflow,
@@ -30,5 +33,6 @@ export function factoryTriageCliOutput(meta: FactoryRunMeta): FactoryTriageCliOu
     triagePath: meta.artifacts?.triage,
     routePath: meta.artifacts?.route,
     routeSummaryPath: meta.artifacts?.routeSummary,
+    ...(options.linearApplied !== undefined ? { linearApplied: options.linearApplied } : {}),
   };
 }

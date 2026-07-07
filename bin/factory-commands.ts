@@ -1,5 +1,5 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { assertItemFileExists, factoryTriageCliOutput } from "./factory-triage-cli.ts";
+import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import {
   resolveFactoryLinearSettings,
   resolveFactoryPlanningSettings,
@@ -13,8 +13,9 @@ import {
   type FactoryPlanningRunMeta,
 } from "../lib/factory-planning-run-context.ts";
 import {
+  assertFactoryItemFileExists,
   resolveFactoryTriageWorkItem,
-  type FactoryTriageWorkItemInput,
+  validateFactoryTriageWorkItemInput,
 } from "../lib/factory-triage-input.ts";
 import {
   createFactoryRunContext,
@@ -144,7 +145,7 @@ function addFactoryPlanningStationCommand(parent: Command, config: FactoryComman
         station: "planning",
         role: "reviewer",
       });
-      const itemPath = assertItemFileExists(settings.workspace, options.itemFile);
+      const itemPath = assertFactoryItemFileExists(settings.workspace, options.itemFile);
       const workItem = readFactoryWorkItemFile(itemPath);
 
       const runAbort = new AbortController();
@@ -201,13 +202,6 @@ function factoryPlanningCliOutput(meta: FactoryPlanningRunMeta) {
   };
 }
 
-function factoryTriageStationCliOutput(meta: FactoryRunMeta, input: FactoryTriageWorkItemInput) {
-  return {
-    ...factoryTriageCliOutput(meta),
-    ...(input.source === "linear" ? { linearApplied: false } : {}),
-  };
-}
-
 function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandOptions): void {
   parent
     .command("triage")
@@ -230,7 +224,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         station: "triage",
         role: "triager",
       });
-      validateFactoryTriageInputOptions(options);
+      validateFactoryTriageWorkItemInput(options);
       const linearSettings = options.linearIssue
         ? resolveFactoryLinearSettings({ workspace: role.workspace })
         : undefined;
@@ -269,16 +263,13 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         process.off("SIGINT", onRunAbort);
         process.off("SIGTERM", onRunAbort);
       }
-      console.log(JSON.stringify(factoryTriageStationCliOutput(meta, input), null, 2));
+      console.log(
+        JSON.stringify(
+          factoryTriageCliOutput(meta, { linearApplied: input.linearApplied }),
+          null,
+          2,
+        ),
+      );
       process.exitCode = meta.status === "failed" ? 1 : 0;
     });
-}
-
-function validateFactoryTriageInputOptions(options: FactoryTriageStationOptions): void {
-  if (options.itemFile && options.linearIssue) {
-    throw new Error("--item-file and --linear-issue are mutually exclusive");
-  }
-  if (!options.itemFile && !options.linearIssue) {
-    throw new Error("one of --item-file or --linear-issue is required");
-  }
 }

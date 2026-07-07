@@ -165,6 +165,16 @@ test("resolveFactoryTriageWorkItem requires Linear config and API key", async ()
   await expect(
     resolveFactoryTriageWorkItem({
       workspace,
+      itemFile: "item.json",
+      linearIssue: "ENG-123",
+      linearSettings: LINEAR_SETTINGS,
+      env: { LINEAR_API_KEY: "test-key" },
+    }),
+  ).rejects.toThrow(/--item-file and --linear-issue are mutually exclusive/);
+
+  await expect(
+    resolveFactoryTriageWorkItem({
+      workspace,
       linearIssue: "ENG-123",
       env: { LINEAR_API_KEY: "test-key" },
     }),

@@ -6,7 +6,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertCodexOnlyAgentOptions } from "./cli-validation.ts";
 import { addFactoryCommands } from "./factory-commands.ts";
-import { assertItemFileExists, factoryTriageCliOutput } from "./factory-triage-cli.ts";
+import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import {
   AGENT_APPROVAL_POLICIES,
   AGENT_MODEL_CATALOG,
@@ -32,6 +32,7 @@ import {
   readFactoryWorkItemFile,
   type FactoryRunMeta,
 } from "../lib/factory-run-context.ts";
+import { assertFactoryItemFileExists } from "../lib/factory-triage-input.ts";
 import {
   assertNonEmptyHandoffStdin,
   assertPipedHandoffStdin,
@@ -311,7 +312,7 @@ function addFactoryTriageCommand(parent: Command): void {
         dryRun: options.dryRun,
         includeGitScope: false,
       });
-      const itemPath = assertItemFileExists(resolvedOptions.workspace, options.itemFile);
+      const itemPath = assertFactoryItemFileExists(resolvedOptions.workspace, options.itemFile);
       assertCodexOnlyAgentOptions(resolvedOptions.agentProvider, {
         codexExecutable: options.codexExecutable,
         sandbox: options.sandbox,

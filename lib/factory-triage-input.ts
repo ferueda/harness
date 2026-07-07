@@ -28,6 +28,8 @@ export type ResolveFactoryTriageWorkItemInput = {
 export async function resolveFactoryTriageWorkItem(
   input: ResolveFactoryTriageWorkItemInput,
 ): Promise<FactoryTriageWorkItemInput> {
+  validateFactoryTriageWorkItemInput(input);
+
   if (input.itemFile) {
     const itemPath = assertFactoryItemFileExists(input.workspace, input.itemFile);
     return {
@@ -60,6 +62,18 @@ export async function resolveFactoryTriageWorkItem(
     workItem: await adapter.fetchWorkItem(input.linearIssue),
     linearApplied: false,
   };
+}
+
+export function validateFactoryTriageWorkItemInput(input: {
+  itemFile?: string;
+  linearIssue?: string;
+}): void {
+  if (input.itemFile && input.linearIssue) {
+    throw new Error("--item-file and --linear-issue are mutually exclusive");
+  }
+  if (!input.itemFile && !input.linearIssue) {
+    throw new Error("one of --item-file or --linear-issue is required");
+  }
 }
 
 export function assertFactoryItemFileExists(workspace: string, itemFile: string): string {

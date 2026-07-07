@@ -145,9 +145,11 @@ The triage station can also fetch Linear directly:
 LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --dry-run
 ```
 
-`--linear-issue` and `--item-file` are mutually exclusive. Linear-backed triage
-currently uses Linear only as the input source; it writes normal factory run
-artifacts and does not move Linear statuses or write comments.
+`--linear-issue` and `--item-file` are mutually exclusive. Every
+`--linear-issue` triage invocation performs a live Linear read before creating
+local factory artifacts, including dry-runs. Linear-backed triage currently
+uses Linear only as the input source; it does not move Linear statuses or write
+comments.
 
 Linear status is human board state. Harness metadata is finer-grained factory
 state. The adapter maps:
