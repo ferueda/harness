@@ -1,11 +1,13 @@
 import { InvalidArgumentError, type Command } from "commander";
 import { assertItemFileExists, factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import {
+  resolveFactoryLinearSettings,
   resolveFactoryPlanningSettings,
   resolveFactoryRoleAgent,
   resolveHarnessOptions,
 } from "../lib/config.ts";
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
+import { createLinearFactoryAdapter } from "../lib/factory-linear-adapter.ts";
 import {
   createFactoryPlanningRunContext,
   type FactoryPlanningRunMeta,
@@ -45,6 +47,10 @@ type FactoryPlanningStationOptions = {
   verbose: boolean;
 };
 
+type FactoryLinearFetchOptions = {
+  workspace?: string;
+};
+
 type FactoryCommandOptions = {
   positiveNumber: (value: string) => number;
   defaultMaxRuntimeMs: number;
@@ -54,6 +60,7 @@ type FactoryCommandOptions = {
 export function addFactoryCommands(parent: Command, options: FactoryCommandOptions): void {
   const factory = parent.command("factory").description("Manage local factory intake");
   addFactoryStatusCommand(factory);
+  addFactoryLinearCommand(factory);
   addFactoryTriageStationCommand(factory, options);
   addFactoryPlanningStationCommand(factory, options);
 }
@@ -76,6 +83,26 @@ function addFactoryStatusCommand(parent: Command): void {
         inboxDir: options.inboxDir,
       });
       console.log(JSON.stringify(result, null, 2));
+    });
+}
+
+function addFactoryLinearCommand(parent: Command): void {
+  const linear = parent.command("linear").description("Read Linear issues as factory work items");
+
+  linear
+    .command("fetch")
+    .description("Fetch one Linear issue and print a factory work item")
+    .argument("<issue>", "Linear issue identifier, e.g. TEAM-123")
+    .option("--workspace <path>", "target repo")
+    .action(async (issue: string, options: FactoryLinearFetchOptions) => {
+      const settings = resolveFactoryLinearSettings({ workspace: options.workspace });
+      const apiKey = process.env.LINEAR_API_KEY;
+      if (!apiKey) {
+        throw new Error("LINEAR_API_KEY is required for Linear commands.");
+      }
+      const adapter = createLinearFactoryAdapter({ apiKey, settings });
+      const workItem = await adapter.fetchWorkItem(issue);
+      console.log(JSON.stringify(workItem, null, 2));
     });
 }
 

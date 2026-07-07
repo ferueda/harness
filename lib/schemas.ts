@@ -26,6 +26,27 @@ const FactoryRoleSchema = z
   })
   .strict();
 
+const FactoryLinearStatusesSchema = z
+  .object({
+    intake: z.string().min(1),
+    parked: z.string().min(1),
+    needsInfo: z.string().min(1),
+    needsPlan: z.string().min(1),
+    readyToImplement: z.string().min(1),
+    triaging: z.string().min(1),
+    planning: z.string().min(1),
+    triageFailed: z.string().min(1),
+    planningFailed: z.string().min(1),
+  })
+  .strict();
+
+const FactoryLinearConfigSchema = z
+  .object({
+    teamKey: z.string().min(1),
+    statuses: FactoryLinearStatusesSchema,
+  })
+  .strict();
+
 const FactoryConfigSchema = z
   .object({
     triage: z
@@ -52,6 +73,7 @@ const FactoryConfigSchema = z
       })
       .strict()
       .optional(),
+    linear: FactoryLinearConfigSchema.optional(),
   })
   .strict();
 
@@ -116,6 +138,8 @@ export const HarnessConfigSchema = z
 
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
 export type FactoryRoleConfig = z.infer<typeof FactoryRoleSchema>;
+export type FactoryLinearConfig = z.infer<typeof FactoryLinearConfigSchema>;
+export type FactoryLinearStatusesConfig = z.infer<typeof FactoryLinearStatusesSchema>;
 
 export const ReviewOutputSchema = z
   .object({
