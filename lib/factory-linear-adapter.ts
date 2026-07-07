@@ -407,7 +407,7 @@ async function fetchWorkItem(
     resolveOptional(issue.assignee),
   ]);
   assertTeamMatches(issue, settings, team);
-  assertProjectMatches(issue, settings, project);
+  const linearProjectId = assertProjectMatches(issue, settings, project);
 
   const metadata = compactJsonRecord({
     tracker: {
@@ -420,7 +420,7 @@ async function fetchWorkItem(
     linearIssueIdentifier: issue.identifier,
     linearTeamKey: team.key,
     linearTeamName: team.name,
-    linearProjectId: projectIdForIssue(issue, project),
+    linearProjectId,
     linearProjectName: project?.name,
     linearProjectUrl: project?.url,
     linearStatus: state?.name,
@@ -561,32 +561,36 @@ function assertProjectMatches(
   issue: LinearIssueLike,
   settings: FactoryLinearSettings,
   project: LinearProjectLike | undefined,
-): void {
-  if (!settings.projectId) return;
+): string | undefined {
   const projectId = projectIdForIssue(issue, project);
+  if (!settings.projectId) return projectId;
   if (!projectId) {
     throw new Error(
       `Linear issue ${issue.identifier} has no project, but factory.linear.projectId is ${settings.projectId}.`,
     );
   }
-  if (projectId !== settings.projectId) {
+  if (normalizeName(projectId) !== normalizeName(settings.projectId)) {
     const projectLabel = project?.name ? `${project.name} (${projectId})` : projectId;
     throw new Error(
       `Linear issue ${issue.identifier} belongs to project ${projectLabel}, but factory.linear.projectId is ${settings.projectId}.`,
     );
   }
+  return projectId;
 }
 
 function projectIdForIssue(
   issue: LinearIssueLike,
   project: LinearProjectLike | undefined,
 ): string | undefined {
-  if (issue.projectId && project?.id && issue.projectId !== project.id) {
+  if (
+    issue.projectId &&
+    project?.id &&
+    normalizeName(issue.projectId) !== normalizeName(project.id)
+  ) {
     throw new Error(
       `Linear issue ${issue.identifier} returned inconsistent project data: projectId ${issue.projectId}, project relation ${project.name} (${project.id}).`,
     );
   }
-  // Prefer Linear's scalar projectId; fall back to the expanded relation for partial SDK payloads.
   return issue.projectId ?? project?.id ?? undefined;
 }
 

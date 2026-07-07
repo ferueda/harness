@@ -247,6 +247,22 @@ test("Linear adapter accepts issues in configured project during fetch", async (
   });
 });
 
+test("Linear adapter compares configured project ids case-insensitively", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient(),
+    settings: {
+      ...SCOPED_LINEAR_SETTINGS,
+      projectId: PROJECT.id.toUpperCase(),
+    },
+  });
+
+  await expect(adapter.fetchWorkItem("ENG-123")).resolves.toMatchObject({
+    metadata: {
+      linearProjectId: PROJECT.id,
+    },
+  });
+});
+
 test("Linear adapter keeps omitted projectId backward compatible", async () => {
   const adapter = createLinearFactoryAdapterForClient({
     client: fakeClient({

@@ -145,6 +145,8 @@ test("Linear issue input can run through factory triage dry-run artifacts", asyn
         id: "ENG-123",
       },
       linearIssueId: "issue-1",
+      linearProjectId: "project-1",
+      linearProjectName: "Harness",
     },
   });
 });
