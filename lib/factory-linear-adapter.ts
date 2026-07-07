@@ -47,8 +47,6 @@ export type LinearFactoryAdapter = {
   applyPlanningFailed: (input: LinearPlanningFailedInput) => Promise<LinearPlanningUpdatePlan>;
 };
 
-export { type LinearClientLike };
-
 export type LinearStatusMapValidation = {
   teamKey: string;
   statuses: LinearWorkflowStateLike[];

@@ -1686,6 +1686,16 @@ test("harness factory planning apply rejects dry-run before Linear config resolu
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
+test("harness factory planning apply requires Linear issue before role config resolution", () => {
+  const workspace = createPlainWorkspace();
+
+  const result = runHarness(["factory", "planning", "--workspace", workspace, "--apply"]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply requires --linear-issue/);
+  expect(result.stderr).not.toMatch(/factory\.linear is required/);
+});
+
 test("harness factory planning with Linear input requires Linear config", () => {
   const workspace = createPlainWorkspace();
   const result = runHarness(

@@ -14,12 +14,17 @@ git clone git@github.com:ferueda/harness.git ~/.harness
 ~/.harness/install
 ```
 
+The checkout can live anywhere:
+
+```bash
+git clone git@github.com:ferueda/harness.git /path/to/harness
+/path/to/harness/install
+```
+
 The installer runs `pnpm install --frozen-lockfile`, writes the user-level
 `harness` command to `~/.local/bin` by default, and verifies `harness --help`.
 If `~/.local/bin` is not on `PATH`, the installer prints the `export PATH=...`
-line to add. The checkout can live anywhere; run that checkout's `./install`.
-
-Next, initialize a target repo and run reviews.
+line to add.
 
 To update:
 
@@ -110,13 +115,11 @@ harness run plan-review --plan path/to/implementation-plan.md --verbose
 
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear fetch uses `LINEAR_API_KEY` and
-`factory.linear` config to produce the same work-item contract. Factory triage
-and planning can use `--linear-issue` as an input source. `--apply` is explicit:
-triage moves Linear through `Triaging` to a terminal triage status, while
-planning moves `Needs Plan` or `Planning Failed` to `Planning`, posts the
-planning outcome, and leaves Ready to Implement for the plan-merge handoff.
-GitHub, Jira, and Inngest remain future layers. For the full operator model,
-read
+`factory.linear` config. Factory triage and planning can use `--linear-issue`;
+`--apply` is explicit. Triage moves Linear through `Triaging`; planning moves
+`Needs Plan` or `Planning Failed` to `Planning` and leaves Ready to Implement
+for the plan-merge handoff. GitHub, Jira, and Inngest remain future layers. For
+the full operator model, read
 [docs/contributing/factory.md](docs/contributing/factory.md).
 
 For review handoff, step-selection, and failure-triage workflow guidance,

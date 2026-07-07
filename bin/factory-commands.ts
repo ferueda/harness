@@ -227,8 +227,8 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryPlanningStationOptions) => {
       // Validate source flags before role/config resolution so CLI usage errors win.
-      validateFactoryWorkItemInput(options);
       validateFactoryApplyOptions(options);
+      validateFactoryWorkItemInput(options);
       const settings = resolveFactoryPlanningSettings({ workspace: options.workspace });
       const plannerRole = resolveFactoryRoleAgent({
         workspace: settings.workspace,
@@ -427,8 +427,8 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryTriageStationOptions) => {
       // Validate source flags before role/config resolution so CLI usage errors win.
-      validateFactoryWorkItemInput(options);
       validateFactoryApplyOptions(options);
+      validateFactoryWorkItemInput(options);
       const role = resolveFactoryRoleAgent({
         workspace: options.workspace,
         station: "triage",
