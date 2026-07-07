@@ -296,7 +296,11 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
         JSON.stringify(
           factoryPlanningCliOutput(
             meta,
-            options.apply ? { linearApplied: true, linearUpdate } : {},
+            options.apply
+              ? { linearApplied: true, linearUpdate }
+              : options.linearIssue
+                ? { linearApplied: false }
+                : {},
           ),
           null,
           2,

@@ -1072,6 +1072,44 @@ test("Linear adapter applies failed planning status and comment", async () => {
   });
 });
 
+test("Linear adapter skips duplicate failed planning apply comments", async () => {
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Planning", name: "Planning", type: "started" }),
+            comments: async () => ({
+              nodes: [
+                {
+                  body: "<!-- harness-factory:planning-apply-failed:run-1 -->\nAlready posted.",
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+      updateIssue: async () => ({ success: true }),
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyPlanningFailed({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    error: "provider crashed",
+  });
+
+  expect(comments).toEqual([]);
+});
+
 test("Linear adapter applies completed triage status and comment", async () => {
   const updates: Array<{ id: string; input: { stateId: string } }> = [];
   const comments: Array<{ issueId: string; body: string }> = [];

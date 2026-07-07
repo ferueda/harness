@@ -26,6 +26,7 @@ The installer runs `pnpm install --frozen-lockfile`, writes the user-level
 If `~/.local/bin` is not on `PATH`, the installer prints the `export PATH=...`
 line to add.
 
+Next, initialize a target repo and run reviews.
 To update:
 
 ```bash

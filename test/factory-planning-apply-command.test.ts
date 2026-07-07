@@ -38,6 +38,62 @@ const META = {
   durationMs: 1,
 } satisfies FactoryPlanningRunMeta;
 
+test("planning apply returns started and terminal updates on success", async () => {
+  const completedInputs: unknown[] = [];
+  const adapter = fakeLinearAdapter({
+    applyPlanningStarted: async () => ({
+      issueIdentifier: "ENG-123",
+      runId: "run-1",
+      runDir: CTX.runDir,
+      stage: "start",
+      fromStatus: "Needs Plan",
+      targetStatus: "Planning",
+    }),
+    applyPlanningCompleted: async (input) => {
+      completedInputs.push(input);
+      return {
+        issueIdentifier: "ENG-123",
+        runId: "run-1",
+        runDir: CTX.runDir,
+        stage: "complete",
+        fromStatus: "Planning",
+        targetStatus: "Planning",
+      };
+    },
+  });
+
+  const result = await runFactoryPlanningWithLinearApply({
+    ctx: CTX,
+    issueRef: "ENG-123",
+    applyAdapter: adapter,
+    runPlanning: async () => META,
+  });
+
+  expect(completedInputs).toEqual([
+    {
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: CTX.runDir,
+      status: "plan-approved",
+      approvedPlanPath: "dev/plans/ENG-123.md",
+      artifactPath: undefined,
+      artifactUri: undefined,
+      planPullRequestUrl: undefined,
+      questions: undefined,
+      unresolvedFindings: undefined,
+      error: undefined,
+    },
+  ]);
+  expect(result).toMatchObject({
+    meta: { runId: "run-1", status: "plan-approved" },
+    linearUpdate: {
+      started: { stage: "start", targetStatus: "Planning" },
+      terminal: { stage: "complete", targetStatus: "Planning" },
+    },
+  });
+  expect(result.terminalApplyError).toBeUndefined();
+});
+
 test("planning apply cleanup preserves original planning error", async () => {
   const failedInputs: unknown[] = [];
   const adapter = fakeLinearAdapter({
@@ -52,6 +108,51 @@ test("planning apply cleanup preserves original planning error", async () => {
     applyPlanningFailed: async (input) => {
       failedInputs.push(input);
       throw new Error("Linear cleanup failed");
+    },
+  });
+
+  await expect(
+    runFactoryPlanningWithLinearApply({
+      ctx: CTX,
+      issueRef: "ENG-123",
+      applyAdapter: adapter,
+      runPlanning: async () => {
+        throw new Error("Planner exploded");
+      },
+    }),
+  ).rejects.toThrow(/Planner exploded/);
+
+  expect(failedInputs).toEqual([
+    {
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: CTX.runDir,
+      error: "Planner exploded",
+    },
+  ]);
+});
+
+test("planning apply cleanup calls failed apply after planning error", async () => {
+  const failedInputs: unknown[] = [];
+  const adapter = fakeLinearAdapter({
+    applyPlanningStarted: async () => ({
+      issueIdentifier: "ENG-123",
+      runId: "run-1",
+      runDir: CTX.runDir,
+      stage: "start",
+      fromStatus: "Needs Plan",
+      targetStatus: "Planning",
+    }),
+    applyPlanningFailed: async (input) => {
+      failedInputs.push(input);
+      return {
+        issueIdentifier: "ENG-123",
+        runId: "run-1",
+        runDir: CTX.runDir,
+        stage: "failed",
+        fromStatus: "Planning",
+        targetStatus: "Planning Failed",
+      };
     },
   });
 
