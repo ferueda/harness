@@ -3,7 +3,6 @@ import { type FactoryLinearSettings } from "./config.ts";
 import {
   FactoryWorkItemSchema,
   type FactoryRoute,
-  type FactoryRoutePlan,
   type FactoryStage,
   type FactoryTriageOutput,
   type FactoryWorkItem,
@@ -38,7 +37,6 @@ export type LinearTriageApplyInput = {
 
 export type LinearTriageCompletedInput = LinearTriageApplyInput & {
   triage: FactoryTriageOutput;
-  routePlan: FactoryRoutePlan;
 };
 
 export type LinearTriageFailedInput = LinearTriageApplyInput & {
@@ -318,7 +316,7 @@ async function applyTriageCompleted(
   const target = await fetchWorkflowState(
     client,
     settings,
-    linearTriageTargetStatus(settings, input.routePlan.route),
+    linearTriageTargetStatus(settings, input.triage.route),
   );
   if (normalizeName(state?.name ?? "") !== normalizeName(target.name)) {
     await client.updateIssue(issue.id, { stateId: target.id });

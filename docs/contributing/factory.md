@@ -166,6 +166,10 @@ status and writes one marker comment:
 - `wait-to-implement` -> `Parked`
 - triage failure -> `Triage Failed`
 
+Comment dedupe checks the most recent Linear comments fetched by the adapter
+(currently 20). If the same run marker is older than that window, a retry may
+post another marker comment.
+
 Linear status is human board state. Harness metadata is finer-grained factory
 state. The adapter maps:
 

@@ -9,7 +9,6 @@ import {
   resolveHarnessOptions,
 } from "../lib/config.ts";
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
-import { buildFactoryRoutePlan } from "../lib/factory-intake.ts";
 import {
   createLinearFactoryAdapter,
   renderLinearPlanningApprovedComment,
@@ -371,6 +370,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       let meta: FactoryRunMeta;
       let startedUpdate: LinearTriageUpdatePlan | undefined;
       let terminalUpdate: LinearTriageUpdatePlan | undefined;
+      let terminalApplyError: unknown;
       try {
         const ctx = createFactoryRunContext({
           workspace: role.workspace,
@@ -388,34 +388,35 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
           eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
           agentProviderFactory: createAgentProvider,
         });
-        if (options.apply) {
-          const adapter = requireLinearApplyAdapter(linearAdapter);
-          startedUpdate = await adapter.applyTriageStarted({
+        const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
+        if (applyAdapter) {
+          startedUpdate = await applyAdapter.applyTriageStarted({
             issueRef: options.linearIssue ?? "",
             runId: ctx.runId,
             runDir: ctx.runDir,
           });
         }
         meta = await runFactoryTriage(ctx);
-        if (options.apply) {
-          const adapter = requireLinearApplyAdapter(linearAdapter);
-          if (meta.status === "completed") {
-            const triage = readFactoryTriageArtifact(meta);
-            const routePlan = buildFactoryRoutePlan(input.workItem, triage);
-            terminalUpdate = await adapter.applyTriageCompleted({
-              issueRef: options.linearIssue ?? "",
-              runId: ctx.runId,
-              runDir: ctx.runDir,
-              triage,
-              routePlan,
-            });
-          } else {
-            terminalUpdate = await adapter.applyTriageFailed({
-              issueRef: options.linearIssue ?? "",
-              runId: ctx.runId,
-              runDir: ctx.runDir,
-              error: meta.error ?? "Factory triage failed.",
-            });
+        if (applyAdapter) {
+          try {
+            if (meta.status === "completed") {
+              const triage = readFactoryTriageArtifact(meta);
+              terminalUpdate = await applyAdapter.applyTriageCompleted({
+                issueRef: options.linearIssue ?? "",
+                runId: ctx.runId,
+                runDir: ctx.runDir,
+                triage,
+              });
+            } else {
+              terminalUpdate = await applyAdapter.applyTriageFailed({
+                issueRef: options.linearIssue ?? "",
+                runId: ctx.runId,
+                runDir: ctx.runDir,
+                error: meta.error ?? "Factory triage failed.",
+              });
+            }
+          } catch (error) {
+            terminalApplyError = error;
           }
         }
       } finally {
@@ -434,6 +435,9 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
           2,
         ),
       );
+      if (terminalApplyError) {
+        throw terminalApplyError;
+      }
       process.exitCode = meta.status === "failed" ? 1 : 0;
     });
 }

@@ -113,6 +113,8 @@ performs a live Linear read before writing local factory artifacts, including
 dry-runs. Add `--apply` to move allowed entry statuses to `Triaging`, then to
 the terminal triage status, and write one marker comment. `--apply` cannot be
 combined with `--dry-run` or `--item-file`.
+Comment dedupe checks the most recent Linear comments fetched by the adapter
+(currently 20); older markers can be reposted on retry.
 
 If an apply run leaves Linear in `Triaging`, inspect `summary.md` and
 `meta.json`, then manually move the issue to `Triage Failed`, `Backlog`, or

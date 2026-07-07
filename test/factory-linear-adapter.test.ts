@@ -10,7 +10,7 @@ import {
   renderLinearTriageCompleteComment,
   type LinearClientLike,
 } from "../lib/factory-linear-adapter.ts";
-import type { FactoryTriageOutput } from "../lib/factory-schemas.ts";
+import type { FactoryRoute, FactoryTriageOutput } from "../lib/factory-schemas.ts";
 
 const LINEAR_SETTINGS = {
   teamKey: "ENG",
@@ -85,6 +85,27 @@ const TRIAGE_READY_TO_PLAN = {
   evidence: [{ kind: "tracker", summary: "Issue asks for a larger workflow." }],
   suggestedNext: { action: "create-plan" },
 } satisfies FactoryTriageOutput;
+
+const NEXT_ACTION_BY_ROUTE = {
+  "ready-to-implement": "implement-directly",
+  "ready-to-plan": "create-plan",
+  "needs-info": "ask-human",
+  "wait-to-implement": "park",
+} satisfies Record<FactoryRoute, FactoryTriageOutput["suggestedNext"]["action"]>;
+
+function triageOutput(
+  route: FactoryRoute,
+  extra: Partial<Pick<FactoryTriageOutput, "questions" | "reconsiderWhen">> = {},
+): FactoryTriageOutput {
+  return {
+    route,
+    confidence: "high",
+    rationale: "Route-specific triage.",
+    evidence: [{ kind: "tracker", summary: "Issue metadata supports this route." }],
+    suggestedNext: { action: NEXT_ACTION_BY_ROUTE[route] },
+    ...extra,
+  };
+}
 
 test("parseLinearIssueIdentifier accepts human issue ids", () => {
   expect(parseLinearIssueIdentifier("eng-123")).toEqual({ teamKey: "ENG", number: 123 });
@@ -361,38 +382,40 @@ test("Linear adapter reports missing and ambiguous human issue identifiers", asy
 });
 
 test("Linear adapter applies triage started status from allowed entry states", async () => {
-  const updates: Array<{ id: string; input: { stateId: string } }> = [];
-  const adapter = createLinearFactoryAdapterForClient({
-    client: fakeClient({
-      issues: async () => ({
-        nodes: [
-          {
-            ...ISSUE,
-            state: Promise.resolve({ id: "state-Backlog", name: "Backlog", type: "backlog" }),
-          },
-        ],
+  for (const statusName of ["Backlog", "Needs Info", "Triage Failed"]) {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            {
+              ...ISSUE,
+              state: Promise.resolve({ id: `state-${statusName}`, name: statusName }),
+            },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
       }),
-      updateIssue: async (id, input) => {
-        updates.push({ id, input });
-        return { success: true };
-      },
-    }),
-    settings: LINEAR_SETTINGS,
-  });
+      settings: LINEAR_SETTINGS,
+    });
 
-  const result = await adapter.applyTriageStarted({
-    issueRef: "ENG-123",
-    runId: "run-1",
-    runDir: ".harness/runs/factory/run-1",
-  });
+    const result = await adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+    });
 
-  expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Triaging" } }]);
-  expect(result).toMatchObject({
-    issueIdentifier: "ENG-123",
-    stage: "start",
-    fromStatus: "Backlog",
-    targetStatus: "Triaging",
-  });
+    expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Triaging" } }]);
+    expect(result).toMatchObject({
+      issueIdentifier: "ENG-123",
+      stage: "start",
+      fromStatus: statusName,
+      targetStatus: "Triaging",
+    });
+  }
 });
 
 test("Linear adapter rejects triage apply from terminal statuses before mutation", async () => {
@@ -447,13 +470,6 @@ test("Linear adapter applies completed triage status and comment", async () => {
     runId: "run-1",
     runDir: ".harness/runs/factory/run-1",
     triage: TRIAGE_READY_TO_PLAN,
-    routePlan: {
-      route: "ready-to-plan",
-      nextAction: "create-plan",
-      statusLabel: "ready-to-plan",
-      artifactRelPath: "factory-route.md",
-      humanSummary: "Needs a plan.",
-    },
   });
 
   expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Needs Plan" } }]);
@@ -465,6 +481,104 @@ test("Linear adapter applies completed triage status and comment", async () => {
     targetStatus: "Needs Plan",
     commentMarker: "<!-- harness-factory:triage:run-1 -->",
   });
+});
+
+test.each([
+  {
+    route: "ready-to-implement" as const,
+    targetStatus: "Ready to Implement",
+    expectedBody: "Route: ready-to-implement",
+  },
+  {
+    route: "needs-info" as const,
+    targetStatus: "Needs Info",
+    triageExtra: { questions: ["Which provider should own this?"] },
+    expectedBody: "- Which provider should own this?",
+  },
+  {
+    route: "wait-to-implement" as const,
+    targetStatus: "Parked",
+    triageExtra: { reconsiderWhen: "Roadmap priority changes." },
+    expectedBody: "Reconsider when: Roadmap priority changes.",
+  },
+])(
+  "Linear adapter applies completed triage route $route",
+  async ({ route, targetStatus, triageExtra, expectedBody }) => {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const comments: Array<{ issueId: string; body: string }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            {
+              ...ISSUE,
+              state: Promise.resolve({ id: "state-Triaging", name: "Triaging", type: "started" }),
+            },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+        createComment: async (input) => {
+          comments.push(input);
+          return { success: true };
+        },
+      }),
+      settings: LINEAR_SETTINGS,
+    });
+
+    await adapter.applyTriageCompleted({
+      issueRef: "ENG-123",
+      runId: `run-${route}`,
+      runDir: `.harness/runs/factory/run-${route}`,
+      triage: triageOutput(route, triageExtra),
+    });
+
+    expect(updates).toEqual([{ id: "issue-1", input: { stateId: `state-${targetStatus}` } }]);
+    expect(comments[0].body).toContain(`Next: ${targetStatus}`);
+    expect(comments[0].body).toContain(expectedBody);
+  },
+);
+
+test("Linear adapter skips terminal status update when already at target", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({
+              id: "state-Needs Plan",
+              name: "Needs Plan",
+              type: "unstarted",
+            }),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyTriageCompleted({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    triage: TRIAGE_READY_TO_PLAN,
+  });
+
+  expect(updates).toEqual([]);
+  expect(comments[0].body).toContain("Next: Needs Plan");
 });
 
 test("Linear adapter skips duplicate triage comments", async () => {
@@ -495,13 +609,6 @@ test("Linear adapter skips duplicate triage comments", async () => {
     runId: "run-1",
     runDir: ".harness/runs/factory/run-1",
     triage: TRIAGE_READY_TO_PLAN,
-    routePlan: {
-      route: "ready-to-plan",
-      nextAction: "create-plan",
-      statusLabel: "ready-to-plan",
-      artifactRelPath: "factory-route.md",
-      humanSummary: "Needs a plan.",
-    },
   });
 
   expect(comments).toEqual([]);
