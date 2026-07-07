@@ -18,6 +18,7 @@
     "check": "make check",
     "check:ci": "make check-ci",
     "check:v": "make check-v",
+    "codex:proxy": "node scripts/codex-proxy.mjs",
     "fix": "make fix",
     "format": "oxfmt --write bin lib providers scripts workflows test skills/sessions docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
     "format:check": "oxfmt --check bin lib providers scripts workflows test skills/sessions docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
