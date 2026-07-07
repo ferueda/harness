@@ -1,5 +1,5 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { assertItemFileExists, factoryTriageCliOutput } from "./factory-triage-cli.ts";
+import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import {
   resolveFactoryLinearSettings,
   resolveFactoryPlanningSettings,
@@ -13,6 +13,11 @@ import {
   type FactoryPlanningRunMeta,
 } from "../lib/factory-planning-run-context.ts";
 import {
+  resolveFactoryTriageWorkItem,
+  validateFactoryTriageWorkItemInput,
+} from "../lib/factory-triage-input.ts";
+import {
+  assertFactoryItemFileExists,
   createFactoryRunContext,
   readFactoryWorkItemFile,
   type FactoryRunMeta,
@@ -29,7 +34,8 @@ type FactoryStatusOptions = {
 
 type FactoryTriageStationOptions = {
   workspace?: string;
-  itemFile: string;
+  itemFile?: string;
+  linearIssue?: string;
   runsDir?: string;
   maxRuntimeMs: number;
   dryRun: boolean;
@@ -139,7 +145,7 @@ function addFactoryPlanningStationCommand(parent: Command, config: FactoryComman
         station: "planning",
         role: "reviewer",
       });
-      const itemPath = assertItemFileExists(settings.workspace, options.itemFile);
+      const itemPath = assertFactoryItemFileExists(settings.workspace, options.itemFile);
       const workItem = readFactoryWorkItemFile(itemPath);
 
       const runAbort = new AbortController();
@@ -201,7 +207,8 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     .command("triage")
     .description("Run one factory work item through the triage station")
     .option("--workspace <path>", "target repo")
-    .requiredOption("--item-file <path>", "factory work item JSON file")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/factory)")
     .option(
       "--max-runtime-ms <ms>",
@@ -212,13 +219,23 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     .option("--dry-run", "prepare context and placeholder routing only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryTriageStationOptions) => {
+      // Validate before role/config resolution so input-source errors win in CLI UX.
+      validateFactoryTriageWorkItemInput(options);
       const role = resolveFactoryRoleAgent({
         workspace: options.workspace,
         station: "triage",
         role: "triager",
       });
-      const itemPath = assertItemFileExists(role.workspace, options.itemFile);
-      const workItem = readFactoryWorkItemFile(itemPath);
+      const linearSettings = options.linearIssue
+        ? resolveFactoryLinearSettings({ workspace: role.workspace })
+        : undefined;
+      const input = await resolveFactoryTriageWorkItem({
+        workspace: role.workspace,
+        itemFile: options.itemFile,
+        linearIssue: options.linearIssue,
+        linearSettings,
+        env: process.env,
+      });
 
       const runAbort = new AbortController();
       const onRunAbort = () => runAbort.abort();
@@ -229,7 +246,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         const ctx = createFactoryRunContext({
           workspace: role.workspace,
           runsDir: options.runsDir,
-          workItem,
+          workItem: input.workItem,
           agentProvider: role.agent,
           codexPathOverride: role.codexPathOverride,
           model: role.model,
@@ -247,7 +264,13 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         process.off("SIGINT", onRunAbort);
         process.off("SIGTERM", onRunAbort);
       }
-      console.log(JSON.stringify(factoryTriageCliOutput(meta), null, 2));
+      console.log(
+        JSON.stringify(
+          factoryTriageCliOutput(meta, { linearApplied: input.linearApplied }),
+          null,
+          2,
+        ),
+      );
       process.exitCode = meta.status === "failed" ? 1 : 0;
     });
 }

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type Agent,
@@ -120,6 +120,14 @@ export function readFactoryWorkItemFile(path: string): FactoryWorkItem {
     });
   }
   return parseFactoryWorkItem(parsed);
+}
+
+export function assertFactoryItemFileExists(workspace: string, itemFile: string): string {
+  const resolvedItemPath = isAbsolute(itemFile) ? itemFile : join(workspace, itemFile);
+  if (!existsSync(resolvedItemPath)) {
+    throw new Error(`Factory item file does not exist: ${itemFile}`);
+  }
+  return resolvedItemPath;
 }
 
 export function createFactoryRunContext(options: FactoryRunContextFactoryOptions) {

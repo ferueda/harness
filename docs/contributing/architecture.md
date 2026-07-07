@@ -95,12 +95,18 @@ copies `context/work-item.json`, resolves the harness-owned factory triage JSON
 schema, invokes the selected provider, and writes route artifacts. It does not
 include git diff scope and does not mutate trackers.
 
+`lib/factory-triage-input.ts` validates and resolves factory triage inputs
+before role/config resolution. It owns the mutually exclusive `--item-file` and
+`--linear-issue` input contract, file existence checks, and Linear-backed input
+fetch setup for the station command.
+
 `lib/factory-planning-run-context.ts` creates local file-backed factory planning
 runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
 schema, prepares `planning/draft.md` for planner writes, snapshots
 per-iteration planner artifacts, writes `factoryMetadata` into `meta.json`, and
 writes an approved final plan under `dev/plans/` when the planning station
-finishes successfully.
+finishes successfully. Tracker-backed plans should be published through a plan
+PR before tracker status moves to `Ready to Implement`.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
@@ -108,9 +114,12 @@ status` reads `.harness/inbox/factory/` without moving files or creating runs.
 `lib/factory-linear-adapter.ts` owns read-only Linear issue import.
 `harness factory linear fetch TEAM-123` validates `factory.linear` status
 mapping, reads one Linear issue through `@linear/sdk`, and prints a normalized
-`FactoryWorkItem` JSON object. It does not mutate Linear.
+`FactoryWorkItem` JSON object. `harness factory triage --linear-issue TEAM-123`
+uses the same adapter as an input source before running the station. Neither
+path mutates Linear.
 
-`harness factory triage --item-file ...` runs one work item through the
+`harness factory triage --item-file ...` or
+`harness factory triage --linear-issue ...` runs one work item through the
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
@@ -208,16 +217,17 @@ Factory planning artifacts include:
 
 Live planning runs create nested plan-review runs under
 `.harness/runs/reviews/<run-id>/`. When a plan is approved, the station writes
-the final tracked plan file under `dev/plans/`. `--dry-run` writes placeholder
-planning artifacts but does not invoke providers or reviewers and does not write
-`events.jsonl`.
+the final tracked plan file under `dev/plans/`. Tracker-backed flows should
+publish that file through a plan PR before implementation starts. `--dry-run`
+writes placeholder planning artifacts but does not invoke providers or reviewers
+and does not write `events.jsonl`.
 
 Planning `meta.json` includes `factoryMetadata` with reserved handoff keys such
 as `tracker`, `factoryRoute`, `factoryNextAction`, `factoryStage`,
-`factoryRunId`, `approvedPlanPath`, and `approvedPlanCommit`. Default approved
-plan filenames include tracker identity when `metadata.tracker` exists, for
-example `dev/plans/260707-gh-123-export-shortcut.md`; local/manual items fall
-back to title-derived slugs.
+`factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
+`approvedPlanCommit`. Tracker-backed approved plan filenames should use the
+tracker key, for example `dev/plans/FER-123.md`; local/manual items fall back to
+title-derived slugs.
 
 ## Factory inbox lifecycle
 
@@ -257,5 +267,6 @@ adapter.
 
 Active runtime roadmap items such as `steps.json`, graders, tracker mutation,
 Linear-backed triage/planning apply modes, GitHub/Jira adapters, hosted trigger
-inboxes, and Inngest are future work. They should be added to this map only
+inboxes, and Inngest are future work. Linear-backed triage input is current;
+Linear status/comment mutation is not. Future items should be added to this map only
 after they describe current behavior in the repo.

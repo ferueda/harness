@@ -2,11 +2,12 @@
 
 ## Active queue
 
-| File                                                                                     | Status        | Summary                                                   |
-| ---------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
-| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)                     | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
-| [260704-factory-intake-routing.md](./260704-factory-intake-routing.md)                   | `in_progress` | Factory intake triage, deterministic routing, local inbox |
-| [260705-factory-operating-docs-smoke.md](./260705-factory-operating-docs-smoke.md)       | `in_progress` | Factory operating docs, packaged skill, and smoke checks  |
+| File                                                                               | Status        | Summary                                                   |
+| ---------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
+| [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)               | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
+| [260704-factory-intake-routing.md](./260704-factory-intake-routing.md)             | `in_progress` | Factory intake triage, deterministic routing, local inbox |
+| [260705-factory-operating-docs-smoke.md](./260705-factory-operating-docs-smoke.md) | `in_progress` | Factory operating docs, packaged skill, and smoke checks  |
+| [260707-linear-plan-pr-handoff.md](./260707-linear-plan-pr-handoff.md)             | `planned`     | Linear planning handoff through repo plan PRs             |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
@@ -41,7 +42,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | README slimdown                               | [#55](https://github.com/ferueda/harness/pull/55) |
 | —     | Commit hygiene hooks                          | [#56](https://github.com/ferueda/harness/pull/56) |
 | —     | Gate output runner                            | [#58](https://github.com/ferueda/harness/pull/58) |
-| —     | Factory station API, sessions, and planning  | [#64](https://github.com/ferueda/harness/pull/64) |
+| —     | Factory station API, sessions, and planning   | [#64](https://github.com/ferueda/harness/pull/64) |
 
 ---
 

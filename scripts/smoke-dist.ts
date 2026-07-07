@@ -89,6 +89,9 @@ if (!factoryTriageStationHelp.includes("harness factory triage")) {
 if (!factoryTriageStationHelp.includes("--item-file <path>")) {
   throw new Error("Expected factory triage help to include --item-file");
 }
+if (!factoryTriageStationHelp.includes("--linear-issue <issue>")) {
+  throw new Error("Expected factory triage help to include --linear-issue");
+}
 if (!factoryTriageStationHelp.includes("--dry-run")) {
   throw new Error("Expected factory triage help to include --dry-run");
 }
