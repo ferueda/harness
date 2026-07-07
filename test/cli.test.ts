@@ -203,9 +203,65 @@ test("harness factory help exits cleanly", () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/Usage: harness factory/);
   expect(result.stdout).toMatch(/status/);
+  expect(result.stdout).toMatch(/linear/);
   expect(result.stdout).toMatch(/triage/);
   expect(result.stdout).toMatch(/planning/);
   expect(result.stdout).not.toMatch(/dispatch/);
+});
+test("harness factory linear help exits cleanly", () => {
+  const result = runHarness(["factory", "linear", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory linear/);
+  expect(result.stdout).toMatch(/fetch/);
+});
+test("harness factory linear fetch help exits cleanly", () => {
+  const result = runHarness(["factory", "linear", "fetch", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory linear fetch/);
+  expect(result.stdout).toMatch(/TEAM-123/);
+  expect(result.stdout).toMatch(/--workspace/);
+});
+test("harness factory linear fetch requires Linear config", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(["factory", "linear", "fetch", "ENG-123", "--workspace", workspace], {
+    env: { LINEAR_API_KEY: "test-key" },
+  });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/factory\.linear is required/);
+});
+test("harness factory linear fetch requires a Linear API key", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify(
+      {
+        factory: {
+          linear: {
+            teamKey: "ENG",
+            statuses: {
+              intake: "Backlog",
+              parked: "Parked",
+              needsInfo: "Needs Info",
+              needsPlan: "Needs Plan",
+              readyToImplement: "Ready to Implement",
+              triaging: "Triaging",
+              planning: "Planning",
+              triageFailed: "Triage Failed",
+              planningFailed: "Planning Failed",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  const result = runHarness(["factory", "linear", "fetch", "ENG-123", "--workspace", workspace], {
+    env: { LINEAR_API_KEY: "" },
+  });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
 });
 test("harness factory status help exits cleanly", () => {
   const result = runHarness(["factory", "status", "--help"]);

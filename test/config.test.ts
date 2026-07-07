@@ -19,6 +19,7 @@ import {
   type InitHarnessOptions,
   findHarnessConfig,
   initHarnessConfig,
+  resolveFactoryLinearSettings,
   resolveFactoryPlanningSettings,
   resolveFactoryRoleAgent,
   resolveHarnessOptions,
@@ -45,6 +46,19 @@ function expectHarnessShim(workspace: string): string {
 function writeHarnessJson(workspace: string, value: unknown): void {
   writeFileSync(join(workspace, "harness.json"), `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
+
+const LINEAR_STATUSES = {
+  intake: "Backlog",
+  parked: "Parked",
+  needsInfo: "Needs Info",
+  needsPlan: "Needs Plan",
+  readyToImplement: "Ready to Implement",
+  triaging: "Triaging",
+  planning: "Planning",
+  triageFailed: "Triage Failed",
+  planningFailed: "Planning Failed",
+};
+
 test("findHarnessConfig walks up from nested directories", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   const nested = join(workspace, "packages/app");
@@ -229,6 +243,31 @@ test("resolveFactoryPlanningSettings reads configured value and defaults to thre
   });
 });
 
+test("resolveFactoryLinearSettings reads configured Linear tracker mapping", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    factory: {
+      linear: {
+        teamKey: "ENG",
+        statuses: LINEAR_STATUSES,
+      },
+    },
+  });
+
+  expect(resolveFactoryLinearSettings({ workspace }, "/")).toEqual({
+    workspace,
+    teamKey: "ENG",
+    statuses: LINEAR_STATUSES,
+  });
+});
+
+test("resolveFactoryLinearSettings requires explicit Linear config", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  expect(() => resolveFactoryLinearSettings({ workspace }, "/")).toThrow(
+    /factory\.linear is required/,
+  );
+});
+
 test("resolveFactoryRoleAgent defaults Codex planning planner to workspace-write", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeHarnessJson(workspace, {
@@ -300,6 +339,21 @@ test("factory config rejects unknown station, role, and role fields", () => {
     [
       { factory: { triage: { roles: { triager: { temperature: 0 } } } } },
       /factory\.triage\.roles\.triager: Unrecognized key/,
+    ],
+    [
+      { factory: { linear: { teamKey: "ENG", statuses: LINEAR_STATUSES, labels: {} } } },
+      /factory\.linear: Unrecognized key/,
+    ],
+    [
+      {
+        factory: {
+          linear: {
+            teamKey: "ENG",
+            statuses: { ...LINEAR_STATUSES, planApproved: "Plan Approved" },
+          },
+        },
+      },
+      /factory\.linear\.statuses: Unrecognized key/,
     ],
   ] as const;
 
