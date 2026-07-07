@@ -23,7 +23,9 @@ harness factory status --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
-harness factory planning --workspace /path/to/repo --item-file work-item.json
+harness factory planning run --workspace /path/to/repo --item-file work-item.json
+harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 ```
 
 Low-level workflow escape hatches:
@@ -123,7 +125,7 @@ deciding the next station.
 Run planning only for a work item routed to `ready-to-plan`:
 
 ```bash
-harness factory planning --workspace /path/to/repo --item-file work-item.json
+harness factory planning run --workspace /path/to/repo --item-file work-item.json
 ```
 
 The planner writes `.harness/runs/factory/<run-id>/planning/draft.md`. Harness
@@ -151,7 +153,10 @@ and approved plans live under `dev/plans/`. Tracker-backed approved plans
 should be published through a plan PR before the tracker moves to
 `Ready to Implement`. During manual publication, `factoryStage: "plan-pr-open"`
 can exist before `approvedPlanPrUrl`; record the URL when the plan PR exists.
-Do not commit `.harness/runs/*`.
+Use `harness factory planning publish` to record the plan PR URL, then
+`harness factory planning mark-plan-merged` to record the merge commit. These
+commands update local run metadata and print suggested Linear comments; they do
+not mutate Linear or GitHub. Do not commit `.harness/runs/*`.
 
 ## Stop Conditions
 

@@ -7,7 +7,13 @@ import {
   resolveHarnessOptions,
 } from "../lib/config.ts";
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
-import { createLinearFactoryAdapter } from "../lib/factory-linear-adapter.ts";
+import {
+  createLinearFactoryAdapter,
+  renderLinearPlanningApprovedComment,
+  renderLinearPlanningReadyComment,
+} from "../lib/factory-linear-adapter.ts";
+import { updateFactoryPlanningHandoff } from "../lib/factory-planning-handoff.ts";
+import { FactoryPlanningError } from "../lib/factory-planning-schemas.ts";
 import {
   createFactoryPlanningRunContext,
   type FactoryPlanningRunMeta,
@@ -51,6 +57,16 @@ type FactoryPlanningStationOptions = {
   maxRuntimeMs: number;
   dryRun: boolean;
   verbose: boolean;
+};
+
+type FactoryPlanningPublishOptions = {
+  runDir: string;
+  prUrl: string;
+};
+
+type FactoryPlanningMarkMergedOptions = {
+  runDir: string;
+  commit: string;
 };
 
 type FactoryLinearFetchOptions = {
@@ -113,8 +129,68 @@ function addFactoryLinearCommand(parent: Command): void {
 }
 
 function addFactoryPlanningStationCommand(parent: Command, config: FactoryCommandOptions): void {
+  const planning = parent.command("planning").description("Manage factory planning station");
+  addFactoryPlanningRunCommand(planning, config);
+  planning
+    .command("publish")
+    .description("Register the plan PR for an approved planning run")
+    .requiredOption("--run-dir <path>", "factory planning run directory")
+    .requiredOption("--pr-url <url>", "plan PR URL")
+    .action((options: FactoryPlanningPublishOptions) => {
+      const meta = updateFactoryPlanningHandoff(options.runDir, {
+        approvedPlanPrUrl: options.prUrl,
+        factoryStage: "plan-pr-open",
+      });
+      const metadata = requirePlanningFactoryMetadata(meta);
+      console.log(
+        JSON.stringify(
+          factoryPlanningPublicationCliOutput(
+            meta,
+            renderLinearPlanningReadyComment({
+              runId: meta.runId,
+              runDir: meta.runDir,
+              approvedPlanPath: metadata.approvedPlanPath,
+              approvedPlanPrUrl: metadata.approvedPlanPrUrl,
+            }),
+          ),
+          null,
+          2,
+        ),
+      );
+    });
+  planning
+    .command("mark-plan-merged")
+    .description("Register the merged plan commit for an approved planning run")
+    .requiredOption("--run-dir <path>", "factory planning run directory")
+    .requiredOption("--commit <sha>", "merged plan commit")
+    .action((options: FactoryPlanningMarkMergedOptions) => {
+      const meta = updateFactoryPlanningHandoff(options.runDir, {
+        approvedPlanCommit: options.commit,
+        factoryStage: "plan-approved",
+      });
+      const metadata = requirePlanningFactoryMetadata(meta);
+      console.log(
+        JSON.stringify(
+          factoryPlanningPublicationCliOutput(
+            meta,
+            renderLinearPlanningApprovedComment({
+              runId: meta.runId,
+              runDir: meta.runDir,
+              approvedPlanPath: metadata.approvedPlanPath,
+              approvedPlanPrUrl: metadata.approvedPlanPrUrl,
+              approvedPlanCommit: metadata.approvedPlanCommit,
+            }),
+          ),
+          null,
+          2,
+        ),
+      );
+    });
+}
+
+function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOptions): void {
   parent
-    .command("planning")
+    .command("run", { isDefault: true })
     .description("Run one factory work item through the planning station")
     .option("--workspace <path>", "target repo")
     .requiredOption("--item-file <path>", "factory work item JSON file")
@@ -197,8 +273,42 @@ function factoryPlanningCliOutput(meta: FactoryPlanningRunMeta) {
     workItem: meta.workItem,
     outputPlan: meta.outputPlan,
     iterations: meta.iterations.length,
+    factoryMetadata: meta.factoryMetadata,
     summaryPath: meta.summaryPath,
     metaPath: meta.metaPath,
+  };
+}
+
+function factoryPlanningPublicationCliOutput(meta: FactoryPlanningRunMeta, linearComment: string) {
+  return {
+    runId: meta.runId,
+    workflow: meta.workflow,
+    status: meta.status,
+    workspace: meta.workspace,
+    runDir: meta.runDir,
+    factoryMetadata: meta.factoryMetadata,
+    summaryPath: meta.summaryPath,
+    metaPath: meta.metaPath,
+    linearComment,
+  };
+}
+
+function requirePlanningFactoryMetadata(meta: FactoryPlanningRunMeta): {
+  approvedPlanPath: string;
+  approvedPlanPrUrl: string;
+  approvedPlanCommit: string;
+} {
+  const metadata = meta.factoryMetadata;
+  if (!metadata?.approvedPlanPath) {
+    throw new FactoryPlanningError("Planning run is missing approvedPlanPath");
+  }
+  if (!metadata.approvedPlanPrUrl) {
+    throw new FactoryPlanningError("Planning run is missing approvedPlanPrUrl");
+  }
+  return {
+    approvedPlanPath: metadata.approvedPlanPath,
+    approvedPlanPrUrl: metadata.approvedPlanPrUrl,
+    approvedPlanCommit: metadata.approvedPlanCommit ?? "",
   };
 }
 

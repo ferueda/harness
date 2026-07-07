@@ -84,7 +84,7 @@ Current local surface:
 .harness/inbox/factory/failed/*
 harness factory status
 harness factory triage --item-file item.json
-harness factory planning --item-file item.json
+harness factory planning run --item-file item.json
 ```
 
 Future GitHub-backed surface:
@@ -124,7 +124,7 @@ Today:
 
 ```bash
 harness factory triage --item-file item.json
-harness factory planning --item-file item.json
+harness factory planning run --item-file item.json
 ```
 
 Future:
@@ -141,7 +141,7 @@ The low-level primitives should still exist:
 
 ```bash
 harness run factory-triage --item-file item.json
-harness factory planning --item-file item.json
+harness factory planning run --item-file item.json
 harness run plan-review --plan dev/plans/example.md
 ```
 

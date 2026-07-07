@@ -21,6 +21,8 @@ import type {
 import { DEFAULT_AGENT_MODELS } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
 import { buildRunId } from "./context.ts";
+import { parseLinearIssueIdentifier } from "./factory-linear-adapter.ts";
+import { renderFactoryPlanningSummary } from "./factory-planning-handoff.ts";
 import { FactoryPlanningError, type FactoryPlanningOutput } from "./factory-planning-schemas.ts";
 import {
   FactoryWorkItemMetadataSchema,
@@ -276,11 +278,12 @@ function createFactoryPlanningRunContextInternal(
       writeJson(join(this.iterationDir(index), "review-findings.json"), findings);
     },
     writeFinalPlan(planPath): string {
+      validateSupportedTracker(options.workItem);
       const outputPlan = resolveOutputPlan({
         workspace,
         outputPlan: options.outputPlan,
         startedAt,
-        slug: deriveFactoryWorkItemPlanSlug(options.workItem),
+        workItem: options.workItem,
       });
       mkdirSync(dirname(outputPlan), { recursive: true });
       if (existsSync(outputPlan)) {
@@ -305,7 +308,7 @@ function createFactoryPlanningRunContextInternal(
         reviewerAgent,
         includeEventsFile: !options.dryRun,
       });
-      writeFileSync(join(runDir, "summary.md"), renderSummary(meta, input.humanQuestions), "utf8");
+      writeFileSync(join(runDir, "summary.md"), renderFactoryPlanningSummary(meta), "utf8");
       writeJson(join(runDir, "meta.json"), meta);
       return meta;
     },
@@ -364,7 +367,7 @@ function buildFactoryMetadata(input: {
 }): FactoryWorkItemMetadata {
   const parsed = FactoryWorkItemMetadataSchema.safeParse(input.workItem.metadata ?? {});
   const metadata = parsed.success ? parsed.data : {};
-  const stage = planningStage(input.status);
+  const stage = planningStage(input.status, input.workItem);
   return {
     ...metadata,
     factoryRunId: input.runId,
@@ -373,51 +376,13 @@ function buildFactoryMetadata(input: {
   };
 }
 
-function planningStage(status: FactoryPlanningRunStatus): FactoryStage | undefined {
+function planningStage(
+  status: FactoryPlanningRunStatus,
+  workItem: FactoryWorkItem,
+): FactoryStage | undefined {
   if (status === "dry_run") return undefined;
+  if (status === "plan-approved" && hasSupportedTracker(workItem)) return "plan-pr-open";
   return status;
-}
-
-function renderSummary(meta: FactoryPlanningRunMeta, humanQuestions: string[] | undefined): string {
-  const lines = [
-    "# Factory Planning",
-    "",
-    "## Work item",
-    "",
-    `- ${meta.workItem.id}: ${meta.workItem.title}`,
-    "",
-    "## Status",
-    "",
-    `- ${meta.status}`,
-    "",
-    "## Output plan",
-    "",
-    meta.outputPlan ? `- ${meta.outputPlan}` : "- None",
-    "",
-    "## Iterations",
-    "",
-  ];
-  if (meta.status === "dry_run") {
-    lines.push("- Dry-run placeholder; providers and reviewers were not called.");
-  } else if (meta.iterations.length === 0) {
-    lines.push("- None");
-  } else {
-    for (const iteration of meta.iterations) {
-      lines.push(`- ${iteration.index}: ${iteration.planPath ?? "(no plan draft)"}`);
-      if (iteration.review) {
-        lines.push(`  - Review: ${iteration.review.runDir}`);
-        lines.push(`  - Findings: ${iteration.review.specReviewPath}`);
-      }
-    }
-  }
-  lines.push("", "## Human questions", "");
-  if (humanQuestions?.length) {
-    for (const question of humanQuestions) lines.push(`- ${question}`);
-  } else {
-    lines.push("- None");
-  }
-  lines.push("", "## Error", "", meta.error ? `- ${meta.error}` : "- None", "");
-  return lines.join("\n");
 }
 
 function buildAgentMeta(role: FactoryPlanningAgentRole): FactoryPlanningAgentMeta {
@@ -438,13 +403,18 @@ function resolveOutputPlan(input: {
   workspace: string;
   outputPlan?: string;
   startedAt: Date;
-  slug: string;
+  workItem: FactoryWorkItem;
 }): string {
   const planPath = input.outputPlan
     ? isAbsolute(input.outputPlan)
       ? resolve(input.outputPlan)
       : resolve(input.workspace, input.outputPlan)
-    : join(input.workspace, "dev/plans", `${dateSlug(input.startedAt)}-${safeSlug(input.slug)}.md`);
+    : (deriveTrackerPlanPath(input.workspace, input.workItem) ??
+      join(
+        input.workspace,
+        "dev/plans",
+        `${dateSlug(input.startedAt)}-${safeSlug(deriveFactoryWorkItemPlanSlug(input.workItem))}.md`,
+      ));
   const rel = relative(input.workspace, planPath);
   if (rel.startsWith("..") || rel === "" || isAbsolute(rel)) {
     throw new FactoryPlanningError(`Output plan must be inside workspace: ${planPath}`);
@@ -453,6 +423,40 @@ function resolveOutputPlan(input: {
     throw new FactoryPlanningError(`Output plan must be under dev/plans: ${planPath}`);
   }
   return planPath;
+}
+
+function deriveTrackerPlanPath(workspace: string, workItem: FactoryWorkItem): string | undefined {
+  const tracker = parseTrackerPlanRef(workItem);
+  return tracker ? join(workspace, "dev/plans", tracker.fileName) : undefined;
+}
+
+function validateSupportedTracker(workItem: FactoryWorkItem): void {
+  parseTrackerPlanRef(workItem);
+}
+
+function hasSupportedTracker(workItem: FactoryWorkItem): boolean {
+  return parseTrackerPlanRef(workItem) !== undefined;
+}
+
+function parseTrackerPlanRef(workItem: FactoryWorkItem): { fileName: string } | undefined {
+  const metadata = FactoryWorkItemMetadataSchema.safeParse(workItem.metadata ?? {});
+  const tracker = metadata.success ? metadata.data.tracker : undefined;
+  if (!tracker) return undefined;
+  if (tracker.source === "linear") {
+    const parsed = parseLinearIssueIdentifier(tracker.id);
+    if (!parsed) {
+      throw new FactoryPlanningError(`Invalid Linear tracker id for plan path: ${tracker.id}`);
+    }
+    return { fileName: `${parsed.teamKey}-${parsed.number}.md` };
+  }
+  if (tracker.source === "github") {
+    const match = /^[-.A-Za-z0-9_]+\/[-.A-Za-z0-9_.]+#(\d+)$/.exec(tracker.id);
+    if (!match) {
+      throw new FactoryPlanningError(`Invalid GitHub tracker id for plan path: ${tracker.id}`);
+    }
+    return { fileName: `GH-${match[1]}.md` };
+  }
+  throw new FactoryPlanningError(`Unsupported tracker source for plan path: ${tracker.source}`);
 }
 
 function dateSlug(date: Date): string {

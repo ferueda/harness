@@ -108,6 +108,11 @@ writes an approved final plan under `dev/plans/` when the planning station
 finishes successfully. Tracker-backed plans should be published through a plan
 PR before tracker status moves to `Ready to Implement`.
 
+`lib/factory-planning-handoff.ts` owns planning handoff metadata helpers:
+loading validated planning `meta.json`, rendering planning summaries, patching
+plan PR and merge metadata, and validating approved-plan metadata for future
+implementation stations.
+
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
 
@@ -123,9 +128,13 @@ path mutates Linear.
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
-`harness factory planning --item-file ...` runs one work item through the
+`harness factory planning run --item-file ...` runs one work item through the
 station-level planning command and uses `factory.planning.roles.planner` and
 `factory.planning.roles.reviewer` config for agent and model selection.
+`harness factory planning --item-file ...` remains a default-subcommand alias
+for the run command. `harness factory planning publish` and
+`harness factory planning mark-plan-merged` update local planning run metadata;
+they do not mutate Linear or GitHub.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these
@@ -227,7 +236,9 @@ as `tracker`, `factoryRoute`, `factoryNextAction`, `factoryStage`,
 `factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
 `approvedPlanCommit`. Tracker-backed approved plan filenames should use the
 tracker key, for example `dev/plans/FER-123.md`; local/manual items fall back to
-title-derived slugs.
+title-derived slugs. Tracker-backed planning approval records
+`factoryStage: "plan-pr-open"` until the plan PR URL and merge commit are
+registered through the planning publication commands.
 
 ## Factory inbox lifecycle
 

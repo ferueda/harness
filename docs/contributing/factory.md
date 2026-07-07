@@ -20,7 +20,9 @@ harness factory status --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
-harness factory planning --workspace /path/to/repo --item-file work-item.json
+harness factory planning run --workspace /path/to/repo --item-file work-item.json
+harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 ```
 
 There is no batch dispatch command. Run an explicit station for an explicit
@@ -204,7 +206,7 @@ Triage does not mutate tracker state, labels, branches, or source files.
 Use planning for a `ready-to-plan` work item:
 
 ```bash
-harness factory planning --workspace /path/to/repo --item-file work-item.json
+harness factory planning run --workspace /path/to/repo --item-file work-item.json
 ```
 
 The planner writes a draft file, the harness snapshots it, `plan-review`
@@ -240,6 +242,16 @@ through a plan PR before the tracker moves to `Ready to Implement`. During the
 manual publication handoff, `factoryStage: "plan-pr-open"` may exist before
 `approvedPlanPrUrl`; the URL is recorded when the operator registers the plan
 PR.
+
+Manual publication commands update local run metadata and summary files only:
+
+```bash
+harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
+```
+
+They print `factoryMetadata` plus suggested Linear comment text. They do not
+open PRs, post comments, or move Linear statuses.
 
 ## Local Inbox
 

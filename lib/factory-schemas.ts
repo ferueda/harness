@@ -215,19 +215,7 @@ export function parseFactoryWorkItemMetadata(value: unknown): FactoryWorkItemMet
 }
 
 export function deriveFactoryWorkItemPlanSlug(workItem: FactoryWorkItem): string {
-  const metadata = FactoryWorkItemMetadataSchema.safeParse(workItem.metadata ?? {});
-  const trackerSlug = metadata.success ? trackerSlugPart(metadata.data.tracker) : undefined;
-  const baseSlug = workItem.title || workItem.id;
-  return trackerSlug ? `${trackerSlug}-${baseSlug}` : baseSlug;
-}
-
-function trackerSlugPart(tracker: FactoryTrackerRef | undefined): string | undefined {
-  if (!tracker) return undefined;
-  const source = tracker.source === "github" ? "gh" : tracker.source;
-  const id = tracker.id.includes("#")
-    ? tracker.id.slice(tracker.id.lastIndexOf("#") + 1)
-    : tracker.id;
-  return `${source}-${id}`;
+  return workItem.title || workItem.id;
 }
 
 function requireAction(

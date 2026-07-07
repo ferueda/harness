@@ -99,14 +99,32 @@ const factoryPlanningStationHelp = runHarness(["factory", "planning", "--help"])
 if (!factoryPlanningStationHelp.includes("harness factory planning")) {
   throw new Error("Expected factory planning help to include command usage");
 }
-if (!factoryPlanningStationHelp.includes("--item-file <path>")) {
+if (!factoryPlanningStationHelp.includes("publish")) {
+  throw new Error("Expected factory planning help to include publish subcommand");
+}
+if (!factoryPlanningStationHelp.includes("mark-plan-merged")) {
+  throw new Error("Expected factory planning help to include mark-plan-merged subcommand");
+}
+const factoryPlanningRunHelp = runHarness(["factory", "planning", "run", "--help"]);
+if (!factoryPlanningRunHelp.includes("harness factory planning run")) {
+  throw new Error("Expected factory planning run help to include command usage");
+}
+if (!factoryPlanningRunHelp.includes("--item-file <path>")) {
   throw new Error("Expected factory planning help to include --item-file");
 }
-if (!factoryPlanningStationHelp.includes("--output-plan <path>")) {
+if (!factoryPlanningRunHelp.includes("--output-plan <path>")) {
   throw new Error("Expected factory planning help to include --output-plan");
 }
-if (!factoryPlanningStationHelp.includes("--dry-run")) {
+if (!factoryPlanningRunHelp.includes("--dry-run")) {
   throw new Error("Expected factory planning help to include --dry-run");
+}
+const factoryPlanningPublishHelp = runHarness(["factory", "planning", "publish", "--help"]);
+if (!factoryPlanningPublishHelp.includes("harness factory planning publish")) {
+  throw new Error("Expected factory planning publish help to include command usage");
+}
+const factoryPlanningMergedHelp = runHarness(["factory", "planning", "mark-plan-merged", "--help"]);
+if (!factoryPlanningMergedHelp.includes("harness factory planning mark-plan-merged")) {
+  throw new Error("Expected factory planning mark-plan-merged help to include command usage");
 }
 const factoryDispatchHelp = runHarnessAllowFailure(["factory", "dispatch", "--help"]);
 const factoryDispatchHelpText = `${factoryDispatchHelp.stderr}\n${factoryDispatchHelp.stdout}`;

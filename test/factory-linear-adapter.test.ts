@@ -3,6 +3,8 @@ import type { FactoryLinearSettings } from "../lib/config.ts";
 import {
   createLinearFactoryAdapterForClient,
   parseLinearIssueIdentifier,
+  renderLinearPlanningApprovedComment,
+  renderLinearPlanningReadyComment,
   type LinearClientLike,
 } from "../lib/factory-linear-adapter.ts";
 
@@ -73,6 +75,26 @@ function fakeClient(overrides: Partial<LinearClientLike> = {}): LinearClientLike
 test("parseLinearIssueIdentifier accepts human issue ids", () => {
   expect(parseLinearIssueIdentifier("eng-123")).toEqual({ teamKey: "ENG", number: 123 });
   expect(parseLinearIssueIdentifier("not-a-linear-id")).toBeNull();
+});
+
+test("Linear planning comments include stable markers and plan handoff links", () => {
+  expect(
+    renderLinearPlanningReadyComment({
+      runId: "20260707-120000",
+      approvedPlanPath: "dev/plans/FER-123.md",
+      approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+      runDir: ".harness/runs/factory/20260707-120000",
+    }),
+  ).toContain("<!-- harness-factory:planning:20260707-120000 -->");
+  expect(
+    renderLinearPlanningApprovedComment({
+      runId: "20260707-120000",
+      approvedPlanPath: "dev/plans/FER-123.md",
+      approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+      approvedPlanCommit: "abc1234",
+      runDir: ".harness/runs/factory/20260707-120000",
+    }),
+  ).toContain("Commit: `abc1234`");
 });
 
 test("Linear adapter fetches an issue as a factory work item", async () => {
