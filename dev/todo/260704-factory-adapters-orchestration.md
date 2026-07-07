@@ -355,11 +355,12 @@ Recommended Linear sequence:
    ```
 
    When the internal planning outcome is approved, writes the approved plan to
-   `dev/plans/<tracker-key>.md`, records `approvedPlanPath` and
-   `approvedPlanPrUrl` in metadata, and adds a concise summary with the plan
-   path and plan PR. Linear should move to `Ready to Implement` only after the
-   plan PR merges and `approvedPlanCommit` is known. Linear comments should not
-   contain the full plan.
+   `dev/plans/<tracker-key>.md`, records `approvedPlanPath` in metadata, and
+   adds a concise summary with the plan path and next plan-PR action. This
+   station command should not record `approvedPlanPrUrl` or move Linear to
+   `Ready to Implement`. A later plan-merge handoff should record the PR URL,
+   record `approvedPlanCommit`, and move Linear only after the plan PR merges.
+   Linear comments should not contain the full plan.
 
 6. Linear inbox:
 
@@ -386,10 +387,15 @@ Keep Linear implementation in scoped slices:
    `FactoryWorkItem`. This slice is read-only toward Linear and does not add
    planning `--apply`.
 5. **Planning apply integration.** Add Linear write mode for planning. Move from
-   an allowed entry status to `Planning`, then publish deterministic comments
-   with `approvedPlanPath` and the plan PR. Move to `Ready to Implement` only
-   after the plan PR merges and `approvedPlanCommit` is known.
-6. **Backlog listing.** Later, add a read-only command that lists issues in the
+   an allowed entry status to `Planning`, then publish deterministic outcome
+   comments. For `plan-approved`, include `approvedPlanPath` and instruct the
+   operator to open/register/merge the plan PR. Do not move to
+   `Ready to Implement` in this station command.
+6. **Plan merge apply integration.** Add Linear write mode for the plan merge
+   handoff. `harness factory planning mark-plan-merged --apply` should move the
+   issue to `Ready to Implement` only after the plan PR merges and
+   `approvedPlanCommit` is known.
+7. **Backlog listing.** Later, add a read-only command that lists issues in the
    configured intake status and prints candidate station commands. Do not batch
    run work in the first Linear adapter pass.
 
