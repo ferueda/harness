@@ -320,7 +320,10 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
         : undefined;
       console.log(
         JSON.stringify(
-          factoryPlanningCliOutput(meta, (options.apply ? { linearApplied: true, linearUpdate } : {})),
+          factoryPlanningCliOutput(
+            meta,
+            options.apply ? { linearApplied: true, linearUpdate } : {},
+          ),
           null,
           2,
         ),
