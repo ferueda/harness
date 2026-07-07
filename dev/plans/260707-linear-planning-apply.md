@@ -44,6 +44,12 @@ Current gap:
 - terminal planning results require the operator to infer what happened from
   local artifacts
 
+Prerequisite:
+
+- Linear project scoping must be in place before this runtime slice lands.
+  `factory.linear.projectId` should reject issues outside the target repo
+  project before any planning apply mutation runs.
+
 ## Non-Goals
 
 - no GitHub PR creation

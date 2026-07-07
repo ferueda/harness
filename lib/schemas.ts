@@ -43,6 +43,7 @@ const FactoryLinearStatusesSchema = z
 const FactoryLinearConfigSchema = z
   .object({
     teamKey: z.string().min(1),
+    projectId: z.uuid().optional(),
     statuses: FactoryLinearStatusesSchema,
   })
   .strict();

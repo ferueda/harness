@@ -406,6 +406,7 @@ Suggested `harness.json` mapping:
   "factory": {
     "linear": {
       "teamKey": "TEAM",
+      "projectId": "00000000-0000-0000-0000-000000000000",
       "statuses": {
         "intake": "Backlog",
         "parked": "Parked",
@@ -421,6 +422,10 @@ Suggested `harness.json` mapping:
   }
 }
 ```
+
+`teamKey` owns the Linear issue identifier namespace and workflow statuses.
+`projectId` scopes the target repo when multiple repo projects share one Linear
+team.
 
 Initial implementation slice should prefer Linear before the implementation
 station if we want to validate the factory against real tracker state first:

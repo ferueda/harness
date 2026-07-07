@@ -97,6 +97,7 @@ Factory station roles use `harness.json`:
     },
     "linear": {
       "teamKey": "ENG",
+      "projectId": "00000000-0000-0000-0000-000000000000",
       "statuses": {
         "intake": "Backlog",
         "parked": "Parked",
@@ -141,8 +142,20 @@ LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/rep
 ```
 
 The fetch command is read-only. It validates `factory.linear.statuses` against
-the configured team workflow, fetches the issue description, labels, and recent
-comments, then prints JSON suitable for `--item-file`.
+the configured team workflow, verifies the issue belongs to the configured
+`factory.linear.projectId` when set, fetches the issue description, labels, and
+recent comments, then prints JSON suitable for `--item-file`.
+
+Linear team and project serve different purposes:
+
+- `teamKey` owns the issue key namespace and workflow statuses, such as
+  `ENG-123` and `Needs Plan`.
+- `projectId` scopes the target repo. Use it when multiple repo projects share
+  one Linear team.
+
+When `projectId` is configured, Linear-backed fetch, triage, planning input, and
+triage apply reject issues outside that project before running station work or
+mutating Linear. Local `--item-file` inputs are not revalidated against Linear.
 
 The triage station can also fetch Linear directly:
 
@@ -163,11 +176,12 @@ LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --line
 ```
 
 Linear-backed planning input is read-only toward Linear in this slice. It
-performs a live Linear read, validates that the issue maps to `Needs Plan` or
-`Planning Failed`, then runs the existing planning station from the fetched
-`FactoryWorkItem`. It writes local factory artifacts and, for live approved
-runs, the reviewed plan under `dev/plans/<issue-key>.md`. It does not move
-Linear to `Planning`, post comments, or move the issue to
+performs a live Linear read, validates configured project scope when set,
+validates that the issue maps to `Needs Plan` or `Planning Failed`, then runs
+the existing planning station from the fetched `FactoryWorkItem`. It writes
+local factory artifacts and, for live approved runs, the reviewed plan under
+`dev/plans/<issue-key>.md`. It does not move Linear to `Planning`, post
+comments, or move the issue to
 `Ready to Implement`; Linear planning `--apply` remains future work.
 
 `--apply` is Linear-only and cannot be combined with `--item-file` or

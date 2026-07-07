@@ -58,6 +58,7 @@ Minimal shape:
     },
     "linear": {
       "teamKey": "ENG",
+      "projectId": "00000000-0000-0000-0000-000000000000",
       "statuses": {
         "intake": "Backlog",
         "parked": "Parked",
@@ -94,9 +95,11 @@ LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/rep
 ```
 
 This command is read-only. It validates the configured Linear team statuses,
+verifies the configured Linear project when `factory.linear.projectId` is set,
 then prints a work item with issue description, labels, recent comments, and
-tracker metadata. Redirect the output to an item file before planning, or pass
-the issue directly to triage with `--linear-issue`.
+tracker metadata. `teamKey` owns issue identifiers and statuses; `projectId`
+scopes the target repo. Redirect the output to an item file before planning, or
+pass the issue directly to triage with `--linear-issue`.
 
 ## Triage
 
@@ -111,9 +114,10 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 `--linear-issue` uses Linear as the input source by default. It requires
 `LINEAR_API_KEY` and `factory.linear` config. Every `--linear-issue` triage run
 performs a live Linear read before writing local factory artifacts, including
-dry-runs. Add `--apply` to move allowed entry statuses to `Triaging`, then to
-the terminal triage status, and write one marker comment. `--apply` cannot be
-combined with `--dry-run` or `--item-file`.
+dry-runs. If `factory.linear.projectId` is set, the issue must belong to that
+project before triage or apply can continue. Add `--apply` to move allowed entry
+statuses to `Triaging`, then to the terminal triage status, and write one marker
+comment. `--apply` cannot be combined with `--dry-run` or `--item-file`.
 Comment dedupe checks the most recent Linear comments fetched by the adapter
 (currently 20); older markers can be reposted on retry.
 
@@ -142,7 +146,8 @@ harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 -
 
 `--linear-issue` planning requires `LINEAR_API_KEY` and `factory.linear` config.
 Every Linear-backed planning run performs a live Linear read before writing
-local factory artifacts, including dry-runs. It accepts `Needs Plan` and
+local factory artifacts, including dry-runs. If `factory.linear.projectId` is
+set, the issue must belong to that project. It accepts `Needs Plan` and
 `Planning Failed`; other Linear statuses are rejected before creating a run
 directory. Linear-backed planning does not mutate Linear yet.
 

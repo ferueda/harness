@@ -249,6 +249,26 @@ test("resolveFactoryLinearSettings reads configured Linear tracker mapping", () 
     factory: {
       linear: {
         teamKey: "ENG",
+        projectId: "00000000-0000-4000-8000-000000000001",
+        statuses: LINEAR_STATUSES,
+      },
+    },
+  });
+
+  expect(resolveFactoryLinearSettings({ workspace }, "/")).toEqual({
+    workspace,
+    teamKey: "ENG",
+    projectId: "00000000-0000-4000-8000-000000000001",
+    statuses: LINEAR_STATUSES,
+  });
+});
+
+test("resolveFactoryLinearSettings keeps projectId optional", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    factory: {
+      linear: {
+        teamKey: "ENG",
         statuses: LINEAR_STATUSES,
       },
     },
@@ -343,6 +363,12 @@ test("factory config rejects unknown station, role, and role fields", () => {
     [
       { factory: { linear: { teamKey: "ENG", statuses: LINEAR_STATUSES, labels: {} } } },
       /factory\.linear: Unrecognized key/,
+    ],
+    [
+      {
+        factory: { linear: { teamKey: "ENG", projectId: "not-a-uuid", statuses: LINEAR_STATUSES } },
+      },
+      /factory\.linear\.projectId/,
     ],
     [
       {

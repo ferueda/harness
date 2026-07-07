@@ -40,6 +40,23 @@ const TEAM = {
   }),
 };
 
+const PROJECT = {
+  id: "project-1",
+  name: "Harness",
+  url: "https://linear.app/acme/project/harness-123",
+};
+
+const OTHER_PROJECT = {
+  id: "project-2",
+  name: "Other Repo",
+  url: "https://linear.app/acme/project/other-456",
+};
+
+const SCOPED_LINEAR_SETTINGS = {
+  ...LINEAR_SETTINGS,
+  projectId: PROJECT.id,
+} satisfies FactoryLinearSettings;
+
 const ISSUE = {
   id: "issue-1",
   identifier: "ENG-123",
@@ -47,12 +64,14 @@ const ISSUE = {
   title: "Add export shortcut",
   description: "Users need a keyboard shortcut for export.",
   url: "https://linear.app/acme/issue/ENG-123/add-export-shortcut",
+  projectId: PROJECT.id,
   priority: 2,
   priorityLabel: "High",
   createdAt: new Date("2026-07-07T10:00:00Z"),
   updatedAt: new Date("2026-07-07T11:00:00Z"),
   state: Promise.resolve({ id: "state-planning", name: "Needs Plan", type: "unstarted" }),
   team: Promise.resolve(TEAM),
+  project: Promise.resolve(PROJECT),
   assignee: Promise.resolve({ displayName: "Felipe" }),
   labels: async () => ({ nodes: [{ name: "factory" }, { name: "product" }] }),
   comments: async () => ({
@@ -200,6 +219,9 @@ test("Linear adapter fetches an issue as a factory work item", async () => {
       factoryStage: "ready-to-plan",
       linearIssueId: "issue-1",
       linearTeamKey: "ENG",
+      linearProjectId: "project-1",
+      linearProjectName: "Harness",
+      linearProjectUrl: "https://linear.app/acme/project/harness-123",
       linearStatus: "Needs Plan",
       linearAssignee: "Felipe",
       linearCommentsIncluded: 1,
@@ -209,6 +231,147 @@ test("Linear adapter fetches an issue as a factory work item", async () => {
   expect(item.body).toContain("Users need a keyboard shortcut");
   expect(item.body).toContain("## Linear Comments");
   expect(item.body).toContain("Please keep the shortcut configurable.");
+});
+
+test("Linear adapter accepts issues in configured project during fetch", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient(),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.fetchWorkItem("ENG-123")).resolves.toMatchObject({
+    metadata: {
+      linearProjectId: PROJECT.id,
+      linearProjectName: PROJECT.name,
+    },
+  });
+});
+
+test("Linear adapter compares configured project ids case-insensitively", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient(),
+    settings: {
+      ...SCOPED_LINEAR_SETTINGS,
+      projectId: PROJECT.id.toUpperCase(),
+    },
+  });
+
+  await expect(adapter.fetchWorkItem("ENG-123")).resolves.toMatchObject({
+    metadata: {
+      linearProjectId: PROJECT.id,
+    },
+  });
+});
+
+test("Linear adapter keeps omitted projectId backward compatible", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            projectId: OTHER_PROJECT.id,
+            project: Promise.resolve(OTHER_PROJECT),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.fetchWorkItem("ENG-123")).resolves.toMatchObject({
+    metadata: {
+      linearProjectId: "project-2",
+      linearProjectName: "Other Repo",
+    },
+  });
+});
+
+test("Linear adapter accepts matching project relation when scalar projectId is absent", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            projectId: undefined,
+            project: Promise.resolve(PROJECT),
+          },
+        ],
+      }),
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.fetchWorkItem("ENG-123")).resolves.toMatchObject({
+    metadata: {
+      linearProjectId: PROJECT.id,
+      linearProjectName: PROJECT.name,
+    },
+  });
+});
+
+test("Linear adapter rejects inconsistent project scalar and relation data", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            projectId: "project-stale",
+            project: Promise.resolve(OTHER_PROJECT),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.fetchWorkItem("ENG-123")).rejects.toThrow(
+    /returned inconsistent project data: projectId project-stale, project relation Other Repo \(project-2\)/,
+  );
+});
+
+test("Linear adapter rejects issues outside the configured project", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            projectId: OTHER_PROJECT.id,
+            project: Promise.resolve(OTHER_PROJECT),
+          },
+        ],
+      }),
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.fetchWorkItem("ENG-123")).rejects.toThrow(
+    /belongs to project Other Repo \(project-2\), but factory\.linear\.projectId is project-1/,
+  );
+});
+
+test("Linear adapter rejects project-scoped fetch when issue has no project", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            projectId: undefined,
+            project: undefined,
+          },
+        ],
+      }),
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.fetchWorkItem("ENG-123")).rejects.toThrow(
+    /has no project, but factory\.linear\.projectId is project-1/,
+  );
 });
 
 test("Linear adapter treats non-human refs as direct issue ids", async () => {
@@ -223,6 +386,27 @@ test("Linear adapter treats non-human refs as direct issue ids", async () => {
   const item = await adapter.fetchWorkItem("uuid-issue-id");
 
   expect(item.id).toBe("linear:ENG-124");
+});
+
+test("Linear adapter rejects direct issue ids outside the configured project", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issue: async (id) => ({
+        ...ISSUE,
+        id,
+        projectId: OTHER_PROJECT.id,
+        project: Promise.resolve(OTHER_PROJECT),
+      }),
+      issues: async () => {
+        throw new Error("identifier lookup should not run");
+      },
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.fetchWorkItem("uuid-issue-id")).rejects.toThrow(
+    /belongs to project Other Repo \(project-2\), but factory\.linear\.projectId is project-1/,
+  );
 });
 
 test("Linear adapter validates configured statuses against team states", async () => {
@@ -438,6 +622,121 @@ test("Linear adapter rejects triage apply from terminal statuses before mutation
     }),
   ).rejects.toThrow(/only accepts Backlog, Needs Info, or Triage Failed/);
   expect(updates).toEqual([]);
+});
+
+test("Linear adapter rejects triage apply outside configured project before mutation", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Backlog", name: "Backlog", type: "backlog" }),
+            projectId: OTHER_PROJECT.id,
+            project: Promise.resolve(OTHER_PROJECT),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+    }),
+  ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+  expect(updates).toEqual([]);
+});
+
+test("Linear adapter rejects triage apply without a project before mutation", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Backlog", name: "Backlog", type: "backlog" }),
+            projectId: undefined,
+            project: undefined,
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+    }),
+  ).rejects.toThrow(/has no project, but factory\.linear\.projectId is project-1/);
+  expect(updates).toEqual([]);
+});
+
+test("Linear adapter rejects terminal triage apply outside configured project before mutation", async () => {
+  for (const apply of ["completed", "failed"] as const) {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const comments: Array<{ issueId: string; body: string }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            {
+              ...ISSUE,
+              projectId: OTHER_PROJECT.id,
+              project: Promise.resolve(OTHER_PROJECT),
+            },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+        createComment: async (input) => {
+          comments.push(input);
+          return { success: true };
+        },
+      }),
+      settings: SCOPED_LINEAR_SETTINGS,
+    });
+
+    if (apply === "completed") {
+      await expect(
+        adapter.applyTriageCompleted({
+          issueRef: "ENG-123",
+          runId: "run-1",
+          runDir: ".harness/runs/factory/run-1",
+          triage: TRIAGE_READY_TO_PLAN,
+        }),
+      ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+    } else {
+      await expect(
+        adapter.applyTriageFailed({
+          issueRef: "ENG-123",
+          runId: "run-1",
+          runDir: ".harness/runs/factory/run-1",
+          error: "agent timeout",
+        }),
+      ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+    }
+    expect(updates).toEqual([]);
+    expect(comments).toEqual([]);
+  }
 });
 
 test("Linear adapter applies completed triage status and comment", async () => {

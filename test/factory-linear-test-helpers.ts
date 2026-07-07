@@ -31,6 +31,9 @@ export const LINEAR_WORK_ITEM = {
       url: "https://linear.app/acme/issue/ENG-123/linear-issue",
     },
     linearIssueId: "issue-1",
+    linearProjectId: "project-1",
+    linearProjectName: "Harness",
+    linearProjectUrl: "https://linear.app/acme/project/harness-123",
     linearStatus: "Backlog",
   },
 } satisfies FactoryWorkItem;

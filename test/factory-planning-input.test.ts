@@ -74,6 +74,8 @@ test("Linear issue input can run through factory planning dry-run artifacts", as
     expect(contextWorkItem).toMatchObject({
       metadata: {
         factoryStage,
+        linearProjectId: "project-1",
+        linearProjectName: "Harness",
         linearStatus,
       },
     });

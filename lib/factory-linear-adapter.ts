@@ -77,6 +77,7 @@ type LinearIssueLike = {
   title: string;
   description?: string | null;
   url: string;
+  projectId?: string | null;
   priority?: number | null;
   priorityLabel?: string | null;
   createdAt?: Date | string;
@@ -84,6 +85,7 @@ type LinearIssueLike = {
   assignee?: Promise<LinearUserLike | undefined> | LinearUserLike | undefined;
   state?: Promise<LinearWorkflowStateLike | undefined> | LinearWorkflowStateLike | undefined;
   team?: Promise<LinearTeamLike | undefined> | LinearTeamLike | undefined;
+  project?: Promise<LinearProjectLike | undefined> | LinearProjectLike | undefined;
   labels?: (variables?: unknown) => Promise<LinearConnectionLike<LinearIssueLabelLike>>;
   comments?: (variables?: unknown) => Promise<LinearConnectionLike<LinearCommentLike>>;
 };
@@ -99,6 +101,12 @@ type LinearWorkflowStateLike = {
   id: string;
   name: string;
   type?: string;
+};
+
+type LinearProjectLike = {
+  id: string;
+  name: string;
+  url?: string;
 };
 
 type LinearIssueLabelLike = {
@@ -289,7 +297,7 @@ async function applyTriageStarted(
   await validateStatusMap(client, settings);
   const issue = await fetchIssue(client, settings, input.issueRef);
   const state = await resolveOptional(issue.state);
-  await assertIssueInConfiguredTeam(issue, settings);
+  await assertIssueInConfiguredScope(issue, settings);
   assertLinearTriageApplyAllowed(settings, state?.name);
 
   const target = await fetchWorkflowState(client, settings, settings.statuses.triaging);
@@ -312,7 +320,7 @@ async function applyTriageCompleted(
   await validateStatusMap(client, settings);
   const issue = await fetchIssue(client, settings, input.issueRef);
   const state = await resolveOptional(issue.state);
-  await assertIssueInConfiguredTeam(issue, settings);
+  await assertIssueInConfiguredScope(issue, settings);
   const target = await fetchWorkflowState(
     client,
     settings,
@@ -355,7 +363,7 @@ async function applyTriageFailed(
   await validateStatusMap(client, settings);
   const issue = await fetchIssue(client, settings, input.issueRef);
   const state = await resolveOptional(issue.state);
-  await assertIssueInConfiguredTeam(issue, settings);
+  await assertIssueInConfiguredScope(issue, settings);
   const target = await fetchWorkflowState(client, settings, settings.statuses.triageFailed);
   if (normalizeName(state?.name ?? "") !== normalizeName(target.name)) {
     await client.updateIssue(issue.id, { stateId: target.id });
@@ -390,23 +398,16 @@ async function fetchWorkItem(
 ): Promise<FactoryWorkItem> {
   await validateStatusMap(client, settings);
   const issue = await fetchIssue(client, settings, issueRef);
-  const [state, team, labels, commentResult, assignee] = await Promise.all([
+  const [state, team, project, labels, commentResult, assignee] = await Promise.all([
     resolveOptional(issue.state),
     resolveOptional(issue.team),
+    resolveOptional(issue.project),
     fetchLabels(issue),
     fetchComments(issue),
     resolveOptional(issue.assignee),
   ]);
-  if (!team) {
-    throw new Error(
-      `Linear issue ${issue.identifier} did not include team data; cannot verify factory.linear.teamKey ${settings.teamKey}.`,
-    );
-  }
-  if (canonicalTeamKey(team.key) !== canonicalTeamKey(settings.teamKey)) {
-    throw new Error(
-      `Linear issue ${issue.identifier} belongs to ${team.key}, but factory.linear.teamKey is ${settings.teamKey}.`,
-    );
-  }
+  assertTeamMatches(issue, settings, team);
+  const linearProjectId = assertProjectMatches(issue, settings, project);
 
   const metadata = compactJsonRecord({
     tracker: {
@@ -419,6 +420,9 @@ async function fetchWorkItem(
     linearIssueIdentifier: issue.identifier,
     linearTeamKey: team.key,
     linearTeamName: team.name,
+    linearProjectId,
+    linearProjectName: project?.name,
+    linearProjectUrl: project?.url,
     linearStatus: state?.name,
     linearStatusType: state?.type,
     linearPriority: issue.priority,
@@ -524,11 +528,23 @@ async function fetchTeam(client: LinearClientLike, teamKey: string): Promise<Lin
   return connection.nodes[0];
 }
 
-async function assertIssueInConfiguredTeam(
+async function assertIssueInConfiguredScope(
   issue: LinearIssueLike,
   settings: FactoryLinearSettings,
 ): Promise<void> {
-  const team = await resolveOptional(issue.team);
+  const [team, project] = await Promise.all([
+    resolveOptional(issue.team),
+    resolveOptional(issue.project),
+  ]);
+  assertTeamMatches(issue, settings, team);
+  assertProjectMatches(issue, settings, project);
+}
+
+function assertTeamMatches(
+  issue: LinearIssueLike,
+  settings: FactoryLinearSettings,
+  team: LinearTeamLike | undefined,
+): asserts team is LinearTeamLike {
   if (!team) {
     throw new Error(
       `Linear issue ${issue.identifier} did not include team data; cannot verify factory.linear.teamKey ${settings.teamKey}.`,
@@ -539,6 +555,43 @@ async function assertIssueInConfiguredTeam(
       `Linear issue ${issue.identifier} belongs to ${team.key}, but factory.linear.teamKey is ${settings.teamKey}.`,
     );
   }
+}
+
+function assertProjectMatches(
+  issue: LinearIssueLike,
+  settings: FactoryLinearSettings,
+  project: LinearProjectLike | undefined,
+): string | undefined {
+  const projectId = projectIdForIssue(issue, project);
+  if (!settings.projectId) return projectId;
+  if (!projectId) {
+    throw new Error(
+      `Linear issue ${issue.identifier} has no project, but factory.linear.projectId is ${settings.projectId}.`,
+    );
+  }
+  if (normalizeName(projectId) !== normalizeName(settings.projectId)) {
+    const projectLabel = project?.name ? `${project.name} (${projectId})` : projectId;
+    throw new Error(
+      `Linear issue ${issue.identifier} belongs to project ${projectLabel}, but factory.linear.projectId is ${settings.projectId}.`,
+    );
+  }
+  return projectId;
+}
+
+function projectIdForIssue(
+  issue: LinearIssueLike,
+  project: LinearProjectLike | undefined,
+): string | undefined {
+  if (
+    issue.projectId &&
+    project?.id &&
+    normalizeName(issue.projectId) !== normalizeName(project.id)
+  ) {
+    throw new Error(
+      `Linear issue ${issue.identifier} returned inconsistent project data: projectId ${issue.projectId}, project relation ${project.name} (${project.id}).`,
+    );
+  }
+  return issue.projectId ?? project?.id ?? undefined;
 }
 
 async function fetchLabels(issue: LinearIssueLike): Promise<string[]> {

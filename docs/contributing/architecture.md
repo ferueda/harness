@@ -124,12 +124,15 @@ status` reads `.harness/inbox/factory/` without moving files or creating runs.
 `lib/factory-linear-adapter.ts` owns Linear issue import and explicit triage
 apply updates.
 `harness factory linear fetch TEAM-123` validates `factory.linear` status
-mapping, reads one Linear issue through `@linear/sdk`, and prints a normalized
-`FactoryWorkItem` JSON object. `harness factory triage --linear-issue TEAM-123`
-uses the same adapter as an input source before running the station. Fetch and
-default Linear-backed triage do not mutate Linear. `harness factory triage
---linear-issue TEAM-123 --apply` additionally moves the issue to `Triaging`,
-then to the terminal triage status, and writes a marker comment.
+mapping, verifies configured project scope, reads one Linear issue through
+`@linear/sdk`, and prints a normalized `FactoryWorkItem` JSON object. Linear
+team owns the issue key and workflow statuses; `factory.linear.projectId`, when
+set, scopes issues to the target repo project. `harness factory triage
+--linear-issue TEAM-123` uses the same adapter as an input source before
+running the station. Fetch and default Linear-backed triage do not mutate
+Linear. `harness factory triage --linear-issue TEAM-123 --apply` additionally
+moves the issue to `Triaging`, then to the terminal triage status, and writes a
+marker comment.
 
 `harness factory triage --item-file ...` or
 `harness factory triage --linear-issue ...` runs one work item through the
