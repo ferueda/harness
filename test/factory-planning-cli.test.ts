@@ -32,6 +32,12 @@ test("factoryPlanningCliOutput omits linearApplied unless provided", () => {
   expect(factoryPlanningCliOutput(META)).not.toHaveProperty("linearApplied");
 });
 
+test("factoryPlanningCliOutput includes read-only Linear marker", () => {
+  expect(factoryPlanningCliOutput(META, { linearApplied: false })).toMatchObject({
+    linearApplied: false,
+  });
+});
+
 test("factoryPlanningCliOutput includes Linear apply details", () => {
   expect(
     factoryPlanningCliOutput(META, {

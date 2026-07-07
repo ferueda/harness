@@ -76,11 +76,7 @@ test("planning apply returns started and terminal updates on success", async () 
       runDir: CTX.runDir,
       status: "plan-approved",
       approvedPlanPath: "dev/plans/ENG-123.md",
-      artifactPath: undefined,
-      artifactUri: undefined,
-      planPullRequestUrl: undefined,
-      questions: undefined,
-      unresolvedFindings: undefined,
+      humanQuestions: undefined,
       error: undefined,
     },
   ]);
