@@ -17,7 +17,7 @@ git clone git@github.com:ferueda/harness.git ~/.harness
 The installer runs `pnpm install --frozen-lockfile`, writes the user-level
 `harness` command to `~/.local/bin` by default, and verifies `harness --help`.
 If `~/.local/bin` is not on `PATH`, the installer prints the `export PATH=...`
-line to add.
+line to add. The checkout can live anywhere; run that checkout's `./install`.
 
 Next, initialize a target repo and run reviews.
 

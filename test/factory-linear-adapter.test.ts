@@ -192,7 +192,7 @@ test("Linear planning apply helpers map statuses and render concise comments", (
       approvedPlanPath: "dev/plans/ENG-123.md",
       targetStatus: "Planning",
     }),
-  ).toContain("Open/register a plan PR, merge it, then mark the plan merged.");
+  ).toContain("Factory plan ready.");
   expect(
     renderLinearPlanningApplyFailedComment({
       issueRef: "ENG-123",
@@ -856,6 +856,67 @@ test("Linear adapter rejects planning apply from disallowed statuses before muta
     }),
   ).rejects.toThrow(/only accepts Needs Plan or Planning Failed/);
   expect(updates).toEqual([]);
+});
+
+test("Linear adapter rejects planning apply outside configured project before mutation", async () => {
+  for (const apply of ["started", "completed", "failed"] as const) {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const comments: Array<{ issueId: string; body: string }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            {
+              ...ISSUE,
+              state: Promise.resolve({ id: "state-Needs Plan", name: "Needs Plan" }),
+              projectId: OTHER_PROJECT.id,
+              project: Promise.resolve(OTHER_PROJECT),
+            },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+        createComment: async (input) => {
+          comments.push(input);
+          return { success: true };
+        },
+      }),
+      settings: SCOPED_LINEAR_SETTINGS,
+    });
+
+    if (apply === "started") {
+      await expect(
+        adapter.applyPlanningStarted({
+          issueRef: "ENG-123",
+          runId: "run-1",
+          runDir: ".harness/runs/factory/run-1",
+        }),
+      ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+    } else if (apply === "completed") {
+      await expect(
+        adapter.applyPlanningCompleted({
+          issueRef: "ENG-123",
+          runId: "run-1",
+          runDir: ".harness/runs/factory/run-1",
+          status: "plan-approved",
+          approvedPlanPath: "dev/plans/ENG-123.md",
+        }),
+      ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+    } else {
+      await expect(
+        adapter.applyPlanningFailed({
+          issueRef: "ENG-123",
+          runId: "run-1",
+          runDir: ".harness/runs/factory/run-1",
+          error: "provider crashed",
+        }),
+      ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+    }
+    expect(updates).toEqual([]);
+    expect(comments).toEqual([]);
+  }
 });
 
 test.each([

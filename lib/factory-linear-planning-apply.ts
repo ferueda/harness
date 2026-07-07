@@ -205,7 +205,7 @@ export function renderLinearPlanningApplyCompleteComment(
   return [
     linearPlanningApplyCommentMarker(input.runId),
     "",
-    "Factory planning complete.",
+    planningCommentHeadline(input.status),
     "",
     `Status: ${input.status}`,
     `Run: \`${input.runDir}\``,
@@ -246,6 +246,10 @@ function planningNextAction(
     case "dry_run":
       return "No Linear update.";
   }
+}
+
+function planningCommentHeadline(status: FactoryPlanningRunStatus): string {
+  return status === "plan-approved" ? "Factory plan ready." : "Factory planning complete.";
 }
 
 function normalizeStatus(value: string): string {

@@ -6,6 +6,7 @@ import {
   type FactoryPlanningLinearUpdate,
 } from "./factory-planning-cli.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
+import { errorMessage } from "../lib/agent-invoke.ts";
 import {
   resolveFactoryLinearSettings,
   resolveFactoryPlanningSettings,
@@ -28,6 +29,7 @@ import { updateFactoryPlanningHandoff } from "../lib/factory-planning-handoff.ts
 import { FactoryPlanningError } from "../lib/factory-planning-schemas.ts";
 import {
   createFactoryPlanningRunContext,
+  type FactoryPlanningRunContext,
   type FactoryPlanningRunMeta,
 } from "../lib/factory-planning-run-context.ts";
 import { assertFactoryPlanningLinearEntry } from "../lib/factory-planning-input.ts";
@@ -263,8 +265,7 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
       process.once("SIGINT", onRunAbort);
       process.once("SIGTERM", onRunAbort);
       let meta: FactoryPlanningRunMeta;
-      let startedUpdate: LinearPlanningUpdatePlan | undefined;
-      let terminalUpdate: LinearPlanningUpdatePlan | undefined;
+      let linearUpdate: FactoryPlanningLinearUpdate | undefined;
       let terminalApplyError: unknown;
       try {
         const ctx = createFactoryPlanningRunContext({
@@ -282,42 +283,15 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
           agentProviderFactory: createAgentProvider,
         });
         const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
-        if (applyAdapter) {
-          startedUpdate = await applyAdapter.applyPlanningStarted({
-            issueRef: options.linearIssue ?? "",
-            runId: ctx.runId,
-            runDir: ctx.runDir,
-          });
-        }
-        try {
-          meta = await runFactoryPlanning(ctx);
-        } catch (error) {
-          if (applyAdapter && startedUpdate) {
-            await applyAdapter.applyPlanningFailed({
-              issueRef: options.linearIssue ?? "",
-              runId: ctx.runId,
-              runDir: ctx.runDir,
-              error: errorMessage(error),
-            });
-          }
-          throw error;
-        }
-        if (applyAdapter) {
-          try {
-            terminalUpdate = await applyAdapter.applyPlanningCompleted(
-              linearPlanningCompletedInput(meta, options.linearIssue ?? ""),
-            );
-          } catch (error) {
-            terminalApplyError = error;
-          }
-        }
+        ({ meta, linearUpdate, terminalApplyError } = await runFactoryPlanningWithLinearApply({
+          ctx,
+          issueRef: options.linearIssue ?? "",
+          applyAdapter,
+        }));
       } finally {
         process.off("SIGINT", onRunAbort);
         process.off("SIGTERM", onRunAbort);
       }
-      const linearUpdate: FactoryPlanningLinearUpdate | undefined = options.apply
-        ? { started: startedUpdate, terminal: terminalUpdate }
-        : undefined;
       console.log(
         JSON.stringify(
           factoryPlanningCliOutput(
@@ -334,6 +308,63 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
       process.exitCode =
         meta.status === "planning-failed" || meta.status === "plan-review-unresolved" ? 1 : 0;
     });
+}
+
+export async function runFactoryPlanningWithLinearApply(input: {
+  ctx: FactoryPlanningRunContext;
+  issueRef: string;
+  applyAdapter?: LinearFactoryAdapter;
+  runPlanning?: (ctx: FactoryPlanningRunContext) => Promise<FactoryPlanningRunMeta>;
+}): Promise<{
+  meta: FactoryPlanningRunMeta;
+  linearUpdate?: FactoryPlanningLinearUpdate;
+  terminalApplyError?: unknown;
+}> {
+  const runPlanning = input.runPlanning ?? runFactoryPlanning;
+  let startedUpdate: LinearPlanningUpdatePlan | undefined;
+  let terminalUpdate: LinearPlanningUpdatePlan | undefined;
+  if (input.applyAdapter) {
+    startedUpdate = await input.applyAdapter.applyPlanningStarted({
+      issueRef: input.issueRef,
+      runId: input.ctx.runId,
+      runDir: input.ctx.runDir,
+    });
+  }
+  let meta: FactoryPlanningRunMeta;
+  try {
+    meta = await runPlanning(input.ctx);
+  } catch (error) {
+    if (input.applyAdapter && startedUpdate) {
+      try {
+        terminalUpdate = await input.applyAdapter.applyPlanningFailed({
+          issueRef: input.issueRef,
+          runId: input.ctx.runId,
+          runDir: input.ctx.runDir,
+          error: errorMessage(error),
+        });
+      } catch {
+        // Preserve the planning/provider error. Cleanup failures are secondary.
+      }
+    }
+    throw error;
+  }
+  let terminalApplyError: unknown;
+  if (input.applyAdapter) {
+    try {
+      terminalUpdate = await input.applyAdapter.applyPlanningCompleted(
+        linearPlanningCompletedInput(meta, input.issueRef),
+      );
+    } catch (error) {
+      terminalApplyError = error;
+    }
+  }
+  return {
+    meta,
+    ...(input.applyAdapter
+      ? { linearUpdate: { started: startedUpdate, terminal: terminalUpdate } }
+      : {}),
+    ...(terminalApplyError ? { terminalApplyError } : {}),
+  };
 }
 
 function positiveInteger(value: string): number {
@@ -548,8 +579,4 @@ function linearPlanningCompletedInput(
     humanQuestions: meta.humanQuestions,
     error: meta.error,
   };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
