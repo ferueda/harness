@@ -1,6 +1,5 @@
-import { existsSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
 import type { FactoryRunMeta } from "../lib/factory-run-context.ts";
+export { assertFactoryItemFileExists as assertItemFileExists } from "../lib/factory-triage-input.ts";
 
 export type FactoryTriageCliOutput = {
   runId: FactoryRunMeta["runId"];
@@ -16,14 +15,6 @@ export type FactoryTriageCliOutput = {
   routePath?: string;
   routeSummaryPath?: string;
 };
-
-export function assertItemFileExists(workspace: string, itemFile: string): string {
-  const resolvedItemPath = isAbsolute(itemFile) ? itemFile : join(workspace, itemFile);
-  if (!existsSync(resolvedItemPath)) {
-    throw new Error(`Factory item file does not exist: ${itemFile}`);
-  }
-  return resolvedItemPath;
-}
 
 export function factoryTriageCliOutput(meta: FactoryRunMeta): FactoryTriageCliOutput {
   return {
