@@ -13,6 +13,7 @@ import {
   renderLinearPlanningReadyComment,
 } from "../lib/factory-linear-adapter.ts";
 import { updateFactoryPlanningHandoff } from "../lib/factory-planning-handoff.ts";
+import { FactoryPlanningError } from "../lib/factory-planning-schemas.ts";
 import {
   createFactoryPlanningRunContext,
   type FactoryPlanningRunMeta,
@@ -299,10 +300,10 @@ function requirePlanningFactoryMetadata(meta: FactoryPlanningRunMeta): {
 } {
   const metadata = meta.factoryMetadata;
   if (!metadata?.approvedPlanPath) {
-    throw new Error("Planning run is missing approvedPlanPath");
+    throw new FactoryPlanningError("Planning run is missing approvedPlanPath");
   }
   if (!metadata.approvedPlanPrUrl) {
-    throw new Error("Planning run is missing approvedPlanPrUrl");
+    throw new FactoryPlanningError("Planning run is missing approvedPlanPrUrl");
   }
   return {
     approvedPlanPath: metadata.approvedPlanPath,

@@ -22,6 +22,7 @@ function createPlanningRun() {
     workItem: { id: "linear:FER-123", source: "linear", title: "Plan issue" },
     outputPlan: join(workspace, "dev/plans/FER-123.md"),
     factoryMetadata: {
+      tracker: { source: "linear", id: "FER-123" },
       factoryStage: "plan-pr-open",
       approvedPlanPath: "dev/plans/FER-123.md",
     },
@@ -78,6 +79,72 @@ test("planning handoff rejects incompatible run metadata before writing", () => 
     }),
   ).toThrow(/Invalid plan PR URL/);
   expect(readFileSync(join(runDir, "meta.json"), "utf8")).toBe(before);
+});
+
+test("planning handoff rejects publish after merge without mutating metadata", () => {
+  const { runDir } = createPlanningRun();
+  updateFactoryPlanningHandoff(runDir, {
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+    factoryStage: "plan-pr-open",
+  });
+  updateFactoryPlanningHandoff(runDir, {
+    approvedPlanCommit: "abc1234",
+    factoryStage: "plan-approved",
+  });
+  const before = readFileSync(join(runDir, "meta.json"), "utf8");
+
+  expect(() =>
+    updateFactoryPlanningHandoff(runDir, {
+      approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+      factoryStage: "plan-pr-open",
+    }),
+  ).toThrow(/already has approvedPlanCommit/);
+  expect(readFileSync(join(runDir, "meta.json"), "utf8")).toBe(before);
+});
+
+test("planning handoff rejects empty commit and mark before publish", () => {
+  const { runDir } = createPlanningRun();
+
+  expect(() =>
+    updateFactoryPlanningHandoff(runDir, {
+      approvedPlanCommit: "",
+      factoryStage: "plan-approved",
+    }),
+  ).toThrow(/approvedPlanCommit must be non-empty/);
+
+  expect(() =>
+    updateFactoryPlanningHandoff(runDir, {
+      approvedPlanCommit: "abc1234",
+      factoryStage: "plan-approved",
+    }),
+  ).toThrow(/missing approvedPlanPrUrl/);
+});
+
+test("planning handoff rejects publication for local manual runs", () => {
+  const { runDir } = createPlanningRun();
+  const meta = loadFactoryPlanningRunMeta(runDir);
+  writeFileSync(
+    join(runDir, "meta.json"),
+    JSON.stringify(
+      {
+        ...meta,
+        factoryMetadata: {
+          factoryStage: "plan-approved",
+          approvedPlanPath: "dev/plans/FER-123.md",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  expect(() =>
+    updateFactoryPlanningHandoff(runDir, {
+      approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+      factoryStage: "plan-pr-open",
+    }),
+  ).toThrow(/requires tracker-backed metadata/);
 });
 
 test("planned work handoff validation fails closed until plan is approved and present", () => {

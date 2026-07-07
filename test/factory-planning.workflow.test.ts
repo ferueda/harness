@@ -165,6 +165,9 @@ test("factory planning allows explicit operator runs without triage metadata", a
 
   expect(meta.status).toBe("plan-approved");
   expect(meta.outputPlan).toBe(join(workspace, "dev/plans/260705-no-metadata-plan.md"));
+  expect(meta.factoryMetadata).toMatchObject({ factoryStage: "plan-approved" });
+  expect(meta.factoryMetadata).not.toHaveProperty("approvedPlanPrUrl");
+  expect(meta.factoryMetadata).not.toHaveProperty("approvedPlanCommit");
 });
 
 test("factory planning loops on needs_changes and resumes the same planner session", async () => {

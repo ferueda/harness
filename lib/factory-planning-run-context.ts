@@ -426,6 +426,19 @@ function resolveOutputPlan(input: {
 }
 
 function deriveTrackerPlanPath(workspace: string, workItem: FactoryWorkItem): string | undefined {
+  const tracker = parseTrackerPlanRef(workItem);
+  return tracker ? join(workspace, "dev/plans", tracker.fileName) : undefined;
+}
+
+function validateSupportedTracker(workItem: FactoryWorkItem): void {
+  parseTrackerPlanRef(workItem);
+}
+
+function hasSupportedTracker(workItem: FactoryWorkItem): boolean {
+  return parseTrackerPlanRef(workItem) !== undefined;
+}
+
+function parseTrackerPlanRef(workItem: FactoryWorkItem): { fileName: string } | undefined {
   const metadata = FactoryWorkItemMetadataSchema.safeParse(workItem.metadata ?? {});
   const tracker = metadata.success ? metadata.data.tracker : undefined;
   if (!tracker) return undefined;
@@ -434,26 +447,16 @@ function deriveTrackerPlanPath(workspace: string, workItem: FactoryWorkItem): st
     if (!parsed) {
       throw new FactoryPlanningError(`Invalid Linear tracker id for plan path: ${tracker.id}`);
     }
-    return join(workspace, "dev/plans", `${parsed.teamKey}-${parsed.number}.md`);
+    return { fileName: `${parsed.teamKey}-${parsed.number}.md` };
   }
   if (tracker.source === "github") {
     const match = /^[-.A-Za-z0-9_]+\/[-.A-Za-z0-9_.]+#(\d+)$/.exec(tracker.id);
     if (!match) {
       throw new FactoryPlanningError(`Invalid GitHub tracker id for plan path: ${tracker.id}`);
     }
-    return join(workspace, "dev/plans", `GH-${match[1]}.md`);
+    return { fileName: `GH-${match[1]}.md` };
   }
   throw new FactoryPlanningError(`Unsupported tracker source for plan path: ${tracker.source}`);
-}
-
-function validateSupportedTracker(workItem: FactoryWorkItem): void {
-  deriveTrackerPlanPath("", workItem);
-}
-
-function hasSupportedTracker(workItem: FactoryWorkItem): boolean {
-  const metadata = FactoryWorkItemMetadataSchema.safeParse(workItem.metadata ?? {});
-  const tracker = metadata.success ? metadata.data.tracker : undefined;
-  return tracker?.source === "linear" || tracker?.source === "github";
 }
 
 function dateSlug(date: Date): string {

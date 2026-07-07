@@ -465,6 +465,58 @@ test("factory planning fails closed for invalid GitHub tracker path metadata", a
   expect(existsSync(join(workspace, "dev/plans"))).toBe(false);
 });
 
+test("factory planning fails closed for unsupported tracker sources", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: {
+      ...WORK_ITEM,
+      metadata: {
+        ...WORK_ITEM.metadata,
+        tracker: {
+          source: "jira",
+          id: "PROJ-123",
+        },
+      },
+    },
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeDraftPlan(draftPath, "# Unsupported Tracker Plan\n");
+          return okPlanner(draft(), {
+            provider: "cursor",
+            id: "planner-session-1",
+          });
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, PASS_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "pass",
+      };
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("Unsupported tracker source for plan path: jira");
+  expect(existsSync(join(workspace, "dev/plans"))).toBe(false);
+});
+
 test("factory planning fails without overwriting an existing output plan", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));

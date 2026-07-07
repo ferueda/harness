@@ -63,12 +63,18 @@ export function updateFactoryPlanningHandoff(
   const metadata = meta.factoryMetadata ?? {};
   validatePublicationPatch(meta, patch);
 
+  const parsedMetadata = FactoryWorkItemMetadataSchema.safeParse({
+    ...metadata,
+    ...patch,
+  });
+  if (!parsedMetadata.success) {
+    throw new FactoryPlanningError(
+      `Invalid factory planning handoff metadata: ${formatZodError(parsedMetadata.error)}`,
+    );
+  }
   const updated: FactoryPlanningRunMeta = {
     ...meta,
-    factoryMetadata: {
-      ...metadata,
-      ...patch,
-    },
+    factoryMetadata: parsedMetadata.data,
   };
   writeJson(join(resolvedRunDir, "meta.json"), updated);
   writeFileSync(join(resolvedRunDir, "summary.md"), renderFactoryPlanningSummary(updated), "utf8");
@@ -169,16 +175,25 @@ function validatePublicationPatch(
   if (!metadata?.approvedPlanPath) {
     throw new FactoryPlanningError("Planning run is missing approvedPlanPath");
   }
-  if (patch.approvedPlanPrUrl) {
+  if (!isTrackerBackedPlanningHandoff(metadata)) {
+    throw new FactoryPlanningError("Planning publication requires tracker-backed metadata");
+  }
+  if (patch.approvedPlanPrUrl !== undefined) {
     const url = z.url().safeParse(patch.approvedPlanPrUrl);
     if (!url.success) {
       throw new FactoryPlanningError(`Invalid plan PR URL: ${patch.approvedPlanPrUrl}`);
+    }
+    if (metadata.approvedPlanCommit) {
+      throw new FactoryPlanningError("Planning run already has approvedPlanCommit");
     }
     if (metadata.approvedPlanPrUrl && metadata.approvedPlanPrUrl !== patch.approvedPlanPrUrl) {
       throw new FactoryPlanningError("Planning run already has a different approvedPlanPrUrl");
     }
   }
-  if (patch.approvedPlanCommit) {
+  if (patch.approvedPlanCommit !== undefined) {
+    if (patch.approvedPlanCommit.trim().length === 0) {
+      throw new FactoryPlanningError("approvedPlanCommit must be non-empty");
+    }
     if (!metadata.approvedPlanPrUrl) {
       throw new FactoryPlanningError("Planning run is missing approvedPlanPrUrl");
     }
@@ -186,6 +201,11 @@ function validatePublicationPatch(
       throw new FactoryPlanningError("Planning run already has a different approvedPlanCommit");
     }
   }
+}
+
+function isTrackerBackedPlanningHandoff(metadata: FactoryWorkItemMetadata): boolean {
+  const source = metadata.tracker?.source;
+  return source === "linear" || source === "github";
 }
 
 function planningNextAction(metadata: FactoryWorkItemMetadata | undefined): string {

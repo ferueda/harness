@@ -1545,6 +1545,7 @@ test("harness factory planning publication commands patch run metadata", () => {
         workItem: { id: "linear:FER-123", source: "linear", title: "Plan issue" },
         outputPlan: join(workspace, "dev/plans/FER-123.md"),
         factoryMetadata: {
+          tracker: { source: "linear", id: "FER-123" },
           factoryStage: "plan-pr-open",
           approvedPlanPath: "dev/plans/FER-123.md",
         },
