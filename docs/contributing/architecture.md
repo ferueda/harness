@@ -95,6 +95,11 @@ copies `context/work-item.json`, resolves the harness-owned factory triage JSON
 schema, invokes the selected provider, and writes route artifacts. It does not
 include git diff scope and does not mutate trackers.
 
+`lib/factory-triage-input.ts` validates and resolves factory triage inputs
+before role/config resolution. It owns the mutually exclusive `--item-file` and
+`--linear-issue` input contract, file existence checks, and Linear-backed input
+fetch setup for the station command.
+
 `lib/factory-planning-run-context.ts` creates local file-backed factory planning
 runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
 schema, prepares `planning/draft.md` for planner writes, snapshots

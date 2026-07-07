@@ -34,7 +34,8 @@ harness run plan-review --plan path/to/implementation-plan.md
 ```
 
 Use `--dry-run` to verify command wiring and artifact layout without provider
-or reviewer calls.
+or reviewer calls. For `--linear-issue`, dry-run still performs the live Linear
+read needed to build the work item; it does not mutate Linear.
 
 ## Role Config
 
@@ -103,8 +104,9 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-r
 ```
 
 `--linear-issue` uses Linear as the input source only. It requires
-`LINEAR_API_KEY` and `factory.linear` config, writes local factory artifacts,
-and does not mutate Linear.
+`LINEAR_API_KEY` and `factory.linear` config. Every `--linear-issue` triage run
+performs a live Linear read before writing local factory artifacts, including
+dry-runs. It does not mutate Linear.
 
 Routes:
 
