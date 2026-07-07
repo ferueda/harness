@@ -117,9 +117,10 @@ harness run plan-review --plan path/to/implementation-plan.md --verbose
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear fetch uses `LINEAR_API_KEY` and
 `factory.linear` config to produce the same work-item contract. Factory triage
-can also use `--linear-issue` as a read-only Linear input source; it does not
-move Linear statuses or write comments. GitHub, Jira, and Inngest remain future
-layers. For the full operator model, read
+can also use `--linear-issue` as a read-only Linear input source. Add `--apply`
+to move the issue through configured Linear triage statuses and write marker
+comments. GitHub, Jira, and Inngest remain future layers. For the full operator
+model, read
 [docs/contributing/factory.md](docs/contributing/factory.md).
 
 For review handoff, step-selection, and failure-triage workflow guidance,

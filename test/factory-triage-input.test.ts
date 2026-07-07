@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { FactoryLinearSettings } from "../lib/config.ts";
+import type { LinearFactoryAdapter } from "../lib/factory-linear-adapter.ts";
 import {
   assertFactoryItemFileExists,
   createFactoryRunContextForTest,
@@ -44,6 +45,26 @@ const LINEAR_WORK_ITEM = {
   },
 } satisfies FactoryWorkItem;
 
+function fakeLinearAdapter(overrides: Partial<LinearFactoryAdapter> = {}): LinearFactoryAdapter {
+  return {
+    fetchWorkItem: async () => LINEAR_WORK_ITEM,
+    validateStatusMap: async () => ({
+      teamKey: "ENG",
+      statuses: [],
+    }),
+    applyTriageStarted: async () => {
+      throw new Error("applyTriageStarted should not run");
+    },
+    applyTriageCompleted: async () => {
+      throw new Error("applyTriageCompleted should not run");
+    },
+    applyTriageFailed: async () => {
+      throw new Error("applyTriageFailed should not run");
+    },
+    ...overrides,
+  };
+}
+
 test("resolveFactoryTriageWorkItem reads file input", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-triage-input-"));
   writeFileSync(
@@ -83,16 +104,12 @@ test("resolveFactoryTriageWorkItem fetches Linear issue input without applying t
     env: { LINEAR_API_KEY: "test-key" },
     linearAdapterFactory: (adapterInput) => {
       calls.push(adapterInput);
-      return {
+      return fakeLinearAdapter({
         fetchWorkItem: async (issueRef) => {
           expect(issueRef).toBe("ENG-123");
           return LINEAR_WORK_ITEM;
         },
-        validateStatusMap: async () => ({
-          teamKey: "ENG",
-          statuses: [],
-        }),
-      };
+      });
     },
   });
 
@@ -112,13 +129,7 @@ test("Linear issue input can run through factory triage dry-run artifacts", asyn
     linearIssue: "ENG-123",
     linearSettings: LINEAR_SETTINGS,
     env: { LINEAR_API_KEY: "test-key" },
-    linearAdapterFactory: () => ({
-      fetchWorkItem: async () => LINEAR_WORK_ITEM,
-      validateStatusMap: async () => ({
-        teamKey: "ENG",
-        statuses: [],
-      }),
-    }),
+    linearAdapterFactory: () => fakeLinearAdapter(),
   });
   const ctx = createFactoryRunContextForTest({
     workspace,

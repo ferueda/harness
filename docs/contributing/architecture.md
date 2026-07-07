@@ -116,12 +116,15 @@ implementation stations.
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
 
-`lib/factory-linear-adapter.ts` owns read-only Linear issue import.
+`lib/factory-linear-adapter.ts` owns Linear issue import and explicit triage
+apply updates.
 `harness factory linear fetch TEAM-123` validates `factory.linear` status
 mapping, reads one Linear issue through `@linear/sdk`, and prints a normalized
 `FactoryWorkItem` JSON object. `harness factory triage --linear-issue TEAM-123`
-uses the same adapter as an input source before running the station. Neither
-path mutates Linear.
+uses the same adapter as an input source before running the station. Fetch and
+default Linear-backed triage do not mutate Linear. `harness factory triage
+--linear-issue TEAM-123 --apply` additionally moves the issue to `Triaging`,
+then to the terminal triage status, and writes a marker comment.
 
 `harness factory triage --item-file ...` or
 `harness factory triage --linear-issue ...` runs one work item through the
@@ -276,8 +279,9 @@ adapter.
 
 ## What is not in this map yet
 
-Active runtime roadmap items such as `steps.json`, graders, tracker mutation,
-Linear-backed triage/planning apply modes, GitHub/Jira adapters, hosted trigger
-inboxes, and Inngest are future work. Linear-backed triage input is current;
-Linear status/comment mutation is not. Future items should be added to this map only
-after they describe current behavior in the repo.
+Active runtime roadmap items such as `steps.json`, graders, tracker mutation
+beyond triage apply, Linear-backed planning apply mode, GitHub/Jira adapters,
+hosted trigger inboxes, and Inngest are future work. Linear-backed triage input
+and Linear triage status/comment mutation via `--apply` are current. Future
+items should be added to this map only after they describe current behavior in
+the repo.

@@ -147,13 +147,28 @@ The triage station can also fetch Linear directly:
 
 ```bash
 LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --apply
 ```
 
 `--linear-issue` and `--item-file` are mutually exclusive. Every
 `--linear-issue` triage invocation performs a live Linear read before creating
 local factory artifacts, including dry-runs. Linear-backed triage currently
-uses Linear only as the input source; it does not move Linear statuses or write
-comments.
+uses Linear only as the input source unless `--apply` is passed.
+
+`--apply` is Linear-only and cannot be combined with `--item-file` or
+`--dry-run`. It moves allowed entry statuses (`Backlog`, `Needs Info`, or
+`Triage Failed`) to `Triaging`, runs the station, then moves to the terminal
+status and writes one marker comment:
+
+- `ready-to-implement` -> `Ready to Implement`
+- `ready-to-plan` -> `Needs Plan`
+- `needs-info` -> `Needs Info`
+- `wait-to-implement` -> `Parked`
+- triage failure -> `Triage Failed`
+
+Comment dedupe checks the most recent Linear comments fetched by the adapter
+(currently 20). If the same run marker is older than that window, a retry may
+post another marker comment.
 
 Linear status is human board state. Harness metadata is finer-grained factory
 state. The adapter maps:
@@ -168,8 +183,7 @@ state. The adapter maps:
 - `Planning Failed` -> `planning-failed`
 
 `Triage Failed` is kept as `metadata.linearStatus`; it is not a `factoryStage`
-today. Mutating Linear statuses and comments belongs to a later integration
-slice.
+today.
 
 ## Triage Station
 
@@ -178,6 +192,7 @@ Use triage to classify an idea or issue into one deterministic route:
 ```bash
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue ENG-123
+harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --apply
 ```
 
 Routes:
@@ -199,7 +214,9 @@ Triage artifacts under `.harness/runs/factory/<run-id>/` include:
 - `meta.json`
 - `events.jsonl` for live runs
 
-Triage does not mutate tracker state, labels, branches, or source files.
+Triage does not mutate tracker state, labels, branches, or source files unless
+`--apply` is used with `--linear-issue`. Apply mode mutates Linear status and
+comments only; it does not mutate source files.
 
 ## Planning Station
 
@@ -296,7 +313,8 @@ Stop and re-check scope if the work requires:
 
 - reviving `harness factory dispatch`
 - moving every inbox item in a batch
-- mutating GitHub, Linear, Jira, or Inngest from current station commands
+- mutating GitHub, Jira, or Inngest from current station commands
+- mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked files

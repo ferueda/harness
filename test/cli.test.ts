@@ -276,6 +276,7 @@ test("harness factory triage help exits cleanly without direct agent flags", () 
   expect(result.stdout).toMatch(/harness factory triage/);
   expect(result.stdout).toMatch(/--item-file <path>/);
   expect(result.stdout).toMatch(/--linear-issue <issue>/);
+  expect(result.stdout).toMatch(/--apply/);
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).not.toMatch(/--agent/);
   expect(result.stdout).not.toMatch(/--model/);
@@ -1385,6 +1386,50 @@ test("harness factory triage rejects multiple input sources", () => {
   ]);
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/--item-file and --linear-issue are mutually exclusive/);
+});
+
+test("harness factory triage rejects apply with item files", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({
+      id: "local-1",
+      source: "file",
+      title: "Queued item",
+      body: "Ready for local triage.",
+    }),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--apply",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply cannot be used with --item-file/);
+});
+
+test("harness factory triage rejects apply dry-runs before Linear config resolution", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--linear-issue",
+    "ENG-123",
+    "--apply",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply cannot be combined with --dry-run/);
 });
 
 test("harness factory triage with Linear input requires Linear config", () => {

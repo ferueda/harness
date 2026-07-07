@@ -1,4 +1,6 @@
 import { InvalidArgumentError, type Command } from "commander";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import {
   resolveFactoryLinearSettings,
@@ -11,6 +13,8 @@ import {
   createLinearFactoryAdapter,
   renderLinearPlanningApprovedComment,
   renderLinearPlanningReadyComment,
+  type LinearFactoryAdapter,
+  type LinearTriageUpdatePlan,
 } from "../lib/factory-linear-adapter.ts";
 import { updateFactoryPlanningHandoff } from "../lib/factory-planning-handoff.ts";
 import { FactoryPlanningError } from "../lib/factory-planning-schemas.ts";
@@ -28,6 +32,7 @@ import {
   readFactoryWorkItemFile,
   type FactoryRunMeta,
 } from "../lib/factory-run-context.ts";
+import { parseFactoryTriageOutput, type FactoryTriageOutput } from "../lib/factory-schemas.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
@@ -44,6 +49,7 @@ type FactoryTriageStationOptions = {
   linearIssue?: string;
   runsDir?: string;
   maxRuntimeMs: number;
+  apply: boolean;
   dryRun: boolean;
   verbose: boolean;
 };
@@ -326,11 +332,13 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       config.positiveNumber,
       config.defaultMaxRuntimeMs,
     )
+    .option("--apply", "apply deterministic Linear status/comment updates", false)
     .option("--dry-run", "prepare context and placeholder routing only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryTriageStationOptions) => {
       // Validate before role/config resolution so input-source errors win in CLI UX.
       validateFactoryTriageWorkItemInput(options);
+      validateFactoryTriageApplyOptions(options);
       const role = resolveFactoryRoleAgent({
         workspace: options.workspace,
         station: "triage",
@@ -339,12 +347,20 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       const linearSettings = options.linearIssue
         ? resolveFactoryLinearSettings({ workspace: role.workspace })
         : undefined;
+      let linearAdapter: LinearFactoryAdapter | undefined;
+      const linearAdapterFactory = options.linearIssue
+        ? (adapterInput: Parameters<typeof createLinearFactoryAdapter>[0]) => {
+            linearAdapter ??= createLinearFactoryAdapter(adapterInput);
+            return linearAdapter;
+          }
+        : undefined;
       const input = await resolveFactoryTriageWorkItem({
         workspace: role.workspace,
         itemFile: options.itemFile,
         linearIssue: options.linearIssue,
         linearSettings,
         env: process.env,
+        linearAdapterFactory,
       });
 
       const runAbort = new AbortController();
@@ -352,6 +368,9 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       process.once("SIGINT", onRunAbort);
       process.once("SIGTERM", onRunAbort);
       let meta: FactoryRunMeta;
+      let startedUpdate: LinearTriageUpdatePlan | undefined;
+      let terminalUpdate: LinearTriageUpdatePlan | undefined;
+      let terminalApplyError: unknown;
       try {
         const ctx = createFactoryRunContext({
           workspace: role.workspace,
@@ -369,18 +388,83 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
           eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
           agentProviderFactory: createAgentProvider,
         });
+        const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
+        if (applyAdapter) {
+          startedUpdate = await applyAdapter.applyTriageStarted({
+            issueRef: options.linearIssue ?? "",
+            runId: ctx.runId,
+            runDir: ctx.runDir,
+          });
+        }
         meta = await runFactoryTriage(ctx);
+        if (applyAdapter) {
+          try {
+            if (meta.status === "completed") {
+              const triage = readFactoryTriageArtifact(meta);
+              terminalUpdate = await applyAdapter.applyTriageCompleted({
+                issueRef: options.linearIssue ?? "",
+                runId: ctx.runId,
+                runDir: ctx.runDir,
+                triage,
+              });
+            } else {
+              terminalUpdate = await applyAdapter.applyTriageFailed({
+                issueRef: options.linearIssue ?? "",
+                runId: ctx.runId,
+                runDir: ctx.runDir,
+                error: meta.error ?? "Factory triage failed.",
+              });
+            }
+          } catch (error) {
+            terminalApplyError = error;
+          }
+        }
       } finally {
         process.off("SIGINT", onRunAbort);
         process.off("SIGTERM", onRunAbort);
       }
       console.log(
         JSON.stringify(
-          factoryTriageCliOutput(meta, { linearApplied: input.linearApplied }),
+          factoryTriageCliOutput(meta, {
+            linearApplied: options.apply ? true : input.linearApplied,
+            ...(options.apply
+              ? { linearUpdate: { started: startedUpdate, terminal: terminalUpdate } }
+              : {}),
+          }),
           null,
           2,
         ),
       );
+      if (terminalApplyError) {
+        throw terminalApplyError;
+      }
       process.exitCode = meta.status === "failed" ? 1 : 0;
     });
+}
+
+function validateFactoryTriageApplyOptions(options: FactoryTriageStationOptions): void {
+  if (!options.apply) return;
+  if (options.itemFile) {
+    throw new Error("--apply cannot be used with --item-file");
+  }
+  if (!options.linearIssue) {
+    throw new Error("--apply requires --linear-issue");
+  }
+  if (options.dryRun) {
+    throw new Error("--apply cannot be combined with --dry-run");
+  }
+}
+
+function requireLinearApplyAdapter(
+  adapter: LinearFactoryAdapter | undefined,
+): LinearFactoryAdapter {
+  if (!adapter) {
+    throw new Error("Linear adapter is required for --apply.");
+  }
+  return adapter;
+}
+
+function readFactoryTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {
+  const triagePath = join(meta.runDir, meta.artifacts?.triage ?? "factory-triage.json");
+  return parseFactoryTriageOutput(JSON.parse(readFileSync(triagePath, "utf8")));
 }

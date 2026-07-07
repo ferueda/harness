@@ -1,4 +1,5 @@
 import type { FactoryRunMeta } from "../lib/factory-run-context.ts";
+import type { LinearTriageUpdatePlan } from "../lib/factory-linear-adapter.ts";
 
 export type FactoryTriageCliOutput = {
   runId: FactoryRunMeta["runId"];
@@ -13,12 +14,18 @@ export type FactoryTriageCliOutput = {
   triagePath?: string;
   routePath?: string;
   routeSummaryPath?: string;
-  linearApplied?: false;
+  linearApplied?: boolean;
+  linearUpdate?: FactoryTriageLinearUpdate;
+};
+
+export type FactoryTriageLinearUpdate = {
+  started?: LinearTriageUpdatePlan;
+  terminal?: LinearTriageUpdatePlan;
 };
 
 export function factoryTriageCliOutput(
   meta: FactoryRunMeta,
-  options: { linearApplied?: false } = {},
+  options: { linearApplied?: boolean; linearUpdate?: FactoryTriageLinearUpdate } = {},
 ): FactoryTriageCliOutput {
   return {
     runId: meta.runId,
@@ -34,5 +41,6 @@ export function factoryTriageCliOutput(
     routePath: meta.artifacts?.route,
     routeSummaryPath: meta.artifacts?.routeSummary,
     ...(options.linearApplied !== undefined ? { linearApplied: options.linearApplied } : {}),
+    ...(options.linearUpdate ? { linearUpdate: options.linearUpdate } : {}),
   };
 }

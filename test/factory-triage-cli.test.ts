@@ -29,3 +29,37 @@ test("factoryTriageCliOutput includes linearApplied only when provided", () => {
     linearApplied: false,
   });
 });
+
+test("factoryTriageCliOutput includes Linear apply details", () => {
+  expect(
+    factoryTriageCliOutput(META, {
+      linearApplied: true,
+      linearUpdate: {
+        started: {
+          issueIdentifier: "ENG-123",
+          runId: "run-1",
+          runDir: "/tmp/workspace/.harness/runs/factory/run-1",
+          stage: "start",
+          fromStatus: "Backlog",
+          targetStatus: "Triaging",
+        },
+        terminal: {
+          issueIdentifier: "ENG-123",
+          runId: "run-1",
+          runDir: "/tmp/workspace/.harness/runs/factory/run-1",
+          stage: "complete",
+          fromStatus: "Triaging",
+          targetStatus: "Needs Plan",
+          commentMarker: "<!-- harness-factory:triage:run-1 -->",
+          commentBody: "Factory triage complete.",
+        },
+      },
+    }),
+  ).toMatchObject({
+    linearApplied: true,
+    linearUpdate: {
+      started: { targetStatus: "Triaging" },
+      terminal: { targetStatus: "Needs Plan" },
+    },
+  });
+});
