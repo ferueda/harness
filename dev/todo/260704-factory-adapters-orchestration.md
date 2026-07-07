@@ -380,11 +380,16 @@ Keep Linear implementation in scoped slices:
 3. **Triage apply integration.** Add `--apply` for Linear-backed triage. Move
    from an allowed entry status to `Triaging`, then to the terminal triage
    status with idempotent comments.
-4. **Planning integration.** Add `--linear-issue` to `harness factory planning`,
-   guard entry from `Needs Plan | Planning Failed`, support dry-run previews, and
-   make `--apply` move through `Planning` to `Ready to Implement`, `Needs Info`,
-   or `Planning Failed` with approved-plan comments when applicable.
-5. **Backlog listing.** Later, add a read-only command that lists issues in the
+4. **Planning input integration.** Add `--linear-issue` to
+   `harness factory planning`, guard entry from `Needs Plan | Planning Failed`,
+   and run the existing planning/review loop from a Linear-derived
+   `FactoryWorkItem`. This slice is read-only toward Linear and does not add
+   planning `--apply`.
+5. **Planning apply integration.** Add Linear write mode for planning. Move from
+   an allowed entry status to `Planning`, then publish deterministic comments
+   with `approvedPlanPath` and the plan PR. Move to `Ready to Implement` only
+   after the plan PR merges and `approvedPlanCommit` is known.
+6. **Backlog listing.** Later, add a read-only command that lists issues in the
    configured intake status and prints candidate station commands. Do not batch
    run work in the first Linear adapter pass.
 
@@ -415,7 +420,7 @@ Initial implementation slice should prefer Linear before the implementation
 station if we want to validate the factory against real tracker state first:
 
 ```text
-Linear issue -> triage -> ready-to-plan -> planning -> plan PR -> ready-to-implement
+Linear issue -> triage -> ready-to-plan -> planning input -> plan PR -> ready-to-implement
 ```
 
 This gives the future implementation station a concrete input contract:

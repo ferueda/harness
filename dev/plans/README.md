@@ -7,8 +7,7 @@
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)               | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md)             | `in_progress` | Factory intake triage, deterministic routing, local inbox |
 | [260705-factory-operating-docs-smoke.md](./260705-factory-operating-docs-smoke.md) | `in_progress` | Factory operating docs, packaged skill, and smoke checks  |
-| [260707-linear-plan-pr-handoff.md](./260707-linear-plan-pr-handoff.md)             | `in_progress` | Linear planning handoff through repo plan PRs             |
-| [260707-linear-triage-apply.md](./260707-linear-triage-apply.md)                   | `in_progress` | Linear triage apply mode with status/comment updates      |
+| [260707-linear-planning-input.md](./260707-linear-planning-input.md)               | `in_progress` | Linear-backed planning station input from Linear issues   |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
@@ -44,6 +43,8 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Commit hygiene hooks                          | [#56](https://github.com/ferueda/harness/pull/56) |
 | —     | Gate output runner                            | [#58](https://github.com/ferueda/harness/pull/58) |
 | —     | Factory station API, sessions, and planning   | [#64](https://github.com/ferueda/harness/pull/64) |
+| —     | Linear plan PR handoff                        | [#72](https://github.com/ferueda/harness/pull/72) |
+| —     | Linear triage apply                           | [#74](https://github.com/ferueda/harness/pull/74) |
 
 ---
 

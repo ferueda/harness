@@ -22,16 +22,12 @@ import {
   createFactoryPlanningRunContext,
   type FactoryPlanningRunMeta,
 } from "../lib/factory-planning-run-context.ts";
+import { assertFactoryPlanningLinearEntry } from "../lib/factory-planning-input.ts";
 import {
-  resolveFactoryTriageWorkItem,
-  validateFactoryTriageWorkItemInput,
+  resolveFactoryWorkItemInput,
+  validateFactoryWorkItemInput,
 } from "../lib/factory-triage-input.ts";
-import {
-  assertFactoryItemFileExists,
-  createFactoryRunContext,
-  readFactoryWorkItemFile,
-  type FactoryRunMeta,
-} from "../lib/factory-run-context.ts";
+import { createFactoryRunContext, type FactoryRunMeta } from "../lib/factory-run-context.ts";
 import { parseFactoryTriageOutput, type FactoryTriageOutput } from "../lib/factory-schemas.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
@@ -56,7 +52,8 @@ type FactoryTriageStationOptions = {
 
 type FactoryPlanningStationOptions = {
   workspace?: string;
-  itemFile: string;
+  itemFile?: string;
+  linearIssue?: string;
   runsDir?: string;
   outputPlan?: string;
   maxReviewIterations?: number;
@@ -199,7 +196,8 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
     .command("run", { isDefault: true })
     .description("Run one factory work item through the planning station")
     .option("--workspace <path>", "target repo")
-    .requiredOption("--item-file <path>", "factory work item JSON file")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/factory)")
     .option("--output-plan <path>", "final plan path under dev/plans")
     .option(
@@ -216,6 +214,8 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
     .option("--dry-run", "prepare context and placeholder plan only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryPlanningStationOptions) => {
+      // Validate source flags before role/config resolution so CLI usage errors win.
+      validateFactoryWorkItemInput(options);
       const settings = resolveFactoryPlanningSettings({ workspace: options.workspace });
       const plannerRole = resolveFactoryRoleAgent({
         workspace: settings.workspace,
@@ -227,8 +227,17 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
         station: "planning",
         role: "reviewer",
       });
-      const itemPath = assertFactoryItemFileExists(settings.workspace, options.itemFile);
-      const workItem = readFactoryWorkItemFile(itemPath);
+      const linearSettings = options.linearIssue
+        ? resolveFactoryLinearSettings({ workspace: settings.workspace })
+        : undefined;
+      const input = await resolveFactoryWorkItemInput({
+        workspace: settings.workspace,
+        itemFile: options.itemFile,
+        linearIssue: options.linearIssue,
+        linearSettings,
+        env: process.env,
+      });
+      assertFactoryPlanningLinearEntry(input);
 
       const runAbort = new AbortController();
       const onRunAbort = () => runAbort.abort();
@@ -239,7 +248,7 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
         const ctx = createFactoryPlanningRunContext({
           workspace: settings.workspace,
           runsDir: options.runsDir,
-          workItem,
+          workItem: input.workItem,
           plannerRole,
           reviewerRole,
           outputPlan: options.outputPlan,
@@ -336,8 +345,8 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     .option("--dry-run", "prepare context and placeholder routing only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryTriageStationOptions) => {
-      // Validate before role/config resolution so input-source errors win in CLI UX.
-      validateFactoryTriageWorkItemInput(options);
+      // Validate source flags before role/config resolution so CLI usage errors win.
+      validateFactoryWorkItemInput(options);
       validateFactoryTriageApplyOptions(options);
       const role = resolveFactoryRoleAgent({
         workspace: options.workspace,
@@ -354,7 +363,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
             return linearAdapter;
           }
         : undefined;
-      const input = await resolveFactoryTriageWorkItem({
+      const input = await resolveFactoryWorkItemInput({
         workspace: role.workspace,
         itemFile: options.itemFile,
         linearIssue: options.linearIssue,

@@ -115,6 +115,9 @@ if (!factoryPlanningRunHelp.includes("harness factory planning run")) {
 if (!factoryPlanningRunHelp.includes("--item-file <path>")) {
   throw new Error("Expected factory planning help to include --item-file");
 }
+if (!factoryPlanningRunHelp.includes("--linear-issue <issue>")) {
+  throw new Error("Expected factory planning help to include --linear-issue");
+}
 if (!factoryPlanningRunHelp.includes("--output-plan <path>")) {
   throw new Error("Expected factory planning help to include --output-plan");
 }
