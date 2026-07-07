@@ -13,11 +13,11 @@ import {
   type FactoryPlanningRunMeta,
 } from "../lib/factory-planning-run-context.ts";
 import {
-  assertFactoryItemFileExists,
   resolveFactoryTriageWorkItem,
   validateFactoryTriageWorkItemInput,
 } from "../lib/factory-triage-input.ts";
 import {
+  assertFactoryItemFileExists,
   createFactoryRunContext,
   readFactoryWorkItemFile,
   type FactoryRunMeta,
@@ -219,12 +219,12 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     .option("--dry-run", "prepare context and placeholder routing only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryTriageStationOptions) => {
+      validateFactoryTriageWorkItemInput(options);
       const role = resolveFactoryRoleAgent({
         workspace: options.workspace,
         station: "triage",
         role: "triager",
       });
-      validateFactoryTriageWorkItemInput(options);
       const linearSettings = options.linearIssue
         ? resolveFactoryLinearSettings({ workspace: role.workspace })
         : undefined;

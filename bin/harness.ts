@@ -28,11 +28,11 @@ import { run as runPlanReview } from "../workflows/plan-review.workflow.ts";
 import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
 import {
+  assertFactoryItemFileExists,
   createFactoryRunContext,
   readFactoryWorkItemFile,
   type FactoryRunMeta,
 } from "../lib/factory-run-context.ts";
-import { assertFactoryItemFileExists } from "../lib/factory-triage-input.ts";
 import {
   assertNonEmptyHandoffStdin,
   assertPipedHandoffStdin,

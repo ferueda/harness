@@ -5,9 +5,9 @@ import { expect, test } from "vitest";
 import type { FactoryLinearSettings } from "../lib/config.ts";
 import {
   assertFactoryItemFileExists,
-  resolveFactoryTriageWorkItem,
-} from "../lib/factory-triage-input.ts";
-import { createFactoryRunContextForTest } from "../lib/factory-run-context.ts";
+  createFactoryRunContextForTest,
+} from "../lib/factory-run-context.ts";
+import { resolveFactoryTriageWorkItem } from "../lib/factory-triage-input.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
 

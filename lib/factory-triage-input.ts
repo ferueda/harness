@@ -1,9 +1,7 @@
-import { existsSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
 import { type FactoryLinearSettings } from "./config.ts";
 import { type LinearFactoryAdapter, createLinearFactoryAdapter } from "./factory-linear-adapter.ts";
 import { type FactoryWorkItem } from "./factory-schemas.ts";
-import { readFactoryWorkItemFile } from "./factory-run-context.ts";
+import { assertFactoryItemFileExists, readFactoryWorkItemFile } from "./factory-run-context.ts";
 
 export type FactoryTriageInputSource = "item-file" | "linear";
 
@@ -25,12 +23,16 @@ export type ResolveFactoryTriageWorkItemInput = {
   }) => LinearFactoryAdapter;
 };
 
+type ValidFactoryTriageInputSources =
+  | { itemFile: string; linearIssue?: undefined }
+  | { itemFile?: undefined; linearIssue: string };
+
 export async function resolveFactoryTriageWorkItem(
   input: ResolveFactoryTriageWorkItemInput,
 ): Promise<FactoryTriageWorkItemInput> {
   validateFactoryTriageWorkItemInput(input);
 
-  if (input.itemFile) {
+  if (input.itemFile !== undefined) {
     const itemPath = assertFactoryItemFileExists(input.workspace, input.itemFile);
     return {
       source: "item-file",
@@ -38,9 +40,6 @@ export async function resolveFactoryTriageWorkItem(
     };
   }
 
-  if (!input.linearIssue) {
-    throw new Error("one of --item-file or --linear-issue is required");
-  }
   if (!input.linearSettings) {
     throw new Error(
       "factory.linear is required in harness.json for Linear commands. Configure teamKey and statuses.",
@@ -67,19 +66,11 @@ export async function resolveFactoryTriageWorkItem(
 export function validateFactoryTriageWorkItemInput(input: {
   itemFile?: string;
   linearIssue?: string;
-}): void {
+}): asserts input is ValidFactoryTriageInputSources {
   if (input.itemFile && input.linearIssue) {
     throw new Error("--item-file and --linear-issue are mutually exclusive");
   }
   if (!input.itemFile && !input.linearIssue) {
     throw new Error("one of --item-file or --linear-issue is required");
   }
-}
-
-export function assertFactoryItemFileExists(workspace: string, itemFile: string): string {
-  const resolvedItemPath = isAbsolute(itemFile) ? itemFile : join(workspace, itemFile);
-  if (!existsSync(resolvedItemPath)) {
-    throw new Error(`Factory item file does not exist: ${itemFile}`);
-  }
-  return resolvedItemPath;
 }
