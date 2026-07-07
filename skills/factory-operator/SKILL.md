@@ -26,6 +26,7 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-r
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 ```
@@ -142,6 +143,7 @@ Run planning only for a work item routed to `ready-to-plan`:
 ```bash
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 ```
 
 `--linear-issue` planning requires `LINEAR_API_KEY` and `factory.linear` config.
@@ -149,7 +151,11 @@ Every Linear-backed planning run performs a live Linear read before writing
 local factory artifacts, including dry-runs. If `factory.linear.projectId` is
 set, the issue must belong to that project. It accepts `Needs Plan` and
 `Planning Failed`; other Linear statuses are rejected before creating a run
-directory. Linear-backed planning does not mutate Linear yet.
+directory. Add `--apply` to move the issue to `Planning` before planner work,
+then post one marker comment after the station finishes. Approved plans stay in
+`Planning`; human questions move to `Needs Info`; unresolved or failed planning
+moves to `Planning Failed`. Planning apply never moves the issue to
+`Ready to Implement`.
 
 The planner writes `.harness/runs/factory/<run-id>/planning/draft.md`. Harness
 snapshots the draft, runs `plan-review`, and reinvokes the same planner session
@@ -189,7 +195,7 @@ Stop before proceeding if the task requires:
 - batch-moving every inbox item
 - mutating GitHub, Jira, or Inngest
 - mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
-- adding Linear planning `--apply` without defining the status/comment policy first
+  or `harness factory planning run --linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked source files

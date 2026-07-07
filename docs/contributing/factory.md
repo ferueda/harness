@@ -22,6 +22,7 @@ harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 ```
@@ -173,19 +174,24 @@ The planning station can fetch Linear directly too:
 
 ```bash
 LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --apply
 ```
 
-Linear-backed planning input is read-only toward Linear in this slice. It
-performs a live Linear read, validates configured project scope when set,
-validates that the issue maps to `Needs Plan` or `Planning Failed`, then runs
-the existing planning station from the fetched `FactoryWorkItem`. It writes
-local factory artifacts and, for live approved runs, the reviewed plan under
-`dev/plans/<issue-key>.md`. It does not move Linear to `Planning`, post
-comments, or move the issue to
-`Ready to Implement`; Linear planning `--apply` remains future work.
+Linear-backed planning performs a live Linear read, validates configured project
+scope when set, validates that the issue maps to `Needs Plan` or
+`Planning Failed`, then runs the existing planning station from the fetched
+`FactoryWorkItem`. It writes local factory artifacts and, for live approved
+runs, the reviewed plan under `dev/plans/<issue-key>.md`.
 
-`--apply` is Linear-only and cannot be combined with `--item-file` or
-`--dry-run`. It moves allowed entry statuses (`Backlog`, `Needs Info`, or
+Planning `--apply` is Linear-only and cannot be combined with `--item-file` or
+`--dry-run`. It moves allowed entry statuses (`Needs Plan` or `Planning Failed`)
+to `Planning`, runs the station, posts one deterministic planning outcome
+comment, and moves attention outcomes to `Needs Info` or `Planning Failed`.
+It never moves Linear to `Ready to Implement`; that happens only after the plan
+PR is opened, merged, and recorded by the plan-merge handoff.
+
+Triage `--apply` is also Linear-only and cannot be combined with `--item-file`
+or `--dry-run`. It moves allowed entry statuses (`Backlog`, `Needs Info`, or
 `Triage Failed`) to `Triaging`, runs the station, then moves to the terminal
 status and writes one marker comment:
 
@@ -254,6 +260,7 @@ Use planning for a `ready-to-plan` work item:
 ```bash
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --apply
 ```
 
 `--item-file` and `--linear-issue` are mutually exclusive. Linear-backed
@@ -261,6 +268,11 @@ planning requires `LINEAR_API_KEY` and `factory.linear` config. It accepts
 issues in `Needs Plan` or `Planning Failed`; other Linear statuses are rejected
 before a factory run directory is created. Dry-run still performs the live
 Linear read but does not mutate Linear.
+
+With `--apply`, planning moves the Linear issue to `Planning` before planner
+work starts. Terminal outcomes post one marker comment: approved plans stay in
+`Planning`, human questions move to `Needs Info`, and failed/unresolved reviews
+move to `Planning Failed`.
 
 The planner writes a draft file, the harness snapshots it, `plan-review`
 reviews the snapshot, and the same planner session handles review findings
@@ -351,8 +363,7 @@ Stop and re-check scope if the work requires:
 - moving every inbox item in a batch
 - mutating GitHub, Jira, or Inngest from current station commands
 - mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
-- adding Linear planning `--apply` to this command surface without updating the
-  tracker transition policy first
+  or `harness factory planning run --linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked files
