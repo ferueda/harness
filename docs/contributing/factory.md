@@ -17,6 +17,7 @@ harness run plan-review --plan path/to/implementation-plan.md
 
 ```bash
 harness factory status --workspace /path/to/repo
+harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory planning --workspace /path/to/repo --item-file work-item.json
 ```
@@ -88,6 +89,20 @@ Factory station roles use `harness.json`:
         "triager": { "agent": "cursor", "model": "composer-2.5" }
       }
     },
+    "linear": {
+      "teamKey": "ENG",
+      "statuses": {
+        "intake": "Backlog",
+        "parked": "Parked",
+        "needsInfo": "Needs Info",
+        "needsPlan": "Needs Plan",
+        "readyToImplement": "Ready to Implement",
+        "triaging": "Triaging",
+        "planning": "Planning",
+        "triageFailed": "Triage Failed",
+        "planningFailed": "Planning Failed"
+      }
+    },
     "planning": {
       "maxReviewIterations": 3,
       "roles": {
@@ -110,6 +125,34 @@ Vocabulary:
 - `agent`: backend identity such as `cursor` or `codex`.
 
 Keep factory config role-based. Do not add per-role CLI flag sprawl.
+
+## Linear Adapter
+
+Use Linear fetch to normalize one issue into a `FactoryWorkItem`:
+
+```bash
+LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/repo
+```
+
+The command is read-only. It validates `factory.linear.statuses` against the
+configured team workflow, fetches the issue description, labels, and recent
+comments, then prints JSON suitable for `--item-file`.
+
+Linear status is human board state. Harness metadata is finer-grained factory
+state. The adapter maps:
+
+- `Backlog` -> `incoming`
+- `Triaging` -> `triaging`
+- `Needs Info` -> `needs-info`
+- `Needs Plan` -> `ready-to-plan`
+- `Ready to Implement` -> `ready-to-implement`
+- `Parked` -> `wait-to-implement`
+- `Planning` -> `planning`
+- `Planning Failed` -> `planning-failed`
+
+`Triage Failed` is kept as `metadata.linearStatus`; it is not a `factoryStage`
+today. Mutating Linear statuses and comments belongs to a later integration
+slice.
 
 ## Triage Station
 

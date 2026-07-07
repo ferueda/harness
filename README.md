@@ -87,6 +87,7 @@ Route one local work item through factory triage or planning:
 
 ```bash
 harness factory status --workspace /path/to/repo
+harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
 harness factory planning --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
 ```
@@ -108,9 +109,10 @@ harness run plan-review --plan path/to/implementation-plan.md --verbose
 ```
 
 Factory station agent and model selection comes from `harness.json` role config
-under `factory.<station>.roles`. GitHub, Linear, Jira, and Inngest adapters are
-future layers over the same work-item contract. For the full operator model,
-read [docs/contributing/factory.md](docs/contributing/factory.md).
+under `factory.<station>.roles`. Linear fetch uses `LINEAR_API_KEY` and
+`factory.linear` config to produce the same work-item contract. GitHub, Jira,
+and Inngest remain future layers. For the full operator model, read
+[docs/contributing/factory.md](docs/contributing/factory.md).
 
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).

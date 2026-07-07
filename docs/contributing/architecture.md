@@ -15,6 +15,7 @@ Current public CLI surfaces:
 
 - `harness init`
 - `harness factory status`
+- `harness factory linear fetch`
 - `harness factory triage`
 - `harness factory planning`
 - `harness run change-review`
@@ -103,6 +104,12 @@ finishes successfully.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
+
+`lib/factory-linear-adapter.ts` owns read-only Linear issue import.
+`harness factory linear fetch TEAM-123` validates `factory.linear` status
+mapping, reads one Linear issue through `@linear/sdk`, and prints a normalized
+`FactoryWorkItem` JSON object. It does not mutate Linear.
+
 `harness factory triage --item-file ...` runs one work item through the
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
