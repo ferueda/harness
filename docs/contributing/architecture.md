@@ -5,7 +5,7 @@
 ```text
 CLI (bin/harness.ts)
   -> workspace/config resolution (lib/config.ts, harness.json)
-  -> workflow context (lib/workflow-context.ts or lib/factory-run-context.ts)
+  -> workflow context (lib/workflow-context.ts, lib/factory-run-context.ts, or lib/factory-planning-run-context.ts)
   -> provider selection (providers/registry.ts and provider adapters)
   -> workflow definition (workflows/*.workflow.ts)
   -> artifacts (.harness/runs/reviews/<run-id>/ or .harness/runs/factory/<run-id>/)
@@ -42,11 +42,15 @@ The harness repo owns the reusable workflow system:
 - `dev/plans/` - active plans and handoffs.
 
 Prompt templates live under `lib/prompts/`. Review prompts are loaded through
-`lib/workflow-context.ts`; factory triage uses `lib/factory-run-context.ts`.
+`lib/workflow-context.ts`; factory triage uses `lib/factory-run-context.ts`;
+factory planning uses `lib/factory-planning-run-context.ts`.
 
 Runtime Zod validation lives in `lib/schemas.ts` for reviews and
-`lib/factory-schemas.ts` for factory intake. `schemas/` owns exported JSON
-schema artifacts. Changes to one side may require checking the other.
+`lib/factory-schemas.ts` for factory intake and
+`lib/factory-planning-schemas.ts` for factory planning. `schemas/` owns
+exported JSON schema artifacts such as `factory-triage-output.schema.json` and
+`factory-planning-output.schema.json`. Changes to one side may require checking
+the other.
 
 ## Target repo responsibilities
 
