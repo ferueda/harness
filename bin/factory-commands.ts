@@ -219,6 +219,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     .option("--dry-run", "prepare context and placeholder routing only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryTriageStationOptions) => {
+      // Validate before role/config resolution so input-source errors win in CLI UX.
       validateFactoryTriageWorkItemInput(options);
       const role = resolveFactoryRoleAgent({
         workspace: options.workspace,
