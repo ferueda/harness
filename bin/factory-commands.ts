@@ -13,6 +13,10 @@ import {
   type FactoryPlanningRunMeta,
 } from "../lib/factory-planning-run-context.ts";
 import {
+  resolveFactoryTriageWorkItem,
+  type FactoryTriageWorkItemInput,
+} from "../lib/factory-triage-input.ts";
+import {
   createFactoryRunContext,
   readFactoryWorkItemFile,
   type FactoryRunMeta,
@@ -29,7 +33,8 @@ type FactoryStatusOptions = {
 
 type FactoryTriageStationOptions = {
   workspace?: string;
-  itemFile: string;
+  itemFile?: string;
+  linearIssue?: string;
   runsDir?: string;
   maxRuntimeMs: number;
   dryRun: boolean;
@@ -196,12 +201,20 @@ function factoryPlanningCliOutput(meta: FactoryPlanningRunMeta) {
   };
 }
 
+function factoryTriageStationCliOutput(meta: FactoryRunMeta, input: FactoryTriageWorkItemInput) {
+  return {
+    ...factoryTriageCliOutput(meta),
+    ...(input.source === "linear" ? { linearApplied: false } : {}),
+  };
+}
+
 function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandOptions): void {
   parent
     .command("triage")
     .description("Run one factory work item through the triage station")
     .option("--workspace <path>", "target repo")
-    .requiredOption("--item-file <path>", "factory work item JSON file")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/factory)")
     .option(
       "--max-runtime-ms <ms>",
@@ -217,8 +230,17 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         station: "triage",
         role: "triager",
       });
-      const itemPath = assertItemFileExists(role.workspace, options.itemFile);
-      const workItem = readFactoryWorkItemFile(itemPath);
+      validateFactoryTriageInputOptions(options);
+      const linearSettings = options.linearIssue
+        ? resolveFactoryLinearSettings({ workspace: role.workspace })
+        : undefined;
+      const input = await resolveFactoryTriageWorkItem({
+        workspace: role.workspace,
+        itemFile: options.itemFile,
+        linearIssue: options.linearIssue,
+        linearSettings,
+        env: process.env,
+      });
 
       const runAbort = new AbortController();
       const onRunAbort = () => runAbort.abort();
@@ -229,7 +251,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         const ctx = createFactoryRunContext({
           workspace: role.workspace,
           runsDir: options.runsDir,
-          workItem,
+          workItem: input.workItem,
           agentProvider: role.agent,
           codexPathOverride: role.codexPathOverride,
           model: role.model,
@@ -247,7 +269,16 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         process.off("SIGINT", onRunAbort);
         process.off("SIGTERM", onRunAbort);
       }
-      console.log(JSON.stringify(factoryTriageCliOutput(meta), null, 2));
+      console.log(JSON.stringify(factoryTriageStationCliOutput(meta, input), null, 2));
       process.exitCode = meta.status === "failed" ? 1 : 0;
     });
+}
+
+function validateFactoryTriageInputOptions(options: FactoryTriageStationOptions): void {
+  if (options.itemFile && options.linearIssue) {
+    throw new Error("--item-file and --linear-issue are mutually exclusive");
+  }
+  if (!options.itemFile && !options.linearIssue) {
+    throw new Error("one of --item-file or --linear-issue is required");
+  }
 }

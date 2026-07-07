@@ -192,6 +192,7 @@ test("harness run factory-triage help exposes item-only options", () => {
   expect(result.stdout).toMatch(/harness run factory-triage/);
   expect(result.stdout).toMatch(/--item-file <path>/);
   expect(result.stdout).toMatch(/--dry-run/);
+  expect(result.stdout).not.toMatch(/--linear-issue/);
   expect(result.stdout).not.toMatch(/--base/);
   expect(result.stdout).not.toMatch(/--head/);
   expect(result.stdout).not.toMatch(/--plan/);
@@ -274,6 +275,7 @@ test("harness factory triage help exits cleanly without direct agent flags", () 
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness factory triage/);
   expect(result.stdout).toMatch(/--item-file <path>/);
+  expect(result.stdout).toMatch(/--linear-issue <issue>/);
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).not.toMatch(/--agent/);
   expect(result.stdout).not.toMatch(/--model/);
@@ -1334,11 +1336,78 @@ test("harness factory triage accepts absolute item-file paths", () => {
   });
 });
 
-test("harness factory triage requires an item file", () => {
+test("harness factory triage requires one input source", () => {
   const workspace = createPlainWorkspace();
   const result = runHarness(["factory", "triage", "--workspace", workspace, "--dry-run"]);
-  expect(result.status).toBe(2);
-  expect(result.stderr).toMatch(/required option.*--item-file/i);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/one of --item-file or --linear-issue is required/);
+});
+
+test("harness factory triage rejects multiple input sources", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--linear-issue",
+    "ENG-123",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--item-file and --linear-issue are mutually exclusive/);
+});
+
+test("harness factory triage with Linear input requires Linear config", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(
+    ["factory", "triage", "--linear-issue", "ENG-123", "--workspace", workspace],
+    {
+      env: { LINEAR_API_KEY: "test-key" },
+    },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/factory\.linear is required/);
+});
+
+test("harness factory triage with Linear input requires a Linear API key", () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify(
+      {
+        factory: {
+          linear: {
+            teamKey: "ENG",
+            statuses: {
+              intake: "Backlog",
+              parked: "Parked",
+              needsInfo: "Needs Info",
+              needsPlan: "Needs Plan",
+              readyToImplement: "Ready to Implement",
+              triaging: "Triaging",
+              planning: "Planning",
+              triageFailed: "Triage Failed",
+              planningFailed: "Planning Failed",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  const result = runHarness(
+    ["factory", "triage", "--linear-issue", "ENG-123", "--workspace", workspace],
+    {
+      env: { LINEAR_API_KEY: "" },
+    },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
 });
 
 test("harness factory triage rejects missing item files", () => {
