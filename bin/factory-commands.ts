@@ -1,6 +1,10 @@
 import { InvalidArgumentError, type Command } from "commander";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import {
+  factoryPlanningCliOutput,
+  type FactoryPlanningLinearUpdate,
+} from "./factory-planning-cli.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import {
   resolveFactoryLinearSettings,
@@ -16,6 +20,10 @@ import {
   type LinearFactoryAdapter,
   type LinearTriageUpdatePlan,
 } from "../lib/factory-linear-adapter.ts";
+import type {
+  LinearPlanningCompletedInput,
+  LinearPlanningUpdatePlan,
+} from "../lib/factory-linear-planning-apply.ts";
 import { updateFactoryPlanningHandoff } from "../lib/factory-planning-handoff.ts";
 import { FactoryPlanningError } from "../lib/factory-planning-schemas.ts";
 import {
@@ -58,6 +66,7 @@ type FactoryPlanningStationOptions = {
   outputPlan?: string;
   maxReviewIterations?: number;
   maxRuntimeMs: number;
+  apply: boolean;
   dryRun: boolean;
   verbose: boolean;
 };
@@ -211,11 +220,13 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
       config.positiveNumber,
       config.defaultMaxRuntimeMs,
     )
+    .option("--apply", "apply deterministic Linear status/comment updates", false)
     .option("--dry-run", "prepare context and placeholder plan only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryPlanningStationOptions) => {
       // Validate source flags before role/config resolution so CLI usage errors win.
       validateFactoryWorkItemInput(options);
+      validateFactoryApplyOptions(options);
       const settings = resolveFactoryPlanningSettings({ workspace: options.workspace });
       const plannerRole = resolveFactoryRoleAgent({
         workspace: settings.workspace,
@@ -230,12 +241,20 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
       const linearSettings = options.linearIssue
         ? resolveFactoryLinearSettings({ workspace: settings.workspace })
         : undefined;
+      let linearAdapter: LinearFactoryAdapter | undefined;
+      const linearAdapterFactory = options.linearIssue
+        ? (adapterInput: Parameters<typeof createLinearFactoryAdapter>[0]) => {
+            linearAdapter ??= createLinearFactoryAdapter(adapterInput);
+            return linearAdapter;
+          }
+        : undefined;
       const input = await resolveFactoryWorkItemInput({
         workspace: settings.workspace,
         itemFile: options.itemFile,
         linearIssue: options.linearIssue,
         linearSettings,
         env: process.env,
+        linearAdapterFactory,
       });
       assertFactoryPlanningLinearEntry(input);
 
@@ -244,6 +263,9 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
       process.once("SIGINT", onRunAbort);
       process.once("SIGTERM", onRunAbort);
       let meta: FactoryPlanningRunMeta;
+      let startedUpdate: LinearPlanningUpdatePlan | undefined;
+      let terminalUpdate: LinearPlanningUpdatePlan | undefined;
+      let terminalApplyError: unknown;
       try {
         const ctx = createFactoryPlanningRunContext({
           workspace: settings.workspace,
@@ -259,12 +281,53 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
           eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
           agentProviderFactory: createAgentProvider,
         });
-        meta = await runFactoryPlanning(ctx);
+        const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
+        if (applyAdapter) {
+          startedUpdate = await applyAdapter.applyPlanningStarted({
+            issueRef: options.linearIssue ?? "",
+            runId: ctx.runId,
+            runDir: ctx.runDir,
+          });
+        }
+        try {
+          meta = await runFactoryPlanning(ctx);
+        } catch (error) {
+          if (applyAdapter && startedUpdate) {
+            await applyAdapter.applyPlanningFailed({
+              issueRef: options.linearIssue ?? "",
+              runId: ctx.runId,
+              runDir: ctx.runDir,
+              error: errorMessage(error),
+            });
+          }
+          throw error;
+        }
+        if (applyAdapter) {
+          try {
+            terminalUpdate = await applyAdapter.applyPlanningCompleted(
+              linearPlanningCompletedInput(meta, options.linearIssue ?? ""),
+            );
+          } catch (error) {
+            terminalApplyError = error;
+          }
+        }
       } finally {
         process.off("SIGINT", onRunAbort);
         process.off("SIGTERM", onRunAbort);
       }
-      console.log(JSON.stringify(factoryPlanningCliOutput(meta), null, 2));
+      const linearUpdate: FactoryPlanningLinearUpdate | undefined = options.apply
+        ? { started: startedUpdate, terminal: terminalUpdate }
+        : undefined;
+      console.log(
+        JSON.stringify(
+          factoryPlanningCliOutput(meta, (options.apply ? { linearApplied: true, linearUpdate } : {})),
+          null,
+          2,
+        ),
+      );
+      if (terminalApplyError) {
+        throw terminalApplyError;
+      }
       process.exitCode =
         meta.status === "planning-failed" || meta.status === "plan-review-unresolved" ? 1 : 0;
     });
@@ -276,22 +339,6 @@ function positiveInteger(value: string): number {
     throw new InvalidArgumentError("must be a positive integer");
   }
   return parsed;
-}
-
-function factoryPlanningCliOutput(meta: FactoryPlanningRunMeta) {
-  return {
-    runId: meta.runId,
-    workflow: meta.workflow,
-    status: meta.status,
-    workspace: meta.workspace,
-    runDir: meta.runDir,
-    workItem: meta.workItem,
-    outputPlan: meta.outputPlan,
-    iterations: meta.iterations.length,
-    factoryMetadata: meta.factoryMetadata,
-    summaryPath: meta.summaryPath,
-    metaPath: meta.metaPath,
-  };
 }
 
 function factoryPlanningPublicationCliOutput(meta: FactoryPlanningRunMeta, linearComment: string) {
@@ -347,7 +394,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     .action(async (options: FactoryTriageStationOptions) => {
       // Validate source flags before role/config resolution so CLI usage errors win.
       validateFactoryWorkItemInput(options);
-      validateFactoryTriageApplyOptions(options);
+      validateFactoryApplyOptions(options);
       const role = resolveFactoryRoleAgent({
         workspace: options.workspace,
         station: "triage",
@@ -451,7 +498,12 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     });
 }
 
-function validateFactoryTriageApplyOptions(options: FactoryTriageStationOptions): void {
+function validateFactoryApplyOptions(options: {
+  apply: boolean;
+  itemFile?: string;
+  linearIssue?: string;
+  dryRun: boolean;
+}): void {
   if (!options.apply) return;
   if (options.itemFile) {
     throw new Error("--apply cannot be used with --item-file");
@@ -476,4 +528,25 @@ function requireLinearApplyAdapter(
 function readFactoryTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {
   const triagePath = join(meta.runDir, meta.artifacts?.triage ?? "factory-triage.json");
   return parseFactoryTriageOutput(JSON.parse(readFileSync(triagePath, "utf8")));
+}
+
+function linearPlanningCompletedInput(
+  meta: FactoryPlanningRunMeta,
+  issueRef: string,
+): LinearPlanningCompletedInput {
+  return {
+    issueRef,
+    runId: meta.runId,
+    runDir: meta.runDir,
+    status: meta.status,
+    approvedPlanPath:
+      meta.factoryMetadata?.approvedPlanPath ??
+      (meta.outputPlan ? relative(meta.workspace, meta.outputPlan) : undefined),
+    humanQuestions: meta.humanQuestions,
+    error: meta.error,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
