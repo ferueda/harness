@@ -284,6 +284,72 @@ test("factory planning derives final dev plan path when outputPlan is omitted", 
   expect(existsSync(meta.outputPlan!)).toBe(true);
 });
 
+test("factory planning includes tracker identity in derived plan path and metadata", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: {
+      ...WORK_ITEM,
+      id: "github:ferueda/harness#123",
+      source: "github",
+      metadata: {
+        ...WORK_ITEM.metadata,
+        tracker: {
+          source: "github",
+          id: "ferueda/harness#123",
+          url: "https://github.com/ferueda/harness/issues/123",
+        },
+      },
+    },
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeDraftPlan(draftPath, "# Tracker Plan\n");
+          return okPlanner(draft(), {
+            provider: "cursor",
+            id: "planner-session-1",
+          });
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, PASS_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "pass",
+      };
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("plan-approved");
+  expect(meta.outputPlan).toMatch(/\/dev\/plans\/\d{6}-gh-123-fix-export-crash\.md$/);
+  expect(meta.factoryMetadata).toMatchObject({
+    factoryRoute: "ready-to-plan",
+    factoryNextAction: "create-plan",
+    factoryStage: "plan-approved",
+    factoryRunId: meta.runId,
+    approvedPlanPath: expect.stringMatching(/^dev\/plans\/\d{6}-gh-123-fix-export-crash\.md$/),
+    tracker: {
+      source: "github",
+      id: "ferueda/harness#123",
+      url: "https://github.com/ferueda/harness/issues/123",
+    },
+  });
+});
+
 test("factory planning fails without overwriting an existing output plan", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));

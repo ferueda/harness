@@ -78,10 +78,17 @@ tracker, not directory names alone:
 {
   "itemId": "github-123",
   "source": "github",
-  "stage": "ready-to-plan",
-  "route": "ready-to-plan",
-  "lastRunId": "20260704-...",
-  "nextAction": "create-plan",
+  "metadata": {
+    "tracker": {
+      "source": "github",
+      "id": "owner/repo#123",
+      "url": "https://github.com/owner/repo/issues/123"
+    },
+    "factoryStage": "ready-to-plan",
+    "factoryRoute": "ready-to-plan",
+    "factoryRunId": "20260704-...",
+    "factoryNextAction": "create-plan"
+  },
   "updatedAt": "..."
 }
 ```
@@ -91,6 +98,32 @@ Possible local path:
 ```text
 .harness/factory/items.jsonl
 ```
+
+## Reserved metadata keys
+
+Adapters should preserve `FactoryWorkItem` and attach tracker/station state
+through reserved `metadata` keys. These keys are the future bridge between
+file-backed local runs, GitHub/Linear, Inngest, and implementation:
+
+```json
+{
+  "tracker": {
+    "source": "linear",
+    "id": "TEAM-123",
+    "url": "https://linear.app/acme/issue/TEAM-123"
+  },
+  "factoryRoute": "ready-to-plan",
+  "factoryNextAction": "create-plan",
+  "factoryStage": "plan-approved",
+  "factoryRunId": "20260707-120000",
+  "approvedPlanPath": "dev/plans/260707-linear-team-123-export-shortcut.md",
+  "approvedPlanCommit": "abc1234"
+}
+```
+
+Trackers should store state, summaries, and links. The canonical approved plan
+should be a repo file at `approvedPlanPath`. Tracker comments should not be the
+source of truth for the full plan.
 
 ## Work item stages
 
@@ -178,6 +211,12 @@ const item: FactoryWorkItem = {
   url: issue.url,
   labels: issue.labels,
   metadata: {
+    tracker: {
+      source: "linear",
+      id: issue.identifier,
+      url: issue.url,
+    },
+    factoryStage: linearStateToFactoryStage(issue.state.name),
     teamKey: issue.team.key,
     issueId: issue.id,
     status: issue.state.name,
@@ -394,6 +433,7 @@ Linear status: Needs Plan
   -> Inngest event: factory/work_item.ready_to_plan
   -> Harness planning workflow
   -> Linear attachment/comment with plan path or PR
+  -> Work item metadata gets approvedPlanPath and factoryStage=plan-approved
 ```
 
 ## Boundary rule

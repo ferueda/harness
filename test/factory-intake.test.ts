@@ -5,8 +5,10 @@ import {
   renderFactoryTriageSummary,
 } from "../lib/factory-intake.ts";
 import {
+  FactoryWorkItemMetadataSchema,
   FactoryTriageOutputSchema,
   FactoryWorkItemSchema,
+  parseFactoryWorkItemMetadata,
   parseFactoryTriageOutput,
   type FactoryTriageOutput,
 } from "../lib/factory-schemas.ts";
@@ -37,6 +39,36 @@ test("work items default labels and reject unknown fields", () => {
     FactoryWorkItemSchema.safeParse({
       ...parsed,
       extra: true,
+    }).success,
+  ).toBe(false);
+});
+
+test("work item metadata reserves factory tracker and handoff keys", () => {
+  const metadata = parseFactoryWorkItemMetadata({
+    tracker: {
+      source: "github",
+      id: "ferueda/harness#123",
+      url: "https://github.com/ferueda/harness/issues/123",
+    },
+    factoryRoute: "ready-to-plan",
+    factoryNextAction: "create-plan",
+    factoryStage: "plan-approved",
+    factoryRunId: "20260707-120000",
+    approvedPlanPath: "dev/plans/260707-gh-123-export-shortcut.md",
+    approvedPlanCommit: "abc1234",
+    adapterSpecificField: { project: "Factory" },
+  });
+
+  expect(metadata.tracker?.id).toBe("ferueda/harness#123");
+  expect(metadata.adapterSpecificField).toEqual({ project: "Factory" });
+  expect(
+    FactoryWorkItemMetadataSchema.safeParse({
+      tracker: { source: "unknown", id: "123" },
+    }).success,
+  ).toBe(false);
+  expect(
+    FactoryWorkItemMetadataSchema.safeParse({
+      factoryStage: "reviewer-invented-stage",
     }).success,
   ).toBe(false);
 });

@@ -22,7 +22,13 @@ import { DEFAULT_AGENT_MODELS } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
 import { buildRunId } from "./context.ts";
 import { FactoryPlanningError, type FactoryPlanningOutput } from "./factory-planning-schemas.ts";
-import type { FactoryWorkItem } from "./factory-schemas.ts";
+import {
+  FactoryWorkItemMetadataSchema,
+  deriveFactoryWorkItemPlanSlug,
+  type FactoryStage,
+  type FactoryWorkItem,
+  type FactoryWorkItemMetadata,
+} from "./factory-schemas.ts";
 import {
   WORKFLOW_EVENTS_FILE,
   createCompositeEventSink,
@@ -55,6 +61,7 @@ export type FactoryPlanningRunMeta = {
   runDir: string;
   workItem: { id: string; source: FactoryWorkItem["source"]; title: string };
   outputPlan?: string;
+  factoryMetadata?: FactoryWorkItemMetadata;
   iterations: Array<{
     index: number;
     planPath?: string;
@@ -273,7 +280,7 @@ function createFactoryPlanningRunContextInternal(
         workspace,
         outputPlan: options.outputPlan,
         startedAt,
-        slug: deriveWorkItemSlug(options.workItem),
+        slug: deriveFactoryWorkItemPlanSlug(options.workItem),
       });
       mkdirSync(dirname(outputPlan), { recursive: true });
       if (existsSync(outputPlan)) {
@@ -333,6 +340,7 @@ function buildMeta(input: {
       title: input.workItem.title,
     },
     ...(input.outputPlan ? { outputPlan: input.outputPlan } : {}),
+    factoryMetadata: buildFactoryMetadata(input),
     iterations: input.iterations,
     ...(input.humanQuestions ? { humanQuestions: input.humanQuestions } : {}),
     plannerAgent: input.plannerAgent,
@@ -345,6 +353,29 @@ function buildMeta(input: {
     ...(input.includeEventsFile ? { eventsFile: WORKFLOW_EVENTS_FILE } : {}),
     ...(input.error ? { error: input.error } : {}),
   };
+}
+
+function buildFactoryMetadata(input: {
+  status: FactoryPlanningRunStatus;
+  runId: string;
+  workspace: string;
+  outputPlan?: string;
+  workItem: FactoryWorkItem;
+}): FactoryWorkItemMetadata {
+  const parsed = FactoryWorkItemMetadataSchema.safeParse(input.workItem.metadata ?? {});
+  const metadata = parsed.success ? parsed.data : {};
+  const stage = planningStage(input.status);
+  return {
+    ...metadata,
+    factoryRunId: input.runId,
+    ...(stage ? { factoryStage: stage } : {}),
+    ...(input.outputPlan ? { approvedPlanPath: relative(input.workspace, input.outputPlan) } : {}),
+  };
+}
+
+function planningStage(status: FactoryPlanningRunStatus): FactoryStage | undefined {
+  if (status === "dry_run") return undefined;
+  return status;
 }
 
 function renderSummary(meta: FactoryPlanningRunMeta, humanQuestions: string[] | undefined): string {
@@ -439,10 +470,6 @@ function safeSlug(slug: string): string {
     .replace(/^-+|-+$/g, "");
   if (!sanitized) throw new FactoryPlanningError("Plan slug must contain a path-safe character");
   return sanitized;
-}
-
-function deriveWorkItemSlug(workItem: FactoryWorkItem): string {
-  return workItem.title || workItem.id;
 }
 
 function validateDraftPath(path: string): void {

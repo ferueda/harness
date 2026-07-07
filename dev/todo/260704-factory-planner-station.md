@@ -701,10 +701,19 @@ The final approved plan should be written to:
 
 ```text
 dev/plans/YYMMDD-short-slug.md
+dev/plans/YYMMDD-<tracker-key>-short-slug.md  # when tracker metadata exists
 ```
 
 Default `short-slug` is harness-derived from the work item title, falling back
-to the work item id. `--output-plan` remains the explicit operator override.
+to the work item id. If `FactoryWorkItem.metadata.tracker` exists, the default
+filename should include a source-prefixed tracker key before the title slug,
+for example `260707-gh-123-export-shortcut.md` or
+`260707-linear-team-123-export-shortcut.md`. `--output-plan` remains the
+explicit operator override.
+
+The approved plan path is the canonical implementation input. Tracker issues
+should point to it through comments/fields; they should not store the full plan
+as the source of truth.
 
 Open decision: whether draft iterations should write directly to `dev/plans/`
 or stay only under `.harness/runs/factory/<run-id>/` until approved.
@@ -722,6 +731,32 @@ Provider workspace guards should run around agent turns, not around harness
 artifact writes. The planning station must write `.harness` iteration artifacts
 outside the guarded provider call so those writes do not make the provider run
 look like it mutated the workspace.
+
+## Station metadata contract
+
+The planner station should preserve and update reserved factory metadata in run
+`meta.json` so future tracker adapters and implementation stations can continue
+without reinterpreting comments or filenames:
+
+```json
+{
+  "tracker": {
+    "source": "github",
+    "id": "owner/repo#123",
+    "url": "https://github.com/owner/repo/issues/123"
+  },
+  "factoryRoute": "ready-to-plan",
+  "factoryNextAction": "create-plan",
+  "factoryStage": "plan-approved",
+  "factoryRunId": "20260707-120000",
+  "approvedPlanPath": "dev/plans/260707-gh-123-export-shortcut.md",
+  "approvedPlanCommit": "abc1234"
+}
+```
+
+`approvedPlanCommit` is optional until the plan file is committed. The
+implementation station should fail closed when metadata points to a missing
+plan, and should prefer the commit pin when it exists.
 
 ## Dry-run behavior
 

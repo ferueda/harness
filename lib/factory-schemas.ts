@@ -16,6 +16,26 @@ export const FACTORY_NEXT_ACTIONS = [
   "ask-human",
   "park",
 ] as const;
+export const FACTORY_STAGES = [
+  "incoming",
+  "triaging",
+  "ready-to-implement",
+  "ready-to-plan",
+  "needs-info",
+  "wait-to-implement",
+  "planning",
+  "plan-reviewing",
+  "plan-needs-revision",
+  "plan-approved",
+  "plan-needs-human",
+  "plan-review-unresolved",
+  "planning-failed",
+  "implementation-started",
+  "implementation-complete",
+  "review-running",
+  "review-complete",
+  "ready-for-human",
+] as const;
 
 const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -55,7 +75,29 @@ export const FactoryWorkItemSchema = z
   })
   .strict();
 
+export const FactoryTrackerRefSchema = z
+  .object({
+    source: z.enum(FACTORY_WORK_ITEM_SOURCES),
+    id: z.string().min(1),
+    url: z.url().optional(),
+  })
+  .strict();
+
 export const FactoryRouteSchema = z.enum(FACTORY_ROUTES);
+export const FactoryNextActionSchema = z.enum(FACTORY_NEXT_ACTIONS);
+export const FactoryStageSchema = z.enum(FACTORY_STAGES);
+
+export const FactoryWorkItemMetadataSchema = z
+  .object({
+    tracker: FactoryTrackerRefSchema.optional(),
+    factoryRoute: FactoryRouteSchema.optional(),
+    factoryNextAction: FactoryNextActionSchema.optional(),
+    factoryStage: FactoryStageSchema.optional(),
+    factoryRunId: z.string().min(1).optional(),
+    approvedPlanPath: z.string().min(1).optional(),
+    approvedPlanCommit: z.string().min(1).optional(),
+  })
+  .catchall(JsonValueSchema);
 
 export const FactoryTriageOutputSchema = z
   .object({
@@ -136,6 +178,10 @@ export const FactoryRoutePlanSchema = z
 
 export type FactoryWorkItem = z.infer<typeof FactoryWorkItemSchema>;
 export type FactoryRoute = z.infer<typeof FactoryRouteSchema>;
+export type FactoryNextAction = z.infer<typeof FactoryNextActionSchema>;
+export type FactoryStage = z.infer<typeof FactoryStageSchema>;
+export type FactoryTrackerRef = z.infer<typeof FactoryTrackerRefSchema>;
+export type FactoryWorkItemMetadata = z.infer<typeof FactoryWorkItemMetadataSchema>;
 export type FactoryTriageOutput = z.infer<typeof FactoryTriageOutputSchema>;
 export type FactoryRoutePlan = z.infer<typeof FactoryRoutePlanSchema>;
 
@@ -153,6 +199,33 @@ export function parseFactoryTriageOutput(value: unknown): FactoryTriageOutput {
   throw new FactoryTriageError(`Invalid factory triage output: ${formatZodError(result.error)}`, {
     cause: result.error,
   });
+}
+
+export function parseFactoryWorkItemMetadata(value: unknown): FactoryWorkItemMetadata {
+  const result = FactoryWorkItemMetadataSchema.safeParse(value ?? {});
+  if (result.success) return result.data;
+  throw new FactoryTriageError(
+    `Invalid factory work item metadata: ${formatZodError(result.error)}`,
+    {
+      cause: result.error,
+    },
+  );
+}
+
+export function deriveFactoryWorkItemPlanSlug(workItem: FactoryWorkItem): string {
+  const metadata = FactoryWorkItemMetadataSchema.safeParse(workItem.metadata ?? {});
+  const trackerSlug = metadata.success ? trackerSlugPart(metadata.data.tracker) : undefined;
+  const baseSlug = workItem.title || workItem.id;
+  return trackerSlug ? `${trackerSlug}-${baseSlug}` : baseSlug;
+}
+
+function trackerSlugPart(tracker: FactoryTrackerRef | undefined): string | undefined {
+  if (!tracker) return undefined;
+  const source = tracker.source === "github" ? "gh" : tracker.source;
+  const id = tracker.id.includes("#")
+    ? tracker.id.slice(tracker.id.lastIndexOf("#") + 1)
+    : tracker.id;
+  return `${source}-${id}`;
 }
 
 function requireAction(
