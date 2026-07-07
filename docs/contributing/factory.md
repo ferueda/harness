@@ -135,6 +135,12 @@ Vocabulary:
 
 Keep factory config role-based. Do not add per-role CLI flag sprawl.
 
+Linear status config is a coordinated board/config contract. When upgrading an
+existing repo, rename the old human-input status to `Needs Clarification`, add
+`Plan Needs Review`, and update `factory.linear.statuses.needsPlanReview` in
+`harness.json` in the same change. Commands fail fast if the configured status
+does not exist on the Linear team.
+
 ## Linear Adapter
 
 Use Linear fetch to normalize one issue into a `FactoryWorkItem`:

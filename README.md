@@ -118,9 +118,10 @@ Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear fetch uses `LINEAR_API_KEY` and
 `factory.linear` config. Factory triage and planning can use `--linear-issue`;
 `--apply` is explicit. Triage moves Linear through `Triaging`; planning moves
-`Needs Plan` or `Planning Failed` to `Planning` and leaves Ready to Implement
-for the plan-merge handoff. GitHub, Jira, and Inngest remain future layers. For
-the full operator model, read
+eligible planning statuses to `Planning`, routes human attention to
+`Needs Clarification` or `Plan Needs Review`, and leaves Ready to Implement for
+the plan-merge handoff. GitHub, Jira, and Inngest remain future layers. For the
+full operator model, read
 [docs/contributing/factory.md](docs/contributing/factory.md).
 
 For review handoff, step-selection, and failure-triage workflow guidance,

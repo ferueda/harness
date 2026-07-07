@@ -128,7 +128,7 @@ test("Linear planning entry guard accepts only Linear input ready-to-plan states
       }),
     ).toThrow(
       new RegExp(
-        `${factoryStage}.*${linearStatus}.*Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed`,
+        `${factoryStage}.*${linearStatus}.*Needs Plan, planning-question Needs Clarification, Plan Needs Review, or Planning Failed`,
       ),
     );
   }
@@ -148,7 +148,7 @@ test("Linear planning entry guard preserves item-file planning with Linear track
       workItem: LINEAR_WORK_ITEM,
     }),
   ).toThrow(
-    /unknown.*Backlog.*Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed/,
+    /unknown.*Backlog.*Needs Plan, planning-question Needs Clarification, Plan Needs Review, or Planning Failed/,
   );
 });
 
@@ -175,7 +175,7 @@ test("Linear planning entry guard rejects disallowed stages without touching run
   const before = readdirSync(runsDir);
 
   expect(() => assertFactoryPlanningLinearEntry(input)).toThrow(
-    /ready-to-implement.*Ready to Implement.*Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed/,
+    /ready-to-implement.*Ready to Implement.*Needs Plan, planning-question Needs Clarification, Plan Needs Review, or Planning Failed/,
   );
   expect(readdirSync(runsDir)).toEqual(before);
 });
