@@ -138,7 +138,7 @@ The low-level primitives should still exist:
 
 ```bash
 harness run factory-triage --item-file item.json
-harness factory plan --item-file item.json
+harness factory planning --item-file item.json
 harness run plan-review --plan dev/plans/example.md
 ```
 

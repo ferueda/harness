@@ -1,0 +1,4 @@
+interface:
+  display_name: "Factory Operator"
+  short_description: "Run local harness factory stations"
+  default_prompt: "Use $factory-operator to operate the current local harness factory flow for one work item."
