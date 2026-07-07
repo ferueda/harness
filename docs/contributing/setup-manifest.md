@@ -99,6 +99,9 @@ Cursor SDK review provider runs require `CURSOR_API_KEY` in the environment.
 Codex SDK provider follows local Codex CLI auth via `codex login`, or
 `CODEX_API_KEY` in the environment.
 
+Linear read-only fetch uses `LINEAR_API_KEY` for
+`harness factory linear fetch`.
+
 Do not write secrets into docs, plans, generated artifacts, committed
 `harness.json`, or checked-in config.
 

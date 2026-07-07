@@ -12,6 +12,7 @@ import {
 import {
   HarnessConfigSchema,
   formatZodError,
+  type FactoryLinearConfig,
   type FactoryRoleConfig,
   type HarnessConfig,
 } from "./schemas.ts";
@@ -81,6 +82,8 @@ export type FactoryRoleAgent = {
 export type FactoryPlanningSettings = {
   maxReviewIterations: number;
 };
+
+export type FactoryLinearSettings = FactoryLinearConfig;
 
 type ResolveFactoryRoleAgentInput =
   | {
@@ -166,6 +169,23 @@ export function resolveFactoryPlanningSettings(
   return {
     workspace,
     maxReviewIterations: config.factory?.planning?.maxReviewIterations ?? 3,
+  };
+}
+
+export function resolveFactoryLinearSettings(
+  options: { workspace?: string },
+  cwd = process.cwd(),
+): FactoryLinearSettings & { workspace: string } {
+  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
+  const config = readHarnessConfig(workspace);
+  if (!config.factory?.linear) {
+    throw new Error(
+      "factory.linear is required in harness.json for Linear commands. Configure teamKey and statuses.",
+    );
+  }
+  return {
+    workspace,
+    ...config.factory.linear,
   };
 }
 

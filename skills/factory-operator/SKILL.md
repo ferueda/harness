@@ -10,8 +10,9 @@ Operate the current local harness factory one work item at a time.
 ## When To Use
 
 Use this skill when the user wants to inspect factory inbox state, triage a
-factory work item, run the planning station for a `ready-to-plan` item, or
-understand factory artifacts and statuses.
+factory work item, fetch a Linear issue as a factory work item, run the
+planning station for a `ready-to-plan` item, or understand factory artifacts
+and statuses.
 
 ## Command Model
 
@@ -19,6 +20,7 @@ Station commands:
 
 ```bash
 harness factory status --workspace /path/to/repo
+harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory planning --workspace /path/to/repo --item-file work-item.json
 ```
@@ -48,6 +50,20 @@ Minimal shape:
         "triager": { "agent": "cursor", "model": "composer-2.5" }
       }
     },
+    "linear": {
+      "teamKey": "ENG",
+      "statuses": {
+        "intake": "Backlog",
+        "parked": "Parked",
+        "needsInfo": "Needs Info",
+        "needsPlan": "Needs Plan",
+        "readyToImplement": "Ready to Implement",
+        "triaging": "Triaging",
+        "planning": "Planning",
+        "triageFailed": "Triage Failed",
+        "planningFailed": "Planning Failed"
+      }
+    },
     "planning": {
       "maxReviewIterations": 3,
       "roles": {
@@ -62,6 +78,19 @@ Minimal shape:
 - `station`: lifecycle step such as `triage` or `planning`.
 - `role`: job inside a station such as `triager`, `planner`, or `reviewer`.
 - `agent`: backend identity such as `cursor` or `codex`.
+
+## Linear Fetch
+
+Use Linear fetch to convert one issue into `FactoryWorkItem` JSON:
+
+```bash
+LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/repo
+```
+
+This command is read-only. It validates the configured Linear team statuses,
+then prints a work item with issue description, labels, recent comments, and
+tracker metadata. Redirect the output to an item file before running triage or
+planning.
 
 ## Triage
 
