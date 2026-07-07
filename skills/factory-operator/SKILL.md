@@ -138,7 +138,8 @@ deciding the next station.
 
 ## Planning
 
-Run planning only for a work item routed to `ready-to-plan`:
+Run planning only for allowed planning entry stages: `ready-to-plan`,
+`plan-needs-human`, `plan-review-unresolved`, or `planning-failed`.
 
 ```bash
 harness factory planning run --workspace /path/to/repo --item-file work-item.json

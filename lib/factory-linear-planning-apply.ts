@@ -173,6 +173,8 @@ export function assertLinearPlanningApplyAllowed(
     settings.statuses.needsInfo,
     settings.statuses.planningFailed,
   ].map(normalizeStatus);
+  // The station input gate is the authoritative filter for Needs Info:
+  // only planning-attention markers may reach this adapter apply step.
   if (allowed.includes(normalizeStatus(statusName))) return;
   throw new Error(
     `Linear issue is in ${statusName}; planning --apply only accepts ${settings.statuses.needsPlan}, ${settings.statuses.needsInfo}, or ${settings.statuses.planningFailed}.`,
@@ -262,7 +264,7 @@ function planningNextAction(
     case "plan-review-unresolved":
       return "Review the draft and findings. Do not implement until the plan is approved and merged.";
     case "planning-failed":
-      return input.targetStatus;
+      return "Inspect run artifacts and reset the issue before rerunning planning.";
     case "dry_run":
       return "No Linear update.";
   }
@@ -277,6 +279,7 @@ function planningCommentHeadline(status: FactoryPlanningRunStatus): string {
     case "plan-review-unresolved":
       return "Factory plan needs human review.";
     case "planning-failed":
+      return "Factory planning failed.";
     case "dry_run":
       return "Factory planning complete.";
   }

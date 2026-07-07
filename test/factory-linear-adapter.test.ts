@@ -11,6 +11,7 @@ import {
 } from "../lib/factory-linear-adapter.ts";
 import {
   assertLinearPlanningApplyAllowed,
+  linearPlanningAttentionStageFromComments,
   linearPlanningApplyCommentMarker,
   linearPlanningApplyFailedCommentMarker,
   linearPlanningTargetStatus,
@@ -200,6 +201,30 @@ test("Linear planning apply helpers map statuses and render concise comments", (
       error: "agent timeout",
     }),
   ).toContain("Factory planning command failed.");
+});
+
+test("Linear planning attention parser selects the latest planning marker", () => {
+  expect(
+    linearPlanningAttentionStageFromComments([
+      {
+        body: [
+          "<!-- harness-factory:planning-apply:run-1 -->",
+          "",
+          "Status: plan-needs-human",
+        ].join("\n"),
+        createdAt: new Date("2026-07-07T10:00:00Z"),
+      },
+      {
+        body: [
+          "<!-- harness-factory:planning-apply:run-2 -->",
+          "",
+          "Status: plan-review-unresolved",
+        ].join("\n"),
+        createdAt: new Date("2026-07-07T11:00:00Z"),
+      },
+    ]),
+  ).toBe("plan-review-unresolved");
+  expect(linearPlanningAttentionStageFromComments([{ body: "human comment" }])).toBeUndefined();
 });
 
 test("Linear triage helpers map routes and render concise comments", () => {
@@ -633,6 +658,37 @@ test("Linear adapter preserves planning attention stage from Needs Info comments
 
   expect(item.metadata).toMatchObject({
     factoryStage: "plan-review-unresolved",
+    linearStatus: "Needs Info",
+  });
+});
+
+test("Linear adapter keeps generic Needs Info without planning marker", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Needs Info", name: "Needs Info" }),
+            comments: async () => ({
+              nodes: [
+                {
+                  body: "<!-- harness-factory:triage:run-1 -->\n\nRoute: needs-info",
+                  createdAt: new Date("2026-07-07T12:00:00Z"),
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const item = await adapter.fetchWorkItem("ENG-123");
+
+  expect(item.metadata).toMatchObject({
+    factoryStage: "needs-info",
     linearStatus: "Needs Info",
   });
 });
