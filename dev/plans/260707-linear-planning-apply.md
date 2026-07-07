@@ -16,7 +16,8 @@ harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --
 The command should:
 
 - fetch the Linear issue as the planning work item
-- accept only `Needs Plan` or `Planning Failed`
+- accept only `Needs Plan`, planning-attention `Needs Info`, or
+  `Planning Failed`
 - move the issue to `Planning` before provider/reviewer work starts
 - run the existing planning/review loop unchanged
 - post one deterministic Linear outcome comment
@@ -179,6 +180,8 @@ Keep publish-handoff markers (`harness-factory:planning:` and
 Planning apply entry guard:
 
 - accept configured `needsPlan`
+- accept configured `needsInfo` when the latest planning marker identifies
+  `plan-needs-human` or `plan-review-unresolved`
 - accept configured `planningFailed`
 - reject every other status before mutation
 
@@ -195,8 +198,8 @@ Completed behavior:
 | -------------------------- | ----------------- | ---------------------------------------------------- |
 | `plan-approved`            | `Planning`        | Plan ready; open/register/merge plan PR next.        |
 | `plan-needs-human`         | `Needs Info`      | Human questions from the planner/reviewer loop.      |
-| `plan-review-unresolved`   | `Planning Failed` | Review did not pass within the station loop.         |
-| `planning-failed`          | `Planning Failed` | Station failed; include concise error text.          |
+| `plan-review-unresolved`   | `Needs Info`      | Review did not pass; human should inspect the draft. |
+| `planning-failed`          | `Planning Failed` | Station/runtime failure; include concise error text. |
 | thrown after apply started | `Planning Failed` | Command failed after moving the issue to `Planning`. |
 
 - `plan-approved`
@@ -209,8 +212,10 @@ Completed behavior:
   - move to configured `needsInfo`
   - post comment with human questions when present
 - `plan-review-unresolved`
-  - move to configured `planningFailed`
+  - move to configured `needsInfo`
   - post comment explaining review did not pass within the station loop
+  - include latest draft and review-findings artifact paths
+  - tell the operator not to implement until the plan is approved and merged
 - `planning-failed`
   - move to configured `planningFailed`
   - post comment with the error
@@ -256,8 +261,8 @@ local planning run metadata when the Linear terminal mutation fails.
 
 If a process crashes after moving Linear to `Planning`, the next retry should
 fail closed because `Planning` is not an allowed entry status. The operator must
-inspect the run artifacts and manually reset the issue to `Needs Plan` or
-`Planning Failed` before rerunning.
+inspect the run artifacts and manually reset the issue to `Needs Plan`,
+planning-attention `Needs Info`, or `Planning Failed` before rerunning.
 
 Do not create a separate orchestrator abstraction in this slice.
 
@@ -308,7 +313,8 @@ Do not create a separate orchestrator abstraction in this slice.
      - `assertLinearPlanningApplyAllowed`
      - approved plan comment and `Planning` terminal status
      - needs-human to `Needs Info`
-     - unresolved/failure to `Planning Failed`
+     - unresolved to `Needs Info`
+     - failure to `Planning Failed`
      - duplicate comment suppression
    - Extend `test/factory-linear-test-helpers.ts` with default throw stubs for
      the new planning apply methods so existing Linear input tests compile.
@@ -346,7 +352,8 @@ Do not create a separate orchestrator abstraction in this slice.
 ## Done Criteria
 
 - Linear planning apply is explicit, opt-in, and rejected for dry-runs.
-- `Needs Plan | Planning Failed -> Planning` is applied before planner work.
+- `Needs Plan | planning-attention Needs Info | Planning Failed -> Planning`
+  is applied before planner work.
 - Terminal comments are deterministic and concise.
 - Planning apply never moves Linear to `Ready to Implement`.
 - Existing read-only planning behavior remains unchanged.

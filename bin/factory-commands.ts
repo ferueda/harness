@@ -572,6 +572,10 @@ function linearPlanningCompletedInput(
   meta: FactoryPlanningRunMeta,
   issueRef: string,
 ): LinearPlanningCompletedInput {
+  const latestIteration = meta.iterations.at(-1);
+  const latestIterationDir = latestIteration
+    ? join(meta.runDir, "iterations", String(latestIteration.index))
+    : undefined;
   return {
     issueRef,
     runId: meta.runId,
@@ -580,6 +584,13 @@ function linearPlanningCompletedInput(
     approvedPlanPath:
       meta.factoryMetadata?.approvedPlanPath ??
       (meta.outputPlan ? relative(meta.workspace, meta.outputPlan) : undefined),
+    draftPlanPath: latestIteration?.planPath
+      ? relative(meta.workspace, latestIteration.planPath)
+      : undefined,
+    reviewFindingsPath:
+      meta.status === "plan-review-unresolved" && latestIterationDir
+        ? relative(meta.workspace, join(latestIterationDir, "review-findings.json"))
+        : undefined,
     humanQuestions: meta.humanQuestions,
     error: meta.error,
   };

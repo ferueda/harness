@@ -15,6 +15,8 @@ import {
 test("Linear issue input can run through factory planning dry-run artifacts", async () => {
   for (const [factoryStage, linearStatus] of [
     ["ready-to-plan", "Needs Plan"],
+    ["plan-needs-human", "Needs Info"],
+    ["plan-review-unresolved", "Needs Info"],
     ["planning-failed", "Planning Failed"],
   ] as const) {
     const workspace = mkdtempSync(join(tmpdir(), "harness-planning-input-"));
@@ -83,31 +85,26 @@ test("Linear issue input can run through factory planning dry-run artifacts", as
 });
 
 test("Linear planning entry guard accepts only Linear input ready-to-plan states", () => {
-  const readyToPlan = {
-    source: "linear",
-    workItem: {
-      ...LINEAR_WORK_ITEM,
-      metadata: {
-        ...LINEAR_WORK_ITEM.metadata,
-        factoryStage: "ready-to-plan",
-        linearStatus: "Needs Plan",
-      },
-    },
-  } as const;
-  const planningFailed = {
-    source: "linear",
-    workItem: {
-      ...LINEAR_WORK_ITEM,
-      metadata: {
-        ...LINEAR_WORK_ITEM.metadata,
-        factoryStage: "planning-failed",
-        linearStatus: "Planning Failed",
-      },
-    },
-  } as const;
-
-  expect(() => assertFactoryPlanningLinearEntry(readyToPlan)).not.toThrow();
-  expect(() => assertFactoryPlanningLinearEntry(planningFailed)).not.toThrow();
+  for (const [factoryStage, linearStatus] of [
+    ["ready-to-plan", "Needs Plan"],
+    ["plan-needs-human", "Needs Info"],
+    ["plan-review-unresolved", "Needs Info"],
+    ["planning-failed", "Planning Failed"],
+  ] as const) {
+    expect(() =>
+      assertFactoryPlanningLinearEntry({
+        source: "linear",
+        workItem: {
+          ...LINEAR_WORK_ITEM,
+          metadata: {
+            ...LINEAR_WORK_ITEM.metadata,
+            factoryStage,
+            linearStatus,
+          },
+        },
+      }),
+    ).not.toThrow();
+  }
 
   for (const [factoryStage, linearStatus] of [
     ["incoming", "Backlog"],
@@ -129,7 +126,11 @@ test("Linear planning entry guard accepts only Linear input ready-to-plan states
           },
         },
       }),
-    ).toThrow(new RegExp(`${factoryStage}.*${linearStatus}.*Needs Plan or Planning Failed`));
+    ).toThrow(
+      new RegExp(
+        `${factoryStage}.*${linearStatus}.*Needs Plan, planning Needs Info, or Planning Failed`,
+      ),
+    );
   }
 });
 
@@ -146,7 +147,7 @@ test("Linear planning entry guard preserves item-file planning with Linear track
       source: "linear",
       workItem: LINEAR_WORK_ITEM,
     }),
-  ).toThrow(/unknown.*Backlog.*Needs Plan or Planning Failed/);
+  ).toThrow(/unknown.*Backlog.*Needs Plan, planning Needs Info, or Planning Failed/);
 });
 
 test("Linear planning entry guard rejects disallowed stages without touching runsDir", async () => {
@@ -172,7 +173,7 @@ test("Linear planning entry guard rejects disallowed stages without touching run
   const before = readdirSync(runsDir);
 
   expect(() => assertFactoryPlanningLinearEntry(input)).toThrow(
-    /ready-to-implement.*Ready to Implement.*Needs Plan or Planning Failed/,
+    /ready-to-implement.*Ready to Implement.*Needs Plan, planning Needs Info, or Planning Failed/,
   );
   expect(readdirSync(runsDir)).toEqual(before);
 });

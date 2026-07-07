@@ -179,14 +179,16 @@ LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --line
 
 Linear-backed planning performs a live Linear read, validates configured project
 scope when set, validates that the issue maps to `Needs Plan` or
-`Planning Failed`, then runs the existing planning station from the fetched
-`FactoryWorkItem`. It writes local factory artifacts and, for live approved
-runs, the reviewed plan under `dev/plans/<issue-key>.md`.
+`Planning Failed` or a planning-attention `Needs Info`, then runs the existing
+planning station from the fetched `FactoryWorkItem`. It writes local factory
+artifacts and, for live approved runs, the reviewed plan under
+`dev/plans/<issue-key>.md`.
 
 Planning `--apply` is Linear-only and cannot be combined with `--item-file` or
-`--dry-run`. It moves allowed entry statuses (`Needs Plan` or `Planning Failed`)
-to `Planning`, runs the station, posts one deterministic planning outcome
-comment, and moves attention outcomes to `Needs Info` or `Planning Failed`.
+`--dry-run`. It moves allowed entry statuses (`Needs Plan`, planning-attention
+`Needs Info`, or `Planning Failed`) to `Planning`, runs the station, posts one
+deterministic planning outcome comment, and moves human-attention outcomes to
+`Needs Info` while reserving `Planning Failed` for station/runtime failures.
 It never moves Linear to `Ready to Implement`; that happens only after the plan
 PR is opened, merged, and recorded by the plan-merge handoff.
 
@@ -216,6 +218,10 @@ state. The adapter maps:
 - `Parked` -> `wait-to-implement`
 - `Planning` -> `planning`
 - `Planning Failed` -> `planning-failed`
+
+When `Needs Info` carries the latest factory planning marker for
+`plan-needs-human` or `plan-review-unresolved`, the adapter preserves that
+planning-attention stage in metadata so planning can rerun from the issue.
 
 `Triage Failed` is kept as `metadata.linearStatus`; it is not a `factoryStage`
 today.
@@ -265,14 +271,16 @@ harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --
 
 `--item-file` and `--linear-issue` are mutually exclusive. Linear-backed
 planning requires `LINEAR_API_KEY` and `factory.linear` config. It accepts
-issues in `Needs Plan` or `Planning Failed`; other Linear statuses are rejected
-before a factory run directory is created. Dry-run still performs the live
-Linear read but does not mutate Linear.
+issues in `Needs Plan`, `Planning Failed`, or `Needs Info` when the latest
+factory planning marker identifies `plan-needs-human` or
+`plan-review-unresolved`; other Linear statuses are rejected before a factory
+run directory is created. Dry-run still performs the live Linear read but does
+not mutate Linear.
 
 With `--apply`, planning moves the Linear issue to `Planning` before planner
 work starts. Terminal outcomes post one marker comment: approved plans stay in
-`Planning`, human questions move to `Needs Info`, and failed/unresolved reviews
-move to `Planning Failed`.
+`Planning`, human questions and unresolved reviews move to `Needs Info`, and
+station/runtime failures move to `Planning Failed`.
 
 The planner writes a draft file, the harness snapshots it, `plan-review`
 reviews the snapshot, and the same planner session handles review findings

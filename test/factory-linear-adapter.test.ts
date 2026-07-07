@@ -162,18 +162,17 @@ test("Linear planning comments include stable markers and plan handoff links", (
 test("Linear planning apply helpers map statuses and render concise comments", () => {
   expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-approved")).toBe("Planning");
   expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-needs-human")).toBe("Needs Info");
-  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-review-unresolved")).toBe(
-    "Planning Failed",
-  );
+  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-review-unresolved")).toBe("Needs Info");
   expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "planning-failed")).toBe("Planning Failed");
   expect(() => linearPlanningTargetStatus(LINEAR_SETTINGS, "dry_run")).toThrow(
     /cannot be used with dry-run/,
   );
   expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Needs Plan")).not.toThrow();
+  expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Needs Info")).not.toThrow();
   expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Planning Failed")).not.toThrow();
-  for (const status of ["Backlog", "Needs Info", "Ready to Implement", "Planning"]) {
+  for (const status of ["Backlog", "Ready to Implement", "Planning"]) {
     expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, status)).toThrow(
-      /only accepts Needs Plan or Planning Failed/,
+      /only accepts Needs Plan, Needs Info, or Planning Failed/,
     );
   }
 
@@ -601,6 +600,43 @@ test("Linear adapter sorts comments and records truncation", async () => {
   });
 });
 
+test("Linear adapter preserves planning attention stage from Needs Info comments", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Needs Info", name: "Needs Info" }),
+            comments: async () => ({
+              nodes: [
+                {
+                  body: [
+                    "<!-- harness-factory:planning-apply:run-1 -->",
+                    "",
+                    "Factory plan needs human review.",
+                    "",
+                    "Status: plan-review-unresolved",
+                  ].join("\n"),
+                  createdAt: new Date("2026-07-07T12:00:00Z"),
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const item = await adapter.fetchWorkItem("ENG-123");
+
+  expect(item.metadata).toMatchObject({
+    factoryStage: "plan-review-unresolved",
+    linearStatus: "Needs Info",
+  });
+});
+
 test("Linear adapter reports missing and ambiguous human issue identifiers", async () => {
   const missing = createLinearFactoryAdapterForClient({
     client: fakeClient({ issues: async () => ({ nodes: [] }) }),
@@ -792,7 +828,7 @@ test("Linear adapter rejects terminal triage apply outside configured project be
 });
 
 test("Linear adapter applies planning started status from allowed entry states", async () => {
-  for (const statusName of ["Needs Plan", "Planning Failed"]) {
+  for (const statusName of ["Needs Plan", "Needs Info", "Planning Failed"]) {
     const updates: Array<{ id: string; input: { stateId: string } }> = [];
     const adapter = createLinearFactoryAdapterForClient({
       client: fakeClient({
@@ -854,7 +890,7 @@ test("Linear adapter rejects planning apply from disallowed statuses before muta
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
     }),
-  ).rejects.toThrow(/only accepts Needs Plan or Planning Failed/);
+  ).rejects.toThrow(/only accepts Needs Plan, Needs Info, or Planning Failed/);
   expect(updates).toEqual([]);
 });
 
@@ -934,9 +970,13 @@ test.each([
   },
   {
     status: "plan-review-unresolved" as const,
-    targetStatus: "Planning Failed",
-    expectedBody: "Plan review did not pass within the station loop.",
-    extra: { error: "Plan review still needs changes after max review iterations" },
+    targetStatus: "Needs Info",
+    expectedBody: "Factory plan needs human review.",
+    extra: {
+      draftPlanPath: ".harness/runs/factory/run-1/iterations/3/plan.md",
+      reviewFindingsPath: ".harness/runs/factory/run-1/iterations/3/review-findings.json",
+      error: "Plan review still needs changes after max review iterations",
+    },
   },
   {
     status: "planning-failed" as const,
@@ -987,6 +1027,11 @@ test.each([
     expect(comments).toHaveLength(1);
     expect(comments[0].body).toContain(`Status: ${status}`);
     expect(comments[0].body).toContain(expectedBody);
+    if (status === "plan-review-unresolved") {
+      expect(comments[0].body).toContain("Draft:");
+      expect(comments[0].body).toContain("Findings:");
+      expect(comments[0].body).toContain("Do not implement until the plan is approved");
+    }
     expect(result).toMatchObject({
       stage: "complete",
       fromStatus: "Planning",

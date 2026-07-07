@@ -150,12 +150,13 @@ harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 -
 Every Linear-backed planning run performs a live Linear read before writing
 local factory artifacts, including dry-runs. If `factory.linear.projectId` is
 set, the issue must belong to that project. It accepts `Needs Plan` and
-`Planning Failed`; other Linear statuses are rejected before creating a run
-directory. Add `--apply` to move the issue to `Planning` before planner work,
-then post one marker comment after the station finishes. Approved plans stay in
-`Planning`; human questions move to `Needs Info`; unresolved or failed planning
-moves to `Planning Failed`. Planning apply never moves the issue to
-`Ready to Implement`.
+`Planning Failed`, plus planning-attention `Needs Info` identified from the
+latest factory planning marker; other Linear statuses are rejected before
+creating a run directory. Add `--apply` to move the issue to `Planning` before
+planner work, then post one marker comment after the station finishes. Approved
+plans stay in `Planning`; human questions and unresolved reviews move to
+`Needs Info`; station/runtime failures move to `Planning Failed`. Planning
+apply never moves the issue to `Ready to Implement`.
 
 The planner writes `.harness/runs/factory/<run-id>/planning/draft.md`. Harness
 snapshots the draft, runs `plan-review`, and reinvokes the same planner session

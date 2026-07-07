@@ -2,6 +2,7 @@ import type { FactoryLinearSettings } from "./config.ts";
 import type { FactoryPlanningRunStatus } from "./factory-planning-run-context.ts";
 import type {
   LinearClientLike,
+  LinearCommentLike,
   LinearIssueLike,
   LinearWorkflowStateLike,
 } from "./factory-linear-types.ts";
@@ -17,6 +18,8 @@ export type LinearPlanningApplyInput = {
 export type LinearPlanningCompletedInput = LinearPlanningApplyInput & {
   status: FactoryPlanningRunStatus;
   approvedPlanPath?: string;
+  draftPlanPath?: string;
+  reviewFindingsPath?: string;
   humanQuestions?: string[];
   error?: string;
 };
@@ -165,12 +168,14 @@ export function assertLinearPlanningApplyAllowed(
   if (!statusName) {
     throw new Error("Linear issue is missing a status; cannot apply factory planning.");
   }
-  const allowed = [settings.statuses.needsPlan, settings.statuses.planningFailed].map(
-    normalizeStatus,
-  );
+  const allowed = [
+    settings.statuses.needsPlan,
+    settings.statuses.needsInfo,
+    settings.statuses.planningFailed,
+  ].map(normalizeStatus);
   if (allowed.includes(normalizeStatus(statusName))) return;
   throw new Error(
-    `Linear issue is in ${statusName}; planning --apply only accepts ${settings.statuses.needsPlan} or ${settings.statuses.planningFailed}.`,
+    `Linear issue is in ${statusName}; planning --apply only accepts ${settings.statuses.needsPlan}, ${settings.statuses.needsInfo}, or ${settings.statuses.planningFailed}.`,
   );
 }
 
@@ -182,8 +187,8 @@ export function linearPlanningTargetStatus(
     case "plan-approved":
       return settings.statuses.planning;
     case "plan-needs-human":
-      return settings.statuses.needsInfo;
     case "plan-review-unresolved":
+      return settings.statuses.needsInfo;
     case "planning-failed":
       return settings.statuses.planningFailed;
     case "dry_run":
@@ -199,6 +204,19 @@ export function linearPlanningApplyFailedCommentMarker(runId: string): string {
   return `<!-- harness-factory:planning-apply-failed:${runId} -->`;
 }
 
+export function linearPlanningAttentionStageFromComments(
+  comments: LinearCommentLike[],
+): "plan-needs-human" | "plan-review-unresolved" | undefined {
+  const latestPlanningComment = [...comments]
+    .filter((comment) => comment.body.includes("<!-- harness-factory:planning-apply:"))
+    .sort(compareCommentsByCreatedAt)
+    .at(-1);
+  const statusMatch = /^Status:\s*(plan-needs-human|plan-review-unresolved)\s*$/m.exec(
+    latestPlanningComment?.body ?? "",
+  );
+  return statusMatch?.[1] as "plan-needs-human" | "plan-review-unresolved" | undefined;
+}
+
 export function renderLinearPlanningApplyCompleteComment(
   input: LinearPlanningCompletedInput & { targetStatus: string },
 ): string {
@@ -211,6 +229,8 @@ export function renderLinearPlanningApplyCompleteComment(
     `Run: \`${input.runDir}\``,
     `Next: ${planningNextAction(input)}`,
     ...(input.approvedPlanPath ? ["", `Plan: \`${input.approvedPlanPath}\``] : []),
+    ...(input.draftPlanPath ? ["", `Draft: \`${input.draftPlanPath}\``] : []),
+    ...(input.reviewFindingsPath ? [`Findings: \`${input.reviewFindingsPath}\``] : []),
     ...(input.humanQuestions && input.humanQuestions.length > 0
       ? ["", "Questions:", ...input.humanQuestions.map((question) => `- ${question}`)]
       : []),
@@ -238,9 +258,9 @@ function planningNextAction(
     case "plan-approved":
       return "Open/register a plan PR, merge it, then mark the plan merged.";
     case "plan-needs-human":
-      return input.targetStatus;
+      return "Answer the questions, then move the issue back to Needs Plan or rerun planning.";
     case "plan-review-unresolved":
-      return "Plan review did not pass within the station loop.";
+      return "Review the draft and findings. Do not implement until the plan is approved and merged.";
     case "planning-failed":
       return input.targetStatus;
     case "dry_run":
@@ -249,9 +269,31 @@ function planningNextAction(
 }
 
 function planningCommentHeadline(status: FactoryPlanningRunStatus): string {
-  return status === "plan-approved" ? "Factory plan ready." : "Factory planning complete.";
+  switch (status) {
+    case "plan-approved":
+      return "Factory plan ready.";
+    case "plan-needs-human":
+      return "Factory planning needs human input.";
+    case "plan-review-unresolved":
+      return "Factory plan needs human review.";
+    case "planning-failed":
+    case "dry_run":
+      return "Factory planning complete.";
+  }
 }
 
 function normalizeStatus(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function compareCommentsByCreatedAt(a: LinearCommentLike, b: LinearCommentLike): number {
+  const left = dateSortValue(a.createdAt);
+  const right = dateSortValue(b.createdAt);
+  if (left !== right) return left - right;
+  return 0;
+}
+
+function dateSortValue(value: Date | string | undefined): number {
+  if (!value) return 0;
+  return value instanceof Date ? value.getTime() : Date.parse(value);
 }

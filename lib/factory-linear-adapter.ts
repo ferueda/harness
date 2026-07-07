@@ -4,6 +4,7 @@ import {
   applyLinearPlanningCompleted,
   applyLinearPlanningFailed,
   applyLinearPlanningStarted,
+  linearPlanningAttentionStageFromComments,
   type LinearPlanningApplyInput,
   type LinearPlanningCompletedInput,
   type LinearPlanningFailedInput,
@@ -395,7 +396,9 @@ async function fetchWorkItem(
       id: issue.identifier,
       url: issue.url,
     },
-    factoryStage: state ? factoryStageForStatus(settings, state.name) : undefined,
+    factoryStage: state
+      ? factoryStageForStatus(settings, state.name, commentResult.comments)
+      : undefined,
     linearIssueId: issue.id,
     linearIssueIdentifier: issue.identifier,
     linearTeamKey: team.key,
@@ -628,12 +631,15 @@ function renderLinearIssueBody(issue: LinearIssueLike, comments: LinearCommentLi
 function factoryStageForStatus(
   settings: FactoryLinearSettings,
   statusName: string,
+  comments: LinearCommentLike[] = [],
 ): FactoryStage | undefined {
   const normalized = normalizeName(statusName);
   const statuses = settings.statuses;
   if (normalized === normalizeName(statuses.intake)) return "incoming";
   if (normalized === normalizeName(statuses.triaging)) return "triaging";
-  if (normalized === normalizeName(statuses.needsInfo)) return "needs-info";
+  if (normalized === normalizeName(statuses.needsInfo)) {
+    return linearPlanningAttentionStageFromComments(comments) ?? "needs-info";
+  }
   if (normalized === normalizeName(statuses.needsPlan)) return "ready-to-plan";
   if (normalized === normalizeName(statuses.readyToImplement)) return "ready-to-implement";
   if (normalized === normalizeName(statuses.parked)) return "wait-to-implement";
