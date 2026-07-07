@@ -25,6 +25,7 @@ harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 ```
@@ -136,7 +137,14 @@ Run planning only for a work item routed to `ready-to-plan`:
 
 ```bash
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 ```
+
+`--linear-issue` planning requires `LINEAR_API_KEY` and `factory.linear` config.
+Every Linear-backed planning run performs a live Linear read before writing
+local factory artifacts, including dry-runs. It accepts `Needs Plan` and
+`Planning Failed`; other Linear statuses are rejected before creating a run
+directory. Linear-backed planning does not mutate Linear yet.
 
 The planner writes `.harness/runs/factory/<run-id>/planning/draft.md`. Harness
 snapshots the draft, runs `plan-review`, and reinvokes the same planner session
@@ -176,6 +184,7 @@ Stop before proceeding if the task requires:
 - batch-moving every inbox item
 - mutating GitHub, Jira, or Inngest
 - mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
+- adding Linear planning `--apply` without defining the status/comment policy first
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked source files

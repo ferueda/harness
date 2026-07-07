@@ -95,10 +95,15 @@ copies `context/work-item.json`, resolves the harness-owned factory triage JSON
 schema, invokes the selected provider, and writes route artifacts. It does not
 include git diff scope and does not mutate trackers.
 
-`lib/factory-triage-input.ts` validates and resolves factory triage inputs
-before role/config resolution. It owns the mutually exclusive `--item-file` and
-`--linear-issue` input contract, file existence checks, and Linear-backed input
-fetch setup for the station command.
+`lib/factory-triage-input.ts` owns shared factory work-item input handling.
+Station commands use it to validate the mutually exclusive `--item-file` and
+`--linear-issue` input contract before role/config resolution, then resolve file
+reads or Linear fetches after station settings are known.
+
+`lib/factory-planning-input.ts` owns planning-specific work-item input guards.
+Linear-backed planning input accepts only issues mapped to `ready-to-plan` or
+`planning-failed` before creating a planning run. Item-file planning remains
+manual/local and is not gated by Linear tracker metadata.
 
 `lib/factory-planning-run-context.ts` creates local file-backed factory planning
 runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
@@ -131,10 +136,13 @@ then to the terminal triage status, and writes a marker comment.
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
-`harness factory planning run --item-file ...` runs one work item through the
+`harness factory planning run --item-file ...` or
+`harness factory planning run --linear-issue ...` runs one work item through the
 station-level planning command and uses `factory.planning.roles.planner` and
 `factory.planning.roles.reviewer` config for agent and model selection.
-`harness factory planning --item-file ...` remains a default-subcommand alias
+Linear-backed planning input performs a live read but does not mutate Linear.
+`harness factory planning --item-file ...` and
+`harness factory planning --linear-issue ...` remain default-subcommand aliases
 for the run command. `harness factory planning publish` and
 `harness factory planning mark-plan-merged` update local planning run metadata;
 they do not mutate Linear or GitHub.

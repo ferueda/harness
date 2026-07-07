@@ -3,15 +3,17 @@ import { type LinearFactoryAdapter, createLinearFactoryAdapter } from "./factory
 import { type FactoryWorkItem } from "./factory-schemas.ts";
 import { assertFactoryItemFileExists, readFactoryWorkItemFile } from "./factory-run-context.ts";
 
-export type FactoryTriageInputSource = "item-file" | "linear";
+// Shared station input resolver. Kept in the original triage-named module for now
+// to avoid import churn while planning adopts the same input contract.
+export type FactoryWorkItemInputSource = "item-file" | "linear";
 
-export type FactoryTriageWorkItemInput = {
-  source: FactoryTriageInputSource;
+export type FactoryResolvedWorkItemInput = {
+  source: FactoryWorkItemInputSource;
   workItem: FactoryWorkItem;
   linearApplied?: false;
 };
 
-export type ResolveFactoryTriageWorkItemInput = {
+export type ResolveFactoryWorkItemInput = {
   workspace: string;
   itemFile?: string;
   linearIssue?: string;
@@ -23,14 +25,14 @@ export type ResolveFactoryTriageWorkItemInput = {
   }) => LinearFactoryAdapter;
 };
 
-type ValidFactoryTriageInputSources =
+type ValidFactoryWorkItemInputSources =
   | { itemFile: string; linearIssue?: undefined }
   | { itemFile?: undefined; linearIssue: string };
 
-export async function resolveFactoryTriageWorkItem(
-  input: ResolveFactoryTriageWorkItemInput,
-): Promise<FactoryTriageWorkItemInput> {
-  validateFactoryTriageWorkItemInput(input);
+export async function resolveFactoryWorkItemInput(
+  input: ResolveFactoryWorkItemInput,
+): Promise<FactoryResolvedWorkItemInput> {
+  validateFactoryWorkItemInput(input);
 
   if (input.itemFile !== undefined) {
     const itemPath = assertFactoryItemFileExists(input.workspace, input.itemFile);
@@ -66,11 +68,28 @@ export async function resolveFactoryTriageWorkItem(
 export function validateFactoryTriageWorkItemInput(input: {
   itemFile?: string;
   linearIssue?: string;
-}): asserts input is ValidFactoryTriageInputSources {
+}): asserts input is ValidFactoryWorkItemInputSources {
+  validateFactoryWorkItemInput(input);
+}
+
+export function validateFactoryWorkItemInput(input: {
+  itemFile?: string;
+  linearIssue?: string;
+}): asserts input is ValidFactoryWorkItemInputSources {
   if (input.itemFile && input.linearIssue) {
     throw new Error("--item-file and --linear-issue are mutually exclusive");
   }
   if (!input.itemFile && !input.linearIssue) {
     throw new Error("one of --item-file or --linear-issue is required");
   }
+}
+
+export type FactoryTriageInputSource = FactoryWorkItemInputSource;
+export type FactoryTriageWorkItemInput = FactoryResolvedWorkItemInput;
+export type ResolveFactoryTriageWorkItemInput = ResolveFactoryWorkItemInput;
+
+export async function resolveFactoryTriageWorkItem(
+  input: ResolveFactoryTriageWorkItemInput,
+): Promise<FactoryTriageWorkItemInput> {
+  return resolveFactoryWorkItemInput(input);
 }

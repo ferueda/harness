@@ -2,68 +2,21 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import type { FactoryLinearSettings } from "../lib/config.ts";
-import type { LinearFactoryAdapter } from "../lib/factory-linear-adapter.ts";
 import {
   assertFactoryItemFileExists,
   createFactoryRunContextForTest,
 } from "../lib/factory-run-context.ts";
-import { resolveFactoryTriageWorkItem } from "../lib/factory-triage-input.ts";
-import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
+import {
+  resolveFactoryTriageWorkItem,
+  resolveFactoryWorkItemInput,
+  validateFactoryWorkItemInput,
+} from "../lib/factory-triage-input.ts";
 import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
-
-const LINEAR_SETTINGS = {
-  teamKey: "ENG",
-  statuses: {
-    intake: "Backlog",
-    parked: "Parked",
-    needsInfo: "Needs Info",
-    needsPlan: "Needs Plan",
-    readyToImplement: "Ready to Implement",
-    triaging: "Triaging",
-    planning: "Planning",
-    triageFailed: "Triage Failed",
-    planningFailed: "Planning Failed",
-  },
-} satisfies FactoryLinearSettings;
-
-const LINEAR_WORK_ITEM = {
-  id: "linear:ENG-123",
-  source: "linear",
-  title: "Linear issue",
-  body: "Fetched from Linear.",
-  url: "https://linear.app/acme/issue/ENG-123/linear-issue",
-  labels: ["factory"],
-  metadata: {
-    tracker: {
-      source: "linear",
-      id: "ENG-123",
-      url: "https://linear.app/acme/issue/ENG-123/linear-issue",
-    },
-    linearIssueId: "issue-1",
-    linearStatus: "Backlog",
-  },
-} satisfies FactoryWorkItem;
-
-function fakeLinearAdapter(overrides: Partial<LinearFactoryAdapter> = {}): LinearFactoryAdapter {
-  return {
-    fetchWorkItem: async () => LINEAR_WORK_ITEM,
-    validateStatusMap: async () => ({
-      teamKey: "ENG",
-      statuses: [],
-    }),
-    applyTriageStarted: async () => {
-      throw new Error("applyTriageStarted should not run");
-    },
-    applyTriageCompleted: async () => {
-      throw new Error("applyTriageCompleted should not run");
-    },
-    applyTriageFailed: async () => {
-      throw new Error("applyTriageFailed should not run");
-    },
-    ...overrides,
-  };
-}
+import {
+  fakeLinearAdapter,
+  LINEAR_SETTINGS,
+  LINEAR_WORK_ITEM,
+} from "./factory-linear-test-helpers.ts";
 
 test("resolveFactoryTriageWorkItem reads file input", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-triage-input-"));
@@ -119,6 +72,32 @@ test("resolveFactoryTriageWorkItem fetches Linear issue input without applying t
     workItem: LINEAR_WORK_ITEM,
     linearApplied: false,
   });
+});
+
+test("resolveFactoryWorkItemInput keeps generic resolver compatible with triage input", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-work-item-input-"));
+  const input = await resolveFactoryWorkItemInput({
+    workspace,
+    linearIssue: "ENG-123",
+    linearSettings: LINEAR_SETTINGS,
+    env: { LINEAR_API_KEY: "test-key" },
+    linearAdapterFactory: () => fakeLinearAdapter(),
+  });
+
+  expect(input).toMatchObject({
+    source: "linear",
+    workItem: {
+      id: "linear:ENG-123",
+      source: "linear",
+    },
+    linearApplied: false,
+  });
+});
+
+test("validateFactoryWorkItemInput rejects multiple input sources", () => {
+  expect(() =>
+    validateFactoryWorkItemInput({ itemFile: "item.json", linearIssue: "ENG-123" }),
+  ).toThrow(/--item-file and --linear-issue are mutually exclusive/);
 });
 
 test("Linear issue input can run through factory triage dry-run artifacts", async () => {

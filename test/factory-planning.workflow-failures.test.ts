@@ -413,6 +413,68 @@ test("factory planning derives Linear tracker plan path and keeps plan PR gate w
   });
 });
 
+test("factory planning derives default Linear tracker plan path", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: {
+      ...WORK_ITEM,
+      id: "linear:fer-123",
+      source: "linear",
+      metadata: {
+        ...WORK_ITEM.metadata,
+        tracker: {
+          source: "linear",
+          id: "fer-123",
+          url: "https://linear.app/acme/issue/FER-123",
+        },
+      },
+    },
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeDraftPlan(draftPath, "# Linear Default Tracker Plan\n");
+          return okPlanner(draft(), {
+            provider: "cursor",
+            id: "planner-session-1",
+          });
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, PASS_REVIEW);
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "pass",
+      };
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("plan-approved");
+  expect(meta.outputPlan).toBe(join(workspace, "dev/plans/FER-123.md"));
+  expect(meta.factoryMetadata).toMatchObject({
+    factoryStage: "plan-pr-open",
+    approvedPlanPath: "dev/plans/FER-123.md",
+    tracker: {
+      source: "linear",
+      id: "fer-123",
+    },
+  });
+});
+
 test("factory planning fails closed for invalid GitHub tracker path metadata", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));

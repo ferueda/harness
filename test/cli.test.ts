@@ -49,6 +49,35 @@ function createPlainWorkspace() {
   return workspace;
 }
 
+function writeLinearConfig(workspace: string): void {
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify(
+      {
+        factory: {
+          linear: {
+            teamKey: "ENG",
+            statuses: {
+              intake: "Backlog",
+              parked: "Parked",
+              needsInfo: "Needs Info",
+              needsPlan: "Needs Plan",
+              readyToImplement: "Ready to Implement",
+              triaging: "Triaging",
+              planning: "Planning",
+              triageFailed: "Triage Failed",
+              planningFailed: "Planning Failed",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+}
+
 function expectInitShim(
   workspace: string,
   output: Record<string, unknown>,
@@ -232,32 +261,7 @@ test("harness factory linear fetch requires Linear config", () => {
 });
 test("harness factory linear fetch requires a Linear API key", () => {
   const workspace = createGitWorkspace();
-  writeFileSync(
-    join(workspace, "harness.json"),
-    JSON.stringify(
-      {
-        factory: {
-          linear: {
-            teamKey: "ENG",
-            statuses: {
-              intake: "Backlog",
-              parked: "Parked",
-              needsInfo: "Needs Info",
-              needsPlan: "Needs Plan",
-              readyToImplement: "Ready to Implement",
-              triaging: "Triaging",
-              planning: "Planning",
-              triageFailed: "Triage Failed",
-              planningFailed: "Planning Failed",
-            },
-          },
-        },
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
+  writeLinearConfig(workspace);
   const result = runHarness(["factory", "linear", "fetch", "ENG-123", "--workspace", workspace], {
     env: { LINEAR_API_KEY: "" },
   });
@@ -304,6 +308,7 @@ test("harness factory planning run help exits cleanly without direct agent flags
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness factory planning run/);
   expect(result.stdout).toMatch(/--item-file <path>/);
+  expect(result.stdout).toMatch(/--linear-issue <issue>/);
   expect(result.stdout).toMatch(/--output-plan <path>/);
   expect(result.stdout).toMatch(/--max-review-iterations <count>/);
   expect(result.stdout).toMatch(/--dry-run/);
@@ -1571,6 +1576,79 @@ test("harness factory planning dry-run works in non-git workspaces", () => {
   expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain(
     '"workflow": "factory-planning"',
   );
+});
+
+test("harness factory planning requires one input source", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness(["factory", "planning", "--workspace", workspace, "--dry-run"]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/one of --item-file or --linear-issue is required/);
+});
+
+test("harness factory planning rejects multiple input sources before role config resolution", () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(
+    join(workspace, "harness.json"),
+    JSON.stringify({
+      defaultAgent: "cursor",
+      factory: {
+        planning: {
+          roles: {
+            planner: {
+              sandboxMode: "read-only",
+            },
+          },
+        },
+      },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "plan-local-1", source: "file", title: "Plan", body: "" }),
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "planning",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--linear-issue",
+    "ENG-123",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--item-file and --linear-issue are mutually exclusive/);
+  expect(result.stderr).not.toMatch(/sandboxMode applies only when role agent is codex/);
+});
+
+test("harness factory planning with Linear input requires Linear config", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness(
+    ["factory", "planning", "--linear-issue", "ENG-123", "--workspace", workspace, "--dry-run"],
+    { env: { LINEAR_API_KEY: "test-key" } },
+  );
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/factory\.linear is required/);
+});
+
+test("harness factory planning with Linear input requires a Linear API key", () => {
+  const workspace = createPlainWorkspace();
+  writeLinearConfig(workspace);
+
+  const result = runHarness(
+    ["factory", "planning", "--linear-issue", "ENG-123", "--workspace", workspace, "--dry-run"],
+    { env: { LINEAR_API_KEY: "" } },
+  );
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
 });
 
 test("harness factory planning publication commands patch run metadata", () => {
