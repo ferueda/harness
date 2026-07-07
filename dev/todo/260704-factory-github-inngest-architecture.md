@@ -9,11 +9,11 @@
 Preserve the future architecture for using GitHub Issues as the tracker and
 Inngest as the orchestrator backend.
 
-This is not the next implementation slice. The next slice should stay focused
-on provider session reuse and the single-item planner station. This document
-describes how the factory can later move from local CLI dispatch to an
-event-backed tracker/orchestrator setup without replacing the core harness
-logic.
+This is not the next implementation slice. The next slice may focus on Linear
+as the first real tracker adapter before implementation automation. This
+document describes how the factory can later move from manual single-item CLI
+operation to an event-backed tracker/orchestrator setup without replacing the
+core harness logic.
 
 ## Ownership model
 
@@ -83,7 +83,8 @@ Current local surface:
 .harness/inbox/factory/processed/*
 .harness/inbox/factory/failed/*
 harness factory status
-harness factory dispatch
+harness factory triage --item-file item.json
+harness factory planning --item-file item.json
 ```
 
 Future GitHub-backed surface:
@@ -116,12 +117,14 @@ GitHub adapter responsibilities:
 
 ## What Inngest replaces
 
-Inngest replaces manual polling/dispatch, not harness workflows.
+Inngest replaces manual polling and manual station chaining, not harness
+workflows.
 
 Today:
 
 ```bash
-harness factory dispatch
+harness factory triage --item-file item.json
+harness factory planning --item-file item.json
 ```
 
 Future:

@@ -33,14 +33,13 @@ Agent JSON -> Zod parse -> route plan -> deterministic transition
 ## CLI namespace rule
 
 Use `harness run <workflow>` for one named workflow execution. Use
-`harness factory <command>` for factory management, adapters, dispatch, queue
-state, and multi-item operations.
+`harness factory <command>` for factory management, adapters, tracker-backed
+station commands, queue state, and future multi-item operations.
 
 Examples:
 
 ```bash
 harness run factory-triage --item-file item.json
-harness factory dispatch
 harness factory linear fetch TEAM-123
 harness factory github fetch 123
 harness factory status
@@ -121,9 +120,20 @@ file-backed local runs, GitHub/Linear, Inngest, and implementation:
 }
 ```
 
-Trackers should store state, summaries, and links. The canonical approved plan
-should be a repo file at `approvedPlanPath`. Tracker comments should not be the
-source of truth for the full plan.
+Trackers should store board state, summaries, and links. The canonical approved
+plan should be a repo file at `approvedPlanPath`. Tracker comments should not
+be the source of truth for the full plan.
+
+Keep two related but distinct concepts:
+
+- Harness `factoryStage` can be fine-grained internal state such as
+  `plan-approved`, `plan-needs-human`, or `plan-review-unresolved`.
+- Linear status is the coarse human board state such as `Ready to Implement`,
+  `Needs Info`, or `Planning Failed`.
+
+For example, an internally approved planning run may keep
+`factoryStage=plan-approved` in metadata while Linear moves the issue to
+`Ready to Implement`.
 
 ## Work item stages
 
@@ -226,14 +236,75 @@ const item: FactoryWorkItem = {
 };
 ```
 
+Linear workflow statuses should be the canonical human board state. Labels
+should be secondary filters only. The current preferred Linear team workflow is:
+
+```text
+Backlog
+  Backlog              Waiting for triage
+  Parked               Valid, but intentionally deferred
+
+Unstarted
+  Needs Info           Human must answer questions
+  Needs Plan           Classified as needing planning
+  Ready to Implement   Implementation can start
+  Triage Failed        Triage run failed; human should inspect or rerun
+  Planning Failed      Planning run failed; human should inspect or rerun
+
+Started
+  Triaging             Factory triage is running
+  Planning             Planning/review loop is running
+
+Completed
+  Done                 Finished implementation/review work
+
+Canceled
+  Canceled
+
+Duplicate
+  Duplicate
+```
+
+Do not add `Plan Approved` as a Linear status. A successful planning station
+moves the issue to `Ready to Implement` and writes a concise comment with the
+approved plan path. The board should answer what needs attention or work now;
+the plan artifact answers what implementation should follow.
+
 Example route mapping:
 
 ```text
-ready-to-implement -> Linear status/label: Ready to Implement
-ready-to-plan      -> Linear status/label: Needs Plan
-needs-info         -> Linear status/label: Needs Info + comment with questions
-wait-to-implement  -> Linear status/label: Backlog/Parked + comment with reconsiderWhen
+ready-to-implement -> Linear status: Ready to Implement
+ready-to-plan      -> Linear status: Needs Plan
+needs-info         -> Linear status: Needs Info + comment with questions
+wait-to-implement  -> Linear status: Parked + comment with reconsiderWhen
+triage failure     -> Linear status: Triage Failed + error comment
+planning success   -> Linear status: Ready to Implement + approved plan path comment
+plan-needs-human   -> Linear status: Needs Info + questions/comment
+review unresolved  -> Linear status: Planning Failed + unresolved review comment
+planning failure   -> Linear status: Planning Failed + error comment
 ```
+
+On `--apply`, use in-flight statuses:
+
+```text
+Backlog | Needs Info | Triage Failed -> Triaging -> terminal triage status
+Needs Plan | Planning Failed         -> Planning -> terminal planning status
+```
+
+If the process crashes while the issue is in `Triaging` or `Planning`, the first
+adapter version can rely on manual reset or rerun-from-failed policy. Inngest
+later owns durable retry/lock behavior.
+
+Entry guards:
+
+- `harness factory triage --linear-issue ... --apply` should normally accept
+  `Backlog`, `Needs Info`, or `Triage Failed`.
+- Rerunning from `Parked` should require a human decision that the
+  `reconsiderWhen` condition has been met.
+- Triage should not run from `Needs Plan` or `Ready to Implement` unless a
+  future explicit override exists.
+- `harness factory planning --linear-issue ... --apply` should accept
+  `Needs Plan` and maybe `Planning Failed` for retry.
 
 Recommended Linear sequence:
 
@@ -248,7 +319,7 @@ Recommended Linear sequence:
 2. Linear-backed triage dry-run:
 
    ```bash
-   harness run factory-triage --linear-issue TEAM-123 --dry-run
+   harness factory triage --linear-issue TEAM-123 --dry-run
    ```
 
    Shows intended Linear updates; applies nothing.
@@ -256,19 +327,173 @@ Recommended Linear sequence:
 3. Linear write mode:
 
    ```bash
-   harness run factory-triage --linear-issue TEAM-123 --apply
+   harness factory triage --linear-issue TEAM-123 --apply
    ```
 
-   Applies deterministic status/label/comment updates.
+   Applies deterministic status/comment updates. Labels are optional secondary
+   filters and should not be the source of truth for factory stage.
 
-4. Linear inbox:
+4. Linear-backed planning dry-run:
 
-   Query issues in a status such as `Factory Inbox`, then triage them.
+   ```bash
+   harness factory planning --linear-issue TEAM-123 --dry-run
+   ```
+
+   Fetches the issue, verifies it maps to `ready-to-plan`, runs the planning
+   station without mutating Linear, and reports intended status/comment updates.
+
+5. Linear planning write mode:
+
+   ```bash
+   harness factory planning --linear-issue TEAM-123 --apply
+   ```
+
+   When the internal planning outcome is approved, writes the approved plan to
+   `dev/plans/`, records `approvedPlanPath` in metadata, moves Linear to
+   `Ready to Implement`, and adds a concise summary with the plan path. Linear
+   comments should not contain the full plan.
+
+6. Linear inbox:
+
+   Query issues in the `Backlog` status, then triage them.
+
+## Linear implementation split
+
+Keep Linear implementation in scoped slices:
+
+1. **Read-only adapter.** Add `@linear/sdk`, `factory.linear` config parsing,
+   status map validation, issue identifier lookup, issue/comment conversion to
+   `FactoryWorkItem`, and `harness factory linear fetch TEAM-123`. No Linear
+   mutation.
+2. **Triage integration.** Add `--linear-issue` to `harness factory triage`,
+   keep it mutually exclusive with `--item-file`, support `--dry-run` previews,
+   and make `--apply` move from an allowed entry status to `Triaging`, then to
+   the terminal triage status with idempotent comments.
+3. **Planning integration.** Add `--linear-issue` to `harness factory planning`,
+   guard entry from `Needs Plan | Planning Failed`, support dry-run previews, and
+   make `--apply` move through `Planning` to `Ready to Implement`, `Needs Info`,
+   or `Planning Failed` with approved-plan comments when applicable.
+4. **Backlog listing.** Later, add a read-only command that lists issues in the
+   configured intake status and prints candidate station commands. Do not batch
+   run work in the first Linear adapter pass.
+
+Suggested `harness.json` mapping:
+
+```json
+{
+  "factory": {
+    "linear": {
+      "teamKey": "TEAM",
+      "statuses": {
+        "intake": "Backlog",
+        "parked": "Parked",
+        "needsInfo": "Needs Info",
+        "needsPlan": "Needs Plan",
+        "readyToImplement": "Ready to Implement",
+        "triaging": "Triaging",
+        "planning": "Planning",
+        "triageFailed": "Triage Failed",
+        "planningFailed": "Planning Failed"
+      }
+    }
+  }
+}
+```
+
+Initial implementation slice should prefer Linear before the implementation
+station if we want to validate the factory against real tracker state first:
+
+```text
+Linear issue -> triage -> ready-to-plan -> planning -> approved plan artifact -> ready-to-implement
+```
+
+This gives the future implementation station a concrete input contract:
+consume Linear issues in `Ready to Implement`. If `approvedPlanPath` exists,
+the implementer must follow it. If no `approvedPlanPath` exists, it is a
+triage-direct item and the implementation station should require an explicit
+direct-implementation route marker.
+
+## Linear SDK notes
+
+Use `@linear/sdk` for the first adapter. Keep SDK calls behind a small harness
+adapter so factory stations do not depend on Linear types.
+
+Authentication:
+
+```ts
+import { LinearClient } from "@linear/sdk";
+
+const client = new LinearClient({ apiKey: process.env.LINEAR_API_KEY });
+```
+
+The SDK also supports OAuth via `accessToken`, but the first CLI slice should
+use a personal API key from `LINEAR_API_KEY`. Fail fast when the env var is
+missing for non-dry-run Linear commands.
+
+Useful SDK operations:
+
+- `linearClient.issue(id)` or equivalent issue lookup for a known model UUID.
+- issue identifier lookup may need a filtered `linearClient.issues(...)`
+  query, because users will pass `TEAM-123`, not a model UUID.
+- status names in config should be resolved to Linear workflow state IDs once
+  before mutations; fail fast if a configured status is missing from the team.
+- `issue.comments()` to include human answers when rebuilding a
+  `FactoryWorkItem`.
+- `linearClient.updateIssue(issue.id, input)` or `issue.update(input)` to move
+  state, apply labels, or attach metadata-backed fields where Linear supports
+  them.
+- `linearClient.createComment({ issueId, body })` for concise route/planning
+  summaries.
+- connection pagination helpers such as `fetchNext()` for future inbox queries.
+
+Adapter shape:
+
+```ts
+type LinearFactoryAdapter = {
+  fetchWorkItem(identifier: string): Promise<FactoryWorkItem>;
+  validateStatusMap(): Promise<void>;
+  previewRouteUpdate(item: FactoryWorkItem, route: FactoryRoutePlan): LinearUpdatePlan;
+  applyRouteUpdate(item: FactoryWorkItem, route: FactoryRoutePlan): Promise<void>;
+  previewPlanningUpdate(meta: FactoryPlanningRunMeta): LinearUpdatePlan;
+  applyPlanningUpdate(meta: FactoryPlanningRunMeta): Promise<void>;
+};
+```
+
+Linear has no durable generic metadata field for the first slice. Use concise
+harness-owned comments with stable hidden markers for round-trip state and
+dedupe:
+
+```text
+<!-- harness-factory:triage:<run-id> -->
+Factory triage complete.
+
+Route: ready-to-plan
+Run: .harness/runs/factory/<run-id>
+Next: Needs Plan
+```
+
+For planning:
+
+```text
+<!-- harness-factory:planning:<run-id> -->
+Factory plan ready.
+
+Plan: dev/plans/260707-linear-team-123-export-shortcut.md
+Run: .harness/runs/factory/<run-id>
+Next: Ready to Implement
+```
+
+The adapter should avoid duplicate comments for the same run id and skip writes
+when Linear is already in the target status.
+
+For webhooks later, `@linear/sdk/webhooks` provides `LinearWebhookClient` with
+signature verification and typed event handlers. That belongs with Inngest or a
+server adapter, not the first local CLI slice.
 
 Hard part is policy, not API calls:
 
 - Which Linear statuses map to factory stages?
-- Labels vs workflow states vs projects vs custom fields?
+- Which optional labels help filtering without becoming stage state?
 - Who can apply changes?
 - Should comments be automatic?
 - How do we avoid noisy updates?
@@ -298,8 +523,10 @@ needs-info         -> label: needs-info + comment with questions
 wait-to-implement  -> label: wait-to-implement + comment with reconsiderWhen
 ```
 
-GitHub is a good first tracker adapter because this repo already centers PRs,
-labels, Actions, and review flows.
+GitHub is a good tracker adapter for PR-centric repos because this repo already
+centers PRs, labels, Actions, and review flows. Linear may be the better first
+adapter when the goal is to validate the factory against a product/task work
+board before implementation automation.
 
 ## What Inngest replaces
 
@@ -308,7 +535,7 @@ Inngest replaces local/manual orchestration, not factory logic.
 It can replace:
 
 ```text
-harness factory dispatch
+manual single-item station commands
 manual polling loop
 file inbox as the main queue
 manual command chaining
@@ -376,7 +603,7 @@ inngest.createFunction(
 
     const result = await step.run("triage", () => runFactoryTriage({ workItem: item }));
 
-    await step.run("apply-route", () => linearAdapter.applyRoute(item, result.routePlan));
+    await step.run("apply-route", () => linearAdapter.applyRouteUpdate(item, result.routePlan));
   },
 );
 ```
@@ -404,7 +631,7 @@ schemas, prompts, route decisions, artifacts, deterministic transitions
 Combined flow:
 
 ```text
-1. Linear issue created or moved to "Factory Inbox"
+1. Linear issue created or moved to "Backlog"
 2. Linear webhook sends event
 3. Inngest receives event
 4. Inngest calls Linear adapter to fetch issue
@@ -419,7 +646,7 @@ Combined flow:
 Example:
 
 ```text
-Linear status: Factory Inbox
+Linear status: Backlog
   -> Inngest event: factory/work_item.created
   -> Harness route: ready-to-plan
   -> Linear status: Needs Plan
@@ -432,7 +659,8 @@ Later:
 Linear status: Needs Plan
   -> Inngest event: factory/work_item.ready_to_plan
   -> Harness planning workflow
-  -> Linear attachment/comment with plan path or PR
+  -> Linear status: Ready to Implement
+  -> Linear comment with approved plan path
   -> Work item metadata gets approvedPlanPath and factoryStage=plan-approved
 ```
 
@@ -445,7 +673,7 @@ Good:
 
 ```ts
 const routePlan = await runFactoryTriage({ workItem });
-await linear.applyRoute(routePlan);
+await linear.applyRouteUpdate(workItem, routePlan);
 ```
 
 Bad:
