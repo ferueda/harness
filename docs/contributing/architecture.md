@@ -136,6 +136,11 @@ loading validated planning `meta.json`, rendering planning summaries, patching
 plan PR and merge metadata, and validating approved-plan metadata for future
 implementation stations.
 
+`lib/factory-implementation-input.ts` owns the library-only implementation
+station input contract. It classifies resolved work-item input into planned or
+direct mode, validates approved-plan handoff metadata, and treats Linear
+`Ready to Implement` as a projection guard rather than source of truth.
+
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
 
