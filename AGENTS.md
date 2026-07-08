@@ -49,6 +49,7 @@ Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/REA
 | `planning-workflow` | Route intake → shape/validate → handoff → implement → close | — |
 | `shape-requirements` | Gate or interview → confirmed interpretation or brief | `dev/briefs/YYMMDD-short-slug.md` (interview) |
 | `diagnose-issue` | Evidence-backed problem definition before planning | inline or `dev/issues/YYMMDD-short-slug.md` |
+| `architect` | Manual-only repo-grounded design/architecture memo before planning | inline |
 | `audit` | Codebase survey → prioritized handoff plans | `dev/plans/YYMMDD-short-slug.md` |
 | `create-plan` | Scoped plan from todo/spec/issue | `dev/plans/YYMMDD-short-slug.md` |
 | `review-spec` | Validate plan/spec against codebase; proportionality check; Simplicity as a finding category | advisory findings |
@@ -59,6 +60,7 @@ Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/REA
 **Shape vs diagnose:** `shape-requirements` when the question is what the user wants. `diagnose-issue` when the question is what is true in the repo. Too vague to investigate → gate only, then diagnose.
 
 **Typical chain** (skip steps per `planning-workflow` routing): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `plan-review` → `handoff-work` → `implement-plan` → `change-review-workflow`.
+Use `architect` only when explicitly invoked for ideation/research/solution design; it writes no artifacts and hands back an inline memo.
 
 **Routing reference:** `planning-workflow/references/routing.md` — intake, skip rules, scenario fixtures, pass criteria.
 
