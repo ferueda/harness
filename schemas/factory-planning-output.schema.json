@@ -3,7 +3,7 @@
   "title": "FactoryPlanningOutput",
   "type": "object",
   "additionalProperties": false,
-  "required": ["outcome", "summary"],
+  "required": ["outcome", "summary", "humanQuestions", "findingDecisions"],
   "properties": {
     "outcome": {
       "type": "string",
@@ -16,7 +16,8 @@
     "humanQuestions": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       }
     },
     "findingDecisions": {
@@ -27,14 +28,16 @@
         "required": ["findingId", "decision", "rationale"],
         "properties": {
           "findingId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "decision": {
             "type": "string",
             "enum": ["implement", "adapt", "decline"]
           },
           "rationale": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         }
       }

@@ -49,6 +49,7 @@ export function draft(overrides: Partial<FactoryPlanningOutput> = {}): FactoryPl
   return {
     outcome: "draft-ready",
     summary: "Plan is ready for review.",
+    humanQuestions: [],
     findingDecisions: [],
     ...overrides,
   };
