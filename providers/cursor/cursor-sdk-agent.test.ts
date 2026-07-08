@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, vi } from "vitest";
-import type { AgentRunResult } from "../../lib/agents.ts";
+import type { AgentRunResult, AgentWorkspaceGuardMode } from "../../lib/agents.ts";
 import type * as ReviewGuard from "../../lib/review-guard.ts";
 import { createCursorSdkAgent, type CursorSdkAgentFactoryOptions } from "./cursor-sdk-agent.ts";
 
@@ -14,18 +14,28 @@ vi.mock("../../lib/review-guard.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof ReviewGuard>();
   return {
     ...actual,
-    withWorkspaceGuard(result: AgentRunResult, workspace: string, beforeStatus: string) {
+    withWorkspaceGuard(
+      result: AgentRunResult,
+      workspace: string,
+      beforeStatus: string,
+      workspaceGuard?: AgentWorkspaceGuardMode,
+    ) {
       if (mockPostRunStatusFailure) {
-        return actual.applyWorkspaceGuard(result, beforeStatus, {
-          ok: false,
-          error: {
+        return actual.applyWorkspaceGuard(
+          result,
+          beforeStatus,
+          {
             ok: false,
-            error: "git unavailable",
-            exitCode: 1,
+            error: {
+              ok: false,
+              error: "git unavailable",
+              exitCode: 1,
+            },
           },
-        });
+          workspaceGuard,
+        );
       }
-      return actual.withWorkspaceGuard(result, workspace, beforeStatus);
+      return actual.withWorkspaceGuard(result, workspace, beforeStatus, workspaceGuard);
     },
   };
 });
@@ -619,6 +629,60 @@ test("createCursorSdkAgent detects workspace mutations outside .harness", async 
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.error).toBe("Agent runtime modified the workspace during a review run");
+});
+
+test("createCursorSdkAgent records workspace mutations when guard mode is record", async () => {
+  const workspace = createGitWorkspace();
+  const { createSdkAgent } = createFakeSdk({
+    onWait() {
+      writeFileSync(join(workspace, "changed.txt"), "changed\n", "utf8");
+    },
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    workspaceGuard: "record",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.raw).toMatchObject({
+    workspaceStatus: {
+      before: "",
+      after: expect.stringContaining("changed.txt"),
+    },
+  });
+});
+
+test("createCursorSdkAgent records workspace mutations while preserving parse failures", async () => {
+  const workspace = createGitWorkspace();
+  const schemaPath = createSchemaFile(workspace);
+  const { createSdkAgent } = createFakeSdk({
+    result: { status: "finished", result: '{"verdict":"invalid"}' },
+    onWait() {
+      writeFileSync(join(workspace, "changed.txt"), "changed\n", "utf8");
+    },
+  });
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    schemaPath,
+    workspaceGuard: "record",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toMatch(/JSON did not match schema/);
+  expect(result.raw).toMatchObject({
+    workspaceStatus: {
+      before: expect.stringContaining("schema.json"),
+      after: expect.stringContaining("changed.txt"),
+    },
+  });
 });
 
 test("createCursorSdkAgent allows .harness artifacts", async () => {

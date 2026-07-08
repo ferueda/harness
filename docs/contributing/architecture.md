@@ -212,7 +212,11 @@ failure aggregation, and export metadata.
 
 `providers/registry.ts` creates the selected provider adapter. Provider
 adapters under `providers/cursor/` and `providers/codex/` implement invocation.
-Workflows should stay provider-agnostic.
+Workflows should stay provider-agnostic. Provider runs default to enforced
+workspace guarding, which records before/after git status and rejects tracked
+workspace mutations. Future writer stations may opt into `record` mode so
+provider raw artifacts still capture workspace changes while the station owns
+validation.
 
 ## Review artifact lifecycle
 
