@@ -28,10 +28,7 @@ export const FactoryPlanningOutputSchema = z
   })
   .strict()
   .superRefine((output, ctx) => {
-    if (
-      output.outcome === "needs-human" &&
-      (!output.humanQuestions || output.humanQuestions.length === 0)
-    ) {
+    if (output.outcome === "needs-human" && output.humanQuestions.length === 0) {
       ctx.addIssue({
         code: "custom",
         path: ["humanQuestions"],

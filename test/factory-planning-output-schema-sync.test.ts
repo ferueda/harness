@@ -34,6 +34,7 @@ const VALID_NEEDS_HUMAN = {
 
 test("factory planning JSON schema file defines expected root shape", () => {
   expect(FACTORY_PLANNING_SCHEMA.additionalProperties).toBe(false);
+  // Codex strict structured outputs require every property to be required.
   expect(new Set(FACTORY_PLANNING_SCHEMA.required)).toEqual(
     new Set(Object.keys(FACTORY_PLANNING_SCHEMA.properties ?? {})),
   );
@@ -79,15 +80,24 @@ test("empty summary fails JSON schema and Zod", () => {
   expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
 });
 
-test("missing humanQuestions for needs-human is rejected by JSON schema and Zod", () => {
-  const payload = { ...VALID_NEEDS_HUMAN };
-  delete (payload as Partial<typeof VALID_NEEDS_HUMAN>).humanQuestions;
-  expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(false);
+test("needs-human with no questions is rejected by Zod", () => {
+  const payload = { ...VALID_NEEDS_HUMAN, humanQuestions: [] };
+  expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(true);
   expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
 });
 
 test("missing arrays are rejected by JSON schema and Zod", () => {
   const payload = { outcome: "draft-ready", summary: "Plan is ready for review." };
+  expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(false);
+  expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
+});
+
+test("empty strings fail JSON schema and Zod", () => {
+  const payload = {
+    ...VALID_DRAFT,
+    humanQuestions: [""],
+    findingDecisions: [{ findingId: "", decision: "implement", rationale: "" }],
+  };
   expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(false);
   expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
 });
