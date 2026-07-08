@@ -272,7 +272,18 @@ test("harness factory linear help exits cleanly", () => {
   const result = runHarness(["factory", "linear", "--help"]);
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness factory linear/);
+  expect(result.stdout).toMatch(/list/);
   expect(result.stdout).toMatch(/fetch/);
+});
+test("harness factory linear list help exits cleanly", () => {
+  const result = runHarness(["factory", "linear", "list", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory linear list/);
+  expect(result.stdout).toMatch(/--status/);
+  expect(result.stdout).toMatch(/--first/);
+  expect(result.stdout).toMatch(/--after/);
+  expect(result.stdout).toMatch(/--all/);
+  expect(result.stdout).toMatch(/--workspace/);
 });
 test("harness factory linear fetch help exits cleanly", () => {
   const result = runHarness(["factory", "linear", "fetch", "--help"]);
@@ -280,6 +291,54 @@ test("harness factory linear fetch help exits cleanly", () => {
   expect(result.stdout).toMatch(/harness factory linear fetch/);
   expect(result.stdout).toMatch(/TEAM-123/);
   expect(result.stdout).toMatch(/--workspace/);
+});
+test("harness factory linear list requires a status", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(["factory", "linear", "list", "--workspace", workspace]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--status is required/);
+});
+test("harness factory linear list requires Linear config", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(
+    ["factory", "linear", "list", "--status", "intake", "--workspace", workspace],
+    {
+      env: { LINEAR_API_KEY: "test-key" },
+    },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/factory\.linear is required/);
+});
+test("harness factory linear list requires a Linear API key", () => {
+  const workspace = createGitWorkspace();
+  writeLinearConfig(workspace);
+  const result = runHarness(
+    ["factory", "linear", "list", "--status", "intake", "--workspace", workspace],
+    {
+      env: { LINEAR_API_KEY: "" },
+    },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
+});
+test("harness factory linear list rejects all-pages with an after cursor", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "factory",
+    "linear",
+    "list",
+    "--status",
+    "intake",
+    "--all",
+    "--after",
+    "cursor-1",
+    "--workspace",
+    workspace,
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--all cannot be combined with --after/);
+  expect(result.stderr).not.toMatch(/factory\.linear is required/);
+  expect(result.stderr).not.toMatch(/LINEAR_API_KEY is required/);
 });
 test("harness factory linear fetch requires Linear config", () => {
   const workspace = createGitWorkspace();

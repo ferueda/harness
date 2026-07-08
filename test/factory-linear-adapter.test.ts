@@ -4,6 +4,7 @@ import {
   assertLinearTriageApplyAllowed,
   createLinearFactoryAdapterForClient,
   linearTriageTargetStatus,
+  parseLinearFactoryStatusKeys,
   parseLinearIssueIdentifier,
   renderLinearPlanningApprovedComment,
   renderLinearPlanningReadyComment,
@@ -133,6 +134,18 @@ function fakeClient(overrides: Partial<LinearClientLike> = {}): LinearClientLike
   };
 }
 
+function fakeReadOnlyLinearClient(overrides: Partial<LinearClientLike> = {}): LinearClientLike {
+  return fakeClient({
+    updateIssue: async () => {
+      throw new Error("updateIssue should not run while listing");
+    },
+    createComment: async () => {
+      throw new Error("createComment should not run while listing");
+    },
+    ...overrides,
+  });
+}
+
 const TRIAGE_READY_TO_PLAN = {
   route: "ready-to-plan",
   confidence: "high",
@@ -165,6 +178,16 @@ function triageOutput(
 test("parseLinearIssueIdentifier accepts human issue ids", () => {
   expect(parseLinearIssueIdentifier("eng-123")).toEqual({ teamKey: "ENG", number: 123 });
   expect(parseLinearIssueIdentifier("not-a-linear-id")).toBeNull();
+});
+
+test("parseLinearFactoryStatusKeys preserves order, dedupes, and rejects unknown keys", () => {
+  expect(parseLinearFactoryStatusKeys(LINEAR_SETTINGS, ["intake", "needsPlan", "intake"])).toEqual([
+    "intake",
+    "needsPlan",
+  ]);
+  expect(() => parseLinearFactoryStatusKeys(LINEAR_SETTINGS, ["Backlog"])).toThrow(
+    /Unknown factory\.linear\.statuses key: Backlog\. Allowed keys: intake, parked, needsInfo, needsPlanReview, needsPlan/,
+  );
 });
 
 test("Linear planning comments include stable markers and plan handoff links", () => {
@@ -614,7 +637,7 @@ test("Linear triage helpers map routes and render concise comments", () => {
 
 test("Linear adapter fetches an issue as a factory work item", async () => {
   const queries: unknown[] = [];
-  const client = fakeClient({
+  const client = fakeReadOnlyLinearClient({
     issues: async (variables) => {
       queries.push(variables);
       return { nodes: [ISSUE] };
@@ -660,6 +683,226 @@ test("Linear adapter fetches an issue as a factory work item", async () => {
   expect(item.body).toContain("Users need a keyboard shortcut");
   expect(item.body).toContain("## Linear Comments");
   expect(item.body).toContain("Please keep the shortcut configurable.");
+});
+
+test("Linear adapter lists lightweight issue summaries by configured status keys", async () => {
+  const queries: unknown[] = [];
+  const listIssue = {
+    ...ISSUE,
+    labels: async () => {
+      throw new Error("labels should not be fetched while listing");
+    },
+    comments: async () => {
+      throw new Error("comments should not be fetched while listing");
+    },
+  };
+  const client = fakeReadOnlyLinearClient({
+    issues: async (variables) => {
+      queries.push(variables);
+      return {
+        pageInfo: { hasNextPage: true, endCursor: "cursor-1" },
+        nodes: [listIssue],
+      };
+    },
+  });
+  const adapter = createLinearFactoryAdapterForClient({
+    client,
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.listWorkItemsByStatus({
+    statusKeys: ["intake", "needsPlan"],
+    first: 25,
+    after: "cursor-0",
+  });
+
+  expect(queries).toEqual([
+    {
+      filter: {
+        team: { key: { eq: "ENG" } },
+        state: { name: { in: ["Backlog", "Needs Plan"] } },
+        project: { id: { eq: PROJECT.id } },
+      },
+      first: 25,
+      after: "cursor-0",
+    },
+  ]);
+  expect(result).toEqual({
+    teamKey: "ENG",
+    projectId: PROJECT.id,
+    statusKeys: ["intake", "needsPlan"],
+    statusNames: ["Backlog", "Needs Plan"],
+    issues: [
+      {
+        id: "linear:ENG-123",
+        source: "linear",
+        identifier: "ENG-123",
+        title: "Add export shortcut",
+        url: "https://linear.app/acme/issue/ENG-123/add-export-shortcut",
+        status: "Needs Plan",
+        statusType: "unstarted",
+        factoryStage: "ready-to-plan",
+        projectId: PROJECT.id,
+        projectName: "Harness",
+        projectUrl: "https://linear.app/acme/project/harness-123",
+        assignee: "Felipe",
+        priority: 2,
+        priorityLabel: "High",
+        createdAt: "2026-07-07T10:00:00.000Z",
+        updatedAt: "2026-07-07T11:00:00.000Z",
+      },
+    ],
+    pageInfo: {
+      fetchedPages: 1,
+      hasNextPage: true,
+      endCursor: "cursor-1",
+    },
+  });
+  expect(result.issues[0]).not.toHaveProperty("body");
+});
+
+test("Linear adapter omits comment-derived factory stage for Needs Clarification lists", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({
+              id: "state-Needs Clarification",
+              name: "Needs Clarification",
+              type: "unstarted",
+            }),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.listWorkItemsByStatus({ statusKeys: ["needsInfo"] });
+
+  expect(result.issues[0]).toMatchObject({
+    status: "Needs Clarification",
+  });
+  expect(result.issues[0]).not.toHaveProperty("factoryStage");
+});
+
+test("Linear adapter rejects listed issues outside configured project", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            projectId: OTHER_PROJECT.id,
+            project: Promise.resolve(OTHER_PROJECT),
+          },
+        ],
+      }),
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.listWorkItemsByStatus({ statusKeys: ["intake"] })).rejects.toThrow(
+    /belongs to project Other Repo \(project-2\), but factory\.linear\.projectId is project-1/,
+  );
+});
+
+test("Linear adapter lists all pages using safe cursors", async () => {
+  const queries: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient({
+      issues: async (variables) => {
+        queries.push(variables);
+        if (queries.length === 1) {
+          return {
+            pageInfo: { hasNextPage: true, endCursor: "cursor-1" },
+            nodes: [ISSUE],
+          };
+        }
+        return {
+          pageInfo: { hasNextPage: false, endCursor: "cursor-2" },
+          nodes: [
+            {
+              ...ISSUE,
+              id: "issue-2",
+              identifier: "ENG-124",
+              number: 124,
+              title: "Second issue",
+            },
+          ],
+        };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.listWorkItemsByStatus({
+    statusKeys: ["intake"],
+    all: true,
+    first: 10,
+  });
+
+  expect(queries).toEqual([
+    {
+      filter: {
+        team: { key: { eq: "ENG" } },
+        state: { name: { in: ["Backlog"] } },
+      },
+      first: 10,
+    },
+    {
+      filter: {
+        team: { key: { eq: "ENG" } },
+        state: { name: { in: ["Backlog"] } },
+      },
+      first: 10,
+      after: "cursor-1",
+    },
+  ]);
+  expect(result.issues.map((issue) => issue.identifier)).toEqual(["ENG-123", "ENG-124"]);
+  expect(result.pageInfo).toEqual({
+    fetchedPages: 2,
+    hasNextPage: false,
+    endCursor: "cursor-2",
+  });
+});
+
+test("Linear adapter rejects unsafe list pagination inputs", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient(),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.listWorkItemsByStatus({ statusKeys: [] })).rejects.toThrow(
+    /At least one factory status key is required/,
+  );
+  await expect(adapter.listWorkItemsByStatus({ statusKeys: ["intake"], first: 0 })).rejects.toThrow(
+    /between 1 and 100/,
+  );
+  await expect(
+    adapter.listWorkItemsByStatus({ statusKeys: ["intake"], first: 101 }),
+  ).rejects.toThrow(/between 1 and 100/);
+  await expect(
+    adapter.listWorkItemsByStatus({ statusKeys: ["intake"], all: true, after: "cursor-1" }),
+  ).rejects.toThrow(/cannot be combined with an after cursor/);
+});
+
+test("Linear adapter fails closed when all-pages listing cannot advance", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient({
+      issues: async () => ({
+        pageInfo: { hasNextPage: true },
+        nodes: [ISSUE],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.listWorkItemsByStatus({ statusKeys: ["intake"], all: true }),
+  ).rejects.toThrow(/hasNextPage without endCursor/);
 });
 
 test("Linear adapter accepts issues in configured project during fetch", async () => {

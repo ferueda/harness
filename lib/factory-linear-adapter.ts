@@ -1,6 +1,12 @@
 import { LinearClient } from "@linear/sdk";
 import { type FactoryLinearSettings } from "./config.ts";
 import {
+  listLinearWorkItemsByStatus,
+  type LinearFactoryStatusKey,
+  type LinearIssueList,
+  type LinearListWorkItemsInput,
+} from "./factory-linear-list.ts";
+import {
   applyLinearPlanningMerged,
   applyLinearPlanningPublished,
   type LinearPlanningHandoffInput,
@@ -41,6 +47,12 @@ export {
   renderLinearPlanningApprovedComment,
   renderLinearPlanningReadyComment,
 } from "./factory-linear-planning-handoff.ts";
+export type {
+  LinearFactoryStatusKey,
+  LinearIssueList,
+  LinearIssueSummary,
+  LinearListWorkItemsInput,
+} from "./factory-linear-list.ts";
 
 const LINEAR_ISSUE_IDENTIFIER_RE = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
 const COMMENT_FETCH_LIMIT = 20;
@@ -50,6 +62,7 @@ const TRIAGE_COMMENT_EVIDENCE_LIMIT = 3;
 
 export type LinearFactoryAdapter = {
   fetchWorkItem: (issueRef: string) => Promise<FactoryWorkItem>;
+  listWorkItemsByStatus: (input: LinearListWorkItemsInput) => Promise<LinearIssueList>;
   validateStatusMap: () => Promise<LinearStatusMapValidation>;
   applyTriageStarted: (input: LinearTriageApplyInput) => Promise<LinearTriageUpdatePlan>;
   applyTriageCompleted: (input: LinearTriageCompletedInput) => Promise<LinearTriageUpdatePlan>;
@@ -121,6 +134,8 @@ export function createLinearFactoryAdapterForClient(input: {
 }): LinearFactoryAdapter {
   return {
     fetchWorkItem: (issueRef) => fetchWorkItem(input.client, input.settings, issueRef),
+    listWorkItemsByStatus: (listInput) =>
+      listLinearWorkItemsByStatus(LINEAR_LIST_DEPS, input.client, input.settings, listInput),
     validateStatusMap: () => validateStatusMap(input.client, input.settings),
     applyTriageStarted: (applyInput) =>
       applyTriageStarted(input.client, input.settings, applyInput),
@@ -175,6 +190,18 @@ const LINEAR_PLANNING_APPLY_DEPS = {
   issueHasCommentMarker,
 };
 
+const LINEAR_LIST_DEPS = {
+  validateStatusMap,
+  resolveOptional,
+  assertTeamMatches,
+  assertProjectMatches,
+  factoryStageForStatus,
+  normalizeName,
+  canonicalTeamKey,
+  assigneeName,
+  formatDate,
+};
+
 export function parseLinearIssueIdentifier(issueRef: string): LinearIssueIdentifier | null {
   const match = LINEAR_ISSUE_IDENTIFIER_RE.exec(issueRef.trim());
   if (!match) return null;
@@ -182,6 +209,29 @@ export function parseLinearIssueIdentifier(issueRef: string): LinearIssueIdentif
     teamKey: match[1].toUpperCase(),
     number: Number(match[2]),
   };
+}
+
+export function parseLinearFactoryStatusKeys(
+  settings: FactoryLinearSettings,
+  values: string[],
+): LinearFactoryStatusKey[] {
+  const allowed = Object.keys(settings.statuses) as LinearFactoryStatusKey[];
+  const allowedSet = new Set(allowed);
+  const seen = new Set<LinearFactoryStatusKey>();
+  const parsed: LinearFactoryStatusKey[] = [];
+  for (const value of values) {
+    if (!allowedSet.has(value as LinearFactoryStatusKey)) {
+      throw new Error(
+        `Unknown factory.linear.statuses key: ${value}. Allowed keys: ${allowed.join(", ")}`,
+      );
+    }
+    const statusKey = value as LinearFactoryStatusKey;
+    if (!seen.has(statusKey)) {
+      seen.add(statusKey);
+      parsed.push(statusKey);
+    }
+  }
+  return parsed;
 }
 
 export function linearTriageTargetStatus(

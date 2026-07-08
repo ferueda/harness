@@ -16,6 +16,7 @@ import {
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
 import {
   createLinearFactoryAdapter,
+  parseLinearFactoryStatusKeys,
   parseLinearIssueIdentifier,
   type LinearFactoryAdapter,
   type LinearTriageUpdatePlan,
@@ -99,6 +100,14 @@ type FactoryLinearFetchOptions = {
   workspace?: string;
 };
 
+type FactoryLinearListOptions = {
+  workspace?: string;
+  status: string[];
+  first: number;
+  after?: string;
+  all: boolean;
+};
+
 type FactoryCommandOptions = {
   positiveNumber: (value: string) => number;
   defaultMaxRuntimeMs: number;
@@ -136,6 +145,37 @@ function addFactoryStatusCommand(parent: Command): void {
 
 function addFactoryLinearCommand(parent: Command): void {
   const linear = parent.command("linear").description("Read Linear issues as factory work items");
+
+  linear
+    .command("list")
+    .description("List Linear issues by configured factory status")
+    .option("--workspace <path>", "target repo")
+    .option("--status <key>", "factory.linear.statuses key; repeatable", collectValues, [])
+    .option("--first <count>", "page size, 1-100 (default: 50)", boundedFirstPageSize, 50)
+    .option("--after <cursor>", "Linear pagination cursor")
+    .option("--all", "fetch every page", false)
+    .action(async (options: FactoryLinearListOptions) => {
+      if (options.status.length === 0) {
+        throw new Error("--status is required");
+      }
+      if (options.all && options.after) {
+        throw new Error("--all cannot be combined with --after");
+      }
+      const settings = resolveFactoryLinearSettings({ workspace: options.workspace });
+      const apiKey = process.env.LINEAR_API_KEY;
+      if (!apiKey) {
+        throw new Error("LINEAR_API_KEY is required for Linear commands.");
+      }
+      const statusKeys = parseLinearFactoryStatusKeys(settings, options.status);
+      const adapter = createLinearFactoryAdapter({ apiKey, settings });
+      const result = await adapter.listWorkItemsByStatus({
+        statusKeys,
+        first: options.first,
+        after: options.after,
+        all: options.all,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    });
 
   linear
     .command("fetch")
@@ -484,6 +524,18 @@ function positiveInteger(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new InvalidArgumentError("must be a positive integer");
+  }
+  return parsed;
+}
+
+function collectValues(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function boundedFirstPageSize(value: string): number {
+  const parsed = positiveInteger(value);
+  if (parsed > 100) {
+    throw new InvalidArgumentError("must be between 1 and 100");
   }
   return parsed;
 }
