@@ -110,9 +110,10 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   expect(readFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "utf8")).toContain(
     "Work item JSON",
   );
-  expect(readFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "utf8")).toContain(
-    "Include blocking questions only for needs-info",
-  );
+  const prompt = readFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "utf8");
+  expect(prompt).toContain("Include blocking questions only for needs-info");
+  expect(prompt).toContain("ready-to-implement must not include questions");
+  expect(prompt).toContain("ready-to-plan may include optional non-blocking planning questions");
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain(
     "Use the planning-workflow coordinator",
   );
