@@ -66,6 +66,12 @@ export function fakeLinearAdapter(
     applyPlanningFailed: async () => {
       throw new Error("applyPlanningFailed should not run");
     },
+    applyPlanningPublished: async () => {
+      throw new Error("applyPlanningPublished should not run");
+    },
+    applyPlanningMerged: async () => {
+      throw new Error("applyPlanningMerged should not run");
+    },
     ...overrides,
   };
 }

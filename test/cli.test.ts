@@ -79,6 +79,35 @@ function writeLinearConfig(workspace: string): void {
   );
 }
 
+function createFactoryPlanningPublicationRun() {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-cli-planning-publication-workspace-"));
+  const runDir = mkdtempSync(join(tmpdir(), "harness-cli-planning-publication-run-"));
+  const meta = {
+    runId: "20260707-120000",
+    workflow: "factory-planning",
+    status: "plan-approved",
+    workspace,
+    runDir,
+    workItem: { id: "linear:ENG-123", source: "linear", title: "Linear issue" },
+    outputPlan: join(workspace, "dev/plans/ENG-123.md"),
+    factoryMetadata: {
+      tracker: { source: "linear", id: "ENG-123" },
+      factoryStage: "plan-pr-open",
+      approvedPlanPath: "dev/plans/ENG-123.md",
+    },
+    iterations: [{ index: 1 }],
+    plannerAgent: { name: "cursor", model: "composer-2.5" },
+    reviewerAgent: { name: "cursor", model: "composer-2.5" },
+    summaryPath: join(runDir, "summary.md"),
+    metaPath: join(runDir, "meta.json"),
+    startedAt: "2026-07-07T12:00:00.000Z",
+    durationMs: 1,
+  };
+  writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
+  writeFileSync(join(runDir, "summary.md"), "# Old Summary\n", "utf8");
+  return { workspace, runDir };
+}
+
 function expectInitShim(
   workspace: string,
   output: Record<string, unknown>,
@@ -327,12 +356,16 @@ test("harness factory planning publication help exits cleanly", () => {
   expect(publish.stdout).toMatch(/harness factory planning publish/);
   expect(publish.stdout).toMatch(/--run-dir <path>/);
   expect(publish.stdout).toMatch(/--pr-url <url>/);
+  expect(publish.stdout).toMatch(/--linear-issue <issue>/);
+  expect(publish.stdout).toMatch(/--apply/);
 
   const merged = runHarness(["factory", "planning", "mark-plan-merged", "--help"]);
   expect(merged.status).toBe(0);
   expect(merged.stdout).toMatch(/harness factory planning mark-plan-merged/);
   expect(merged.stdout).toMatch(/--run-dir <path>/);
   expect(merged.stdout).toMatch(/--commit <sha>/);
+  expect(merged.stdout).toMatch(/--linear-issue <issue>/);
+  expect(merged.stdout).toMatch(/--apply/);
 });
 test("harness run factory-planning is not a command", () => {
   const result = runHarness(["run", "factory-planning"]);
@@ -1791,9 +1824,71 @@ test("harness factory planning publication commands patch run metadata", () => {
     approvedPlanCommit: "abc1234",
   });
   expect(output.linearComment).toContain("Factory plan approved.");
-  expect(readFileSync(join(runDir, "summary.md"), "utf8")).toContain(
-    "Ready for future tracker move",
+  expect(readFileSync(join(runDir, "summary.md"), "utf8")).toContain("Ready to implement");
+});
+
+test("harness factory planning publish apply rejects missing Linear issue before metadata write", () => {
+  const { runDir } = createFactoryPlanningPublicationRun();
+  const result = runHarness([
+    "factory",
+    "planning",
+    "publish",
+    "--run-dir",
+    runDir,
+    "--pr-url",
+    "https://github.com/owner/repo/pull/123",
+    "--apply",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply requires --linear-issue/);
+  expect(readFileSync(join(runDir, "meta.json"), "utf8")).not.toContain("approvedPlanPrUrl");
+});
+
+test("harness factory planning publish apply rejects missing Linear key before metadata write", () => {
+  const { runDir } = createFactoryPlanningPublicationRun();
+  const result = runHarness(
+    [
+      "factory",
+      "planning",
+      "publish",
+      "--run-dir",
+      runDir,
+      "--pr-url",
+      "https://github.com/owner/repo/pull/123",
+      "--linear-issue",
+      "ENG-123",
+      "--apply",
+    ],
+    { env: { LINEAR_API_KEY: "" } },
   );
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
+  expect(readFileSync(join(runDir, "meta.json"), "utf8")).not.toContain("approvedPlanPrUrl");
+});
+
+test("harness factory planning publish apply rejects missing Linear config before metadata write", () => {
+  const { runDir } = createFactoryPlanningPublicationRun();
+  const result = runHarness(
+    [
+      "factory",
+      "planning",
+      "publish",
+      "--run-dir",
+      runDir,
+      "--pr-url",
+      "https://github.com/owner/repo/pull/123",
+      "--linear-issue",
+      "ENG-123",
+      "--apply",
+    ],
+    { env: { LINEAR_API_KEY: "test-key" } },
+  );
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/factory\.linear is required/);
+  expect(readFileSync(join(runDir, "meta.json"), "utf8")).not.toContain("approvedPlanPrUrl");
 });
 
 test("harness factory planning rejects missing item files", () => {

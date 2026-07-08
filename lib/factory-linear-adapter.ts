@@ -1,6 +1,13 @@
 import { LinearClient } from "@linear/sdk";
 import { type FactoryLinearSettings } from "./config.ts";
 import {
+  applyLinearPlanningMerged,
+  applyLinearPlanningPublished,
+  type LinearPlanningHandoffInput,
+  type LinearPlanningHandoffUpdatePlan,
+  type LinearPlanningMergedInput,
+} from "./factory-linear-planning-handoff.ts";
+import {
   applyLinearPlanningCompleted,
   applyLinearPlanningFailed,
   applyLinearPlanningStarted,
@@ -30,6 +37,11 @@ import {
   type JsonValue,
 } from "./factory-schemas.ts";
 
+export {
+  renderLinearPlanningApprovedComment,
+  renderLinearPlanningReadyComment,
+} from "./factory-linear-planning-handoff.ts";
+
 const LINEAR_ISSUE_IDENTIFIER_RE = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
 const COMMENT_FETCH_LIMIT = 20;
 const LABEL_FETCH_LIMIT = 50;
@@ -47,6 +59,12 @@ export type LinearFactoryAdapter = {
     input: LinearPlanningCompletedInput,
   ) => Promise<LinearPlanningUpdatePlan>;
   applyPlanningFailed: (input: LinearPlanningFailedInput) => Promise<LinearPlanningUpdatePlan>;
+  applyPlanningPublished: (
+    input: LinearPlanningHandoffInput,
+  ) => Promise<LinearPlanningHandoffUpdatePlan>;
+  applyPlanningMerged: (
+    input: LinearPlanningMergedInput,
+  ) => Promise<LinearPlanningHandoffUpdatePlan>;
 };
 
 export type LinearStatusMapValidation = {
@@ -84,17 +102,6 @@ export type LinearTriageUpdatePlan = {
 type LinearIssueIdentifier = {
   teamKey: string;
   number: number;
-};
-
-export type LinearPlanningReadyCommentInput = {
-  runId: string;
-  approvedPlanPath: string;
-  approvedPlanPrUrl: string;
-  runDir: string;
-};
-
-export type LinearPlanningApprovedCommentInput = LinearPlanningReadyCommentInput & {
-  approvedPlanCommit: string;
 };
 
 export function createLinearFactoryAdapter(input: {
@@ -141,6 +148,20 @@ export function createLinearFactoryAdapterForClient(input: {
         input.settings,
         applyInput,
       ),
+    applyPlanningPublished: (applyInput) =>
+      applyLinearPlanningPublished(
+        LINEAR_PLANNING_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
+    applyPlanningMerged: (applyInput) =>
+      applyLinearPlanningMerged(
+        LINEAR_PLANNING_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
   };
 }
 
@@ -161,36 +182,6 @@ export function parseLinearIssueIdentifier(issueRef: string): LinearIssueIdentif
     teamKey: match[1].toUpperCase(),
     number: Number(match[2]),
   };
-}
-
-export function renderLinearPlanningReadyComment(input: LinearPlanningReadyCommentInput): string {
-  return [
-    `<!-- harness-factory:planning:${input.runId} -->`,
-    "",
-    "Factory plan ready.",
-    "",
-    `Plan: \`${input.approvedPlanPath}\``,
-    `Plan PR: ${input.approvedPlanPrUrl}`,
-    `Run: \`${input.runDir}\``,
-    "Next: merge plan PR, then move to Ready to Implement.",
-    "",
-  ].join("\n");
-}
-
-export function renderLinearPlanningApprovedComment(
-  input: LinearPlanningApprovedCommentInput,
-): string {
-  return [
-    `<!-- harness-factory:planning-approved:${input.runId} -->`,
-    "",
-    "Factory plan approved.",
-    "",
-    `Plan: \`${input.approvedPlanPath}\``,
-    `Merged PR: ${input.approvedPlanPrUrl}`,
-    `Commit: \`${input.approvedPlanCommit}\``,
-    "Next: Ready to Implement.",
-    "",
-  ].join("\n");
 }
 
 export function linearTriageTargetStatus(

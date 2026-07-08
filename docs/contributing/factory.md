@@ -329,7 +329,8 @@ manual publication handoff, `factoryStage: "plan-pr-open"` may exist before
 `approvedPlanPrUrl`; the URL is recorded when the operator registers the plan
 PR.
 
-Manual publication commands update local run metadata and summary files only:
+Manual publication commands update local run metadata and summary files by
+default:
 
 ```bash
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
@@ -337,7 +338,22 @@ harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-i
 ```
 
 They print `factoryMetadata` plus suggested Linear comment text. They do not
-open PRs, post comments, or move Linear statuses.
+open PRs or inspect GitHub merge state.
+
+Add `--linear-issue` and `--apply` to mutate Linear:
+
+```bash
+LINEAR_API_KEY=... harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue ENG-123 --apply
+LINEAR_API_KEY=... harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue ENG-123 --apply
+```
+
+`publish --apply` validates the issue belongs to the configured Linear
+team/project, accepts `Needs Plan`, `Planning`, or `Plan Needs Review`, moves
+the issue to `Plan Needs Review`, and posts one plan-PR marker comment.
+`mark-plan-merged --apply` accepts `Plan Needs Review` or
+`Ready to Implement`, moves the issue to `Ready to Implement`, and posts one
+approved-plan marker comment. Both commands reject mismatched issue ids and
+non-Linear tracker metadata before local metadata writes.
 
 ## Local Inbox
 
