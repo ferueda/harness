@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architect"
+  short_description: "Design repo-grounded technical solutions"
+  default_prompt: "Use $architect to explore the problem, compare repo-grounded solution options, consult Cursor for critique, and recommend an architecture before planning."

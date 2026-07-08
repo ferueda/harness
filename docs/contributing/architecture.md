@@ -35,7 +35,8 @@ The harness repo owns the reusable workflow system:
   skill installation helpers.
 - `providers/` - Cursor and Codex provider adapters plus `providers/registry.ts`.
 - `workflows/` - callable workflow definitions and shared review-step execution.
-- `skills/` - packaged skills that can be installed into target repos.
+- `skills/` - packaged skills that can be installed into target repos,
+  including manual-only design/research helpers such as `architect`.
 - `.agents/skills/` - repo-local development skills for this checkout.
 - `automations/` - background task definitions.
 - `schemas/` - exported JSON schema artifacts.

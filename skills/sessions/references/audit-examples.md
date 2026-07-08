@@ -79,7 +79,7 @@ See also coordinator fixtures: `planning-workflow/references/routing.md`.
 
 ```bash
 # Per-skill counts
-for term in planning-workflow shape-requirements diagnose-issue \
+for term in planning-workflow shape-requirements diagnose-issue architect \
   create-plan review-spec implement-plan handoff-work audit; do
   echo -n "$term: "
   sessions analyze --provider codex --include-turns --extract-only \

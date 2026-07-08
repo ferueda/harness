@@ -9,6 +9,7 @@ Routing rules, skip table, artifact paths, and scenario fixtures. Use when choos
 | Vague idea, no brief | `shape-requirements` **interview** |
 | Build/fix/plan now but scope or done-ness unclear | `shape-requirements` **gate** |
 | Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |
+| Explicit `$architect` / "use architect" design request | `architect` |
 | Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing plans; otherwise `review-spec` or `create-plan` |
 | Created implementation plan needs review before execution | `harness run plan-review --plan <path>` (`review-spec` fallback) |
 | Approved plan ready to execute | `implement-plan` |
@@ -16,6 +17,10 @@ Routing rules, skip table, artifact paths, and scenario fixtures. Use when choos
 **shape-requirements** when the question is what the user wants. **diagnose-issue** when the question is what is true in the repo. Too vague to investigate → **gate** only (not interview), then `diagnose-issue`.
 
 Intent-aware review: when work affects product direction, architecture boundaries, docs-architecture, data/tenancy, provider contracts, public APIs, or workflow-wide behavior, validate it against the target repo's intent source (`docs/project-intent.md`, root `VISION.md`, or explicit intent docs linked from repo guidance).
+
+`architect` is manual-only. It returns an inline architecture memo, writes no
+artifacts, and should sit before `create-plan` only when the user explicitly
+asks for repo-grounded ideation, research, or solution design.
 
 ## shape ↔ diagnose handoffs
 
@@ -33,6 +38,7 @@ Intent-aware review: when work affects product direction, architecture boundarie
 |------|------|
 | shape | Ticket has repro + clear acceptance criteria |
 | diagnose | Greenfield feature with no code-truth claims |
+| architect | User did not explicitly invoke it, or the design decision is already clear enough for `create-plan` |
 | plan-review / review-spec | Trivial plan or prior review on same revision |
 | create-plan | Single-file fix after gate |
 | handoff-work | Same agent continues in one session |
@@ -43,6 +49,7 @@ Intent-aware review: when work affects product direction, architecture boundarie
 |----------|------|
 | Requirements brief | `dev/briefs/YYMMDD-short-slug.md` |
 | Problem definition | inline or `dev/issues/YYMMDD-short-slug.md` |
+| Architecture memo | inline only |
 | Implementation plan | `dev/plans/YYMMDD-short-slug.md` |
 
 ## Scenario fixtures
@@ -61,6 +68,7 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 | 8 | Three diagnose directions; pick one | `shape-requirements` **gate** | gate → `create-plan` → `plan-review` |
 | 9 | Greenfield brief, no code-truth claims | `shape-requirements` **interview** | brief → `create-plan` → `plan-review` (skip diagnose) |
 | 10 | "Plan a new public API shape for this project" | `shape-requirements` **gate** when intent is unclear; otherwise `review-spec` or `create-plan` | confirm intent source → `create-plan` → `plan-review` validates project alignment |
+| 11 | "Use architect to design a new public API shape first" | `architect` | inline memo → user chooses whether to `create-plan` |
 
 ### Pass criteria
 

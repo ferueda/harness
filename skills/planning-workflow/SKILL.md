@@ -11,6 +11,10 @@ description: >
 
 Chat coordinator for intent → validated plan → implementation. Not a `harness run` target.
 
+`architect` is manual-only. When the user explicitly invokes it for
+repo-grounded ideation or solution design, run it before `create-plan`; do not
+auto-route generic planning prompts to it.
+
 ## 1. Route intake
 
 | Signal | Start with |
@@ -18,6 +22,7 @@ Chat coordinator for intent → validated plan → implementation. Not a `harnes
 | Vague idea, no brief | `shape-requirements` **interview** |
 | Build/fix/plan now but scope or done-ness unclear | `shape-requirements` **gate** |
 | Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |
+| Explicit `$architect` / "use architect" design request | `architect` |
 | Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing implementation plans; otherwise `review-spec` or `create-plan` (see step 2) |
 | Approved plan ready to execute | `implement-plan` |
 
@@ -32,6 +37,7 @@ Too vague to investigate → `shape-requirements` **gate** only (not interview),
 | Artifact | Next |
 |----------|------|
 | Brief or problem definition | `review-spec` when claims must match the codebase |
+| Inline architecture memo from `architect` | `create-plan` when the user asks to build from it; `review-spec` first when claims need validation |
 | Problem definition with multiple directions | `shape-requirements` **gate** to pick one |
 | Validated spec or brief | `create-plan` when work is multi-step, cross-area, or needs executor handoff |
 | Created non-trivial implementation plan | `harness run plan-review --plan <path>`; direct `review-spec` fallback when harness is unavailable or durable artifacts are unnecessary |
