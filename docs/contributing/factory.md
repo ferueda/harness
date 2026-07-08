@@ -410,6 +410,24 @@ the issue to `Plan Needs Review`, and posts one plan-PR marker comment.
 approved-plan marker comment. Both commands reject mismatched issue ids and
 non-Linear tracker metadata before local metadata writes.
 
+### Implementation Input Contract
+
+There is no implementation station CLI yet. The future implementation station
+should first call `resolveFactoryWorkItemInput`, then
+`resolveFactoryImplementationInput`.
+
+Planned implementation input requires lifecycle/factory metadata with
+`factoryStage: "plan-approved"`, `approvedPlanPath`, `approvedPlanCommit`, and
+the approved plan file present in the current workspace. The returned input
+includes the workspace plan path and commit pin the implementer should use.
+
+Direct implementation input requires explicit factory readiness markers:
+`factoryStage: "ready-to-implement"`,
+`factoryRoute: "ready-to-implement"`, and
+`factoryNextAction: "implement-directly"`. Linear `Ready to Implement` is only
+a projection consistency guard for Linear-backed input; it is not the source of
+truth for direct or planned readiness.
+
 ## Local Inbox
 
 Local inbox files live under `.harness/inbox/factory/*.json`.
