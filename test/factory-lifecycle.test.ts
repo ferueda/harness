@@ -105,6 +105,25 @@ test("triage route events reduce to durable stages and next actions", () => {
   });
 });
 
+test("later triage completed event wins durable route fields", () => {
+  const state = reduceFactoryLifecycleEvents([
+    importedEvent("linear:FER-34"),
+    triageCompletedEvent("linear:FER-34", "needs-info", "ask-human"),
+    triageCompletedEvent("linear:FER-34", "ready-to-plan", "create-plan", {
+      id: "triage.completed:triage-run-2",
+      runId: "triage-run-2",
+    }),
+  ]);
+
+  expect(state).toMatchObject({
+    factoryStage: "ready-to-plan",
+    factoryRoute: "ready-to-plan",
+    factoryNextAction: "create-plan",
+    factoryRunId: "triage-run-2",
+    lastEventId: "triage.completed:triage-run-2",
+  });
+});
+
 test("started-only events do not change durable stage or factory run id", () => {
   const state = reduceFactoryLifecycleEvents([
     importedEvent("linear:FER-34"),
@@ -247,6 +266,30 @@ test("planning failed clears publication readiness fields but keeps historical p
   expect(state?.approvedPlanCommit).toBeUndefined();
 });
 
+test("planning failed after start does not leave a stranded planning stage", () => {
+  const state = reduceFactoryLifecycleEvents([
+    importedEvent("linear:FER-34", { tracker: { source: "linear", id: "FER-34" } }),
+    {
+      ...baseEvent("planning.started:run-1", "linear:FER-34", "run-1"),
+      runId: "run-1",
+      type: "planning.started",
+      data: { linearIssue: "FER-34" },
+    },
+    {
+      ...baseEvent("planning.failed:run-1", "linear:FER-34", "run-1"),
+      runId: "run-1",
+      type: "planning.failed",
+      data: { error: "Planner failed" },
+    },
+  ]);
+
+  expect(state).toMatchObject({
+    factoryStage: "planning-failed",
+    factoryRunId: "run-1",
+    lastEventId: "planning.failed:run-1",
+  });
+});
+
 test("load rebuilds stale cache from canonical JSONL", () => {
   const root = tempRoot();
   const first = importedEvent("linear:FER-34");
@@ -294,6 +337,30 @@ test("merge overlays lifecycle fields while preserving tracker-specific metadata
     linearStatus: "Backlog",
     factoryStage: "ready-to-plan",
     factoryRoute: "ready-to-plan",
+  });
+});
+
+test("merge preserves existing stage when lifecycle import has no durable stage", () => {
+  const workItem: FactoryWorkItem = {
+    id: "linear:FER-34",
+    source: "linear",
+    title: "Linear issue",
+    body: "",
+    labels: [],
+    metadata: {
+      tracker: { source: "linear", id: "FER-34" },
+      linearStatus: "Backlog",
+      factoryStage: "incoming",
+    },
+  };
+  const state = reduceFactoryLifecycleEvents([
+    importedEvent("linear:FER-34", { tracker: { source: "linear", id: "FER-34" } }),
+  ]);
+
+  expect(mergeFactoryStateIntoWorkItem(workItem, state).metadata).toMatchObject({
+    factoryStage: "incoming",
+    linearStatus: "Backlog",
+    tracker: { source: "linear", id: "FER-34" },
   });
 });
 
@@ -356,10 +423,12 @@ function triageCompletedEvent(
   workItemKey: string,
   route: "ready-to-implement" | "ready-to-plan" | "needs-info" | "wait-to-implement",
   nextAction: "implement-directly" | "create-plan" | "ask-human" | "park",
+  overrides: { id?: string; runId?: string } = {},
 ): FactoryLifecycleEvent {
+  const runId = overrides.runId ?? "triage-run-1";
   return {
-    ...baseEvent("triage.completed:triage-run-1", workItemKey, "triage-run-1"),
-    runId: "triage-run-1",
+    ...baseEvent(overrides.id ?? `triage.completed:${runId}`, workItemKey, runId),
+    runId,
     type: "triage.completed",
     data: {
       route,

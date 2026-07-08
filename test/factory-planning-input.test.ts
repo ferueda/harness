@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { appendFactoryLifecycleEvent, resolveFactoryStateRoot } from "../lib/factory-lifecycle.ts";
 import { assertFactoryPlanningLinearEntry } from "../lib/factory-planning-input.ts";
 import { createFactoryPlanningRunContextForTest } from "../lib/factory-planning-run-context.ts";
 import { resolveFactoryWorkItemInput } from "../lib/factory-triage-input.ts";
@@ -132,6 +133,60 @@ test("Linear planning entry guard accepts only Linear input ready-to-plan states
       ),
     );
   }
+});
+
+test("Linear planning entry accepts lifecycle-derived plan-needs-human state", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-planning-input-"));
+  const factoryStateRoot = resolveFactoryStateRoot({ workspace });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot,
+    event: {
+      version: 1,
+      id: "work_item.imported:linear:ENG-123",
+      type: "work_item.imported",
+      workItemKey: "linear:ENG-123",
+      occurredAt: "2026-07-08T00:00:00.000Z",
+      source: "harness",
+      data: {
+        source: "linear",
+        title: "Linear issue",
+        tracker: { source: "linear", id: "ENG-123" },
+      },
+    },
+  });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot,
+    event: {
+      version: 1,
+      id: "planning.completed:planning-run-1",
+      type: "planning.completed",
+      workItemKey: "linear:ENG-123",
+      occurredAt: "2026-07-08T00:01:00.000Z",
+      runId: "planning-run-1",
+      source: "harness",
+      data: {
+        status: "plan-needs-human",
+        humanQuestions: ["Which direction should the plan take?"],
+      },
+    },
+  });
+
+  const input = await resolveFactoryWorkItemInput({
+    workspace,
+    linearIssue: "ENG-123",
+    linearSettings: LINEAR_SETTINGS,
+    env: { LINEAR_API_KEY: "test-key" },
+    linearAdapterFactory: () =>
+      fakeLinearAdapter({
+        fetchWorkItem: async () => LINEAR_WORK_ITEM,
+      }),
+  });
+
+  expect(() => assertFactoryPlanningLinearEntry(input)).not.toThrow();
+  expect(input.workItem.metadata).toMatchObject({
+    factoryStage: "plan-needs-human",
+    factoryRunId: "planning-run-1",
+  });
 });
 
 test("Linear planning entry guard preserves item-file planning with Linear tracker metadata", () => {
