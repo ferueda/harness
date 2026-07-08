@@ -258,15 +258,18 @@ test("Linear triage helpers map routes and render concise comments", () => {
     );
   }
 
-  expect(
-    renderLinearTriageCompleteComment({
-      runId: "run-1",
-      runDir: ".harness/runs/factory/run-1",
-      route: "needs-info",
-      targetStatus: "Needs Clarification",
-      questions: ["Which provider should own this?"],
-    }),
-  ).toContain("<!-- harness-factory:triage:run-1 -->");
+  const comment = renderLinearTriageCompleteComment({
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    route: "needs-info",
+    targetStatus: "Needs Clarification",
+    rationale: "Human input is required.",
+    evidence: [{ kind: "tracker", summary: "Issue is missing scope." }],
+    questions: ["Which provider should own this?"],
+  });
+  expect(comment).toContain("<!-- harness-factory:triage:run-1 -->");
+  expect(comment).not.toContain("Why Needs Plan:");
+  expect(comment).not.toContain("Evidence:");
 });
 
 test("Linear adapter fetches an issue as a factory work item", async () => {
@@ -1286,18 +1289,74 @@ test("Linear adapter applies completed triage status and comment", async () => {
     issueRef: "ENG-123",
     runId: "run-1",
     runDir: ".harness/runs/factory/run-1",
-    triage: TRIAGE_READY_TO_PLAN,
+    triage: {
+      ...TRIAGE_READY_TO_PLAN,
+      evidence: [
+        { kind: "tracker", summary: "Issue asks for a larger workflow." },
+        { kind: "docs", path: "docs/contributing/factory.md", summary: "Factory docs apply." },
+        { kind: "code", path: "lib/factory-linear-adapter.ts", summary: "Adapter needs updates." },
+        {
+          kind: "test",
+          path: "test/factory-linear-adapter.test.ts",
+          summary: "Tests need coverage.",
+        },
+      ],
+      questions: ["Which command should publish the plan PR?"],
+    },
   });
 
   expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Needs Plan" } }]);
   expect(comments).toHaveLength(1);
-  expect(comments[0].body).toContain("Route: ready-to-plan");
+  const commentBody = comments[0].body;
+  expect(commentBody).toContain("Route: ready-to-plan");
+  expect(commentBody).toContain("Why Needs Plan:");
+  expect(commentBody).toContain("- Needs a reviewed plan.");
+  expect(commentBody).toContain("Evidence:");
+  expect(commentBody).toContain("- tracker: Issue asks for a larger workflow.");
+  expect(commentBody).toContain("- docs (docs/contributing/factory.md): Factory docs apply.");
+  expect(commentBody).toContain("- code (lib/factory-linear-adapter.ts): Adapter needs updates.");
+  expect(commentBody).not.toContain("Tests need coverage.");
+  expect(commentBody).toContain("Questions:");
+  expect(commentBody).toContain("- Which command should publish the plan PR?");
+  expect(commentBody.indexOf("Evidence:")).toBeLessThan(commentBody.indexOf("Questions:"));
   expect(result).toMatchObject({
     stage: "complete",
     fromStatus: "Triaging",
     targetStatus: "Needs Plan",
     commentMarker: "<!-- harness-factory:triage:run-1 -->",
   });
+});
+
+test("Linear adapter omits questions section for ready-to-plan without questions", async () => {
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Triaging", name: "Triaging", type: "started" }),
+          },
+        ],
+      }),
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyTriageCompleted({
+    issueRef: "ENG-123",
+    runId: "run-no-questions",
+    runDir: ".harness/runs/factory/run-no-questions",
+    triage: TRIAGE_READY_TO_PLAN,
+  });
+
+  expect(comments[0].body).toContain("Why Needs Plan:");
+  expect(comments[0].body).toContain("Evidence:");
+  expect(comments[0].body).not.toContain("Questions:");
 });
 
 test.each([
@@ -1355,6 +1414,8 @@ test.each([
     expect(updates).toEqual([{ id: "issue-1", input: { stateId: `state-${targetStatus}` } }]);
     expect(comments[0].body).toContain(`Next: ${targetStatus}`);
     expect(comments[0].body).toContain(expectedBody);
+    expect(comments[0].body).not.toContain("Why Needs Plan:");
+    expect(comments[0].body).not.toContain("Evidence:");
   },
 );
 
