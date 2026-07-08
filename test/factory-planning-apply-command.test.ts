@@ -7,29 +7,48 @@ import {
   runFactoryPlanningPublicationWithLinearApply,
   runFactoryPlanningWithLinearApply,
 } from "../bin/factory-commands.ts";
+import {
+  deriveFactoryWorkItemKey,
+  loadFactoryLifecycleState,
+  resolveFactoryStateRoot,
+} from "../lib/factory-lifecycle.ts";
 import type {
   FactoryPlanningRunContext,
   FactoryPlanningRunMeta,
 } from "../lib/factory-planning-run-context.ts";
 import { fakeLinearAdapter, LINEAR_SETTINGS } from "./factory-linear-test-helpers.ts";
 
+const APPLY_WORKSPACE = mkdtempSync(join(tmpdir(), "harness-planning-apply-workspace-"));
+const APPLY_RUN_DIR = join(APPLY_WORKSPACE, ".harness/runs/factory/run-1");
+mkdirSync(APPLY_RUN_DIR, { recursive: true });
+
 const CTX = {
   runId: "run-1",
-  runDir: "/tmp/workspace/.harness/runs/factory/run-1",
-} as FactoryPlanningRunContext;
+  workspace: APPLY_WORKSPACE,
+  runDir: APPLY_RUN_DIR,
+  workItem: {
+    id: "linear:ENG-123",
+    source: "linear",
+    title: "Linear issue",
+    body: "Fetched from Linear.",
+    labels: [],
+    metadata: { tracker: { source: "linear", id: "ENG-123" } },
+  },
+  dryRun: false,
+} as unknown as FactoryPlanningRunContext;
 
 const META = {
   runId: "run-1",
   workflow: "factory-planning",
   status: "plan-approved",
-  workspace: "/tmp/workspace",
-  runDir: "/tmp/workspace/.harness/runs/factory/run-1",
+  workspace: APPLY_WORKSPACE,
+  runDir: APPLY_RUN_DIR,
   workItem: {
     id: "linear:ENG-123",
     source: "linear",
     title: "Linear issue",
   },
-  outputPlan: "/tmp/workspace/dev/plans/ENG-123.md",
+  outputPlan: join(APPLY_WORKSPACE, "dev/plans/ENG-123.md"),
   factoryMetadata: {
     tracker: { source: "linear", id: "ENG-123" },
     factoryStage: "plan-pr-open",
@@ -38,8 +57,8 @@ const META = {
   iterations: [{ index: 1 }],
   plannerAgent: { name: "cursor", model: "composer-2.5" },
   reviewerAgent: { name: "cursor", model: "composer-2.5" },
-  summaryPath: "/tmp/workspace/.harness/runs/factory/run-1/summary.md",
-  metaPath: "/tmp/workspace/.harness/runs/factory/run-1/meta.json",
+  summaryPath: join(APPLY_RUN_DIR, "summary.md"),
+  metaPath: join(APPLY_RUN_DIR, "meta.json"),
   startedAt: "2026-07-07T00:00:00.000Z",
   durationMs: 1,
 } satisfies FactoryPlanningRunMeta;
@@ -210,6 +229,65 @@ test("planning apply cleanup calls failed apply after planning error", async () 
   ]);
 });
 
+test("planning apply writes failed lifecycle state when planning throws", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-planning-apply-failed-"));
+  const runDir = join(workspace, ".harness/runs/factory/run-throw");
+  mkdirSync(runDir, { recursive: true });
+  const ctx = {
+    ...CTX,
+    runId: "run-throw",
+    workspace,
+    runDir,
+    workItem: {
+      id: "linear:ENG-123",
+      source: "linear",
+      title: "Linear issue",
+      body: "Fetched from Linear.",
+      labels: [],
+      metadata: { tracker: { source: "linear", id: "ENG-123" } },
+    },
+    export(input) {
+      return {
+        ...META,
+        runId: "run-throw",
+        workspace,
+        runDir,
+        workItem: {
+          id: "linear:ENG-123",
+          source: "linear",
+          title: "Linear issue",
+        },
+        status: input.status,
+        iterations: input.iterations,
+        summaryPath: join(runDir, "summary.md"),
+        metaPath: join(runDir, "meta.json"),
+        error: input.error,
+      } satisfies FactoryPlanningRunMeta;
+    },
+  } as FactoryPlanningRunContext;
+
+  await expect(
+    runFactoryPlanningWithLinearApply({
+      ctx,
+      issueRef: "ENG-123",
+      runPlanning: async () => {
+        throw new Error("Planner exploded");
+      },
+    }),
+  ).rejects.toThrow(/Planner exploded/);
+
+  expect(
+    loadFactoryLifecycleState({
+      factoryStateRoot: resolveFactoryStateRoot({ workspace }),
+      workItemKey: "linear:ENG-123",
+    }),
+  ).toMatchObject({
+    factoryStage: "planning-failed",
+    factoryRunId: "run-throw",
+    lastEventId: "planning.failed:run-throw",
+  });
+});
+
 test("planning terminal apply failure keeps local metadata printable", async () => {
   const adapter = fakeLinearAdapter({
     applyPlanningStarted: async () => ({
@@ -296,6 +374,23 @@ test("planning publication apply returns terminal Linear update", async () => {
       approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
     },
   });
+  expect(
+    loadFactoryLifecycleState({
+      factoryStateRoot: resolveFactoryStateRoot({ workspace: result.output.workspace }),
+      workItemKey: deriveFactoryWorkItemKey({
+        id: "linear:ENG-123",
+        source: "linear",
+        title: "Linear issue",
+        body: "",
+        labels: [],
+        metadata: result.output.factoryMetadata,
+      }),
+    }),
+  ).toMatchObject({
+    factoryStage: "plan-pr-open",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+  });
   expect(result.terminalApplyError).toBeUndefined();
 });
 
@@ -338,6 +433,24 @@ test("planning mark-merged apply returns terminal Linear update", async () => {
       factoryStage: "plan-approved",
       approvedPlanCommit: "abc1234",
     },
+  });
+  expect(
+    loadFactoryLifecycleState({
+      factoryStateRoot: resolveFactoryStateRoot({ workspace: result.output.workspace }),
+      workItemKey: deriveFactoryWorkItemKey({
+        id: "linear:ENG-123",
+        source: "linear",
+        title: "Linear issue",
+        body: "",
+        labels: [],
+        metadata: result.output.factoryMetadata,
+      }),
+    }),
+  ).toMatchObject({
+    factoryStage: "plan-approved",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+    approvedPlanCommit: "abc1234",
   });
 });
 

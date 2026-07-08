@@ -3,6 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
+  appendFactoryLifecycleEvent,
+  deriveFactoryWorkItemKey,
+  resolveFactoryStateRoot,
+} from "../lib/factory-lifecycle.ts";
+import {
   assertFactoryItemFileExists,
   createFactoryRunContextForTest,
 } from "../lib/factory-run-context.ts";
@@ -91,6 +96,72 @@ test("resolveFactoryWorkItemInput keeps generic resolver compatible with triage 
       source: "linear",
     },
     linearApplied: false,
+  });
+});
+
+test("resolveFactoryWorkItemInput overlays lifecycle state over Linear fallback metadata", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-work-item-lifecycle-"));
+  const factoryStateRoot = resolveFactoryStateRoot({ workspace });
+  const workItemKey = deriveFactoryWorkItemKey(LINEAR_WORK_ITEM);
+  appendFactoryLifecycleEvent({
+    factoryStateRoot,
+    event: {
+      version: 1,
+      id: `work_item.imported:${workItemKey}`,
+      type: "work_item.imported",
+      workItemKey,
+      occurredAt: "2026-07-08T00:00:00.000Z",
+      source: "harness",
+      data: {
+        source: LINEAR_WORK_ITEM.source,
+        title: LINEAR_WORK_ITEM.title,
+        tracker: { source: "linear", id: "ENG-123" },
+      },
+    },
+  });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot,
+    event: {
+      version: 1,
+      id: "triage.completed:run-1",
+      type: "triage.completed",
+      workItemKey,
+      occurredAt: "2026-07-08T00:01:00.000Z",
+      runId: "run-1",
+      source: "harness",
+      data: {
+        route: "ready-to-plan",
+        nextAction: "create-plan",
+        rationale: "Needs a plan.",
+        routeArtifactPath: "factory-route.md",
+        triageArtifactPath: "factory-triage.json",
+      },
+    },
+  });
+
+  const input = await resolveFactoryWorkItemInput({
+    workspace,
+    linearIssue: "ENG-123",
+    linearSettings: LINEAR_SETTINGS,
+    env: { LINEAR_API_KEY: "test-key" },
+    linearAdapterFactory: () =>
+      fakeLinearAdapter({
+        fetchWorkItem: async () => ({
+          ...LINEAR_WORK_ITEM,
+          metadata: {
+            ...LINEAR_WORK_ITEM.metadata,
+            factoryStage: "incoming",
+          },
+        }),
+      }),
+  });
+
+  expect(input.workItem.metadata).toMatchObject({
+    linearStatus: "Backlog",
+    factoryStage: "ready-to-plan",
+    factoryRoute: "ready-to-plan",
+    factoryNextAction: "create-plan",
+    factoryRunId: "run-1",
   });
 });
 

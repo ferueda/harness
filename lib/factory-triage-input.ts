@@ -1,5 +1,11 @@
 import { type FactoryLinearSettings } from "./config.ts";
 import { type LinearFactoryAdapter, createLinearFactoryAdapter } from "./factory-linear-adapter.ts";
+import {
+  deriveFactoryWorkItemKey,
+  loadFactoryLifecycleState,
+  mergeFactoryStateIntoWorkItem,
+  resolveFactoryStateRoot,
+} from "./factory-lifecycle.ts";
 import { type FactoryWorkItem } from "./factory-schemas.ts";
 import { assertFactoryItemFileExists, readFactoryWorkItemFile } from "./factory-run-context.ts";
 
@@ -19,6 +25,7 @@ export type ResolveFactoryWorkItemInput = {
   linearIssue?: string;
   linearSettings?: FactoryLinearSettings;
   env?: NodeJS.ProcessEnv;
+  factoryStateRoot?: string;
   linearAdapterFactory?: (input: {
     apiKey: string;
     settings: FactoryLinearSettings;
@@ -38,7 +45,11 @@ export async function resolveFactoryWorkItemInput(
     const itemPath = assertFactoryItemFileExists(input.workspace, input.itemFile);
     return {
       source: "item-file",
-      workItem: readFactoryWorkItemFile(itemPath),
+      workItem: mergeLifecycleState({
+        workspace: input.workspace,
+        factoryStateRoot: input.factoryStateRoot,
+        workItem: readFactoryWorkItemFile(itemPath),
+      }),
     };
   }
 
@@ -60,9 +71,24 @@ export async function resolveFactoryWorkItemInput(
   });
   return {
     source: "linear",
-    workItem: await adapter.fetchWorkItem(input.linearIssue),
+    workItem: mergeLifecycleState({
+      workspace: input.workspace,
+      factoryStateRoot: input.factoryStateRoot,
+      workItem: await adapter.fetchWorkItem(input.linearIssue),
+    }),
     linearApplied: false,
   };
+}
+
+export function mergeLifecycleState(input: {
+  workspace: string;
+  workItem: FactoryWorkItem;
+  factoryStateRoot?: string;
+}): FactoryWorkItem {
+  const factoryStateRoot = resolveFactoryStateRoot(input);
+  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
+  const state = loadFactoryLifecycleState({ factoryStateRoot, workItemKey });
+  return mergeFactoryStateIntoWorkItem(input.workItem, state);
 }
 
 export function validateFactoryTriageWorkItemInput(input: {
