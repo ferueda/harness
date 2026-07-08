@@ -264,6 +264,8 @@ test("Linear triage helpers map routes and render concise comments", () => {
       runDir: ".harness/runs/factory/run-1",
       route: "needs-info",
       targetStatus: "Needs Clarification",
+      rationale: "Human input is required.",
+      evidence: [{ kind: "tracker", summary: "Issue is missing scope." }],
       questions: ["Which provider should own this?"],
     }),
   ).toContain("<!-- harness-factory:triage:run-1 -->");
@@ -1292,6 +1294,10 @@ test("Linear adapter applies completed triage status and comment", async () => {
   expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Needs Plan" } }]);
   expect(comments).toHaveLength(1);
   expect(comments[0].body).toContain("Route: ready-to-plan");
+  expect(comments[0].body).toContain("Why Needs Plan:");
+  expect(comments[0].body).toContain("- Needs a reviewed plan.");
+  expect(comments[0].body).toContain("Evidence:");
+  expect(comments[0].body).toContain("- tracker: Issue asks for a larger workflow.");
   expect(result).toMatchObject({
     stage: "complete",
     fromStatus: "Triaging",

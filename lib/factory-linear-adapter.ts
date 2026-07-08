@@ -239,6 +239,8 @@ export function renderLinearTriageCompleteComment(input: {
   runDir: string;
   route: FactoryRoute;
   targetStatus: string;
+  rationale: string;
+  evidence: FactoryTriageOutput["evidence"];
   questions?: string[];
   reconsiderWhen?: string;
 }): string {
@@ -250,6 +252,7 @@ export function renderLinearTriageCompleteComment(input: {
     `Route: ${input.route}`,
     `Run: \`${input.runDir}\``,
     `Next: ${input.targetStatus}`,
+    ...readyToPlanContext(input),
     ...(input.questions && input.questions.length > 0
       ? ["", "Questions:", ...input.questions.map((question) => `- ${question}`)]
       : []),
@@ -319,6 +322,8 @@ async function applyTriageCompleted(
     runDir: input.runDir,
     route: input.triage.route,
     targetStatus: target.name,
+    rationale: input.triage.rationale,
+    evidence: input.triage.evidence,
     questions: input.triage.questions,
     reconsiderWhen: input.triage.reconsiderWhen,
   });
@@ -336,6 +341,24 @@ async function applyTriageCompleted(
     commentMarker,
     commentBody,
   };
+}
+
+function readyToPlanContext(input: {
+  route: FactoryRoute;
+  rationale: string;
+  evidence: FactoryTriageOutput["evidence"];
+}): string[] {
+  if (input.route !== "ready-to-plan") return [];
+  const evidence = input.evidence.slice(0, 3).map((item) => {
+    const prefix = item.path ? `${item.kind} (${item.path})` : item.kind;
+    return `- ${prefix}: ${item.summary}`;
+  });
+  return [
+    "",
+    "Why Needs Plan:",
+    `- ${input.rationale}`,
+    ...(evidence.length ? ["", "Evidence:", ...evidence] : []),
+  ];
 }
 
 async function applyTriageFailed(
