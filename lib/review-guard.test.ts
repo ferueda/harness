@@ -114,6 +114,36 @@ test("applyWorkspaceGuard preserves non-abort failure when post-run status is un
   });
 });
 
+test("applyWorkspaceGuard records workspace changes while preserving provider failures", () => {
+  const result = applyWorkspaceGuard(
+    {
+      ok: false,
+      error: "Invalid JSON in reviewer output",
+      exitCode: 1,
+      raw: { parseError: true },
+    },
+    "",
+    {
+      ok: true,
+      value: "?? dirty.txt\0",
+    },
+    "record",
+  );
+
+  expect(result).toMatchObject({
+    ok: false,
+    error: "Invalid JSON in reviewer output",
+    exitCode: 1,
+  });
+  expect(result.raw).toMatchObject({
+    parseError: true,
+    workspaceStatus: {
+      before: "",
+      after: expect.stringContaining("dirty.txt"),
+    },
+  });
+});
+
 test("withWorkspaceGuard fails when workspace porcelain changes", () => {
   const workspace = createGitWorkspace();
   const before = readWorkspaceStatus(workspace);
@@ -141,6 +171,36 @@ test("withWorkspaceGuard fails when workspace porcelain changes", () => {
     },
   });
   expect(result.raw).not.toHaveProperty("underlyingFailure");
+});
+
+test("withWorkspaceGuard records workspace changes when guard mode is record", () => {
+  const workspace = createGitWorkspace();
+  const before = readWorkspaceStatus(workspace);
+  expect(before.ok).toBe(true);
+  if (!before.ok) return;
+
+  writeFileSync(join(workspace, "dirty.txt"), "changed\n", "utf8");
+
+  const result = withWorkspaceGuard(
+    {
+      ok: true,
+      structuredOutput: { verdict: "pass" },
+      raw: { status: "finished" },
+    },
+    workspace,
+    before.value,
+    "record",
+  );
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.raw).toMatchObject({
+    status: "finished",
+    workspaceStatus: {
+      before: before.value,
+      after: expect.stringContaining("dirty.txt"),
+    },
+  });
 });
 
 test("withWorkspaceGuard passes when workspace is unchanged", () => {

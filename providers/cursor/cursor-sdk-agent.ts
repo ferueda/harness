@@ -110,6 +110,8 @@ async function invokeCursorSdkAgent({
   if (!beforeStatus.ok) {
     return beforeStatus.error;
   }
+  const guardWorkspace = (result: AgentRunResult): AgentRunResult =>
+    withWorkspaceGuard(result, input.workspace, beforeStatus.value, input.workspaceGuard);
 
   const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
   if (signalState.isExternallyAborted()) {
@@ -170,54 +172,38 @@ async function invokeCursorSdkAgent({
     });
 
     if (result.status === "error") {
-      return withWorkspaceGuard(
-        {
-          ok: false,
-          error: cursorSdkErrorStatusMessage(result),
-          raw,
-          exitCode: 1,
-        },
-        input.workspace,
-        beforeStatus.value,
-      );
+      return guardWorkspace({
+        ok: false,
+        error: cursorSdkErrorStatusMessage(result),
+        raw,
+        exitCode: 1,
+      });
     }
     if (result.status === "cancelled") {
-      return withWorkspaceGuard(
-        {
-          ok: false,
-          error: "Cursor SDK run was cancelled",
-          raw,
-          exitCode: 130,
-        },
-        input.workspace,
-        beforeStatus.value,
-      );
+      return guardWorkspace({
+        ok: false,
+        error: "Cursor SDK run was cancelled",
+        raw,
+        exitCode: 130,
+      });
     }
 
     const structuredOutput = parseStructuredOutput(result.result, schemaResult.schema);
     if (structuredOutput.error) {
-      return withWorkspaceGuard(
-        {
-          ok: false,
-          error: structuredOutput.error,
-          raw,
-          exitCode: 1,
-        },
-        input.workspace,
-        beforeStatus.value,
-      );
+      return guardWorkspace({
+        ok: false,
+        error: structuredOutput.error,
+        raw,
+        exitCode: 1,
+      });
     }
 
-    return withWorkspaceGuard(
-      {
-        ok: true,
-        structuredOutput: structuredOutput.value,
-        raw,
-        session: createAgentSessionRef("cursor", sdkAgent.agentId),
-      },
-      input.workspace,
-      beforeStatus.value,
-    );
+    return guardWorkspace({
+      ok: true,
+      structuredOutput: structuredOutput.value,
+      raw,
+      session: createAgentSessionRef("cursor", sdkAgent.agentId),
+    });
   } catch (error) {
     if (signalState.signal.aborted && run) {
       await cancelRun(run);
@@ -225,28 +211,24 @@ async function invokeCursorSdkAgent({
     streamLog = await streamPump?.settle(streamLog);
     const externallyAborted = signalState.isExternallyAborted();
     const timedOut = signalState.isTimedOut();
-    return withWorkspaceGuard(
-      {
-        ok: false,
-        error: externallyAborted
-          ? "Agent was aborted"
-          : timedOut
-            ? `Cursor SDK agent timed out after ${input.maxRuntimeMs}ms`
-            : `Cursor SDK agent failed: ${errorMessage(error)}`,
-        raw: {
-          agentId: sdkAgent?.agentId,
-          runId: run?.id,
-          requestId: run?.requestId,
-          streamLog,
-          error: errorArtifact(error),
-          durationMs: Date.now() - startedAt,
-        },
-        exitCode: externallyAborted ? 130 : timedOut ? 124 : 1,
-        ...(externallyAborted ? { aborted: true } : {}),
+    return guardWorkspace({
+      ok: false,
+      error: externallyAborted
+        ? "Agent was aborted"
+        : timedOut
+          ? `Cursor SDK agent timed out after ${input.maxRuntimeMs}ms`
+          : `Cursor SDK agent failed: ${errorMessage(error)}`,
+      raw: {
+        agentId: sdkAgent?.agentId,
+        runId: run?.id,
+        requestId: run?.requestId,
+        streamLog,
+        error: errorArtifact(error),
+        durationMs: Date.now() - startedAt,
       },
-      input.workspace,
-      beforeStatus.value,
-    );
+      exitCode: externallyAborted ? 130 : timedOut ? 124 : 1,
+      ...(externallyAborted ? { aborted: true } : {}),
+    });
   } finally {
     if (sdkAgent) await safeDisposeAgent(sdkAgent);
     abortRace.cleanup();

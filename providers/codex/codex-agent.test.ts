@@ -1092,3 +1092,86 @@ test("createCodexAgent fails when workspace porcelain changes during run", async
   if (result.ok) return;
   expect(result.error).toMatch(/modified the workspace/);
 });
+
+test("createCodexAgent records workspace mutations when guard mode is record", async () => {
+  const workspace = createGitWorkspace();
+  const wrappedFactory = (codexOptions: CodexOptions) => {
+    const fake = createFakeCodex({ finalResponse: '{"verdict":"pass"}' });
+    const client = fake.codexFactory(codexOptions);
+    const originalStart = client.startThread.bind(client);
+    return {
+      startThread(threadOptions: ThreadOptions) {
+        const thread = originalStart(threadOptions);
+        return {
+          ...thread,
+          async run(prompt: string, turnOptions: TurnOptions) {
+            writeFileSync(join(workspace, "dirty.txt"), "changed\n", "utf8");
+            return thread.run(prompt, turnOptions);
+          },
+        };
+      },
+      resumeThread() {
+        throw new Error("should not resume thread");
+      },
+    };
+  };
+
+  const result = await createCodexAgent({ codexFactory: wrappedFactory }).run({
+    workspace,
+    prompt: "review this",
+    workspaceGuard: "record",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.raw).toMatchObject({
+    workspaceStatus: {
+      before: "",
+      after: expect.stringContaining("dirty.txt"),
+    },
+  });
+});
+
+test("createCodexAgent records workspace mutations while preserving parse failures", async () => {
+  const workspace = createGitWorkspace();
+  const schemaPath = createSchemaFile(workspace);
+  const wrappedFactory = (codexOptions: CodexOptions) => {
+    const fake = createFakeCodex({ finalResponse: '{"verdict":123}' });
+    const client = fake.codexFactory(codexOptions);
+    const originalStart = client.startThread.bind(client);
+    return {
+      startThread(threadOptions: ThreadOptions) {
+        const thread = originalStart(threadOptions);
+        return {
+          ...thread,
+          async run(prompt: string, turnOptions: TurnOptions) {
+            writeFileSync(join(workspace, "dirty.txt"), "changed\n", "utf8");
+            return thread.run(prompt, turnOptions);
+          },
+        };
+      },
+      resumeThread() {
+        throw new Error("should not resume thread");
+      },
+    };
+  };
+
+  const result = await createCodexAgent({ codexFactory: wrappedFactory }).run({
+    workspace,
+    prompt: "review this",
+    schemaPath,
+    workspaceGuard: "record",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error).toMatch(/JSON did not match schema/);
+  expect(result.raw).toMatchObject({
+    workspaceStatus: {
+      before: expect.stringContaining("schema.json"),
+      after: expect.stringContaining("dirty.txt"),
+    },
+  });
+});

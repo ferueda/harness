@@ -87,6 +87,8 @@ async function invokeCodexAgent(
   if (!beforeStatus.ok) {
     return beforeStatus.error;
   }
+  const guardWorkspace = (result: AgentRunResult): AgentRunResult =>
+    withWorkspaceGuard(result, input.workspace, beforeStatus.value, input.workspaceGuard);
 
   const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
   if (signalState.isExternallyAborted()) {
@@ -139,50 +141,38 @@ async function invokeCodexAgent(
     const turn = await Promise.race([observedTurnPromise, abortRace.promise]);
     const parsed = parseStructuredOutput(turn.finalResponse, outputSchema);
     if (parsed.error) {
-      return withWorkspaceGuard(
-        {
-          ok: false,
-          error: parsed.error,
-          raw: turn,
-          exitCode: 1,
-        },
-        input.workspace,
-        beforeStatus.value,
-      );
+      return guardWorkspace({
+        ok: false,
+        error: parsed.error,
+        raw: turn,
+        exitCode: 1,
+      });
     }
 
-    return withWorkspaceGuard(
-      {
-        ok: true,
-        structuredOutput: parsed.value,
-        raw: turn,
-        session: createAgentSessionRef("codex", thread.id),
-        usage: turn.usage ?? undefined,
-      },
-      input.workspace,
-      beforeStatus.value,
-    );
+    return guardWorkspace({
+      ok: true,
+      structuredOutput: parsed.value,
+      raw: turn,
+      session: createAgentSessionRef("codex", thread.id),
+      usage: turn.usage ?? undefined,
+    });
   } catch (error) {
     if (signalState.signal.aborted) {
       streamLog = await settleCodexStreamTask(streamedTurnPromise, () => streamLog);
     }
     const externallyAborted = signalState.isExternallyAborted();
     const timedOut = signalState.isTimedOut();
-    return withWorkspaceGuard(
-      {
-        ok: false,
-        error: externallyAborted
-          ? "Agent was aborted"
-          : timedOut
-            ? `Codex agent timed out after ${input.maxRuntimeMs}ms`
-            : `Codex agent failed: ${errorMessage(error)}`,
-        raw: addStreamLog(errorArtifact(error), streamLog),
-        exitCode: externallyAborted ? 130 : timedOut ? 124 : 1,
-        ...(externallyAborted ? { aborted: true } : {}),
-      },
-      input.workspace,
-      beforeStatus.value,
-    );
+    return guardWorkspace({
+      ok: false,
+      error: externallyAborted
+        ? "Agent was aborted"
+        : timedOut
+          ? `Codex agent timed out after ${input.maxRuntimeMs}ms`
+          : `Codex agent failed: ${errorMessage(error)}`,
+      raw: addStreamLog(errorArtifact(error), streamLog),
+      exitCode: externallyAborted ? 130 : timedOut ? 124 : 1,
+      ...(externallyAborted ? { aborted: true } : {}),
+    });
   } finally {
     abortRace.cleanup();
     signalState.cleanup();
