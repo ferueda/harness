@@ -3,6 +3,37 @@
 **Status:** open  
 **Related plan:** [`dev/plans/260704-factory-intake-routing.md`](../plans/260704-factory-intake-routing.md)
 
+## Current state after PR #80
+
+Linear is now the first real tracker adapter through the planning handoff:
+
+- read one issue as `FactoryWorkItem` with `harness factory linear fetch`
+- triage from `Backlog` with `harness factory triage --linear-issue ... --apply`
+- plan from `Needs Plan` with `harness factory planning run --linear-issue ... --apply`
+- publish the plan PR with `harness factory planning publish --linear-issue ... --apply`
+- mark the merged plan with `harness factory planning mark-plan-merged --linear-issue ... --apply`
+- move planned work to `Ready to Implement` only after `approvedPlanCommit` is recorded
+
+Shipped Linear slices:
+
+1. Read-only adapter: PR #70.
+2. Triage input integration: PR #71.
+3. Triage apply integration: PR #74.
+4. Planning input integration: PR #75.
+5. Planning apply integration: PR #78.
+6. Plan publish/merge apply integration: PR #80.
+
+Remaining adapter/orchestration topics:
+
+- read-only backlog listing for configured Linear intake status
+- implementation station input contract for `Ready to Implement`
+- GitHub issue adapter if needed later
+- Inngest event backend that calls exported harness library functions instead of shelling out to the CLI
+
+Use current Linear status names in new plans: `Needs Clarification`,
+`Plan Needs Review`, and `Ready to Implement`. Older examples below may still
+say `Needs Info`; treat that as historical wording.
+
 ## Purpose
 
 Preserve the adapter/orchestrator design context for later factory work. PR 1
