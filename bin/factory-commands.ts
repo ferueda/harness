@@ -728,23 +728,24 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         } catch (error) {
           meta = ctx.exportFailed(error);
         }
+        const completedTriage =
+          meta.status === "completed" ? readFactoryTriageArtifact(meta) : undefined;
         if (!options.dryRun) {
           appendTriageTerminalEvent({
             workspace: role.workspace,
             workItem: input.workItem,
             meta,
-            triage: meta.status === "completed" ? readFactoryTriageArtifact(meta) : undefined,
+            triage: completedTriage,
           });
         }
         if (applyAdapter) {
           try {
-            if (meta.status === "completed") {
-              const triage = readFactoryTriageArtifact(meta);
+            if (completedTriage) {
               terminalUpdate = await applyAdapter.applyTriageCompleted({
                 issueRef: options.linearIssue ?? "",
                 runId: ctx.runId,
                 runDir: ctx.runDir,
-                triage,
+                triage: completedTriage,
               });
             } else {
               terminalUpdate = await applyAdapter.applyTriageFailed({
