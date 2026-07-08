@@ -137,6 +137,29 @@ test("Linear projection guard rejects stale status before planned success", () =
   ).toThrow(/Linear issue is in Planning; implementation accepts Ready to Implement/);
 });
 
+test("Linear input requires configured ready status", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-input-"));
+  const resolvedInput = linearInput({
+    factoryStage: "ready-to-implement",
+    factoryRoute: "ready-to-implement",
+    factoryNextAction: "implement-directly",
+  });
+
+  expect(() =>
+    resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput,
+    }),
+  ).toThrow(/linearReadyStatus is required/);
+  expect(() =>
+    resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput,
+      linearReadyStatus: "   ",
+    }),
+  ).toThrow(/linearReadyStatus is required/);
+});
+
 test("Plan Needs Review fails projection guard before planned handoff validation", () => {
   const { workspace } = createWorkspacePlan();
 
@@ -152,6 +175,22 @@ test("Plan Needs Review fails projection guard before planned handoff validation
       linearReadyStatus: READY_STATUS,
     }),
   ).toThrow(/Linear issue is in Plan Needs Review; implementation accepts Ready to Implement/);
+});
+
+test("planned publication signal takes precedence over direct markers", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-input-"));
+
+  expect(() =>
+    resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput: itemFileInput({
+        factoryStage: "ready-to-implement",
+        factoryRoute: "ready-to-implement",
+        factoryNextAction: "implement-directly",
+        approvedPlanCommit: "abc1234",
+      }),
+    }),
+  ).toThrow(/Planned work is not ready to implement: factoryStage=ready-to-implement/);
 });
 
 test("item-file input skips Linear projection guard and enforces readiness", () => {
@@ -178,39 +217,21 @@ test("item-file input skips Linear projection guard and enforces readiness", () 
 
 test("invalid metadata shape fails with implementation input parse error", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-input-"));
+  let thrown: unknown;
 
-  expect(() =>
+  try {
     resolveFactoryImplementationInput({
       workspace,
-      resolvedInput: {
-        source: "item-file",
-        workItem: {
-          id: "local-1",
-          source: "file",
-          title: "Invalid metadata",
-          body: "",
-          labels: [],
-          metadata: { tracker: { source: "not-a-tracker", id: "FER-32" } },
-        } as FactoryWorkItem,
-      },
-    }),
-  ).toThrow(FactoryImplementationInputError);
-  expect(() =>
-    resolveFactoryImplementationInput({
-      workspace,
-      resolvedInput: {
-        source: "item-file",
-        workItem: {
-          id: "local-1",
-          source: "file",
-          title: "Invalid metadata",
-          body: "",
-          labels: [],
-          metadata: { tracker: { source: "not-a-tracker", id: "FER-32" } },
-        } as FactoryWorkItem,
-      },
-    }),
-  ).toThrow(/Invalid factory work item metadata for implementation input/);
+      resolvedInput: invalidMetadataInput(),
+    });
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(FactoryImplementationInputError);
+  expect(thrown).toMatchObject({
+    message: "Invalid factory work item metadata for implementation input.",
+  });
 });
 
 test("lifecycle overlay resolves approved planned implementation input", async () => {
@@ -259,10 +280,10 @@ test("lifecycle overlay resolves approved planned implementation input", async (
     linearAdapterFactory: () =>
       fakeLinearAdapter({
         fetchWorkItem: async () =>
-          linearWorkItem({
+          linearInput({
             linearStatus: READY_STATUS,
             factoryStage: "incoming",
-          }),
+          }).workItem,
       }),
   });
 
@@ -308,18 +329,15 @@ function linearInput(
 ): FactoryResolvedWorkItemInput {
   return {
     source: "linear",
-    workItem: linearWorkItem({ linearStatus: READY_STATUS, ...metadata }),
-    linearApplied: false,
-  };
-}
-
-function linearWorkItem(metadata: NonNullable<FactoryWorkItem["metadata"]>): FactoryWorkItem {
-  return {
-    ...LINEAR_WORK_ITEM,
-    metadata: {
-      ...LINEAR_WORK_ITEM.metadata,
-      ...metadata,
+    workItem: {
+      ...LINEAR_WORK_ITEM,
+      metadata: {
+        ...LINEAR_WORK_ITEM.metadata,
+        linearStatus: READY_STATUS,
+        ...metadata,
+      },
     },
+    linearApplied: false,
   };
 }
 
@@ -336,5 +354,19 @@ function itemFileInput(
       labels: ["factory"],
       metadata,
     },
+  };
+}
+
+function invalidMetadataInput(): FactoryResolvedWorkItemInput {
+  return {
+    source: "item-file",
+    workItem: {
+      id: "local-1",
+      source: "file",
+      title: "Invalid metadata",
+      body: "",
+      labels: [],
+      metadata: { tracker: { source: "not-a-tracker", id: "FER-32" } },
+    } as FactoryWorkItem,
   };
 }

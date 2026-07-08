@@ -45,19 +45,29 @@ export function resolveFactoryImplementationInput(input: {
   linearReadyStatus?: string;
 }): FactoryImplementationInput {
   const metadata = parseImplementationMetadata(input.resolvedInput.workItem.metadata);
+  const base = {
+    source: input.resolvedInput.source,
+    workItem: input.resolvedInput.workItem,
+    metadata,
+  };
 
   if (input.resolvedInput.source === "linear") {
     assertLinearReadyProjection(metadata, input.linearReadyStatus);
   }
 
+  // Any publication signal means planned work; validate it before direct mode.
   if (hasAnyPlannedPublicationSignal(metadata)) {
     const handoff = validatePlannedWorkHandoff(metadata, input.workspace);
+    const approvedPlanPath = metadata.approvedPlanPath;
+    if (!approvedPlanPath) {
+      throw new FactoryImplementationInputError(
+        "Planned implementation input is missing approvedPlanPath after handoff validation.",
+      );
+    }
     return {
       mode: "planned",
-      source: input.resolvedInput.source,
-      workItem: input.resolvedInput.workItem,
-      metadata,
-      approvedPlanPath: metadata.approvedPlanPath!,
+      ...base,
+      approvedPlanPath,
       planPath: handoff.planPath,
       approvedPlanCommit: handoff.approvedPlanCommit,
     };
@@ -66,15 +76,19 @@ export function resolveFactoryImplementationInput(input: {
   if (hasAllDirectMarkers(metadata)) {
     return {
       mode: "direct",
-      source: input.resolvedInput.source,
-      workItem: input.resolvedInput.workItem,
-      metadata,
-      sourceMaterial: directSourceMaterial(input.resolvedInput.workItem, metadata),
+      ...base,
+      sourceMaterial: {
+        title: input.resolvedInput.workItem.title,
+        body: input.resolvedInput.workItem.body,
+        labels: [...input.resolvedInput.workItem.labels],
+        ...(input.resolvedInput.workItem.url ? { url: input.resolvedInput.workItem.url } : {}),
+        ...(metadata.tracker ? { tracker: metadata.tracker } : {}),
+      },
     };
   }
 
   throw new FactoryImplementationInputError(
-    `Factory work item is not ready for implementation: factoryStage=${metadata.factoryStage ?? "none"}, factoryRoute=${metadata.factoryRoute ?? "none"}, factoryNextAction=${metadata.factoryNextAction ?? "none"}, linearStatus=${String(metadata.linearStatus ?? "none")}`,
+    `Factory work item is not ready for implementation: factoryStage=${metadata.factoryStage ?? "none"}, factoryRoute=${metadata.factoryRoute ?? "none"}, factoryNextAction=${metadata.factoryNextAction ?? "none"}, linearStatus=${metadata.linearStatus ?? "none"}`,
   );
 }
 
@@ -121,17 +135,4 @@ function hasAllDirectMarkers(metadata: FactoryWorkItemMetadata): boolean {
     metadata.factoryRoute === "ready-to-implement" &&
     metadata.factoryNextAction === "implement-directly"
   );
-}
-
-function directSourceMaterial(
-  workItem: FactoryResolvedWorkItemInput["workItem"],
-  metadata: FactoryWorkItemMetadata,
-): FactoryImplementationSourceMaterial {
-  return {
-    title: workItem.title,
-    body: workItem.body,
-    labels: [...workItem.labels],
-    ...(workItem.url ? { url: workItem.url } : {}),
-    ...(metadata.tracker ? { tracker: metadata.tracker } : {}),
-  };
 }

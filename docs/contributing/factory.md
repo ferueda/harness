@@ -426,7 +426,8 @@ Direct implementation input requires explicit factory readiness markers:
 `factoryRoute: "ready-to-implement"`, and
 `factoryNextAction: "implement-directly"`. Linear `Ready to Implement` is only
 a projection consistency guard for Linear-backed input; it is not the source of
-truth for direct or planned readiness.
+truth for direct or planned readiness. Future Linear-backed station wiring must
+pass `factory.linear.statuses.readyToImplement` as `linearReadyStatus`.
 
 ## Local Inbox
 
