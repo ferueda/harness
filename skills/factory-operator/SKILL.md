@@ -101,9 +101,11 @@ LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/rep
 This command is read-only. It validates the configured Linear team statuses,
 verifies the configured Linear project when `factory.linear.projectId` is set,
 then prints a work item with issue description, labels, recent comments, and
-tracker metadata. `teamKey` owns issue identifiers and statuses; `projectId`
-scopes the target repo. Redirect the output to an item file before planning, or
-pass the issue directly to triage with `--linear-issue`.
+tracker metadata. If lifecycle state exists under `.harness/factory`, fetch
+merges it into the printed work item. `teamKey` owns issue identifiers and
+statuses; `projectId` scopes the target repo. Redirect the output to an item
+file before planning, or pass the issue directly to triage with
+`--linear-issue`.
 
 ## Triage
 
@@ -138,6 +140,11 @@ Routes:
 
 Read the run `summary.md`, `factory-triage.json`, and `factory-route.md` before
 deciding the next station.
+
+Live triage appends lifecycle events under `.harness/factory`. Dry-run does not.
+The lifecycle read model owns machine fields such as `factoryStage`,
+`factoryRoute`, `factoryNextAction`, and `factoryRunId`; Linear status/comments
+are human board projections.
 
 ## Planning
 
@@ -174,6 +181,10 @@ Terminal statuses:
 - `plan-review-unresolved`
 - `planning-failed`
 
+Live planning appends lifecycle events under `.harness/factory`. Future station
+decisions should use the lifecycle read model when present instead of parsing
+recent Linear marker comments.
+
 ## Artifacts
 
 Factory run root:
@@ -184,18 +195,21 @@ Factory run root:
 
 Read `summary.md` and `meta.json` first. Planning snapshots live under
 `iterations/<n>/`, plan-review artifacts live under `.harness/runs/reviews/`,
-and approved plans live under `dev/plans/`. Tracker-backed approved plans
-should be published through a plan PR before the tracker moves to
-`Ready to Implement`. During manual publication, `factoryStage: "plan-pr-open"`
-can exist before `approvedPlanPrUrl`; record the URL when the plan PR exists.
-Use `harness factory planning publish` to record the plan PR URL, then
+and approved plans live under `dev/plans/`. Lifecycle truth lives under
+`.harness/factory/events/*.jsonl`; `.harness/factory/state/*.json` is a
+rebuildable cache. Tracker-backed approved plans should be published through a
+plan PR before the tracker moves to `Ready to Implement`. During manual
+publication, `factoryStage: "plan-pr-open"` can exist before
+`approvedPlanPrUrl`; record the URL when the plan PR exists. Use
+`harness factory planning publish` to record the plan PR URL, then
 `harness factory planning mark-plan-merged` to record the merge commit. These
-commands update local run metadata and print suggested Linear comments by
-default; they do not mutate Linear or GitHub unless `--linear-issue ... --apply`
-is present. `publish --apply` moves Linear to `Plan Needs Review` and posts a
-plan-PR marker comment. `mark-plan-merged --apply` moves Linear to
-`Ready to Implement` and posts an approved-plan marker comment. Neither command
-opens PRs or inspects GitHub merge state. Do not commit `.harness/runs/*`.
+commands update local run metadata and lifecycle state, and print suggested
+Linear comments by default; they do not mutate Linear or GitHub unless
+`--linear-issue ... --apply` is present. `publish --apply` moves Linear to
+`Plan Needs Review` and posts a plan-PR marker comment.
+`mark-plan-merged --apply` moves Linear to `Ready to Implement` and posts an
+approved-plan marker comment. Neither command opens PRs or inspects GitHub
+merge state. Do not commit `.harness/runs/*` or `.harness/factory/*`.
 
 ## Stop Conditions
 

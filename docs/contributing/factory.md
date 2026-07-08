@@ -70,9 +70,36 @@ Tracker adapters can attach reserved metadata under `metadata`:
 }
 ```
 
-`approvedPlanPath` is the canonical implementation input after the plan PR has
-merged. `approvedPlanPrUrl` links the publication PR while it is open.
+These metadata keys are transport fields. When a lifecycle log exists, the
+canonical machine state is the lifecycle read model under `.harness/factory`;
+work-item metadata is the resolved view passed to stations.
+`approvedPlanPath` is the implementation input after the plan PR has merged.
+`approvedPlanPrUrl` links the publication PR while it is open.
 `approvedPlanCommit` pins the merged plan version.
+
+## Lifecycle State
+
+Live operator station commands write a harness-owned lifecycle log:
+
+```text
+.harness/factory/events/<work-item>.jsonl
+.harness/factory/state/<work-item>.json
+```
+
+`events/*.jsonl` is the canonical local factory lifecycle source of truth.
+`state/*.json` is a rebuildable read-model cache. The read model owns durable
+machine fields such as `factoryStage`, `factoryRoute`, `factoryNextAction`,
+`factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
+`approvedPlanCommit`.
+
+Linear status and comments are human board projections. Per-run `meta.json`
+and `.harness/runs/factory/<run-id>/events.jsonl` are execution evidence. Git
+remains source of truth for committed plans and code.
+
+`triage.started` and `planning.started` events are audit history only; they do
+not move durable `factoryStage`. Terminal events such as `triage.completed`,
+`planning.completed`, `planning.failed`, `plan_pr.opened`, and
+`plan_pr.merged` own durable transitions.
 
 ## Station Config
 
@@ -152,7 +179,8 @@ LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/rep
 The fetch command is read-only. It validates `factory.linear.statuses` against
 the configured team workflow, verifies the issue belongs to the configured
 `factory.linear.projectId` when set, fetches the issue description, labels, and
-recent comments, then prints JSON suitable for `--item-file`.
+recent comments, merges lifecycle state when present, then prints JSON suitable
+for `--item-file`.
 
 Linear team and project serve different purposes:
 
@@ -217,8 +245,8 @@ than that window, a retry may post another marker comment or classify
 `Needs Clarification` as generic human input instead of a planning re-entry
 state.
 
-Linear status is human board state. Harness metadata is finer-grained factory
-state. The adapter maps:
+Linear status is human board state. The adapter maps statuses as a bootstrap
+fallback when no lifecycle log exists:
 
 - `Backlog` -> `incoming`
 - `Triaging` -> `triaging`
@@ -232,7 +260,8 @@ state. The adapter maps:
 
 When `Needs Clarification` carries the latest factory planning marker for
 `plan-needs-human`, the adapter preserves that planning-attention stage in
-metadata so planning can rerun from the issue.
+metadata as a bootstrap fallback. When lifecycle state exists, planning uses
+the lifecycle read model instead of recent marker comments.
 
 `Triage Failed` is kept as `metadata.linearStatus`; it is not a `factoryStage`
 today.
@@ -266,6 +295,9 @@ Triage artifacts under `.harness/runs/factory/<run-id>/` include:
 - `meta.json`
 - `events.jsonl` for live runs
 
+Live triage appends lifecycle events for work-item import, station start, and
+terminal completion/failure. Dry-run does not write lifecycle events.
+
 Triage does not mutate tracker state, labels, branches, or source files unless
 `--apply` is used with `--linear-issue`. Apply mode mutates Linear status and
 comments only; it does not mutate source files.
@@ -294,6 +326,10 @@ work starts. Terminal outcomes post one marker comment: approved plans stay in
 `Planning`, human questions move to `Needs Clarification`, unresolved reviews
 move to `Plan Needs Review`, and station/runtime failures move to
 `Planning Failed`.
+
+Live planning appends lifecycle events for work-item import, station start, and
+terminal completion/failure. The lifecycle read model is what future stations
+should use for readiness; Linear comments remain human context and dedupe.
 
 The planner writes a draft file, the harness snapshots it, `plan-review`
 reviews the snapshot, and the same planner session handles review findings
@@ -329,8 +365,8 @@ manual publication handoff, `factoryStage: "plan-pr-open"` may exist before
 `approvedPlanPrUrl`; the URL is recorded when the operator registers the plan
 PR.
 
-Manual publication commands update local run metadata and summary files by
-default:
+Manual publication commands update local run metadata, summary files, and the
+lifecycle log by default:
 
 ```bash
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
@@ -390,7 +426,8 @@ Harness keeps the station logic:
 
 Durable artifacts should stay in the repo or artifact storage. Tracker comments
 should contain summaries and links, not full plans or logs as the source of
-truth.
+truth. Inngest should call station helpers or CLI commands that append
+lifecycle events; it should not become the factory lifecycle database.
 
 ## Stop Conditions
 

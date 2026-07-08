@@ -60,6 +60,8 @@ Target repositories own their local harness state:
 - `harness.json` for repo-local defaults.
 - `.harness/bin/harness` as an ignored shim written by `harness init`.
 - `.harness/inbox/factory/*.json` for local factory intake queue items.
+- `.harness/factory/events/*.jsonl` for local factory lifecycle truth.
+- `.harness/factory/state/*.json` for rebuildable lifecycle read-model cache.
 - `.harness/runs/reviews/<run-id>/` for review artifacts.
 - `.harness/runs/factory/<run-id>/` for factory intake artifacts.
 - local `.agents/skills/` installs when a target repo chooses to install skills.
@@ -98,7 +100,19 @@ include git diff scope and does not mutate trackers.
 `lib/factory-triage-input.ts` owns shared factory work-item input handling.
 Station commands use it to validate the mutually exclusive `--item-file` and
 `--linear-issue` input contract before role/config resolution, then resolve file
-reads or Linear fetches after station settings are known.
+reads or Linear fetches after station settings are known. When a lifecycle log
+exists, it merges lifecycle state over tracker-derived fallback metadata before
+the station consumes the work item.
+
+`lib/factory-lifecycle.ts` owns the local factory lifecycle event contract,
+JSONL store, read-model reducer, state cache, work-item key derivation, and
+lifecycle metadata merge helper. `.harness/factory/events/*.jsonl` is
+canonical local machine state; `.harness/factory/state/*.json` is a
+rebuildable projection.
+
+`lib/factory-lifecycle-writes.ts` owns lifecycle event construction for current
+operator station commands. Live triage, planning, plan publication, and
+plan-merge paths append lifecycle events; dry-run station commands do not.
 
 `lib/factory-planning-input.ts` owns planning-specific work-item input guards.
 Linear-backed planning input accepts issues mapped to `ready-to-plan`,
@@ -132,7 +146,9 @@ guards, comments, and status movement for plan PR and merge handoff commands.
 mapping, verifies configured project scope, reads one Linear issue through
 `@linear/sdk`, and prints a normalized `FactoryWorkItem` JSON object. Linear
 team owns the issue key and workflow statuses; `factory.linear.projectId`, when
-set, scopes issues to the target repo project. `harness factory triage
+set, scopes issues to the target repo project. Linear status and recent marker
+comments are bootstrap fallback metadata; lifecycle state wins when present.
+`harness factory triage
 --linear-issue TEAM-123` uses the same adapter as an input source before
 running the station. Fetch and default Linear-backed triage do not mutate
 Linear. `harness factory triage --linear-issue TEAM-123 --apply` additionally
@@ -236,7 +252,8 @@ Factory triage artifacts include:
 - `events.jsonl` for live runs
 
 `--dry-run` writes placeholder triage and route artifacts but does not invoke a
-provider and does not write `events.jsonl`.
+provider, does not write run `events.jsonl`, and does not write lifecycle
+events under `.harness/factory`.
 
 Factory planning artifacts include:
 
@@ -262,9 +279,11 @@ and does not write `events.jsonl`.
 Planning `meta.json` includes `factoryMetadata` with reserved handoff keys such
 as `tracker`, `factoryRoute`, `factoryNextAction`, `factoryStage`,
 `factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
-`approvedPlanCommit`. Tracker-backed approved plan filenames should use the
-tracker key, for example `dev/plans/FER-123.md`; local/manual items fall back to
-title-derived slugs. Tracker-backed planning approval records
+`approvedPlanCommit`. This metadata is execution evidence and station handoff
+context; lifecycle state under `.harness/factory` is the per-work-item machine
+source of truth when present. Tracker-backed approved plan filenames should use
+the tracker key, for example `dev/plans/FER-123.md`; local/manual items fall
+back to title-derived slugs. Tracker-backed planning approval records
 `factoryStage: "plan-pr-open"` until the plan PR URL and merge commit are
 registered through the planning publication commands.
 

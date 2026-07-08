@@ -6,7 +6,7 @@
 | ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
-| [260708-factory-lifecycle-log.md](./260708-factory-lifecycle-log.md)   | `ready`       | Factory lifecycle event log and read model                |
+| [260708-factory-lifecycle-log.md](./260708-factory-lifecycle-log.md)   | `in_progress` | Factory lifecycle event log and read model                |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 

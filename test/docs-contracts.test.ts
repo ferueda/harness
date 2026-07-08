@@ -581,6 +581,16 @@ test("factory operator guide stays linked from entrypoints", () => {
   expect(readRepoFile("docs/contributing/script-command-surface.md")).toContain("./factory.md");
 });
 
+test("factory lifecycle generated artifacts are documented", () => {
+  const setup = readRepoFile(SETUP_MANIFEST);
+  expect(setup).toContain(".harness/factory/events/*.jsonl");
+  expect(setup).toContain(".harness/factory/state/*.json");
+  expect(setup).toContain("Canonical local lifecycle event log keyed by work item");
+  expect(setup).toContain("Rebuildable cache derived from `.harness/factory/events/*.jsonl`");
+  expect(setup).toContain("Ignored; do not commit");
+  expect(setup).toContain("Dry-run factory commands do not write this path");
+});
+
 test("docs are covered by format and format check scripts", () => {
   const parsed: unknown = JSON.parse(readRepoFile("package.json"));
   expect(isObject(parsed) && isObject(parsed.scripts), "package.json scripts missing").toBe(true);
