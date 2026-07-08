@@ -17,7 +17,8 @@ Important constraints:
 - Classify against project intent when available: docs/project-intent.md, VISION.md, vision.md, roadmap.md, README.md, AGENTS.md, dev/plans/README.md.
 - If no intent source exists, narrow bugs may still be ready-to-implement. Broad product work should become needs-info or wait-to-implement.
 - Use suggestedNext.action that matches the route. Do not invent downstream commands.
-- Include questions only for needs-info. If questions are useful but non-blocking, put the caveat in rationale or reconsiderWhen instead.
+- Include blocking questions only for needs-info. ready-to-implement must not include questions.
+- ready-to-plan may include optional non-blocking planning questions; use rationale/evidence to explain why planning is needed.
 - Use ready-to-plan instead of ready-to-implement when the work needs a plan or design review before code changes.
 
 Work item JSON:

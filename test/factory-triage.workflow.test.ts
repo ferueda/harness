@@ -111,7 +111,7 @@ test("factory triage live run writes artifacts and workflow events", async () =>
     "Work item JSON",
   );
   expect(readFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "utf8")).toContain(
-    "Include questions only for needs-info",
+    "Include blocking questions only for needs-info",
   );
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain(
     "Use the planning-workflow coordinator",

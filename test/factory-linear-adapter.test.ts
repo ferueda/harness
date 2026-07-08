@@ -1288,16 +1288,23 @@ test("Linear adapter applies completed triage status and comment", async () => {
     issueRef: "ENG-123",
     runId: "run-1",
     runDir: ".harness/runs/factory/run-1",
-    triage: TRIAGE_READY_TO_PLAN,
+    triage: {
+      ...TRIAGE_READY_TO_PLAN,
+      questions: ["Which command should publish the plan PR?"],
+    },
   });
 
   expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Needs Plan" } }]);
   expect(comments).toHaveLength(1);
-  expect(comments[0].body).toContain("Route: ready-to-plan");
-  expect(comments[0].body).toContain("Why Needs Plan:");
-  expect(comments[0].body).toContain("- Needs a reviewed plan.");
-  expect(comments[0].body).toContain("Evidence:");
-  expect(comments[0].body).toContain("- tracker: Issue asks for a larger workflow.");
+  const commentBody = comments[0].body;
+  expect(commentBody).toContain("Route: ready-to-plan");
+  expect(commentBody).toContain("Why Needs Plan:");
+  expect(commentBody).toContain("- Needs a reviewed plan.");
+  expect(commentBody).toContain("Evidence:");
+  expect(commentBody).toContain("- tracker: Issue asks for a larger workflow.");
+  expect(commentBody).toContain("Questions:");
+  expect(commentBody).toContain("- Which command should publish the plan PR?");
+  expect(commentBody.indexOf("Evidence:")).toBeLessThan(commentBody.indexOf("Questions:"));
   expect(result).toMatchObject({
     stage: "complete",
     fromStatus: "Triaging",
@@ -1361,6 +1368,8 @@ test.each([
     expect(updates).toEqual([{ id: "issue-1", input: { stateId: `state-${targetStatus}` } }]);
     expect(comments[0].body).toContain(`Next: ${targetStatus}`);
     expect(comments[0].body).toContain(expectedBody);
+    expect(comments[0].body).not.toContain("Why Needs Plan:");
+    expect(comments[0].body).not.toContain("Evidence:");
   },
 );
 
