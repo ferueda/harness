@@ -3,7 +3,7 @@
   "title": "FactoryPlanningOutput",
   "type": "object",
   "additionalProperties": false,
-  "required": ["outcome", "summary"],
+  "required": ["outcome", "summary", "humanQuestions", "findingDecisions"],
   "properties": {
     "outcome": {
       "type": "string",

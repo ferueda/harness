@@ -15,6 +15,7 @@ const FACTORY_PLANNING_SCHEMA = loadSchema({ schemaPath: FACTORY_PLANNING_SCHEMA
 const VALID_DRAFT = {
   outcome: "draft-ready",
   summary: "Plan is ready for review.",
+  humanQuestions: [],
   findingDecisions: [
     {
       findingId: "spec-001",
@@ -28,10 +29,14 @@ const VALID_NEEDS_HUMAN = {
   outcome: "needs-human",
   summary: "The request has an unresolved product choice.",
   humanQuestions: ["Which export format should be canonical?"],
+  findingDecisions: [],
 };
 
 test("factory planning JSON schema file defines expected root shape", () => {
   expect(FACTORY_PLANNING_SCHEMA.additionalProperties).toBe(false);
+  expect(new Set(FACTORY_PLANNING_SCHEMA.required)).toEqual(
+    new Set(Object.keys(FACTORY_PLANNING_SCHEMA.properties ?? {})),
+  );
   expect(FACTORY_PLANNING_SCHEMA.properties?.outcome?.enum).toEqual([...FACTORY_PLANNING_OUTCOMES]);
   expect(
     FACTORY_PLANNING_SCHEMA.properties?.findingDecisions?.items?.properties?.decision?.enum,
@@ -74,9 +79,15 @@ test("empty summary fails JSON schema and Zod", () => {
   expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
 });
 
-test("missing humanQuestions for needs-human is rejected by Zod", () => {
+test("missing humanQuestions for needs-human is rejected by JSON schema and Zod", () => {
   const payload = { ...VALID_NEEDS_HUMAN };
   delete (payload as Partial<typeof VALID_NEEDS_HUMAN>).humanQuestions;
-  expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(true);
+  expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(false);
+  expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
+});
+
+test("missing arrays are rejected by JSON schema and Zod", () => {
+  const payload = { outcome: "draft-ready", summary: "Plan is ready for review." };
+  expect(schemaAccepts(FACTORY_PLANNING_SCHEMA, payload)).toBe(false);
   expect(FactoryPlanningOutputSchema.safeParse(payload).success).toBe(false);
 });

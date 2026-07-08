@@ -37,6 +37,7 @@ const FACTORY_PLANNING_APPROVAL_POLICY = "never" as const;
 const DRY_RUN_PLANNING = {
   outcome: "draft-ready",
   summary: "(dry-run placeholder)",
+  humanQuestions: [],
   findingDecisions: [],
 } satisfies FactoryPlanningOutput;
 

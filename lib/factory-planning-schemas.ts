@@ -15,18 +15,16 @@ export const FactoryPlanningOutputSchema = z
   .object({
     outcome: z.enum(FACTORY_PLANNING_OUTCOMES),
     summary: z.string().min(1),
-    humanQuestions: z.array(z.string().min(1)).optional(),
-    findingDecisions: z
-      .array(
-        z
-          .object({
-            findingId: z.string().min(1),
-            decision: z.enum(FACTORY_PLANNING_FINDING_DECISIONS),
-            rationale: z.string().min(1),
-          })
-          .strict(),
-      )
-      .default([]),
+    humanQuestions: z.array(z.string().min(1)),
+    findingDecisions: z.array(
+      z
+        .object({
+          findingId: z.string().min(1),
+          decision: z.enum(FACTORY_PLANNING_FINDING_DECISIONS),
+          rationale: z.string().min(1),
+        })
+        .strict(),
+    ),
   })
   .strict()
   .superRefine((output, ctx) => {

@@ -16,6 +16,7 @@ Write or edit the complete implementation plan directly at the draft path.
 The harness snapshots, reviews, and copies the final approved plan. You only own the draft file and small JSON metadata.
 When outcome is draft-ready, the draft path must exist and contain the complete current plan.
 When outcome is needs-human, return humanQuestions with the exact missing decisions.
+Always return both arrays: use humanQuestions: [] and findingDecisions: [] when not applicable.
 
 Plan requirements:
 - Verify current state before prescribing edits.
@@ -64,7 +65,7 @@ Revision rules:
 - Edit the draft path in place. Do not return the plan markdown in JSON.
 - The latest review findings below have synthetic ids.
 - When outcome is draft-ready, return exactly one findingDecisions entry for every latest finding id.
-- When outcome is needs-human, return humanQuestions; findingDecisions may be empty.
+- When outcome is needs-human, return humanQuestions; findingDecisions may be empty but must still be present.
 - Use decision "implement" when applying the recommendation directly.
 - Use decision "adapt" when solving the underlying issue differently.
 - Use decision "decline" only when the finding is not applicable, and explain why.
