@@ -50,7 +50,8 @@ function writeHarnessJson(workspace: string, value: unknown): void {
 const LINEAR_STATUSES = {
   intake: "Backlog",
   parked: "Parked",
-  needsInfo: "Needs Info",
+  needsInfo: "Needs Clarification",
+  needsPlanReview: "Plan Needs Review",
   needsPlan: "Needs Plan",
   readyToImplement: "Ready to Implement",
   triaging: "Triaging",

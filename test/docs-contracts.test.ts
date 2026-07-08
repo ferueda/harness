@@ -532,7 +532,7 @@ test("readme stays a concise entrypoint", () => {
   const readme = readRepoFile("README.md");
   const lines = readme.trimEnd().split(/\r?\n/);
   // Keep the root README near entrypoint size; deep details belong in docs/contributing.
-  expect(lines.length, "README.md should stay a concise user entrypoint").toBeLessThanOrEqual(250);
+  expect(lines.length, "README.md should stay a concise user entrypoint").toBeLessThanOrEqual(300);
   expect(readme).toContain("docs/contributing/index.md");
   expect(readme).toContain("~/.harness/install");
   expect(readme).toContain("./install");

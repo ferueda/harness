@@ -121,6 +121,9 @@ if (!factoryPlanningRunHelp.includes("--linear-issue <issue>")) {
 if (!factoryPlanningRunHelp.includes("--output-plan <path>")) {
   throw new Error("Expected factory planning help to include --output-plan");
 }
+if (!factoryPlanningRunHelp.includes("--apply")) {
+  throw new Error("Expected factory planning help to include --apply");
+}
 if (!factoryPlanningRunHelp.includes("--dry-run")) {
   throw new Error("Expected factory planning help to include --dry-run");
 }

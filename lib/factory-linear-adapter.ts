@@ -1,6 +1,27 @@
 import { LinearClient } from "@linear/sdk";
 import { type FactoryLinearSettings } from "./config.ts";
 import {
+  applyLinearPlanningCompleted,
+  applyLinearPlanningFailed,
+  applyLinearPlanningStarted,
+  linearPlanningAttentionStageFromComments,
+  type LinearPlanningApplyInput,
+  type LinearPlanningCompletedInput,
+  type LinearPlanningFailedInput,
+  type LinearPlanningUpdatePlan,
+} from "./factory-linear-planning-apply.ts";
+import type {
+  LinearClientLike,
+  LinearCommentLike,
+  LinearConnectionLike,
+  LinearIssueLabelLike,
+  LinearIssueLike,
+  LinearProjectLike,
+  LinearTeamLike,
+  LinearUserLike,
+  LinearWorkflowStateLike,
+} from "./factory-linear-types.ts";
+import {
   FactoryWorkItemSchema,
   type FactoryRoute,
   type FactoryStage,
@@ -20,6 +41,11 @@ export type LinearFactoryAdapter = {
   applyTriageStarted: (input: LinearTriageApplyInput) => Promise<LinearTriageUpdatePlan>;
   applyTriageCompleted: (input: LinearTriageCompletedInput) => Promise<LinearTriageUpdatePlan>;
   applyTriageFailed: (input: LinearTriageFailedInput) => Promise<LinearTriageUpdatePlan>;
+  applyPlanningStarted: (input: LinearPlanningApplyInput) => Promise<LinearPlanningUpdatePlan>;
+  applyPlanningCompleted: (
+    input: LinearPlanningCompletedInput,
+  ) => Promise<LinearPlanningUpdatePlan>;
+  applyPlanningFailed: (input: LinearPlanningFailedInput) => Promise<LinearPlanningUpdatePlan>;
 };
 
 export type LinearStatusMapValidation = {
@@ -52,78 +78,6 @@ export type LinearTriageUpdatePlan = {
   targetStatus: string;
   commentMarker?: string;
   commentBody?: string;
-};
-
-export type LinearClientLike = {
-  issue: (id: string) => Promise<LinearIssueLike>;
-  issues: (variables?: unknown) => Promise<LinearConnectionLike<LinearIssueLike>>;
-  teams: (variables?: unknown) => Promise<LinearConnectionLike<LinearTeamLike>>;
-  updateIssue: (id: string, input: { stateId: string }) => Promise<unknown>;
-  createComment: (input: { issueId: string; body: string }) => Promise<unknown>;
-};
-
-type LinearConnectionLike<T> = {
-  nodes: T[];
-  pageInfo?: {
-    hasNextPage?: boolean;
-    hasPreviousPage?: boolean;
-  };
-};
-
-type LinearIssueLike = {
-  id: string;
-  identifier: string;
-  number: number;
-  title: string;
-  description?: string | null;
-  url: string;
-  projectId?: string | null;
-  priority?: number | null;
-  priorityLabel?: string | null;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
-  assignee?: Promise<LinearUserLike | undefined> | LinearUserLike | undefined;
-  state?: Promise<LinearWorkflowStateLike | undefined> | LinearWorkflowStateLike | undefined;
-  team?: Promise<LinearTeamLike | undefined> | LinearTeamLike | undefined;
-  project?: Promise<LinearProjectLike | undefined> | LinearProjectLike | undefined;
-  labels?: (variables?: unknown) => Promise<LinearConnectionLike<LinearIssueLabelLike>>;
-  comments?: (variables?: unknown) => Promise<LinearConnectionLike<LinearCommentLike>>;
-};
-
-type LinearTeamLike = {
-  id: string;
-  key: string;
-  name: string;
-  states: (variables?: unknown) => Promise<LinearConnectionLike<LinearWorkflowStateLike>>;
-};
-
-type LinearWorkflowStateLike = {
-  id: string;
-  name: string;
-  type?: string;
-};
-
-type LinearProjectLike = {
-  id: string;
-  name: string;
-  url?: string;
-};
-
-type LinearIssueLabelLike = {
-  name: string;
-};
-
-type LinearCommentLike = {
-  id?: string;
-  body: string;
-  createdAt?: Date | string;
-};
-
-type LinearUserLike = {
-  id?: string;
-  name?: string | null;
-  displayName?: string | null;
-  email?: string | null;
 };
 
 type LinearIssueIdentifier = {
@@ -165,8 +119,39 @@ export function createLinearFactoryAdapterForClient(input: {
     applyTriageCompleted: (applyInput) =>
       applyTriageCompleted(input.client, input.settings, applyInput),
     applyTriageFailed: (applyInput) => applyTriageFailed(input.client, input.settings, applyInput),
+    applyPlanningStarted: (applyInput) =>
+      applyLinearPlanningStarted(
+        LINEAR_PLANNING_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
+    applyPlanningCompleted: (applyInput) =>
+      applyLinearPlanningCompleted(
+        LINEAR_PLANNING_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
+    applyPlanningFailed: (applyInput) =>
+      applyLinearPlanningFailed(
+        LINEAR_PLANNING_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
   };
 }
+
+const LINEAR_PLANNING_APPLY_DEPS = {
+  validateStatusMap,
+  fetchIssue,
+  resolveOptional,
+  assertIssueInConfiguredScope,
+  fetchWorkflowState,
+  updateIssueStatusIfNeeded,
+  issueHasCommentMarker,
+};
 
 export function parseLinearIssueIdentifier(issueRef: string): LinearIssueIdentifier | null {
   const match = LINEAR_ISSUE_IDENTIFIER_RE.exec(issueRef.trim());
@@ -326,9 +311,7 @@ async function applyTriageCompleted(
     settings,
     linearTriageTargetStatus(settings, input.triage.route),
   );
-  if (normalizeName(state?.name ?? "") !== normalizeName(target.name)) {
-    await client.updateIssue(issue.id, { stateId: target.id });
-  }
+  await updateIssueStatusIfNeeded(client, issue, state, target);
 
   const commentMarker = linearTriageCommentMarker(input.runId);
   const commentBody = renderLinearTriageCompleteComment({
@@ -365,9 +348,7 @@ async function applyTriageFailed(
   const state = await resolveOptional(issue.state);
   await assertIssueInConfiguredScope(issue, settings);
   const target = await fetchWorkflowState(client, settings, settings.statuses.triageFailed);
-  if (normalizeName(state?.name ?? "") !== normalizeName(target.name)) {
-    await client.updateIssue(issue.id, { stateId: target.id });
-  }
+  await updateIssueStatusIfNeeded(client, issue, state, target);
 
   const commentMarker = linearTriageFailedCommentMarker(input.runId);
   const commentBody = renderLinearTriageFailedComment({
@@ -415,7 +396,9 @@ async function fetchWorkItem(
       id: issue.identifier,
       url: issue.url,
     },
-    factoryStage: state ? factoryStageForStatus(settings, state.name) : undefined,
+    factoryStage: state
+      ? factoryStageForStatus(settings, state.name, commentResult.comments)
+      : undefined,
     linearIssueId: issue.id,
     linearIssueIdentifier: issue.identifier,
     linearTeamKey: team.key,
@@ -512,6 +495,17 @@ async function fetchWorkflowState(
     throw new Error(`Linear team ${settings.teamKey} is missing configured status: ${statusName}`);
   }
   return state;
+}
+
+async function updateIssueStatusIfNeeded(
+  client: LinearClientLike,
+  issue: LinearIssueLike,
+  current: LinearWorkflowStateLike | undefined,
+  target: LinearWorkflowStateLike,
+): Promise<void> {
+  if (normalizeName(current?.name ?? "") !== normalizeName(target.name)) {
+    await client.updateIssue(issue.id, { stateId: target.id });
+  }
 }
 
 async function fetchTeam(client: LinearClientLike, teamKey: string): Promise<LinearTeamLike> {
@@ -637,13 +631,18 @@ function renderLinearIssueBody(issue: LinearIssueLike, comments: LinearCommentLi
 function factoryStageForStatus(
   settings: FactoryLinearSettings,
   statusName: string,
+  comments: LinearCommentLike[] = [],
 ): FactoryStage | undefined {
   const normalized = normalizeName(statusName);
   const statuses = settings.statuses;
   if (normalized === normalizeName(statuses.intake)) return "incoming";
   if (normalized === normalizeName(statuses.triaging)) return "triaging";
-  if (normalized === normalizeName(statuses.needsInfo)) return "needs-info";
+  if (normalized === normalizeName(statuses.needsInfo)) {
+    const stage = linearPlanningAttentionStageFromComments(comments);
+    return stage === "plan-needs-human" ? stage : "needs-info";
+  }
   if (normalized === normalizeName(statuses.needsPlan)) return "ready-to-plan";
+  if (normalized === normalizeName(statuses.needsPlanReview)) return "plan-review-unresolved";
   if (normalized === normalizeName(statuses.readyToImplement)) return "ready-to-implement";
   if (normalized === normalizeName(statuses.parked)) return "wait-to-implement";
   if (normalized === normalizeName(statuses.planning)) return "planning";

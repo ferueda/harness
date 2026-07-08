@@ -22,16 +22,16 @@
       }
     },
     "planning": {
-      "maxReviewIterations": 3,
+      "maxReviewIterations": 5,
       "roles": {
         "planner": {
-          "agent": "cursor",
-          "model": "composer-2.5"
-        },
-        "reviewer": {
           "agent": "codex",
           "model": "gpt-5.5",
           "modelReasoningEffort": "high"
+        },
+        "reviewer": {
+          "agent": "cursor",
+          "model": "composer-2.5"
         }
       }
     },
@@ -41,8 +41,9 @@
       "statuses": {
         "intake": "Backlog",
         "parked": "Parked",
-        "needsInfo": "Needs Info",
+        "needsInfo": "Needs Clarification",
         "needsPlan": "Needs Plan",
+        "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
         "triaging": "Triaging",
         "planning": "Planning",

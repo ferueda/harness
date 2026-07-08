@@ -13,12 +13,17 @@ export function assertFactoryPlanningLinearEntry(input: FactoryResolvedWorkItemI
       cause: error,
     });
   }
-  if (metadata.factoryStage === "ready-to-plan" || metadata.factoryStage === "planning-failed") {
+  if (
+    metadata.factoryStage === "ready-to-plan" ||
+    metadata.factoryStage === "plan-needs-human" ||
+    metadata.factoryStage === "plan-review-unresolved" ||
+    metadata.factoryStage === "planning-failed"
+  ) {
     return;
   }
 
   const status = typeof metadata.linearStatus === "string" ? ` (${metadata.linearStatus})` : "";
   throw new FactoryPlanningError(
-    `Linear issue is in ${String(metadata.factoryStage ?? "unknown")}${status}; planning accepts Needs Plan or Planning Failed.`,
+    `Linear issue is in ${String(metadata.factoryStage ?? "unknown")}${status}; planning accepts Needs Plan, planning-question Needs Clarification, Plan Needs Review, or Planning Failed.`,
   );
 }

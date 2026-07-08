@@ -27,7 +27,6 @@ If `~/.local/bin` is not on `PATH`, the installer prints the `export PATH=...`
 line to add.
 
 Next, initialize a target repo and run reviews.
-
 To update:
 
 ```bash
@@ -91,6 +90,7 @@ harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory planning run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 ```
@@ -116,10 +116,11 @@ harness run plan-review --plan path/to/implementation-plan.md --verbose
 
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear fetch uses `LINEAR_API_KEY` and
-`factory.linear` config to produce the same work-item contract. Factory triage
-and planning can use `--linear-issue` as a read-only Linear input source.
-Triage `--apply` moves Linear status and writes marker comments; planning apply
-remains future work. GitHub, Jira, and Inngest remain future layers. For the
+`factory.linear` config. Factory triage and planning can use `--linear-issue`;
+`--apply` is explicit. Triage moves Linear through `Triaging`; planning moves
+eligible planning statuses to `Planning`, routes human attention to
+`Needs Clarification` or `Plan Needs Review`, and leaves Ready to Implement for
+the plan-merge handoff. GitHub, Jira, and Inngest remain future layers. For the
 full operator model, read
 [docs/contributing/factory.md](docs/contributing/factory.md).
 

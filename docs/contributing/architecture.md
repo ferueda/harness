@@ -101,8 +101,10 @@ Station commands use it to validate the mutually exclusive `--item-file` and
 reads or Linear fetches after station settings are known.
 
 `lib/factory-planning-input.ts` owns planning-specific work-item input guards.
-Linear-backed planning input accepts only issues mapped to `ready-to-plan` or
-`planning-failed` before creating a planning run. Item-file planning remains
+Linear-backed planning input accepts issues mapped to `ready-to-plan`,
+`plan-needs-human`, `plan-review-unresolved`, or `planning-failed` before
+creating a planning run. Planning-attention `Needs Clarification` issues are
+identified by the latest factory planning marker. Item-file planning remains
 manual/local and is not gated by Linear tracker metadata.
 
 `lib/factory-planning-run-context.ts` creates local file-backed factory planning
@@ -121,8 +123,9 @@ implementation stations.
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
 
-`lib/factory-linear-adapter.ts` owns Linear issue import and explicit triage
-apply updates.
+`lib/factory-linear-adapter.ts` owns Linear issue import and explicit station
+apply updates. `lib/factory-linear-planning-apply.ts` owns planning apply
+markers, target-status mapping, comments, and mutation helpers.
 `harness factory linear fetch TEAM-123` validates `factory.linear` status
 mapping, verifies configured project scope, reads one Linear issue through
 `@linear/sdk`, and prints a normalized `FactoryWorkItem` JSON object. Linear
@@ -143,7 +146,12 @@ agent and model selection.
 `harness factory planning run --linear-issue ...` runs one work item through the
 station-level planning command and uses `factory.planning.roles.planner` and
 `factory.planning.roles.reviewer` config for agent and model selection.
-Linear-backed planning input performs a live read but does not mutate Linear.
+Linear-backed planning input performs a live read. With `--apply`, it moves
+`Needs Plan`, planning-attention `Needs Clarification`, `Plan Needs Review`, or
+`Planning Failed` to `Planning`, runs the planning loop, then posts one outcome
+comment. Human questions move to `Needs Clarification`, unresolved reviews move
+to `Plan Needs Review`, and station/runtime failures move to `Planning Failed`.
+It does not move issues to `Ready to Implement`.
 `harness factory planning --item-file ...` and
 `harness factory planning --linear-issue ...` remain default-subcommand aliases
 for the run command. `harness factory planning publish` and
@@ -291,8 +299,8 @@ adapter.
 ## What is not in this map yet
 
 Active runtime roadmap items such as `steps.json`, graders, tracker mutation
-beyond triage apply, Linear-backed planning apply mode, GitHub/Jira adapters,
-hosted trigger inboxes, and Inngest are future work. Linear-backed triage input
-and Linear triage status/comment mutation via `--apply` are current. Future
-items should be added to this map only after they describe current behavior in
-the repo.
+beyond explicit Linear triage/planning apply modes, GitHub/Jira adapters,
+hosted trigger inboxes, and Inngest are future work. Linear-backed triage and
+planning input plus their explicit status/comment mutation via `--apply` are
+current. Future items should be added to this map only after they describe
+current behavior in the repo.

@@ -8,8 +8,17 @@ import {
   renderLinearPlanningApprovedComment,
   renderLinearPlanningReadyComment,
   renderLinearTriageCompleteComment,
-  type LinearClientLike,
 } from "../lib/factory-linear-adapter.ts";
+import {
+  assertLinearPlanningApplyAllowed,
+  linearPlanningAttentionStageFromComments,
+  linearPlanningApplyCommentMarker,
+  linearPlanningApplyFailedCommentMarker,
+  linearPlanningTargetStatus,
+  renderLinearPlanningApplyCompleteComment,
+  renderLinearPlanningApplyFailedComment,
+} from "../lib/factory-linear-planning-apply.ts";
+import type { LinearClientLike } from "../lib/factory-linear-types.ts";
 import type { FactoryRoute, FactoryTriageOutput } from "../lib/factory-schemas.ts";
 
 const LINEAR_SETTINGS = {
@@ -17,7 +26,8 @@ const LINEAR_SETTINGS = {
   statuses: {
     intake: "Backlog",
     parked: "Parked",
-    needsInfo: "Needs Info",
+    needsInfo: "Needs Clarification",
+    needsPlanReview: "Plan Needs Review",
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
     triaging: "Triaging",
@@ -151,12 +161,88 @@ test("Linear planning comments include stable markers and plan handoff links", (
   ).toContain("Commit: `abc1234`");
 });
 
+test("Linear planning apply helpers map statuses and render concise comments", () => {
+  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-approved")).toBe("Planning");
+  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-needs-human")).toBe(
+    "Needs Clarification",
+  );
+  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "plan-review-unresolved")).toBe(
+    "Plan Needs Review",
+  );
+  expect(linearPlanningTargetStatus(LINEAR_SETTINGS, "planning-failed")).toBe("Planning Failed");
+  expect(() => linearPlanningTargetStatus(LINEAR_SETTINGS, "dry_run")).toThrow(
+    /cannot be used with dry-run/,
+  );
+  expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Needs Plan")).not.toThrow();
+  expect(() =>
+    assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Needs Clarification"),
+  ).not.toThrow();
+  expect(() =>
+    assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Plan Needs Review"),
+  ).not.toThrow();
+  expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Planning Failed")).not.toThrow();
+  for (const status of ["Backlog", "Ready to Implement", "Planning"]) {
+    expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, status)).toThrow(
+      /only accepts Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed/,
+    );
+  }
+
+  expect(linearPlanningApplyCommentMarker("run-1")).toBe(
+    "<!-- harness-factory:planning-apply:run-1 -->",
+  );
+  expect(linearPlanningApplyFailedCommentMarker("run-1")).toBe(
+    "<!-- harness-factory:planning-apply-failed:run-1 -->",
+  );
+  expect(
+    renderLinearPlanningApplyCompleteComment({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+      status: "plan-approved",
+      approvedPlanPath: "dev/plans/ENG-123.md",
+      targetStatus: "Planning",
+    }),
+  ).toContain("Factory plan ready.");
+  expect(
+    renderLinearPlanningApplyFailedComment({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+      error: "agent timeout",
+    }),
+  ).toContain("Factory planning command failed.");
+});
+
+test("Linear planning attention parser selects the latest planning marker", () => {
+  expect(
+    linearPlanningAttentionStageFromComments([
+      {
+        body: [
+          "<!-- harness-factory:planning-apply:run-1 -->",
+          "",
+          "Status: plan-needs-human",
+        ].join("\n"),
+        createdAt: new Date("2026-07-07T10:00:00Z"),
+      },
+      {
+        body: [
+          "<!-- harness-factory:planning-apply:run-2 -->",
+          "",
+          "Status: plan-review-unresolved",
+        ].join("\n"),
+        createdAt: new Date("2026-07-07T11:00:00Z"),
+      },
+    ]),
+  ).toBe("plan-review-unresolved");
+  expect(linearPlanningAttentionStageFromComments([{ body: "human comment" }])).toBeUndefined();
+});
+
 test("Linear triage helpers map routes and render concise comments", () => {
   expect(linearTriageTargetStatus(LINEAR_SETTINGS, "ready-to-implement")).toBe(
     "Ready to Implement",
   );
   expect(linearTriageTargetStatus(LINEAR_SETTINGS, "ready-to-plan")).toBe("Needs Plan");
-  expect(linearTriageTargetStatus(LINEAR_SETTINGS, "needs-info")).toBe("Needs Info");
+  expect(linearTriageTargetStatus(LINEAR_SETTINGS, "needs-info")).toBe("Needs Clarification");
   expect(linearTriageTargetStatus(LINEAR_SETTINGS, "wait-to-implement")).toBe("Parked");
   expect(() => assertLinearTriageApplyAllowed(LINEAR_SETTINGS, "Backlog")).not.toThrow();
   for (const status of [
@@ -168,7 +254,7 @@ test("Linear triage helpers map routes and render concise comments", () => {
     "Planning Failed",
   ]) {
     expect(() => assertLinearTriageApplyAllowed(LINEAR_SETTINGS, status)).toThrow(
-      /only accepts Backlog, Needs Info, or Triage Failed/,
+      /only accepts Backlog, Needs Clarification, or Triage Failed/,
     );
   }
 
@@ -177,7 +263,7 @@ test("Linear triage helpers map routes and render concise comments", () => {
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
       route: "needs-info",
-      targetStatus: "Needs Info",
+      targetStatus: "Needs Clarification",
       questions: ["Which provider should own this?"],
     }),
   ).toContain("<!-- harness-factory:triage:run-1 -->");
@@ -422,7 +508,7 @@ test("Linear adapter validates configured statuses against team states", async (
   });
 
   await expect(adapter.validateStatusMap()).rejects.toThrow(
-    /missing configured statuses: Parked, Needs Info/,
+    /missing configured statuses: Parked, Needs Clarification/,
   );
 });
 
@@ -439,7 +525,7 @@ test("Linear adapter validates status map during fetch", async () => {
   });
 
   await expect(adapter.fetchWorkItem("ENG-123")).rejects.toThrow(
-    /missing configured statuses: Parked, Needs Info/,
+    /missing configured statuses: Parked, Needs Clarification/,
   );
 });
 
@@ -549,6 +635,103 @@ test("Linear adapter sorts comments and records truncation", async () => {
   });
 });
 
+test("Linear adapter maps Plan Needs Review to unresolved planning", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Plan Needs Review", name: "Plan Needs Review" }),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const item = await adapter.fetchWorkItem("ENG-123");
+
+  expect(item.metadata).toMatchObject({
+    factoryStage: "plan-review-unresolved",
+    linearStatus: "Plan Needs Review",
+  });
+});
+
+test("Linear adapter keeps generic Needs Clarification without planning marker", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({
+              id: "state-Needs Clarification",
+              name: "Needs Clarification",
+            }),
+            comments: async () => ({
+              nodes: [
+                {
+                  body: "<!-- harness-factory:triage:run-1 -->\n\nRoute: needs-info",
+                  createdAt: new Date("2026-07-07T12:00:00Z"),
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const item = await adapter.fetchWorkItem("ENG-123");
+
+  expect(item.metadata).toMatchObject({
+    factoryStage: "needs-info",
+    linearStatus: "Needs Clarification",
+  });
+});
+
+test("Linear adapter preserves needs-human stage from Needs Clarification comments", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({
+              id: "state-Needs Clarification",
+              name: "Needs Clarification",
+            }),
+            comments: async () => ({
+              nodes: [
+                {
+                  body: [
+                    "<!-- harness-factory:planning-apply:run-1 -->",
+                    "",
+                    "Factory planning needs human input.",
+                    "",
+                    "Status: plan-needs-human",
+                  ].join("\n"),
+                  createdAt: new Date("2026-07-07T12:00:00Z"),
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const item = await adapter.fetchWorkItem("ENG-123");
+
+  expect(item.metadata).toMatchObject({
+    factoryStage: "plan-needs-human",
+    linearStatus: "Needs Clarification",
+  });
+});
+
 test("Linear adapter reports missing and ambiguous human issue identifiers", async () => {
   const missing = createLinearFactoryAdapterForClient({
     client: fakeClient({ issues: async () => ({ nodes: [] }) }),
@@ -566,7 +749,7 @@ test("Linear adapter reports missing and ambiguous human issue identifiers", asy
 });
 
 test("Linear adapter applies triage started status from allowed entry states", async () => {
-  for (const statusName of ["Backlog", "Needs Info", "Triage Failed"]) {
+  for (const statusName of ["Backlog", "Needs Clarification", "Triage Failed"]) {
     const updates: Array<{ id: string; input: { stateId: string } }> = [];
     const adapter = createLinearFactoryAdapterForClient({
       client: fakeClient({
@@ -620,7 +803,7 @@ test("Linear adapter rejects triage apply from terminal statuses before mutation
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
     }),
-  ).rejects.toThrow(/only accepts Backlog, Needs Info, or Triage Failed/);
+  ).rejects.toThrow(/only accepts Backlog, Needs Clarification, or Triage Failed/);
   expect(updates).toEqual([]);
 });
 
@@ -739,6 +922,341 @@ test("Linear adapter rejects terminal triage apply outside configured project be
   }
 });
 
+test("Linear adapter applies planning started status from allowed entry states", async () => {
+  for (const statusName of [
+    "Needs Plan",
+    "Needs Clarification",
+    "Plan Needs Review",
+    "Planning Failed",
+  ]) {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            {
+              ...ISSUE,
+              state: Promise.resolve({ id: `state-${statusName}`, name: statusName }),
+            },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+      }),
+      settings: LINEAR_SETTINGS,
+    });
+
+    const result = await adapter.applyPlanningStarted({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+    });
+
+    expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Planning" } }]);
+    expect(result).toMatchObject({
+      issueIdentifier: "ENG-123",
+      stage: "start",
+      fromStatus: statusName,
+      targetStatus: "Planning",
+    });
+  }
+});
+
+test("Linear adapter rejects planning apply from disallowed statuses before mutation", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Backlog", name: "Backlog" }),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyPlanningStarted({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+    }),
+  ).rejects.toThrow(
+    /only accepts Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed/,
+  );
+  expect(updates).toEqual([]);
+});
+
+test("Linear adapter rejects planning apply outside configured project before mutation", async () => {
+  for (const apply of ["started", "completed", "failed"] as const) {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const comments: Array<{ issueId: string; body: string }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            {
+              ...ISSUE,
+              state: Promise.resolve({ id: "state-Needs Plan", name: "Needs Plan" }),
+              projectId: OTHER_PROJECT.id,
+              project: Promise.resolve(OTHER_PROJECT),
+            },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+        createComment: async (input) => {
+          comments.push(input);
+          return { success: true };
+        },
+      }),
+      settings: SCOPED_LINEAR_SETTINGS,
+    });
+
+    if (apply === "started") {
+      await expect(
+        adapter.applyPlanningStarted({
+          issueRef: "ENG-123",
+          runId: "run-1",
+          runDir: ".harness/runs/factory/run-1",
+        }),
+      ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+    } else if (apply === "completed") {
+      await expect(
+        adapter.applyPlanningCompleted({
+          issueRef: "ENG-123",
+          runId: "run-1",
+          runDir: ".harness/runs/factory/run-1",
+          status: "plan-approved",
+          approvedPlanPath: "dev/plans/ENG-123.md",
+        }),
+      ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+    } else {
+      await expect(
+        adapter.applyPlanningFailed({
+          issueRef: "ENG-123",
+          runId: "run-1",
+          runDir: ".harness/runs/factory/run-1",
+          error: "provider crashed",
+        }),
+      ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
+    }
+    expect(updates).toEqual([]);
+    expect(comments).toEqual([]);
+  }
+});
+
+test.each([
+  {
+    status: "plan-approved" as const,
+    targetStatus: "Planning",
+    expectedBody: "Open/register a plan PR",
+    extra: { approvedPlanPath: "dev/plans/ENG-123.md" },
+  },
+  {
+    status: "plan-needs-human" as const,
+    targetStatus: "Needs Clarification",
+    expectedBody: "- Which scope should we use?",
+    extra: { humanQuestions: ["Which scope should we use?"] },
+  },
+  {
+    status: "plan-review-unresolved" as const,
+    targetStatus: "Plan Needs Review",
+    expectedBody: "Factory plan needs human review.",
+    extra: {
+      draftPlanPath: ".harness/runs/factory/run-1/iterations/3/plan.md",
+      reviewFindingsPath: ".harness/runs/factory/run-1/iterations/3/review-findings.json",
+      error: "Plan review still needs changes after max review iterations",
+    },
+  },
+  {
+    status: "planning-failed" as const,
+    targetStatus: "Planning Failed",
+    expectedBody: "Error: planner failed",
+    extra: { error: "planner failed" },
+  },
+])(
+  "Linear adapter applies completed planning outcome $status",
+  async ({ status, targetStatus, expectedBody, extra }) => {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const comments: Array<{ issueId: string; body: string }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            {
+              ...ISSUE,
+              state: Promise.resolve({ id: "state-Planning", name: "Planning", type: "started" }),
+            },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+        createComment: async (input) => {
+          comments.push(input);
+          return { success: true };
+        },
+      }),
+      settings: LINEAR_SETTINGS,
+    });
+
+    const result = await adapter.applyPlanningCompleted({
+      issueRef: "ENG-123",
+      runId: `run-${status}`,
+      runDir: `.harness/runs/factory/run-${status}`,
+      status,
+      ...extra,
+    });
+
+    expect(updates).toEqual(
+      targetStatus === "Planning"
+        ? []
+        : [{ id: "issue-1", input: { stateId: `state-${targetStatus}` } }],
+    );
+    expect(comments).toHaveLength(1);
+    expect(comments[0].body).toContain(`Status: ${status}`);
+    expect(comments[0].body).toContain(expectedBody);
+    if (status === "plan-review-unresolved") {
+      expect(comments[0].body).toContain("Draft:");
+      expect(comments[0].body).toContain("Findings:");
+      expect(comments[0].body).toContain("Do not implement until the plan is approved");
+    }
+    expect(result).toMatchObject({
+      stage: "complete",
+      fromStatus: "Planning",
+      targetStatus,
+      commentMarker: `<!-- harness-factory:planning-apply:run-${status} -->`,
+    });
+  },
+);
+
+test("Linear adapter skips duplicate planning apply comments", async () => {
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Planning", name: "Planning", type: "started" }),
+            comments: async () => ({
+              nodes: [{ body: "<!-- harness-factory:planning-apply:run-1 -->\nAlready posted." }],
+            }),
+          },
+        ],
+      }),
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyPlanningCompleted({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    status: "plan-approved",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+  });
+
+  expect(comments).toEqual([]);
+});
+
+test("Linear adapter applies failed planning status and comment", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Planning", name: "Planning", type: "started" }),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.applyPlanningFailed({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    error: "provider crashed",
+  });
+
+  expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Planning Failed" } }]);
+  expect(comments[0].body).toContain("Error: provider crashed");
+  expect(result).toMatchObject({
+    stage: "failed",
+    fromStatus: "Planning",
+    targetStatus: "Planning Failed",
+    commentMarker: "<!-- harness-factory:planning-apply-failed:run-1 -->",
+  });
+});
+
+test("Linear adapter skips duplicate failed planning apply comments", async () => {
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Planning", name: "Planning", type: "started" }),
+            comments: async () => ({
+              nodes: [
+                {
+                  body: "<!-- harness-factory:planning-apply-failed:run-1 -->\nAlready posted.",
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+      updateIssue: async () => ({ success: true }),
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyPlanningFailed({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    error: "provider crashed",
+  });
+
+  expect(comments).toEqual([]);
+});
+
 test("Linear adapter applies completed triage status and comment", async () => {
   const updates: Array<{ id: string; input: { stateId: string } }> = [];
   const comments: Array<{ issueId: string; body: string }> = [];
@@ -790,7 +1308,7 @@ test.each([
   },
   {
     route: "needs-info" as const,
-    targetStatus: "Needs Info",
+    targetStatus: "Needs Clarification",
     triageExtra: { questions: ["Which provider should own this?"] },
     expectedBody: "- Which provider should own this?",
   },

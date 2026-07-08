@@ -7,7 +7,8 @@ export const LINEAR_SETTINGS = {
   statuses: {
     intake: "Backlog",
     parked: "Parked",
-    needsInfo: "Needs Info",
+    needsInfo: "Needs Clarification",
+    needsPlanReview: "Plan Needs Review",
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
     triaging: "Triaging",
@@ -55,6 +56,15 @@ export function fakeLinearAdapter(
     },
     applyTriageFailed: async () => {
       throw new Error("applyTriageFailed should not run");
+    },
+    applyPlanningStarted: async () => {
+      throw new Error("applyPlanningStarted should not run");
+    },
+    applyPlanningCompleted: async () => {
+      throw new Error("applyPlanningCompleted should not run");
+    },
+    applyPlanningFailed: async () => {
+      throw new Error("applyPlanningFailed should not run");
     },
     ...overrides,
   };

@@ -106,9 +106,9 @@ Linear fetch and Linear-backed station input use `LINEAR_API_KEY` for
 `harness factory linear fetch`,
 `harness factory triage --linear-issue TEAM-123`, and
 `harness factory planning run --linear-issue TEAM-123`. Adding `--apply` to Linear
-triage also mutates Linear issue status and marker comments. Linear-backed
-planning input is read-only toward Linear; planning `--apply` is not implemented
-yet.
+triage or planning mutates Linear issue status and marker comments. Planning
+`--apply` never moves an issue to `Ready to Implement`; the plan-merge handoff
+owns that later transition.
 
 Do not write secrets into docs, plans, generated artifacts, committed
 `harness.json`, or checked-in config.
