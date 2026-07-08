@@ -6,6 +6,7 @@
 | ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
+| [FER-31.md](./FER-31.md)                                               | `ready`       | Read-only Linear status listing                           |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
@@ -47,6 +48,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Linear planning input                         | [#75](https://github.com/ferueda/harness/pull/75) |
 | —     | Linear planning apply                         | [#78](https://github.com/ferueda/harness/pull/78) |
 | —     | Linear planning publish handoff apply         | [#80](https://github.com/ferueda/harness/pull/80) |
+| —     | Factory lifecycle event log and read model    | [#85](https://github.com/ferueda/harness/pull/85) |
 
 ---
 

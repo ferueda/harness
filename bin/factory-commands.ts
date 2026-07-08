@@ -15,6 +15,15 @@ import {
 } from "../lib/config.ts";
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
 import {
+  appendPlanPrMergedEvent,
+  appendPlanPrOpenedEvent,
+  appendPlanningStartedEvent,
+  appendPlanningTerminalEvent,
+  appendTriageStartedEvent,
+  appendTriageTerminalEvent,
+  appendWorkItemImportedEvent,
+} from "../lib/factory-lifecycle-writes.ts";
+import {
   createLinearFactoryAdapter,
   parseLinearFactoryStatusKeys,
   parseLinearIssueIdentifier,
@@ -43,11 +52,16 @@ import {
 } from "../lib/factory-planning-run-context.ts";
 import { assertFactoryPlanningLinearEntry } from "../lib/factory-planning-input.ts";
 import {
+  mergeLifecycleState,
   resolveFactoryWorkItemInput,
   validateFactoryWorkItemInput,
 } from "../lib/factory-triage-input.ts";
 import { createFactoryRunContext, type FactoryRunMeta } from "../lib/factory-run-context.ts";
-import { parseFactoryTriageOutput, type FactoryTriageOutput } from "../lib/factory-schemas.ts";
+import {
+  parseFactoryTriageOutput,
+  type FactoryTriageOutput,
+  type FactoryWorkItem,
+} from "../lib/factory-schemas.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
@@ -183,15 +197,37 @@ function addFactoryLinearCommand(parent: Command): void {
     .argument("<issue>", "Linear issue identifier, e.g. TEAM-123")
     .option("--workspace <path>", "target repo")
     .action(async (issue: string, options: FactoryLinearFetchOptions) => {
-      const settings = resolveFactoryLinearSettings({ workspace: options.workspace });
-      const apiKey = process.env.LINEAR_API_KEY;
-      if (!apiKey) {
-        throw new Error("LINEAR_API_KEY is required for Linear commands.");
-      }
-      const adapter = createLinearFactoryAdapter({ apiKey, settings });
-      const workItem = await adapter.fetchWorkItem(issue);
+      const workItem = await fetchFactoryLinearWorkItem({
+        issue,
+        workspace: options.workspace,
+        env: process.env,
+      });
       console.log(JSON.stringify(workItem, null, 2));
     });
+}
+
+export async function fetchFactoryLinearWorkItem(input: {
+  issue: string;
+  workspace?: string;
+  env?: NodeJS.ProcessEnv;
+  resolveLinearSettings?: (input: { workspace?: string }) => FactoryLinearSettings;
+  adapterFactory?: (input: {
+    apiKey: string;
+    settings: FactoryLinearSettings;
+  }) => LinearFactoryAdapter;
+}): Promise<FactoryWorkItem> {
+  const settings = (input.resolveLinearSettings ?? resolveFactoryLinearSettings)({
+    workspace: input.workspace,
+  });
+  const apiKey = input.env?.LINEAR_API_KEY;
+  if (!apiKey) {
+    throw new Error("LINEAR_API_KEY is required for Linear commands.");
+  }
+  const adapter = (input.adapterFactory ?? createLinearFactoryAdapter)({ apiKey, settings });
+  return mergeLifecycleState({
+    workspace: resolveHarnessOptions({ workspace: input.workspace }).workspace,
+    workItem: await adapter.fetchWorkItem(input.issue),
+  });
 }
 
 function addFactoryPlanningStationCommand(parent: Command, config: FactoryCommandOptions): void {
@@ -325,6 +361,7 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
         ({ meta, linearUpdate, terminalApplyError } = await runFactoryPlanningWithLinearApply({
           ctx,
           issueRef: options.linearIssue ?? "",
+          itemFile: options.itemFile,
           applyAdapter,
         }));
       } finally {
@@ -356,6 +393,7 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
 export async function runFactoryPlanningWithLinearApply(input: {
   ctx: FactoryPlanningRunContext;
   issueRef: string;
+  itemFile?: string;
   applyAdapter?: LinearFactoryAdapter;
   runPlanning?: (ctx: FactoryPlanningRunContext) => Promise<FactoryPlanningRunMeta>;
 }): Promise<{
@@ -366,6 +404,21 @@ export async function runFactoryPlanningWithLinearApply(input: {
   const runPlanning = input.runPlanning ?? runFactoryPlanning;
   let startedUpdate: LinearPlanningUpdatePlan | undefined;
   let terminalUpdate: LinearPlanningUpdatePlan | undefined;
+  if (!input.ctx.dryRun) {
+    appendWorkItemImportedEvent({
+      workspace: input.ctx.workspace,
+      workItem: input.ctx.workItem,
+      execution: { workspace: input.ctx.workspace, runDir: input.ctx.runDir },
+    });
+    appendPlanningStartedEvent({
+      workspace: input.ctx.workspace,
+      workItem: input.ctx.workItem,
+      runId: input.ctx.runId,
+      execution: { workspace: input.ctx.workspace, runDir: input.ctx.runDir },
+      ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
+      ...(input.itemFile ? { itemFile: input.itemFile } : {}),
+    });
+  }
   if (input.applyAdapter) {
     startedUpdate = await input.applyAdapter.applyPlanningStarted({
       issueRef: input.issueRef,
@@ -377,6 +430,17 @@ export async function runFactoryPlanningWithLinearApply(input: {
   try {
     meta = await runPlanning(input.ctx);
   } catch (error) {
+    if (!input.ctx.dryRun && typeof input.ctx.export === "function") {
+      const failedMeta = input.ctx.export({
+        status: "planning-failed",
+        iterations: [],
+        error: errorMessage(error),
+      });
+      appendPlanningTerminalEvent({
+        meta: failedMeta,
+        error: errorMessage(error),
+      });
+    }
     if (input.applyAdapter && startedUpdate) {
       try {
         terminalUpdate = await input.applyAdapter.applyPlanningFailed({
@@ -390,6 +454,9 @@ export async function runFactoryPlanningWithLinearApply(input: {
       }
     }
     throw error;
+  }
+  if (!input.ctx.dryRun) {
+    appendPlanningTerminalEvent({ meta });
   }
   let terminalApplyError: unknown;
   if (input.applyAdapter) {
@@ -463,6 +530,11 @@ export async function runFactoryPlanningPublicationWithLinearApply(input: {
           approvedPlanCommit: requireCommit(input.commit),
           factoryStage: "plan-approved",
         });
+  if (input.mode === "publish") {
+    appendPlanPrOpenedEvent({ meta });
+  } else {
+    appendPlanPrMergedEvent({ meta });
+  }
   const metadata = requirePlanningFactoryMetadata(meta);
   const linearComment =
     input.mode === "publish"
@@ -681,6 +753,21 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
           agentProviderFactory: createAgentProvider,
         });
         const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
+        if (!options.dryRun) {
+          appendWorkItemImportedEvent({
+            workspace: role.workspace,
+            workItem: input.workItem,
+            execution: { workspace: ctx.workspace, runDir: ctx.runDir },
+          });
+          appendTriageStartedEvent({
+            workspace: role.workspace,
+            workItem: input.workItem,
+            runId: ctx.runId,
+            execution: { workspace: ctx.workspace, runDir: ctx.runDir },
+            linearIssue: options.linearIssue,
+            itemFile: options.itemFile,
+          });
+        }
         if (applyAdapter) {
           startedUpdate = await applyAdapter.applyTriageStarted({
             issueRef: options.linearIssue ?? "",
@@ -688,16 +775,29 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
             runDir: ctx.runDir,
           });
         }
-        meta = await runFactoryTriage(ctx);
+        try {
+          meta = await runFactoryTriage(ctx);
+        } catch (error) {
+          meta = ctx.exportFailed(error);
+        }
+        const completedTriage =
+          meta.status === "completed" ? readFactoryTriageArtifact(meta) : undefined;
+        if (!options.dryRun) {
+          appendTriageTerminalEvent({
+            workspace: role.workspace,
+            workItem: input.workItem,
+            meta,
+            triage: completedTriage,
+          });
+        }
         if (applyAdapter) {
           try {
-            if (meta.status === "completed") {
-              const triage = readFactoryTriageArtifact(meta);
+            if (completedTriage) {
               terminalUpdate = await applyAdapter.applyTriageCompleted({
                 issueRef: options.linearIssue ?? "",
                 runId: ctx.runId,
                 runDir: ctx.runDir,
-                triage,
+                triage: completedTriage,
               });
             } else {
               terminalUpdate = await applyAdapter.applyTriageFailed({
