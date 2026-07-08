@@ -104,8 +104,8 @@ Cursor SDK review provider runs require `CURSOR_API_KEY` in the environment.
 Codex SDK provider follows local Codex CLI auth via `codex login`, or
 `CODEX_API_KEY` in the environment.
 
-Linear fetch and Linear-backed station input use `LINEAR_API_KEY` for
-`harness factory linear fetch`,
+Linear list, fetch, and Linear-backed station input use `LINEAR_API_KEY` for
+`harness factory linear list`, `harness factory linear fetch`,
 `harness factory triage --linear-issue TEAM-123`, and
 `harness factory planning run --linear-issue TEAM-123`. Adding `--apply` to
 Linear triage, planning, or planning publication commands mutates Linear issue

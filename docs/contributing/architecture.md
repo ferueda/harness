@@ -15,6 +15,7 @@ Current public CLI surfaces:
 
 - `harness init`
 - `harness factory status`
+- `harness factory linear list`
 - `harness factory linear fetch`
 - `harness factory triage`
 - `harness factory planning`
@@ -138,22 +139,26 @@ implementation stations.
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
 
 `lib/factory-linear-adapter.ts` owns Linear issue import and explicit station
-apply updates. `lib/factory-linear-planning-apply.ts` owns planning run apply
-markers, target-status mapping, comments, and mutation helpers.
+apply updates. `lib/factory-linear-list.ts` owns read-only status-key listing,
+query pagination, and lightweight summary mapping behind the adapter facade.
+`lib/factory-linear-planning-apply.ts` owns planning run apply markers,
+target-status mapping, comments, and mutation helpers.
 `lib/factory-linear-planning-handoff.ts` owns planning publication apply
 guards, comments, and status movement for plan PR and merge handoff commands.
-`harness factory linear fetch TEAM-123` validates `factory.linear` status
-mapping, verifies configured project scope, reads one Linear issue through
-`@linear/sdk`, and prints a normalized `FactoryWorkItem` JSON object. Linear
-team owns the issue key and workflow statuses; `factory.linear.projectId`, when
-set, scopes issues to the target repo project. Linear status and recent marker
-comments are bootstrap fallback metadata; lifecycle state wins when present.
-`harness factory triage
---linear-issue TEAM-123` uses the same adapter as an input source before
-running the station. Fetch and default Linear-backed triage do not mutate
-Linear. `harness factory triage --linear-issue TEAM-123 --apply` additionally
-moves the issue to `Triaging`, then to the terminal triage status, and writes a
-marker comment.
+`harness factory linear list --status intake` validates `factory.linear` status
+mapping, queries the configured team and optional project scope, and prints
+lightweight issue summaries for configured status keys. `harness factory linear
+fetch TEAM-123` reads one Linear issue through `@linear/sdk` and prints a
+normalized `FactoryWorkItem` JSON object with description, labels, and recent
+comments. Linear team owns the issue key and workflow statuses;
+`factory.linear.projectId`, when set, scopes issues to the target repo project.
+Linear status and recent marker comments are bootstrap fallback metadata;
+lifecycle state wins when present.
+`harness factory triage --linear-issue TEAM-123` uses the same adapter as an
+input source before running the station. List, fetch, and default Linear-backed
+triage do not mutate Linear. `harness factory triage --linear-issue TEAM-123
+--apply` additionally moves the issue to `Triaging`, then to the terminal
+triage status, and writes a marker comment.
 
 `harness factory triage --item-file ...` or
 `harness factory triage --linear-issue ...` runs one work item through the

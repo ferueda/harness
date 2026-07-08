@@ -20,6 +20,7 @@ Station commands:
 
 ```bash
 harness factory status --workspace /path/to/repo
+harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
@@ -90,7 +91,17 @@ Minimal shape:
 - `role`: job inside a station such as `triager`, `planner`, or `reviewer`.
 - `agent`: backend identity such as `cursor` or `codex`.
 
-## Linear Fetch
+## Linear List And Fetch
+
+Use Linear list for read-only backlog discovery by configured status key:
+
+```bash
+LINEAR_API_KEY=... harness factory linear list --status intake --workspace /path/to/repo
+```
+
+List validates configured Linear statuses and project scope, then prints
+lightweight issue summaries. It does not fetch descriptions, labels, comments,
+or mutate Linear.
 
 Use Linear fetch to convert one issue into `FactoryWorkItem` JSON:
 

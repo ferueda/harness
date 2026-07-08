@@ -75,6 +75,16 @@ const factoryLinearHelp = runHarness(["factory", "linear", "--help"]);
 if (!factoryLinearHelp.includes("harness factory linear")) {
   throw new Error("Expected factory linear help to include command usage");
 }
+if (!factoryLinearHelp.includes("list")) {
+  throw new Error("Expected factory linear help to include list command");
+}
+const factoryLinearListHelp = runHarness(["factory", "linear", "list", "--help"]);
+if (!factoryLinearListHelp.includes("harness factory linear list")) {
+  throw new Error("Expected factory linear list help to include command usage");
+}
+if (!factoryLinearListHelp.includes("--status")) {
+  throw new Error("Expected factory linear list help to include --status");
+}
 const factoryLinearFetchHelp = runHarness(["factory", "linear", "fetch", "--help"]);
 if (!factoryLinearFetchHelp.includes("harness factory linear fetch")) {
   throw new Error("Expected factory linear fetch help to include command usage");

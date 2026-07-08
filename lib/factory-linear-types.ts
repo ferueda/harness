@@ -11,6 +11,7 @@ export type LinearConnectionLike<T> = {
   pageInfo?: {
     hasNextPage?: boolean;
     hasPreviousPage?: boolean;
+    endCursor?: string;
   };
 };
 

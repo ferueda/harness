@@ -170,17 +170,35 @@ does not exist on the Linear team.
 
 ## Linear Adapter
 
-Use Linear fetch to normalize one issue into a `FactoryWorkItem`:
+Use Linear list to scan issues in configured factory statuses:
+
+```bash
+LINEAR_API_KEY=... harness factory linear list --status intake --workspace /path/to/repo
+LINEAR_API_KEY=... harness factory linear list --status intake --status needsPlan --all --workspace /path/to/repo
+```
+
+The list command is read-only. It accepts keys from
+`factory.linear.statuses`, such as `intake` or `needsPlan`, rather than raw
+Linear status names. It validates the configured Linear team statuses, applies
+the configured `factory.linear.projectId` filter when present, and prints
+lightweight issue summaries for backlog discovery. Pagination defaults to the
+first page; use generated help for cursor and all-pages options. Large
+all-pages scans may take longer because each summary verifies issue team,
+project, status, and assignee relations for scope-safe output.
+
+List output deliberately omits descriptions, labels, and comments. Use Linear
+fetch to normalize one selected issue into a full `FactoryWorkItem`:
 
 ```bash
 LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/repo
 ```
 
-The fetch command is read-only. It validates `factory.linear.statuses` against
-the configured team workflow, verifies the issue belongs to the configured
+The fetch command is read-only. It verifies the issue belongs to the configured
 `factory.linear.projectId` when set, fetches the issue description, labels, and
 recent comments, merges lifecycle state when present, then prints JSON suitable
-for `--item-file`.
+for `--item-file`. Comment-derived planning-attention stages such as
+`plan-needs-human` require fetch; list mode does not read comments and omits
+`factoryStage` for the configured `needsInfo` status.
 
 Linear team and project serve different purposes:
 
@@ -189,9 +207,10 @@ Linear team and project serve different purposes:
 - `projectId` scopes the target repo. Use it when multiple repo projects share
   one Linear team.
 
-When `projectId` is configured, Linear-backed fetch, triage, planning input, and
-triage apply reject issues outside that project before running station work or
-mutating Linear. Local `--item-file` inputs are not revalidated against Linear.
+When `projectId` is configured, Linear-backed list, fetch, triage, planning
+input, and triage apply reject issues outside that project before running
+station work or mutating Linear. Local `--item-file` inputs are not revalidated
+against Linear.
 
 The triage station can also fetch Linear directly:
 

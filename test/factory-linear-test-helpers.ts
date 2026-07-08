@@ -44,6 +44,9 @@ export function fakeLinearAdapter(
 ): LinearFactoryAdapter {
   return {
     fetchWorkItem: async () => LINEAR_WORK_ITEM,
+    listWorkItemsByStatus: async () => {
+      throw new Error("listWorkItemsByStatus should not run");
+    },
     validateStatusMap: async () => ({
       teamKey: "ENG",
       statuses: [],
