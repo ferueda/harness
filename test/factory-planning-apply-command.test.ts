@@ -7,6 +7,11 @@ import {
   runFactoryPlanningPublicationWithLinearApply,
   runFactoryPlanningWithLinearApply,
 } from "../bin/factory-commands.ts";
+import {
+  deriveFactoryWorkItemKey,
+  loadFactoryLifecycleState,
+  resolveFactoryStateRoot,
+} from "../lib/factory-lifecycle.ts";
 import type {
   FactoryPlanningRunContext,
   FactoryPlanningRunMeta,
@@ -296,6 +301,23 @@ test("planning publication apply returns terminal Linear update", async () => {
       approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
     },
   });
+  expect(
+    loadFactoryLifecycleState({
+      factoryStateRoot: resolveFactoryStateRoot({ workspace: result.output.workspace }),
+      workItemKey: deriveFactoryWorkItemKey({
+        id: "linear:ENG-123",
+        source: "linear",
+        title: "Linear issue",
+        body: "",
+        labels: [],
+        metadata: result.output.factoryMetadata,
+      }),
+    }),
+  ).toMatchObject({
+    factoryStage: "plan-pr-open",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+  });
   expect(result.terminalApplyError).toBeUndefined();
 });
 
@@ -338,6 +360,24 @@ test("planning mark-merged apply returns terminal Linear update", async () => {
       factoryStage: "plan-approved",
       approvedPlanCommit: "abc1234",
     },
+  });
+  expect(
+    loadFactoryLifecycleState({
+      factoryStateRoot: resolveFactoryStateRoot({ workspace: result.output.workspace }),
+      workItemKey: deriveFactoryWorkItemKey({
+        id: "linear:ENG-123",
+        source: "linear",
+        title: "Linear issue",
+        body: "",
+        labels: [],
+        metadata: result.output.factoryMetadata,
+      }),
+    }),
+  ).toMatchObject({
+    factoryStage: "plan-approved",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+    approvedPlanCommit: "abc1234",
   });
 });
 
