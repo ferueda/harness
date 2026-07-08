@@ -8,6 +8,7 @@
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md)             | `in_progress` | Factory intake triage, deterministic routing, local inbox |
 | [260705-factory-operating-docs-smoke.md](./260705-factory-operating-docs-smoke.md) | `in_progress` | Factory operating docs, packaged skill, and smoke checks  |
 | [260707-linear-planning-apply.md](./260707-linear-planning-apply.md)               | `approved`    | Linear write mode for the planning station                |
+| [260708-linear-planning-publish-handoff.md](./260708-linear-planning-publish-handoff.md) | `approved`    | Linear apply mode for planning publish and merge handoff  |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 

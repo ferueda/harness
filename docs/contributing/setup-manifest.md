@@ -105,10 +105,12 @@ Codex SDK provider follows local Codex CLI auth via `codex login`, or
 Linear fetch and Linear-backed station input use `LINEAR_API_KEY` for
 `harness factory linear fetch`,
 `harness factory triage --linear-issue TEAM-123`, and
-`harness factory planning run --linear-issue TEAM-123`. Adding `--apply` to Linear
-triage or planning mutates Linear issue status and marker comments. Planning
-`--apply` never moves an issue to `Ready to Implement`; the plan-merge handoff
-owns that later transition.
+`harness factory planning run --linear-issue TEAM-123`. Adding `--apply` to
+Linear triage, planning, or planning publication commands mutates Linear issue
+status and marker comments. Planning run `--apply` never moves an issue to
+`Ready to Implement`; `harness factory planning mark-plan-merged
+--linear-issue TEAM-123 --apply` owns that transition after the plan commit is
+recorded.
 
 Do not write secrets into docs, plans, generated artifacts, committed
 `harness.json`, or checked-in config.

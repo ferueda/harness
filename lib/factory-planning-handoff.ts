@@ -216,7 +216,7 @@ function planningNextAction(metadata: FactoryWorkItemMetadata | undefined): stri
     return "Merge the plan PR, then register the commit with mark-plan-merged.";
   }
   if (metadata?.factoryStage === "plan-approved" && metadata.approvedPlanCommit) {
-    return "Ready for future tracker move to Ready to Implement.";
+    return "Ready to implement.";
   }
   return "None";
 }

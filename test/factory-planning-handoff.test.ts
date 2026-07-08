@@ -63,9 +63,7 @@ test("planning handoff publish and merge patch run metadata and summary", () => 
     factoryStage: "plan-approved",
     approvedPlanCommit: "abc1234",
   });
-  expect(readFileSync(join(runDir, "summary.md"), "utf8")).toContain(
-    "Ready for future tracker move",
-  );
+  expect(readFileSync(join(runDir, "summary.md"), "utf8")).toContain("Ready to implement");
 });
 
 test("planning handoff rejects incompatible run metadata before writing", () => {

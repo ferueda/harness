@@ -29,6 +29,8 @@ harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 -
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
+harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
+harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
 ```
 
 Low-level workflow escape hatches:
@@ -188,8 +190,12 @@ should be published through a plan PR before the tracker moves to
 can exist before `approvedPlanPrUrl`; record the URL when the plan PR exists.
 Use `harness factory planning publish` to record the plan PR URL, then
 `harness factory planning mark-plan-merged` to record the merge commit. These
-commands update local run metadata and print suggested Linear comments; they do
-not mutate Linear or GitHub. Do not commit `.harness/runs/*`.
+commands update local run metadata and print suggested Linear comments by
+default; they do not mutate Linear or GitHub unless `--linear-issue ... --apply`
+is present. `publish --apply` moves Linear to `Plan Needs Review` and posts a
+plan-PR marker comment. `mark-plan-merged --apply` moves Linear to
+`Ready to Implement` and posts an approved-plan marker comment. Neither command
+opens PRs or inspects GitHub merge state. Do not commit `.harness/runs/*`.
 
 ## Stop Conditions
 
@@ -199,7 +205,8 @@ Stop before proceeding if the task requires:
 - batch-moving every inbox item
 - mutating GitHub, Jira, or Inngest
 - mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
-  or `harness factory planning run --linear-issue ... --apply`
+  or `harness factory planning run --linear-issue ... --apply`, or explicit
+  planning publication commands with `--linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked source files

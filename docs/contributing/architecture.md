@@ -124,8 +124,10 @@ implementation stations.
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
 
 `lib/factory-linear-adapter.ts` owns Linear issue import and explicit station
-apply updates. `lib/factory-linear-planning-apply.ts` owns planning apply
+apply updates. `lib/factory-linear-planning-apply.ts` owns planning run apply
 markers, target-status mapping, comments, and mutation helpers.
+`lib/factory-linear-planning-handoff.ts` owns planning publication apply
+guards, comments, and status movement for plan PR and merge handoff commands.
 `harness factory linear fetch TEAM-123` validates `factory.linear` status
 mapping, verifies configured project scope, reads one Linear issue through
 `@linear/sdk`, and prints a normalized `FactoryWorkItem` JSON object. Linear
@@ -155,8 +157,12 @@ It does not move issues to `Ready to Implement`.
 `harness factory planning --item-file ...` and
 `harness factory planning --linear-issue ...` remain default-subcommand aliases
 for the run command. `harness factory planning publish` and
-`harness factory planning mark-plan-merged` update local planning run metadata;
-they do not mutate Linear or GitHub.
+`harness factory planning mark-plan-merged` update local planning run metadata.
+Without `--apply`, they print suggested Linear comment text only. With
+`--linear-issue ... --apply`, they validate the Linear issue and configured
+status, post marker comments, and move `publish` to `Plan Needs Review` or
+`mark-plan-merged` to `Ready to Implement`. They do not open PRs or inspect
+GitHub merge state.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these

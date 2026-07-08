@@ -93,6 +93,8 @@ harness factory planning run --workspace /path/to/repo --item-file .harness/inbo
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
+harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
+harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
 ```
 
 The item file is JSON with `id`, `source`, `title`, and `body`. `status` is
@@ -120,8 +122,10 @@ under `factory.<station>.roles`. Linear fetch uses `LINEAR_API_KEY` and
 `--apply` is explicit. Triage moves Linear through `Triaging`; planning moves
 eligible planning statuses to `Planning`, routes human attention to
 `Needs Clarification` or `Plan Needs Review`, and leaves Ready to Implement for
-the plan-merge handoff. GitHub, Jira, and Inngest remain future layers. For the
-full operator model, read
+the plan-merge handoff. Publication commands are local-only unless `--apply`
+is present; apply mode moves Linear to `Plan Needs Review` after the plan PR is
+registered and to `Ready to Implement` after the merge commit is recorded.
+GitHub, Jira, and Inngest remain future layers. For the full operator model, read
 [docs/contributing/factory.md](docs/contributing/factory.md).
 
 For review handoff, step-selection, and failure-triage workflow guidance,

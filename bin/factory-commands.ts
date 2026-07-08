@@ -16,16 +16,24 @@ import {
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
 import {
   createLinearFactoryAdapter,
-  renderLinearPlanningApprovedComment,
-  renderLinearPlanningReadyComment,
+  parseLinearIssueIdentifier,
   type LinearFactoryAdapter,
   type LinearTriageUpdatePlan,
 } from "../lib/factory-linear-adapter.ts";
+import type { FactoryLinearSettings } from "../lib/config.ts";
+import {
+  renderLinearPlanningApprovedComment,
+  renderLinearPlanningReadyComment,
+  type LinearPlanningHandoffUpdatePlan,
+} from "../lib/factory-linear-planning-handoff.ts";
 import type {
   LinearPlanningCompletedInput,
   LinearPlanningUpdatePlan,
 } from "../lib/factory-linear-planning-apply.ts";
-import { updateFactoryPlanningHandoff } from "../lib/factory-planning-handoff.ts";
+import {
+  loadFactoryPlanningRunMeta,
+  updateFactoryPlanningHandoff,
+} from "../lib/factory-planning-handoff.ts";
 import { FactoryPlanningError } from "../lib/factory-planning-schemas.ts";
 import {
   createFactoryPlanningRunContext,
@@ -76,11 +84,15 @@ type FactoryPlanningStationOptions = {
 type FactoryPlanningPublishOptions = {
   runDir: string;
   prUrl: string;
+  linearIssue?: string;
+  apply: boolean;
 };
 
 type FactoryPlanningMarkMergedOptions = {
   runDir: string;
   commit: string;
+  linearIssue?: string;
+  apply: boolean;
 };
 
 type FactoryLinearFetchOptions = {
@@ -150,55 +162,42 @@ function addFactoryPlanningStationCommand(parent: Command, config: FactoryComman
     .description("Register the plan PR for an approved planning run")
     .requiredOption("--run-dir <path>", "factory planning run directory")
     .requiredOption("--pr-url <url>", "plan PR URL")
-    .action((options: FactoryPlanningPublishOptions) => {
-      const meta = updateFactoryPlanningHandoff(options.runDir, {
-        approvedPlanPrUrl: options.prUrl,
-        factoryStage: "plan-pr-open",
+    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
+    .option("--apply", "apply deterministic Linear status/comment updates", false)
+    .action(async (options: FactoryPlanningPublishOptions) => {
+      const result = await runFactoryPlanningPublicationWithLinearApply({
+        mode: "publish",
+        runDir: options.runDir,
+        prUrl: options.prUrl,
+        issueRef: options.linearIssue,
+        apply: options.apply,
+        env: process.env,
       });
-      const metadata = requirePlanningFactoryMetadata(meta);
-      console.log(
-        JSON.stringify(
-          factoryPlanningPublicationCliOutput(
-            meta,
-            renderLinearPlanningReadyComment({
-              runId: meta.runId,
-              runDir: meta.runDir,
-              approvedPlanPath: metadata.approvedPlanPath,
-              approvedPlanPrUrl: metadata.approvedPlanPrUrl,
-            }),
-          ),
-          null,
-          2,
-        ),
-      );
+      console.log(JSON.stringify(result.output, null, 2));
+      if (result.terminalApplyError) {
+        throw result.terminalApplyError;
+      }
     });
   planning
     .command("mark-plan-merged")
     .description("Register the merged plan commit for an approved planning run")
     .requiredOption("--run-dir <path>", "factory planning run directory")
     .requiredOption("--commit <sha>", "merged plan commit")
-    .action((options: FactoryPlanningMarkMergedOptions) => {
-      const meta = updateFactoryPlanningHandoff(options.runDir, {
-        approvedPlanCommit: options.commit,
-        factoryStage: "plan-approved",
+    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
+    .option("--apply", "apply deterministic Linear status/comment updates", false)
+    .action(async (options: FactoryPlanningMarkMergedOptions) => {
+      const result = await runFactoryPlanningPublicationWithLinearApply({
+        mode: "mark-plan-merged",
+        runDir: options.runDir,
+        commit: options.commit,
+        issueRef: options.linearIssue,
+        apply: options.apply,
+        env: process.env,
       });
-      const metadata = requirePlanningFactoryMetadata(meta);
-      console.log(
-        JSON.stringify(
-          factoryPlanningPublicationCliOutput(
-            meta,
-            renderLinearPlanningApprovedComment({
-              runId: meta.runId,
-              runDir: meta.runDir,
-              approvedPlanPath: metadata.approvedPlanPath,
-              approvedPlanPrUrl: metadata.approvedPlanPrUrl,
-              approvedPlanCommit: metadata.approvedPlanCommit,
-            }),
-          ),
-          null,
-          2,
-        ),
-      );
+      console.log(JSON.stringify(result.output, null, 2));
+      if (result.terminalApplyError) {
+        throw result.terminalApplyError;
+      }
     });
 }
 
@@ -371,6 +370,116 @@ export async function runFactoryPlanningWithLinearApply(input: {
   };
 }
 
+type FactoryPlanningPublicationMode = "publish" | "mark-plan-merged";
+
+type FactoryPlanningPublicationOutput = ReturnType<typeof factoryPlanningPublicationCliOutput> & {
+  linearApplied?: boolean;
+  linearUpdate?: {
+    terminal?: LinearPlanningHandoffUpdatePlan;
+  };
+};
+
+export async function runFactoryPlanningPublicationWithLinearApply(input: {
+  mode: FactoryPlanningPublicationMode;
+  runDir: string;
+  issueRef?: string;
+  prUrl?: string;
+  commit?: string;
+  apply: boolean;
+  env?: NodeJS.ProcessEnv;
+  resolveLinearSettings?: (input: { workspace?: string }) => FactoryLinearSettings;
+  adapterFactory?: (input: {
+    apiKey: string;
+    settings: FactoryLinearSettings;
+  }) => LinearFactoryAdapter;
+}): Promise<{
+  output: FactoryPlanningPublicationOutput;
+  terminalApplyError?: unknown;
+}> {
+  const existingMeta = loadFactoryPlanningRunMeta(input.runDir);
+  let applyAdapter: LinearFactoryAdapter | undefined;
+  if (input.apply) {
+    if (!input.issueRef) {
+      throw new FactoryPlanningError("--apply requires --linear-issue");
+    }
+    assertLinearPublicationIssueMatches(existingMeta, input.issueRef);
+    const apiKey = input.env?.LINEAR_API_KEY;
+    if (!apiKey) {
+      throw new FactoryPlanningError("LINEAR_API_KEY is required for Linear commands.");
+    }
+    const settings = (input.resolveLinearSettings ?? resolveFactoryLinearSettings)({
+      workspace: existingMeta.workspace,
+    });
+    applyAdapter = (input.adapterFactory ?? createLinearFactoryAdapter)({ apiKey, settings });
+  }
+
+  const meta =
+    input.mode === "publish"
+      ? updateFactoryPlanningHandoff(input.runDir, {
+          approvedPlanPrUrl: requirePrUrl(input.prUrl),
+          factoryStage: "plan-pr-open",
+        })
+      : updateFactoryPlanningHandoff(input.runDir, {
+          approvedPlanCommit: requireCommit(input.commit),
+          factoryStage: "plan-approved",
+        });
+  const metadata = requirePlanningFactoryMetadata(meta);
+  const linearComment =
+    input.mode === "publish"
+      ? renderLinearPlanningReadyComment({
+          runId: meta.runId,
+          runDir: meta.runDir,
+          approvedPlanPath: metadata.approvedPlanPath,
+          approvedPlanPrUrl: metadata.approvedPlanPrUrl,
+        })
+      : renderLinearPlanningApprovedComment({
+          runId: meta.runId,
+          runDir: meta.runDir,
+          approvedPlanPath: metadata.approvedPlanPath,
+          approvedPlanPrUrl: metadata.approvedPlanPrUrl,
+          approvedPlanCommit: metadata.approvedPlanCommit,
+        });
+
+  if (!input.apply || !applyAdapter) {
+    return {
+      output: factoryPlanningPublicationCliOutput(meta, linearComment),
+    };
+  }
+
+  try {
+    const terminal =
+      input.mode === "publish"
+        ? await applyAdapter.applyPlanningPublished({
+            issueRef: input.issueRef ?? "",
+            runId: meta.runId,
+            runDir: meta.runDir,
+            approvedPlanPath: metadata.approvedPlanPath,
+            approvedPlanPrUrl: metadata.approvedPlanPrUrl,
+          })
+        : await applyAdapter.applyPlanningMerged({
+            issueRef: input.issueRef ?? "",
+            runId: meta.runId,
+            runDir: meta.runDir,
+            approvedPlanPath: metadata.approvedPlanPath,
+            approvedPlanPrUrl: metadata.approvedPlanPrUrl,
+            approvedPlanCommit: metadata.approvedPlanCommit,
+          });
+    return {
+      output: factoryPlanningPublicationCliOutput(meta, linearComment, {
+        linearApplied: true,
+        linearUpdate: { terminal },
+      }),
+    };
+  } catch (error) {
+    return {
+      output: factoryPlanningPublicationCliOutput(meta, linearComment, {
+        linearApplied: false,
+      }),
+      terminalApplyError: error,
+    };
+  }
+}
+
 function positiveInteger(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -379,7 +488,14 @@ function positiveInteger(value: string): number {
   return parsed;
 }
 
-function factoryPlanningPublicationCliOutput(meta: FactoryPlanningRunMeta, linearComment: string) {
+function factoryPlanningPublicationCliOutput(
+  meta: FactoryPlanningRunMeta,
+  linearComment: string,
+  extra: {
+    linearApplied?: boolean;
+    linearUpdate?: { terminal?: LinearPlanningHandoffUpdatePlan };
+  } = {},
+) {
   return {
     runId: meta.runId,
     workflow: meta.workflow,
@@ -390,7 +506,37 @@ function factoryPlanningPublicationCliOutput(meta: FactoryPlanningRunMeta, linea
     summaryPath: meta.summaryPath,
     metaPath: meta.metaPath,
     linearComment,
+    ...extra,
   };
+}
+
+function assertLinearPublicationIssueMatches(meta: FactoryPlanningRunMeta, issueRef: string): void {
+  const tracker = meta.factoryMetadata?.tracker;
+  if (tracker?.source !== "linear") {
+    throw new FactoryPlanningError("Linear apply requires linear tracker metadata.");
+  }
+  const expected = parseLinearIssueIdentifier(tracker.id);
+  const actual = parseLinearIssueIdentifier(issueRef);
+  if (!expected || !actual) {
+    throw new FactoryPlanningError(
+      `Linear apply requires issue identifiers like TEAM-123: ${issueRef}`,
+    );
+  }
+  if (expected.teamKey !== actual.teamKey || expected.number !== actual.number) {
+    throw new FactoryPlanningError(
+      `--linear-issue ${issueRef} does not match planning run tracker ${tracker.id}.`,
+    );
+  }
+}
+
+function requirePrUrl(value: string | undefined): string {
+  if (!value) throw new FactoryPlanningError("--pr-url is required");
+  return value;
+}
+
+function requireCommit(value: string | undefined): string {
+  if (!value) throw new FactoryPlanningError("--commit is required");
+  return value;
 }
 
 function requirePlanningFactoryMetadata(meta: FactoryPlanningRunMeta): {

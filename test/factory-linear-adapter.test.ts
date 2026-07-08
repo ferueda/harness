@@ -18,6 +18,12 @@ import {
   renderLinearPlanningApplyCompleteComment,
   renderLinearPlanningApplyFailedComment,
 } from "../lib/factory-linear-planning-apply.ts";
+import {
+  assertLinearPlanningMergedApplyAllowed,
+  assertLinearPlanningPublishedApplyAllowed,
+  linearPlanningApprovedCommentMarker,
+  linearPlanningReadyCommentMarker,
+} from "../lib/factory-linear-planning-handoff.ts";
 import type { LinearClientLike } from "../lib/factory-linear-types.ts";
 import type { FactoryRoute, FactoryTriageOutput } from "../lib/factory-schemas.ts";
 
@@ -96,6 +102,26 @@ const ISSUE = {
   }),
 };
 
+function issueWithState(
+  name: string,
+  extra: {
+    comments?: Array<{ id: string; body: string; createdAt?: Date }>;
+    projectId?: string;
+    project?: Promise<typeof PROJECT | typeof OTHER_PROJECT | undefined>;
+  } = {},
+) {
+  return {
+    ...ISSUE,
+    projectId: extra.projectId ?? ISSUE.projectId,
+    project: extra.project ?? ISSUE.project,
+    state: Promise.resolve({ id: `state-${name}`, name, type: "started" }),
+    comments: async () => ({
+      pageInfo: { hasPreviousPage: false },
+      nodes: extra.comments ?? [],
+    }),
+  };
+}
+
 function fakeClient(overrides: Partial<LinearClientLike> = {}): LinearClientLike {
   return {
     issue: async () => ISSUE,
@@ -159,6 +185,320 @@ test("Linear planning comments include stable markers and plan handoff links", (
       runDir: ".harness/runs/factory/20260707-120000",
     }),
   ).toContain("Commit: `abc1234`");
+});
+
+test("Linear planning handoff apply helpers guard statuses", () => {
+  expect(() =>
+    assertLinearPlanningPublishedApplyAllowed(LINEAR_SETTINGS, "Needs Plan"),
+  ).not.toThrow();
+  expect(() =>
+    assertLinearPlanningPublishedApplyAllowed(LINEAR_SETTINGS, "Planning"),
+  ).not.toThrow();
+  expect(() =>
+    assertLinearPlanningPublishedApplyAllowed(LINEAR_SETTINGS, "Plan Needs Review"),
+  ).not.toThrow();
+  expect(() => assertLinearPlanningPublishedApplyAllowed(LINEAR_SETTINGS, "Backlog")).toThrow(
+    /planning publish --apply only accepts Needs Plan, Planning, Plan Needs Review/,
+  );
+
+  expect(() =>
+    assertLinearPlanningMergedApplyAllowed(LINEAR_SETTINGS, "Plan Needs Review"),
+  ).not.toThrow();
+  expect(() =>
+    assertLinearPlanningMergedApplyAllowed(LINEAR_SETTINGS, "Ready to Implement"),
+  ).not.toThrow();
+  expect(() => assertLinearPlanningMergedApplyAllowed(LINEAR_SETTINGS, "Planning")).toThrow(
+    /planning mark-plan-merged --apply only accepts Plan Needs Review, Ready to Implement/,
+  );
+});
+
+test("Linear adapter publishes plan handoff to Plan Needs Review", async () => {
+  const updates: unknown[] = [];
+  const comments: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({ nodes: [issueWithState("Planning")] }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.applyPlanningPublished({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+  });
+
+  expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Plan Needs Review" } }]);
+  expect(comments).toHaveLength(1);
+  expect(comments[0]).toMatchObject({
+    issueId: "issue-1",
+    body: expect.stringContaining(linearPlanningReadyCommentMarker("run-1")),
+  });
+  expect(result).toMatchObject({
+    stage: "publish",
+    fromStatus: "Planning",
+    targetStatus: "Plan Needs Review",
+    commentMarker: linearPlanningReadyCommentMarker("run-1"),
+  });
+});
+
+test("Linear adapter publishes local-only planning runs from Needs Plan", async () => {
+  const updates: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({ nodes: [issueWithState("Needs Plan")] }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyPlanningPublished({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+  });
+
+  expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Plan Needs Review" } }]);
+});
+
+test("Linear adapter publish apply is idempotent and dedupes comments", async () => {
+  const updates: unknown[] = [];
+  const comments: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          issueWithState("Plan Needs Review", {
+            comments: [
+              {
+                id: "comment-1",
+                body: linearPlanningReadyCommentMarker("run-1"),
+                createdAt: new Date("2026-07-07T12:00:00Z"),
+              },
+            ],
+          }),
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyPlanningPublished({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+  });
+
+  expect(updates).toEqual([]);
+  expect(comments).toEqual([]);
+});
+
+test("Linear adapter rejects publish apply from unrelated statuses before mutation", async () => {
+  const updates: unknown[] = [];
+  const comments: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({ nodes: [issueWithState("Backlog")] }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyPlanningPublished({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+      approvedPlanPath: "dev/plans/ENG-123.md",
+      approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+    }),
+  ).rejects.toThrow(/planning publish --apply only accepts/);
+  expect(updates).toEqual([]);
+  expect(comments).toEqual([]);
+});
+
+test("Linear adapter marks merged planning handoff Ready to Implement", async () => {
+  const updates: unknown[] = [];
+  const comments: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({ nodes: [issueWithState("Plan Needs Review")] }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.applyPlanningMerged({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+    approvedPlanCommit: "abc1234",
+  });
+
+  expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Ready to Implement" } }]);
+  expect(comments[0]).toMatchObject({
+    issueId: "issue-1",
+    body: expect.stringContaining(linearPlanningApprovedCommentMarker("run-1")),
+  });
+  expect(result).toMatchObject({
+    stage: "merged",
+    fromStatus: "Plan Needs Review",
+    targetStatus: "Ready to Implement",
+  });
+});
+
+test("Linear adapter merged apply is idempotent and dedupes comments", async () => {
+  const updates: unknown[] = [];
+  const comments: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          issueWithState("Ready to Implement", {
+            comments: [
+              {
+                id: "comment-1",
+                body: linearPlanningApprovedCommentMarker("run-1"),
+                createdAt: new Date("2026-07-07T12:00:00Z"),
+              },
+            ],
+          }),
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await adapter.applyPlanningMerged({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+    approvedPlanPath: "dev/plans/ENG-123.md",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+    approvedPlanCommit: "abc1234",
+  });
+
+  expect(updates).toEqual([]);
+  expect(comments).toEqual([]);
+});
+
+test("Linear adapter rejects merged apply from unrelated statuses before mutation", async () => {
+  const updates: unknown[] = [];
+  const comments: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({ nodes: [issueWithState("Planning")] }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyPlanningMerged({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+      approvedPlanPath: "dev/plans/ENG-123.md",
+      approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+      approvedPlanCommit: "abc1234",
+    }),
+  ).rejects.toThrow(/planning mark-plan-merged --apply only accepts/);
+  expect(updates).toEqual([]);
+  expect(comments).toEqual([]);
+});
+
+test("Linear adapter rejects handoff apply outside configured project before mutation", async () => {
+  const updates: unknown[] = [];
+  const comments: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          issueWithState("Planning", {
+            projectId: OTHER_PROJECT.id,
+            project: Promise.resolve(OTHER_PROJECT),
+          }),
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+      createComment: async (input) => {
+        comments.push(input);
+        return { success: true };
+      },
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyPlanningPublished({
+      issueRef: "ENG-123",
+      runId: "run-1",
+      runDir: ".harness/runs/factory/run-1",
+      approvedPlanPath: "dev/plans/ENG-123.md",
+      approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
+    }),
+  ).rejects.toThrow(/belongs to project Other Repo/);
+  expect(updates).toEqual([]);
+  expect(comments).toEqual([]);
 });
 
 test("Linear planning apply helpers map statuses and render concise comments", () => {
