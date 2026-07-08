@@ -274,7 +274,8 @@ Live planning runs create nested plan-review runs under
 the final tracked plan file under `dev/plans/`. Tracker-backed flows should
 publish that file through a plan PR before implementation starts. `--dry-run`
 writes placeholder planning artifacts but does not invoke providers or reviewers
-and does not write `events.jsonl`.
+does not write run `events.jsonl`, and does not write lifecycle events under
+`.harness/factory`.
 
 Planning `meta.json` includes `factoryMetadata` with reserved handoff keys such
 as `tracker`, `factoryRoute`, `factoryNextAction`, `factoryStage`,
