@@ -11,6 +11,7 @@ const TESTING_DOC = "docs/contributing/testing.md";
 const DEVELOPER_CHECKOUT_PATH_PATTERNS = [
   /\/Users\/[^/\s`)"]+\/dev\/(?:clones\/)?[^/\s`)"]+/i,
 ] as const;
+const RETIRED_TODO_BACKLOG_PATTERN = /dev\/todos?(?:\/|\b)|\.\.\/todo\/|\(todo\/|Todo backlog/;
 const REQUIRED_INVENTORY_CONCRETE = ["install", "bin/harness.ts"] as const;
 const REQUIRED_INVENTORY_GLOBS = ["scripts/*", "workflows/*.ts", "skills/*/scripts/*"] as const;
 const INVENTORY_EXCLUSIONS = [
@@ -278,6 +279,16 @@ function durableDocPaths(): string[] {
   return [...paths].sort();
 }
 
+function activeDocAndPlanPaths(): string[] {
+  const paths = new Set(durableDocPaths());
+  for (const root of ["skills", ".agents/skills", "dev/plans"]) {
+    for (const path of listFiles(join(REPO_ROOT, root))) {
+      if (path.endsWith(".md")) paths.add(path);
+    }
+  }
+  return [...paths].sort();
+}
+
 test("testing taxonomy documents required proof layers", () => {
   expect(existsSync(join(REPO_ROOT, TESTING_DOC)), TESTING_DOC).toBe(true);
   const content = readRepoFile(TESTING_DOC);
@@ -525,6 +536,18 @@ test("durable docs do not reference developer-local checkout paths", () => {
         `${relativePath} contains developer-local checkout path: ${match?.[0] ?? pattern.source}`,
       ).toBeNull();
     }
+  }
+});
+
+test("active docs and plans do not use repo-managed todos as backlog", () => {
+  for (const relativePath of activeDocAndPlanPaths()) {
+    const match = RETIRED_TODO_BACKLOG_PATTERN.exec(readRepoFile(relativePath));
+    expect(
+      match,
+      `${relativePath} references retired repo todo backlog: ${
+        match?.[0] ?? RETIRED_TODO_BACKLOG_PATTERN.source
+      }`,
+    ).toBeNull();
   }
 });
 

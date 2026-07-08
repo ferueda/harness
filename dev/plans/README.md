@@ -9,7 +9,7 @@
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
-Parse-resilience remainder (retry, structured-output spike): [todo](../todo/260627-reviewer-json-parse-resilience.md).
+Parse-resilience remainder (retry, structured-output spike): [FER-33](https://linear.app/ferueda/issue/FER-33/improve-reviewer-json-parse-resilience).
 
 Skill trees are intentionally not instruction-memory cleanup targets: `skills/` packaged installable skills; `.agents/skills/` repo-local dev skills. **Deferred:** `.agents/skills/{typescript-refactor,vitest,zod}/AGENTS.md` duplicate skill summaries — fix only in a separate skill-structure plan with explicit scope for skill trees.
 
@@ -58,4 +58,4 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 
 ---
 
-**New plans:** `YYMMDD-short-slug.md` in this directory — reconcile here before adding. **When done:** remove the plan file and update this README shipped table; do not keep an `archive/` copy.
+**New plans:** `YYMMDD-short-slug.md` in this directory — reconcile here before adding. Todo-like backlog spikes live in Linear; this directory is for approved implementation plans and handoffs. **When done:** remove the plan file and update this README shipped table; do not keep an `archive/` copy.

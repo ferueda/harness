@@ -89,7 +89,7 @@ Compress prior review JSON to ~500 tokens (verdict, summary, findings by severit
 1. **`steps.json` resumability** — Phase 0.6; align step IDs with `events.jsonl`.
 2. **`digestReview()`** — before quality-review consumes prior review output.
 3. **One deterministic grader** (`grader:test`) with `--test-command`.
-4. **Parse resilience** — [`dev/todo/260627-reviewer-json-parse-resilience.md`](../todo/260627-reviewer-json-parse-resilience.md).
+4. **Parse resilience** — [FER-33](https://linear.app/ferueda/issue/FER-33/improve-reviewer-json-parse-resilience).
 5. **Extract `runSingleReview` / `finalizeReview`** from `runReviewSteps` — prerequisite for Inngest lib import.
 6. **Inbox trigger** — GH Action writes `.harness/inbox/review.json`.
 7. **`orchestrator/`** — Inngest function per workflow; start with `change-review`.
