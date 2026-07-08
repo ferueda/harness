@@ -120,6 +120,28 @@ GitHub adapter responsibilities:
 Inngest replaces manual polling and manual station chaining, not harness
 workflows.
 
+Current integration decision: Inngest should call exported harness library
+functions directly, not shell out to `harness` CLI commands. The CLI remains
+the human/operator interface. Inngest becomes an event runner over the same
+station functions so retries, locks, and step outputs stay typed and durable.
+
+Target boundary:
+
+```text
+CLI      -> exported station/orchestration functions
+Inngest  -> exported station/orchestration functions
+```
+
+Avoid this as the primary integration:
+
+```text
+Inngest -> shell out to `harness factory ...`
+```
+
+Shelling out may stay useful for smoke tests or emergency operator scripts, but
+production event orchestration should use library functions such as the current
+planning publication helper.
+
 Today:
 
 ```bash

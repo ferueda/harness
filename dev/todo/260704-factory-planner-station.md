@@ -1,8 +1,43 @@
 # Factory planning station context
 
-**Status:** open  
+**Status:** shipped-context  
 **Related plan:** [`dev/plans/260704-factory-intake-routing.md`](../plans/260704-factory-intake-routing.md)  
 **Related todo:** [`dev/todo/260704-factory-adapters-orchestration.md`](./260704-factory-adapters-orchestration.md)
+
+## Current state after PR #80
+
+The planning station and Linear planning handoff are shipped. Keep this file as
+historical design context only; do not use it as the next executor plan.
+
+Shipped path:
+
+```text
+Linear Backlog
+  -> triage --apply
+  -> Needs Plan
+  -> planning run --apply
+  -> Planning
+  -> operator opens plan PR
+  -> planning publish --apply
+  -> Plan Needs Review
+  -> operator merges plan PR
+  -> planning mark-plan-merged --apply
+  -> Ready to Implement
+```
+
+Current commands:
+
+```bash
+harness factory triage --linear-issue FER-123 --apply
+harness factory planning run --linear-issue FER-123 --apply
+harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url <plan-pr-url> --linear-issue FER-123 --apply
+harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit <merge-sha> --linear-issue FER-123 --apply
+```
+
+Next feature work should create a fresh implementation-station plan. The
+implementation station should consume Linear issues in `Ready to Implement`,
+verify `approvedPlanPath` and `approvedPlanCommit` for planned work, and fail
+closed when the approved plan is missing from the current base.
 
 ## Purpose
 
