@@ -272,7 +272,8 @@ comments only; it does not mutate source files.
 
 ## Planning Station
 
-Use planning for a `ready-to-plan` work item:
+Use planning for work items that need a new plan, revised plan, or failed
+planning retry:
 
 ```bash
 harness factory planning run --workspace /path/to/repo --item-file work-item.json

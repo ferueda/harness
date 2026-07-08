@@ -101,8 +101,10 @@ Station commands use it to validate the mutually exclusive `--item-file` and
 reads or Linear fetches after station settings are known.
 
 `lib/factory-planning-input.ts` owns planning-specific work-item input guards.
-Linear-backed planning input accepts only issues mapped to `ready-to-plan` or
-`planning-failed` before creating a planning run. Item-file planning remains
+Linear-backed planning input accepts issues mapped to `ready-to-plan`,
+`plan-needs-human`, `plan-review-unresolved`, or `planning-failed` before
+creating a planning run. Planning-attention `Needs Clarification` issues are
+identified by the latest factory planning marker. Item-file planning remains
 manual/local and is not gated by Linear tracker metadata.
 
 `lib/factory-planning-run-context.ts` creates local file-backed factory planning
