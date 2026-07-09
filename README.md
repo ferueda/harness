@@ -89,15 +89,15 @@ harness factory status --workspace /path/to/repo
 harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example intake" --body "Details"
-harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
-harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
-harness factory planning run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
+harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
+harness factory planning run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory implementation run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
 ```
 
@@ -132,10 +132,10 @@ statuses to `Planning`, routes human attention to `Needs Clarification` or
 Publication commands are local-only unless `--apply` is present; apply mode
 moves Linear to `Plan Needs Review` after the plan PR is registered and to
 `Ready to Implement` after the merge commit is recorded.
-Implementation dry-run prepares prompt/handoff artifacts without a provider.
 Live implementation runs one implementer, writes candidate changes plus an
 internal review ref, and stops before change-review; it does not mutate Linear
-or create a human branch/PR/commit.
+or create a human branch/PR/commit. Optional `--dry-run` prepares prompt/handoff
+artifacts without a provider.
 Harness adapters for GitHub, Jira, and Inngest remain future layers. Linking
 factory PRs to Linear issues via branch/title naming is current operator
 practice (see Linear PR linking in

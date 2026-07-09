@@ -11,8 +11,8 @@ Operate the current local harness factory one work item at a time.
 
 Use this skill when the user wants to inspect factory inbox state, triage a
 factory work item, fetch or create a Linear intake issue, run the planning
-station for a `ready-to-plan` item, run implementation dry-run or live mode for
-a `ready-to-implement` item, or understand factory artifacts and statuses.
+station for a `ready-to-plan` item, run implementation for a
+`ready-to-implement` item, or understand factory artifacts and statuses.
 
 ## Waiting For Station Runs
 
@@ -49,16 +49,16 @@ harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file work-item.json
-harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
-harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 ```
 
@@ -69,13 +69,10 @@ harness run factory-triage --item-file work-item.json
 harness run plan-review --plan path/to/implementation-plan.md
 ```
 
-Use `--dry-run` only to verify command wiring and artifact layout without
-provider or reviewer calls. Factory dry-run skips the triager/planner and
-writes placeholder artifacts — it is not a real classification or plan.
-For `--linear-issue`, dry-run still performs the live Linear read needed to
-build the work item; it does not mutate Linear. When the chief wants a real
-route or authorizes `--apply`, run live triage/planning (with `--apply` when
-authorized) instead of dry-run first.
+Live is the default. Use `--dry-run` only to verify command wiring and artifact
+layout — not for classification or planning. Dry-run skips the triager/planner
+and writes placeholders; for `--linear-issue` it still does the live Linear
+read needed to build the work item, without mutating Linear.
 
 ## Role Config
 
@@ -183,20 +180,17 @@ Run:
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 ```
 
 `--linear-issue` uses Linear as the input source by default. It requires
 `LINEAR_API_KEY` and `factory.linear` config. Every `--linear-issue` triage run
-performs a live Linear read before writing local factory artifacts, including
-dry-runs. If `factory.linear.projectId` is set, the issue must belong to that
-project before triage or apply can continue.
+performs a live Linear read before writing local factory artifacts. If
+`factory.linear.projectId` is set, the issue must belong to that project before
+triage or apply can continue.
 
-Live triage (no `--dry-run`) invokes the triager and writes a real route.
-Add `--apply` to move allowed entry statuses to `Triaging`, then to the
-terminal triage status, and write one marker comment. When the chief
-authorizes apply, run `--apply` directly — do not burn a dry-run first for
-classification. `--apply` cannot be combined with `--dry-run` or
+Live triage invokes the triager and writes a real route. Add `--apply` to move
+allowed entry statuses to `Triaging`, then to the terminal triage status, and
+write one marker comment. `--apply` cannot be combined with `--dry-run` or
 `--item-file`. Comment dedupe checks the most recent Linear comments fetched
 by the adapter (currently 20); older markers can be reposted on retry.
 
@@ -226,25 +220,24 @@ Run planning only for allowed planning entry stages: `ready-to-plan`,
 
 ```bash
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 ```
 
 `--linear-issue` planning requires `LINEAR_API_KEY` and `factory.linear` config.
 Every Linear-backed planning run performs a live Linear read before writing
-local factory artifacts, including dry-runs. If `factory.linear.projectId` is
-set, the issue must belong to that project. It accepts `Needs Plan`,
-`Planning Failed`, `Plan Needs Review`, plus planning-attention
-`Needs Clarification` identified from the latest factory planning marker; other
-Linear statuses are rejected before creating a run directory.
+local factory artifacts. If `factory.linear.projectId` is set, the issue must
+belong to that project. It accepts `Needs Plan`, `Planning Failed`,
+`Plan Needs Review`, plus planning-attention `Needs Clarification` identified
+from the latest factory planning marker; other Linear statuses are rejected
+before creating a run directory.
 
-Live planning (no `--dry-run`) runs the planner/reviewer loop. Add `--apply` to
-move the issue to `Planning` before planner work, then post one marker comment
-after the station finishes. When the chief authorizes apply, run `--apply`
-directly rather than a wiring-only dry-run first. Approved plans stay in
-`Planning`; human questions move to `Needs Clarification`; unresolved reviews
-move to `Plan Needs Review`; station/runtime failures move to `Planning Failed`.
-Planning apply never moves the issue to `Ready to Implement`.
+Live planning runs the planner/reviewer loop. Add `--apply` to move the issue
+to `Planning` before planner work, then post one marker comment after the
+station finishes. Approved plans stay in `Planning`; human questions move to
+`Needs Clarification`; unresolved reviews move to `Plan Needs Review`;
+station/runtime failures move to `Planning Failed`. Planning apply never moves
+the issue to `Ready to Implement`.
 
 The planner writes `.harness/runs/factory/<run-id>/planning/draft.md`. Harness
 snapshots the draft, runs `plan-review`, and reinvokes the same planner session
@@ -266,18 +259,19 @@ recent Linear marker comments.
 Run implementation only for work items already ready to implement:
 
 ```bash
-harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 ```
 
-Dry-run prepares prompt and handoff artifacts without invoking a provider or
-writing lifecycle state. Live mode resolves direct or planned implementation
-input, validates readiness, resolves `factory.implementation.roles.implementer`,
-invokes one implementer, writes candidate change artifacts, creates
+Live mode resolves direct or planned implementation input, validates readiness,
+resolves `factory.implementation.roles.implementer`, invokes one implementer,
+writes candidate change artifacts, creates
 `refs/harness/factory/<run-id>/implementation`, and appends lifecycle events.
 It does not run change-review, mutate Linear, create human branches/worktrees,
 or open PRs. After `implementation-complete`, run
 `harness run change-review --base <reviewBase> --head <reviewHead>` separately.
+Optional `--dry-run` prepares prompt and handoff artifacts without invoking a
+provider or writing lifecycle state.
 
 Planned mode requires `factoryStage: "plan-approved"`, `approvedPlanPath`, and
 `approvedPlanCommit`; the approved plan file must exist in the workspace. Direct
