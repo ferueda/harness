@@ -52,11 +52,6 @@ build the work item; it does not mutate Linear. When the chief wants a real
 route or authorizes `--apply`, run live triage/planning (with `--apply` when
 authorized) instead of dry-run first.
 
-Grove / extra worktrees are not required for triage or planning. Those
-stations write ignored `.harness/runs/` artifacts and (with `--apply`) mutate
-Linear only — use the registered project workspace path. Prefer Grove when
-implementation or other git-mutating work needs an isolated checkout.
-
 ## Role Config
 
 Factory station roles come from `harness.json`, under
@@ -161,8 +156,6 @@ classification. `--apply` cannot be combined with `--dry-run` or
 `--item-file`. Comment dedupe checks the most recent Linear comments fetched
 by the adapter (currently 20); older markers can be reposted on retry.
 
-Do not require a Grove worktree for triage; use the registered workspace.
-
 If an apply run leaves Linear in `Triaging`, inspect `summary.md` and
 `meta.json`, then manually move the issue to `Triage Failed`, `Backlog`, or
 another intentional status before rerunning.
@@ -208,8 +201,6 @@ directly rather than a wiring-only dry-run first. Approved plans stay in
 `Planning`; human questions move to `Needs Clarification`; unresolved reviews
 move to `Plan Needs Review`; station/runtime failures move to `Planning Failed`.
 Planning apply never moves the issue to `Ready to Implement`.
-
-Do not require a Grove worktree for planning; use the registered workspace.
 
 The planner writes `.harness/runs/factory/<run-id>/planning/draft.md`. Harness
 snapshots the draft, runs `plan-review`, and reinvokes the same planner session
