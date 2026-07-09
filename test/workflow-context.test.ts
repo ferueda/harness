@@ -263,7 +263,7 @@ test("workflow context passes Cursor provider to factory", () => {
 
   expect(calls.providerOptions).toMatchObject({ provider: "cursor" });
   expect(ctx.reviewConcurrency).toBe("parallel");
-  expect(meta.agent).toMatchObject({ name: "cursor", model: "composer-2.5" });
+  expect(meta.agent).toMatchObject({ name: "cursor", model: "grok-4.5" });
 });
 
 test("workflow context keeps Cursor reviews parallel by default", () => {
@@ -490,7 +490,7 @@ test("workflow context passes Codex review sandbox and approval defaults", async
   expect(review.verdict).toBe("pass");
   expect(calls.providerOptions).toMatchObject({ provider: "codex" });
   expect(calls.input).toMatchObject({
-    model: "gpt-5.5",
+    model: "gpt-5.6-sol",
     sandboxMode: "read-only",
     approvalPolicy: "never",
     modelReasoningEffort: "high",

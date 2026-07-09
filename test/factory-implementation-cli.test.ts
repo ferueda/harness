@@ -62,7 +62,7 @@ test("implementation item-file direct dry-run writes artifacts without lifecycle
     workflow: "factory-implementation",
     status: "dry_run",
     mode: "direct",
-    implementerAgent: { name: "cursor", model: "composer-2.5" },
+    implementerAgent: { name: "cursor", model: "grok-4.5" },
   });
   expect(output.summaryPath).toBe(join(output.runDir, "summary.md"));
   expect(output.metaPath).toBe(join(output.runDir, "meta.json"));

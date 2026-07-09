@@ -77,7 +77,7 @@ test("factory planning approves a reviewed plan and writes final dev plan", asyn
     runsDir,
     workItem: WORK_ITEM,
     plannerRole: { agent: "cursor", model: "composer-2.5" },
-    reviewerRole: { agent: "codex", model: "gpt-5.5", modelReasoningEffort: "high" },
+    reviewerRole: { agent: "codex", model: "gpt-5.6-sol", modelReasoningEffort: "high" },
     outputPlan,
     reviewRunsDir,
     maxReviewIterations: 2,
@@ -117,7 +117,7 @@ test("factory planning approves a reviewed plan and writes final dev plan", asyn
   expect(meta.iterations[0]?.review).toMatchObject({ status: "completed", verdict: "pass" });
   expect(meta.plannerSession).toEqual(session);
   expect(meta.plannerAgent).toMatchObject({ name: "cursor", model: "composer-2.5" });
-  expect(meta.reviewerAgent).toMatchObject({ name: "codex", model: "gpt-5.5" });
+  expect(meta.reviewerAgent).toMatchObject({ name: "codex", model: "gpt-5.6-sol" });
   expect(calls).toHaveLength(1);
   expect(calls[0]?.schemaPath).toMatch(/schemas\/factory-planning-output\.schema\.json$/);
   expect(calls[0]?.logPath).toBe(join(ctx.runDir, "iterations/1/planner.stream.jsonl"));
