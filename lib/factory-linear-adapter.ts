@@ -213,7 +213,7 @@ const LINEAR_LIST_DEPS = {
 const LINEAR_CREATE_DEPS = {
   validateStatusMap,
   fetchTeam,
-  fetchWorkflowState,
+  normalizeName,
 };
 
 export function parseLinearIssueIdentifier(issueRef: string): LinearIssueIdentifier | null {
