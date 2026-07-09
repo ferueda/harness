@@ -25,6 +25,8 @@ harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 -
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
 ```
 
 There is no batch dispatch command. Run an explicit station for an explicit
@@ -149,6 +151,14 @@ Factory station roles use `harness.json`:
           "modelReasoningEffort": "high"
         }
       }
+    },
+    "implementation": {
+      "roles": {
+        "implementer": {
+          "agent": "cursor",
+          "model": "composer-2.5"
+        }
+      }
     }
   }
 }
@@ -156,11 +166,14 @@ Factory station roles use `harness.json`:
 
 Vocabulary:
 
-- `station`: lifecycle step such as `triage` or `planning`.
-- `role`: job inside a station such as `triager`, `planner`, or `reviewer`.
+- `station`: lifecycle step such as `triage`, `planning`, or `implementation`.
+- `role`: job inside a station such as `triager`, `planner`, `reviewer`, or `implementer`.
 - `agent`: backend identity such as `cursor` or `codex`.
 
 Keep factory config role-based. Do not add per-role CLI flag sprawl.
+Codex implementation roles may use the same optional provider policy fields as
+other Codex roles: `executable`, `sandboxMode`, `approvalPolicy`, and
+`modelReasoningEffort`.
 
 Linear status config is a coordinated board/config contract. When upgrading an
 existing repo, rename the old human-input status to `Needs Clarification`, add
@@ -410,24 +423,55 @@ the issue to `Plan Needs Review`, and posts one plan-PR marker comment.
 approved-plan marker comment. Both commands reject mismatched issue ids and
 non-Linear tracker metadata before local metadata writes.
 
-### Implementation Input Contract
+## Implementation Station
 
-There is no implementation station CLI yet. The future implementation station
-should first call `resolveFactoryWorkItemInput`, then
-`resolveFactoryImplementationInput`.
+Implementation is currently a dry-run station shell:
 
-Planned implementation input requires lifecycle/factory metadata with
+```bash
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
+harness factory implementation run --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+```
+
+The station first calls `resolveFactoryWorkItemInput`, then
+`resolveFactoryImplementationInput`. Linear-backed input passes
+`factory.linear.statuses.readyToImplement` as `linearReadyStatus`.
+
+Planned mode requires lifecycle/factory metadata with
 `factoryStage: "plan-approved"`, `approvedPlanPath`, `approvedPlanCommit`, and
-the approved plan file present in the current workspace. The returned input
-includes the workspace plan path and commit pin the implementer should use.
+the approved plan file present in the current workspace. The station records the
+relative plan path, absolute workspace plan path, and commit provenance. In v1,
+the commit is a readiness marker only; the station does not check out or verify
+the Git object.
 
-Direct implementation input requires explicit factory readiness markers:
+Direct mode requires explicit factory readiness markers:
 `factoryStage: "ready-to-implement"`,
 `factoryRoute: "ready-to-implement"`, and
 `factoryNextAction: "implement-directly"`. Linear `Ready to Implement` is only
 a projection consistency guard for Linear-backed input; it is not the source of
-truth for direct or planned readiness. Future Linear-backed station wiring must
-pass `factory.linear.statuses.readyToImplement` as `linearReadyStatus`.
+truth for direct or planned readiness.
+
+Dry-run artifacts:
+
+```text
+.harness/runs/factory/<run-id>/
+  context/
+    work-item.json
+    implementation-input.json
+    plan-ref.json              # planned only
+    source-material.json       # direct only
+  implementation/
+    prompt.md
+    change-review-handoff.md
+  summary.md
+  meta.json
+```
+
+`implementation/change-review-handoff.md` uses the same handoff section model as
+`change-review-workflow`.
+
+Non-goals for the current station shell: no provider invocation, no
+change-review loop, no PR creation, no Linear mutation, no lifecycle events, no
+branch/worktree orchestration, and no Git checkout or commit verification.
 
 ## Local Inbox
 

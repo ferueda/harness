@@ -32,6 +32,8 @@ harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-u
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 ```
 
 Low-level workflow escape hatches:
@@ -82,13 +84,19 @@ Minimal shape:
         "planner": { "agent": "cursor", "model": "composer-2.5" },
         "reviewer": { "agent": "codex", "model": "gpt-5.5" }
       }
+    },
+    "implementation": {
+      "roles": {
+        "implementer": { "agent": "cursor", "model": "composer-2.5" }
+      }
     }
   }
 }
 ```
 
-- `station`: lifecycle step such as `triage` or `planning`.
-- `role`: job inside a station such as `triager`, `planner`, or `reviewer`.
+- `station`: lifecycle step such as `triage`, `planning`, or `implementation`.
+- `role`: job inside a station such as `triager`, `planner`, `reviewer`, or
+  `implementer`.
 - `agent`: backend identity such as `cursor` or `codex`.
 
 ## Linear List And Fetch
@@ -195,6 +203,45 @@ Terminal statuses:
 Live planning appends lifecycle events under `.harness/factory`. Future station
 decisions should use the lifecycle read model when present instead of parsing
 recent Linear marker comments.
+
+## Implementation
+
+Run implementation only for work items already ready to implement:
+
+```bash
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+```
+
+The implementation station is dry-run only in the current factory shell. It
+resolves direct or planned implementation input, validates readiness, resolves
+`factory.implementation.roles.implementer`, and writes implementation prep
+artifacts. It does not invoke a provider, run change review, mutate Linear,
+append lifecycle events, create branches, create worktrees, or open PRs.
+
+Planned mode requires `factoryStage: "plan-approved"`, `approvedPlanPath`, and
+`approvedPlanCommit`; the approved plan file must exist in the workspace. Direct
+mode requires `factoryStage: "ready-to-implement"`,
+`factoryRoute: "ready-to-implement"`, and
+`factoryNextAction: "implement-directly"`. For Linear-backed input, Linear
+`Ready to Implement` is a projection consistency guard; lifecycle metadata is
+the source of truth.
+
+Implementation artifacts:
+
+```text
+.harness/runs/factory/<run-id>/
+  context/
+    work-item.json
+    implementation-input.json
+    plan-ref.json              # planned only
+    source-material.json       # direct only
+  implementation/
+    prompt.md
+    change-review-handoff.md
+  summary.md
+  meta.json
+```
 
 ## Artifacts
 

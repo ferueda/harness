@@ -75,6 +75,17 @@ const FactoryConfigSchema = z
       })
       .strict()
       .optional(),
+    implementation: z
+      .object({
+        roles: z
+          .object({
+            implementer: FactoryRoleSchema.optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
     linear: FactoryLinearConfigSchema.optional(),
   })
   .strict();
@@ -135,6 +146,12 @@ export const HarnessConfigSchema = z
       ctx,
       ["factory", "planning", "roles", "reviewer"],
       config.factory?.planning?.roles?.reviewer,
+    );
+    validateFactoryRole(
+      config,
+      ctx,
+      ["factory", "implementation", "roles", "implementer"],
+      config.factory?.implementation?.roles?.implementer,
     );
   });
 

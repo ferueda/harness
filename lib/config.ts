@@ -67,8 +67,8 @@ export type InitHarnessResult = {
   shimUpdated: boolean;
 };
 
-type FactoryStationName = "triage" | "planning";
-type FactoryStationRole = "triager" | "planner" | "reviewer";
+type FactoryStationName = "triage" | "planning" | "implementation";
+type FactoryStationRole = "triager" | "planner" | "reviewer" | "implementer";
 
 export type FactoryRoleAgent = {
   agent: AgentProviderName;
@@ -95,6 +95,11 @@ type ResolveFactoryRoleAgentInput =
       workspace?: string;
       station: Extract<FactoryStationName, "planning">;
       role: Extract<FactoryStationRole, "planner" | "reviewer">;
+    }
+  | {
+      workspace?: string;
+      station: Extract<FactoryStationName, "implementation">;
+      role: Extract<FactoryStationRole, "implementer">;
     };
 
 export function resolveHarnessOptions<T extends HarnessOptions>(
@@ -287,6 +292,9 @@ function factoryRoleConfig(
 ): FactoryRoleConfig | undefined {
   if (input.station === "triage") {
     return config.factory?.triage?.roles?.triager;
+  }
+  if (input.station === "implementation") {
+    return config.factory?.implementation?.roles?.implementer;
   }
   return config.factory?.planning?.roles?.[input.role];
 }
