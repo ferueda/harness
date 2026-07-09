@@ -475,7 +475,7 @@ Live artifacts:
   implementation/
     prompt.md
     implementer.raw.json
-    implementer.stream.jsonl
+    implementer.stream.jsonl   # when provider streams
     workspace-status.json
     diff.patch
     change-review-handoff.md
