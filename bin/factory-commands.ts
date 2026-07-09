@@ -413,25 +413,33 @@ export async function runFactoryImplementationWithLifecycle(input: {
     ...(itemFileRelative ? { itemFile: itemFileRelative } : {}),
   });
 
+  let meta: FactoryImplementationRunMeta;
   try {
-    const meta = await runImplementation(input.ctx);
-    appendImplementationTerminalEvent({
-      meta,
-      factoryStateRoot: input.factoryStateRoot,
-    });
-    return meta;
+    meta = await runImplementation(input.ctx);
   } catch (error) {
-    const failedMeta = input.ctx.export({
-      status: "implementation-failed",
-      error: errorMessage(error),
-    });
-    appendImplementationTerminalEvent({
-      meta: failedMeta,
-      factoryStateRoot: input.factoryStateRoot,
-      error: errorMessage(error),
-    });
+    let failedMeta: FactoryImplementationRunMeta;
+    try {
+      failedMeta = input.ctx.export({
+        status: "implementation-failed",
+        error: errorMessage(error),
+        includeLiveArtifacts: false,
+      });
+      appendImplementationTerminalEvent({
+        meta: failedMeta,
+        factoryStateRoot: input.factoryStateRoot,
+        error: errorMessage(error),
+      });
+    } catch (terminalizationError) {
+      throw terminalizationError;
+    }
     return failedMeta;
   }
+
+  appendImplementationTerminalEvent({
+    meta,
+    factoryStateRoot: input.factoryStateRoot,
+  });
+  return meta;
 }
 
 function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOptions): void {
