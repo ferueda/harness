@@ -89,7 +89,6 @@ export type FactoryImplementationLiveArtifactsInput = {
   workspaceStatus: unknown;
   diff: string;
   changeReviewHandoff: string;
-  streamLogWritten?: boolean;
 };
 
 export type FactoryImplementationExportInput = {
@@ -232,9 +231,6 @@ function createFactoryImplementationRunContextInternal(
         "utf8",
       );
       liveArtifactsWritten = true;
-      if (input.streamLogWritten) {
-        // Stream log is written by the provider via logPath; mark presence for meta.
-      }
     },
     writeImplementationArtifacts(input): void {
       this.writeDryRunArtifacts(input);
@@ -259,8 +255,8 @@ function createFactoryImplementationRunContextInternal(
       return implementerProvider;
     },
     export(input): FactoryImplementationRunMeta {
-      const includeLiveArtifacts =
-        input.includeLiveArtifacts ?? (liveArtifactsWritten || input.status !== "dry_run");
+      // Only advertise live artifact paths when they were actually written.
+      const includeLiveArtifacts = input.includeLiveArtifacts ?? liveArtifactsWritten;
       const meta = buildMeta({
         status: input.status,
         startedAt,
