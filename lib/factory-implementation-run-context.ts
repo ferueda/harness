@@ -1,14 +1,20 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
 import { buildRunId } from "./context.ts";
 import { factoryRoleAgentMeta, type FactoryStationAgentMeta } from "./factory-agent-meta.ts";
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
 import type { FactoryWorkItem } from "./factory-schemas.ts";
+import {
+  WORKFLOW_EVENTS_FILE,
+  createCompositeEventSink,
+  createFileEventSink,
+  noopEventSink,
+  type WorkflowEventSink,
+} from "./workflow-events.ts";
 
 export const FACTORY_IMPLEMENTATION_WORKFLOW = "factory-implementation" as const;
-export const FACTORY_IMPLEMENTATION_DRY_RUN_ERROR =
-  "Factory implementation station only supports --dry-run in v1";
 
 export class FactoryImplementationRunError extends Error {
   constructor(message: string, options: { cause?: unknown } = {}) {
@@ -17,7 +23,10 @@ export class FactoryImplementationRunError extends Error {
   }
 }
 
-export type FactoryImplementationRunStatus = "dry_run";
+export type FactoryImplementationRunStatus =
+  | "dry_run"
+  | "implementation-complete"
+  | "implementation-failed";
 
 export type FactoryImplementationAgentMeta = FactoryStationAgentMeta;
 
@@ -30,6 +39,10 @@ export type FactoryImplementationArtifacts = {
   changeReviewHandoff: string;
   summary: string;
   meta: string;
+  rawOutput?: "implementation/implementer.raw.json";
+  streamLog?: "implementation/implementer.stream.jsonl";
+  workspaceStatus?: "implementation/workspace-status.json";
+  diff?: "implementation/diff.patch";
 };
 
 export type FactoryImplementationRunMeta = {
@@ -50,6 +63,12 @@ export type FactoryImplementationRunMeta = {
   metaPath: string;
   startedAt: string;
   durationMs: number;
+  error?: string;
+  implementerSession?: AgentSessionRef;
+  eventsFile?: typeof WORKFLOW_EVENTS_FILE;
+  reviewBase?: string;
+  reviewHead?: string;
+  reviewCommitSha?: string;
 };
 
 export type FactoryImplementationRunContextOptions = {
@@ -58,7 +77,29 @@ export type FactoryImplementationRunContextOptions = {
   workItem: FactoryWorkItem;
   implementationInput: FactoryImplementationInput;
   implementerRole: FactoryRoleAgent;
-  dryRun?: boolean;
+  dryRun: boolean;
+  maxRuntimeMs?: number;
+  signal?: AbortSignal;
+  eventSink?: WorkflowEventSink;
+  agentProviderFactory?: (options: AgentProviderOptions) => Agent;
+};
+
+export type FactoryImplementationLiveArtifactsInput = {
+  raw: unknown;
+  workspaceStatus: unknown;
+  diff: string;
+  changeReviewHandoff: string;
+  streamLogWritten?: boolean;
+};
+
+export type FactoryImplementationExportInput = {
+  status: FactoryImplementationRunStatus;
+  error?: string;
+  implementerSession?: AgentSessionRef;
+  reviewBase?: string;
+  reviewHead?: string;
+  reviewCommitSha?: string;
+  includeLiveArtifacts?: boolean;
 };
 
 export type FactoryImplementationRunContext = {
@@ -69,9 +110,18 @@ export type FactoryImplementationRunContext = {
   workItem: FactoryWorkItem;
   implementationInput: FactoryImplementationInput;
   implementerAgent: FactoryImplementationAgentMeta;
-  dryRun?: boolean;
+  implementerRole: FactoryRoleAgent;
+  dryRun: boolean;
+  maxRuntimeMs: number;
+  signal?: AbortSignal;
+  eventSink: WorkflowEventSink;
+  writeDryRunArtifacts(input: { prompt: string; changeReviewHandoff: string }): void;
+  writePromptArtifact(input: { prompt: string }): void;
+  writeLiveArtifacts(input: FactoryImplementationLiveArtifactsInput): void;
+  /** @deprecated Prefer writeDryRunArtifacts / writePromptArtifact / writeLiveArtifacts. */
   writeImplementationArtifacts(input: { prompt: string; changeReviewHandoff: string }): void;
-  export(): FactoryImplementationRunMeta;
+  implementerProvider(): Agent;
+  export(input: FactoryImplementationExportInput): FactoryImplementationRunMeta;
 };
 
 export function createFactoryImplementationRunContext(
@@ -94,11 +144,28 @@ function createFactoryImplementationRunContextInternal(
   if (!existsSync(workspace)) {
     throw new FactoryImplementationRunError(`Workspace does not exist: ${workspace}`);
   }
+  if (options.dryRun !== true && options.dryRun !== false) {
+    throw new FactoryImplementationRunError(
+      "Factory implementation context requires an explicit dryRun boolean",
+    );
+  }
+  if (!options.dryRun) {
+    if (options.maxRuntimeMs === undefined) {
+      throw new FactoryImplementationRunError("Live factory implementation requires maxRuntimeMs");
+    }
+    if (!options.agentProviderFactory) {
+      throw new FactoryImplementationRunError(
+        "Live factory implementation requires agentProviderFactory",
+      );
+    }
+  }
 
   const startedAt = new Date();
   const runId = buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/factory")), runId);
   const implementerAgent = factoryRoleAgentMeta(options.implementerRole);
+  let implementerProvider: Agent | undefined;
+  let liveArtifactsWritten = false;
 
   try {
     mkdirSync(join(runDir, "context"), { recursive: true });
@@ -125,6 +192,12 @@ function createFactoryImplementationRunContextInternal(
     throw asFactoryImplementationRunError(error);
   }
 
+  const eventSink = options.dryRun
+    ? noopEventSink
+    : options.eventSink
+      ? createCompositeEventSink(createFileEventSink(runDir), options.eventSink)
+      : createFileEventSink(runDir);
+
   return {
     runId,
     runDir,
@@ -133,8 +206,12 @@ function createFactoryImplementationRunContextInternal(
     workItem: options.workItem,
     implementationInput: options.implementationInput,
     implementerAgent,
+    implementerRole: options.implementerRole,
     dryRun: options.dryRun,
-    writeImplementationArtifacts(input): void {
+    maxRuntimeMs: options.maxRuntimeMs ?? 0,
+    signal: options.signal,
+    eventSink,
+    writeDryRunArtifacts(input): void {
       writeFileSync(join(runDir, "implementation/prompt.md"), input.prompt, "utf8");
       writeFileSync(
         join(runDir, "implementation/change-review-handoff.md"),
@@ -142,8 +219,50 @@ function createFactoryImplementationRunContextInternal(
         "utf8",
       );
     },
-    export(): FactoryImplementationRunMeta {
+    writePromptArtifact(input): void {
+      writeFileSync(join(runDir, "implementation/prompt.md"), input.prompt, "utf8");
+    },
+    writeLiveArtifacts(input): void {
+      writeJson(join(runDir, "implementation/implementer.raw.json"), input.raw);
+      writeJson(join(runDir, "implementation/workspace-status.json"), input.workspaceStatus);
+      writeFileSync(join(runDir, "implementation/diff.patch"), input.diff, "utf8");
+      writeFileSync(
+        join(runDir, "implementation/change-review-handoff.md"),
+        input.changeReviewHandoff,
+        "utf8",
+      );
+      liveArtifactsWritten = true;
+      if (input.streamLogWritten) {
+        // Stream log is written by the provider via logPath; mark presence for meta.
+      }
+    },
+    writeImplementationArtifacts(input): void {
+      this.writeDryRunArtifacts(input);
+    },
+    implementerProvider(): Agent {
+      if (!implementerProvider && !options.dryRun) {
+        if (!options.agentProviderFactory) {
+          throw new FactoryImplementationRunError(
+            "Live factory implementation requires agentProviderFactory",
+          );
+        }
+        implementerProvider = options.agentProviderFactory({
+          provider: options.implementerRole.agent,
+          codexPathOverride: options.implementerRole.codexPathOverride,
+        });
+      }
+      if (!implementerProvider) {
+        throw new FactoryImplementationRunError(
+          "Implementer provider is unavailable during dry-run",
+        );
+      }
+      return implementerProvider;
+    },
+    export(input): FactoryImplementationRunMeta {
+      const includeLiveArtifacts =
+        input.includeLiveArtifacts ?? (liveArtifactsWritten || input.status !== "dry_run");
       const meta = buildMeta({
+        status: input.status,
         startedAt,
         runId,
         runDir,
@@ -151,6 +270,14 @@ function createFactoryImplementationRunContextInternal(
         workItem: options.workItem,
         mode: options.implementationInput.mode,
         implementerAgent,
+        includeEventsFile: !options.dryRun,
+        includeLiveArtifacts: options.dryRun ? false : includeLiveArtifacts,
+        error: input.error,
+        implementerSession: input.implementerSession,
+        reviewBase: input.reviewBase,
+        reviewHead: input.reviewHead,
+        reviewCommitSha: input.reviewCommitSha,
+        streamLogExists: existsSync(join(runDir, "implementation/implementer.stream.jsonl")),
       });
       writeFileSync(
         join(runDir, "summary.md"),
@@ -164,6 +291,7 @@ function createFactoryImplementationRunContextInternal(
 }
 
 function buildMeta(input: {
+  status: FactoryImplementationRunStatus;
   startedAt: Date;
   runId: string;
   runDir: string;
@@ -171,8 +299,16 @@ function buildMeta(input: {
   workItem: FactoryWorkItem;
   mode: FactoryImplementationInput["mode"];
   implementerAgent: FactoryImplementationAgentMeta;
+  includeEventsFile: boolean;
+  includeLiveArtifacts: boolean;
+  error?: string;
+  implementerSession?: AgentSessionRef;
+  reviewBase?: string;
+  reviewHead?: string;
+  reviewCommitSha?: string;
+  streamLogExists: boolean;
 }): FactoryImplementationRunMeta {
-  const artifacts = {
+  const artifacts: FactoryImplementationArtifacts = {
     workItem: "context/work-item.json",
     implementationInput: "context/implementation-input.json",
     ...(input.mode === "planned"
@@ -182,11 +318,21 @@ function buildMeta(input: {
     changeReviewHandoff: "implementation/change-review-handoff.md",
     summary: "summary.md",
     meta: "meta.json",
+    ...(input.includeLiveArtifacts
+      ? {
+          rawOutput: "implementation/implementer.raw.json" as const,
+          workspaceStatus: "implementation/workspace-status.json" as const,
+          diff: "implementation/diff.patch" as const,
+          ...(input.streamLogExists
+            ? { streamLog: "implementation/implementer.stream.jsonl" as const }
+            : {}),
+        }
+      : {}),
   };
   return {
     runId: input.runId,
     workflow: FACTORY_IMPLEMENTATION_WORKFLOW,
-    status: "dry_run",
+    status: input.status,
     mode: input.mode,
     workspace: input.workspace,
     runDir: input.runDir,
@@ -201,6 +347,12 @@ function buildMeta(input: {
     metaPath: join(input.runDir, "meta.json"),
     startedAt: input.startedAt.toISOString(),
     durationMs: Date.now() - input.startedAt.getTime(),
+    ...(input.includeEventsFile ? { eventsFile: WORKFLOW_EVENTS_FILE } : {}),
+    ...(input.error ? { error: input.error } : {}),
+    ...(input.implementerSession ? { implementerSession: input.implementerSession } : {}),
+    ...(input.reviewBase ? { reviewBase: input.reviewBase } : {}),
+    ...(input.reviewHead ? { reviewHead: input.reviewHead } : {}),
+    ...(input.reviewCommitSha ? { reviewCommitSha: input.reviewCommitSha } : {}),
   };
 }
 
@@ -228,6 +380,32 @@ function renderSummary(
             ? [`- Tracker: ${JSON.stringify(implementationInput.sourceMaterial.tracker)}`]
             : []),
         ];
+
+  const liveActions =
+    meta.status === "dry_run"
+      ? [
+          "- Provider invocation: not run.",
+          "- Reviewer invocation: not run.",
+          "- Lifecycle events: not written.",
+        ]
+      : [
+          `- Provider run status: ${meta.status}`,
+          ...(meta.implementerSession
+            ? [
+                `- Implementer session: ${meta.implementerSession.provider} ${meta.implementerSession.id}`,
+              ]
+            : []),
+          ...(meta.reviewBase ? [`- Review base: ${meta.reviewBase}`] : []),
+          ...(meta.reviewHead ? [`- Review head: ${meta.reviewHead}`] : []),
+          ...(meta.reviewCommitSha ? [`- Review commit: ${meta.reviewCommitSha}`] : []),
+          ...(meta.artifacts.diff ? [`- Diff path: ${meta.artifacts.diff}`] : []),
+          ...(meta.artifacts.changeReviewHandoff
+            ? [`- Handoff path: ${meta.artifacts.changeReviewHandoff}`]
+            : []),
+          "- Reviewer invocation: not run.",
+          "- Lifecycle events: written by harness command.",
+        ];
+
   return [
     "# Factory Implementation",
     "",
@@ -236,6 +414,7 @@ function renderSummary(
     `- Mode: ${meta.mode}`,
     `- Work item: ${meta.workItem.id} - ${meta.workItem.title}`,
     `- Implementer: ${meta.implementerAgent.name} ${meta.implementerAgent.model}`,
+    ...(meta.error ? [`- Error: ${meta.error}`] : []),
     "",
     "## Artifacts",
     "",
@@ -245,9 +424,7 @@ function renderSummary(
     "",
     "## Actions",
     "",
-    "- Provider invocation: not run.",
-    "- Reviewer invocation: not run.",
-    "- Lifecycle events: not written.",
+    ...liveActions,
     "- Linear mutation: not run.",
     "- GitHub/PR mutation: not run.",
     "- Branch/worktree orchestration: not run.",
