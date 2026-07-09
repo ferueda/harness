@@ -26,6 +26,7 @@ import {
   linearPlanningReadyCommentMarker,
 } from "../lib/factory-linear-planning-handoff.ts";
 import type { LinearClientLike } from "../lib/factory-linear-types.ts";
+import { listLinearWorkItemsByStatus } from "../lib/factory-linear-list.ts";
 import type { FactoryRoute, FactoryTriageOutput } from "../lib/factory-schemas.ts";
 
 const LINEAR_SETTINGS = {
@@ -762,6 +763,165 @@ test("Linear adapter lists lightweight issue summaries by configured status keys
     },
   });
   expect(result.issues[0]).not.toHaveProperty("body");
+});
+
+test("Linear adapter lists issues by optional terminal status keys", async () => {
+  const queries: unknown[] = [];
+  const doneIssue = {
+    ...ISSUE,
+    identifier: "ENG-200",
+    number: 200,
+    title: "Shipped terminal work",
+    url: "https://linear.app/acme/issue/ENG-200/shipped-terminal-work",
+    state: Promise.resolve({ id: "state-Done", name: "Done", type: "completed" }),
+    labels: async () => {
+      throw new Error("labels should not be fetched while listing");
+    },
+    comments: async () => {
+      throw new Error("comments should not be fetched while listing");
+    },
+  };
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient({
+      issues: async (variables) => {
+        queries.push(variables);
+        return { nodes: [doneIssue] };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.listWorkItemsByStatus({
+    statusKeys: ["done", "canceled", "duplicate"],
+  });
+
+  expect(queries).toEqual([
+    {
+      filter: {
+        team: { key: { eq: "ENG" } },
+        state: { name: { in: ["Done", "Canceled", "Duplicate"] } },
+      },
+      first: 50,
+    },
+  ]);
+  expect(result).toMatchObject({
+    teamKey: "ENG",
+    statusKeys: ["done", "canceled", "duplicate"],
+    statusNames: ["Done", "Canceled", "Duplicate"],
+    issues: [
+      {
+        id: "linear:ENG-200",
+        identifier: "ENG-200",
+        status: "Done",
+        statusType: "completed",
+      },
+    ],
+  });
+  expect(result.issues[0]).not.toHaveProperty("factoryStage");
+});
+
+test("Linear adapter rejects list when an optional terminal status key is unset", async () => {
+  const settings = {
+    ...LINEAR_SETTINGS,
+    statuses: {
+      ...LINEAR_SETTINGS.statuses,
+      done: undefined,
+    },
+  } as FactoryLinearSettings;
+
+  await expect(
+    listLinearWorkItemsByStatus(
+      {
+        validateStatusMap: async () => ({ teamKey: "ENG" }),
+        resolveOptional: async (value) => value,
+        assertTeamMatches: () => undefined,
+        assertProjectMatches: () => undefined,
+        factoryStageForStatus: () => undefined,
+        normalizeName: (value) => value.toLowerCase(),
+        canonicalTeamKey: (value) => value.toUpperCase(),
+        assigneeName: () => undefined,
+        formatDate: () => undefined,
+      },
+      fakeReadOnlyLinearClient(),
+      settings,
+      { statusKeys: ["done"] },
+    ),
+  ).rejects.toThrow(/factory\.linear\.statuses\.done is not configured/);
+});
+
+test("Linear adapter validates and lists without optional terminal statuses", async () => {
+  const {
+    done: _done,
+    canceled: _canceled,
+    duplicate: _duplicate,
+    ...requiredStatuses
+  } = LINEAR_SETTINGS.statuses;
+  const requiredOnlySettings = {
+    teamKey: "ENG",
+    statuses: requiredStatuses,
+  } satisfies FactoryLinearSettings;
+  const requiredOnlyTeam = {
+    ...TEAM,
+    states: async () => ({
+      nodes: Object.values(requiredStatuses).map((name) => ({
+        id: `state-${name}`,
+        name,
+        type: "unstarted",
+      })),
+    }),
+  };
+  const queries: unknown[] = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient({
+      teams: async () => ({ nodes: [requiredOnlyTeam] }),
+      issues: async (variables) => {
+        queries.push(variables);
+        return { nodes: [ISSUE] };
+      },
+    }),
+    settings: requiredOnlySettings,
+  });
+
+  await expect(adapter.validateStatusMap()).resolves.toMatchObject({ teamKey: "ENG" });
+  const result = await adapter.listWorkItemsByStatus({ statusKeys: ["intake"] });
+  expect(queries[0]).toMatchObject({
+    filter: {
+      team: { key: { eq: "ENG" } },
+      state: { name: { in: ["Backlog"] } },
+    },
+  });
+  expect(result.statusNames).toEqual(["Backlog"]);
+});
+
+test("Linear adapter skips undefined optional terminal values during status-map validation", async () => {
+  const settings = {
+    ...LINEAR_SETTINGS,
+    statuses: {
+      ...LINEAR_SETTINGS.statuses,
+      done: undefined,
+      canceled: undefined,
+      duplicate: undefined,
+    },
+  } as FactoryLinearSettings;
+  const requiredNames = Object.values(LINEAR_SETTINGS.statuses).filter(
+    (name) => !["Done", "Canceled", "Duplicate"].includes(name),
+  );
+  const teamWithoutTerminals = {
+    ...TEAM,
+    states: async () => ({
+      nodes: requiredNames.map((name) => ({
+        id: `state-${name}`,
+        name,
+        type: "unstarted",
+      })),
+    }),
+  };
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({ teams: async () => ({ nodes: [teamWithoutTerminals] }) }),
+    settings,
+  });
+
+  await expect(adapter.validateStatusMap()).resolves.toMatchObject({ teamKey: "ENG" });
 });
 
 test("Linear adapter omits comment-derived factory stage for Needs Clarification lists", async () => {
