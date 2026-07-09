@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -372,6 +372,124 @@ test("runFactoryImplementationWithLifecycle live runner throw terminalizes witho
     type: "implementation.failed",
     data: { error: "workflow exploded after started" },
   });
+});
+
+test("runFactoryImplementationWithLifecycle rethrows when terminal lifecycle append fails after success", async () => {
+  const workspace = createWorkspace();
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const workItem = directWorkItem();
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem,
+    implementationInput: directInput(workItem),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          throw new Error("lifecycle helper should use injected runner");
+        },
+      };
+    },
+  });
+
+  const completed = baseLiveMeta(ctx, {
+    status: "implementation-complete",
+    reviewBase: "aaa111",
+    reviewHead: `refs/harness/factory/${ctx.runId}/implementation`,
+    reviewCommitSha: "bbb222",
+  });
+
+  await expect(
+    runFactoryImplementationWithLifecycle({
+      ctx,
+      factoryStateRoot,
+      async runImplementation() {
+        // Invalidate the lifecycle root after started events so terminal append fails.
+        rmSync(factoryStateRoot, { recursive: true, force: true });
+        writeFileSync(factoryStateRoot, "not-a-directory\n", "utf8");
+        return completed;
+      },
+    }),
+  ).rejects.toThrow();
+});
+
+test("runFactoryImplementationWithLifecycle rethrows when failed meta export cannot be written", async () => {
+  const workspace = createWorkspace();
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const workItem = directWorkItem();
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem,
+    implementationInput: directInput(workItem),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          throw new Error("lifecycle helper should use injected runner");
+        },
+      };
+    },
+  });
+
+  await expect(
+    runFactoryImplementationWithLifecycle({
+      ctx,
+      factoryStateRoot,
+      async runImplementation() {
+        rmSync(ctx.runDir, { recursive: true, force: true });
+        writeFileSync(ctx.runDir, "not-a-directory\n", "utf8");
+        throw new Error("workflow exploded after started");
+      },
+    }),
+  ).rejects.toThrow();
+});
+
+test("runFactoryImplementationWithLifecycle throw path does not advertise unwritten live artifacts", async () => {
+  const workspace = createWorkspace();
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const workItem = directWorkItem();
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem,
+    implementationInput: directInput(workItem),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          throw new Error("lifecycle helper should use injected runner");
+        },
+      };
+    },
+  });
+
+  const meta = await runFactoryImplementationWithLifecycle({
+    ctx,
+    factoryStateRoot,
+    async runImplementation() {
+      throw new Error("workflow exploded before live artifacts");
+    },
+  });
+
+  expect(meta.status).toBe("implementation-failed");
+  expect(meta.artifacts.rawOutput).toBeUndefined();
+  expect(meta.artifacts.diff).toBeUndefined();
+  expect(meta.artifacts.workspaceStatus).toBeUndefined();
+  expect(existsSync(join(ctx.runDir, "implementation/implementer.raw.json"))).toBe(false);
 });
 
 function createWorkspace(config: Record<string, unknown> = {}): string {
