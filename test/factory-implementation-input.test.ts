@@ -275,8 +275,10 @@ test("lifecycle overlay resolves approved planned implementation input", async (
   const resolvedInput = await resolveFactoryWorkItemInput({
     workspace,
     linearIssue: "ENG-123",
+    allowWorkspaceLocalStateRoot: true,
     linearSettings: LINEAR_SETTINGS,
     env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "load",
     linearAdapterFactory: () =>
       fakeLinearAdapter({
         fetchWorkItem: async () =>

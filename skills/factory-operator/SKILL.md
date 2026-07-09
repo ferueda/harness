@@ -39,6 +39,20 @@ line, then wait once for completion. After exit, trust stdout JSON and read
 `summary.md` / `meta.json` for narrative. Do not treat mid-run `runDir`
 contents as terminal success.
 
+## Durable Store
+
+Factory lifecycle JSONL, rebuildable state, station evidence, and nested
+factory plan-review evidence default to
+`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/`. The
+workspace remains the sandbox for source, tests, `harness.json`, inbox, and
+committed plans/code. Use the reported `runDir`, not an assumed workspace path.
+
+Override the store with `--factory-store-root`, `--factory-store-project-id`,
+`HARNESS_FACTORY_STORE_ROOT`, `HARNESS_FACTORY_STORE_PROJECT_ID`, or
+`factory.store` in `harness.json`. After upgrade, an empty durable store is
+expected until a station writes new events; legacy workspace `.harness/factory`
+state is reported and ignored, never silently imported.
+
 ## Command Model
 
 Station commands:
@@ -54,10 +68,10 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
-harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
-harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
-harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
+harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
+harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
+harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 ```
@@ -153,8 +167,9 @@ LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/rep
 This command is read-only. It validates the configured Linear team statuses,
 verifies the configured Linear project when `factory.linear.projectId` is set,
 then prints a work item with issue description, labels, recent comments, and
-tracker metadata. If lifecycle state exists under `.harness/factory`, fetch
-merges it into the printed work item. `teamKey` owns issue identifiers and
+tracker metadata. Fetch merges durable lifecycle state in inspect-only mode;
+it does not wait on a lock or rebuild state, and reports stale-state warnings.
+`teamKey` owns issue identifiers and
 statuses; `projectId` scopes the target repo. Redirect the output to an item
 file before planning, or pass the issue directly to triage with
 `--linear-issue`.
@@ -208,7 +223,8 @@ Routes:
 Read the run `summary.md`, `factory-triage.json`, and `factory-route.md` before
 deciding the next station.
 
-Live triage appends lifecycle events under `.harness/factory`. Dry-run does not.
+Live triage appends lifecycle events in the durable factory store. Dry-run does
+not mutate lifecycle state and can warn when the durable projection is stale.
 The lifecycle read model owns machine fields such as `factoryStage`,
 `factoryRoute`, `factoryNextAction`, and `factoryRunId`; Linear status/comments
 are human board projections.
@@ -239,7 +255,8 @@ station finishes. Approved plans stay in `Planning`; human questions move to
 station/runtime failures move to `Planning Failed`. Planning apply never moves
 the issue to `Ready to Implement`.
 
-The planner writes `.harness/runs/factory/<run-id>/planning/draft.md`. Harness
+The planner writes `runs/factory/<run-id>/planning/draft.md` in the durable
+factory store. Harness
 snapshots the draft, runs `plan-review`, and reinvokes the same planner session
 for review findings until the station reaches a terminal status.
 
@@ -250,7 +267,7 @@ Terminal statuses:
 - `plan-review-unresolved`
 - `planning-failed`
 
-Live planning appends lifecycle events under `.harness/factory`. Future station
+Live planning appends lifecycle events in the durable factory store. Future station
 decisions should use the lifecycle read model when present instead of parsing
 recent Linear marker comments.
 
@@ -284,7 +301,7 @@ the source of truth.
 Live implementation artifacts:
 
 ```text
-.harness/runs/factory/<run-id>/
+${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/
   context/
     work-item.json
     implementation-input.json
@@ -307,13 +324,13 @@ Live implementation artifacts:
 Factory run root:
 
 ```text
-.harness/runs/factory/<run-id>/
+${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/
 ```
 
 Read `summary.md` and `meta.json` first. Planning snapshots live under
-`iterations/<n>/`, plan-review artifacts live under `.harness/runs/reviews/`,
-and approved plans live under `dev/plans/`. Lifecycle truth lives under
-`.harness/factory/events/*.jsonl`; `.harness/factory/state/*.json` is a
+`iterations/<n>/`, nested plan-review artifacts live under durable
+`runs/reviews/`, and approved plans live under `dev/plans/`. Lifecycle truth
+lives under durable `factory/events/*.jsonl`; `factory/state/*.json` is a
 rebuildable cache. Tracker-backed approved plans should be published through a
 plan PR before the tracker moves to `Ready to Implement`. During manual
 publication, `factoryStage: "plan-pr-open"` can exist before
@@ -326,7 +343,8 @@ Linear comments by default; they do not mutate Linear or GitHub unless
 `Plan Needs Review` and posts a plan-PR marker comment.
 `mark-plan-merged --apply` moves Linear to `Ready to Implement` and posts an
 approved-plan marker comment. Neither command opens PRs or inspects GitHub
-merge state. Do not commit `.harness/runs/*` or `.harness/factory/*`.
+merge state. Durable store contents are user data; do not commit workspace
+`.harness/runs/*` or legacy `.harness/factory/*`.
 
 ### Linear PR linking
 

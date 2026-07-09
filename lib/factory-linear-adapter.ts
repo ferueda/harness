@@ -715,7 +715,7 @@ function factoryStageForStatus(
   statusName: string,
   comments: LinearCommentLike[] = [],
 ): FactoryStage | undefined {
-  // Bootstrap fallback only. Lifecycle state under .harness/factory is canonical when present.
+  // Bootstrap fallback only. Durable lifecycle state is canonical; workspace-local state is legacy.
   const normalized = normalizeName(statusName);
   const statuses = settings.statuses;
   if (normalized === normalizeName(statuses.intake)) return "incoming";

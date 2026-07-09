@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { expect, test } from "vitest";
 import { runFactoryImplementationWithLifecycle } from "../bin/factory-commands.ts";
 import {
@@ -9,15 +8,40 @@ import {
   type FactoryImplementationRunMeta,
 } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
-import { deriveFactoryWorkItemKey, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
+import {
+  appendFactoryLifecycleEvent,
+  deriveFactoryWorkItemKey,
+  factoryLifecycleStatePath,
+  readFactoryLifecycleEvents,
+} from "../lib/factory-lifecycle.ts";
+import { resolveFactoryStore } from "../lib/factory-store.ts";
 import { parseFactoryWorkItemMetadata, type FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { parseFactoryRunStartedProgress } from "./factory-run-started-test-helpers.ts";
+import { runFactoryHarness } from "./factory-store-test-helpers.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 
 test("implementation item-file direct dry-run writes artifacts without lifecycle state", () => {
   const workspace = createWorkspace();
-  const itemFile = writeWorkItem(workspace, directWorkItem());
+  const workItem = directWorkItem();
+  const itemFile = writeWorkItem(workspace, workItem);
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-implementation-store-"));
+  const store = resolveFactoryStore({ workspace, factoryStoreRoot: storeRoot, env: {} });
+  const workItemKey = deriveFactoryWorkItemKey(workItem);
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    event: {
+      version: 1,
+      id: `work_item.imported:${workItemKey}`,
+      type: "work_item.imported",
+      workItemKey,
+      occurredAt: "2026-07-09T00:00:00.000Z",
+      source: "harness",
+      data: { source: "file", title: workItem.title },
+    },
+  });
+  rmSync(factoryLifecycleStatePath(store.factoryStateRoot, workItemKey));
+  rmSync(join(store.factoryStateRoot, "locks"), { recursive: true, force: true });
 
   const result = runHarness([
     "factory",
@@ -28,6 +52,8 @@ test("implementation item-file direct dry-run writes artifacts without lifecycle
     "--item-file",
     itemFile,
     "--dry-run",
+    "--factory-store-root",
+    storeRoot,
   ]);
 
   expect(result.status).toBe(0);
@@ -51,6 +77,15 @@ test("implementation item-file direct dry-run writes artifacts without lifecycle
     workspace,
   });
   expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
+  expect(output.warnings).toEqual([
+    expect.objectContaining({
+      code: "durable-state-missing",
+      factoryStateRoot: store.factoryStateRoot,
+      workItemKey,
+    }),
+  ]);
+  expect(existsSync(factoryLifecycleStatePath(store.factoryStateRoot, workItemKey))).toBe(false);
+  expect(existsSync(join(store.factoryStateRoot, "locks"))).toBe(false);
 });
 
 test("implementation item-file planned dry-run writes plan reference", () => {
@@ -688,11 +723,12 @@ function baseLiveMeta(
 }
 
 function runHarness(args: string[]) {
-  return spawnSync(process.execPath, [BIN, ...args], {
+  return runFactoryHarness({
+    bin: BIN,
+    args,
     cwd: process.cwd(),
-    encoding: "utf8",
-    env: { ...process.env, LINEAR_API_KEY: "test-key" },
-  });
+    env: { LINEAR_API_KEY: "test-key" },
+  }).result;
 }
 
 function parseStdout(result: ReturnType<typeof runHarness>): Record<string, any> {

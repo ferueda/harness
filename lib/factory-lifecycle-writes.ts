@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import type { FactoryImplementationRunMeta } from "./factory-implementation-run-context.ts";
 import type { FactoryRunMeta } from "./factory-run-context.ts";
 import {
@@ -11,9 +11,12 @@ import {
 } from "./factory-lifecycle.ts";
 import type { FactoryPlanningRunMeta } from "./factory-planning-run-context.ts";
 import { FactoryWorkItemMetadataSchema, type FactoryWorkItem } from "./factory-schemas.ts";
+import { factoryLifecycleExecutionProvenance } from "./factory-store.ts";
 
 export type FactoryLifecycleWriteOptions = {
   factoryStateRoot?: string;
+  /** Low-level/test-only workspace-local escape hatch. Never use from factory commands. */
+  allowWorkspaceLocalStateRoot?: boolean;
   occurredAt?: string;
 };
 
@@ -29,7 +32,7 @@ export function appendWorkItemImportedEvent(
   const metadata = parsedMetadata.success ? parsedMetadata.data : undefined;
   const tracker = metadata?.tracker;
   return appendFactoryLifecycleEvent({
-    factoryStateRoot: resolveFactoryStateRoot(input),
+    factoryStateRoot: requireFactoryStateRoot(input),
     event: {
       version: 1,
       id: `work_item.imported:${workItemKey}`,
@@ -66,7 +69,7 @@ export function appendTriageStartedEvent(
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
   return appendFactoryLifecycleEvent({
-    factoryStateRoot: resolveFactoryStateRoot(input),
+    factoryStateRoot: requireFactoryStateRoot(input),
     event: {
       version: 1,
       id: `triage.started:${input.runId}`,
@@ -94,9 +97,10 @@ export function appendTriageTerminalEvent(input: {
     reconsiderWhen: string | null;
   };
   factoryStateRoot?: string;
+  allowWorkspaceLocalStateRoot?: boolean;
 }): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
-  const factoryStateRoot = resolveFactoryStateRoot(input);
+  const factoryStateRoot = requireFactoryStateRoot(input);
   const execution = executionFromMeta(input.meta);
   if (input.meta.status === "completed") {
     return appendFactoryLifecycleEvent({
@@ -114,11 +118,17 @@ export function appendTriageTerminalEvent(input: {
           route: required(input.meta.route, "triage route"),
           nextAction: required(input.meta.nextAction, "triage nextAction"),
           rationale: required(input.triage?.rationale, "triage rationale"),
-          routeArtifactPath: required(
-            input.meta.artifacts?.routeSummary ?? input.meta.artifacts?.route,
-            "route artifact path",
+          routeArtifactPath: formatMetaArtifactPath(
+            input.meta,
+            required(
+              input.meta.artifacts?.routeSummary ?? input.meta.artifacts?.route,
+              "route artifact path",
+            ),
           ),
-          triageArtifactPath: required(input.meta.artifacts?.triage, "triage artifact path"),
+          triageArtifactPath: formatMetaArtifactPath(
+            input.meta,
+            required(input.meta.artifacts?.triage, "triage artifact path"),
+          ),
           ...(input.triage && input.triage.questions.length
             ? { questions: input.triage.questions }
             : {}),
@@ -142,7 +152,10 @@ export function appendTriageTerminalEvent(input: {
       execution,
       data: {
         error: input.meta.error ?? "Factory triage failed.",
-        summaryPath: input.meta.artifacts?.summary ?? "summary.md",
+        summaryPath: formatMetaArtifactPath(
+          input.meta,
+          input.meta.artifacts?.summary ?? "summary.md",
+        ),
       },
     },
   });
@@ -160,7 +173,7 @@ export function appendPlanningStartedEvent(
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
   return appendFactoryLifecycleEvent({
-    factoryStateRoot: resolveFactoryStateRoot(input),
+    factoryStateRoot: requireFactoryStateRoot(input),
     event: {
       version: 1,
       id: `planning.started:${input.runId}`,
@@ -181,14 +194,16 @@ export function appendPlanningStartedEvent(
 export function appendPlanningTerminalEvent(input: {
   meta: FactoryPlanningRunMeta;
   factoryStateRoot?: string;
+  allowWorkspaceLocalStateRoot?: boolean;
   error?: string;
 }): FactoryLifecycleEvent | undefined {
   if (input.meta.status === "dry_run") return undefined;
   const workItem = planningMetaWorkItem(input.meta);
   const workItemKey = deriveFactoryWorkItemKey(workItem);
-  const factoryStateRoot = resolveFactoryStateRoot({
+  const factoryStateRoot = requireFactoryStateRoot({
     workspace: input.meta.workspace,
     factoryStateRoot: input.factoryStateRoot,
+    allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
   });
   if (input.meta.status === "planning-failed") {
     return appendFactoryLifecycleEvent({
@@ -204,7 +219,7 @@ export function appendPlanningTerminalEvent(input: {
         execution: planningExecution(input.meta),
         data: {
           error: input.error ?? input.meta.error ?? "Factory planning failed.",
-          summaryPath: relative(input.meta.workspace, input.meta.summaryPath),
+          summaryPath: formatMetaArtifactPath(input.meta, input.meta.summaryPath),
         },
       },
     });
@@ -245,7 +260,7 @@ export function appendImplementationStartedEvent(
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
   return appendFactoryLifecycleEvent({
-    factoryStateRoot: resolveFactoryStateRoot(input),
+    factoryStateRoot: requireFactoryStateRoot(input),
     event: {
       version: 1,
       id: `implementation.started:${input.runId}`,
@@ -266,14 +281,16 @@ export function appendImplementationStartedEvent(
 export function appendImplementationTerminalEvent(input: {
   meta: FactoryImplementationRunMeta;
   factoryStateRoot?: string;
+  allowWorkspaceLocalStateRoot?: boolean;
   error?: string;
 }): FactoryLifecycleEvent | undefined {
   if (input.meta.status === "dry_run") return undefined;
   const workItem = implementationMetaWorkItem(input.meta);
   const workItemKey = deriveFactoryWorkItemKey(workItem);
-  const factoryStateRoot = resolveFactoryStateRoot({
+  const factoryStateRoot = requireFactoryStateRoot({
     workspace: input.meta.workspace,
     factoryStateRoot: input.factoryStateRoot,
+    allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
   });
   const execution = implementationExecution(input.meta);
   if (input.meta.status === "implementation-failed") {
@@ -290,28 +307,22 @@ export function appendImplementationTerminalEvent(input: {
         execution,
         data: {
           error: input.error ?? input.meta.error ?? "Factory implementation failed.",
-          summaryPath: relative(input.meta.workspace, input.meta.summaryPath),
+          summaryPath: formatMetaArtifactPath(input.meta, input.meta.summaryPath),
           ...(input.meta.artifacts.rawOutput
             ? {
-                rawOutputPath: relative(
-                  input.meta.workspace,
-                  join(input.meta.runDir, input.meta.artifacts.rawOutput),
-                ),
+                rawOutputPath: formatMetaArtifactPath(input.meta, input.meta.artifacts.rawOutput),
               }
             : {}),
           ...(input.meta.artifacts.streamLog
             ? {
-                streamLogPath: relative(
-                  input.meta.workspace,
-                  join(input.meta.runDir, input.meta.artifacts.streamLog),
-                ),
+                streamLogPath: formatMetaArtifactPath(input.meta, input.meta.artifacts.streamLog),
               }
             : {}),
           ...(input.meta.artifacts.workspaceStatus
             ? {
-                workspaceStatusPath: relative(
-                  input.meta.workspace,
-                  join(input.meta.runDir, input.meta.artifacts.workspaceStatus),
+                workspaceStatusPath: formatMetaArtifactPath(
+                  input.meta,
+                  input.meta.artifacts.workspaceStatus,
                 ),
               }
             : {}),
@@ -332,38 +343,32 @@ export function appendImplementationTerminalEvent(input: {
       source: "harness",
       execution,
       data: {
-        diffPath: relative(
-          input.meta.workspace,
-          join(input.meta.runDir, required(input.meta.artifacts.diff, "diff artifact")),
+        diffPath: formatMetaArtifactPath(
+          input.meta,
+          required(input.meta.artifacts.diff, "diff artifact"),
         ),
-        changeReviewHandoffPath: relative(
-          input.meta.workspace,
-          join(input.meta.runDir, input.meta.artifacts.changeReviewHandoff),
+        changeReviewHandoffPath: formatMetaArtifactPath(
+          input.meta,
+          input.meta.artifacts.changeReviewHandoff,
         ),
         reviewBase: required(input.meta.reviewBase, "reviewBase"),
         reviewHead: required(input.meta.reviewHead, "reviewHead"),
         reviewCommitSha: required(input.meta.reviewCommitSha, "reviewCommitSha"),
         ...(input.meta.artifacts.rawOutput
           ? {
-              rawOutputPath: relative(
-                input.meta.workspace,
-                join(input.meta.runDir, input.meta.artifacts.rawOutput),
-              ),
+              rawOutputPath: formatMetaArtifactPath(input.meta, input.meta.artifacts.rawOutput),
             }
           : {}),
         ...(input.meta.artifacts.streamLog
           ? {
-              streamLogPath: relative(
-                input.meta.workspace,
-                join(input.meta.runDir, input.meta.artifacts.streamLog),
-              ),
+              streamLogPath: formatMetaArtifactPath(input.meta, input.meta.artifacts.streamLog),
             }
           : {}),
         ...(input.meta.artifacts.workspaceStatus
           ? {
-              workspaceStatusPath: relative(
-                input.meta.workspace,
-                join(input.meta.runDir, input.meta.artifacts.workspaceStatus),
+              workspaceStatusPath: formatMetaArtifactPath(
+                input.meta,
+                input.meta.artifacts.workspaceStatus,
               ),
             }
           : {}),
@@ -383,12 +388,14 @@ export function appendImplementationTerminalEvent(input: {
 export function appendPlanPrOpenedEvent(input: {
   meta: FactoryPlanningRunMeta;
   factoryStateRoot?: string;
+  allowWorkspaceLocalStateRoot?: boolean;
 }): FactoryLifecycleEvent {
   const metadata = requireOpenedPublicationMetadata(input.meta);
   return appendFactoryLifecycleEvent({
-    factoryStateRoot: resolveFactoryStateRoot({
+    factoryStateRoot: requireFactoryStateRoot({
       workspace: input.meta.workspace,
       factoryStateRoot: input.factoryStateRoot,
+      allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
     }),
     event: {
       version: 1,
@@ -410,12 +417,14 @@ export function appendPlanPrOpenedEvent(input: {
 export function appendPlanPrMergedEvent(input: {
   meta: FactoryPlanningRunMeta;
   factoryStateRoot?: string;
+  allowWorkspaceLocalStateRoot?: boolean;
 }): FactoryLifecycleEvent {
   const metadata = requireMergedPublicationMetadata(input.meta);
   return appendFactoryLifecycleEvent({
-    factoryStateRoot: resolveFactoryStateRoot({
+    factoryStateRoot: requireFactoryStateRoot({
       workspace: input.meta.workspace,
       factoryStateRoot: input.factoryStateRoot,
+      allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
     }),
     event: {
       version: 1,
@@ -447,10 +456,7 @@ function planningMetaWorkItem(meta: FactoryPlanningRunMeta): FactoryWorkItem {
 }
 
 function planningExecution(meta: FactoryPlanningRunMeta): FactoryLifecycleExecution {
-  return {
-    workspace: meta.workspace,
-    runDir: meta.runDir,
-  };
+  return executionWithStore(meta);
 }
 
 function implementationMetaWorkItem(meta: FactoryImplementationRunMeta): FactoryWorkItem {
@@ -465,17 +471,26 @@ function implementationMetaWorkItem(meta: FactoryImplementationRunMeta): Factory
 }
 
 function implementationExecution(meta: FactoryImplementationRunMeta): FactoryLifecycleExecution {
-  return {
-    workspace: meta.workspace,
-    runDir: meta.runDir,
-  };
+  return executionWithStore(meta);
 }
 
 function executionFromMeta(meta: FactoryRunMeta): FactoryLifecycleExecution {
-  return {
-    workspace: meta.workspace,
-    runDir: meta.runDir,
+  return executionWithStore(meta);
+}
+
+function executionWithStore(meta: {
+  workspace: string;
+  runDir: string;
+  execution?: FactoryLifecycleExecution;
+  factoryStore?: FactoryRunMeta["factoryStore"];
+}): FactoryLifecycleExecution {
+  const execution = {
+    workspace: meta.execution?.workspace ?? meta.workspace,
+    runDir: meta.execution?.runDir ?? meta.runDir,
+    ...(meta.execution?.branch ? { branch: meta.execution.branch } : {}),
+    ...(meta.execution?.head ? { head: meta.execution.head } : {}),
   };
+  return factoryLifecycleExecutionProvenance(execution, meta.factoryStore);
 }
 
 function latestReviewPaths(meta: FactoryPlanningRunMeta): {
@@ -488,10 +503,47 @@ function latestReviewPaths(meta: FactoryPlanningRunMeta): {
   const reviewFindingsPath = join(iterationDir, "review-findings.json");
   return {
     ...(existsSync(reviewFindingsPath)
-      ? { reviewFindingsPath: relative(meta.workspace, reviewFindingsPath) }
+      ? { reviewFindingsPath: formatMetaArtifactPath(meta, reviewFindingsPath) }
       : {}),
-    planReviewRefPath: relative(meta.workspace, join(iterationDir, "plan-review-ref.json")),
+    planReviewRefPath: formatMetaArtifactPath(meta, join(iterationDir, "plan-review-ref.json")),
   };
+}
+
+export function formatLifecycleArtifactPath(input: {
+  runDir: string;
+  projectRoot?: string;
+  path: string;
+}): string {
+  const absolutePath = isAbsolute(input.path)
+    ? resolve(input.path)
+    : resolve(input.runDir, input.path);
+  const runRelative = relative(resolve(input.runDir), absolutePath);
+  if (isInside(runRelative)) return runRelative;
+  if (input.projectRoot) {
+    const storeRelative = relative(resolve(input.projectRoot), absolutePath);
+    if (isInside(storeRelative)) return storeRelative;
+  }
+  return absolutePath;
+}
+
+function formatMetaArtifactPath(
+  meta: Pick<FactoryRunMeta, "workspace" | "runDir" | "factoryStore">,
+  path: string,
+): string {
+  return formatLifecycleArtifactPath({
+    runDir: meta.runDir,
+    projectRoot: meta.factoryStore?.projectRoot,
+    path,
+  });
+}
+
+function isInside(path: string): boolean {
+  return (
+    path !== "" &&
+    path !== ".." &&
+    !path.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) &&
+    !isAbsolute(path)
+  );
 }
 
 function requireOpenedPublicationMetadata(meta: FactoryPlanningRunMeta): {
@@ -524,6 +576,25 @@ function requireMergedPublicationMetadata(meta: FactoryPlanningRunMeta): {
 
 function occurredAt(input: { occurredAt?: string }): string {
   return input.occurredAt ?? new Date().toISOString();
+}
+
+function requireFactoryStateRoot(input: {
+  workspace: string;
+  factoryStateRoot?: string;
+  allowWorkspaceLocalStateRoot?: boolean;
+}): string {
+  if (input.factoryStateRoot) {
+    return resolveFactoryStateRoot({
+      workspace: input.workspace,
+      factoryStateRoot: input.factoryStateRoot,
+    });
+  }
+  if (input.allowWorkspaceLocalStateRoot) {
+    return resolveFactoryStateRoot({ workspace: input.workspace });
+  }
+  throw new Error(
+    "factoryStateRoot is required for factory lifecycle writes; pass allowWorkspaceLocalStateRoot only for low-level workspace-local tests.",
+  );
 }
 
 function required<T>(value: T | undefined, label: string): T {

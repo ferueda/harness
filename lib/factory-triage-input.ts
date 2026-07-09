@@ -1,10 +1,13 @@
 import { type FactoryLinearSettings } from "./config.ts";
 import { type LinearFactoryAdapter, createLinearFactoryAdapter } from "./factory-linear-adapter.ts";
+import type { FactoryLockRuntimeOptions } from "./factory-locks.ts";
 import {
   deriveFactoryWorkItemKey,
+  inspectFactoryLifecycleState,
   loadFactoryLifecycleState,
   mergeFactoryStateIntoWorkItem,
   resolveFactoryStateRoot,
+  type FactoryLifecycleWarning,
 } from "./factory-lifecycle.ts";
 import { type FactoryWorkItem } from "./factory-schemas.ts";
 import { assertFactoryItemFileExists, readFactoryWorkItemFile } from "./factory-run-context.ts";
@@ -17,7 +20,10 @@ export type FactoryResolvedWorkItemInput = {
   source: FactoryWorkItemInputSource;
   workItem: FactoryWorkItem;
   linearApplied?: false;
+  warnings?: FactoryLifecycleWarning[];
 };
+
+export type FactoryLifecycleReadMode = "inspect" | "load";
 
 export type ResolveFactoryWorkItemInput = {
   workspace: string;
@@ -26,6 +32,11 @@ export type ResolveFactoryWorkItemInput = {
   linearSettings?: FactoryLinearSettings;
   env?: NodeJS.ProcessEnv;
   factoryStateRoot?: string;
+  /** Low-level/test-only workspace-local lifecycle escape hatch. */
+  allowWorkspaceLocalStateRoot?: boolean;
+  lifecycleReadMode: FactoryLifecycleReadMode;
+  /** Test-only seam for bounded lock contention coverage. */
+  lifecycleLockOptions?: FactoryLockRuntimeOptions;
   linearAdapterFactory?: (input: {
     apiKey: string;
     settings: FactoryLinearSettings;
@@ -43,13 +54,18 @@ export async function resolveFactoryWorkItemInput(
 
   if (input.itemFile !== undefined) {
     const itemPath = assertFactoryItemFileExists(input.workspace, input.itemFile);
+    const merged = mergeLifecycleState({
+      workspace: input.workspace,
+      factoryStateRoot: input.factoryStateRoot,
+      allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
+      lifecycleReadMode: input.lifecycleReadMode,
+      lifecycleLockOptions: input.lifecycleLockOptions,
+      workItem: readFactoryWorkItemFile(itemPath),
+    });
     return {
       source: "item-file",
-      workItem: mergeLifecycleState({
-        workspace: input.workspace,
-        factoryStateRoot: input.factoryStateRoot,
-        workItem: readFactoryWorkItemFile(itemPath),
-      }),
+      workItem: merged.workItem,
+      ...(merged.warnings.length > 0 ? { warnings: merged.warnings } : {}),
     };
   }
 
@@ -69,13 +85,18 @@ export async function resolveFactoryWorkItemInput(
     apiKey,
     settings: input.linearSettings,
   });
+  const merged = mergeLifecycleState({
+    workspace: input.workspace,
+    factoryStateRoot: input.factoryStateRoot,
+    allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
+    lifecycleReadMode: input.lifecycleReadMode,
+    lifecycleLockOptions: input.lifecycleLockOptions,
+    workItem: await adapter.fetchWorkItem(input.linearIssue),
+  });
   return {
     source: "linear",
-    workItem: mergeLifecycleState({
-      workspace: input.workspace,
-      factoryStateRoot: input.factoryStateRoot,
-      workItem: await adapter.fetchWorkItem(input.linearIssue),
-    }),
+    workItem: merged.workItem,
+    ...(merged.warnings.length > 0 ? { warnings: merged.warnings } : {}),
     linearApplied: false,
   };
 }
@@ -84,11 +105,36 @@ export function mergeLifecycleState(input: {
   workspace: string;
   workItem: FactoryWorkItem;
   factoryStateRoot?: string;
-}): FactoryWorkItem {
+  allowWorkspaceLocalStateRoot?: boolean;
+  lifecycleReadMode: FactoryLifecycleReadMode;
+  lifecycleLockOptions?: FactoryLockRuntimeOptions;
+}): { workItem: FactoryWorkItem; warnings: FactoryLifecycleWarning[] } {
+  if (!input.factoryStateRoot && !input.allowWorkspaceLocalStateRoot) {
+    throw new Error(
+      "factoryStateRoot is required for factory station lifecycle reads; pass allowWorkspaceLocalStateRoot only for low-level workspace-local tests.",
+    );
+  }
   const factoryStateRoot = resolveFactoryStateRoot(input);
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
-  const state = loadFactoryLifecycleState({ factoryStateRoot, workItemKey });
-  return mergeFactoryStateIntoWorkItem(input.workItem, state);
+  if (input.lifecycleReadMode === "inspect") {
+    const inspected = inspectFactoryLifecycleState({ factoryStateRoot, workItemKey });
+    return {
+      workItem: mergeFactoryStateIntoWorkItem(input.workItem, inspected.state),
+      warnings: inspected.warnings,
+    };
+  }
+  return {
+    workItem: mergeFactoryStateIntoWorkItem(
+      input.workItem,
+      loadFactoryLifecycleState({
+        factoryStateRoot,
+        workItemKey,
+        workspace: input.workspace,
+        lockOptions: input.lifecycleLockOptions,
+      }),
+    ),
+    warnings: [],
+  };
 }
 
 export function validateFactoryTriageWorkItemInput(input: {

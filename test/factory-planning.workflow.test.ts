@@ -63,6 +63,7 @@ test("factory planning dry-run writes placeholder artifacts without provider or 
 test("factory planning approves a reviewed plan and writes final dev plan", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  const reviewRunsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-reviews-"));
   const outputPlan = "dev/plans/260705-approved-plan.md";
   const calls: AgentRunInput[] = [];
   const reviews: FactoryPlanningReviewContext[] = [];
@@ -78,6 +79,7 @@ test("factory planning approves a reviewed plan and writes final dev plan", asyn
     plannerRole: { agent: "cursor", model: "composer-2.5" },
     reviewerRole: { agent: "codex", model: "gpt-5.6-sol", modelReasoningEffort: "high" },
     outputPlan,
+    reviewRunsDir,
     maxReviewIterations: 2,
     maxRuntimeMs: 1_000,
     eventSink(event) {
@@ -121,10 +123,33 @@ test("factory planning approves a reviewed plan and writes final dev plan", asyn
   expect(calls[0]?.logPath).toBe(join(ctx.runDir, "iterations/1/planner.stream.jsonl"));
   expect(existsSync(join(ctx.runDir, "iterations/1"))).toBe(true);
   expect(reviews).toHaveLength(1);
-  expect(reviews[0]?.runDir).toContain(".harness/runs/reviews");
+  expect(reviews[0]?.runDir).toMatch(new RegExp(`^${reviewRunsDir}`));
   expect(readFileSync(join(ctx.runDir, "summary.md"), "utf8")).toContain("plan-approved");
   expect(events.map((event) => event.type)).toContain("run:start");
   expect(events.map((event) => event.type)).toContain("run:end");
+});
+
+test("factory planning keeps the workspace review default when no durable review root is injected", () => {
+  const workspace = createWorkspace();
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir: mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-")),
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 1,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          throw new Error("not invoked");
+        },
+      };
+    },
+  });
+
+  expect(ctx.reviewRunsDir).toBeUndefined();
 });
 
 test("factory planning allows explicit operator runs without triage metadata", async () => {

@@ -38,6 +38,17 @@ import {
   noopEventSink,
   type WorkflowEventSink,
 } from "./workflow-events.ts";
+import {
+  factoryExecutionProvenance,
+  type FactoryExecutionProvenance,
+  type FactoryStoreMeta,
+} from "./factory-store.ts";
+
+export type FactoryPlanningRunWarning = {
+  code: string;
+  message: string;
+  factoryStateRoot?: string;
+};
 
 export type FactoryPlanningRunStatus =
   | "dry_run"
@@ -79,6 +90,9 @@ export type FactoryPlanningRunMeta = {
   durationMs: number;
   eventsFile?: typeof WORKFLOW_EVENTS_FILE;
   error?: string;
+  factoryStore?: FactoryStoreMeta;
+  warnings?: FactoryPlanningRunWarning[];
+  execution?: FactoryExecutionProvenance;
 };
 
 export type FactoryPlanningAgentRole = FactoryRoleAgent;
@@ -123,6 +137,8 @@ export type FactoryPlanningRunContextOptions = {
   eventSink?: WorkflowEventSink;
   agentProviderFactory: (options: AgentProviderOptions) => Agent;
   planReviewRunner?: FactoryPlanningReviewRunner;
+  factoryStore?: FactoryStoreMeta;
+  reviewRunsDir?: string;
 };
 
 export type FactoryPlanningRunContext = {
@@ -144,6 +160,8 @@ export type FactoryPlanningRunContext = {
   eventSink: WorkflowEventSink;
   agentProviderFactory: (options: AgentProviderOptions) => Agent;
   planReviewRunner?: FactoryPlanningReviewRunner;
+  factoryStore?: FactoryStoreMeta;
+  reviewRunsDir?: string;
   plannerProvider(): Agent;
   iterationDir(index: number): string;
   writePlannerArtifacts(input: {
@@ -243,6 +261,8 @@ function createFactoryPlanningRunContextInternal(
     eventSink,
     agentProviderFactory: options.agentProviderFactory,
     planReviewRunner: options.planReviewRunner,
+    factoryStore: options.factoryStore,
+    reviewRunsDir: options.reviewRunsDir,
     plannerProvider(): Agent {
       if (!plannerProvider && !options.dryRun) {
         plannerProvider = options.agentProviderFactory({
@@ -307,6 +327,7 @@ function createFactoryPlanningRunContextInternal(
         plannerAgent,
         reviewerAgent,
         includeEventsFile: !options.dryRun,
+        factoryStore: options.factoryStore,
       });
       writeFileSync(join(runDir, "summary.md"), renderFactoryPlanningSummary(meta), "utf8");
       writeJson(join(runDir, "meta.json"), meta);
@@ -330,6 +351,7 @@ function buildMeta(input: {
   plannerSession?: AgentSessionRef;
   error?: string;
   includeEventsFile: boolean;
+  factoryStore?: FactoryStoreMeta;
 }): FactoryPlanningRunMeta {
   return {
     runId: input.runId,
@@ -355,6 +377,8 @@ function buildMeta(input: {
     durationMs: Date.now() - input.startedAt.getTime(),
     ...(input.includeEventsFile ? { eventsFile: WORKFLOW_EVENTS_FILE } : {}),
     ...(input.error ? { error: input.error } : {}),
+    ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
+    execution: factoryExecutionProvenance(input.workspace, input.runDir),
   };
 }
 

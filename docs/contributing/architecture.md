@@ -8,7 +8,7 @@ CLI (bin/harness.ts)
   -> workflow context (lib/workflow-context.ts, lib/factory-run-context.ts, or lib/factory-planning-run-context.ts)
   -> provider selection (providers/registry.ts and provider adapters)
   -> workflow definition (workflows/*.workflow.ts)
-  -> artifacts (.harness/runs/reviews/<run-id>/ or .harness/runs/factory/<run-id>/)
+  -> artifacts (.harness/runs/reviews/<run-id>/ or durable factory store runs/<run-id>/)
 ```
 
 Current public CLI surfaces:
@@ -65,15 +65,30 @@ Target repositories own their local harness state:
 - `harness.json` for repo-local defaults.
 - `.harness/bin/harness` as an ignored shim written by `harness init`.
 - `.harness/inbox/factory/*.json` for local factory intake queue items.
-- `.harness/factory/events/*.jsonl` for local factory lifecycle truth.
-- `.harness/factory/state/*.json` for rebuildable lifecycle read-model cache.
 - `.harness/runs/reviews/<run-id>/` for review artifacts.
-- `.harness/runs/factory/<run-id>/` for factory intake artifacts.
 - local `.agents/skills/` installs when a target repo chooses to install skills.
+
+The durable factory store owns
+`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory/`
+for lifecycle JSONL/state/locks and its `runs/factory/` and `runs/reviews/`
+directories for factory-owned evidence. Existing workspace-local
+`.harness/factory` is legacy state: status reports it, but v1 does not merge it.
 
 Target repositories also own their project docs, source code, tests, CI, and
 final gates. Harness can invoke workflows against them, but it does not own
 their product decisions.
+
+### Durable factory-store boundary
+
+Factory lifecycle JSONL/read-model state and factory-owned run evidence live in
+`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/` by
+default. The target repository remains the execution sandbox and Git
+materialization point: it will continue to own its shim, inbox, source, tests,
+`harness.json`, and committed plans/code.
+
+Standalone `harness run change-review` and `harness run plan-review` artifacts
+remain workspace-local by default under `.harness/runs/reviews/`. The durable
+store applies only to factory continuity and factory-owned evidence.
 
 ## Major source areas
 
@@ -109,11 +124,11 @@ reads or Linear fetches after station settings are known. When a lifecycle log
 exists, it merges lifecycle state over tracker-derived fallback metadata before
 the station consumes the work item.
 
-`lib/factory-lifecycle.ts` owns the local factory lifecycle event contract,
-JSONL store, read-model reducer, state cache, work-item key derivation, and
-lifecycle metadata merge helper. `.harness/factory/events/*.jsonl` is
-canonical local machine state; `.harness/factory/state/*.json` is a
-rebuildable projection.
+`lib/factory-lifecycle.ts` owns the factory lifecycle event contract, JSONL
+store, read-model reducer, state cache, work-item key derivation, and lifecycle
+metadata merge helper. Durable-store `factory/events/*.jsonl` is canonical
+machine state; `factory/state/*.json` is a rebuildable projection protected by
+per-work-item locks.
 
 `lib/factory-lifecycle-writes.ts` owns lifecycle event construction for current
 operator station commands. Live triage, planning, plan publication, plan-merge,
@@ -158,8 +173,12 @@ the real index.
 plus harness-owned review-ref materialization. It does not mutate Linear, create
 human branches, or open PRs.
 
-`lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
-status` reads `.harness/inbox/factory/` without moving files or creating runs.
+`lib/factory-inbox.ts` owns local factory inbox inspection. `lib/factory-status.ts`
+composes that inbox data with durable-store, lock, and legacy-state inspection
+for `harness factory status`; status remains read-only and never creates runs.
+`lib/factory-store.ts` resolves project-scoped durable paths and store
+provenance, while `lib/factory-locks.ts` owns lifecycle lock acquisition and
+non-blocking inspection.
 
 `lib/factory-linear-adapter.ts` owns Linear issue import, constrained intake
 create, and explicit station apply updates. `lib/factory-linear-list.ts` owns
@@ -282,8 +301,9 @@ scope by default and may also include a plan or handoff.
 
 ## Factory artifact lifecycle
 
-Each factory station run creates `.harness/runs/factory/<run-id>/` under the
-selected workspace or explicit runs directory.
+Each `harness factory` station run creates
+`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/`
+by default, or uses an explicit `--runs-dir` override.
 
 Factory triage artifacts include:
 
@@ -299,7 +319,7 @@ Factory triage artifacts include:
 
 `--dry-run` writes placeholder triage and route artifacts but does not invoke a
 provider, does not write run `events.jsonl`, and does not write lifecycle
-events under `.harness/factory`.
+events in the durable factory store.
 
 Factory planning artifacts include:
 
@@ -315,20 +335,19 @@ Factory planning artifacts include:
 - `meta.json`
 - `events.jsonl` for live runs
 
-Live planning runs create nested plan-review runs under
-`.harness/runs/reviews/<run-id>/`. When a plan is approved, the station writes
+Live planning runs create nested plan-review runs under the durable store's
+`runs/reviews/<run-id>/`. When a plan is approved, the station writes
 the final tracked plan file under `dev/plans/`. Tracker-backed flows should
 publish that file through a plan PR before implementation starts. `--dry-run`
 writes placeholder planning artifacts but does not invoke providers or reviewers
-does not write run `events.jsonl`, and does not write lifecycle events under
-`.harness/factory`.
+does not write run `events.jsonl`, and does not write lifecycle events.
 
 Planning `meta.json` includes `factoryMetadata` with reserved handoff keys such
 as `tracker`, `factoryRoute`, `factoryNextAction`, `factoryStage`,
 `factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
 `approvedPlanCommit`. This metadata is execution evidence and station handoff
-context; lifecycle state under `.harness/factory` is the per-work-item machine
-source of truth when present. Tracker-backed approved plan filenames should use
+context; durable lifecycle state is the per-work-item machine source of truth
+when present. Tracker-backed approved plan filenames should use
 the tracker key, for example `dev/plans/FER-123.md`; local/manual items fall
 back to title-derived slugs. Tracker-backed planning approval records
 `factoryStage: "plan-pr-open"` until the plan PR URL and merge commit are

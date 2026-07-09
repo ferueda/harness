@@ -25,8 +25,8 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
-harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
+harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 ```
@@ -93,7 +93,7 @@ Tracker adapters can attach reserved metadata under `metadata`:
 ```
 
 These metadata keys are transport fields. When a lifecycle log exists, the
-canonical machine state is the lifecycle read model under `.harness/factory`;
+canonical machine state is the durable factory-store lifecycle read model;
 work-item metadata is the resolved view passed to stations.
 `approvedPlanPath` is the implementation input after the plan PR has merged.
 `approvedPlanPrUrl` links the publication PR while it is open.
@@ -101,22 +101,32 @@ work-item metadata is the resolved view passed to stations.
 
 ## Lifecycle State
 
-Live operator station commands write a harness-owned lifecycle log:
+Live operator station commands write a harness-owned durable lifecycle log:
 
 ```text
-.harness/factory/events/<work-item>.jsonl
-.harness/factory/state/<work-item>.json
+${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory/events/<work-item>.jsonl
+${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory/state/<work-item>.json
 ```
 
-`events/*.jsonl` is the canonical local factory lifecycle source of truth.
+`events/*.jsonl` is the canonical lifecycle source of truth. Each work item has
+a local-filesystem lock under `factory/locks/`; state JSON is an atomically
+published, rebuildable projection. Dry-run stations and Linear fetch inspect
+state without acquiring locks or rebuilding it; they report warnings for stale,
+missing, corrupt, or held lifecycle state. Live stations rebuild projections
+under lock when required.
 `state/*.json` is a rebuildable read-model cache. The read model owns durable
 machine fields such as `factoryStage`, `factoryRoute`, `factoryNextAction`,
 `factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
 `approvedPlanCommit`.
 
 Linear status and comments are human board projections. Per-run `meta.json`
-and `.harness/runs/factory/<run-id>/events.jsonl` are execution evidence. Git
+and durable `runs/factory/<run-id>/events.jsonl` are execution evidence. Git
 remains source of truth for committed plans and code.
+
+The workspace remains the sandbox: it owns source, tests, `harness.json`, the
+shim, inbox, and committed `dev/plans/*.md`. Legacy workspace-local
+`.harness/factory` state is detected by `factory status` and ignored; it is not
+silently imported into the durable store.
 
 `triage.started`, `planning.started`, and `implementation.started` events are
 audit history only; they do not move durable `factoryStage`. Terminal events
@@ -188,6 +198,17 @@ Factory station roles use `harness.json`:
 Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
 `statuses` when operator tools like `linear-cli` or `factory linear list`
 should target those board states by key; factory stations do not require them.
+
+### Durable Store Overrides
+
+Factory station commands default to
+`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/`. Override
+the store root or project id with `--factory-store-root` /
+`--factory-store-project-id`, `HARNESS_FACTORY_STORE_ROOT` /
+`HARNESS_FACTORY_STORE_PROJECT_ID`, or `factory.store.root` /
+`factory.store.projectId` in `harness.json`. Precedence is CLI, environment,
+config, then the default. The workspace still owns its shim, inbox, source, and
+committed plans; workspace-local `.harness/factory` lifecycle files are legacy.
 
 Vocabulary:
 
@@ -360,7 +381,7 @@ Routes:
 - `needs-info`: requires human answers before rerun.
 - `wait-to-implement`: valid but parked until `reconsiderWhen`.
 
-Triage artifacts under `.harness/runs/factory/<run-id>/` include:
+Triage artifacts under the durable factory `runs/factory/<run-id>/` include:
 
 - `context/work-item.json`
 - `factory-triage.prompt.md`
@@ -418,7 +439,7 @@ Planning statuses:
 - `plan-review-unresolved`
 - `planning-failed`
 
-Planning artifacts under `.harness/runs/factory/<run-id>/` include:
+Planning artifacts under the durable factory `runs/factory/<run-id>/` include:
 
 - `context/work-item.json`
 - `planning/draft.md`
@@ -432,7 +453,7 @@ Planning artifacts under `.harness/runs/factory/<run-id>/` include:
 - `meta.json`
 - `events.jsonl` for live runs
 
-Plan-review artifacts live under `.harness/runs/reviews/<run-id>/` and are
+Nested factory plan-review artifacts live under durable `runs/reviews/<run-id>/` and are
 referenced from `iterations/<n>/plan-review-ref.json`. The final approved plan
 is copied under `dev/plans/` only after approval. Tracker-backed plans should
 use stable tracker-key names such as `dev/plans/FER-123.md` and be published
@@ -445,8 +466,8 @@ Manual publication commands update local run metadata, summary files, and the
 lifecycle log by default:
 
 ```bash
-harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
-harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
+harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
 ```
 
 They print `factoryMetadata` plus suggested Linear comment text. They do not
@@ -480,7 +501,7 @@ git checkout -b plan/ENG-123-short-slug
 git push -u origin plan/ENG-123-short-slug
 gh pr create --title "plan: ENG-123 short description" --body "..."
 LINEAR_API_KEY=... harness factory planning publish \
-  --run-dir .harness/runs/factory/<run-id> \
+  --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> \
   --pr-url https://github.com/owner/repo/pull/123 \
   --linear-issue ENG-123 --apply
 ```
@@ -496,8 +517,8 @@ does not edit GitHub PRs or verify that Linear attached the PR.
 Add `--linear-issue` and `--apply` to mutate Linear:
 
 ```bash
-LINEAR_API_KEY=... harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue ENG-123 --apply
-LINEAR_API_KEY=... harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue ENG-123 --apply
+LINEAR_API_KEY=... harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue ENG-123 --apply
+LINEAR_API_KEY=... harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234 --linear-issue ENG-123 --apply
 ```
 
 `publish --apply` validates the issue belongs to the configured Linear
@@ -551,7 +572,7 @@ provider or writing lifecycle state.
 Live artifacts:
 
 ```text
-.harness/runs/factory/<run-id>/
+${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/
   context/
     work-item.json
     implementation-input.json
@@ -588,8 +609,9 @@ command owns the internal review ref.
 Local inbox files live under `.harness/inbox/factory/*.json`.
 
 `harness factory status` reads pending, historical processed, and historical
-failed files. It is read-only. Current station commands do not move inbox files
-or batch-process every pending item.
+failed files, then reports the active durable store, lifecycle locks, ignored
+legacy workspace-local state, and any warnings. It is read-only. Current
+station commands do not move inbox files or batch-process every pending item.
 
 ## Future Tracker And Orchestrator Boundary
 

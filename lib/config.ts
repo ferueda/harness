@@ -14,6 +14,7 @@ import {
   formatZodError,
   type FactoryLinearConfig,
   type FactoryRoleConfig,
+  type FactoryStoreConfig,
   type HarnessConfig,
 } from "./schemas.ts";
 
@@ -86,6 +87,7 @@ export type FactoryPlanningSettings = {
 };
 
 export type FactoryLinearSettings = FactoryLinearConfig;
+export type FactoryStoreSettings = FactoryStoreConfig;
 
 type ResolveFactoryRoleAgentInput =
   | {
@@ -195,6 +197,18 @@ export function resolveFactoryLinearSettings(
   return {
     workspace,
     ...config.factory.linear,
+  };
+}
+
+export function resolveFactoryStoreSettings(
+  options: { workspace?: string },
+  cwd = process.cwd(),
+): FactoryStoreSettings & { workspace: string } {
+  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
+  const config = readHarnessConfig(workspace);
+  return {
+    workspace,
+    ...config.factory?.store,
   };
 }
 

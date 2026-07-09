@@ -285,7 +285,7 @@ async function runReview(
   const reviewCtx = createWorkflowContext({
     workspace: ctx.workspace,
     planPath,
-    runsDir: join(ctx.workspace, ".harness/runs/reviews"),
+    runsDir: ctx.reviewRunsDir,
     includeGitScope: false,
     agentProvider: ctx.reviewerRole.agent,
     codexPathOverride: ctx.reviewerRole.codexPathOverride,

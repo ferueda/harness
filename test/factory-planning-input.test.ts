@@ -25,8 +25,10 @@ test("Linear issue input can run through factory planning dry-run artifacts", as
     const input = await resolveFactoryWorkItemInput({
       workspace,
       linearIssue: "ENG-123",
+      allowWorkspaceLocalStateRoot: true,
       linearSettings: LINEAR_SETTINGS,
       env: { LINEAR_API_KEY: "test-key" },
+      lifecycleReadMode: "load",
       linearAdapterFactory: () =>
         fakeLinearAdapter({
           fetchWorkItem: async () => ({
@@ -174,8 +176,10 @@ test("Linear planning entry accepts lifecycle-derived plan-needs-human state", a
   const input = await resolveFactoryWorkItemInput({
     workspace,
     linearIssue: "ENG-123",
+    allowWorkspaceLocalStateRoot: true,
     linearSettings: LINEAR_SETTINGS,
     env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "load",
     linearAdapterFactory: () =>
       fakeLinearAdapter({
         fetchWorkItem: async () => LINEAR_WORK_ITEM,
@@ -213,8 +217,10 @@ test("Linear planning entry guard rejects disallowed stages without touching run
   const input = await resolveFactoryWorkItemInput({
     workspace,
     linearIssue: "ENG-123",
+    allowWorkspaceLocalStateRoot: true,
     linearSettings: LINEAR_SETTINGS,
     env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "load",
     linearAdapterFactory: () =>
       fakeLinearAdapter({
         fetchWorkItem: async () => ({

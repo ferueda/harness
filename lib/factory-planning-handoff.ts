@@ -1,7 +1,20 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeSync,
+  writeFileSync,
+} from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
-import type { FactoryPlanningRunMeta } from "./factory-planning-run-context.ts";
+import type {
+  FactoryPlanningRunMeta,
+  FactoryPlanningRunWarning,
+} from "./factory-planning-run-context.ts";
+import type { FactoryStoreMeta } from "./factory-store.ts";
 import { FactoryPlanningError } from "./factory-planning-schemas.ts";
 import { FactoryWorkItemMetadataSchema, type FactoryWorkItemMetadata } from "./factory-schemas.ts";
 import { formatZodError } from "./schemas.ts";
@@ -28,6 +41,54 @@ export const FactoryPlanningRunMetaSchema = z
       .passthrough(),
     outputPlan: z.string().min(1).optional(),
     factoryMetadata: FactoryWorkItemMetadataSchema.optional(),
+    factoryStore: z
+      .object({
+        storeRoot: z.string().min(1),
+        projectId: z.string().min(1),
+        projectRoot: z.string().min(1),
+        factoryStateRoot: z.string().min(1),
+        factoryRunsDir: z.string().min(1),
+        reviewRunsDir: z.string().min(1),
+        repo: z
+          .object({
+            name: z.string().min(1),
+            id: z.string().min(1),
+            idSource: z.enum([
+              "config",
+              "cli",
+              "env",
+              "origin",
+              "no-origin-fallback",
+              "workspace-fallback",
+            ]),
+            normalizedOriginUrl: z.string().min(1).optional(),
+            originHash: z.string().min(1).optional(),
+            workspaceHash: z.string().min(1).optional(),
+          })
+          .strict(),
+        overrides: z
+          .object({
+            storeRoot: z.enum(["cli", "env", "config"]).optional(),
+            projectId: z.enum(["cli", "env", "config"]).optional(),
+            runsDir: z.string().min(1).optional(),
+            factoryStateRoot: z.string().min(1).optional(),
+          })
+          .strict(),
+        warnings: z.array(z.string()),
+      })
+      .strict()
+      .optional(),
+    warnings: z
+      .array(
+        z
+          .object({
+            code: z.string().min(1),
+            message: z.string().min(1),
+            factoryStateRoot: z.string().min(1).optional(),
+          })
+          .strict(),
+      )
+      .optional(),
     iterations: z.array(z.object({ index: z.number() }).passthrough()),
   })
   .passthrough();
@@ -36,6 +97,11 @@ export type FactoryPlanningHandoffPatch = {
   approvedPlanPrUrl?: string;
   approvedPlanCommit?: string;
   factoryStage?: "plan-pr-open" | "plan-approved";
+};
+
+export type FactoryPlanningRunMetaPatch = {
+  factoryStore?: FactoryStoreMeta;
+  warnings?: FactoryPlanningRunWarning[];
 };
 
 export type PlannedWorkHandoff = {
@@ -76,8 +142,24 @@ export function updateFactoryPlanningHandoff(
     ...meta,
     factoryMetadata: parsedMetadata.data,
   };
-  writeJson(join(resolvedRunDir, "meta.json"), updated);
+  writePlanningMeta(join(resolvedRunDir, "meta.json"), updated);
   writeFileSync(join(resolvedRunDir, "summary.md"), renderFactoryPlanningSummary(updated), "utf8");
+  return updated;
+}
+
+export function updateFactoryPlanningRunMeta(
+  runDir: string,
+  patch: FactoryPlanningRunMetaPatch,
+): FactoryPlanningRunMeta {
+  const resolvedRunDir = resolve(runDir);
+  const meta = loadFactoryPlanningRunMeta(resolvedRunDir);
+  const warnings = appendUniqueWarnings(meta.warnings, patch.warnings);
+  const updated: FactoryPlanningRunMeta = {
+    ...meta,
+    ...(patch.factoryStore ? { factoryStore: patch.factoryStore } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+  writePlanningMeta(join(resolvedRunDir, "meta.json"), updated);
   return updated;
 }
 
@@ -231,6 +313,33 @@ function resolveWorkspacePath(workspace: string, path: string): string {
   return resolvedPath;
 }
 
-function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, JSON.stringify(value, null, 2), "utf8");
+function writePlanningMeta(path: string, value: FactoryPlanningRunMeta): void {
+  const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
+  const descriptor = openSync(temporary, "w");
+  try {
+    writeSync(descriptor, `${JSON.stringify(value, null, 2)}\n`, undefined, "utf8");
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  renameSync(temporary, path);
+}
+
+function appendUniqueWarnings(
+  existing: FactoryPlanningRunWarning[] | undefined,
+  incoming: FactoryPlanningRunWarning[] | undefined,
+): FactoryPlanningRunWarning[] {
+  const warnings = [...(existing ?? [])];
+  for (const warning of incoming ?? []) {
+    if (
+      warnings.some(
+        (candidate) =>
+          candidate.code === warning.code &&
+          candidate.factoryStateRoot === warning.factoryStateRoot,
+      )
+    )
+      continue;
+    warnings.push(warning);
+  }
+  return warnings;
 }

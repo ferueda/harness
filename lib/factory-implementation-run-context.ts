@@ -7,6 +7,11 @@ import { factoryRoleAgentMeta, type FactoryStationAgentMeta } from "./factory-ag
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
 import type { FactoryWorkItem, FactoryWorkItemMetadata } from "./factory-schemas.ts";
 import {
+  factoryExecutionProvenance,
+  type FactoryExecutionProvenance,
+  type FactoryStoreMeta,
+} from "./factory-store.ts";
+import {
   WORKFLOW_EVENTS_FILE,
   createCompositeEventSink,
   createFileEventSink,
@@ -70,12 +75,15 @@ export type FactoryImplementationRunMeta = {
   reviewHead?: string;
   reviewCommitSha?: string;
   factoryMetadata?: FactoryWorkItemMetadata;
+  factoryStore?: FactoryStoreMeta;
+  execution?: FactoryExecutionProvenance;
 };
 
 export type FactoryImplementationRunContextOptions = {
   workspace: string;
   runsDir?: string;
   workItem: FactoryWorkItem;
+  factoryStore?: FactoryStoreMeta;
   implementationInput: FactoryImplementationInput;
   implementerRole: FactoryRoleAgent;
   dryRun: boolean;
@@ -108,6 +116,7 @@ export type FactoryImplementationRunContext = {
   workspace: string;
   startedAt: Date;
   workItem: FactoryWorkItem;
+  factoryStore?: FactoryStoreMeta;
   implementationInput: FactoryImplementationInput;
   implementerAgent: FactoryImplementationAgentMeta;
   implementerRole: FactoryRoleAgent;
@@ -204,6 +213,7 @@ function createFactoryImplementationRunContextInternal(
     workspace,
     startedAt,
     workItem: options.workItem,
+    factoryStore: options.factoryStore,
     implementationInput: options.implementationInput,
     implementerAgent,
     implementerRole: options.implementerRole,
@@ -268,6 +278,7 @@ function createFactoryImplementationRunContextInternal(
         mode: options.implementationInput.mode,
         implementerAgent,
         factoryMetadata: options.implementationInput.metadata,
+        factoryStore: options.factoryStore,
         includeEventsFile: !options.dryRun,
         includeLiveArtifacts: options.dryRun ? false : includeLiveArtifacts,
         error: input.error,
@@ -298,6 +309,7 @@ function buildMeta(input: {
   mode: FactoryImplementationInput["mode"];
   implementerAgent: FactoryImplementationAgentMeta;
   factoryMetadata: FactoryWorkItemMetadata;
+  factoryStore?: FactoryStoreMeta;
   includeEventsFile: boolean;
   includeLiveArtifacts: boolean;
   error?: string;
@@ -353,6 +365,8 @@ function buildMeta(input: {
     ...(input.reviewBase ? { reviewBase: input.reviewBase } : {}),
     ...(input.reviewHead ? { reviewHead: input.reviewHead } : {}),
     ...(input.reviewCommitSha ? { reviewCommitSha: input.reviewCommitSha } : {}),
+    ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
+    execution: factoryExecutionProvenance(input.workspace, input.runDir),
   };
 }
 
