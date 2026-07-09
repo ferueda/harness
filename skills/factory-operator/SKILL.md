@@ -139,11 +139,13 @@ Use Linear list for read-only backlog discovery by configured status key:
 
 ```bash
 LINEAR_API_KEY=... harness factory linear list --status intake --workspace /path/to/repo
+LINEAR_API_KEY=... harness factory linear list --status done --workspace /path/to/repo
 ```
 
 List validates configured Linear statuses and project scope, then prints
 lightweight issue summaries. It does not fetch descriptions, labels, comments,
-or mutate Linear.
+or mutate Linear. Terminal keys such as `done` work only when mapped in
+`factory.linear.statuses`.
 
 Use Linear fetch to convert one issue into `FactoryWorkItem` JSON:
 
