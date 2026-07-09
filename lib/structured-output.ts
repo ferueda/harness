@@ -1,9 +1,4 @@
-import {
-  extractJsonFromText,
-  extractJsonText,
-  leadingBalancedJsonValue,
-  stripJsonFences,
-} from "./json-extract.ts";
+import { extractJsonText, leadingBalancedJsonValue, stripJsonFences } from "./json-extract.ts";
 import { schemaAccepts, type JsonSchema, validateJsonSchema } from "./schema-validation.ts";
 
 export type { JsonSchema } from "./schema-validation.ts";
@@ -85,8 +80,14 @@ export function parseStructuredOutput(
     return { error: "Final answer was not valid JSON." };
   }
 
-  const jsonText = extractJsonFromText(resultText);
+  // No schema: JSON is optional. Prefer extractable JSON; accept prose finals.
+  const jsonText = extractJsonText(resultText, { fallbackToCleaned: false });
+  if (!jsonText) {
+    return { value: undefined };
+  }
   const parsed = parseJsonText(jsonText);
-  if (parsed.error) return parsed;
+  if (parsed.error) {
+    return { value: undefined };
+  }
   return { value: parsed.value };
 }
