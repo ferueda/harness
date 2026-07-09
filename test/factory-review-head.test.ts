@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import { createFactoryReviewHead } from "../lib/factory-review-head.ts";
 
 test("createFactoryReviewHead succeeds with populated ignored .harness and omits it from the review tree", () => {
-  const workspace = createGitWorkspaceWithIgnoredHarness();
+  const workspace = createGitWorkspace({ ignoreHarness: true });
   const runDir = join(workspace, ".harness", "runs", "factory", "run-fer-56");
   mkdirSync(runDir, { recursive: true });
   writeFileSync(join(runDir, "marker.txt"), "factory run artifact\n", "utf8");
@@ -31,7 +31,28 @@ test("createFactoryReviewHead succeeds with populated ignored .harness and omits
   expect(treePaths.some((path) => path === ".harness" || path.startsWith(".harness/"))).toBe(false);
 });
 
-function createGitWorkspaceWithIgnoredHarness(): string {
+test("createFactoryReviewHead fails closed when .harness is not ignored", () => {
+  const workspace = createGitWorkspace({ ignoreHarness: false });
+  const runDir = join(workspace, ".harness", "runs", "factory", "run-fer-56");
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(runDir, "marker.txt"), "factory run artifact\n", "utf8");
+  writeFileSync(join(workspace, "tracked.txt"), "edited for review head\n", "utf8");
+
+  const reviewBase = git(workspace, ["rev-parse", "HEAD"]).trim();
+  expect(() =>
+    createFactoryReviewHead({
+      workspace,
+      runDir,
+      runId: "run-fer-56-unignored",
+      reviewBase,
+    }),
+  ).toThrow(/must not include \.harness\//);
+
+  const refs = git(workspace, ["for-each-ref", "--format=%(refname)", "refs/harness"]).trim();
+  expect(refs).toBe("");
+});
+
+function createGitWorkspace(options: { ignoreHarness: boolean }): string {
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-review-head-"));
   execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
   execFileSync("git", ["config", "user.email", "test@example.com"], {
@@ -39,9 +60,13 @@ function createGitWorkspaceWithIgnoredHarness(): string {
     stdio: "ignore",
   });
   execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace, stdio: "ignore" });
-  writeFileSync(join(workspace, ".gitignore"), ".harness/\n", "utf8");
   writeFileSync(join(workspace, "tracked.txt"), "tracked content\n", "utf8");
-  execFileSync("git", ["add", ".gitignore", "tracked.txt"], { cwd: workspace, stdio: "ignore" });
+  const toAdd = ["tracked.txt"];
+  if (options.ignoreHarness) {
+    writeFileSync(join(workspace, ".gitignore"), ".harness/\n", "utf8");
+    toAdd.push(".gitignore");
+  }
+  execFileSync("git", ["add", ...toAdd], { cwd: workspace, stdio: "ignore" });
   execFileSync("git", ["commit", "-m", "init"], { cwd: workspace, stdio: "ignore" });
   return workspace;
 }
