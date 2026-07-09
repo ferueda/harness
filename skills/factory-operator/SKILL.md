@@ -44,9 +44,18 @@ harness run factory-triage --item-file work-item.json
 harness run plan-review --plan path/to/implementation-plan.md
 ```
 
-Use `--dry-run` to verify command wiring and artifact layout without provider
-or reviewer calls. For `--linear-issue`, dry-run still performs the live Linear
-read needed to build the work item; it does not mutate Linear.
+Use `--dry-run` only to verify command wiring and artifact layout without
+provider or reviewer calls. Factory dry-run skips the triager/planner and
+writes placeholder artifacts — it is not a real classification or plan.
+For `--linear-issue`, dry-run still performs the live Linear read needed to
+build the work item; it does not mutate Linear. When the chief wants a real
+route or authorizes `--apply`, run live triage/planning (with `--apply` when
+authorized) instead of dry-run first.
+
+Grove / extra worktrees are not required for triage or planning. Those
+stations write ignored `.harness/runs/` artifacts and (with `--apply`) mutate
+Linear only — use the registered project workspace path. Prefer Grove when
+implementation or other git-mutating work needs an isolated checkout.
 
 ## Role Config
 
@@ -133,19 +142,26 @@ Run:
 
 ```bash
 harness factory triage --workspace /path/to/repo --item-file work-item.json
-harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 ```
 
 `--linear-issue` uses Linear as the input source by default. It requires
 `LINEAR_API_KEY` and `factory.linear` config. Every `--linear-issue` triage run
 performs a live Linear read before writing local factory artifacts, including
 dry-runs. If `factory.linear.projectId` is set, the issue must belong to that
-project before triage or apply can continue. Add `--apply` to move allowed entry
-statuses to `Triaging`, then to the terminal triage status, and write one marker
-comment. `--apply` cannot be combined with `--dry-run` or `--item-file`.
-Comment dedupe checks the most recent Linear comments fetched by the adapter
-(currently 20); older markers can be reposted on retry.
+project before triage or apply can continue.
+
+Live triage (no `--dry-run`) invokes the triager and writes a real route.
+Add `--apply` to move allowed entry statuses to `Triaging`, then to the
+terminal triage status, and write one marker comment. When the chief
+authorizes apply, run `--apply` directly — do not burn a dry-run first for
+classification. `--apply` cannot be combined with `--dry-run` or
+`--item-file`. Comment dedupe checks the most recent Linear comments fetched
+by the adapter (currently 20); older markers can be reposted on retry.
+
+Do not require a Grove worktree for triage; use the registered workspace.
 
 If an apply run leaves Linear in `Triaging`, inspect `summary.md` and
 `meta.json`, then manually move the issue to `Triage Failed`, `Backlog`, or
@@ -183,12 +199,17 @@ local factory artifacts, including dry-runs. If `factory.linear.projectId` is
 set, the issue must belong to that project. It accepts `Needs Plan`,
 `Planning Failed`, `Plan Needs Review`, plus planning-attention
 `Needs Clarification` identified from the latest factory planning marker; other
-Linear statuses are rejected before creating a run directory. Add `--apply` to
+Linear statuses are rejected before creating a run directory.
+
+Live planning (no `--dry-run`) runs the planner/reviewer loop. Add `--apply` to
 move the issue to `Planning` before planner work, then post one marker comment
-after the station finishes. Approved plans stay in `Planning`; human questions
-move to `Needs Clarification`; unresolved reviews move to `Plan Needs Review`;
-station/runtime failures move to `Planning Failed`. Planning apply never moves
-the issue to `Ready to Implement`.
+after the station finishes. When the chief authorizes apply, run `--apply`
+directly rather than a wiring-only dry-run first. Approved plans stay in
+`Planning`; human questions move to `Needs Clarification`; unresolved reviews
+move to `Plan Needs Review`; station/runtime failures move to `Planning Failed`.
+Planning apply never moves the issue to `Ready to Implement`.
+
+Do not require a Grove worktree for planning; use the registered workspace.
 
 The planner writes `.harness/runs/factory/<run-id>/planning/draft.md`. Harness
 snapshots the draft, runs `plan-review`, and reinvokes the same planner session
