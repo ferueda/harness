@@ -42,7 +42,11 @@ export function createFactoryReviewHead(input: {
 
   try {
     git(input.workspace, ["read-tree", input.reviewBase], env);
-    git(input.workspace, ["add", "-A", "--", ".", ":!.harness"], env);
+    // Do not use exclude pathspecs here. `git add` still treats `:!.harness` /
+    // `:(exclude).harness` as a positive path match for its ignored-path check,
+    // so a populated ignored `.harness/` makes `git add -A -- . :!.harness` exit 1.
+    // Rely on `.gitignore` to keep `.harness/` out of the temp index (FER-56).
+    git(input.workspace, ["add", "-A", "--", "."], env);
     const treeSha = git(input.workspace, ["write-tree"], env).trim();
     const reviewCommitSha = git(
       input.workspace,
