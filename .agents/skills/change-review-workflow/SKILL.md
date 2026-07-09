@@ -42,7 +42,7 @@ For a deliberate partial run:
 printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --steps implementation,quality --handoff-stdin --verbose
 ```
 
-Defaults: Cursor SDK `composer-2.5`; Codex SDK `gpt-5.5` with effort `high`. Use `--agent` or `--model` only when the caller asks or repo config requires it. Cursor SDK review models are constrained to `composer-2.5`, `claude-opus-4-8`, `gpt-5.5`, and `grok-4.5`. Selecting `grok-4.5` uses harness-mapped `effort=high` and `fast=false` (not Cursor's catalog default `fast=true`).
+Defaults: Cursor SDK `grok-4.5`; Codex SDK `gpt-5.6-sol` with effort `high`. Use `--agent` or `--model` only when the caller asks or repo config requires it. Cursor SDK review models are constrained to `composer-2.5`, `claude-opus-4-8`, `grok-4.5`, `gpt-5.6-sol-medium`, `gpt-5.6-sol-high`, `gpt-5.6-sol-xhigh`, `gpt-5.6-terra-high`, and `gpt-5.6-terra-xhigh`. Selecting `grok-4.5` uses harness-mapped `effort=high` and `fast=false` (not Cursor's catalog default `fast=true`). Combined GPT-5.6 modes map to base SDK ids (`gpt-5.6-sol` / `gpt-5.6-terra`) with `reasoning` + `context=272k` + `fast=false`.
 
 Run `harness models` before choosing a non-default model or checking the SDK params behind each mode.
 

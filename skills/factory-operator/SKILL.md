@@ -86,7 +86,7 @@ Minimal shape:
   "factory": {
     "triage": {
       "roles": {
-        "triager": { "agent": "cursor", "model": "composer-2.5" }
+        "triager": { "agent": "cursor", "model": "grok-4.5" }
       }
     },
     "linear": {
@@ -108,13 +108,13 @@ Minimal shape:
     "planning": {
       "maxReviewIterations": 3,
       "roles": {
-        "planner": { "agent": "cursor", "model": "composer-2.5" },
-        "reviewer": { "agent": "codex", "model": "gpt-5.5" }
+        "planner": { "agent": "cursor", "model": "grok-4.5" },
+        "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
       }
     },
     "implementation": {
       "roles": {
-        "implementer": { "agent": "cursor", "model": "composer-2.5" }
+        "implementer": { "agent": "cursor", "model": "grok-4.5" }
       }
     }
   }

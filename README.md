@@ -160,10 +160,10 @@ ownership and mutability, read
   "defaultAgent": "cursor",
   "agents": {
     "cursor": {
-      "model": "composer-2.5"
+      "model": "grok-4.5"
     },
     "codex": {
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-sol",
       "sandboxMode": "read-only",
       "approvalPolicy": "never",
       "modelReasoningEffort": "high"
@@ -174,17 +174,17 @@ ownership and mutability, read
       "roles": {
         "triager": {
           "agent": "cursor",
-          "model": "composer-2.5"
+          "model": "grok-4.5"
         }
       }
     },
     "planning": {
       "maxReviewIterations": 3,
       "roles": {
-        "planner": { "agent": "cursor", "model": "composer-2.5" },
+        "planner": { "agent": "cursor", "model": "grok-4.5" },
         "reviewer": {
           "agent": "codex",
-          "model": "gpt-5.5",
+          "model": "gpt-5.6-sol",
           "modelReasoningEffort": "high"
         }
       }
@@ -193,7 +193,7 @@ ownership and mutability, read
       "roles": {
         "implementer": {
           "agent": "cursor",
-          "model": "composer-2.5"
+          "model": "grok-4.5"
         }
       }
     }
