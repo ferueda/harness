@@ -6,8 +6,9 @@
 | ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
+| [FER-37.md](./FER-37.md)                                               | `approved`    | Lifecycle-authoritative triage rerun policy                |
 
-**Next factory issues (Linear, no plan file yet):** [FER-37](https://linear.app/ferueda/issue/FER-37/refactor-triage-station-around-lifecycle-state), [FER-52](https://linear.app/ferueda/issue/FER-52/add-linear-apply-projection-for-implementation-station).
+**Next factory issue (Linear, no plan file yet):** [FER-52](https://linear.app/ferueda/issue/FER-52/add-linear-apply-projection-for-implementation-station).
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
