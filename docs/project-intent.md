@@ -42,6 +42,20 @@ such as `/path/to/repo`, `harness.json`, and `.harness/runs/reviews/<run-id>/`.
 - Runtime schemas and exported schemas must stay aligned when either side
   changes.
 
+## Durable factory-store boundary
+
+Factory lifecycle evidence and factory-owned run evidence live in the durable
+factory store by default:
+`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/` by
+default.
+
+Target repositories remain execution sandboxes and Git materialization points:
+they own `harness.json`, the harness shim, inbox files, source, tests, local
+skill installs, and committed plans and code. Standalone review artifacts keep their target-repo
+`.harness/runs/reviews` defaults. Linear and GitHub will remain human/project
+projections, while Git remains the source of truth for committed plans and
+code.
+
 ## Harness-repo vs target-repo boundary
 
 The harness repo owns reusable workflow machinery and repo-local planning

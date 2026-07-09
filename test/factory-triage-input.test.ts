@@ -1,12 +1,15 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { expect, test } from "vitest";
 import {
   appendFactoryLifecycleEvent,
   deriveFactoryWorkItemKey,
+  factoryLifecycleStatePath,
   resolveFactoryStateRoot,
+  workItemKeyToFilename,
 } from "../lib/factory-lifecycle.ts";
+import { FactoryLifecycleLockTimeoutError } from "../lib/factory-locks.ts";
 import {
   assertFactoryItemFileExists,
   createFactoryRunContextForTest,
@@ -39,6 +42,8 @@ test("resolveFactoryTriageWorkItem reads file input", async () => {
   const input = await resolveFactoryTriageWorkItem({
     workspace,
     itemFile: "item.json",
+    allowWorkspaceLocalStateRoot: true,
+    lifecycleReadMode: "load",
   });
 
   expect(input).toMatchObject({
@@ -51,6 +56,117 @@ test("resolveFactoryTriageWorkItem reads file input", async () => {
   });
 });
 
+test("station input requires an explicit durable state root outside low-level tests", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-triage-input-"));
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "local-1", source: "file", title: "Local item", body: "" }),
+    "utf8",
+  );
+
+  await expect(
+    resolveFactoryWorkItemInput({
+      workspace,
+      itemFile: "item.json",
+      lifecycleReadMode: "load",
+    }),
+  ).rejects.toThrow(/factoryStateRoot is required/);
+  expect(existsSync(join(workspace, ".harness/factory"))).toBe(false);
+});
+
+test("live station input fails closed with lock diagnostics before rebuilding a missing projection", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-triage-lock-timeout-"));
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-triage-lock-store-"));
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "local-1", source: "file", title: "Locked item", body: "" }),
+    "utf8",
+  );
+  const workItemKey = "file:local-1";
+  appendFactoryLifecycleEvent({
+    factoryStateRoot,
+    event: {
+      version: 1,
+      id: `work_item.imported:${workItemKey}`,
+      type: "work_item.imported",
+      workItemKey,
+      occurredAt: "2026-07-09T00:00:00.000Z",
+      source: "harness",
+      data: { source: "file", title: "Locked item" },
+    },
+  });
+  const statePath = factoryLifecycleStatePath(factoryStateRoot, workItemKey);
+  rmSync(statePath);
+  const ownerPath = join(
+    factoryStateRoot,
+    "locks",
+    `${workItemKeyToFilename(workItemKey)}.lock`,
+    "owner.json",
+  );
+  mkdirSync(dirname(ownerPath), { recursive: true });
+  writeFileSync(
+    ownerPath,
+    `${JSON.stringify({
+      pid: 1,
+      hostname: "other-host",
+      token: "held-token",
+      workspace,
+      workItemKey,
+      startedAt: new Date().toISOString(),
+    })}\n`,
+    "utf8",
+  );
+
+  let thrown: unknown;
+  try {
+    await resolveFactoryWorkItemInput({
+      workspace,
+      itemFile: "item.json",
+      factoryStateRoot,
+      lifecycleReadMode: "load",
+      lifecycleLockOptions: { timeoutMs: 0 },
+    });
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(FactoryLifecycleLockTimeoutError);
+  expect((thrown as FactoryLifecycleLockTimeoutError).diagnostic).toMatchObject({
+    operation: "read",
+    workItemKey,
+    lockPath: join(factoryStateRoot, "locks", `${workItemKeyToFilename(workItemKey)}.lock`),
+    stale: false,
+    owner: { token: "held-token", hostname: "other-host" },
+  });
+  expect(existsSync(statePath)).toBe(false);
+  expect(readFileSync(ownerPath, "utf8")).toContain("held-token");
+});
+
+test("item-file input accepts warnings added by factory linear fetch", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-triage-input-"));
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({
+      id: "local-1",
+      source: "file",
+      title: "Fetched item",
+      body: "",
+      labels: [],
+      warnings: [{ code: "durable-state-stale" }],
+    }),
+    "utf8",
+  );
+
+  await expect(
+    resolveFactoryWorkItemInput({
+      workspace,
+      itemFile: "item.json",
+      lifecycleReadMode: "inspect",
+      allowWorkspaceLocalStateRoot: true,
+    }),
+  ).resolves.toMatchObject({ workItem: { id: "local-1", title: "Fetched item" } });
+});
+
 test("resolveFactoryTriageWorkItem fetches Linear issue input without applying tracker updates", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-triage-input-"));
   const calls: unknown[] = [];
@@ -58,8 +174,10 @@ test("resolveFactoryTriageWorkItem fetches Linear issue input without applying t
   const input = await resolveFactoryTriageWorkItem({
     workspace,
     linearIssue: "ENG-123",
+    allowWorkspaceLocalStateRoot: true,
     linearSettings: LINEAR_SETTINGS,
     env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "load",
     linearAdapterFactory: (adapterInput) => {
       calls.push(adapterInput);
       return fakeLinearAdapter({
@@ -84,8 +202,10 @@ test("resolveFactoryWorkItemInput keeps generic resolver compatible with triage 
   const input = await resolveFactoryWorkItemInput({
     workspace,
     linearIssue: "ENG-123",
+    allowWorkspaceLocalStateRoot: true,
     linearSettings: LINEAR_SETTINGS,
     env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "load",
     linearAdapterFactory: () => fakeLinearAdapter(),
   });
 
@@ -142,8 +262,10 @@ test("resolveFactoryWorkItemInput overlays lifecycle state over Linear fallback 
   const input = await resolveFactoryWorkItemInput({
     workspace,
     linearIssue: "ENG-123",
+    allowWorkspaceLocalStateRoot: true,
     linearSettings: LINEAR_SETTINGS,
     env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "load",
     linearAdapterFactory: () =>
       fakeLinearAdapter({
         fetchWorkItem: async () => ({
@@ -177,8 +299,10 @@ test("Linear issue input can run through factory triage dry-run artifacts", asyn
   const input = await resolveFactoryTriageWorkItem({
     workspace,
     linearIssue: "ENG-123",
+    allowWorkspaceLocalStateRoot: true,
     linearSettings: LINEAR_SETTINGS,
     env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "inspect",
     linearAdapterFactory: () => fakeLinearAdapter(),
   });
   const ctx = createFactoryRunContextForTest({
@@ -232,6 +356,7 @@ test("resolveFactoryTriageWorkItem requires Linear config and API key", async ()
       linearIssue: "ENG-123",
       linearSettings: LINEAR_SETTINGS,
       env: { LINEAR_API_KEY: "test-key" },
+      lifecycleReadMode: "load",
     }),
   ).rejects.toThrow(/--item-file and --linear-issue are mutually exclusive/);
 
@@ -240,6 +365,7 @@ test("resolveFactoryTriageWorkItem requires Linear config and API key", async ()
       workspace,
       linearIssue: "ENG-123",
       env: { LINEAR_API_KEY: "test-key" },
+      lifecycleReadMode: "load",
     }),
   ).rejects.toThrow(/factory\.linear is required/);
 
@@ -249,6 +375,7 @@ test("resolveFactoryTriageWorkItem requires Linear config and API key", async ()
       linearIssue: "ENG-123",
       linearSettings: LINEAR_SETTINGS,
       env: { LINEAR_API_KEY: "" },
+      lifecycleReadMode: "load",
     }),
   ).rejects.toThrow(/LINEAR_API_KEY is required/);
 });

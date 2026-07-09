@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -7,6 +14,7 @@ import {
   deriveFactoryWorkItemKey,
   factoryLifecycleEventPath,
   factoryLifecycleStatePath,
+  inspectFactoryLifecycleState,
   loadFactoryLifecycleState,
   mergeFactoryStateIntoWorkItem,
   readFactoryLifecycleEvents,
@@ -16,8 +24,18 @@ import {
   type FactoryLifecycleEvent,
 } from "../lib/factory-lifecycle.ts";
 import {
+  FACTORY_LOCK_STALE_MS,
+  FactoryLifecycleLockTimeoutError,
+  acquireFactoryWorkItemLock,
+  factoryWorkItemLockPath,
+  inspectFactoryWorkItemLock,
+  releaseFactoryWorkItemLock,
+  withFactoryWorkItemLock,
+} from "../lib/factory-locks.ts";
+import {
   appendImplementationStartedEvent,
   appendImplementationTerminalEvent,
+  formatLifecycleArtifactPath,
 } from "../lib/factory-lifecycle-writes.ts";
 import type { FactoryImplementationRunMeta } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
@@ -82,6 +100,150 @@ test("append writes JSONL and rebuildable state cache idempotently", () => {
     title: "Lifecycle issue",
     lastEventId: event.id,
   });
+  expect(readdirSync(join(root, "state")).some((entry) => entry.includes(".tmp-"))).toBe(false);
+});
+
+test("lifecycle locks serialize same work item and keep different work items independent", () => {
+  const root = tempRoot();
+  const first = acquireFactoryWorkItemLock({
+    factoryStateRoot: root,
+    workItemKey: "linear:FER-34",
+    workItemFilename: workItemKeyToFilename("linear:FER-34"),
+    workspace: "/workspace",
+    operation: "write",
+    options: { token: "first", timeoutMs: 1 },
+  });
+
+  expect(() =>
+    acquireFactoryWorkItemLock({
+      factoryStateRoot: root,
+      workItemKey: "linear:FER-34",
+      workItemFilename: workItemKeyToFilename("linear:FER-34"),
+      workspace: "/workspace",
+      operation: "write",
+      options: { timeoutMs: 0 },
+    }),
+  ).toThrow(FactoryLifecycleLockTimeoutError);
+
+  const second = acquireFactoryWorkItemLock({
+    factoryStateRoot: root,
+    workItemKey: "linear:FER-35",
+    workItemFilename: workItemKeyToFilename("linear:FER-35"),
+    workspace: "/workspace",
+    operation: "write",
+    options: { token: "second", timeoutMs: 1 },
+  });
+  releaseFactoryWorkItemLock({
+    factoryStateRoot: root,
+    workItemFilename: workItemKeyToFilename("linear:FER-35"),
+    owner: second,
+  });
+  releaseFactoryWorkItemLock({
+    factoryStateRoot: root,
+    workItemFilename: workItemKeyToFilename("linear:FER-34"),
+    owner: first,
+  });
+  expect(existsSync(join(root, "locks"))).toBe(true);
+});
+
+test("lock owner metadata and stale lock handling are inspectable and fail closed", () => {
+  const root = tempRoot();
+  const workItemKey = "linear:FER-34";
+  const filename = workItemKeyToFilename(workItemKey);
+  const lockPath = factoryWorkItemLockPath(root, filename);
+  mkdirSync(lockPath, { recursive: true });
+  writeFileSync(
+    join(lockPath, "owner.json"),
+    `${JSON.stringify({
+      pid: 999_999_999,
+      hostname: "test-host",
+      token: "stale-token",
+      workspace: "/workspace",
+      runDir: "/runs/one",
+      workItemKey,
+      startedAt: new Date(0).toISOString(),
+    })}\n`,
+    "utf8",
+  );
+  const stale = inspectFactoryWorkItemLock({
+    factoryStateRoot: root,
+    workItemKey,
+    workItemFilename: filename,
+    options: { hostname: "test-host", now: () => FACTORY_LOCK_STALE_MS + 1 },
+  });
+  expect(stale).toMatchObject({
+    stale: true,
+    owner: {
+      pid: 999_999_999,
+      hostname: "test-host",
+      token: "stale-token",
+      workspace: "/workspace",
+    },
+  });
+
+  const owner = acquireFactoryWorkItemLock({
+    factoryStateRoot: root,
+    workItemKey,
+    workItemFilename: filename,
+    workspace: "/new-workspace",
+    operation: "write",
+    options: {
+      hostname: "test-host",
+      token: "new-token",
+      timeoutMs: 1,
+      now: () => FACTORY_LOCK_STALE_MS + 1,
+    },
+  });
+  expect(owner).toMatchObject({ workspace: "/new-workspace", workItemKey, token: "new-token" });
+  releaseFactoryWorkItemLock({ factoryStateRoot: root, workItemFilename: filename, owner });
+});
+
+test("incomplete lock owners report safely and owner publication failures release their lock", () => {
+  const root = tempRoot();
+  const workItemKey = "linear:FER-34";
+  const filename = workItemKeyToFilename(workItemKey);
+  const lockPath = factoryWorkItemLockPath(root, filename);
+  mkdirSync(lockPath, { recursive: true });
+  expect(
+    inspectFactoryWorkItemLock({ factoryStateRoot: root, workItemKey, workItemFilename: filename }),
+  ).toMatchObject({ classification: "owner-missing" });
+
+  expect(() =>
+    acquireFactoryWorkItemLock({
+      factoryStateRoot: root,
+      workItemKey,
+      workItemFilename: filename,
+      workspace: "/workspace",
+      operation: "write",
+      options: { timeoutMs: 0 },
+    }),
+  ).toThrow(FactoryLifecycleLockTimeoutError);
+
+  writeFileSync(join(lockPath, "owner.json"), "{not-json}\n", "utf8");
+  expect(
+    inspectFactoryWorkItemLock({ factoryStateRoot: root, workItemKey, workItemFilename: filename }),
+  ).toMatchObject({ classification: "owner-invalid", stale: false });
+
+  const otherKey = "linear:FER-35";
+  const otherFilename = workItemKeyToFilename(otherKey);
+  expect(() =>
+    withFactoryWorkItemLock(
+      {
+        factoryStateRoot: root,
+        workItemKey: otherKey,
+        workItemFilename: otherFilename,
+        workspace: "/workspace",
+        operation: "write",
+        options: {
+          publishOwner: () => {
+            throw new Error("cannot publish owner");
+          },
+        },
+      },
+      () => undefined,
+    ),
+  ).toThrow("cannot publish owner");
+  expect(existsSync(factoryWorkItemLockPath(root, otherFilename))).toBe(false);
 });
 
 test("malformed JSONL fails closed with a lifecycle error", () => {
@@ -413,6 +575,58 @@ test("load rebuilds stale cache from canonical JSONL", () => {
     factoryStage: "ready-to-implement",
     lastEventId: second.id,
   });
+});
+
+test("inspect-only lifecycle reads warn without rebuilding a corrupt projection", () => {
+  const root = tempRoot();
+  const event = importedEvent("linear:FER-34");
+  appendFactoryLifecycleEvent({ factoryStateRoot: root, event });
+  const statePath = factoryLifecycleStatePath(root, event.workItemKey);
+  writeFileSync(statePath, "{not-json}\n", "utf8");
+
+  const inspected = inspectFactoryLifecycleState({
+    factoryStateRoot: root,
+    workItemKey: event.workItemKey,
+  });
+  expect(inspected).toMatchObject({
+    state: { lastEventId: event.id },
+    warnings: [{ code: "durable-state-stale", factoryStateRoot: root }],
+  });
+  expect(readFileSync(statePath, "utf8")).toBe("{not-json}\n");
+
+  expect(
+    loadFactoryLifecycleState({ factoryStateRoot: root, workItemKey: event.workItemKey }),
+  ).toMatchObject({ lastEventId: event.id });
+  expect(() => JSON.parse(readFileSync(statePath, "utf8"))).not.toThrow();
+});
+
+test("durable artifact paths are run-relative, store-relative, or absolute without parent traversal", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-lifecycle-workspace-"));
+  const projectRoot = mkdtempSync(join(tmpdir(), "harness-lifecycle-store-"));
+  const runDir = join(projectRoot, "runs/factory/run-1");
+
+  const triage = formatLifecycleArtifactPath({
+    projectRoot,
+    runDir,
+    path: "factory-route.md",
+  });
+  const planning = formatLifecycleArtifactPath({
+    projectRoot,
+    runDir,
+    path: join(projectRoot, "runs/reviews/review-1/summary.md"),
+  });
+  const implementation = formatLifecycleArtifactPath({
+    projectRoot,
+    runDir,
+    path: join(workspace, "dev/plans/FER-53.md"),
+  });
+
+  expect(triage).toBe("factory-route.md");
+  expect(planning).toBe("runs/reviews/review-1/summary.md");
+  expect(implementation).toBe(join(workspace, "dev/plans/FER-53.md"));
+  for (const path of [triage, planning, implementation]) {
+    expect(path.startsWith("..")).toBe(false);
+  }
 });
 
 test("merge overlays lifecycle fields while preserving tracker-specific metadata", () => {

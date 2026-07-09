@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { assertCodexOnlyAgentOptions } from "./cli-validation.ts";
 import { addFactoryCommands } from "./factory-commands.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
+import { formatHarnessError } from "../lib/factory-cli-errors.ts";
 import {
   AGENT_APPROVAL_POLICIES,
   AGENT_MODEL_CATALOG,
@@ -559,8 +560,7 @@ async function main(): Promise<void> {
     if (error instanceof CommanderError) {
       process.exit(error.exitCode === 0 ? 0 : 2);
     }
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
+    console.error(formatHarnessError(error));
     process.exit(1);
   }
 }

@@ -6,10 +6,11 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { CURSOR_SDK_MODEL_MODES } from "../lib/agents.ts";
@@ -24,15 +25,17 @@ import {
 } from "../bin/factory-commands.ts";
 import {
   appendFactoryLifecycleEvent,
+  factoryLifecycleStatePath,
   loadFactoryLifecycleState,
-  resolveFactoryStateRoot,
 } from "../lib/factory-lifecycle.ts";
+import { resolveFactoryStore } from "../lib/factory-store.ts";
 import {
   fakeLinearAdapter,
   LINEAR_SETTINGS,
   LINEAR_WORK_ITEM,
 } from "./factory-linear-test-helpers.ts";
 import { parseFactoryRunStartedProgress } from "./factory-run-started-test-helpers.ts";
+import { runFactoryHarness } from "./factory-store-test-helpers.ts";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HARNESS_BIN = join(REPO_ROOT, "bin/harness.ts");
 
@@ -40,6 +43,15 @@ function runHarness(
   args: string[],
   options: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv } = {},
 ) {
+  if (args[0] === "factory") {
+    return runFactoryHarness({
+      bin: HARNESS_BIN,
+      args,
+      cwd: options.cwd,
+      input: options.input,
+      env: options.env,
+    }).result;
+  }
   return spawnSync(process.execPath, [HARNESS_BIN, ...args], {
     cwd: options.cwd,
     encoding: "utf8",
@@ -63,6 +75,36 @@ function createPlainWorkspace() {
   const workspace = mkdtempSync(join(tmpdir(), "harness-cli-"));
   writeFileSync(join(workspace, "plan.md"), "# Plan\n\nReview me.\n", "utf8");
   return workspace;
+}
+
+function seedMissingLifecycleProjection(input: {
+  workspace: string;
+  storeRoot: string;
+  id: string;
+  source: "file" | "linear";
+  title: string;
+}) {
+  const store = resolveFactoryStore({
+    workspace: input.workspace,
+    factoryStoreRoot: input.storeRoot,
+    env: {},
+  });
+  const workItemKey = `${input.source}:${input.id}`;
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    event: {
+      version: 1,
+      id: `work_item.imported:${workItemKey}`,
+      type: "work_item.imported",
+      workItemKey,
+      occurredAt: "2026-07-09T00:00:00.000Z",
+      source: "harness",
+      data: { source: input.source, title: input.title },
+    },
+  });
+  rmSync(factoryLifecycleStatePath(store.factoryStateRoot, workItemKey));
+  rmSync(join(store.factoryStateRoot, "locks"), { recursive: true, force: true });
+  return store;
 }
 
 function writeLinearConfig(workspace: string): void {
@@ -591,7 +633,7 @@ test("createFactoryLinearWorkItem returns compact JSON for inline, file, and std
 });
 test("harness factory linear fetch overlays seeded lifecycle state", async () => {
   const workspace = createPlainWorkspace();
-  const factoryStateRoot = resolveFactoryStateRoot({ workspace });
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-cli-fetch-store-"));
   appendFactoryLifecycleEvent({
     factoryStateRoot,
     event: {
@@ -631,6 +673,7 @@ test("harness factory linear fetch overlays seeded lifecycle state", async () =>
   const workItem = await fetchFactoryLinearWorkItem({
     issue: "ENG-123",
     workspace,
+    factoryStateRoot,
     env: { LINEAR_API_KEY: "test-key" },
     resolveLinearSettings: () => LINEAR_SETTINGS,
     adapterFactory: () =>
@@ -1608,6 +1651,71 @@ test("harness factory status lists local inbox items", () => {
   expect(existsSync(join(workspace, ".harness/runs/factory"))).toBe(false);
 });
 
+test("harness factory status reports stale locks and ignored legacy state without writes", () => {
+  const workspace = createPlainWorkspace();
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-status-store-"));
+  const first = runHarness([
+    "factory",
+    "status",
+    "--workspace",
+    workspace,
+    "--factory-store-root",
+    storeRoot,
+  ]);
+  expect(first.status).toBe(0);
+  const factoryStateRoot = JSON.parse(first.stdout).store.factoryStateRoot as string;
+
+  const legacyEventPath = join(workspace, ".harness/factory/events/file-legacy.jsonl");
+  mkdirSync(dirname(legacyEventPath), { recursive: true });
+  writeFileSync(legacyEventPath, '{"legacy":true}\n', "utf8");
+  const ownerPath = join(factoryStateRoot, "locks/file-legacy.lock/owner.json");
+  mkdirSync(dirname(ownerPath), { recursive: true });
+  writeFileSync(
+    ownerPath,
+    `${JSON.stringify({
+      pid: 1,
+      hostname: "other-host",
+      token: "lock-token",
+      workspace,
+      workItemKey: "file:legacy",
+      startedAt: "2000-01-01T00:00:00.000Z",
+    })}\n`,
+    "utf8",
+  );
+
+  const result = runHarness([
+    "factory",
+    "status",
+    "--workspace",
+    workspace,
+    "--factory-store-root",
+    storeRoot,
+  ]);
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    store: { factoryStateRoot },
+    legacyFactoryState: { eventCount: 1, stateCount: 0, ignored: true },
+    locks: [
+      {
+        workItemKey: "file:legacy",
+        stale: true,
+        classification: "remote-owner",
+      },
+    ],
+  });
+  expect(output.warnings).toEqual(
+    expect.arrayContaining([
+      "Legacy workspace-local factory lifecycle state is ignored in v1; the durable store wins.",
+      "Durable factory store is empty for this project; legacy workspace-local lifecycle is ignored in v1.",
+    ]),
+  );
+  expect(readFileSync(legacyEventPath, "utf8")).toBe('{"legacy":true}\n');
+  expect(readFileSync(ownerPath, "utf8")).toContain("lock-token");
+  expect(existsSync(join(factoryStateRoot, "events"))).toBe(false);
+  expect(existsSync(join(factoryStateRoot, "state"))).toBe(false);
+});
+
 test("harness factory status resolves relative inbox-dir against workspace", () => {
   const workspace = createPlainWorkspace();
   const inboxDir = join(workspace, "custom-inbox");
@@ -1638,6 +1746,7 @@ test("harness factory status resolves relative inbox-dir against workspace", () 
 
 test("harness factory triage dry-run handles one item file", () => {
   const workspace = createPlainWorkspace();
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-store-"));
   const inboxDir = join(workspace, ".harness/inbox/factory");
   mkdirSync(inboxDir, { recursive: true });
   writeFileSync(
@@ -1650,6 +1759,13 @@ test("harness factory triage dry-run handles one item file", () => {
     }),
     "utf8",
   );
+  const store = seedMissingLifecycleProjection({
+    workspace,
+    storeRoot,
+    id: "local-1",
+    source: "file",
+    title: "Queued item",
+  });
 
   const result = runHarness([
     "factory",
@@ -1659,6 +1775,8 @@ test("harness factory triage dry-run handles one item file", () => {
     "--item-file",
     ".harness/inbox/factory/001-item.json",
     "--dry-run",
+    "--factory-store-root",
+    storeRoot,
   ]);
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
@@ -1683,6 +1801,52 @@ test("harness factory triage dry-run handles one item file", () => {
     workspace,
   });
   expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
+  expect(output.warnings).toEqual([
+    expect.objectContaining({
+      code: "durable-state-missing",
+      factoryStateRoot: store.factoryStateRoot,
+      workItemKey: "file:local-1",
+    }),
+  ]);
+  expect(existsSync(factoryLifecycleStatePath(store.factoryStateRoot, "file:local-1"))).toBe(false);
+  expect(existsSync(join(store.factoryStateRoot, "locks"))).toBe(false);
+});
+
+test("harness factory triage records explicit runs-dir overrides in durable metadata", () => {
+  const workspace = createPlainWorkspace();
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-override-store-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-cli-override-runs-"));
+  writeFileSync(
+    join(workspace, "item.json"),
+    JSON.stringify({ id: "local-override", source: "file", title: "Override run", body: "" }),
+    "utf8",
+  );
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--runs-dir",
+    runsDir,
+    "--factory-store-root",
+    storeRoot,
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(result.stdout);
+  const meta = JSON.parse(readFileSync(join(output.runDir, "meta.json"), "utf8"));
+  expect(output.runDir.startsWith(runsDir)).toBe(true);
+  expect(meta.factoryStore).toMatchObject({
+    storeRoot: resolve(storeRoot),
+    overrides: { runsDir: resolve(runsDir) },
+  });
+  expect(meta.factoryStore.factoryStateRoot).toBe(
+    join(resolve(storeRoot), "projects", meta.factoryStore.projectId, "factory"),
+  );
+  expect(existsSync(join(workspace, ".harness/factory"))).toBe(false);
 });
 
 test("harness factory triage honors factory triager role config", () => {
@@ -1924,6 +2088,7 @@ test("harness factory triage rejects invalid item JSON", () => {
 
 test("harness factory planning dry-run works in non-git workspaces", () => {
   const workspace = createPlainWorkspace();
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-planning-store-"));
   writeFileSync(
     join(workspace, "item.json"),
     JSON.stringify(
@@ -1942,6 +2107,13 @@ test("harness factory planning dry-run works in non-git workspaces", () => {
     ),
     "utf8",
   );
+  const store = seedMissingLifecycleProjection({
+    workspace,
+    storeRoot,
+    id: "plan-local-1",
+    source: "file",
+    title: "Plan export shortcut",
+  });
 
   const result = runHarness([
     "factory",
@@ -1951,6 +2123,8 @@ test("harness factory planning dry-run works in non-git workspaces", () => {
     "--item-file",
     "item.json",
     "--dry-run",
+    "--factory-store-root",
+    storeRoot,
   ]);
 
   expect(result.status).toBe(0);
@@ -1988,6 +2162,17 @@ test("harness factory planning dry-run works in non-git workspaces", () => {
     runDir: output.runDir,
     workspace,
   });
+  expect(output.warnings).toEqual([
+    expect.objectContaining({
+      code: "durable-state-missing",
+      factoryStateRoot: store.factoryStateRoot,
+      workItemKey: "file:plan-local-1",
+    }),
+  ]);
+  expect(existsSync(factoryLifecycleStatePath(store.factoryStateRoot, "file:plan-local-1"))).toBe(
+    false,
+  );
+  expect(existsSync(join(store.factoryStateRoot, "locks"))).toBe(false);
 });
 
 test("harness factory planning requires one input source", () => {
@@ -2157,6 +2342,17 @@ test("harness factory planning publication commands patch run metadata", () => {
         reviewerAgent: { name: "cursor", model: "composer-2.5" },
         summaryPath: join(runDir, "summary.md"),
         metaPath: join(runDir, "meta.json"),
+        factoryStore: {
+          storeRoot: join(runDir, "store"),
+          projectId: "cli-test-project",
+          projectRoot: join(runDir, "store/projects/cli-test-project"),
+          factoryStateRoot: join(runDir, "factory-state"),
+          factoryRunsDir: join(runDir, "store/projects/cli-test-project/runs/factory"),
+          reviewRunsDir: join(runDir, "store/projects/cli-test-project/runs/reviews"),
+          repo: { name: "cli-test", id: "cli-test-project", idSource: "config" },
+          overrides: {},
+          warnings: [],
+        },
         startedAt: "2026-07-07T12:00:00.000Z",
         durationMs: 1,
       },
@@ -2185,7 +2381,7 @@ test("harness factory planning publication commands patch run metadata", () => {
   expect(published.linearComment).toContain("Factory plan ready.");
   expect(
     loadFactoryLifecycleState({
-      factoryStateRoot: resolveFactoryStateRoot({ workspace }),
+      factoryStateRoot: published.factoryStore.factoryStateRoot,
       workItemKey: "linear:FER-123",
     }),
   ).toMatchObject({
@@ -2212,7 +2408,7 @@ test("harness factory planning publication commands patch run metadata", () => {
   expect(output.linearComment).toContain("Factory plan approved.");
   expect(
     loadFactoryLifecycleState({
-      factoryStateRoot: resolveFactoryStateRoot({ workspace }),
+      factoryStateRoot: output.factoryStore.factoryStateRoot,
       workItemKey: "linear:FER-123",
     }),
   ).toMatchObject({
@@ -2459,10 +2655,11 @@ test("harness factory triage preserves post-bootstrap failure artifacts", () => 
   expect(output.summaryPath).toBeUndefined();
   expect(output.triagePath).toBeUndefined();
   expect(existsSync(join(output.runDir, "factory-triage.prompt.md"))).toBe(true);
-  expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain('"status": "failed"');
+  const runMeta = JSON.parse(readFileSync(join(output.runDir, "meta.json"), "utf8"));
+  expect(JSON.stringify(runMeta)).toContain('"status":"failed"');
   expect(
     loadFactoryLifecycleState({
-      factoryStateRoot: resolveFactoryStateRoot({ workspace }),
+      factoryStateRoot: runMeta.factoryStore.factoryStateRoot,
       workItemKey: "file:station-fail",
     }),
   ).toMatchObject({

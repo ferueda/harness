@@ -196,6 +196,34 @@ if (!factoryImplementationRunHelp.includes("--max-runtime-ms")) {
 if (!factoryImplementationRunHelp.includes("--verbose")) {
   throw new Error("Expected factory implementation run help to include --verbose");
 }
+for (const [name, help] of [
+  ["factory status", factoryStatusHelp],
+  ["factory linear fetch", factoryLinearFetchHelp],
+  ["factory triage", factoryTriageStationHelp],
+  ["factory planning run", factoryPlanningRunHelp],
+  ["factory planning publish", factoryPlanningPublishHelp],
+  ["factory planning mark-plan-merged", factoryPlanningMergedHelp],
+  ["factory implementation run", factoryImplementationRunHelp],
+] as const) {
+  if (!help.includes("--factory-store-root")) {
+    throw new Error(`Expected ${name} help to include --factory-store-root`);
+  }
+  if (!help.includes("--factory-store-project-id")) {
+    throw new Error(`Expected ${name} help to include --factory-store-project-id`);
+  }
+}
+for (const [name, help] of [
+  ["factory triage", factoryTriageStationHelp],
+  ["factory planning run", factoryPlanningRunHelp],
+  ["factory implementation run", factoryImplementationRunHelp],
+] as const) {
+  if (!/default: durable\s+factory store runs\/factory/.test(help)) {
+    throw new Error(`Expected ${name} help to describe the durable factory run default`);
+  }
+  if (help.includes("default: <workspace>/.harness/runs/factory")) {
+    throw new Error(`Expected ${name} help not to describe the legacy workspace default`);
+  }
+}
 const factoryDispatchHelp = runHarnessAllowFailure(["factory", "dispatch", "--help"]);
 const factoryDispatchHelpText = `${factoryDispatchHelp.stderr}\n${factoryDispatchHelp.stdout}`;
 if (/factory dispatch/i.test(factoryDispatchHelpText)) {

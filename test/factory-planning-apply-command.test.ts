@@ -7,11 +7,7 @@ import {
   runFactoryPlanningPublicationWithLinearApply,
   runFactoryPlanningWithLinearApply,
 } from "../bin/factory-commands.ts";
-import {
-  deriveFactoryWorkItemKey,
-  loadFactoryLifecycleState,
-  resolveFactoryStateRoot,
-} from "../lib/factory-lifecycle.ts";
+import { deriveFactoryWorkItemKey, loadFactoryLifecycleState } from "../lib/factory-lifecycle.ts";
 import type {
   FactoryPlanningRunContext,
   FactoryPlanningRunMeta,
@@ -20,6 +16,7 @@ import { fakeLinearAdapter, LINEAR_SETTINGS } from "./factory-linear-test-helper
 
 const APPLY_WORKSPACE = mkdtempSync(join(tmpdir(), "harness-planning-apply-workspace-"));
 const APPLY_RUN_DIR = join(APPLY_WORKSPACE, ".harness/runs/factory/run-1");
+const APPLY_FACTORY_STATE_ROOT = mkdtempSync(join(tmpdir(), "harness-planning-apply-state-"));
 mkdirSync(APPLY_RUN_DIR, { recursive: true });
 
 const CTX = {
@@ -67,6 +64,7 @@ function createPublicationRun(
   input: {
     trackerSource?: "linear" | "github";
     trackerId?: string;
+    includeFactoryStore?: boolean;
   } = {},
 ) {
   const workspace = mkdtempSync(join(tmpdir(), "harness-planning-publication-workspace-"));
@@ -88,6 +86,21 @@ function createPublicationRun(
     },
     summaryPath: join(runDir, "summary.md"),
     metaPath: join(runDir, "meta.json"),
+    ...(input.includeFactoryStore === false
+      ? {}
+      : {
+          factoryStore: {
+            storeRoot: join(runDir, "store"),
+            projectId: "test-project",
+            projectRoot: join(runDir, "store/projects/test-project"),
+            factoryStateRoot: join(runDir, "factory-state"),
+            factoryRunsDir: join(runDir, "store/projects/test-project/runs/factory"),
+            reviewRunsDir: join(runDir, "store/projects/test-project/runs/reviews"),
+            repo: { name: "test", id: "test-project", idSource: "config" },
+            overrides: {},
+            warnings: [],
+          },
+        }),
   } satisfies FactoryPlanningRunMeta;
   writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
   writeFileSync(join(runDir, "summary.md"), "# Old Summary\n", "utf8");
@@ -120,6 +133,7 @@ test("planning apply returns started and terminal updates on success", async () 
 
   const result = await runFactoryPlanningWithLinearApply({
     ctx: CTX,
+    factoryStateRoot: APPLY_FACTORY_STATE_ROOT,
     issueRef: "ENG-123",
     applyAdapter: adapter,
     runPlanning: async () => META,
@@ -166,6 +180,7 @@ test("planning apply cleanup preserves original planning error", async () => {
   await expect(
     runFactoryPlanningWithLinearApply({
       ctx: CTX,
+      factoryStateRoot: APPLY_FACTORY_STATE_ROOT,
       issueRef: "ENG-123",
       applyAdapter: adapter,
       runPlanning: async () => {
@@ -211,6 +226,7 @@ test("planning apply cleanup calls failed apply after planning error", async () 
   await expect(
     runFactoryPlanningWithLinearApply({
       ctx: CTX,
+      factoryStateRoot: APPLY_FACTORY_STATE_ROOT,
       issueRef: "ENG-123",
       applyAdapter: adapter,
       runPlanning: async () => {
@@ -269,6 +285,7 @@ test("planning apply writes failed lifecycle state when planning throws", async 
   await expect(
     runFactoryPlanningWithLinearApply({
       ctx,
+      factoryStateRoot: join(workspace, "factory-state"),
       issueRef: "ENG-123",
       runPlanning: async () => {
         throw new Error("Planner exploded");
@@ -278,7 +295,7 @@ test("planning apply writes failed lifecycle state when planning throws", async 
 
   expect(
     loadFactoryLifecycleState({
-      factoryStateRoot: resolveFactoryStateRoot({ workspace }),
+      factoryStateRoot: join(workspace, "factory-state"),
       workItemKey: "linear:ENG-123",
     }),
   ).toMatchObject({
@@ -305,6 +322,7 @@ test("planning terminal apply failure keeps local metadata printable", async () 
 
   const result = await runFactoryPlanningWithLinearApply({
     ctx: CTX,
+    factoryStateRoot: APPLY_FACTORY_STATE_ROOT,
     issueRef: "ENG-123",
     applyAdapter: adapter,
     runPlanning: async () => META,
@@ -376,7 +394,7 @@ test("planning publication apply returns terminal Linear update", async () => {
   });
   expect(
     loadFactoryLifecycleState({
-      factoryStateRoot: resolveFactoryStateRoot({ workspace: result.output.workspace }),
+      factoryStateRoot: result.output.factoryStore?.factoryStateRoot ?? "",
       workItemKey: deriveFactoryWorkItemKey({
         id: "linear:ENG-123",
         source: "linear",
@@ -392,6 +410,36 @@ test("planning publication apply returns terminal Linear update", async () => {
     approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
   });
   expect(result.terminalApplyError).toBeUndefined();
+});
+
+test("planning publication repairs legacy metadata with durable store provenance", async () => {
+  const { runDir } = createPublicationRun({ includeFactoryStore: false });
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-publication-store-"));
+
+  const result = await runFactoryPlanningPublicationWithLinearApply({
+    mode: "publish",
+    runDir,
+    prUrl: "https://github.com/owner/repo/pull/123",
+    apply: false,
+    factoryStoreRoot: storeRoot,
+    env: {},
+  });
+
+  expect(result.output).toMatchObject({
+    factoryStore: { factoryStateRoot: expect.stringContaining("/factory") },
+    warnings: [{ code: "factory-store-meta-missing" }],
+  });
+  const meta = JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8"));
+  expect(meta).toMatchObject({
+    factoryStore: { factoryStateRoot: result.output.factoryStore?.factoryStateRoot },
+    warnings: [{ code: "factory-store-meta-missing" }],
+  });
+  expect(
+    loadFactoryLifecycleState({
+      factoryStateRoot: result.output.factoryStore?.factoryStateRoot ?? "",
+      workItemKey: "linear:ENG-123",
+    }),
+  ).toMatchObject({ factoryStage: "plan-pr-open" });
 });
 
 test("planning mark-merged apply returns terminal Linear update", async () => {
@@ -436,7 +484,7 @@ test("planning mark-merged apply returns terminal Linear update", async () => {
   });
   expect(
     loadFactoryLifecycleState({
-      factoryStateRoot: resolveFactoryStateRoot({ workspace: result.output.workspace }),
+      factoryStateRoot: result.output.factoryStore?.factoryStateRoot ?? "",
       workItemKey: deriveFactoryWorkItemKey({
         id: "linear:ENG-123",
         source: "linear",

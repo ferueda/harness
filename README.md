@@ -105,8 +105,11 @@ The item file is JSON with `id`, `source`, `title`, and `body`. `status` is
 read-only. Station commands process one explicit item and do not move inbox
 files.
 
-Factory artifacts are written under
-`<workspace>/.harness/runs/factory/<run-id>/`. Triage routes are
+Factory station artifacts are written under
+`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/`
+by default. Factory lifecycle JSONL and rebuildable state live under that
+project's `factory/` directory. This default is intentionally outside the
+documented harness checkout at `~/.harness`. Triage routes are
 `ready-to-implement`, `ready-to-plan`, `needs-info`, or `wait-to-implement`.
 Planning writes reviewed plans into the target repo only after approval. For
 tracker-backed work, publish the plan file through a plan PR, then register the
@@ -144,9 +147,17 @@ operator model, read that same doc.
 
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).
+Configure the durable store with `--factory-store-root`,
+`--factory-store-project-id`, `HARNESS_FACTORY_STORE_ROOT`,
+`HARNESS_FACTORY_STORE_PROJECT_ID`, or `factory.store.root` /
+`factory.store.projectId` in `harness.json`. The workspace keeps its local
+shim and `.harness/inbox/factory`; it remains the sandbox and Git
+materialization point. Standalone reviews remain workspace-local under
+`.harness/runs/reviews` unless their own `--runs-dir` is used.
+
 For review artifact cleanup, use `harness runs prune --help`. The prune default
 targets `.harness/runs/reviews`; factory run cleanup currently needs
-`--runs-dir <workspace>/.harness/runs/factory` or manual deletion. For command
+`--runs-dir <store>/projects/<repo-id>/runs/factory` or manual deletion. For command
 ownership and mutability, read
 [docs/contributing/script-command-surface.md](docs/contributing/script-command-surface.md).
 

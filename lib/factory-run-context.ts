@@ -34,6 +34,11 @@ import {
   noopEventSink,
   type WorkflowEventSink,
 } from "./workflow-events.ts";
+import {
+  factoryExecutionProvenance,
+  type FactoryExecutionProvenance,
+  type FactoryStoreMeta,
+} from "./factory-store.ts";
 
 type FactoryRunStatus = "completed" | "dry_run" | "failed";
 
@@ -67,6 +72,8 @@ export type FactoryRunMeta = {
   durationMs: number;
   eventsFile?: typeof WORKFLOW_EVENTS_FILE;
   error?: string;
+  factoryStore?: FactoryStoreMeta;
+  execution?: FactoryExecutionProvenance;
 };
 
 export type FactoryRunContext = {
@@ -74,6 +81,7 @@ export type FactoryRunContext = {
   runDir: string;
   workspace: string;
   workItem: FactoryWorkItem;
+  factoryStore?: FactoryStoreMeta;
   dryRun?: boolean;
   eventSink: WorkflowEventSink;
   invokeTriageAgent(): Promise<FactoryTriageOutput>;
@@ -96,6 +104,7 @@ export type FactoryRunContextFactoryOptions = {
   signal?: AbortSignal;
   eventSink?: WorkflowEventSink;
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
+  factoryStore?: FactoryStoreMeta;
 };
 
 const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -119,7 +128,17 @@ export function readFactoryWorkItemFile(path: string): FactoryWorkItem {
       cause: error,
     });
   }
-  return parseFactoryWorkItem(parsed);
+  return parseFactoryWorkItem(stripFetchWarnings(parsed));
+}
+
+function stripFetchWarnings(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const candidate = value as Record<string, unknown>;
+  // `factory linear fetch` retains work-item fields at the top level and adds
+  // optional warnings. Accept that intentional CLI envelope for item-file reuse.
+  if (!Array.isArray(candidate.warnings)) return value;
+  const { warnings: _warnings, ...workItem } = candidate;
+  return workItem;
 }
 
 export function assertFactoryItemFileExists(workspace: string, itemFile: string): string {
@@ -188,6 +207,7 @@ function createFactoryRunContextInternal(
     runDir,
     workspace,
     workItem: options.workItem,
+    factoryStore: options.factoryStore,
     dryRun: options.dryRun,
     eventSink,
     async invokeTriageAgent(): Promise<FactoryTriageOutput> {
@@ -253,6 +273,7 @@ function createFactoryRunContextInternal(
           routePlan: input.routePlan,
           agent: agentMeta,
           includeEventsFile: !options.dryRun,
+          factoryStore: options.factoryStore,
         });
         writeJson(join(runDir, "meta.json"), meta);
         return meta;
@@ -276,6 +297,7 @@ function createFactoryRunContextInternal(
         agent: agentMeta,
         error: errorMessage(error),
         includeEventsFile: !options.dryRun,
+        factoryStore: options.factoryStore,
       });
       writeJson(join(runDir, "meta.json"), meta);
       return meta;
@@ -301,6 +323,7 @@ function buildMeta(input: {
   agent: FactoryRunMeta["agent"];
   error?: string;
   includeEventsFile: boolean;
+  factoryStore?: FactoryStoreMeta;
 }): FactoryRunMeta {
   return {
     runId: input.runId,
@@ -330,6 +353,8 @@ function buildMeta(input: {
     durationMs: Date.now() - input.startedAt.getTime(),
     ...(input.includeEventsFile ? { eventsFile: WORKFLOW_EVENTS_FILE } : {}),
     ...(input.error ? { error: input.error } : {}),
+    ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
+    execution: factoryExecutionProvenance(input.workspace, input.runDir),
   };
 }
 

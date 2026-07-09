@@ -1,4 +1,5 @@
 import type { LinearPlanningUpdatePlan } from "../lib/factory-linear-planning-apply.ts";
+import type { FactoryLifecycleWarning } from "../lib/factory-lifecycle.ts";
 import type { FactoryPlanningRunMeta } from "../lib/factory-planning-run-context.ts";
 
 export type FactoryPlanningLinearUpdate = {
@@ -20,11 +21,16 @@ export type FactoryPlanningCliOutput = {
   metaPath: string;
   linearApplied?: boolean;
   linearUpdate?: FactoryPlanningLinearUpdate;
+  warnings?: FactoryLifecycleWarning[];
 };
 
 export function factoryPlanningCliOutput(
   meta: FactoryPlanningRunMeta,
-  options: { linearApplied?: boolean; linearUpdate?: FactoryPlanningLinearUpdate } = {},
+  options: {
+    linearApplied?: boolean;
+    linearUpdate?: FactoryPlanningLinearUpdate;
+    warnings?: FactoryLifecycleWarning[];
+  } = {},
 ): FactoryPlanningCliOutput {
   return {
     runId: meta.runId,
@@ -40,5 +46,6 @@ export function factoryPlanningCliOutput(
     metaPath: meta.metaPath,
     ...(options.linearApplied !== undefined ? { linearApplied: options.linearApplied } : {}),
     ...(options.linearUpdate ? { linearUpdate: options.linearUpdate } : {}),
+    ...(options.warnings && options.warnings.length > 0 ? { warnings: options.warnings } : {}),
   };
 }

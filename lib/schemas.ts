@@ -53,6 +53,22 @@ const FactoryLinearConfigSchema = z
   })
   .strict();
 
+/** A store project id is joined below `<storeRoot>/projects`, never sanitized. */
+export const FactoryStoreProjectIdSchema = z
+  .string()
+  .min(1)
+  .max(120)
+  .refine((value) => value === value.trim(), "must not contain leading or trailing whitespace")
+  .refine((value) => value !== "." && value !== "..", "must not be . or ..")
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must be one safe path segment");
+
+const FactoryStoreConfigSchema = z
+  .object({
+    root: z.string().min(1).optional(),
+    projectId: FactoryStoreProjectIdSchema.optional(),
+  })
+  .strict();
+
 const FactoryConfigSchema = z
   .object({
     triage: z
@@ -91,6 +107,7 @@ const FactoryConfigSchema = z
       .strict()
       .optional(),
     linear: FactoryLinearConfigSchema.optional(),
+    store: FactoryStoreConfigSchema.optional(),
   })
   .strict();
 
@@ -163,6 +180,7 @@ export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
 export type FactoryRoleConfig = z.infer<typeof FactoryRoleSchema>;
 export type FactoryLinearConfig = z.infer<typeof FactoryLinearConfigSchema>;
 export type FactoryLinearStatusesConfig = z.infer<typeof FactoryLinearStatusesSchema>;
+export type FactoryStoreConfig = z.infer<typeof FactoryStoreConfigSchema>;
 
 export const ReviewOutputSchema = z
   .object({

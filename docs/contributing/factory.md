@@ -93,7 +93,7 @@ Tracker adapters can attach reserved metadata under `metadata`:
 ```
 
 These metadata keys are transport fields. When a lifecycle log exists, the
-canonical machine state is the lifecycle read model under `.harness/factory`;
+canonical machine state is the durable factory-store lifecycle read model;
 work-item metadata is the resolved view passed to stations.
 `approvedPlanPath` is the implementation input after the plan PR has merged.
 `approvedPlanPrUrl` links the publication PR while it is open.
@@ -101,22 +101,32 @@ work-item metadata is the resolved view passed to stations.
 
 ## Lifecycle State
 
-Live operator station commands write a harness-owned lifecycle log:
+Live operator station commands write a harness-owned durable lifecycle log:
 
 ```text
-.harness/factory/events/<work-item>.jsonl
-.harness/factory/state/<work-item>.json
+${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory/events/<work-item>.jsonl
+${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory/state/<work-item>.json
 ```
 
-`events/*.jsonl` is the canonical local factory lifecycle source of truth.
+`events/*.jsonl` is the canonical lifecycle source of truth. Each work item has
+a local-filesystem lock under `factory/locks/`; state JSON is an atomically
+published, rebuildable projection. Dry-run stations and Linear fetch inspect
+state without acquiring locks or rebuilding it; they report warnings for stale,
+missing, corrupt, or held lifecycle state. Live stations rebuild projections
+under lock when required.
 `state/*.json` is a rebuildable read-model cache. The read model owns durable
 machine fields such as `factoryStage`, `factoryRoute`, `factoryNextAction`,
 `factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
 `approvedPlanCommit`.
 
 Linear status and comments are human board projections. Per-run `meta.json`
-and `.harness/runs/factory/<run-id>/events.jsonl` are execution evidence. Git
+and durable `runs/factory/<run-id>/events.jsonl` are execution evidence. Git
 remains source of truth for committed plans and code.
+
+The workspace remains the sandbox: it owns source, tests, `harness.json`, the
+shim, inbox, and committed `dev/plans/*.md`. Legacy workspace-local
+`.harness/factory` state is detected by `factory status` and ignored; it is not
+silently imported into the durable store.
 
 `triage.started`, `planning.started`, and `implementation.started` events are
 audit history only; they do not move durable `factoryStage`. Terminal events
@@ -360,7 +370,7 @@ Routes:
 - `needs-info`: requires human answers before rerun.
 - `wait-to-implement`: valid but parked until `reconsiderWhen`.
 
-Triage artifacts under `.harness/runs/factory/<run-id>/` include:
+Triage artifacts under the durable factory `runs/factory/<run-id>/` include:
 
 - `context/work-item.json`
 - `factory-triage.prompt.md`
@@ -418,7 +428,7 @@ Planning statuses:
 - `plan-review-unresolved`
 - `planning-failed`
 
-Planning artifacts under `.harness/runs/factory/<run-id>/` include:
+Planning artifacts under the durable factory `runs/factory/<run-id>/` include:
 
 - `context/work-item.json`
 - `planning/draft.md`
@@ -432,7 +442,7 @@ Planning artifacts under `.harness/runs/factory/<run-id>/` include:
 - `meta.json`
 - `events.jsonl` for live runs
 
-Plan-review artifacts live under `.harness/runs/reviews/<run-id>/` and are
+Nested factory plan-review artifacts live under durable `runs/reviews/<run-id>/` and are
 referenced from `iterations/<n>/plan-review-ref.json`. The final approved plan
 is copied under `dev/plans/` only after approval. Tracker-backed plans should
 use stable tracker-key names such as `dev/plans/FER-123.md` and be published

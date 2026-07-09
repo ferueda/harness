@@ -882,34 +882,34 @@ Expected:
 
 All must hold:
 
-- [ ] Default factory lifecycle events/state write under `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory`, or a test/operator override, not workspace `.harness/factory`.
-- [ ] Default factory station run artifacts write under `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory`.
-- [ ] Factory planning nested plan-review artifacts write under `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/reviews`.
-- [ ] Default store root is outside a documented harness checkout at `~/.harness`.
-- [ ] Explicit project ids from CLI/env/config are validated as safe single path segments, traversal attempts fail before directory creation, and `projectRoot` containment is checked.
-- [ ] Factory CLI tests inject temp store roots for station/status/publication/fetch commands through spawn-scoped env/flags, in-process tests pass explicit env objects without mutating ambient `process.env`, and verification fails if it writes outside those temp roots.
-- [ ] Gate 1 wrapper adoption is complete: every production `harness factory ...` test path uses `runFactoryHarness()` or explicit temp durable store env/flags; help/error-before-resolve exemptions are documented.
-- [ ] Gate 2 artifact-path migration is complete before durable run-dir flips: no lifecycle artifact path or Linear planning comment/display path under temp durable run roots starts with `..`.
-- [ ] Gate 3 station cutover is complete as a unit: production call sites pass `resolution.factoryStateRoot`, fail-closed missing-root behavior is enabled only after that wiring, `factoryStore` meta is written, and nested `reviewRunsDir` uses the durable store.
-- [ ] Standalone review workflows still default to workspace `.harness/runs/reviews`.
-- [ ] Low-level `harness run factory-triage` still defaults to workspace `.harness/runs/factory` unless `--runs-dir` is set.
-- [ ] CLI/env/config/default precedence is tested.
-- [ ] Repo id derivation and explicit project id override are tested, including no-origin fallback.
-- [ ] Per-work-item locking is tested for first-use parent creation, atomic non-recursive acquisition, same issue serialization, different issue independence, idempotent duplicate handling, stale lock reporting, and incomplete-owner handling.
-- [ ] Stale/missing/corrupt state projection rebuilds from valid JSONL; inspect-only paths warn and perform no writes.
-- [ ] `resolveFactoryWorkItemInput` merges lifecycle state from the durable store.
-- [ ] `factory linear fetch` overlays durable lifecycle state in inspect/read-only mode and reports stale/missing/corrupt/lock warnings without waiting, rebuilding, or writing lifecycle projections.
-- [ ] Planned implementation still fails when the approved plan file is absent from the execution workspace.
-- [ ] `factory status` reports store root, locks, stale warnings, and ignored legacy workspace-local state without blocking.
-- [ ] `factory status` reports empty durable store plus ignored legacy workspace-local lifecycle as a first-class warning.
-- [ ] `factory status` uses lock-free lifecycle inspection and never acquires/rebuilds lifecycle state.
-- [ ] Factory station `meta.json` files include `factoryStore` metadata, and lifecycle `execution` fields include the exact strict store/project/repo provenance schema without `normalizedOriginUrl`.
-- [ ] Lifecycle artifact paths for durable run dirs never start with `..` and use run-relative or store-relative/absolute paths.
-- [ ] Docs reflect workspace/store/projection/Git split.
-- [ ] Step 1 docs remained planned-tense only; no present-tense durable-store docs-contract assertions were added before the runtime cutover and final docs step.
-- [ ] Present-tense `docs/project-intent.md` durable-store ownership claims land only in Step 6 after runtime behavior and tests are complete.
-- [ ] `pnpm check` passes.
-- [ ] Linear-backed smoke executed or explicitly skipped with reason (missing credentials or no throwaway issue).
+- [x] Default factory lifecycle events/state write under `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory`, or a test/operator override, not workspace `.harness/factory`.
+- [x] Default factory station run artifacts write under `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory`.
+- [x] Factory planning nested plan-review artifacts write under `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/reviews`.
+- [x] Default store root is outside a documented harness checkout at `~/.harness`.
+- [x] Explicit project ids from CLI/env/config are validated as safe single path segments, traversal attempts fail before directory creation, and `projectRoot` containment is checked.
+- [x] Factory CLI tests inject temp store roots for station/status/publication/fetch commands through spawn-scoped env/flags, in-process tests pass explicit env objects without mutating ambient `process.env`, and verification fails if it writes outside those temp roots.
+- [x] Gate 1 wrapper adoption is complete: every production `harness factory ...` test path uses `runFactoryHarness()` or explicit temp durable store env/flags; help/error-before-resolve exemptions are documented.
+- [x] Gate 2 artifact-path migration is complete before durable run-dir flips: no lifecycle artifact path or Linear planning comment/display path under temp durable run roots starts with `..`.
+- [x] Gate 3 station cutover is complete as a unit: production call sites pass `resolution.factoryStateRoot`, fail-closed missing-root behavior is enabled only after that wiring, `factoryStore` meta is written, and nested `reviewRunsDir` uses the durable store.
+- [x] Standalone review workflows still default to workspace `.harness/runs/reviews`.
+- [x] Low-level `harness run factory-triage` still defaults to workspace `.harness/runs/factory` unless `--runs-dir` is set.
+- [x] CLI/env/config/default precedence is tested.
+- [x] Repo id derivation and explicit project id override are tested, including no-origin fallback.
+- [x] Per-work-item locking is tested for first-use parent creation, atomic non-recursive acquisition, same issue serialization, different issue independence, idempotent duplicate handling, stale lock reporting, and incomplete-owner handling.
+- [x] Stale/missing/corrupt state projection rebuilds from valid JSONL; inspect-only paths warn and perform no writes.
+- [x] `resolveFactoryWorkItemInput` merges lifecycle state from the durable store.
+- [x] `factory linear fetch` overlays durable lifecycle state in inspect/read-only mode and reports stale/missing/corrupt/lock warnings without waiting, rebuilding, or writing lifecycle projections.
+- [x] Planned implementation still fails when the approved plan file is absent from the execution workspace.
+- [x] `factory status` reports store root, locks, stale warnings, and ignored legacy workspace-local state without blocking.
+- [x] `factory status` reports empty durable store plus ignored legacy workspace-local lifecycle as a first-class warning.
+- [x] `factory status` uses lock-free lifecycle inspection and never acquires/rebuilds lifecycle state.
+- [x] Factory station `meta.json` files include `factoryStore` metadata, and lifecycle `execution` fields include the exact strict store/project/repo provenance schema without `normalizedOriginUrl`.
+- [x] Lifecycle artifact paths for durable run dirs never start with `..` and use run-relative or store-relative/absolute paths.
+- [x] Docs reflect workspace/store/projection/Git split.
+- [x] Step 1 docs remained planned-tense only; no present-tense durable-store docs-contract assertions were added before the runtime cutover and final docs step.
+- [x] Present-tense `docs/project-intent.md` durable-store ownership claims land only in Step 6 after runtime behavior and tests are complete.
+- [x] `pnpm check` passes.
+- [x] Linear-backed smoke skipped: no credentials or authorized throwaway Linear issue were available.
 
 ## STOP Conditions
 

@@ -1,5 +1,14 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeSync,
+} from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import { AGENT_PROVIDERS } from "./agents.ts";
@@ -17,6 +26,12 @@ import {
   type FactoryWorkItemMetadata,
 } from "./factory-schemas.ts";
 import { formatZodError } from "./schemas.ts";
+import {
+  type FactoryLockRuntimeOptions,
+  type FactoryLockInspection,
+  inspectFactoryWorkItemLock,
+  withFactoryWorkItemLock,
+} from "./factory-locks.ts";
 
 const LIFECYCLE_VERSION = 1 as const;
 const LIFECYCLE_SOURCE = "harness" as const;
@@ -34,6 +49,26 @@ const ExecutionSchema = z
     runDir: z.string().min(1).optional(),
     branch: z.string().min(1).optional(),
     head: z.string().min(1).optional(),
+    storeRoot: z.string().min(1).optional(),
+    projectId: z.string().min(1).optional(),
+    factoryStateRoot: z.string().min(1).optional(),
+    repo: z
+      .object({
+        name: z.string().min(1),
+        id: z.string().min(1),
+        idSource: z.enum([
+          "config",
+          "cli",
+          "env",
+          "origin",
+          "no-origin-fallback",
+          "workspace-fallback",
+        ]),
+        originHash: z.string().min(1).optional(),
+        workspaceHash: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -255,10 +290,30 @@ export const FactoryLifecycleStateSchema = z
 export type FactoryLifecycleEvent = z.infer<typeof FactoryLifecycleEventSchema>;
 export type FactoryLifecycleState = z.infer<typeof FactoryLifecycleStateSchema>;
 export type FactoryLifecycleExecution = z.infer<typeof ExecutionSchema>;
+export type FactoryLifecycleWarning = {
+  code: "durable-state-missing" | "durable-state-stale" | "lifecycle-lock-held";
+  message: string;
+  factoryStateRoot?: string;
+  workItemKey?: string;
+  lockOwner?: {
+    pid?: number;
+    hostname?: string;
+    token?: string;
+    startedAt?: string;
+    ageMs?: number;
+    classification?: "owner-missing" | "owner-invalid";
+  };
+};
+
+export type FactoryLifecycleInspection = {
+  state?: FactoryLifecycleState;
+  warnings: FactoryLifecycleWarning[];
+};
 
 export type AppendFactoryLifecycleEventInput = {
   factoryStateRoot: string;
   event: FactoryLifecycleEvent;
+  lockOptions?: FactoryLockRuntimeOptions;
 };
 
 export function deriveFactoryWorkItemKey(workItem: FactoryWorkItem): string {
@@ -311,21 +366,50 @@ export function appendFactoryLifecycleEvent(
   input: AppendFactoryLifecycleEventInput,
 ): FactoryLifecycleEvent {
   const event = parseFactoryLifecycleEvent(input.event);
-  const eventPath = factoryLifecycleEventPath(input.factoryStateRoot, event.workItemKey);
-  const existingEvents = readFactoryLifecycleEvents({
-    factoryStateRoot: input.factoryStateRoot,
-    workItemKey: event.workItemKey,
-  });
-  const existing = existingEvents.find((candidate) => candidate.id === event.id);
-  if (existing) return existing;
+  const factoryStateRoot = resolve(input.factoryStateRoot);
+  return withFactoryWorkItemLock(
+    {
+      factoryStateRoot,
+      workItemKey: event.workItemKey,
+      workItemFilename: workItemKeyToFilename(event.workItemKey),
+      workspace: event.execution?.workspace ?? process.cwd(),
+      runDir: event.execution?.runDir,
+      operation: "write",
+      options: input.lockOptions,
+    },
+    () => {
+      // Re-read only after acquisition so a retry remains idempotent.
+      const existingEvents = readFactoryLifecycleEvents({
+        factoryStateRoot,
+        workItemKey: event.workItemKey,
+      });
+      const existing = existingEvents.find((candidate) => candidate.id === event.id);
+      if (existing) return existing;
 
-  mkdirSync(dirname(eventPath), { recursive: true });
-  appendFileSync(eventPath, `${JSON.stringify(event)}\n`, "utf8");
-  writeFactoryLifecycleState({
+      appendFactoryLifecycleEventLine(
+        factoryLifecycleEventPath(factoryStateRoot, event.workItemKey),
+        event,
+      );
+      writeFactoryLifecycleState({
+        factoryStateRoot,
+        state: requireReducedState([...existingEvents, event], event.workItemKey),
+      });
+      return event;
+    },
+  );
+}
+
+export function inspectFactoryLifecycleLock(input: {
+  factoryStateRoot: string;
+  workItemKey: string;
+  lockOptions?: Pick<FactoryLockRuntimeOptions, "now" | "hostname" | "staleAfterMs">;
+}): FactoryLockInspection | undefined {
+  return inspectFactoryWorkItemLock({
     factoryStateRoot: input.factoryStateRoot,
-    state: requireReducedState([...existingEvents, event], event.workItemKey),
+    workItemKey: input.workItemKey,
+    workItemFilename: workItemKeyToFilename(input.workItemKey),
+    options: input.lockOptions,
   });
-  return event;
 }
 
 export function reduceFactoryLifecycleEvents(
@@ -341,35 +425,170 @@ export function reduceFactoryLifecycleEvents(
 export function loadFactoryLifecycleState(input: {
   factoryStateRoot: string;
   workItemKey: string;
+  workspace?: string;
+  runDir?: string;
+  lockOptions?: FactoryLockRuntimeOptions;
 }): FactoryLifecycleState | undefined {
-  const events = readFactoryLifecycleEvents(input);
-  if (events.length === 0) return undefined;
+  const initial = readFactoryLifecycleProjection(input);
+  if (initial.events.length === 0) return undefined;
+  if (initial.cache === "fresh") return initial.state;
 
-  const statePath = factoryLifecycleStatePath(input.factoryStateRoot, input.workItemKey);
-  if (existsSync(statePath)) {
-    const cached = parseFactoryLifecycleStateFile(statePath);
-    const lastEventId = events.at(-1)?.id;
-    if (cached.lastEventId === lastEventId) return cached;
-  }
-
-  const reduced = reduceFactoryLifecycleEvents(events);
-  if (!reduced) return undefined;
-  writeFactoryLifecycleState({
-    factoryStateRoot: input.factoryStateRoot,
-    state: reduced,
-  });
-  return reduced;
+  return withFactoryWorkItemLock(
+    {
+      factoryStateRoot: input.factoryStateRoot,
+      workItemKey: input.workItemKey,
+      workItemFilename: workItemKeyToFilename(input.workItemKey),
+      workspace: input.workspace ?? process.cwd(),
+      runDir: input.runDir,
+      operation: "read",
+      options: input.lockOptions,
+    },
+    () => {
+      const current = readFactoryLifecycleProjection(input);
+      if (current.events.length === 0) return undefined;
+      if (current.cache === "fresh") return current.state;
+      const reduced = reduceFactoryLifecycleEvents(current.events);
+      if (!reduced) return undefined;
+      writeFactoryLifecycleState({
+        factoryStateRoot: input.factoryStateRoot,
+        state: reduced,
+      });
+      return reduced;
+    },
+  );
 }
 
-export function writeFactoryLifecycleState(input: {
+/**
+ * Read existing lifecycle files without lock acquisition or projection writes.
+ * Inspect-only commands use its in-memory projection and warnings.
+ */
+export function inspectFactoryLifecycleState(input: {
+  factoryStateRoot: string;
+  workItemKey: string;
+  lockOptions?: Pick<FactoryLockRuntimeOptions, "now" | "hostname" | "staleAfterMs">;
+}): FactoryLifecycleInspection {
+  const projection = readFactoryLifecycleProjection(input);
+  const factoryStateRoot = resolve(input.factoryStateRoot);
+  const warnings: FactoryLifecycleWarning[] = [];
+  if (projection.events.length > 0 && projection.cache !== "fresh") {
+    warnings.push({
+      code: projection.cache === "missing" ? "durable-state-missing" : "durable-state-stale",
+      message:
+        projection.cache === "corrupt"
+          ? "Durable lifecycle state cache is invalid; using an in-memory projection from JSONL."
+          : projection.cache === "missing"
+            ? "Durable lifecycle state cache is missing; using an in-memory projection from JSONL."
+            : "Durable lifecycle state cache is stale; using an in-memory projection from JSONL.",
+      factoryStateRoot,
+      workItemKey: input.workItemKey,
+    });
+  }
+  const lock = inspectFactoryLifecycleLock({
+    factoryStateRoot,
+    workItemKey: input.workItemKey,
+    lockOptions: input.lockOptions,
+  });
+  if (lock) warnings.push(lockWarning(lock));
+  return {
+    state:
+      projection.state ??
+      (projection.events.length > 0 ? reduceFactoryLifecycleEvents(projection.events) : undefined),
+    warnings,
+  };
+}
+
+function writeFactoryLifecycleState(input: {
   factoryStateRoot: string;
   state: FactoryLifecycleState;
 }): FactoryLifecycleState {
   const state = parseFactoryLifecycleState(input.state);
   const statePath = factoryLifecycleStatePath(input.factoryStateRoot, state.workItemKey);
   mkdirSync(dirname(statePath), { recursive: true });
-  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const tempPath = `${statePath}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
+  const descriptor = openSync(tempPath, "w");
+  try {
+    writeSync(descriptor, `${JSON.stringify(state, null, 2)}\n`, undefined, "utf8");
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  renameSync(tempPath, statePath);
+  fsyncParentDirectory(dirname(statePath));
   return state;
+}
+
+function appendFactoryLifecycleEventLine(path: string, event: FactoryLifecycleEvent): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const descriptor = openSync(path, "a");
+  try {
+    writeSync(descriptor, `${JSON.stringify(event)}\n`, undefined, "utf8");
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  fsyncParentDirectory(dirname(path));
+}
+
+type FactoryLifecycleProjectionCache = "empty" | "fresh" | "missing" | "stale" | "corrupt";
+
+function readFactoryLifecycleProjection(input: { factoryStateRoot: string; workItemKey: string }): {
+  events: FactoryLifecycleEvent[];
+  state?: FactoryLifecycleState;
+  cache: FactoryLifecycleProjectionCache;
+} {
+  const events = readFactoryLifecycleEvents(input);
+  if (events.length === 0) return { events, cache: "empty" };
+  const statePath = factoryLifecycleStatePath(input.factoryStateRoot, input.workItemKey);
+  if (!existsSync(statePath)) return { events, cache: "missing" };
+  try {
+    const state = parseFactoryLifecycleStateFile(statePath);
+    return {
+      events,
+      ...(state.lastEventId === events.at(-1)?.id
+        ? { state, cache: "fresh" as const }
+        : { cache: "stale" as const }),
+    };
+  } catch {
+    return { events, cache: "corrupt" };
+  }
+}
+
+function lockWarning(lock: FactoryLockInspection): FactoryLifecycleWarning {
+  return {
+    code: "lifecycle-lock-held",
+    message:
+      lock.warning ??
+      `Lifecycle lock is held for ${lock.workItemKey}; inspection did not wait or mutate the lock.`,
+    factoryStateRoot: dirname(dirname(lock.lockPath)),
+    workItemKey: lock.workItemKey,
+    lockOwner: {
+      ...(lock.owner
+        ? {
+            pid: lock.owner.pid,
+            hostname: lock.owner.hostname,
+            token: lock.owner.token,
+            startedAt: lock.owner.startedAt,
+          }
+        : {}),
+      ageMs: lock.ageMs,
+      ...(lock.classification === "owner-missing" || lock.classification === "owner-invalid"
+        ? { classification: lock.classification }
+        : {}),
+    },
+  };
+}
+
+function fsyncParentDirectory(path: string): void {
+  try {
+    const descriptor = openSync(path, "r");
+    try {
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+  } catch {
+    // Directory fsync is not supported by every local filesystem.
+  }
 }
 
 export function mergeFactoryStateIntoWorkItem(
