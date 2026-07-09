@@ -45,9 +45,11 @@ export function createFactoryReviewHead(input: {
     // Do not use exclude pathspecs here. `git add` still treats `:!.harness` /
     // `:(exclude).harness` as a positive path match for its ignored-path check,
     // so a populated ignored `.harness/` makes `git add -A -- . :!.harness` exit 1.
-    // Rely on `.gitignore` to keep `.harness/` out of the temp index (FER-56).
+    // Rely on `.gitignore` for the happy path; fail closed after write-tree if
+    // `.harness/` still entered the review tree (FER-56).
     git(input.workspace, ["add", "-A", "--", "."], env);
     const treeSha = git(input.workspace, ["write-tree"], env).trim();
+    assertReviewTreeOmitsHarness(input.workspace, treeSha, env);
     const reviewCommitSha = git(
       input.workspace,
       [
@@ -75,6 +77,7 @@ export function createFactoryReviewHead(input: {
       diffPatch,
     };
   } catch (error) {
+    if (error instanceof FactoryReviewHeadError) throw error;
     throw new FactoryReviewHeadError(
       `Failed to materialize factory review head: ${errorMessage(error)}`,
       { cause: error },
@@ -94,6 +97,27 @@ export function readFactoryReviewBase(workspace: string): string {
       cause: error,
     });
   }
+}
+
+function assertReviewTreeOmitsHarness(
+  workspace: string,
+  treeSha: string,
+  env: NodeJS.ProcessEnv,
+): void {
+  const treePaths = git(workspace, ["ls-tree", "-r", "--name-only", treeSha], env)
+    .split("\n")
+    .map((path) => path.trim())
+    .filter(Boolean);
+  const harnessPaths = treePaths.filter(
+    (path) => path === ".harness" || path.startsWith(".harness/"),
+  );
+  if (harnessPaths.length === 0) return;
+
+  const sample = harnessPaths.slice(0, 5).join(", ");
+  const more = harnessPaths.length > 5 ? ` (+${harnessPaths.length - 5} more)` : "";
+  throw new FactoryReviewHeadError(
+    `Review tree must not include .harness/ artifacts (found ${harnessPaths.length}: ${sample}${more}). Add ".harness/" to .gitignore or run harness init before factory implementation.`,
+  );
 }
 
 function git(workspace: string, args: string[], env: NodeJS.ProcessEnv): string {
