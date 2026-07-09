@@ -1,9 +1,8 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
-import { isatty } from "node:tty";
 import { factoryImplementationCliOutput } from "./factory-implementation-cli.ts";
 import {
   factoryPlanningCliOutput,
@@ -69,7 +68,11 @@ import {
   resolveFactoryWorkItemInput,
   validateFactoryWorkItemInput,
 } from "../lib/factory-triage-input.ts";
-import { createFactoryRunContext, type FactoryRunMeta } from "../lib/factory-run-context.ts";
+import {
+  createFactoryRunContext,
+  assertFactoryItemFileExists,
+  type FactoryRunMeta,
+} from "../lib/factory-run-context.ts";
 import {
   parseFactoryTriageOutput,
   type FactoryTriageOutput,
@@ -333,35 +336,24 @@ async function resolveFactoryLinearCreateBody(input: {
     throw new Error("--body and --body-file are mutually exclusive");
   }
   if (hasBody) {
-    return input.body ?? "";
+    return input.body as string;
   }
   if (hasBodyFile) {
     const workspace = resolveHarnessOptions({ workspace: input.workspace }).workspace;
-    const bodyFile = input.bodyFile ?? "";
-    const resolvedPath = isAbsolute(bodyFile) ? bodyFile : join(workspace, bodyFile);
-    if (!existsSync(resolvedPath)) {
-      throw new Error(`Linear create body file does not exist: ${bodyFile}`);
-    }
+    const bodyFile = input.bodyFile as string;
+    const resolvedPath = assertFactoryItemFileExists(workspace, bodyFile);
     return readFileSync(resolvedPath, "utf8");
   }
 
   const stdin = input.stdin;
-  if (isReadableTty(stdin)) {
+  if ("isTTY" in stdin && stdin.isTTY === true) {
     throw new Error("one of --body, --body-file, or stdin is required");
   }
   const fromStdin = await readStreamToString(stdin);
-  if (!fromStdin.trim()) {
+  if (fromStdin.length === 0) {
     throw new Error("one of --body, --body-file, or stdin is required");
   }
   return fromStdin;
-}
-
-function isReadableTty(stream: NodeJS.ReadStream | Readable): boolean {
-  if ("isTTY" in stream && stream.isTTY === true) {
-    return true;
-  }
-  const maybeFd = (stream as { fd?: unknown }).fd;
-  return typeof maybeFd === "number" && isatty(maybeFd);
 }
 
 async function readStreamToString(stream: Readable): Promise<string> {
