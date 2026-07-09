@@ -1,6 +1,11 @@
 import { LinearClient } from "@linear/sdk";
 import { type FactoryLinearSettings } from "./config.ts";
 import {
+  createLinearWorkItem,
+  type LinearCreateWorkItemInput,
+  type LinearCreateWorkItemResult,
+} from "./factory-linear-create.ts";
+import {
   listLinearWorkItemsByStatus,
   type LinearFactoryStatusKey,
   type LinearIssueList,
@@ -63,6 +68,7 @@ const TRIAGE_COMMENT_EVIDENCE_LIMIT = 3;
 export type LinearFactoryAdapter = {
   fetchWorkItem: (issueRef: string) => Promise<FactoryWorkItem>;
   listWorkItemsByStatus: (input: LinearListWorkItemsInput) => Promise<LinearIssueList>;
+  createWorkItem: (input: LinearCreateWorkItemInput) => Promise<LinearCreateWorkItemResult>;
   validateStatusMap: () => Promise<LinearStatusMapValidation>;
   applyTriageStarted: (input: LinearTriageApplyInput) => Promise<LinearTriageUpdatePlan>;
   applyTriageCompleted: (input: LinearTriageCompletedInput) => Promise<LinearTriageUpdatePlan>;
@@ -136,6 +142,8 @@ export function createLinearFactoryAdapterForClient(input: {
     fetchWorkItem: (issueRef) => fetchWorkItem(input.client, input.settings, issueRef),
     listWorkItemsByStatus: (listInput) =>
       listLinearWorkItemsByStatus(LINEAR_LIST_DEPS, input.client, input.settings, listInput),
+    createWorkItem: (createInput) =>
+      createLinearWorkItem(LINEAR_CREATE_DEPS, input.client, input.settings, createInput),
     validateStatusMap: () => validateStatusMap(input.client, input.settings),
     applyTriageStarted: (applyInput) =>
       applyTriageStarted(input.client, input.settings, applyInput),
@@ -200,6 +208,12 @@ const LINEAR_LIST_DEPS = {
   canonicalTeamKey,
   assigneeName,
   formatDate,
+};
+
+const LINEAR_CREATE_DEPS = {
+  validateStatusMap,
+  fetchTeam,
+  fetchWorkflowState,
 };
 
 export function parseLinearIssueIdentifier(issueRef: string): LinearIssueIdentifier | null {
