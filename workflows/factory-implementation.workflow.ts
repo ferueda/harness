@@ -203,7 +203,6 @@ async function runLive(
       workspaceStatus,
       diff: reviewHead.diffPatch,
       changeReviewHandoff,
-      streamLogWritten,
     });
 
     const meta = ctx.export({
@@ -310,7 +309,6 @@ function exportFailedLive(input: {
     workspaceStatus,
     diff: after.patch,
     changeReviewHandoff,
-    streamLogWritten,
   });
 
   return input.ctx.export({
