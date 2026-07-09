@@ -5,8 +5,12 @@ export const AGENT_REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhi
 export const CURSOR_SDK_MODEL_MODES = [
   "composer-2.5",
   "claude-opus-4-8",
-  "gpt-5.5",
   "grok-4.5",
+  "gpt-5.6-sol-medium",
+  "gpt-5.6-sol-high",
+  "gpt-5.6-sol-xhigh",
+  "gpt-5.6-terra-high",
+  "gpt-5.6-terra-xhigh",
 ] as const;
 export const AGENT_WORKSPACE_GUARD_MODES = ["enforce", "record"] as const;
 
@@ -25,11 +29,11 @@ export type AgentSessionRef = {
   raw?: unknown;
 };
 
-const DEFAULT_CURSOR_MODEL = CURSOR_SDK_MODEL_MODES[0] satisfies CursorSdkModelMode;
+const DEFAULT_CURSOR_MODEL = "grok-4.5" satisfies CursorSdkModelMode;
 
 export const DEFAULT_AGENT_MODELS = {
   cursor: DEFAULT_CURSOR_MODEL,
-  codex: "gpt-5.5",
+  codex: "gpt-5.6-sol",
 } as const satisfies Record<AgentProviderName, string>;
 
 export const DEFAULT_CODEX_REASONING_EFFORT = "high" satisfies AgentReasoningEffort;
@@ -43,7 +47,14 @@ export const AGENT_MODEL_CATALOG = {
   codex: {
     defaultModel: DEFAULT_AGENT_MODELS.codex,
     defaultReasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
-    models: ["gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.2", "gpt-5.1-codex-max"],
+    models: [
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.4",
+      "gpt-5.3-codex",
+      "gpt-5.2",
+      "gpt-5.1-codex-max",
+    ],
     reasoningEfforts: AGENT_REASONING_EFFORTS,
     liveListCommand: "codex --help; see Codex config docs for model availability",
   },
