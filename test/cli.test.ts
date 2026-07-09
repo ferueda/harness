@@ -18,7 +18,10 @@ import {
   HARNESS_RECOMMENDED_COMMAND,
   HARNESS_SHIM_RELATIVE_PATH,
 } from "../lib/config.ts";
-import { fetchFactoryLinearWorkItem } from "../bin/factory-commands.ts";
+import {
+  fetchFactoryLinearWorkItem,
+  createFactoryLinearWorkItem,
+} from "../bin/factory-commands.ts";
 import {
   appendFactoryLifecycleEvent,
   loadFactoryLifecycleState,
@@ -286,6 +289,7 @@ test("harness factory linear help exits cleanly", () => {
   expect(result.stdout).toMatch(/harness factory linear/);
   expect(result.stdout).toMatch(/list/);
   expect(result.stdout).toMatch(/fetch/);
+  expect(result.stdout).toMatch(/create/);
 });
 test("harness factory linear list help exits cleanly", () => {
   const result = runHarness(["factory", "linear", "list", "--help"]);
@@ -303,6 +307,17 @@ test("harness factory linear fetch help exits cleanly", () => {
   expect(result.stdout).toMatch(/harness factory linear fetch/);
   expect(result.stdout).toMatch(/TEAM-123/);
   expect(result.stdout).toMatch(/--workspace/);
+});
+test("harness factory linear create help exits cleanly", () => {
+  const result = runHarness(["factory", "linear", "create", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory linear create/);
+  expect(result.stdout).toMatch(/--workspace/);
+  expect(result.stdout).toMatch(/--title/);
+  expect(result.stdout).toMatch(/--body/);
+  expect(result.stdout).toMatch(/--body-file/);
+  expect(result.stdout).not.toMatch(/--dry-run/);
+  expect(result.stdout).not.toMatch(/--apply/);
 });
 test("harness factory linear list requires a status", () => {
   const workspace = createGitWorkspace();
@@ -368,6 +383,177 @@ test("harness factory linear fetch requires a Linear API key", () => {
   });
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
+});
+test("harness factory linear create requires Linear config", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(
+    [
+      "factory",
+      "linear",
+      "create",
+      "--title",
+      "Example",
+      "--body",
+      "Body",
+      "--workspace",
+      workspace,
+    ],
+    {
+      env: { LINEAR_API_KEY: "test-key" },
+    },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/factory\.linear is required/);
+});
+test("harness factory linear create requires a Linear API key", () => {
+  const workspace = createGitWorkspace();
+  writeLinearConfig(workspace);
+  const result = runHarness(
+    [
+      "factory",
+      "linear",
+      "create",
+      "--title",
+      "Example",
+      "--body",
+      "Body",
+      "--workspace",
+      workspace,
+    ],
+    {
+      env: { LINEAR_API_KEY: "" },
+    },
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
+});
+test("harness factory linear create rejects body and body-file together before config checks", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "factory",
+    "linear",
+    "create",
+    "--title",
+    "Example",
+    "--body",
+    "Body",
+    "--body-file",
+    "body.md",
+    "--workspace",
+    workspace,
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--body and --body-file are mutually exclusive/);
+  expect(result.stderr).not.toMatch(/factory\.linear is required/);
+  expect(result.stderr).not.toMatch(/LINEAR_API_KEY is required/);
+});
+test("harness factory linear create rejects missing body sources before config checks", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness([
+    "factory",
+    "linear",
+    "create",
+    "--title",
+    "Example",
+    "--workspace",
+    workspace,
+  ]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/one of --body, --body-file, or stdin is required/);
+  expect(result.stderr).not.toMatch(/factory\.linear is required/);
+  expect(result.stderr).not.toMatch(/LINEAR_API_KEY is required/);
+});
+test("createFactoryLinearWorkItem rejects whitespace title or body before mutation", async () => {
+  let createCalled = false;
+  await expect(
+    createFactoryLinearWorkItem({
+      title: "   ",
+      body: "Body",
+      env: { LINEAR_API_KEY: "test-key" },
+      resolveLinearSettings: () => ({ ...LINEAR_SETTINGS, projectId: "project-1" }),
+      adapterFactory: () =>
+        fakeLinearAdapter({
+          createWorkItem: async () => {
+            createCalled = true;
+            throw new Error("createWorkItem should not run");
+          },
+        }),
+    }),
+  ).rejects.toThrow(/Linear create title must be non-empty/);
+  await expect(
+    createFactoryLinearWorkItem({
+      title: "Title",
+      body: "  \n",
+      env: { LINEAR_API_KEY: "test-key" },
+      resolveLinearSettings: () => ({ ...LINEAR_SETTINGS, projectId: "project-1" }),
+      adapterFactory: () =>
+        fakeLinearAdapter({
+          createWorkItem: async () => {
+            createCalled = true;
+            throw new Error("createWorkItem should not run");
+          },
+        }),
+    }),
+  ).rejects.toThrow(/Linear create body must be non-empty/);
+  expect(createCalled).toBe(false);
+});
+test("createFactoryLinearWorkItem returns compact JSON for inline, file, and stdin bodies", async () => {
+  const workspace = createPlainWorkspace();
+  writeFileSync(join(workspace, "body.md"), "File body content\n", "utf8");
+  const created = {
+    identifier: "ENG-124",
+    url: "https://linear.app/acme/issue/ENG-124/example",
+    id: "linear:ENG-124",
+  };
+  const calls: Array<{ title: string; body: string }> = [];
+  const adapterFactory = () =>
+    fakeLinearAdapter({
+      createWorkItem: async (input) => {
+        calls.push(input);
+        return created;
+      },
+    });
+  const settings = { ...LINEAR_SETTINGS, projectId: "project-1" };
+
+  await expect(
+    createFactoryLinearWorkItem({
+      workspace,
+      title: "Inline",
+      body: "Inline body",
+      env: { LINEAR_API_KEY: "test-key" },
+      resolveLinearSettings: () => settings,
+      adapterFactory,
+    }),
+  ).resolves.toEqual(created);
+
+  await expect(
+    createFactoryLinearWorkItem({
+      workspace,
+      title: "File",
+      bodyFile: "body.md",
+      env: { LINEAR_API_KEY: "test-key" },
+      resolveLinearSettings: () => settings,
+      adapterFactory,
+    }),
+  ).resolves.toEqual(created);
+
+  const { Readable } = await import("node:stream");
+  await expect(
+    createFactoryLinearWorkItem({
+      workspace,
+      title: "Stdin",
+      env: { LINEAR_API_KEY: "test-key" },
+      stdin: Readable.from(["Stdin body"]),
+      resolveLinearSettings: () => settings,
+      adapterFactory,
+    }),
+  ).resolves.toEqual(created);
+
+  expect(calls).toEqual([
+    { title: "Inline", body: "Inline body" },
+    { title: "File", body: "File body content" },
+    { title: "Stdin", body: "Stdin body" },
+  ]);
 });
 test("harness factory linear fetch overlays seeded lifecycle state", async () => {
   const workspace = createPlainWorkspace();
