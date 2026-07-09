@@ -17,7 +17,9 @@ harness run plan-review --plan path/to/implementation-plan.md
 
 ```bash
 harness factory status --workspace /path/to/repo
+harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
+harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
@@ -561,8 +563,10 @@ Stop and re-check scope if the work requires:
 - reviving `harness factory dispatch`
 - moving every inbox item in a batch
 - mutating GitHub, Jira, or Inngest from current station commands
-- mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
-  or `harness factory planning run --linear-issue ... --apply`
+- mutating Linear outside documented `harness factory linear create` or explicit
+  `harness factory triage --linear-issue ... --apply`,
+  `harness factory planning run --linear-issue ... --apply`, or explicit
+  planning publication commands with `--linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked files
