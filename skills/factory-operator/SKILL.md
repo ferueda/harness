@@ -105,7 +105,10 @@ Minimal shape:
         "triaging": "Triaging",
         "planning": "Planning",
         "triageFailed": "Triage Failed",
-        "planningFailed": "Planning Failed"
+        "planningFailed": "Planning Failed",
+        "done": "Done",
+        "canceled": "Canceled",
+        "duplicate": "Duplicate"
       }
     },
     "planning": {
