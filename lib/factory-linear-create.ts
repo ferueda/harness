@@ -16,17 +16,13 @@ export type LinearCreateWorkItemResult = {
   url: string;
 };
 
-export type LinearCreateDeps = {
+type LinearCreateDeps = {
   validateStatusMap: (
     client: LinearClientLike,
     settings: FactoryLinearSettings,
-  ) => Promise<{ teamKey: string }>;
+  ) => Promise<{ teamKey: string; statuses: LinearWorkflowStateLike[] }>;
   fetchTeam: (client: LinearClientLike, teamKey: string) => Promise<LinearTeamLike>;
-  fetchWorkflowState: (
-    client: LinearClientLike,
-    settings: FactoryLinearSettings,
-    statusName: string,
-  ) => Promise<LinearWorkflowStateLike>;
+  normalizeName: (value: string) => string;
 };
 
 export async function createLinearWorkItem(
@@ -47,9 +43,17 @@ export async function createLinearWorkItem(
     throw new Error("factory.linear.projectId is required for Linear create.");
   }
 
-  await deps.validateStatusMap(client, settings);
+  const validation = await deps.validateStatusMap(client, settings);
   const team = await deps.fetchTeam(client, settings.teamKey);
-  const intakeState = await deps.fetchWorkflowState(client, settings, settings.statuses.intake);
+  const intakeName = deps.normalizeName(settings.statuses.intake);
+  const intakeState = validation.statuses.find(
+    (state) => deps.normalizeName(state.name) === intakeName,
+  );
+  if (!intakeState) {
+    throw new Error(
+      `Linear team ${settings.teamKey} is missing configured status: ${settings.statuses.intake}`,
+    );
+  }
 
   const result = await client.createIssue({
     teamId: team.id,
