@@ -50,19 +50,19 @@ PR itself is plan-only work.
 
 ## Operator-doc bloat (advisory)
 
-Only when the PR edits these surfaces: `skills/*/SKILL.md`, `README.md`
-factory/quickstart, operator command/station fences in
-`docs/contributing/factory.md`.
+Only when the PR edits agent-loaded or operator happy-path docs (e.g.
+`skills/**/SKILL.md`, README quickstarts, primary operator command guides
+linked from `AGENTS.md`). Discover paths from the host repo — do not assume
+harness-only filenames.
 
-Comment only if the PR **adds or re-emphasizes** a non-default path as the
-first copy-paste example, or repeats the same caveat/command block in-file
-(or skill + README) without new information. Canonical smell: dry-run-first
-station fences when live is the real path.
+Comment only if the PR **adds or re-emphasizes** a preview, scaffold, or
+non-default path as the first copy-paste example, or repeats the same
+caveat/command block in-file (or skill + README) without new information.
+Prefer the real default path first; keep optional modes in a short note.
 
-Do not: whole-file lint pre-existing prose; flag contributor/CI classification
-docs; flag one short optional wiring note; flag CLI `--help` mentioning
-`--dry-run`. Label findings **advisory** — never request changes for bloat
-alone.
+Do not: whole-file lint pre-existing prose; flag contributor/CI inventory
+docs; flag one short optional-mode note; flag CLI `--help` listing flags.
+Label findings **advisory** — never request changes for bloat alone.
 
 ## Confidence bar
 
