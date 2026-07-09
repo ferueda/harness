@@ -35,6 +35,14 @@ test("implementation item-file direct dry-run writes artifacts without lifecycle
   expect(existsSync(join(output.runDir, "implementation/prompt.md"))).toBe(true);
   expect(existsSync(join(output.runDir, "implementation/change-review-handoff.md"))).toBe(true);
   expect(existsSync(join(workspace, ".harness/factory"))).toBe(false);
+  expect(parseFactoryRunStartedProgress(result.stderr)).toEqual({
+    harnessFactory: "run-started",
+    station: "implementation",
+    runId: output.runId,
+    runDir: output.runDir,
+    workspace,
+  });
+  expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
 });
 
 test("implementation item-file planned dry-run writes plan reference", () => {
@@ -215,6 +223,23 @@ function runHarness(args: string[]) {
 
 function parseStdout(result: ReturnType<typeof runHarness>): Record<string, any> {
   return JSON.parse(result.stdout) as Record<string, any>;
+}
+
+function parseFactoryRunStartedProgress(stderr: string) {
+  const lines = stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        const parsed = JSON.parse(line) as { harnessFactory?: string };
+        return parsed.harnessFactory === "run-started" ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    });
+  expect(lines).toHaveLength(1);
+  return lines[0];
 }
 
 function readJson(path: string): unknown {
