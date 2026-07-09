@@ -453,6 +453,46 @@ harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-i
 They print `factoryMetadata` plus suggested Linear comment text. They do not
 open PRs or inspect GitHub merge state.
 
+### Linear PR linking
+
+Linear's native GitHub integration links a PR to an issue when the issue id
+appears in the **branch name**, the **PR title**, or a magic word plus issue id
+in the title or body. See [Linear's GitHub docs](https://linear.app/docs/github).
+Harness does not PATCH GitHub PR bodies or verify linking.
+
+**Prerequisite:** the target repo must have Linear's GitHub integration enabled
+and the repo connected in Linear settings. Harness does not configure or check
+this.
+
+House rule for tracker-backed factory work: put the normalized issue id (for
+example `ENG-123`) in **both** the branch name and the PR title before or when
+opening the PR.
+
+| PR kind        | Branch                                                    | Title             | Magic words                                                                                                             |
+| -------------- | --------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Plan           | `plan/<ISSUE>-<short-slug>`                               | include `<ISSUE>` | Prefer **no** closing words (`Fixes`, `Closes`, `Implements`, …). A bare issue id in branch or title is enough to link. |
+| Implementation | `feat/<ISSUE>-<short-slug>` or `fix/<ISSUE>-<short-slug>` | include `<ISSUE>` | Use `Fixes <ISSUE>.` (or another closing phrase) in title or body **only** when merge should complete the Linear issue. |
+
+Example plan PR flow:
+
+```bash
+git checkout -b plan/ENG-123-short-slug
+# ... commit plan ...
+git push -u origin plan/ENG-123-short-slug
+gh pr create --title "plan: ENG-123 short description" --body "..."
+LINEAR_API_KEY=... harness factory planning publish \
+  --run-dir .harness/runs/factory/<run-id> \
+  --pr-url https://github.com/owner/repo/pull/123 \
+  --linear-issue ENG-123 --apply
+```
+
+If an already-open PR is not linked, repair as an operator — rename the branch
+and/or edit the title (for example `gh pr edit <number> --title "feat: ENG-123 short description"`).
+Do not add or expect a harness repair command.
+
+`planning publish` records the PR URL and may apply Linear status/comments; it
+does not edit GitHub PRs or verify that Linear attached the PR.
+
 Add `--linear-issue` and `--apply` to mutate Linear:
 
 ```bash
