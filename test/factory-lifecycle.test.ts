@@ -187,6 +187,43 @@ test("implementation completed moves to implementation-complete and preserves pl
   });
 });
 
+test("file planned import seeds plan retry fields preserved through implementation.completed", () => {
+  const imported: FactoryLifecycleEvent = {
+    ...baseEvent("work_item.imported:file:smoke-planned", "file:smoke-planned"),
+    type: "work_item.imported",
+    data: {
+      source: "file",
+      title: "Lifecycle issue",
+      tracker: { source: "file", id: "smoke-planned" },
+      approvedPlanPath: "dev/plans/SMOKE.md",
+      approvedPlanCommit: "deadbeef",
+    },
+  };
+  const state = reduceFactoryLifecycleEvents([
+    imported,
+    {
+      ...baseEvent("implementation.completed:impl-file", "file:smoke-planned", "impl-file"),
+      runId: "impl-file",
+      type: "implementation.completed",
+      data: {
+        diffPath: "implementation/diff.patch",
+        changeReviewHandoffPath: "implementation/change-review-handoff.md",
+        reviewBase: "aaa111",
+        reviewHead: "refs/harness/factory/impl-file/implementation",
+        reviewCommitSha: "bbb222",
+      },
+    },
+  ]);
+
+  expect(state).toMatchObject({
+    factoryStage: "implementation-complete",
+    factoryRunId: "impl-file",
+    approvedPlanPath: "dev/plans/SMOKE.md",
+    approvedPlanCommit: "deadbeef",
+    lastEventId: "implementation.completed:impl-file",
+  });
+});
+
 test("implementation failed moves to implementation-failed and preserves plan retry fields", () => {
   const state = reduceFactoryLifecycleEvents([
     importedEvent("linear:FER-34", { tracker: { source: "linear", id: "FER-34" } }),
