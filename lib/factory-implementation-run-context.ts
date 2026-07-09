@@ -5,7 +5,7 @@ import type { FactoryRoleAgent } from "./config.ts";
 import { buildRunId } from "./context.ts";
 import { factoryRoleAgentMeta, type FactoryStationAgentMeta } from "./factory-agent-meta.ts";
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
-import type { FactoryWorkItem } from "./factory-schemas.ts";
+import type { FactoryWorkItem, FactoryWorkItemMetadata } from "./factory-schemas.ts";
 import {
   WORKFLOW_EVENTS_FILE,
   createCompositeEventSink,
@@ -69,6 +69,7 @@ export type FactoryImplementationRunMeta = {
   reviewBase?: string;
   reviewHead?: string;
   reviewCommitSha?: string;
+  factoryMetadata?: FactoryWorkItemMetadata;
 };
 
 export type FactoryImplementationRunContextOptions = {
@@ -266,6 +267,7 @@ function createFactoryImplementationRunContextInternal(
         workItem: options.workItem,
         mode: options.implementationInput.mode,
         implementerAgent,
+        factoryMetadata: options.implementationInput.metadata,
         includeEventsFile: !options.dryRun,
         includeLiveArtifacts: options.dryRun ? false : includeLiveArtifacts,
         error: input.error,
@@ -295,6 +297,7 @@ function buildMeta(input: {
   workItem: FactoryWorkItem;
   mode: FactoryImplementationInput["mode"];
   implementerAgent: FactoryImplementationAgentMeta;
+  factoryMetadata: FactoryWorkItemMetadata;
   includeEventsFile: boolean;
   includeLiveArtifacts: boolean;
   error?: string;
@@ -338,6 +341,7 @@ function buildMeta(input: {
       title: input.workItem.title,
     },
     implementerAgent: input.implementerAgent,
+    factoryMetadata: input.factoryMetadata,
     artifacts,
     summaryPath: join(input.runDir, "summary.md"),
     metaPath: join(input.runDir, "meta.json"),

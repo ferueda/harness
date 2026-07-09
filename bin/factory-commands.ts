@@ -430,7 +430,10 @@ export async function runFactoryImplementationWithLifecycle(input: {
         error: errorMessage(error),
       });
     } catch (terminalizationError) {
-      throw terminalizationError;
+      throw new AggregateError(
+        [error, terminalizationError],
+        `Failed to terminalize factory implementation failure: ${errorMessage(error)}; terminalization failed: ${errorMessage(terminalizationError)}`,
+      );
     }
     return failedMeta;
   }

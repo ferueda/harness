@@ -8,7 +8,9 @@ export type WorkspaceStatusMeta = {
   guard?: "unverified";
 };
 
-type WorkspaceStatusResult = { ok: true; value: string } | { ok: false; error: AgentRunResult };
+type WorkspaceStatusResult =
+  | { ok: true; value: string }
+  | { ok: false; error: Extract<AgentRunResult, { ok: false }> };
 
 // Tracked porcelain only (:!.harness); gitignored changes are not detected.
 export function readWorkspaceStatus(workspace: string): WorkspaceStatusResult {

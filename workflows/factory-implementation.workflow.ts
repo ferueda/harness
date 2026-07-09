@@ -90,6 +90,7 @@ async function runLive(
     reviewBase = readFactoryReviewBase(ctx.workspace);
     const logPath = join(ctx.runDir, "implementation/implementer.stream.jsonl");
     const role = ctx.implementerRole;
+    providerInvoked = true;
     const result = await ctx.implementerProvider().run({
       workspace: ctx.workspace,
       prompt,
@@ -100,7 +101,6 @@ async function runLive(
       workspaceGuard: "record",
       signal: ctx.signal,
     });
-    providerInvoked = true;
 
     const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
     if (!result.ok) {
@@ -279,7 +279,8 @@ function exportFailedLive(input: {
     ...(input.reviewBase ? { reviewBase: input.reviewBase } : {}),
   };
   const emptyPatchWithStatusChange =
-    after.porcelain !== before.porcelain && after.patch.length === 0;
+    !input.dirtyBefore && after.porcelain !== before.porcelain && after.patch.length === 0;
+  const diff = input.dirtyBefore ? "" : after.patch;
   const changeReviewHandoff = renderFactoryImplementationChangeReviewHandoff({
     mode: "live",
     status: "implementation-failed",
@@ -292,7 +293,7 @@ function exportFailedLive(input: {
       changeReviewHandoff: "implementation/change-review-handoff.md",
       ...(streamLogWritten ? { streamLog: "implementation/implementer.stream.jsonl" } : {}),
     },
-    changedFiles: after.changedFiles,
+    changedFiles: input.dirtyBefore ? [] : after.changedFiles,
     provider: {
       session: input.implementerSession,
       error: input.error,
@@ -300,14 +301,14 @@ function exportFailedLive(input: {
     warnings: {
       dirtyBefore: input.dirtyBefore ?? false,
       emptyPatchWithStatusChange,
-      patchTruncated: after.patchTruncated,
+      patchTruncated: input.dirtyBefore ? false : after.patchTruncated,
     },
   });
 
   input.ctx.writeLiveArtifacts({
     raw: input.raw ?? { error: input.error },
     workspaceStatus,
-    diff: after.patch,
+    diff,
     changeReviewHandoff,
   });
 

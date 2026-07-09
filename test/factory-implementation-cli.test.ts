@@ -10,7 +10,7 @@ import {
 } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import { deriveFactoryWorkItemKey, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
-import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
+import { parseFactoryWorkItemMetadata, type FactoryWorkItem } from "../lib/factory-schemas.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 
@@ -273,6 +273,71 @@ test("runFactoryImplementationWithLifecycle live success appends imported/starte
   });
 });
 
+test("runFactoryImplementationWithLifecycle terminal event uses tracker metadata key", async () => {
+  const workspace = createWorkspace();
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const workItem: FactoryWorkItem = {
+    ...directWorkItem(),
+    id: "file:local-1",
+    source: "file",
+    metadata: {
+      tracker: { source: "linear", id: "FER-47" },
+      factoryStage: "ready-to-implement",
+      factoryRoute: "ready-to-implement",
+      factoryNextAction: "implement-directly",
+    },
+  };
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem,
+    implementationInput: directInput(workItem),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          throw new Error("lifecycle helper should use injected runner");
+        },
+      };
+    },
+  });
+
+  const completed = baseLiveMeta(ctx, {
+    status: "implementation-complete",
+    reviewBase: "aaa111",
+    reviewHead: `refs/harness/factory/${ctx.runId}/implementation`,
+    reviewCommitSha: "bbb222",
+  });
+
+  await runFactoryImplementationWithLifecycle({
+    ctx,
+    factoryStateRoot,
+    itemFile: join(workspace, "work-item.json"),
+    async runImplementation() {
+      return completed;
+    },
+  });
+
+  const trackerEvents = readFactoryLifecycleEvents({
+    factoryStateRoot,
+    workItemKey: "linear:FER-47",
+  });
+  const fallbackEvents = readFactoryLifecycleEvents({
+    factoryStateRoot,
+    workItemKey: deriveFactoryWorkItemKey({ ...workItem, metadata: undefined }),
+  });
+  expect(trackerEvents.map((event) => event.type)).toEqual([
+    "work_item.imported",
+    "implementation.started",
+    "implementation.completed",
+  ]);
+  expect(fallbackEvents).toHaveLength(0);
+});
+
 test("runFactoryImplementationWithLifecycle live failed meta appends implementation.failed", async () => {
   const workspace = createWorkspace();
   const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
@@ -441,8 +506,9 @@ test("runFactoryImplementationWithLifecycle rethrows when failed meta export can
     },
   });
 
-  await expect(
-    runFactoryImplementationWithLifecycle({
+  let thrown: unknown;
+  try {
+    await runFactoryImplementationWithLifecycle({
       ctx,
       factoryStateRoot,
       async runImplementation() {
@@ -450,8 +516,14 @@ test("runFactoryImplementationWithLifecycle rethrows when failed meta export can
         writeFileSync(ctx.runDir, "not-a-directory\n", "utf8");
         throw new Error("workflow exploded after started");
       },
-    }),
-  ).rejects.toThrow();
+    });
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(AggregateError);
+  expect((thrown as AggregateError).message).toContain("workflow exploded after started");
+  expect((thrown as AggregateError).errors).toHaveLength(2);
 });
 
 test("runFactoryImplementationWithLifecycle throw path does not advertise unwritten live artifacts", async () => {
@@ -538,22 +610,18 @@ function plannedWorkItem(): FactoryWorkItem {
 }
 
 function directInput(workItem: FactoryWorkItem): FactoryImplementationInput {
+  const metadata = parseFactoryWorkItemMetadata(workItem.metadata);
   return {
     mode: "direct",
     source: "item-file",
     workItem,
-    metadata: {
-      tracker: { source: "linear", id: "FER-48" },
-      factoryStage: "ready-to-implement",
-      factoryRoute: "ready-to-implement",
-      factoryNextAction: "implement-directly",
-    },
+    metadata,
     sourceMaterial: {
       title: workItem.title,
       body: workItem.body,
       labels: workItem.labels,
       url: workItem.url,
-      tracker: { source: "linear", id: "FER-48" },
+      ...(metadata.tracker ? { tracker: metadata.tracker } : {}),
     },
   };
 }
@@ -602,6 +670,7 @@ function baseLiveMeta(
     startedAt: ctx.startedAt.toISOString(),
     durationMs: 1,
     eventsFile: "events.jsonl",
+    factoryMetadata: ctx.implementationInput.metadata,
     ...(overrides.error ? { error: overrides.error } : {}),
     ...(overrides.reviewBase ? { reviewBase: overrides.reviewBase } : {}),
     ...(overrides.reviewHead ? { reviewHead: overrides.reviewHead } : {}),

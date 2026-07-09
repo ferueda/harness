@@ -6,6 +6,8 @@ import { readWorkspaceStatus } from "./review-guard.ts";
 
 const UNTRACKED_PATCH_FILE_CAP = 500;
 const UNTRACKED_PATCH_BYTE_CAP = 5 * 1024 * 1024;
+const UNTRACKED_CHANGED_FILES_CAP = 5_000;
+const GIT_DIFF_MAX_BUFFER = 64 * 1024 * 1024;
 
 /** Test/diagnostic access to v1 untracked patch caps. */
 export const FACTORY_UNTRACKED_PATCH_CAPS = {
@@ -29,21 +31,12 @@ export type FactoryWorkspacePatchCapture = {
   truncatedUntrackedFileCount?: number;
 };
 
-export type FactoryWorkspaceChangeSnapshot = {
-  before: FactoryWorkspacePatchCapture;
-  after: FactoryWorkspacePatchCapture;
-  changed: boolean;
-};
-
 export function captureFactoryWorkspaceChanges(input: {
   workspace: string;
 }): FactoryWorkspacePatchCapture {
   const status = readWorkspaceStatus(input.workspace);
   if (!status.ok) {
-    const failure = status.error;
-    throw new FactoryWorkspaceChangesError(
-      failure.ok ? "Failed to inspect workspace status" : failure.error,
-    );
+    throw new FactoryWorkspaceChangesError(status.error.error);
   }
   return buildPatchCapture({
     workspace: input.workspace,
@@ -60,40 +53,85 @@ export function buildPatchCapture(input: {
   porcelain: string;
   caps?: { fileCap?: number; byteCap?: number };
 }): FactoryWorkspacePatchCapture {
-  const changedFiles = parsePorcelainChangedFiles(input.workspace, input.porcelain);
+  const fileCap = input.caps?.fileCap ?? UNTRACKED_PATCH_FILE_CAP;
+  const byteCap = input.caps?.byteCap ?? UNTRACKED_PATCH_BYTE_CAP;
+  const changes = collectChangedFiles({
+    workspace: input.workspace,
+    porcelain: input.porcelain,
+    untrackedFileCap: Math.max(fileCap, UNTRACKED_CHANGED_FILES_CAP),
+  });
+  const untrackedFilesForPatch = changes.untrackedFiles.slice(0, fileCap);
+  const skippedByPatchFileCap = changes.untrackedFiles.length - untrackedFilesForPatch.length;
+  const initialTruncatedUntrackedFileCount =
+    (changes.truncatedUntrackedFileCount ?? 0) + skippedByPatchFileCap;
   const { patch, patchTruncated, truncatedUntrackedFileCount } = buildPatchMaterial({
     workspace: input.workspace,
     porcelain: input.porcelain,
-    changedFiles,
-    fileCap: input.caps?.fileCap ?? UNTRACKED_PATCH_FILE_CAP,
-    byteCap: input.caps?.byteCap ?? UNTRACKED_PATCH_BYTE_CAP,
+    untrackedFiles: untrackedFilesForPatch,
+    fileCap,
+    byteCap,
+    initialTruncatedUntrackedFileCount:
+      initialTruncatedUntrackedFileCount > 0 ? initialTruncatedUntrackedFileCount : undefined,
   });
   return {
     porcelain: input.porcelain,
     patch,
     patchSha256: sha256Hex(patch),
-    changedFiles,
+    changedFiles: changes.changedFiles,
     patchTruncated,
     ...(truncatedUntrackedFileCount !== undefined ? { truncatedUntrackedFileCount } : {}),
   };
 }
 
-export function parsePorcelainChangedFiles(workspace: string, porcelain: string): string[] {
+type CollectedWorkspaceChanges = {
+  changedFiles: string[];
+  untrackedFiles: string[];
+  truncatedUntrackedFileCount?: number;
+};
+
+function collectChangedFiles(input: {
+  workspace: string;
+  porcelain: string;
+  untrackedFileCap?: number;
+}): CollectedWorkspaceChanges {
   const files = new Set<string>();
-  for (const record of parsePorcelainRecords(porcelain)) {
+  const untrackedFiles: string[] = [];
+  const untrackedFileCap = input.untrackedFileCap ?? Number.POSITIVE_INFINITY;
+  let truncatedUntrackedFileCount = 0;
+  for (const record of parsePorcelainRecords(input.porcelain)) {
     if (record.kind === "rename" || record.kind === "copy") {
-      addWorkspaceRelativePath(files, workspace, record.path);
+      addWorkspaceRelativePath(files, input.workspace, record.path);
+      continue;
+    }
+    if (record.kind === "untracked-file") {
+      const file = normalizeWorkspaceRelativePath(input.workspace, record.path);
+      if (!file) continue;
+      if (untrackedFiles.length >= untrackedFileCap) {
+        truncatedUntrackedFileCount += 1;
+        continue;
+      }
+      files.add(file);
+      untrackedFiles.push(file);
       continue;
     }
     if (record.kind === "untracked-dir") {
-      for (const file of enumerateUntrackedFiles(workspace, record.path)) {
+      const result = enumerateUntrackedFiles(input.workspace, record.path, {
+        limit: Math.max(untrackedFileCap - untrackedFiles.length, 0),
+      });
+      for (const file of result.files) {
         files.add(file);
+        untrackedFiles.push(file);
       }
+      truncatedUntrackedFileCount += result.truncatedFileCount;
       continue;
     }
-    addWorkspaceRelativePath(files, workspace, record.path);
+    addWorkspaceRelativePath(files, input.workspace, record.path);
   }
-  return [...files].sort((a, b) => a.localeCompare(b));
+  return {
+    changedFiles: [...files].sort((a, b) => a.localeCompare(b)),
+    untrackedFiles: untrackedFiles.sort((a, b) => a.localeCompare(b)),
+    ...(truncatedUntrackedFileCount > 0 ? { truncatedUntrackedFileCount } : {}),
+  };
 }
 
 type PorcelainRecord = {
@@ -141,9 +179,10 @@ function parsePorcelainRecords(porcelain: string): PorcelainRecord[] {
 function buildPatchMaterial(input: {
   workspace: string;
   porcelain: string;
-  changedFiles: string[];
+  untrackedFiles: string[];
   fileCap: number;
   byteCap: number;
+  initialTruncatedUntrackedFileCount?: number;
 }): {
   patch: string;
   patchTruncated: boolean;
@@ -164,31 +203,26 @@ function buildPatchMaterial(input: {
   ]);
   const trackedPatch = [unstaged, staged].filter((part) => part.length > 0).join("");
 
-  const untrackedPaths = parsePorcelainRecords(input.porcelain)
-    .filter((record) => record.kind === "untracked-file" || record.kind === "untracked-dir")
-    .flatMap((record) =>
-      record.kind === "untracked-dir"
-        ? enumerateUntrackedFiles(input.workspace, record.path)
-        : [normalizeWorkspaceRelativePath(input.workspace, record.path)].filter(
-            (path): path is string => path !== undefined,
-          ),
-    );
-
   let untrackedPatch = "";
   let appendedFiles = 0;
   let appendedBytes = 0;
-  let patchTruncated = false;
-  let truncatedUntrackedFileCount = 0;
+  let patchTruncated = input.initialTruncatedUntrackedFileCount !== undefined;
+  let truncatedUntrackedFileCount = input.initialTruncatedUntrackedFileCount ?? 0;
 
-  for (const relativePath of untrackedPaths) {
+  for (const relativePath of input.untrackedFiles) {
     if (appendedFiles >= input.fileCap || appendedBytes >= input.byteCap) {
       patchTruncated = true;
       truncatedUntrackedFileCount += 1;
       continue;
     }
     const absolutePath = resolve(input.workspace, relativePath);
-    const noIndexPatch = gitDiffNoIndex(input.workspace, absolutePath);
-    if (appendedBytes + noIndexPatch.length > input.byteCap && appendedFiles > 0) {
+    const noIndexPatch = gitDiffNoIndex(input.workspace, absolutePath, input.byteCap);
+    if (noIndexPatch === undefined) {
+      patchTruncated = true;
+      truncatedUntrackedFileCount += 1;
+      continue;
+    }
+    if (appendedBytes + noIndexPatch.length > input.byteCap) {
       patchTruncated = true;
       truncatedUntrackedFileCount += 1;
       continue;
@@ -198,7 +232,7 @@ function buildPatchMaterial(input: {
     appendedBytes += noIndexPatch.length;
     if (appendedFiles >= input.fileCap || appendedBytes >= input.byteCap) {
       // Cap may land exactly on this file; remaining paths still count as truncated.
-      const remaining = untrackedPaths.length - appendedFiles;
+      const remaining = input.untrackedFiles.length - appendedFiles;
       if (remaining > 0) {
         patchTruncated = true;
         truncatedUntrackedFileCount += remaining;
@@ -214,13 +248,19 @@ function buildPatchMaterial(input: {
   };
 }
 
-function enumerateUntrackedFiles(workspace: string, relativeDir: string): string[] {
+function enumerateUntrackedFiles(
+  workspace: string,
+  relativeDir: string,
+  options: { limit?: number } = {},
+): { files: string[]; truncatedFileCount: number } {
   const absoluteDir = resolve(workspace, relativeDir);
   const normalizedDir = normalizeWorkspaceRelativePath(workspace, relativeDir);
-  if (!normalizedDir || !existsSync(absoluteDir)) return [];
+  if (!normalizedDir || !existsSync(absoluteDir)) return { files: [], truncatedFileCount: 0 };
 
   const files: string[] = [];
   const stack = [absoluteDir];
+  let truncatedFileCount = 0;
+  const limit = options.limit ?? Number.POSITIVE_INFINITY;
   while (stack.length > 0) {
     const current = stack.pop();
     if (!current) continue;
@@ -240,11 +280,16 @@ function enumerateUntrackedFiles(workspace: string, relativeDir: string): string
         continue;
       }
       if (entry.isFile()) {
+        if (files.length >= limit) {
+          truncatedFileCount += 1;
+          stack.length = 0;
+          break;
+        }
         files.push(relativeChild.split(sep).join("/"));
       }
     }
   }
-  return files.sort((a, b) => a.localeCompare(b));
+  return { files: files.sort((a, b) => a.localeCompare(b)), truncatedFileCount };
 }
 
 function gitDiff(workspace: string, args: string[]): string {
@@ -252,6 +297,7 @@ function gitDiff(workspace: string, args: string[]): string {
     return execFileSync("git", args, {
       cwd: workspace,
       encoding: "utf8",
+      maxBuffer: GIT_DIFF_MAX_BUFFER,
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (error) {
@@ -261,7 +307,11 @@ function gitDiff(workspace: string, args: string[]): string {
   }
 }
 
-function gitDiffNoIndex(workspace: string, absolutePath: string): string {
+function gitDiffNoIndex(
+  workspace: string,
+  absolutePath: string,
+  byteCap: number,
+): string | undefined {
   try {
     return execFileSync(
       "git",
@@ -269,6 +319,7 @@ function gitDiffNoIndex(workspace: string, absolutePath: string): string {
       {
         cwd: workspace,
         encoding: "utf8",
+        maxBuffer: byteCap + 1024,
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -284,11 +335,16 @@ function gitDiffNoIndex(workspace: string, absolutePath: string): string {
     ) {
       return (error as { stdout: string }).stdout;
     }
+    if (isMaxBufferError(error)) return undefined;
     throw new FactoryWorkspaceChangesError(
       `Failed to capture untracked file diff for ${absolutePath}: ${errorMessage(error)}`,
       { cause: error },
     );
   }
+}
+
+function isMaxBufferError(error: unknown): boolean {
+  return error instanceof Error && /maxBuffer|ENOBUFS/i.test(error.message);
 }
 
 function addWorkspaceRelativePath(files: Set<string>, workspace: string, path: string): void {

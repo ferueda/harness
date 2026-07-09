@@ -450,6 +450,7 @@ function implementationMetaWorkItem(meta: FactoryImplementationRunMeta): Factory
     title: meta.workItem.title,
     body: "",
     labels: [],
+    metadata: meta.factoryMetadata,
   };
 }
 

@@ -18,7 +18,11 @@ import {
 } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
-import { buildPatchCapture } from "../lib/factory-workspace-changes.ts";
+import {
+  buildPatchCapture,
+  FACTORY_UNTRACKED_PATCH_CAPS,
+} from "../lib/factory-workspace-changes.ts";
+import { renderFactoryImplementationChangeReviewHandoff } from "../lib/prompts/factory-implementation.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
 
@@ -235,6 +239,25 @@ test("untracked directory patch capture truncates under file cap", async () => {
   expect(capture.patch).toContain("file-0.txt");
 });
 
+test("untracked patch capture truncates a single file over byte cap", async () => {
+  const workspace = createGitWorkspace();
+  writeFileSync(join(workspace, "large.txt"), `${"x".repeat(128)}\n`, "utf8");
+  const porcelain = execFileSync(
+    "git",
+    ["status", "--porcelain=v1", "-z", "--", ".", ":!.harness"],
+    { cwd: workspace, encoding: "utf8" },
+  );
+  const capture = buildPatchCapture({
+    workspace,
+    porcelain,
+    caps: { byteCap: 32 },
+  });
+  expect(capture.changedFiles).toEqual(["large.txt"]);
+  expect(capture.patchTruncated).toBe(true);
+  expect(capture.truncatedUntrackedFileCount).toBe(1);
+  expect(capture.patch).not.toContain("large.txt");
+});
+
 test("changedFiles is stable-sorted across multiple edits", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
@@ -313,6 +336,10 @@ test("pre-existing dirty tracked edit fails before provider and creates no revie
   expect(providerCalls).toBe(0);
   expect(meta.reviewHead).toBeUndefined();
   expect(reviewRefs(workspace)).toHaveLength(0);
+  expect(readFileSync(join(ctx.runDir, "implementation/diff.patch"), "utf8")).toBe("");
+  const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
+  expect(handoff).toContain("_No changed files recorded._");
+  expect(handoff).toContain("Pre-run porcelain status was non-empty");
 });
 
 test("pre-existing untracked file fails before provider", async () => {
@@ -534,6 +561,66 @@ test("provider ok:false maps to implementation-failed with artifacts", async () 
   expect(handoff).toContain("**Status:** blocked");
 });
 
+test("provider run rejection maps to implementation-failed with artifacts", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const ctx = createLiveCtx({
+    workspace,
+    runsDir,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          throw new Error("provider rejected");
+        },
+      };
+    },
+  });
+
+  const meta = await runFactoryImplementation(ctx);
+
+  expect(meta.status).toBe("implementation-failed");
+  expect(meta.error).toContain("provider rejected");
+  expect(existsSync(join(ctx.runDir, "implementation/implementer.raw.json"))).toBe(true);
+  expect(existsSync(join(ctx.runDir, "implementation/workspace-status.json"))).toBe(true);
+  expect(existsSync(join(ctx.runDir, "implementation/diff.patch"))).toBe(true);
+  expect(existsSync(join(ctx.runDir, "implementation/change-review-handoff.md"))).toBe(true);
+  const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
+  expect(handoff).toContain("**Status:** blocked");
+  expect(handoff).toContain("provider rejected");
+});
+
+test("provider aborted result maps to implementation-failed with blocked handoff", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const ctx = createLiveCtx({
+    workspace,
+    runsDir,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          return {
+            ok: false,
+            error: "Agent was aborted",
+            exitCode: 130,
+            aborted: true,
+            raw: { aborted: true },
+          };
+        },
+      };
+    },
+  });
+
+  const meta = await runFactoryImplementation(ctx);
+
+  expect(meta.status).toBe("implementation-failed");
+  expect(meta.error).toContain("Agent was aborted: factory-implementation");
+  const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
+  expect(handoff).toContain("**Status:** blocked");
+  expect(handoff).toContain("Agent was aborted");
+});
+
 test("provider ok:true without porcelain changes maps to implementation-failed", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
@@ -558,10 +645,112 @@ test("provider ok:true without porcelain changes maps to implementation-failed",
   expect(meta.reviewHead).toBeUndefined();
 });
 
+test("completed run warns when best-effort patch capture truncates", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const ctx = createLiveCtx({
+    workspace,
+    runsDir,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          mkdirSync(join(workspace, "bulk"), { recursive: true });
+          for (let i = 0; i <= FACTORY_UNTRACKED_PATCH_CAPS.fileCap; i += 1) {
+            writeFileSync(join(workspace, `bulk/file-${i}.txt`), `content-${i}\n`, "utf8");
+          }
+          return okImplementer();
+        },
+      };
+    },
+  });
+
+  const meta = await runFactoryImplementation(ctx);
+
+  expect(meta.status).toBe("implementation-complete");
+  const status = readJson(join(ctx.runDir, "implementation/workspace-status.json")) as {
+    patchTruncated: boolean;
+    truncatedUntrackedFileCount?: number;
+  };
+  expect(status.patchTruncated).toBe(true);
+  expect(status.truncatedUntrackedFileCount).toBeGreaterThan(0);
+  const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
+  expect(handoff).toContain("Best-effort workspace patch capture truncated");
+  expect(handoff).toContain("review-ref diff remains authoritative");
+  const diff = readFileSync(join(ctx.runDir, "implementation/diff.patch"), "utf8");
+  expect(diff).toContain(`bulk/file-${FACTORY_UNTRACKED_PATCH_CAPS.fileCap}.txt`);
+});
+
+test("workflow forwards Codex implementer policy fields", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const calls: AgentRunInput[] = [];
+  const ctx = createLiveCtx({
+    workspace,
+    runsDir,
+    implementerRole: {
+      agent: "codex",
+      model: "gpt-5.5",
+      sandboxMode: "workspace-write",
+      approvalPolicy: "on-request",
+      modelReasoningEffort: "xhigh",
+    },
+    agentProviderFactory() {
+      return {
+        name: "codex",
+        async run(input) {
+          calls.push(input);
+          writeFileSync(join(workspace, "tracked.txt"), "codex policy\n", "utf8");
+          return okImplementer();
+        },
+      };
+    },
+  });
+
+  const meta = await runFactoryImplementation(ctx);
+
+  expect(meta.status).toBe("implementation-complete");
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({
+    sandboxMode: "workspace-write",
+    approvalPolicy: "on-request",
+    modelReasoningEffort: "xhigh",
+  });
+});
+
+test("handoff warning text covers truncation and empty patch warnings", () => {
+  const handoff = renderFactoryImplementationChangeReviewHandoff({
+    mode: "live",
+    status: "implementation-failed",
+    implementationInput: directInput(),
+    implementerAgent: { name: "cursor", model: "composer-2.5" },
+    artifacts: {
+      diff: "implementation/diff.patch",
+      rawOutput: "implementation/implementer.raw.json",
+      workspaceStatus: "implementation/workspace-status.json",
+      changeReviewHandoff: "implementation/change-review-handoff.md",
+    },
+    changedFiles: ["large.txt"],
+    provider: { error: "failed after status changed" },
+    warnings: {
+      dirtyBefore: false,
+      emptyPatchWithStatusChange: true,
+      patchTruncated: true,
+    },
+  });
+
+  expect(handoff).toContain("Warnings:");
+  expect(handoff).toContain("`implementation/diff.patch` is empty while porcelain status changed");
+  expect(handoff).toContain("Best-effort workspace patch capture truncated");
+});
+
 function createLiveCtx(input: {
   workspace: string;
   runsDir: string;
   eventSink?: (event: WorkflowEvent) => void;
+  implementerRole?: Parameters<
+    typeof createFactoryImplementationRunContextForTest
+  >[0]["implementerRole"];
   agentProviderFactory: NonNullable<
     Parameters<typeof createFactoryImplementationRunContextForTest>[0]["agentProviderFactory"]
   >;
@@ -571,7 +760,7 @@ function createLiveCtx(input: {
     runsDir: input.runsDir,
     workItem: WORK_ITEM,
     implementationInput: directInput(),
-    implementerRole: { agent: "cursor", model: "composer-2.5" },
+    implementerRole: input.implementerRole ?? { agent: "cursor", model: "composer-2.5" },
     dryRun: false,
     maxRuntimeMs: 5_000,
     ...(input.eventSink ? { eventSink: input.eventSink } : {}),

@@ -162,7 +162,7 @@ export function renderFactoryImplementationChangeReviewHandoff(
   }
   if (input.warnings.patchTruncated) {
     warnings.push(
-      "- Patch capture truncated untracked-directory expansion under the v1 file/byte cap; inspect `workspace-status.json` for truncation details.",
+      "- Best-effort workspace patch capture truncated untracked expansion under the v1 file/byte cap; inspect `workspace-status.json` for truncation details. On completed runs, the review-ref diff remains authoritative.",
     );
   }
 

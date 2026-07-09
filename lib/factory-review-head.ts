@@ -22,6 +22,7 @@ const HARNESS_GIT_IDENTITY = {
   GIT_COMMITTER_NAME: "Harness Factory",
   GIT_COMMITTER_EMAIL: "factory@harness.local",
 } as const;
+const GIT_DIFF_MAX_BUFFER = 64 * 1024 * 1024;
 
 export function createFactoryReviewHead(input: {
   workspace: string;
@@ -96,6 +97,7 @@ function git(workspace: string, args: string[], env: NodeJS.ProcessEnv): string 
     cwd: workspace,
     encoding: "utf8",
     env,
+    maxBuffer: GIT_DIFF_MAX_BUFFER,
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
