@@ -232,11 +232,11 @@ test("harness models prints provider model defaults", () => {
   const result = runHarness(["models"]);
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
-  expect(output.cursor.defaultModel).toBe("composer-2.5");
+  expect(output.cursor.defaultModel).toBe("grok-4.5");
   expect(output.cursor.models).toEqual([...CURSOR_SDK_MODEL_MODES]);
   expect(output.cursor.modelsNote).toMatch(/Fixed Cursor SDK review modes/);
   expect(output.cursor.liveListCommand).toBeUndefined();
-  expect(output.codex.defaultModel).toBe("gpt-5.5");
+  expect(output.codex.defaultModel).toBe("gpt-5.6-sol");
   expect(output.codex.defaultReasoningEffort).toBe("high");
   expect(output.codex.reasoningEfforts).toContain("xhigh");
 });
@@ -1007,7 +1007,7 @@ test("harness run change-review ignores Codex-only policy config for Cursor", ()
 
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
-  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5" });
+  expect(output.agent).toMatchObject({ name: "cursor", model: "grok-4.5" });
 });
 test("harness run change-review lets Cursor override Codex policy config", () => {
   const workspace = createGitWorkspace();
@@ -1033,7 +1033,7 @@ test("harness run change-review lets Cursor override Codex policy config", () =>
 
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
-  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5" });
+  expect(output.agent).toMatchObject({ name: "cursor", model: "grok-4.5" });
 });
 test("harness run change-review rejects invalid steps", () => {
   const workspace = createGitWorkspace();
@@ -1249,7 +1249,7 @@ test("harness run change-review dry-run works through the CLI", () => {
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
-  expect(output.agent).toMatchObject({ name: "cursor", model: "composer-2.5" });
+  expect(output.agent).toMatchObject({ name: "cursor", model: "grok-4.5" });
   expect(output.workflow).toBe("change-review");
   expect(output.requestedSteps).toEqual(["implementation", "quality", "simplify"]);
   expect(output.partial).toBe(false);
@@ -2550,7 +2550,7 @@ test("harness run change-review dry-run accepts Codex provider options", () => {
   expect(output.status).toBe("dry_run");
   expect(output.agent).toMatchObject({
     name: "codex",
-    model: "gpt-5.5",
+    model: "gpt-5.6-sol",
     sandboxMode: "workspace-write",
     approvalPolicy: "on-request",
     modelReasoningEffort: "medium",
@@ -2574,7 +2574,7 @@ test("harness run change-review dry-run reads Codex provider from harness.json",
   const output = JSON.parse(result.stdout);
   expect(output.agent).toMatchObject({
     name: "codex",
-    model: "gpt-5.5",
+    model: "gpt-5.6-sol",
     sandboxMode: "read-only",
     approvalPolicy: "never",
     modelReasoningEffort: "high",

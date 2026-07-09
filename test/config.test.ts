@@ -116,26 +116,26 @@ test("resolveHarnessOptions reads provider-scoped Cursor config", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeFileSync(
     join(workspace, "harness.json"),
-    '{ "defaultAgent": "cursor", "agents": { "cursor": { "model": "gpt-5.5" } } }\n',
+    '{ "defaultAgent": "cursor", "agents": { "cursor": { "model": "gpt-5.6-sol-high" } } }\n',
     "utf8",
   );
   const options = resolveHarnessOptions({ workspace }, "/");
   expect(options.agentProvider).toBe("cursor");
-  expect(options.model).toBe("gpt-5.5");
+  expect(options.model).toBe("gpt-5.6-sol-high");
   expect(options.modelReasoningEffort).toBeUndefined();
 });
 test("resolveHarnessOptions applies provider model defaults", () => {
   const cursorWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   const cursorOptions = resolveHarnessOptions({ workspace: cursorWorkspace }, "/");
   expect(cursorOptions.agentProvider).toBe("cursor");
-  expect(cursorOptions.model).toBe("composer-2.5");
+  expect(cursorOptions.model).toBe("grok-4.5");
   expect(cursorOptions.modelReasoningEffort).toBeUndefined();
 
   const codexWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeFileSync(join(codexWorkspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
   const codexOptions = resolveHarnessOptions({ workspace: codexWorkspace }, "/");
   expect(codexOptions.agentProvider).toBe("codex");
-  expect(codexOptions.model).toBe("gpt-5.5");
+  expect(codexOptions.model).toBe("gpt-5.6-sol");
   expect(codexOptions.modelReasoningEffort).toBe("high");
 });
 
@@ -163,7 +163,7 @@ test("resolveFactoryRoleAgent resolves absent factory through defaultAgent then 
   ).toMatchObject({
     workspace: cursorWorkspace,
     agent: "cursor",
-    model: "composer-2.5",
+    model: "grok-4.5",
   });
 });
 
@@ -385,7 +385,7 @@ test("resolveFactoryRoleAgent resolves missing role entries through fallback", (
     resolveFactoryRoleAgent({ workspace, station: "planning", role: "planner" }, "/"),
   ).toMatchObject({
     agent: "cursor",
-    model: "composer-2.5",
+    model: "grok-4.5",
   });
 });
 
@@ -452,7 +452,7 @@ test("resolveFactoryRoleAgent reads configured implementation Cursor role", () =
     factory: {
       implementation: {
         roles: {
-          implementer: { agent: "cursor", model: "gpt-5.5" },
+          implementer: { agent: "cursor", model: "gpt-5.6-sol-high" },
         },
       },
     },
@@ -462,7 +462,7 @@ test("resolveFactoryRoleAgent reads configured implementation Cursor role", () =
     resolveFactoryRoleAgent({ workspace, station: "implementation", role: "implementer" }, "/"),
   ).toMatchObject({
     agent: "cursor",
-    model: "gpt-5.5",
+    model: "gpt-5.6-sol-high",
   });
 });
 
@@ -599,7 +599,7 @@ test("resolveHarnessOptions rejects legacy Cursor runtime cli config", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeFileSync(
     join(workspace, "harness.json"),
-    '{ "defaultAgent": "cursor", "agents": { "cursor": { "runtime": "cli", "model": "gpt-5.5" } } }\n',
+    '{ "defaultAgent": "cursor", "agents": { "cursor": { "runtime": "cli", "model": "gpt-5.6-sol-high" } } }\n',
     "utf8",
   );
   expect(() => resolveHarnessOptions({ workspace }, "/")).toThrow(
