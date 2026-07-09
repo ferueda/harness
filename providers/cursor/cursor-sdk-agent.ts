@@ -55,6 +55,11 @@ const CURSOR_SDK_MODEL_PARAMS = {
     { id: "reasoning", value: "high" },
     { id: "fast", value: "false" },
   ],
+  // Cursor catalog default is effort=high + fast=true; harness keeps non-fast high like Opus/GPT.
+  "grok-4.5": [
+    { id: "effort", value: "high" },
+    { id: "fast", value: "false" },
+  ],
 } satisfies Record<CursorSdkModelMode, CursorSdkModelSelection["params"]>;
 
 export function createCursorSdkAgent(options: CursorSdkAgentFactoryOptions = {}): Agent {
