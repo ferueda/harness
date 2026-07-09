@@ -487,7 +487,8 @@ LINEAR_API_KEY=... harness factory planning publish \
 ```
 
 If an already-open PR is not linked, repair as an operator — rename the branch
-and/or edit the title (for example `gh pr edit <number> --title "feat: ENG-123 short description"`).
+and/or edit the title to match the PR kind (for example
+`gh pr edit <number> --title "plan: ENG-123 short description"` for a plan PR).
 Do not add or expect a harness repair command.
 
 `planning publish` records the PR URL and may apply Linear status/comments; it
