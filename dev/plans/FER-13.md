@@ -59,17 +59,17 @@ commands.
 - `rg -n "pr create|createPull|pulls\\.create|openPr" bin lib` finds no harness
   code that opens GitHub PRs. PR creation is operator/chief responsibility via
   `gh pr create` or equivalent.
-- `docs/contributing/factory.md:425-434` documents `harness factory planning
+- `docs/contributing/factory.md:445-466` documents `harness factory planning
   publish` and `mark-plan-merged` as local metadata/lifecycle writers that do
   not open PRs or inspect GitHub merge state.
-- `docs/contributing/factory.md:520-523` states implementation non-goals include
-  no PR creation.
-- `docs/contributing/architecture.md:158` and `:345` state factory stations do
-  not open PRs.
-- `skills/factory-operator/SKILL.md:313-322` tells operators to record plan PR
+- `docs/contributing/factory.md:540` states implementation non-goals include no
+  PR creation.
+- `docs/contributing/architecture.md:159`, `:215`, and `:353` state factory
+  stations / publication do not open PRs.
+- `skills/factory-operator/SKILL.md:323-335` tells operators to record plan PR
   URLs with `planning publish`; it does not prescribe branch/title naming for
   Linear linking.
-- `bin/factory-commands.ts:255-278` registers `harness factory planning publish`
+- `bin/factory-commands.ts:372-391` registers `harness factory planning publish`
   with `--run-dir`, `--pr-url`, `--linear-issue`, and `--apply` only. No
   `--link-linear-pr`.
 - `lib/factory-linear-planning-handoff.ts:141-152` posts a Linear comment with
@@ -79,6 +79,10 @@ commands.
   `GITHUB_TOKEN`, and PR body upsert. Plan review `20260709-070039-a291b3`
   returned `needs_changes`. That approach is **superseded** by this docs-only
   convention plan.
+- Read `docs/project-intent.md` before editing durable docs: keep examples
+  generic (`owner/repo`, `ENG-123` / `TEAM-123`); separate current operator
+  practice from planned harness adapters; do not describe GitHub mutation as
+  current harness station behavior.
 
 ### External behavior verified
 
@@ -132,14 +136,16 @@ commands.
 
 ## Design
 
-Rely on Linear's native GitHub integration. Operators ensure **both** branch and
-PR title include the normalized issue id (e.g. `FER-13`) before or when opening
-the PR.
+Rely on Linear's native GitHub integration. Linear links a PR when **any** of
+branch name, PR title, or magic-word + issue id is present. This plan's house
+rule is stricter for reliability: operators should put the normalized issue id
+(e.g. `FER-13`) in **both** branch and PR title before or when opening the PR.
+Title-only repair via `gh pr edit` is still enough for Linear to link.
 
 ### Plan PR convention
 
 - **Branch**: `plan/<ISSUE>-<short-slug>` — example: `plan/FER-13-link-prs`.
-- **Title**: include `<ISSUE>` — example: `plan: link PRs to Linear via naming`.
+- **Title**: include `<ISSUE>` — example: `plan: FER-13 link PRs via native Linear naming`.
 - **Body**: optional. Prefer **no** closing magic words (`Fixes`, `Closes`,
   `Implements`, etc.) on plan PRs. A bare issue id in title or branch is enough
   for linking.
@@ -204,8 +210,9 @@ plan assumes docs-only.
 
 ### Step 2: Add Linear PR linking section to factory docs
 
-In `docs/contributing/factory.md`, add a **Linear PR linking** subsection near
-the manual publication commands (`~425-449`). Cover:
+In `docs/contributing/factory.md`, add a **Linear PR linking** subsection
+immediately adjacent to the **Manual publication commands** block (around
+`planning publish` / `mark-plan-merged` examples near lines 445–466). Cover:
 
 - Native linking via branch name and/or PR title (cite Linear docs URL).
 - Plan PR branch/title convention (`plan/<ISSUE>-...`, title contains issue id).
@@ -251,8 +258,11 @@ rg -n "link.*PR|GitHub.*Linear|PR.*attach" docs README.md skills/factory-operato
 If `README.md` or `docs/contributing/architecture.md` factory paragraphs
 contradict native linking (e.g. imply a future GitHub adapter is required for
 linking), add at most one sentence each pointing to the new factory.md section.
-Do not expand scope into `script-command-surface.md` or `setup-manifest.md`
-unless a direct contradiction exists.
+If touching README's "GitHub, Jira, and Inngest remain future layers" wording,
+clarify that means **harness adapters**, while Linear-native PR linking via
+branch/title is current operator practice. Do not expand scope into
+`script-command-surface.md` or `setup-manifest.md` unless a direct contradiction
+exists.
 
 **Verify**: no doc claims harness PATCHes PR bodies or requires `GITHUB_TOKEN`
 for factory PR linking.
