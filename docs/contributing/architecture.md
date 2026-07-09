@@ -115,8 +115,9 @@ canonical local machine state; `.harness/factory/state/*.json` is a
 rebuildable projection.
 
 `lib/factory-lifecycle-writes.ts` owns lifecycle event construction for current
-operator station commands. Live triage, planning, plan publication, and
-plan-merge paths append lifecycle events; dry-run station commands do not.
+operator station commands. Live triage, planning, plan publication, plan-merge,
+and implementation paths append lifecycle events; dry-run station commands do
+not.
 
 `lib/factory-planning-input.ts` owns planning-specific work-item input guards.
 Linear-backed planning input accepts issues mapped to `ready-to-plan`,
@@ -145,6 +146,13 @@ validates approved-plan handoff metadata, and treats Linear
 `lib/factory-implementation-run-context.ts` owns the implementation station run
 directory, context artifacts, prompt and change-review handoff artifacts,
 provider raw/status/diff outputs, summary, and metadata.
+`lib/factory-workspace-changes.ts` owns porcelain status parsing, patch
+material capture (including untracked no-index diffs and truncation caps), and
+changed-file lists for live implementation.
+`lib/factory-review-head.ts` owns harness-owned review-ref materialization via
+a temporary index and `commit-tree`, writing
+`refs/harness/factory/<run-id>/implementation` without moving `HEAD` or using
+the real index.
 `harness factory implementation run` supports dry-run or one live provider pass
 plus harness-owned review-ref materialization. It does not mutate Linear, create
 human branches, or open PRs.
