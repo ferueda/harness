@@ -15,6 +15,28 @@ planning station for a `ready-to-plan` item, prepare implementation dry-run
 artifacts for a `ready-to-implement` item, or understand factory artifacts and
 statuses.
 
+## Waiting For Station Runs
+
+Factory triage and planning stay synchronous. Prefer one Shell invocation with
+a long enough `block_until_ms`, then wait for process exit. Do **not** poll with
+repeated AwaitShell or status checks while the command is running.
+
+After run context creation, stations emit exactly one always-on stderr JSON
+progress line so operators can learn `runDir` before exit:
+
+```json
+{"harnessFactory":"run-started","station":"triage","runId":"...","runDir":"...","workspace":"..."}
+```
+
+`station` is `triage`, `planning`, or `implementation`. This line is CLI
+progress only — not a `WorkflowEvent`, not written to `events.jsonl`, and not
+lifecycle/Linear source of truth. Final stdout JSON contracts stay unchanged.
+
+Optional: background the command only when needed, parse that one progress
+line, then wait once for completion. After exit, trust stdout JSON and read
+`summary.md` / `meta.json` for narrative. Do not treat mid-run `runDir`
+contents as terminal success.
+
 ## Command Model
 
 Station commands:
