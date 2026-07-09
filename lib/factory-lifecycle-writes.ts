@@ -26,7 +26,8 @@ export function appendWorkItemImportedEvent(
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
   const parsedMetadata = FactoryWorkItemMetadataSchema.safeParse(input.workItem.metadata ?? {});
-  const tracker = parsedMetadata.success ? parsedMetadata.data.tracker : undefined;
+  const metadata = parsedMetadata.success ? parsedMetadata.data : undefined;
+  const tracker = metadata?.tracker;
   return appendFactoryLifecycleEvent({
     factoryStateRoot: resolveFactoryStateRoot(input),
     event: {
@@ -43,6 +44,11 @@ export function appendWorkItemImportedEvent(
         ...(tracker ? { tracker } : {}),
         ...(input.workItem.url ? { url: input.workItem.url } : {}),
         ...(input.workItem.labels.length > 0 ? { labels: input.workItem.labels } : {}),
+        ...(metadata?.approvedPlanPath ? { approvedPlanPath: metadata.approvedPlanPath } : {}),
+        ...(metadata?.approvedPlanPrUrl ? { approvedPlanPrUrl: metadata.approvedPlanPrUrl } : {}),
+        ...(metadata?.approvedPlanCommit
+          ? { approvedPlanCommit: metadata.approvedPlanCommit }
+          : {}),
       },
     },
   });
