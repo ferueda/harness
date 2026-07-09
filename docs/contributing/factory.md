@@ -34,6 +34,24 @@ harness factory implementation run --workspace /path/to/repo --item-file work-it
 There is no batch dispatch command. Run an explicit station for an explicit
 work item while this surface is still local-first.
 
+Triage, planning, and implementation station commands emit one always-on
+stderr JSON progress line after run context creation and before provider work
+or Linear `--apply` started mutations:
+
+```json
+{
+  "harnessFactory": "run-started",
+  "station": "triage",
+  "runId": "...",
+  "runDir": "...",
+  "workspace": "..."
+}
+```
+
+The line is CLI progress only so operators can learn `runDir` early; it is not
+a `WorkflowEvent` and is not appended to `events.jsonl`. Final stdout JSON
+stays the station contract.
+
 ## Work Items
 
 Local work items are JSON files shaped as `FactoryWorkItem`:

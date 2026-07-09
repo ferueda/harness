@@ -32,6 +32,7 @@ import {
   LINEAR_SETTINGS,
   LINEAR_WORK_ITEM,
 } from "./factory-linear-test-helpers.ts";
+import { parseFactoryRunStartedProgress } from "./factory-run-started-test-helpers.ts";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HARNESS_BIN = join(REPO_ROOT, "bin/harness.ts");
 
@@ -1671,6 +1672,14 @@ test("harness factory triage dry-run handles one item file", () => {
   expect(existsSync(join(inboxDir, "001-item.json"))).toBe(true);
   expect(existsSync(join(inboxDir, "processed"))).toBe(false);
   expect(existsSync(join(workspace, ".harness/factory"))).toBe(false);
+  expect(parseFactoryRunStartedProgress(result.stderr)).toEqual({
+    harnessFactory: "run-started",
+    station: "triage",
+    runId: output.runId,
+    runDir: output.runDir,
+    workspace,
+  });
+  expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
 });
 
 test("harness factory triage honors factory triager role config", () => {
@@ -1966,6 +1975,13 @@ test("harness factory planning dry-run works in non-git workspaces", () => {
   expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain(
     '"workflow": "factory-planning"',
   );
+  expect(parseFactoryRunStartedProgress(result.stderr)).toEqual({
+    harnessFactory: "run-started",
+    station: "planning",
+    runId: output.runId,
+    runDir: output.runDir,
+    workspace,
+  });
 });
 
 test("harness factory planning requires one input source", () => {

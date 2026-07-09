@@ -11,6 +11,7 @@ import {
 import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import { deriveFactoryWorkItemKey, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import { parseFactoryWorkItemMetadata, type FactoryWorkItem } from "../lib/factory-schemas.ts";
+import { parseFactoryRunStartedProgress } from "./factory-run-started-test-helpers.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 
@@ -42,6 +43,14 @@ test("implementation item-file direct dry-run writes artifacts without lifecycle
   expect(existsSync(join(output.runDir, "implementation/prompt.md"))).toBe(true);
   expect(existsSync(join(output.runDir, "implementation/change-review-handoff.md"))).toBe(true);
   expect(existsSync(join(workspace, ".harness/factory"))).toBe(false);
+  expect(parseFactoryRunStartedProgress(result.stderr)).toEqual({
+    harnessFactory: "run-started",
+    station: "implementation",
+    runId: output.runId,
+    runDir: output.runDir,
+    workspace,
+  });
+  expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
 });
 
 test("implementation item-file planned dry-run writes plan reference", () => {
