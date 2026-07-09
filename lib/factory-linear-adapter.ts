@@ -530,6 +530,7 @@ async function validateStatusMap(
   const team = await fetchTeam(client, settings.teamKey);
   const states = await team.states({ first: STATUS_FETCH_LIMIT });
   const existingNames = new Set(states.nodes.map((state) => normalizeName(state.name)));
+  // Optional terminal keys may be absent; only defined names must exist on the team.
   const missing = unique(
     Object.values(settings.statuses).filter((statusName): statusName is string =>
       Boolean(statusName),
