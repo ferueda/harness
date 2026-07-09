@@ -1,6 +1,6 @@
 ---
 name: factory-operator
-description: Operate the current harness factory flow for one local work item through status, triage, or planning stations.
+description: Operate the current harness factory flow for one local work item through status, triage, planning, or implementation stations.
 ---
 
 # Factory Operator
@@ -11,8 +11,9 @@ Operate the current local harness factory one work item at a time.
 
 Use this skill when the user wants to inspect factory inbox state, triage a
 factory work item, fetch a Linear issue as a factory work item, run the
-planning station for a `ready-to-plan` item, or understand factory artifacts
-and statuses.
+planning station for a `ready-to-plan` item, prepare implementation dry-run
+artifacts for a `ready-to-implement` item, or understand factory artifacts and
+statuses.
 
 ## Command Model
 
