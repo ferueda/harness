@@ -124,6 +124,10 @@ Minimal shape:
 }
 ```
 
+Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
+`factory.linear.statuses` when operator list/move tools need those board
+states; stations do not require them.
+
 - `station`: lifecycle step such as `triage`, `planning`, or `implementation`.
 - `role`: job inside a station such as `triager`, `planner`, `reviewer`, or
   `implementer`.
@@ -135,11 +139,13 @@ Use Linear list for read-only backlog discovery by configured status key:
 
 ```bash
 LINEAR_API_KEY=... harness factory linear list --status intake --workspace /path/to/repo
+LINEAR_API_KEY=... harness factory linear list --status done --workspace /path/to/repo
 ```
 
 List validates configured Linear statuses and project scope, then prints
 lightweight issue summaries. It does not fetch descriptions, labels, comments,
-or mutate Linear.
+or mutate Linear. Terminal keys such as `done` work only when mapped in
+`factory.linear.statuses`.
 
 Use Linear fetch to convert one issue into `FactoryWorkItem` JSON:
 

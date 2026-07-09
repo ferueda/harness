@@ -58,6 +58,9 @@ const LINEAR_STATUSES = {
   planning: "Planning",
   triageFailed: "Triage Failed",
   planningFailed: "Planning Failed",
+  done: "Done",
+  canceled: "Canceled",
+  duplicate: "Duplicate",
 };
 
 test("findHarnessConfig walks up from nested directories", () => {
@@ -300,6 +303,25 @@ test("resolveFactoryLinearSettings keeps projectId optional", () => {
     workspace,
     teamKey: "ENG",
     statuses: LINEAR_STATUSES,
+  });
+});
+
+test("resolveFactoryLinearSettings allows omitting optional terminal statuses", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  const { done: _done, canceled: _canceled, duplicate: _duplicate, ...required } = LINEAR_STATUSES;
+  writeHarnessJson(workspace, {
+    factory: {
+      linear: {
+        teamKey: "ENG",
+        statuses: required,
+      },
+    },
+  });
+
+  expect(resolveFactoryLinearSettings({ workspace }, "/")).toEqual({
+    workspace,
+    teamKey: "ENG",
+    statuses: required,
   });
 });
 
