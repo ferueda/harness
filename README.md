@@ -97,7 +97,7 @@ harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-i
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
-harness factory implementation run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
+harness factory implementation run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
 ```
 
 The item file is JSON with `id`, `source`, `title`, and `body`. `status` is
@@ -130,9 +130,10 @@ Linear through `Triaging`; planning moves eligible planning statuses to
 Publication commands are local-only unless `--apply` is present; apply mode
 moves Linear to `Plan Needs Review` after the plan PR is registered and to
 `Ready to Implement` after the merge commit is recorded.
-Implementation is currently dry-run only. It writes implementation prompt and
-change-review handoff artifacts without invoking a provider, mutating Linear, or
-starting branch/PR automation.
+Implementation dry-run prepares prompt/handoff artifacts without a provider.
+Live implementation runs one implementer, writes candidate changes plus an
+internal review ref, and stops before change-review; it does not mutate Linear
+or create a human branch/PR/commit.
 GitHub, Jira, and Inngest remain future layers. For the full operator model, read
 [docs/contributing/factory.md](docs/contributing/factory.md).
 
