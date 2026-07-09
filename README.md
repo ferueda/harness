@@ -136,8 +136,11 @@ Implementation dry-run prepares prompt/handoff artifacts without a provider.
 Live implementation runs one implementer, writes candidate changes plus an
 internal review ref, and stops before change-review; it does not mutate Linear
 or create a human branch/PR/commit.
-GitHub, Jira, and Inngest remain future layers. For the full operator model, read
-[docs/contributing/factory.md](docs/contributing/factory.md).
+Harness adapters for GitHub, Jira, and Inngest remain future layers. Linking
+factory PRs to Linear issues via branch/title naming is current operator
+practice (see Linear PR linking in
+[docs/contributing/factory.md](docs/contributing/factory.md)). For the full
+operator model, read that same doc.
 
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).
