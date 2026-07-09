@@ -38,6 +38,10 @@ const FactoryLinearStatusesSchema = z
     planning: z.string().min(1),
     triageFailed: z.string().min(1),
     planningFailed: z.string().min(1),
+    /** Optional terminal board statuses for operator moves / list filters. */
+    done: z.string().min(1).optional(),
+    canceled: z.string().min(1).optional(),
+    duplicate: z.string().min(1).optional(),
   })
   .strict();
 

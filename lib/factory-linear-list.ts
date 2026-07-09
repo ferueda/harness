@@ -96,7 +96,13 @@ export async function listLinearWorkItemsByStatus(
   }
 
   const validation = await deps.validateStatusMap(client, settings);
-  const statusNames = input.statusKeys.map((key) => settings.statuses[key]);
+  const statusNames = input.statusKeys.map((key) => {
+    const statusName = settings.statuses[key];
+    if (!statusName) {
+      throw new Error(`factory.linear.statuses.${key} is not configured.`);
+    }
+    return statusName;
+  });
   const issues: LinearIssueSummary[] = [];
   let fetchedPages = 0;
   let after = input.after;
