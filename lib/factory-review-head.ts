@@ -104,13 +104,14 @@ function assertReviewTreeOmitsHarness(
   treeSha: string,
   env: NodeJS.ProcessEnv,
 ): void {
-  const treePaths = git(workspace, ["ls-tree", "-r", "--name-only", treeSha], env)
+  const harnessPaths = git(
+    workspace,
+    ["ls-tree", "-r", "--name-only", treeSha, "--", ".harness"],
+    env,
+  )
     .split("\n")
     .map((path) => path.trim())
     .filter(Boolean);
-  const harnessPaths = treePaths.filter(
-    (path) => path === ".harness" || path.startsWith(".harness/"),
-  );
   if (harnessPaths.length === 0) return;
 
   const sample = harnessPaths.slice(0, 5).join(", ");
