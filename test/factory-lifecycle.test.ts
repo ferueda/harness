@@ -15,6 +15,11 @@ import {
   workItemKeyToFilename,
   type FactoryLifecycleEvent,
 } from "../lib/factory-lifecycle.ts";
+import {
+  appendImplementationStartedEvent,
+  appendImplementationTerminalEvent,
+} from "../lib/factory-lifecycle-writes.ts";
+import type { FactoryImplementationRunMeta } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 
 const OCCURRED_AT = "2026-07-08T12:00:00.000Z";
@@ -137,14 +142,73 @@ test("started-only events do not change durable stage or factory run id", () => 
       type: "planning.started",
       data: { linearIssue: "FER-34" },
     },
+    {
+      ...baseEvent("implementation.started:run-3", "linear:FER-34"),
+      type: "implementation.started",
+      data: { linearIssue: "FER-34" },
+    },
   ]);
 
   expect(state).toMatchObject({
     workItemKey: "linear:FER-34",
-    lastEventId: "planning.started:run-2",
+    lastEventId: "implementation.started:run-3",
   });
   expect(state?.factoryStage).toBeUndefined();
   expect(state?.factoryRunId).toBeUndefined();
+});
+
+test("implementation completed moves to implementation-complete and preserves plan retry fields", () => {
+  const state = reduceFactoryLifecycleEvents([
+    importedEvent("linear:FER-34", { tracker: { source: "linear", id: "FER-34" } }),
+    planningCompletedEvent("linear:FER-34", "plan-approved"),
+    planPrOpenedEvent("linear:FER-34", "https://github.com/owner/repo/pull/1"),
+    planPrMergedEvent("linear:FER-34", "https://github.com/owner/repo/pull/1", "abc123"),
+    {
+      ...baseEvent("implementation.completed:impl-1", "linear:FER-34", "impl-1"),
+      runId: "impl-1",
+      type: "implementation.completed",
+      data: {
+        diffPath: "implementation/diff.patch",
+        changeReviewHandoffPath: "implementation/change-review-handoff.md",
+        reviewBase: "aaa111",
+        reviewHead: "refs/harness/factory/impl-1/implementation",
+        reviewCommitSha: "bbb222",
+      },
+    },
+  ]);
+
+  expect(state).toMatchObject({
+    factoryStage: "implementation-complete",
+    factoryRunId: "impl-1",
+    approvedPlanPath: "dev/plans/FER-34.md",
+    approvedPlanCommit: "abc123",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/1",
+    lastEventId: "implementation.completed:impl-1",
+  });
+});
+
+test("implementation failed moves to implementation-failed and preserves plan retry fields", () => {
+  const state = reduceFactoryLifecycleEvents([
+    importedEvent("linear:FER-34", { tracker: { source: "linear", id: "FER-34" } }),
+    planningCompletedEvent("linear:FER-34", "plan-approved"),
+    planPrOpenedEvent("linear:FER-34", "https://github.com/owner/repo/pull/1"),
+    planPrMergedEvent("linear:FER-34", "https://github.com/owner/repo/pull/1", "abc123"),
+    {
+      ...baseEvent("implementation.failed:impl-1", "linear:FER-34", "impl-1"),
+      runId: "impl-1",
+      type: "implementation.failed",
+      data: { error: "Implementer failed" },
+    },
+  ]);
+
+  expect(state).toMatchObject({
+    factoryStage: "implementation-failed",
+    factoryRunId: "impl-1",
+    approvedPlanPath: "dev/plans/FER-34.md",
+    approvedPlanCommit: "abc123",
+    approvedPlanPrUrl: "https://github.com/owner/repo/pull/1",
+    lastEventId: "implementation.failed:impl-1",
+  });
 });
 
 test("triage failed records run data without replacing prior durable route", () => {
@@ -384,6 +448,167 @@ test("factory state root is independent from execution workspace", () => {
     readFactoryLifecycleEvents({ factoryStateRoot: root, workItemKey: "linear:FER-34" })[0],
   ).toMatchObject({ execution: { workspace } });
 });
+
+test("appendImplementationStartedEvent writes audit-only started event", () => {
+  const root = tempRoot();
+  const workspace = mkdtempSync(join(tmpdir(), "harness-lifecycle-impl-ws-"));
+  const workItem = implementationWorkItem();
+
+  appendImplementationStartedEvent({
+    workspace,
+    workItem,
+    runId: "impl-1",
+    factoryStateRoot: root,
+    execution: { workspace, runDir: join(workspace, ".harness/runs/factory/impl-1") },
+    linearIssue: "FER-34",
+    occurredAt: OCCURRED_AT,
+  });
+
+  const events = readFactoryLifecycleEvents({
+    factoryStateRoot: root,
+    workItemKey: "linear:FER-34",
+  });
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "implementation.started",
+    runId: "impl-1",
+    data: { linearIssue: "FER-34" },
+  });
+});
+
+test("appendImplementationTerminalEvent dry-run skips writes", () => {
+  const root = tempRoot();
+  const meta = implementationMeta({ status: "dry_run" });
+
+  expect(
+    appendImplementationTerminalEvent({
+      meta,
+      factoryStateRoot: root,
+    }),
+  ).toBeUndefined();
+  expect(
+    readFactoryLifecycleEvents({
+      factoryStateRoot: root,
+      workItemKey: "linear:FER-34",
+    }),
+  ).toHaveLength(0);
+});
+
+test("appendImplementationTerminalEvent completed emits review fields", () => {
+  const root = tempRoot();
+  const meta = implementationMeta({
+    status: "implementation-complete",
+    reviewBase: "aaa111",
+    reviewHead: "refs/harness/factory/impl-1/implementation",
+    reviewCommitSha: "bbb222",
+  });
+
+  const event = appendImplementationTerminalEvent({
+    meta,
+    factoryStateRoot: root,
+  });
+
+  expect(event).toMatchObject({
+    type: "implementation.completed",
+    data: {
+      reviewBase: "aaa111",
+      reviewHead: "refs/harness/factory/impl-1/implementation",
+      reviewCommitSha: "bbb222",
+      diffPath: expect.stringContaining("implementation/diff.patch"),
+      changeReviewHandoffPath: expect.stringContaining("implementation/change-review-handoff.md"),
+    },
+  });
+  expect(
+    readFactoryLifecycleEvents({
+      factoryStateRoot: root,
+      workItemKey: "linear:FER-34",
+    }),
+  ).toHaveLength(1);
+});
+
+test("appendImplementationTerminalEvent failed emits error", () => {
+  const root = tempRoot();
+  const meta = implementationMeta({
+    status: "implementation-failed",
+    error: "Implementer crashed",
+  });
+
+  const event = appendImplementationTerminalEvent({
+    meta,
+    factoryStateRoot: root,
+  });
+
+  expect(event).toMatchObject({
+    type: "implementation.failed",
+    data: { error: "Implementer crashed" },
+  });
+  expect(
+    readFactoryLifecycleEvents({
+      factoryStateRoot: root,
+      workItemKey: "linear:FER-34",
+    }),
+  ).toHaveLength(1);
+});
+
+function implementationWorkItem(): FactoryWorkItem {
+  return {
+    id: "linear:FER-34",
+    source: "linear",
+    title: "Implementation issue",
+    body: "",
+    labels: ["factory"],
+    metadata: { tracker: { source: "linear", id: "FER-34" } },
+  };
+}
+
+function implementationMeta(
+  overrides: Partial<FactoryImplementationRunMeta> & {
+    status: FactoryImplementationRunMeta["status"];
+  },
+): FactoryImplementationRunMeta {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-lifecycle-impl-meta-"));
+  const runDir = join(workspace, ".harness/runs/factory/impl-1");
+  mkdirSync(runDir, { recursive: true });
+  return {
+    runId: "impl-1",
+    workflow: "factory-implementation",
+    status: overrides.status,
+    mode: "direct",
+    workspace,
+    runDir,
+    workItem: {
+      id: "linear:FER-34",
+      source: "linear",
+      title: "Implementation issue",
+    },
+    implementerAgent: { name: "cursor", model: "composer-2.5" },
+    artifacts: {
+      workItem: "context/work-item.json",
+      implementationInput: "context/implementation-input.json",
+      sourceMaterial: "context/source-material.json",
+      prompt: "implementation/prompt.md",
+      changeReviewHandoff: "implementation/change-review-handoff.md",
+      summary: "summary.md",
+      meta: "meta.json",
+      ...(overrides.status !== "dry_run"
+        ? {
+            rawOutput: "implementation/implementer.raw.json" as const,
+            workspaceStatus: "implementation/workspace-status.json" as const,
+            diff: "implementation/diff.patch" as const,
+          }
+        : {}),
+    },
+    summaryPath: join(runDir, "summary.md"),
+    metaPath: join(runDir, "meta.json"),
+    startedAt: OCCURRED_AT,
+    durationMs: 1,
+    ...(overrides.status !== "dry_run" ? { eventsFile: "events.jsonl" as const } : {}),
+    ...(overrides.error ? { error: overrides.error } : {}),
+    ...(overrides.reviewBase ? { reviewBase: overrides.reviewBase } : {}),
+    ...(overrides.reviewHead ? { reviewHead: overrides.reviewHead } : {}),
+    ...(overrides.reviewCommitSha ? { reviewCommitSha: overrides.reviewCommitSha } : {}),
+  };
+}
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "harness-lifecycle-"));
