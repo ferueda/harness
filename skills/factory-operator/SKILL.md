@@ -105,10 +105,7 @@ Minimal shape:
         "triaging": "Triaging",
         "planning": "Planning",
         "triageFailed": "Triage Failed",
-        "planningFailed": "Planning Failed",
-        "done": "Done",
-        "canceled": "Canceled",
-        "duplicate": "Duplicate"
+        "planningFailed": "Planning Failed"
       }
     },
     "planning": {
@@ -126,6 +123,10 @@ Minimal shape:
   }
 }
 ```
+
+Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
+`factory.linear.statuses` when operator list/move tools need those board
+states; stations do not require them.
 
 - `station`: lifecycle step such as `triage`, `planning`, or `implementation`.
 - `role`: job inside a station such as `triager`, `planner`, `reviewer`, or
