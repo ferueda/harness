@@ -78,6 +78,9 @@ if (!factoryLinearHelp.includes("harness factory linear")) {
 if (!factoryLinearHelp.includes("list")) {
   throw new Error("Expected factory linear help to include list command");
 }
+if (!factoryLinearHelp.includes("create")) {
+  throw new Error("Expected factory linear help to include create command");
+}
 const factoryLinearListHelp = runHarness(["factory", "linear", "list", "--help"]);
 if (!factoryLinearListHelp.includes("harness factory linear list")) {
   throw new Error("Expected factory linear list help to include command usage");
@@ -91,6 +94,25 @@ if (!factoryLinearFetchHelp.includes("harness factory linear fetch")) {
 }
 if (!factoryLinearFetchHelp.includes("TEAM-123")) {
   throw new Error("Expected factory linear fetch help to include issue identifier guidance");
+}
+const factoryLinearCreateHelp = runHarness(["factory", "linear", "create", "--help"]);
+if (!factoryLinearCreateHelp.includes("harness factory linear create")) {
+  throw new Error("Expected factory linear create help to include command usage");
+}
+if (!factoryLinearCreateHelp.includes("--title")) {
+  throw new Error("Expected factory linear create help to include --title");
+}
+if (!factoryLinearCreateHelp.includes("--body")) {
+  throw new Error("Expected factory linear create help to include --body");
+}
+if (!factoryLinearCreateHelp.includes("--body-file")) {
+  throw new Error("Expected factory linear create help to include --body-file");
+}
+if (factoryLinearCreateHelp.includes("--dry-run")) {
+  throw new Error("Expected factory linear create help not to include --dry-run");
+}
+if (factoryLinearCreateHelp.includes("--apply")) {
+  throw new Error("Expected factory linear create help not to include --apply");
 }
 const factoryTriageStationHelp = runHarness(["factory", "triage", "--help"]);
 if (!factoryTriageStationHelp.includes("harness factory triage")) {
