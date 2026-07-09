@@ -58,6 +58,11 @@ const WorkItemImportedEventSchema = BaseEventSchema.extend({
       tracker: FactoryTrackerRefSchema.optional(),
       url: z.url().optional(),
       labels: z.array(z.string()).optional(),
+      // File/item-file planned entry may skip planning.completed / plan_pr.merged;
+      // seed retry fields so implementation.completed can preserve them on base.
+      approvedPlanPath: z.string().min(1).optional(),
+      approvedPlanPrUrl: z.url().optional(),
+      approvedPlanCommit: z.string().min(1).optional(),
     })
     .strict(),
 });
@@ -401,6 +406,13 @@ function reduceFactoryLifecycleEvent(
         source: event.data.source,
         title: event.data.title,
         ...(event.data.tracker ? { tracker: event.data.tracker } : {}),
+        ...(event.data.approvedPlanPath ? { approvedPlanPath: event.data.approvedPlanPath } : {}),
+        ...(event.data.approvedPlanPrUrl
+          ? { approvedPlanPrUrl: event.data.approvedPlanPrUrl }
+          : {}),
+        ...(event.data.approvedPlanCommit
+          ? { approvedPlanCommit: event.data.approvedPlanCommit }
+          : {}),
       };
     case "triage.started":
     case "planning.started":
