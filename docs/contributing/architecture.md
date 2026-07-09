@@ -183,7 +183,9 @@ and is required for create. Linear status and recent marker comments are
 bootstrap fallback metadata; lifecycle state wins when present.
 `harness factory triage --linear-issue TEAM-123` uses the same adapter as an
 input source before running the station. List, fetch, and default Linear-backed
-triage do not mutate Linear. Create is the only non-station Linear write.
+triage do not mutate Linear. Create is the only non-station Linear
+issue-creation path; other Linear writes stay on explicit station `--apply`
+or planning publication commands with `--linear-issue ... --apply`.
 `harness factory triage --linear-issue TEAM-123 --apply` additionally moves the
 issue to `Triaging`, then to the terminal triage status, and writes a marker
 comment.
