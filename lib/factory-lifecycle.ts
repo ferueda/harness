@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
+import { AGENT_PROVIDERS } from "./agents.ts";
 import {
   FactoryNextActionSchema,
   FactoryRouteSchema,
@@ -140,6 +141,55 @@ const PlanningFailedEventSchema = BaseEventSchema.extend({
     .strict(),
 });
 
+const ImplementationStartedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.started"),
+  data: z
+    .object({
+      linearIssue: z.string().min(1).optional(),
+      itemFile: z.string().min(1).optional(),
+    })
+    .strict(),
+});
+
+const ImplementationCompletedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.completed"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      diffPath: z.string().min(1),
+      changeReviewHandoffPath: z.string().min(1),
+      reviewBase: z.string().min(1),
+      reviewHead: z.string().min(1),
+      reviewCommitSha: z.string().min(1),
+      rawOutputPath: z.string().min(1).optional(),
+      streamLogPath: z.string().min(1).optional(),
+      workspaceStatusPath: z.string().min(1).optional(),
+      session: z
+        .object({
+          provider: z.enum(AGENT_PROVIDERS),
+          id: z.string().min(1),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+});
+
+const ImplementationFailedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.failed"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      error: z.string().min(1),
+      summaryPath: z.string().min(1).optional(),
+      rawOutputPath: z.string().min(1).optional(),
+      streamLogPath: z.string().min(1).optional(),
+      workspaceStatusPath: z.string().min(1).optional(),
+      reviewBase: z.string().min(1).optional(),
+    })
+    .strict(),
+});
+
 const PlanPrOpenedEventSchema = BaseEventSchema.extend({
   type: z.literal("plan_pr.opened"),
   runId: z.string().min(1),
@@ -171,6 +221,9 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   PlanningStartedEventSchema,
   PlanningCompletedEventSchema,
   PlanningFailedEventSchema,
+  ImplementationStartedEventSchema,
+  ImplementationCompletedEventSchema,
+  ImplementationFailedEventSchema,
   PlanPrOpenedEventSchema,
   PlanPrMergedEventSchema,
 ]);
@@ -351,6 +404,7 @@ function reduceFactoryLifecycleEvent(
       };
     case "triage.started":
     case "planning.started":
+    case "implementation.started":
       return base;
     case "triage.completed":
       return {
@@ -373,6 +427,18 @@ function reduceFactoryLifecycleEvent(
         factoryStage: "planning-failed",
         factoryRunId: event.runId,
       });
+    case "implementation.completed":
+      return {
+        ...base,
+        factoryStage: "implementation-complete",
+        factoryRunId: event.runId,
+      };
+    case "implementation.failed":
+      return {
+        ...base,
+        factoryStage: "implementation-failed",
+        factoryRunId: event.runId,
+      };
     case "plan_pr.opened":
       return withoutApprovedPlanCommit({
         ...base,
