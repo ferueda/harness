@@ -2,7 +2,12 @@ export const AGENT_PROVIDERS = ["cursor", "codex"] as const;
 export const AGENT_SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
 export const AGENT_APPROVAL_POLICIES = ["never", "on-request", "on-failure", "untrusted"] as const;
 export const AGENT_REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
-export const CURSOR_SDK_MODEL_MODES = ["composer-2.5", "claude-opus-4-8", "gpt-5.5"] as const;
+export const CURSOR_SDK_MODEL_MODES = [
+  "composer-2.5",
+  "claude-opus-4-8",
+  "gpt-5.5",
+  "grok-4.5",
+] as const;
 export const AGENT_WORKSPACE_GUARD_MODES = ["enforce", "record"] as const;
 
 export type AgentProviderName = (typeof AGENT_PROVIDERS)[number];
