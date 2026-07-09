@@ -8,6 +8,7 @@
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
 | [FER-47.md](./FER-47.md)                                               | `approved`    | Dry-run factory implementation station shell              |
 | [FER-48.md](./FER-48.md)                                               | `approved`    | Live factory implementation pass with review ref          |
+| [FER-51.md](./FER-51.md)                                               | `approved`    | Constrained factory Linear create intake helper           |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
