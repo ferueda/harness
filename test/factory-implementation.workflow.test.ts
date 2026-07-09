@@ -690,7 +690,7 @@ test("workflow forwards Codex implementer policy fields", async () => {
     runsDir,
     implementerRole: {
       agent: "codex",
-      model: "gpt-5.5",
+      model: "gpt-5.6-sol",
       sandboxMode: "workspace-write",
       approvalPolicy: "on-request",
       modelReasoningEffort: "xhigh",

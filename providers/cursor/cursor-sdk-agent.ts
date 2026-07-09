@@ -43,24 +43,53 @@ export type CursorSdkAgentFactoryOptions = {
   resumeSdkAgent?: ResumeCursorSdkAgent;
 };
 
-const CURSOR_SDK_MODEL_PARAMS = {
-  "composer-2.5": [{ id: "fast", value: "false" }],
-  "claude-opus-4-8": [
-    { id: "thinking", value: "true" },
-    { id: "effort", value: "high" },
-    { id: "fast", value: "false" },
-  ],
-  "gpt-5.5": [
-    { id: "context", value: "272k" },
-    { id: "reasoning", value: "high" },
-    { id: "fast", value: "false" },
-  ],
+const GPT_56_CONTEXT_PARAMS = [
+  { id: "context", value: "272k" },
+  { id: "fast", value: "false" },
+] as const;
+
+function gpt56CombinedSelection(
+  id: "gpt-5.6-sol" | "gpt-5.6-terra",
+  reasoning: "medium" | "high" | "xhigh",
+): CursorSdkModelSelection {
+  return {
+    id,
+    params: [
+      GPT_56_CONTEXT_PARAMS[0],
+      { id: "reasoning", value: reasoning },
+      GPT_56_CONTEXT_PARAMS[1],
+    ],
+  };
+}
+
+// Combined effort slugs map to base SDK ids; composer/opus/grok keep id === mode.
+const CURSOR_SDK_MODEL_SELECTIONS = {
+  "composer-2.5": {
+    id: "composer-2.5",
+    params: [{ id: "fast", value: "false" }],
+  },
+  "claude-opus-4-8": {
+    id: "claude-opus-4-8",
+    params: [
+      { id: "thinking", value: "true" },
+      { id: "effort", value: "high" },
+      { id: "fast", value: "false" },
+    ],
+  },
+  "gpt-5.6-sol-medium": gpt56CombinedSelection("gpt-5.6-sol", "medium"),
+  "gpt-5.6-sol-high": gpt56CombinedSelection("gpt-5.6-sol", "high"),
+  "gpt-5.6-sol-xhigh": gpt56CombinedSelection("gpt-5.6-sol", "xhigh"),
+  "gpt-5.6-terra-high": gpt56CombinedSelection("gpt-5.6-terra", "high"),
+  "gpt-5.6-terra-xhigh": gpt56CombinedSelection("gpt-5.6-terra", "xhigh"),
   // Cursor catalog default is effort=high + fast=true; harness keeps non-fast high like Opus/GPT.
-  "grok-4.5": [
-    { id: "effort", value: "high" },
-    { id: "fast", value: "false" },
-  ],
-} satisfies Record<CursorSdkModelMode, CursorSdkModelSelection["params"]>;
+  "grok-4.5": {
+    id: "grok-4.5",
+    params: [
+      { id: "effort", value: "high" },
+      { id: "fast", value: "false" },
+    ],
+  },
+} satisfies Record<CursorSdkModelMode, CursorSdkModelSelection>;
 
 export function createCursorSdkAgent(options: CursorSdkAgentFactoryOptions = {}): Agent {
   const createSdkAgent = options.createSdkAgent ?? CursorSdkAgent.create;
@@ -284,10 +313,7 @@ function cursorSdkModelSelection(
 
   return {
     ok: true,
-    value: {
-      id: model,
-      params: CURSOR_SDK_MODEL_PARAMS[model],
-    },
+    value: CURSOR_SDK_MODEL_SELECTIONS[model],
   };
 }
 

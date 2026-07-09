@@ -28,7 +28,7 @@ test("planned dry-run writes implementation artifacts without events", async () 
     runsDir,
     workItem: WORK_ITEM,
     implementationInput: input,
-    implementerRole: { agent: "codex", model: "gpt-5.5", modelReasoningEffort: "high" },
+    implementerRole: { agent: "codex", model: "gpt-5.6-sol", modelReasoningEffort: "high" },
     dryRun: true,
   });
 
@@ -39,7 +39,7 @@ test("planned dry-run writes implementation artifacts without events", async () 
     status: "dry_run",
     mode: "planned",
     workItem: { id: "linear:FER-47", source: "linear" },
-    implementerAgent: { name: "codex", model: "gpt-5.5", modelReasoningEffort: "high" },
+    implementerAgent: { name: "codex", model: "gpt-5.6-sol", modelReasoningEffort: "high" },
     artifacts: {
       workItem: "context/work-item.json",
       implementationInput: "context/implementation-input.json",
@@ -157,7 +157,7 @@ test("live context exposes implementerRole and creates events.jsonl on export", 
     implementationInput: directInput(),
     implementerRole: {
       agent: "codex",
-      model: "gpt-5.5",
+      model: "gpt-5.6-sol",
       sandboxMode: "workspace-write",
       approvalPolicy: "never",
       modelReasoningEffort: "high",
