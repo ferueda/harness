@@ -6,10 +6,8 @@
 | ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
-| [FER-47.md](./FER-47.md)                                               | `approved`    | Dry-run factory implementation station shell              |
-| [FER-48.md](./FER-48.md)                                               | `approved`    | Live factory implementation pass with review ref          |
-| [FER-51.md](./FER-51.md)                                               | `approved`    | Constrained factory Linear create intake helper           |
-| [FER-53-durable-factory-store.md](./FER-53-durable-factory-store.md)   | `planned`     | Durable factory store for lifecycle and run artifacts     |
+
+**Next factory issues (Linear, no plan file yet):** [FER-37](https://linear.app/ferueda/issue/FER-37/refactor-triage-station-around-lifecycle-state), [FER-52](https://linear.app/ferueda/issue/FER-52/add-linear-apply-projection-for-implementation-station).
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
@@ -53,6 +51,13 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Linear planning publish handoff apply         | [#80](https://github.com/ferueda/harness/pull/80) |
 | —     | Factory lifecycle event log and read model    | [#85](https://github.com/ferueda/harness/pull/85) |
 | —     | Read-only Linear status listing               | [#86](https://github.com/ferueda/harness/pull/86) |
+| —     | Factory implementation input resolver           | [#88](https://github.com/ferueda/harness/pull/88) |
+| —     | Factory implementation dry-run shell          | [#92](https://github.com/ferueda/harness/pull/92) |
+| —     | Live factory implementation station           | [#94](https://github.com/ferueda/harness/pull/94) |
+| —     | Constrained factory Linear create             | [#99](https://github.com/ferueda/harness/pull/99) |
+| —     | Native Linear PR linking docs                 | [#102](https://github.com/ferueda/harness/pull/102) |
+| —     | Trim factory dry-run from operator docs       | [#103](https://github.com/ferueda/harness/pull/103) |
+| —     | Durable factory store                         | [#108](https://github.com/ferueda/harness/pull/108) |
 
 ---
 
