@@ -1,6 +1,9 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
+import { stdin as processStdin } from "node:process";
+import type { Readable } from "node:stream";
+import { isatty } from "node:tty";
 import { factoryImplementationCliOutput } from "./factory-implementation-cli.ts";
 import {
   factoryPlanningCliOutput,
@@ -39,6 +42,7 @@ import {
   type LinearFactoryAdapter,
   type LinearTriageUpdatePlan,
 } from "../lib/factory-linear-adapter.ts";
+import type { LinearCreateWorkItemResult } from "../lib/factory-linear-create.ts";
 import type { FactoryLinearSettings } from "../lib/config.ts";
 import {
   renderLinearPlanningApprovedComment,
@@ -142,6 +146,13 @@ type FactoryLinearListOptions = {
   all: boolean;
 };
 
+type FactoryLinearCreateOptions = {
+  workspace?: string;
+  title: string;
+  body?: string;
+  bodyFile?: string;
+};
+
 type FactoryCommandOptions = {
   positiveNumber: (value: string) => number;
   defaultMaxRuntimeMs: number;
@@ -179,7 +190,7 @@ function addFactoryStatusCommand(parent: Command): void {
 }
 
 function addFactoryLinearCommand(parent: Command): void {
-  const linear = parent.command("linear").description("Read Linear issues as factory work items");
+  const linear = parent.command("linear").description("Use Linear factory intake helpers");
 
   linear
     .command("list")
@@ -225,6 +236,25 @@ function addFactoryLinearCommand(parent: Command): void {
       });
       console.log(JSON.stringify(workItem, null, 2));
     });
+
+  linear
+    .command("create")
+    .description("Create one Linear intake issue in the configured factory project")
+    .option("--workspace <path>", "target repo")
+    .requiredOption("--title <title>", "Linear issue title")
+    .option("--body <body>", "Linear issue body")
+    .option("--body-file <path>", "Linear issue body markdown file")
+    .action(async (options: FactoryLinearCreateOptions) => {
+      const result = await createFactoryLinearWorkItem({
+        workspace: options.workspace,
+        title: options.title,
+        body: options.body,
+        bodyFile: options.bodyFile,
+        env: process.env,
+        stdin: processStdin,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    });
 }
 
 export async function fetchFactoryLinearWorkItem(input: {
@@ -249,6 +279,97 @@ export async function fetchFactoryLinearWorkItem(input: {
     workspace: resolveHarnessOptions({ workspace: input.workspace }).workspace,
     workItem: await adapter.fetchWorkItem(input.issue),
   });
+}
+
+export async function createFactoryLinearWorkItem(input: {
+  workspace?: string;
+  title: string;
+  body?: string;
+  bodyFile?: string;
+  env?: NodeJS.ProcessEnv;
+  stdin?: NodeJS.ReadStream | Readable;
+  resolveLinearSettings?: (input: { workspace?: string }) => FactoryLinearSettings;
+  adapterFactory?: (input: {
+    apiKey: string;
+    settings: FactoryLinearSettings;
+  }) => LinearFactoryAdapter;
+}): Promise<LinearCreateWorkItemResult> {
+  const title = input.title.trim();
+  if (!title) {
+    throw new Error("Linear create title must be non-empty.");
+  }
+  const body = (
+    await resolveFactoryLinearCreateBody({
+      workspace: input.workspace,
+      body: input.body,
+      bodyFile: input.bodyFile,
+      stdin: input.stdin ?? processStdin,
+    })
+  ).trim();
+  if (!body) {
+    throw new Error("Linear create body must be non-empty.");
+  }
+
+  const settings = (input.resolveLinearSettings ?? resolveFactoryLinearSettings)({
+    workspace: input.workspace,
+  });
+  const apiKey = input.env?.LINEAR_API_KEY;
+  if (!apiKey) {
+    throw new Error("LINEAR_API_KEY is required for Linear commands.");
+  }
+  const adapter = (input.adapterFactory ?? createLinearFactoryAdapter)({ apiKey, settings });
+  return adapter.createWorkItem({ title, body });
+}
+
+async function resolveFactoryLinearCreateBody(input: {
+  workspace?: string;
+  body?: string;
+  bodyFile?: string;
+  stdin: NodeJS.ReadStream | Readable;
+}): Promise<string> {
+  const hasBody = input.body !== undefined;
+  const hasBodyFile = input.bodyFile !== undefined;
+  if (hasBody && hasBodyFile) {
+    throw new Error("--body and --body-file are mutually exclusive");
+  }
+  if (hasBody) {
+    return input.body ?? "";
+  }
+  if (hasBodyFile) {
+    const workspace = resolveHarnessOptions({ workspace: input.workspace }).workspace;
+    const bodyFile = input.bodyFile ?? "";
+    const resolvedPath = isAbsolute(bodyFile) ? bodyFile : join(workspace, bodyFile);
+    if (!existsSync(resolvedPath)) {
+      throw new Error(`Linear create body file does not exist: ${bodyFile}`);
+    }
+    return readFileSync(resolvedPath, "utf8");
+  }
+
+  const stdin = input.stdin;
+  if (isReadableTty(stdin)) {
+    throw new Error("one of --body, --body-file, or stdin is required");
+  }
+  const fromStdin = await readStreamToString(stdin);
+  if (!fromStdin.trim()) {
+    throw new Error("one of --body, --body-file, or stdin is required");
+  }
+  return fromStdin;
+}
+
+function isReadableTty(stream: NodeJS.ReadStream | Readable): boolean {
+  if ("isTTY" in stream && stream.isTTY === true) {
+    return true;
+  }
+  const maybeFd = (stream as { fd?: unknown }).fd;
+  return typeof maybeFd === "number" && isatty(maybeFd);
+}
+
+async function readStreamToString(stream: Readable): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function addFactoryPlanningStationCommand(parent: Command, config: FactoryCommandOptions): void {
