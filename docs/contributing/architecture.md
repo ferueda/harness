@@ -173,8 +173,12 @@ the real index.
 plus harness-owned review-ref materialization. It does not mutate Linear, create
 human branches, or open PRs.
 
-`lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
-status` reads `.harness/inbox/factory/` without moving files or creating runs.
+`lib/factory-inbox.ts` owns local factory inbox inspection. `lib/factory-status.ts`
+composes that inbox data with durable-store, lock, and legacy-state inspection
+for `harness factory status`; status remains read-only and never creates runs.
+`lib/factory-store.ts` resolves project-scoped durable paths and store
+provenance, while `lib/factory-locks.ts` owns lifecycle lock acquisition and
+non-blocking inspection.
 
 `lib/factory-linear-adapter.ts` owns Linear issue import, constrained intake
 create, and explicit station apply updates. `lib/factory-linear-list.ts` owns

@@ -25,8 +25,8 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
-harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
+harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 ```
@@ -198,6 +198,17 @@ Factory station roles use `harness.json`:
 Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
 `statuses` when operator tools like `linear-cli` or `factory linear list`
 should target those board states by key; factory stations do not require them.
+
+### Durable Store Overrides
+
+Factory station commands default to
+`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/`. Override
+the store root or project id with `--factory-store-root` /
+`--factory-store-project-id`, `HARNESS_FACTORY_STORE_ROOT` /
+`HARNESS_FACTORY_STORE_PROJECT_ID`, or `factory.store.root` /
+`factory.store.projectId` in `harness.json`. Precedence is CLI, environment,
+config, then the default. The workspace still owns its shim, inbox, source, and
+committed plans; workspace-local `.harness/factory` lifecycle files are legacy.
 
 Vocabulary:
 
@@ -455,8 +466,8 @@ Manual publication commands update local run metadata, summary files, and the
 lifecycle log by default:
 
 ```bash
-harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
-harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
+harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
+harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
 ```
 
 They print `factoryMetadata` plus suggested Linear comment text. They do not
@@ -490,7 +501,7 @@ git checkout -b plan/ENG-123-short-slug
 git push -u origin plan/ENG-123-short-slug
 gh pr create --title "plan: ENG-123 short description" --body "..."
 LINEAR_API_KEY=... harness factory planning publish \
-  --run-dir .harness/runs/factory/<run-id> \
+  --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> \
   --pr-url https://github.com/owner/repo/pull/123 \
   --linear-issue ENG-123 --apply
 ```
@@ -506,8 +517,8 @@ does not edit GitHub PRs or verify that Linear attached the PR.
 Add `--linear-issue` and `--apply` to mutate Linear:
 
 ```bash
-LINEAR_API_KEY=... harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue ENG-123 --apply
-LINEAR_API_KEY=... harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue ENG-123 --apply
+LINEAR_API_KEY=... harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue ENG-123 --apply
+LINEAR_API_KEY=... harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234 --linear-issue ENG-123 --apply
 ```
 
 `publish --apply` validates the issue belongs to the configured Linear
@@ -561,7 +572,7 @@ provider or writing lifecycle state.
 Live artifacts:
 
 ```text
-.harness/runs/factory/<run-id>/
+${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/
   context/
     work-item.json
     implementation-input.json
@@ -598,8 +609,9 @@ command owns the internal review ref.
 Local inbox files live under `.harness/inbox/factory/*.json`.
 
 `harness factory status` reads pending, historical processed, and historical
-failed files. It is read-only. Current station commands do not move inbox files
-or batch-process every pending item.
+failed files, then reports the active durable store, lifecycle locks, ignored
+legacy workspace-local state, and any warnings. It is read-only. Current
+station commands do not move inbox files or batch-process every pending item.
 
 ## Future Tracker And Orchestrator Boundary
 
