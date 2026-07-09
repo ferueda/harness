@@ -789,42 +789,42 @@ Use pre-existing dirty tracked and untracked fixtures to prove the live implemen
 
 All must hold:
 
-- [ ] `harness factory implementation run --dry-run` still writes only dry-run context/prompt/handoff/summary/meta artifacts and no lifecycle state.
-- [ ] Dry-run and live handoffs use one heading contract: `## Review Handoff`, `**Status:**`, and `### Goal` / `### Scope` / `### Files changed` / `### Implementation notes` / `### Verification` / `### Risks to scrutinize` / `### Open items`.
-- [ ] Dry-run handoff uses `**Status:** in_progress` and retains placeholder body text under the shared headings.
-- [ ] Live implementation invokes exactly one configured implementer provider.
-- [ ] Provider input includes `workspaceGuard: "record"`.
-- [ ] Provider input takes `model`, `sandboxMode`, `approvalPolicy`, and `modelReasoningEffort` from `ctx.implementerRole`.
-- [ ] Codex implementation roles default to `sandboxMode: "workspace-write"` unless role config explicitly overrides it.
-- [ ] `FACTORY_IMPLEMENTATION_DRY_RUN_ERROR` and the old non-dry-run rejection test are gone or replaced with live fail-closed tests.
-- [ ] Live run writes `implementation/implementer.raw.json`, `implementation/implementer.stream.jsonl` when emitted, `implementation/workspace-status.json`, `implementation/diff.patch`, and completed `implementation/change-review-handoff.md`.
-- [ ] Live run writes durable run `events.jsonl`, and `meta.eventsFile` points to it.
-- [ ] Live run fails before provider invocation when `git status --porcelain=v1 -z -- . :!.harness` is non-empty before start.
-- [ ] Live successful run with tracked changes creates `refs/harness/factory/<run-id>/implementation`, returns/prints `status: "implementation-complete"`, includes `reviewBase` / `reviewHead` / `reviewCommitSha`, and appends lifecycle `implementation.completed`.
-- [ ] Live successful run that only creates a new untracked file returns/prints `status: "implementation-complete"`, creates a review ref, and records that file in status/handoff artifacts.
-- [ ] Live successful run that only creates a new untracked directory with a file returns/prints `status: "implementation-complete"`, creates a review ref, and records that file in status/handoff artifacts.
-- [ ] `implementation/diff.patch` for completed runs is generated from `reviewBase..reviewCommitSha`.
-- [ ] Review-ref tests cover tracked edit, untracked file, untracked directory, tracked deletion, and tracked rename.
-- [ ] Review-ref creation uses a temporary index and deterministic commit-tree identity.
-- [ ] Live provider failure or no tracked porcelain status change returns/prints `status: "implementation-failed"` and appends lifecycle `implementation.failed`.
-- [ ] Provider success plus review ref creation failure returns/prints `status: "implementation-failed"` and appends lifecycle `implementation.failed`.
-- [ ] `runFactoryImplementationWithLifecycle` unit tests prove a live workflow throw after `implementation.started` exports failed meta when possible, appends terminal `implementation.failed`, returns failed meta, and does not rethrow after durable terminalization.
-- [ ] `workspace-status.json.changedFiles` is parsed from NUL-framed porcelain, stable-sorted, expands untracked directories to files, and records `patchTruncated` when the v1 untracked patch cap is hit.
-- [ ] Handoff rendering uses the explicit dry-run/live input contract and maps dry-run to `in_progress`, complete to `complete`, and failed to `blocked`.
-- [ ] `implementation.started` lifecycle event does not move durable `factoryStage`.
-- [ ] Implementation prompt boundaries say the implementer agent must not append lifecycle state; the harness command owns lifecycle writes.
-- [ ] No command runs change-review, mutates Linear, creates a human-facing commit/branch/PR/worktree, or verifies/checks out `approvedPlanCommit`.
-- [ ] The implementer prompt forbids agent-owned git operations; the only git ref created by the station is the harness-owned `refs/harness/factory/<run-id>/implementation`.
-- [ ] Docs distinguish dry-run from live behavior and preserve generic target-repo examples.
-- [ ] README changes replace existing implementation text in place, keep README at or below 300 lines, and leave detailed live behavior in contributor docs/operator skill.
-- [ ] `docs/contributing/setup-manifest.md` lists live implementation as a lifecycle producer and distinguishes dry-run from live run-dir behavior.
-- [ ] `docs/contributing/factory.md` lifecycle event paragraph includes `implementation.started` as audit-only and `implementation.completed` / `implementation.failed` as durable transitions.
-- [ ] `skills/factory-operator/SKILL.md` distinguishes dry-run from live behavior and no longer says implementation is dry-run only.
-- [ ] `scripts/smoke-dist.ts` checks implementation help for `--max-runtime-ms` and `--verbose`.
-- [ ] Focused test command exits 0.
-- [ ] `pnpm typecheck` exits 0.
-- [ ] `pnpm build` exits 0.
-- [ ] `pnpm check` exits 0.
+- [x] `harness factory implementation run --dry-run` still writes only dry-run context/prompt/handoff/summary/meta artifacts and no lifecycle state.
+- [x] Dry-run and live handoffs use one heading contract: `## Review Handoff`, `**Status:**`, and `### Goal` / `### Scope` / `### Files changed` / `### Implementation notes` / `### Verification` / `### Risks to scrutinize` / `### Open items`.
+- [x] Dry-run handoff uses `**Status:** in_progress` and retains placeholder body text under the shared headings.
+- [x] Live implementation invokes exactly one configured implementer provider.
+- [x] Provider input includes `workspaceGuard: "record"`.
+- [x] Provider input takes `model`, `sandboxMode`, `approvalPolicy`, and `modelReasoningEffort` from `ctx.implementerRole`.
+- [x] Codex implementation roles default to `sandboxMode: "workspace-write"` unless role config explicitly overrides it.
+- [x] `FACTORY_IMPLEMENTATION_DRY_RUN_ERROR` and the old non-dry-run rejection test are gone or replaced with live fail-closed tests.
+- [x] Live run writes `implementation/implementer.raw.json`, `implementation/implementer.stream.jsonl` when emitted, `implementation/workspace-status.json`, `implementation/diff.patch`, and completed `implementation/change-review-handoff.md`.
+- [x] Live run writes durable run `events.jsonl`, and `meta.eventsFile` points to it.
+- [x] Live run fails before provider invocation when `git status --porcelain=v1 -z -- . :!.harness` is non-empty before start.
+- [x] Live successful run with tracked changes creates `refs/harness/factory/<run-id>/implementation`, returns/prints `status: "implementation-complete"`, includes `reviewBase` / `reviewHead` / `reviewCommitSha`, and appends lifecycle `implementation.completed`.
+- [x] Live successful run that only creates a new untracked file returns/prints `status: "implementation-complete"`, creates a review ref, and records that file in status/handoff artifacts.
+- [x] Live successful run that only creates a new untracked directory with a file returns/prints `status: "implementation-complete"`, creates a review ref, and records that file in status/handoff artifacts.
+- [x] `implementation/diff.patch` for completed runs is generated from `reviewBase..reviewCommitSha`.
+- [x] Review-ref tests cover tracked edit, untracked file, untracked directory, tracked deletion, and tracked rename.
+- [x] Review-ref creation uses a temporary index and deterministic commit-tree identity.
+- [x] Live provider failure or no tracked porcelain status change returns/prints `status: "implementation-failed"` and appends lifecycle `implementation.failed`.
+- [x] Provider success plus review ref creation failure returns/prints `status: "implementation-failed"` and appends lifecycle `implementation.failed`.
+- [x] `runFactoryImplementationWithLifecycle` unit tests prove a live workflow throw after `implementation.started` exports failed meta when possible, appends terminal `implementation.failed`, returns failed meta, and does not rethrow after durable terminalization.
+- [x] `workspace-status.json.changedFiles` is parsed from NUL-framed porcelain, stable-sorted, expands untracked directories to files, and records `patchTruncated` when the v1 untracked patch cap is hit.
+- [x] Handoff rendering uses the explicit dry-run/live input contract and maps dry-run to `in_progress`, complete to `complete`, and failed to `blocked`.
+- [x] `implementation.started` lifecycle event does not move durable `factoryStage`.
+- [x] Implementation prompt boundaries say the implementer agent must not append lifecycle state; the harness command owns lifecycle writes.
+- [x] No command runs change-review, mutates Linear, creates a human-facing commit/branch/PR/worktree, or verifies/checks out `approvedPlanCommit`.
+- [x] The implementer prompt forbids agent-owned git operations; the only git ref created by the station is the harness-owned `refs/harness/factory/<run-id>/implementation`.
+- [x] Docs distinguish dry-run from live behavior and preserve generic target-repo examples.
+- [x] README changes replace existing implementation text in place, keep README at or below 300 lines, and leave detailed live behavior in contributor docs/operator skill.
+- [x] `docs/contributing/setup-manifest.md` lists live implementation as a lifecycle producer and distinguishes dry-run from live run-dir behavior.
+- [x] `docs/contributing/factory.md` lifecycle event paragraph includes `implementation.started` as audit-only and `implementation.completed` / `implementation.failed` as durable transitions.
+- [x] `skills/factory-operator/SKILL.md` distinguishes dry-run from live behavior and no longer says implementation is dry-run only.
+- [x] `scripts/smoke-dist.ts` checks implementation help for `--max-runtime-ms` and `--verbose`.
+- [x] Focused test command exits 0.
+- [x] `pnpm typecheck` exits 0.
+- [x] `pnpm build` exits 0.
+- [x] `pnpm check` exits 0.
 
 ## STOP Conditions
 
