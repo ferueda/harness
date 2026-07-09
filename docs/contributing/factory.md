@@ -157,10 +157,7 @@ Factory station roles use `harness.json`:
         "triaging": "Triaging",
         "planning": "Planning",
         "triageFailed": "Triage Failed",
-        "planningFailed": "Planning Failed",
-        "done": "Done",
-        "canceled": "Canceled",
-        "duplicate": "Duplicate"
+        "planningFailed": "Planning Failed"
       }
     },
     "planning": {
@@ -185,6 +182,10 @@ Factory station roles use `harness.json`:
   }
 }
 ```
+
+Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
+`statuses` when operator tools need those board states; they are not required
+for factory stations.
 
 Vocabulary:
 
@@ -215,11 +216,13 @@ Use Linear list to scan issues in configured factory statuses:
 ```bash
 LINEAR_API_KEY=... harness factory linear list --status intake --workspace /path/to/repo
 LINEAR_API_KEY=... harness factory linear list --status intake --status needsPlan --all --workspace /path/to/repo
+LINEAR_API_KEY=... harness factory linear list --status done --workspace /path/to/repo
 ```
 
 The list command is read-only. It accepts keys from
-`factory.linear.statuses`, such as `intake` or `needsPlan`, rather than raw
-Linear status names. It validates the configured Linear team statuses, applies
+`factory.linear.statuses`, such as `intake`, `needsPlan`, or optional terminal
+keys like `done` when mapped in `harness.json`, rather than raw Linear status
+names. It validates the configured Linear team statuses, applies
 the configured `factory.linear.projectId` filter when present, and prints
 lightweight issue summaries for backlog discovery. Pagination defaults to the
 first page; use generated help for cursor and all-pages options. Large
