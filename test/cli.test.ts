@@ -29,6 +29,7 @@ import {
   LINEAR_SETTINGS,
   LINEAR_WORK_ITEM,
 } from "./factory-linear-test-helpers.ts";
+import { parseFactoryRunStartedProgress } from "./factory-run-started-test-helpers.ts";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HARNESS_BIN = join(REPO_ROOT, "bin/harness.ts");
 
@@ -59,23 +60,6 @@ function createPlainWorkspace() {
   const workspace = mkdtempSync(join(tmpdir(), "harness-cli-"));
   writeFileSync(join(workspace, "plan.md"), "# Plan\n\nReview me.\n", "utf8");
   return workspace;
-}
-
-function parseFactoryRunStartedProgress(stderr: string) {
-  const lines = stderr
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        const parsed = JSON.parse(line) as { harnessFactory?: string };
-        return parsed.harnessFactory === "run-started" ? [parsed] : [];
-      } catch {
-        return [];
-      }
-    });
-  expect(lines).toHaveLength(1);
-  return lines[0];
 }
 
 function writeLinearConfig(workspace: string): void {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { expect, test } from "vitest";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
+import { parseFactoryRunStartedProgress } from "./factory-run-started-test-helpers.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 
@@ -223,23 +224,6 @@ function runHarness(args: string[]) {
 
 function parseStdout(result: ReturnType<typeof runHarness>): Record<string, any> {
   return JSON.parse(result.stdout) as Record<string, any>;
-}
-
-function parseFactoryRunStartedProgress(stderr: string) {
-  const lines = stderr
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        const parsed = JSON.parse(line) as { harnessFactory?: string };
-        return parsed.harnessFactory === "run-started" ? [parsed] : [];
-      } catch {
-        return [];
-      }
-    });
-  expect(lines).toHaveLength(1);
-  return lines[0];
 }
 
 function readJson(path: string): unknown {
