@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, vi } from "vitest";
-import type { AgentRunResult, AgentWorkspaceGuardMode } from "../../lib/agents.ts";
+import {
+  CURSOR_SDK_MODEL_MODES,
+  type AgentRunResult,
+  type AgentWorkspaceGuardMode,
+} from "../../lib/agents.ts";
 import type * as ReviewGuard from "../../lib/review-guard.ts";
 import { createCursorSdkAgent, type CursorSdkAgentFactoryOptions } from "./cursor-sdk-agent.ts";
 
@@ -548,7 +552,31 @@ test("createCursorSdkAgent supports non-fast Opus 4.8 high thinking mode", async
   });
 });
 
-test.each(["claude-opus-4-8-thinking-high", "gpt-5.5-high"])(
+test("createCursorSdkAgent supports non-fast Grok 4.5 high effort mode", async () => {
+  const workspace = createGitWorkspace();
+  const { calls, createSdkAgent } = createFakeSdk();
+
+  const result = await createCursorSdkAgent({
+    apiKey: "cursor-key",
+    createSdkAgent,
+  }).run({
+    workspace,
+    prompt: "review this",
+    model: "grok-4.5",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  expect(calls.options?.model).toEqual({
+    id: "grok-4.5",
+    params: [
+      { id: "effort", value: "high" },
+      { id: "fast", value: "false" },
+    ],
+  });
+});
+
+test.each(["claude-opus-4-8-thinking-high", "gpt-5.5-high", "grok-4.5-high"])(
   "createCursorSdkAgent rejects unsupported SDK model mode %s",
   async (model) => {
     const workspace = createGitWorkspace();
@@ -567,7 +595,7 @@ test.each(["claude-opus-4-8-thinking-high", "gpt-5.5-high"])(
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toBe(
-      `Unsupported Cursor SDK model: ${model}. Use one of: composer-2.5, claude-opus-4-8, gpt-5.5.`,
+      `Unsupported Cursor SDK model: ${model}. Use one of: ${CURSOR_SDK_MODEL_MODES.join(", ")}.`,
     );
     expect(calls.options).toBeUndefined();
   },

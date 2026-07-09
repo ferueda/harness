@@ -185,6 +185,27 @@ test("resolveFactoryRoleAgent reads triage role model override", () => {
   });
 });
 
+test("resolveFactoryRoleAgent accepts Cursor grok-4.5 role model", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    agents: { cursor: { model: "composer-2.5" } },
+    factory: {
+      triage: {
+        roles: {
+          triager: { agent: "cursor", model: "grok-4.5" },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "triage", role: "triager" }, "/"),
+  ).toMatchObject({
+    agent: "cursor",
+    model: "grok-4.5",
+  });
+});
+
 test("resolveFactoryRoleAgent resolves planning roles independently", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeHarnessJson(workspace, {
