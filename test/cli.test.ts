@@ -427,6 +427,36 @@ test("harness factory linear create requires a Linear API key", () => {
   expect(result.status).toBe(1);
   expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
 });
+test("harness factory linear create requires factory.linear.projectId", async () => {
+  let createCalled = false;
+  const { createLinearFactoryAdapterForClient } = await import("../lib/factory-linear-adapter.ts");
+  await expect(
+    createFactoryLinearWorkItem({
+      title: "Example",
+      body: "Body",
+      env: { LINEAR_API_KEY: "test-key" },
+      resolveLinearSettings: () => LINEAR_SETTINGS,
+      adapterFactory: ({ settings }) =>
+        createLinearFactoryAdapterForClient({
+          client: {
+            issue: async () => {
+              throw new Error("issue should not run");
+            },
+            issues: async () => ({ nodes: [] }),
+            teams: async () => ({ nodes: [] }),
+            createIssue: async () => {
+              createCalled = true;
+              throw new Error("createIssue should not run");
+            },
+            updateIssue: async () => ({ success: true }),
+            createComment: async () => ({ success: true }),
+          },
+          settings,
+        }),
+    }),
+  ).rejects.toThrow(/factory\.linear\.projectId is required for Linear create/);
+  expect(createCalled).toBe(false);
+});
 test("harness factory linear create rejects body and body-file together before config checks", () => {
   const workspace = createGitWorkspace();
   const result = runHarness([
