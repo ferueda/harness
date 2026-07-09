@@ -9,6 +9,7 @@
 | [FER-47.md](./FER-47.md)                                               | `approved`    | Dry-run factory implementation station shell              |
 | [FER-48.md](./FER-48.md)                                               | `approved`    | Live factory implementation pass with review ref          |
 | [FER-51.md](./FER-51.md)                                               | `approved`    | Constrained factory Linear create intake helper           |
+| [FER-53-durable-factory-store.md](./FER-53-durable-factory-store.md)   | `planned`     | Durable factory store for lifecycle and run artifacts     |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
