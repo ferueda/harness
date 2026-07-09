@@ -184,8 +184,8 @@ Factory station roles use `harness.json`:
 ```
 
 Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
-`statuses` when operator tools need those board states; they are not required
-for factory stations.
+`statuses` when operator tools like `linear-cli` or `factory linear list`
+should target those board states by key; factory stations do not require them.
 
 Vocabulary:
 
@@ -203,11 +203,6 @@ existing repo, rename the old human-input status to `Needs Clarification`, add
 `Plan Needs Review`, and update `factory.linear.statuses.needsPlanReview` in
 `harness.json` in the same change. Commands fail fast if the configured status
 does not exist on the Linear team.
-
-Optional terminal keys `done`, `canceled`, and `duplicate` map operator-facing
-board states (for example Linear `Done`, `Canceled`, `Duplicate`). Factory
-stations do not require them; include them when cos/`linear-cli` or
-`factory linear list` should target those statuses by key.
 
 ## Linear Adapter
 
