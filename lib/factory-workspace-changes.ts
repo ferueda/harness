@@ -7,6 +7,12 @@ import { readWorkspaceStatus } from "./review-guard.ts";
 const UNTRACKED_PATCH_FILE_CAP = 500;
 const UNTRACKED_PATCH_BYTE_CAP = 5 * 1024 * 1024;
 
+/** Test/diagnostic access to v1 untracked patch caps. */
+export const FACTORY_UNTRACKED_PATCH_CAPS = {
+  fileCap: UNTRACKED_PATCH_FILE_CAP,
+  byteCap: UNTRACKED_PATCH_BYTE_CAP,
+} as const;
+
 export class FactoryWorkspaceChangesError extends Error {
   constructor(message: string, options: { cause?: unknown } = {}) {
     super(message, options);
@@ -52,12 +58,15 @@ export function isEmptyPorcelainStatus(porcelain: string): boolean {
 export function buildPatchCapture(input: {
   workspace: string;
   porcelain: string;
+  caps?: { fileCap?: number; byteCap?: number };
 }): FactoryWorkspacePatchCapture {
   const changedFiles = parsePorcelainChangedFiles(input.workspace, input.porcelain);
   const { patch, patchTruncated, truncatedUntrackedFileCount } = buildPatchMaterial({
     workspace: input.workspace,
     porcelain: input.porcelain,
     changedFiles,
+    fileCap: input.caps?.fileCap ?? UNTRACKED_PATCH_FILE_CAP,
+    byteCap: input.caps?.byteCap ?? UNTRACKED_PATCH_BYTE_CAP,
   });
   return {
     porcelain: input.porcelain,
@@ -133,6 +142,8 @@ function buildPatchMaterial(input: {
   workspace: string;
   porcelain: string;
   changedFiles: string[];
+  fileCap: number;
+  byteCap: number;
 }): {
   patch: string;
   patchTruncated: boolean;
@@ -170,14 +181,14 @@ function buildPatchMaterial(input: {
   let truncatedUntrackedFileCount = 0;
 
   for (const relativePath of untrackedPaths) {
-    if (appendedFiles >= UNTRACKED_PATCH_FILE_CAP || appendedBytes >= UNTRACKED_PATCH_BYTE_CAP) {
+    if (appendedFiles >= input.fileCap || appendedBytes >= input.byteCap) {
       patchTruncated = true;
       truncatedUntrackedFileCount += 1;
       continue;
     }
     const absolutePath = resolve(input.workspace, relativePath);
     const noIndexPatch = gitDiffNoIndex(input.workspace, absolutePath);
-    if (appendedBytes + noIndexPatch.length > UNTRACKED_PATCH_BYTE_CAP && appendedFiles > 0) {
+    if (appendedBytes + noIndexPatch.length > input.byteCap && appendedFiles > 0) {
       patchTruncated = true;
       truncatedUntrackedFileCount += 1;
       continue;
@@ -185,7 +196,7 @@ function buildPatchMaterial(input: {
     untrackedPatch += noIndexPatch;
     appendedFiles += 1;
     appendedBytes += noIndexPatch.length;
-    if (appendedFiles >= UNTRACKED_PATCH_FILE_CAP || appendedBytes >= UNTRACKED_PATCH_BYTE_CAP) {
+    if (appendedFiles >= input.fileCap || appendedBytes >= input.byteCap) {
       // Cap may land exactly on this file; remaining paths still count as truncated.
       const remaining = untrackedPaths.length - appendedFiles;
       if (remaining > 0) {
