@@ -214,6 +214,24 @@ for `--item-file`. Comment-derived planning-attention stages such as
 `plan-needs-human` require fetch; list mode does not read comments and omits
 `factoryStage` for the configured `needsInfo` status.
 
+### Linear Create
+
+Use Linear create to author one intake issue in the configured factory project:
+
+```bash
+LINEAR_API_KEY=... harness factory linear create --workspace /path/to/repo --title "Example intake" --body "Details"
+LINEAR_API_KEY=... harness factory linear create --workspace /path/to/repo --title "Example intake" --body-file notes.md
+printf '%s\n' "Details" | LINEAR_API_KEY=... harness factory linear create --workspace /path/to/repo --title "Example intake"
+```
+
+Create is a constrained intake helper, not a station. It requires
+`factory.linear.projectId`, a non-empty title, and a non-empty body from exactly
+one of `--body`, `--body-file`, or stdin. It always uses configured
+`factory.linear.teamKey`, `projectId`, and `statuses.intake`. It prints compact
+JSON with `identifier`, `url`, and `id: "linear:<identifier>"`. Create does not
+append lifecycle events, write factory run artifacts, or accept `--dry-run` /
+`--apply`. Use Linear fetch afterward when you need a full `FactoryWorkItem`.
+
 Linear team and project serve different purposes:
 
 - `teamKey` owns the issue key namespace and workflow statuses, such as
