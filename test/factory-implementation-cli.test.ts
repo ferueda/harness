@@ -3,6 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { expect, test } from "vitest";
+import { runFactoryImplementationWithLifecycle } from "../bin/factory-commands.ts";
+import {
+  createFactoryImplementationRunContextForTest,
+  type FactoryImplementationRunMeta,
+} from "../lib/factory-implementation-run-context.ts";
+import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
+import { deriveFactoryWorkItemKey, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
@@ -68,9 +75,16 @@ test("implementation item-file planned dry-run writes plan reference", () => {
   });
 });
 
-test("implementation run requires dry-run before role resolution", () => {
+test("implementation live without dry-run still validates input", () => {
+  const missing = runHarness(["factory", "implementation", "run"]);
+  expect(missing.status).not.toBe(0);
+  expect(missing.stderr).toContain("one of --item-file or --linear-issue is required");
+  expect(missing.stderr).not.toContain(
+    "Factory implementation station only supports --dry-run in v1",
+  );
+
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-implementation-cli-"));
-  const result = runHarness([
+  const missingFile = runHarness([
     "factory",
     "implementation",
     "run",
@@ -79,9 +93,18 @@ test("implementation run requires dry-run before role resolution", () => {
     "--item-file",
     "missing.json",
   ]);
+  expect(missingFile.status).not.toBe(0);
+  expect(missingFile.stderr).not.toContain(
+    "Factory implementation station only supports --dry-run in v1",
+  );
+  expect(missingFile.stderr.length).toBeGreaterThan(0);
+});
 
-  expect(result.status).not.toBe(0);
-  expect(result.stderr).toContain("Factory implementation station only supports --dry-run in v1");
+test("implementation run help includes live options", () => {
+  const result = runHarness(["factory", "implementation", "run", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("--max-runtime-ms");
+  expect(result.stdout).toContain("--verbose");
 });
 
 test("implementation run validates exactly one input source", () => {
@@ -160,6 +183,197 @@ test("implementation run includes configured implementer role in output and meta
   });
 });
 
+test("runFactoryImplementationWithLifecycle dry-run skips lifecycle events", async () => {
+  const workspace = createWorkspace();
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const workItem = directWorkItem();
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem,
+    implementationInput: directInput(workItem),
+    implementerRole: { agent: "cursor" },
+    dryRun: true,
+  });
+
+  const meta = await runFactoryImplementationWithLifecycle({
+    ctx,
+    factoryStateRoot,
+    async runImplementation(runCtx) {
+      return runCtx.export({ status: "dry_run" });
+    },
+  });
+
+  expect(meta.status).toBe("dry_run");
+  expect(
+    readFactoryLifecycleEvents({
+      factoryStateRoot,
+      workItemKey: deriveFactoryWorkItemKey(workItem),
+    }),
+  ).toHaveLength(0);
+});
+
+test("runFactoryImplementationWithLifecycle live success appends imported/started/completed", async () => {
+  const workspace = createWorkspace();
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const workItem = directWorkItem();
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem,
+    implementationInput: directInput(workItem),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          throw new Error("lifecycle helper should use injected runner");
+        },
+      };
+    },
+  });
+
+  const completed = baseLiveMeta(ctx, {
+    status: "implementation-complete",
+    reviewBase: "aaa111",
+    reviewHead: `refs/harness/factory/${ctx.runId}/implementation`,
+    reviewCommitSha: "bbb222",
+  });
+
+  const meta = await runFactoryImplementationWithLifecycle({
+    ctx,
+    factoryStateRoot,
+    itemFile: join(workspace, "work-item.json"),
+    async runImplementation() {
+      return completed;
+    },
+  });
+
+  expect(meta.status).toBe("implementation-complete");
+  const events = readFactoryLifecycleEvents({
+    factoryStateRoot,
+    workItemKey: deriveFactoryWorkItemKey(workItem),
+  });
+  expect(events.map((event) => event.type)).toEqual([
+    "work_item.imported",
+    "implementation.started",
+    "implementation.completed",
+  ]);
+  expect(events[2]).toMatchObject({
+    type: "implementation.completed",
+    data: {
+      reviewBase: "aaa111",
+      reviewHead: `refs/harness/factory/${ctx.runId}/implementation`,
+      reviewCommitSha: "bbb222",
+    },
+  });
+});
+
+test("runFactoryImplementationWithLifecycle live failed meta appends implementation.failed", async () => {
+  const workspace = createWorkspace();
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const workItem = directWorkItem();
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem,
+    implementationInput: directInput(workItem),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          throw new Error("lifecycle helper should use injected runner");
+        },
+      };
+    },
+  });
+
+  const failed = baseLiveMeta(ctx, {
+    status: "implementation-failed",
+    error: "Implementer failed",
+  });
+
+  const meta = await runFactoryImplementationWithLifecycle({
+    ctx,
+    factoryStateRoot,
+    async runImplementation() {
+      return failed;
+    },
+  });
+
+  expect(meta.status).toBe("implementation-failed");
+  const events = readFactoryLifecycleEvents({
+    factoryStateRoot,
+    workItemKey: deriveFactoryWorkItemKey(workItem),
+  });
+  expect(events.map((event) => event.type)).toEqual([
+    "work_item.imported",
+    "implementation.started",
+    "implementation.failed",
+  ]);
+  expect(events[2]).toMatchObject({
+    type: "implementation.failed",
+    data: { error: "Implementer failed" },
+  });
+});
+
+test("runFactoryImplementationWithLifecycle live runner throw terminalizes without rethrow", async () => {
+  const workspace = createWorkspace();
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-factory-impl-lifecycle-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const workItem = directWorkItem();
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem,
+    implementationInput: directInput(workItem),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          throw new Error("lifecycle helper should use injected runner");
+        },
+      };
+    },
+  });
+
+  const meta = await runFactoryImplementationWithLifecycle({
+    ctx,
+    factoryStateRoot,
+    async runImplementation() {
+      throw new Error("workflow exploded after started");
+    },
+  });
+
+  expect(meta.status).toBe("implementation-failed");
+  expect(meta.error).toContain("workflow exploded after started");
+  expect(existsSync(join(ctx.runDir, "meta.json"))).toBe(true);
+  const events = readFactoryLifecycleEvents({
+    factoryStateRoot,
+    workItemKey: deriveFactoryWorkItemKey(workItem),
+  });
+  expect(events.map((event) => event.type)).toEqual([
+    "work_item.imported",
+    "implementation.started",
+    "implementation.failed",
+  ]);
+  expect(events[2]).toMatchObject({
+    type: "implementation.failed",
+    data: { error: "workflow exploded after started" },
+  });
+});
+
 function createWorkspace(config: Record<string, unknown> = {}): string {
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-implementation-cli-"));
   writeFileSync(
@@ -178,14 +392,14 @@ function writeWorkItem(workspace: string, workItem: FactoryWorkItem): string {
 
 function directWorkItem(): FactoryWorkItem {
   return {
-    id: "local-1",
+    id: "file:local-1",
     source: "file",
     title: "Direct work",
     body: "Implement direct request.",
     labels: ["factory"],
     url: "https://example.com/work/local-1",
     metadata: {
-      tracker: { source: "manual", id: "local-1", url: "https://example.com/work/local-1" },
+      tracker: { source: "file", id: "local-1", url: "https://example.com/work/local-1" },
       factoryStage: "ready-to-implement",
       factoryRoute: "ready-to-implement",
       factoryNextAction: "implement-directly",
@@ -202,6 +416,78 @@ function plannedWorkItem(): FactoryWorkItem {
       approvedPlanPath: "dev/plans/FER-47.md",
       approvedPlanCommit: "abc1234",
     },
+  };
+}
+
+function directInput(workItem: FactoryWorkItem): FactoryImplementationInput {
+  return {
+    mode: "direct",
+    source: "item-file",
+    workItem,
+    metadata: {
+      tracker: { source: "linear", id: "FER-48" },
+      factoryStage: "ready-to-implement",
+      factoryRoute: "ready-to-implement",
+      factoryNextAction: "implement-directly",
+    },
+    sourceMaterial: {
+      title: workItem.title,
+      body: workItem.body,
+      labels: workItem.labels,
+      url: workItem.url,
+      tracker: { source: "linear", id: "FER-48" },
+    },
+  };
+}
+
+function baseLiveMeta(
+  ctx: ReturnType<typeof createFactoryImplementationRunContextForTest>,
+  overrides: Partial<FactoryImplementationRunMeta> & {
+    status: FactoryImplementationRunMeta["status"];
+  },
+): FactoryImplementationRunMeta {
+  return {
+    runId: ctx.runId,
+    workflow: "factory-implementation",
+    status: overrides.status,
+    mode: "direct",
+    workspace: ctx.workspace,
+    runDir: ctx.runDir,
+    workItem: {
+      id: ctx.workItem.id,
+      source: ctx.workItem.source,
+      title: ctx.workItem.title,
+    },
+    implementerAgent: ctx.implementerAgent,
+    artifacts: {
+      workItem: "context/work-item.json",
+      implementationInput: "context/implementation-input.json",
+      sourceMaterial: "context/source-material.json",
+      prompt: "implementation/prompt.md",
+      changeReviewHandoff: "implementation/change-review-handoff.md",
+      summary: "summary.md",
+      meta: "meta.json",
+      ...(overrides.status === "implementation-complete"
+        ? {
+            rawOutput: "implementation/implementer.raw.json" as const,
+            workspaceStatus: "implementation/workspace-status.json" as const,
+            diff: "implementation/diff.patch" as const,
+          }
+        : {
+            rawOutput: "implementation/implementer.raw.json" as const,
+            workspaceStatus: "implementation/workspace-status.json" as const,
+            diff: "implementation/diff.patch" as const,
+          }),
+    },
+    summaryPath: join(ctx.runDir, "summary.md"),
+    metaPath: join(ctx.runDir, "meta.json"),
+    startedAt: ctx.startedAt.toISOString(),
+    durationMs: 1,
+    eventsFile: "events.jsonl",
+    ...(overrides.error ? { error: overrides.error } : {}),
+    ...(overrides.reviewBase ? { reviewBase: overrides.reviewBase } : {}),
+    ...(overrides.reviewHead ? { reviewHead: overrides.reviewHead } : {}),
+    ...(overrides.reviewCommitSha ? { reviewCommitSha: overrides.reviewCommitSha } : {}),
   };
 }
 
