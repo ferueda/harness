@@ -711,6 +711,7 @@ test("harness factory triage help exits cleanly without direct agent flags", () 
   expect(result.stdout).toMatch(/--linear-issue <issue>/);
   expect(result.stdout).toMatch(/--apply/);
   expect(result.stdout).toMatch(/--dry-run/);
+  expect(result.stdout).toMatch(/--rerun/);
   expect(result.stdout).not.toMatch(/--agent/);
   expect(result.stdout).not.toMatch(/--model/);
   expect(result.stdout).not.toMatch(/--codex-executable/);
@@ -1810,6 +1811,103 @@ test("harness factory triage dry-run handles one item file", () => {
   ]);
   expect(existsSync(factoryLifecycleStatePath(store.factoryStateRoot, "file:local-1"))).toBe(false);
   expect(existsSync(join(store.factoryStateRoot, "locks"))).toBe(false);
+});
+
+test("harness factory triage gates completed history before run creation", () => {
+  const workspace = createPlainWorkspace();
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-rerun-store-"));
+  const itemFile = join(workspace, "item.json");
+  writeFileSync(
+    itemFile,
+    JSON.stringify({ id: "local-rerun", source: "file", title: "Rerun item", body: "" }),
+  );
+  const store = resolveFactoryStore({ workspace, factoryStoreRoot: storeRoot, env: {} });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    event: {
+      version: 1,
+      id: "triage.completed:old-run",
+      type: "triage.completed",
+      workItemKey: "file:local-rerun",
+      occurredAt: "2026-07-09T00:00:00.000Z",
+      runId: "old-run",
+      source: "harness",
+      data: {
+        route: "needs-info",
+        nextAction: "ask-human",
+        rationale: "Question",
+        routeArtifactPath: "factory-route.md",
+        triageArtifactPath: "factory-triage.json",
+      },
+    },
+  });
+  const args = [
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    itemFile,
+    "--factory-store-root",
+    storeRoot,
+  ];
+  for (const extra of [[], ["--dry-run"]]) {
+    const result = runHarness([...args, ...extra]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("--rerun");
+    expect(result.stderr).not.toContain('"harnessFactory":"run-started"');
+    expect(existsSync(itemFile)).toBe(true);
+    expect(existsSync(store.factoryRunsDir)).toBe(false);
+  }
+
+  const rerun = runHarness([...args, "--rerun", "--dry-run"]);
+  expect(rerun.status).toBe(0);
+  const output = JSON.parse(rerun.stdout);
+  expect(output.status).toBe("dry_run");
+  expect(readFileSync(join(output.runDir, "factory-route.md"), "utf8")).toContain("--rerun");
+  expect(
+    loadFactoryLifecycleState({
+      factoryStateRoot: store.factoryStateRoot,
+      workItemKey: "file:local-rerun",
+    })?.lastEventId,
+  ).toBe("triage.completed:old-run");
+});
+
+test("harness factory triage allows a failed-only history without rerun", () => {
+  const workspace = createPlainWorkspace();
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-retry-store-"));
+  const itemFile = join(workspace, "item.json");
+  writeFileSync(
+    itemFile,
+    JSON.stringify({ id: "local-retry", source: "file", title: "Retry item", body: "" }),
+  );
+  const store = resolveFactoryStore({ workspace, factoryStoreRoot: storeRoot, env: {} });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    event: {
+      version: 1,
+      id: "triage.failed:old-run",
+      type: "triage.failed",
+      workItemKey: "file:local-retry",
+      occurredAt: "2026-07-09T00:00:00.000Z",
+      runId: "old-run",
+      source: "harness",
+      data: { error: "Previous provider failure" },
+    },
+  });
+  const result = runHarness([
+    "factory",
+    "triage",
+    "--workspace",
+    workspace,
+    "--item-file",
+    itemFile,
+    "--dry-run",
+    "--factory-store-root",
+    storeRoot,
+  ]);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).status).toBe("dry_run");
 });
 
 test("harness factory triage records explicit runs-dir overrides in durable metadata", () => {

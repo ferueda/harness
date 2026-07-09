@@ -305,6 +305,64 @@ test("lifecycle overlay resolves approved planned implementation input", async (
   });
 });
 
+test("lifecycle direct route overrides stale source plan signals", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-direct-lifecycle-"));
+  const factoryStateRoot = resolveFactoryStateRoot({ workspace });
+  const workItemKey = deriveFactoryWorkItemKey(LINEAR_WORK_ITEM);
+  for (const event of [
+    {
+      version: 1 as const,
+      id: `work_item.imported:${workItemKey}`,
+      type: "work_item.imported" as const,
+      workItemKey,
+      occurredAt: "2026-07-08T00:00:00.000Z",
+      source: "harness" as const,
+      data: { source: "linear", title: LINEAR_WORK_ITEM.title },
+    },
+    {
+      version: 1 as const,
+      id: "triage.completed:run-direct",
+      type: "triage.completed" as const,
+      workItemKey,
+      occurredAt: "2026-07-08T00:01:00.000Z",
+      runId: "run-direct",
+      source: "harness" as const,
+      data: {
+        route: "ready-to-implement" as const,
+        nextAction: "implement-directly" as const,
+        rationale: "Direct",
+        routeArtifactPath: "factory-route.md",
+        triageArtifactPath: "factory-triage.json",
+      },
+    },
+  ])
+    appendFactoryLifecycleEvent({ factoryStateRoot, event });
+
+  const resolvedInput = await resolveFactoryWorkItemInput({
+    workspace,
+    linearIssue: "ENG-123",
+    factoryStateRoot,
+    linearSettings: LINEAR_SETTINGS,
+    env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "load",
+    linearAdapterFactory: () =>
+      fakeLinearAdapter({
+        fetchWorkItem: async () =>
+          linearInput({
+            approvedPlanPath: "dev/plans/stale.md",
+            approvedPlanCommit: "abc1234",
+          }).workItem,
+      }),
+  });
+  expect(
+    resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput,
+      linearReadyStatus: READY_STATUS,
+    }),
+  ).toMatchObject({ mode: "direct" });
+});
+
 test("planned handoff errors propagate unchanged", () => {
   const { workspace } = createWorkspacePlan();
 

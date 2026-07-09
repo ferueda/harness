@@ -56,8 +56,22 @@ const ROUTE_PLANS = {
 export function buildFactoryRoutePlan(
   _workItem: FactoryWorkItem,
   triageOutput: FactoryTriageOutput,
+  options: { nextLiveRunRequiresRerun?: boolean; isDryRun?: boolean } = {},
 ): FactoryRoutePlan {
-  return FactoryRoutePlanSchema.parse(ROUTE_PLANS[triageOutput.route]);
+  const routePlan = ROUTE_PLANS[triageOutput.route];
+  const repeatableRoute =
+    triageOutput.route === "needs-info" || triageOutput.route === "wait-to-implement";
+  let guidanceSuffix: string | undefined;
+  if (options.nextLiveRunRequiresRerun) {
+    guidanceSuffix = "Use --rerun for the intentional repeat.";
+  } else if (options.isDryRun) {
+    guidanceSuffix = "Run live factory triage without --rerun for the first recorded triage.";
+  }
+  return FactoryRoutePlanSchema.parse(
+    repeatableRoute && guidanceSuffix
+      ? { ...routePlan, command: `${routePlan.command} ${guidanceSuffix}` }
+      : routePlan,
+  );
 }
 
 export function renderFactoryTriageSummary(

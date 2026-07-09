@@ -82,9 +82,11 @@ import {
 import {
   createFactoryRunContext,
   assertFactoryItemFileExists,
+  type FactoryRunContext,
   type FactoryRunMeta,
 } from "../lib/factory-run-context.ts";
 import { announceFactoryRunStarted } from "../lib/factory-run-started.ts";
+import { assertFactoryTriageAllowed } from "../lib/factory-triage-policy.ts";
 import {
   parseFactoryTriageOutput,
   type FactoryTriageOutput,
@@ -112,6 +114,7 @@ type FactoryTriageStationOptions = {
   apply: boolean;
   dryRun: boolean;
   verbose: boolean;
+  rerun: boolean;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
 };
@@ -1189,6 +1192,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     )
     .option("--apply", "apply deterministic Linear status/comment updates", false)
     .option("--dry-run", "prepare context and placeholder routing only", false)
+    .option("--rerun", "intentionally repeat previously completed triage", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryTriageStationOptions) => {
       // Validate source flags before role/config resolution so CLI usage errors win.
@@ -1227,104 +1231,34 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         factoryStateRoot: store.factoryStateRoot,
       });
 
-      const runAbort = new AbortController();
-      const onRunAbort = () => runAbort.abort();
-      process.once("SIGINT", onRunAbort);
-      process.once("SIGTERM", onRunAbort);
-      let meta: FactoryRunMeta;
-      let startedUpdate: LinearTriageUpdatePlan | undefined;
-      let terminalUpdate: LinearTriageUpdatePlan | undefined;
-      let terminalApplyError: unknown;
-      try {
-        const ctx = createFactoryRunContext({
-          workspace: role.workspace,
-          runsDir: options.runsDir ?? store.factoryRunsDir,
-          factoryStore,
+      const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
+      const { meta, startedUpdate, terminalUpdate, terminalApplyError } =
+        await runFactoryTriageWithLinearApply({
+          factoryStateRoot: store.factoryStateRoot,
           workItem: input.workItem,
-          agentProvider: role.agent,
-          codexPathOverride: role.codexPathOverride,
-          model: role.model,
-          sandboxMode: role.sandboxMode,
-          approvalPolicy: role.approvalPolicy,
-          modelReasoningEffort: role.modelReasoningEffort,
-          maxRuntimeMs: options.maxRuntimeMs,
-          dryRun: options.dryRun,
-          signal: runAbort.signal,
-          eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
-          agentProviderFactory: createAgentProvider,
+          rerun: options.rerun,
+          issueRef: options.linearIssue ?? "",
+          itemFile: options.itemFile,
+          applyAdapter,
+          createContext: (signal) =>
+            createFactoryRunContext({
+              workspace: role.workspace,
+              runsDir: options.runsDir ?? store.factoryRunsDir,
+              factoryStore,
+              workItem: input.workItem,
+              agentProvider: role.agent,
+              codexPathOverride: role.codexPathOverride,
+              model: role.model,
+              sandboxMode: role.sandboxMode,
+              approvalPolicy: role.approvalPolicy,
+              modelReasoningEffort: role.modelReasoningEffort,
+              maxRuntimeMs: options.maxRuntimeMs,
+              dryRun: options.dryRun,
+              signal,
+              eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
+              agentProviderFactory: createAgentProvider,
+            }),
         });
-        announceFactoryRunStarted({
-          station: "triage",
-          runId: ctx.runId,
-          runDir: ctx.runDir,
-          workspace: ctx.workspace,
-        });
-        const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
-        if (!options.dryRun) {
-          appendWorkItemImportedEvent({
-            workspace: role.workspace,
-            workItem: input.workItem,
-            factoryStateRoot: store.factoryStateRoot,
-            execution: lifecycleExecutionForRun(ctx.workspace, ctx.runDir, ctx.factoryStore),
-          });
-          appendTriageStartedEvent({
-            workspace: role.workspace,
-            workItem: input.workItem,
-            runId: ctx.runId,
-            factoryStateRoot: store.factoryStateRoot,
-            execution: lifecycleExecutionForRun(ctx.workspace, ctx.runDir, ctx.factoryStore),
-            linearIssue: options.linearIssue,
-            itemFile: lifecycleItemFilePath(ctx.workspace, options.itemFile),
-          });
-        }
-        if (applyAdapter) {
-          startedUpdate = await applyAdapter.applyTriageStarted({
-            issueRef: options.linearIssue ?? "",
-            runId: ctx.runId,
-            runDir: ctx.runDir,
-          });
-        }
-        try {
-          meta = await runFactoryTriage(ctx);
-        } catch (error) {
-          meta = ctx.exportFailed(error);
-        }
-        const completedTriage =
-          meta.status === "completed" ? readFactoryTriageArtifact(meta) : undefined;
-        if (!options.dryRun) {
-          appendTriageTerminalEvent({
-            workspace: role.workspace,
-            workItem: input.workItem,
-            meta,
-            triage: completedTriage,
-            factoryStateRoot: store.factoryStateRoot,
-          });
-        }
-        if (applyAdapter) {
-          try {
-            if (completedTriage) {
-              terminalUpdate = await applyAdapter.applyTriageCompleted({
-                issueRef: options.linearIssue ?? "",
-                runId: ctx.runId,
-                runDir: ctx.runDir,
-                triage: completedTriage,
-              });
-            } else {
-              terminalUpdate = await applyAdapter.applyTriageFailed({
-                issueRef: options.linearIssue ?? "",
-                runId: ctx.runId,
-                runDir: ctx.runDir,
-                error: meta.error ?? "Factory triage failed.",
-              });
-            }
-          } catch (error) {
-            terminalApplyError = error;
-          }
-        }
-      } finally {
-        process.off("SIGINT", onRunAbort);
-        process.off("SIGTERM", onRunAbort);
-      }
       console.log(
         JSON.stringify(
           factoryTriageCliOutput(meta, {
@@ -1343,6 +1277,130 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       }
       process.exitCode = meta.status === "failed" ? 1 : 0;
     });
+}
+
+export async function runFactoryTriageWithLinearApply(input: {
+  factoryStateRoot: string;
+  workItem: FactoryWorkItem;
+  rerun: boolean;
+  issueRef: string;
+  itemFile?: string;
+  applyAdapter?: LinearFactoryAdapter;
+  createContext: (signal: AbortSignal) => FactoryRunContext;
+  runTriage?: (
+    ctx: FactoryRunContext,
+    options: { nextLiveRunRequiresRerun: boolean },
+  ) => Promise<FactoryRunMeta>;
+  announceRunStarted?: (input: Parameters<typeof announceFactoryRunStarted>[0]) => void;
+  appendImported?: (input: Parameters<typeof appendWorkItemImportedEvent>[0]) => void;
+  appendStarted?: (input: Parameters<typeof appendTriageStartedEvent>[0]) => void;
+  appendTerminal?: (input: Parameters<typeof appendTriageTerminalEvent>[0]) => void;
+}): Promise<{
+  meta: FactoryRunMeta;
+  startedUpdate?: LinearTriageUpdatePlan;
+  terminalUpdate?: LinearTriageUpdatePlan;
+  terminalApplyError?: unknown;
+}> {
+  const policy = assertFactoryTriageAllowed({
+    factoryStateRoot: input.factoryStateRoot,
+    workItem: input.workItem,
+    rerun: input.rerun,
+  });
+  const announceRunStarted = input.announceRunStarted ?? announceFactoryRunStarted;
+  const appendImported = input.appendImported ?? appendWorkItemImportedEvent;
+  const appendStarted = input.appendStarted ?? appendTriageStartedEvent;
+  const appendTerminal = input.appendTerminal ?? appendTriageTerminalEvent;
+  const runTriage = input.runTriage ?? runFactoryTriage;
+  const runAbort = new AbortController();
+  const onRunAbort = () => runAbort.abort();
+  process.once("SIGINT", onRunAbort);
+  process.once("SIGTERM", onRunAbort);
+  try {
+    const ctx = input.createContext(runAbort.signal);
+    announceRunStarted({
+      station: "triage",
+      runId: ctx.runId,
+      runDir: ctx.runDir,
+      workspace: ctx.workspace,
+    });
+    if (!ctx.dryRun) {
+      const execution = lifecycleExecutionForRun(ctx.workspace, ctx.runDir, ctx.factoryStore);
+      appendImported({
+        workspace: ctx.workspace,
+        workItem: input.workItem,
+        factoryStateRoot: input.factoryStateRoot,
+        execution,
+      });
+      const itemFile = lifecycleItemFilePath(ctx.workspace, input.itemFile);
+      appendStarted({
+        workspace: ctx.workspace,
+        workItem: input.workItem,
+        runId: ctx.runId,
+        factoryStateRoot: input.factoryStateRoot,
+        execution,
+        ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
+        ...(itemFile ? { itemFile } : {}),
+      });
+    }
+    let startedUpdate: LinearTriageUpdatePlan | undefined;
+    if (input.applyAdapter) {
+      startedUpdate = await input.applyAdapter.applyTriageStarted({
+        issueRef: input.issueRef,
+        runId: ctx.runId,
+        runDir: ctx.runDir,
+        rerun: input.rerun,
+      });
+    }
+    let meta: FactoryRunMeta;
+    try {
+      meta = await runTriage(ctx, {
+        nextLiveRunRequiresRerun: !ctx.dryRun || policy.hadPriorCompletion,
+      });
+    } catch (error) {
+      meta = ctx.exportFailed(error);
+    }
+    const completedTriage =
+      meta.status === "completed" ? readFactoryTriageArtifact(meta) : undefined;
+    if (!ctx.dryRun) {
+      appendTerminal({
+        workspace: ctx.workspace,
+        workItem: input.workItem,
+        meta,
+        triage: completedTriage,
+        factoryStateRoot: input.factoryStateRoot,
+      });
+    }
+    let terminalUpdate: LinearTriageUpdatePlan | undefined;
+    let terminalApplyError: unknown;
+    if (input.applyAdapter) {
+      try {
+        terminalUpdate = completedTriage
+          ? await input.applyAdapter.applyTriageCompleted({
+              issueRef: input.issueRef,
+              runId: ctx.runId,
+              runDir: ctx.runDir,
+              triage: completedTriage,
+            })
+          : await input.applyAdapter.applyTriageFailed({
+              issueRef: input.issueRef,
+              runId: ctx.runId,
+              runDir: ctx.runDir,
+              error: meta.error ?? "Factory triage failed.",
+            });
+      } catch (error) {
+        terminalApplyError = error;
+      }
+    }
+    return {
+      meta,
+      ...(startedUpdate ? { startedUpdate } : {}),
+      ...(terminalUpdate ? { terminalUpdate } : {}),
+      ...(terminalApplyError ? { terminalApplyError } : {}),
+    };
+  } finally {
+    process.off("SIGINT", onRunAbort);
+    process.off("SIGTERM", onRunAbort);
+  }
 }
 
 function validateFactoryApplyOptions(options: {

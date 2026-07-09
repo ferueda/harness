@@ -65,6 +65,7 @@ harness factory linear create --workspace /path/to/repo --title "Example" --body
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --rerun --apply
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
@@ -208,6 +209,16 @@ allowed entry statuses to `Triaging`, then to the terminal triage status, and
 write one marker comment. `--apply` cannot be combined with `--dry-run` or
 `--item-file`. Comment dedupe checks the most recent Linear comments fetched
 by the adapter (currently 20); older markers can be reposted on retry.
+
+Durable lifecycle event history is canonical. A prior `triage.completed`
+blocks normal live and dry-run triage before run creation, lifecycle writes,
+provider calls, or Linear mutation. Use `--rerun` only for intentional
+re-triage. Normal apply accepts Backlog, Needs Clarification, or Triage Failed;
+`--rerun --apply` accepts any present status after the same issue and configured
+team/project scope checks. A new completion clears prior approved-plan path,
+PR URL, and commit metadata. A first dry-run writes no completion and its next
+live command needs no override; an overridden dry-run over completed history
+still requires `--rerun` for the later live command.
 
 If an apply run leaves Linear in `Triaging`, inspect `summary.md` and
 `meta.json`, then manually move the issue to `Triage Failed`, `Backlog`, or
