@@ -3,7 +3,7 @@
   "defaultAgent": "cursor",
   "agents": {
     "cursor": {
-      "model": "composer-2.5"
+      "model": "grok-4.5"
     },
     "codex": {
       "model": "gpt-5.5",
