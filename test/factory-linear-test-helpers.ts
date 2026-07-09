@@ -15,6 +15,9 @@ export const LINEAR_SETTINGS = {
     planning: "Planning",
     triageFailed: "Triage Failed",
     planningFailed: "Planning Failed",
+    done: "Done",
+    canceled: "Canceled",
+    duplicate: "Duplicate",
   },
 } satisfies FactoryLinearSettings;
 
