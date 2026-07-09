@@ -334,6 +334,31 @@ Linear comments by default; they do not mutate Linear or GitHub unless
 approved-plan marker comment. Neither command opens PRs or inspects GitHub
 merge state. Do not commit `.harness/runs/*` or `.harness/factory/*`.
 
+### Linear PR linking
+
+Linear links GitHub PRs to issues via branch name, PR title, or magic-word +
+issue id ([Linear GitHub docs](https://linear.app/docs/github)). Operators own
+linking at PR creation time; harness stations do not mutate GitHub.
+
+Put the issue id in **both** branch and title:
+
+- Plan PR: branch `plan/<ISSUE>-<short-slug>`; title includes `<ISSUE>`; prefer
+  **no** closing magic words (`Fixes`, `Closes`, …).
+- Implementation PR: branch `feat/<ISSUE>-...` or `fix/<ISSUE>-...`; title
+  includes `<ISSUE>`; use closing words only when merge should complete the
+  issue.
+
+```bash
+git checkout -b plan/TEAM-123-short-slug
+git push -u origin plan/TEAM-123-short-slug
+gh pr create --title "plan: TEAM-123 short description" --body "..."
+```
+
+Repair an unlinked open PR with `gh pr edit <number> --title "..."` (or a
+branch rename). Prerequisite: Linear↔GitHub integration enabled for the repo.
+See [docs/contributing/factory.md](../../docs/contributing/factory.md) (Linear
+PR linking).
+
 ## Stop Conditions
 
 Stop before proceeding if the task requires:

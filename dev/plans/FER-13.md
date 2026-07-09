@@ -288,16 +288,16 @@ No new unit tests — no production code changes.
 
 ## Done criteria
 
-- [ ] `docs/contributing/factory.md` documents native Linear PR linking,
+- [x] `docs/contributing/factory.md` documents native Linear PR linking,
       branch/title conventions, prerequisite, repair path, and harness boundary.
-- [ ] `skills/factory-operator/SKILL.md` documents the same conventions for
+- [x] `skills/factory-operator/SKILL.md` documents the same conventions for
       operators opening plan and implementation PRs.
-- [ ] No `harness factory github` command, `--link-linear-pr`, `GITHUB_TOKEN`
+- [x] No `harness factory github` command, `--link-linear-pr`, `GITHUB_TOKEN`
       requirement, or PR-body mutation is introduced.
-- [ ] Docs state plan PRs prefer no closing magic words; implementation PRs use
+- [x] Docs state plan PRs prefer no closing magic words; implementation PRs use
       closing words only when merge should complete the issue.
-- [ ] `make check` exits 0.
-- [ ] `git status --short` shows only in-scope doc/plan files.
+- [x] `make check` exits 0.
+- [x] `git status --short` shows only in-scope doc/plan files.
 
 ## STOP conditions
 

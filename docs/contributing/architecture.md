@@ -213,7 +213,8 @@ Without `--apply`, they print suggested Linear comment text only. With
 `--linear-issue ... --apply`, they validate the Linear issue and configured
 status, post marker comments, and move `publish` to `Plan Needs Review` or
 `mark-plan-merged` to `Ready to Implement`. They do not open PRs or inspect
-GitHub merge state.
+GitHub merge state. Operators link PRs to Linear via branch/title conventions;
+see Linear PR linking in [Factory operation](./factory.md).
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these
