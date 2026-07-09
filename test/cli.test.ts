@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
+import { CURSOR_SDK_MODEL_MODES } from "../lib/agents.ts";
 import {
   HARNESS_GITIGNORE_ENTRY,
   HARNESS_RECOMMENDED_COMMAND,
@@ -225,7 +226,7 @@ test("harness models prints provider model defaults", () => {
   expect(result.status).toBe(0);
   const output = JSON.parse(result.stdout);
   expect(output.cursor.defaultModel).toBe("composer-2.5");
-  expect(output.cursor.models).toEqual(["composer-2.5", "claude-opus-4-8", "gpt-5.5"]);
+  expect(output.cursor.models).toEqual([...CURSOR_SDK_MODEL_MODES]);
   expect(output.cursor.modelsNote).toMatch(/Fixed Cursor SDK review modes/);
   expect(output.cursor.liveListCommand).toBeUndefined();
   expect(output.codex.defaultModel).toBe("gpt-5.5");
