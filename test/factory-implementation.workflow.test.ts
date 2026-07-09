@@ -18,6 +18,7 @@ import {
 } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
+import { buildPatchCapture } from "../lib/factory-workspace-changes.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
 
@@ -164,6 +165,13 @@ test("live untracked file completes and lists the file", async () => {
   };
   expect(status.changedFiles).toEqual(["new-file.ts"]);
   expect(meta.reviewHead).toBe(`refs/harness/factory/${ctx.runId}/implementation`);
+  const expectedDiff = git(workspace, [
+    "diff",
+    "--binary",
+    `${meta.reviewBase}..${meta.reviewCommitSha}`,
+  ]);
+  expect(readFileSync(join(ctx.runDir, "implementation/diff.patch"), "utf8")).toBe(expectedDiff);
+  expect(expectedDiff).toContain("new-file.ts");
 });
 
 test("live untracked directory with a file completes and lists the file", async () => {
@@ -195,6 +203,36 @@ test("live untracked directory with a file completes and lists the file", async 
     changedFiles: string[];
   };
   expect(status.changedFiles).toEqual(["new-dir/nested.ts"]);
+});
+
+test("untracked directory patch capture truncates under file cap", async () => {
+  const workspace = createGitWorkspace();
+  mkdirSync(join(workspace, "bulk"), { recursive: true });
+  for (let i = 0; i < 5; i += 1) {
+    writeFileSync(join(workspace, `bulk/file-${i}.txt`), `content-${i}\n`, "utf8");
+  }
+  const porcelain = execFileSync(
+    "git",
+    ["status", "--porcelain=v1", "-z", "--", ".", ":!.harness"],
+    { cwd: workspace, encoding: "utf8" },
+  );
+  const capture = buildPatchCapture({
+    workspace,
+    porcelain,
+    caps: { fileCap: 2 },
+  });
+  expect(capture.changedFiles).toEqual([
+    "bulk/file-0.txt",
+    "bulk/file-1.txt",
+    "bulk/file-2.txt",
+    "bulk/file-3.txt",
+    "bulk/file-4.txt",
+  ]);
+  expect(capture.patchTruncated).toBe(true);
+  expect(capture.truncatedUntrackedFileCount).toBeGreaterThan(0);
+  // With fileCap=2, later files must not appear in the truncated patch text.
+  expect(capture.patch).not.toContain("file-4.txt");
+  expect(capture.patch).toContain("file-0.txt");
 });
 
 test("changedFiles is stable-sorted across multiple edits", async () => {
