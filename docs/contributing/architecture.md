@@ -19,6 +19,7 @@ Current public CLI surfaces:
 - `harness factory linear fetch`
 - `harness factory triage`
 - `harness factory planning`
+- `harness factory implementation`
 - `harness run change-review`
 - `harness run factory-triage`
 - `harness run plan-review`
@@ -46,7 +47,8 @@ The harness repo owns the reusable workflow system:
 
 Prompt templates live under `lib/prompts/`. Review prompts are loaded through
 `lib/workflow-context.ts`; factory triage uses `lib/factory-run-context.ts`;
-factory planning uses `lib/factory-planning-run-context.ts`.
+factory planning uses `lib/factory-planning-run-context.ts`; factory
+implementation uses `lib/factory-implementation-run-context.ts`.
 
 Runtime Zod validation lives in `lib/schemas.ts` for reviews and
 `lib/factory-schemas.ts` for factory intake and
@@ -136,10 +138,16 @@ loading validated planning `meta.json`, rendering planning summaries, patching
 plan PR and merge metadata, and validating approved-plan metadata for future
 implementation stations.
 
-`lib/factory-implementation-input.ts` owns the library-only implementation
-station input contract. It classifies resolved work-item input into planned or
-direct mode, validates approved-plan handoff metadata, and treats Linear
+`lib/factory-implementation-input.ts` owns the implementation station input
+contract. It classifies resolved work-item input into planned or direct mode,
+validates approved-plan handoff metadata, and treats Linear
 `Ready to Implement` as a projection guard rather than source of truth.
+`lib/factory-implementation-run-context.ts` owns the dry-run implementation
+station run directory, context artifacts, prompt and change-review handoff
+artifacts, summary, and metadata. `harness factory implementation run` is
+currently dry-run only; it prepares implementation artifacts and does not
+invoke a provider, append lifecycle events, mutate Linear, create branches, or
+open PRs.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
@@ -207,6 +215,11 @@ Harness snapshots the draft, runs `plan-review` against that snapshot, guards
 against tracked source edits during planner turns, and reuses the captured
 planner session for revisions until the plan is approved, needs human input,
 fails, or reaches the review-iteration limit.
+
+`workflows/factory-implementation.workflow.ts` runs the current dry-run
+implementation station shell. It renders implementation prompt and
+change-review handoff artifacts, then exports summary and metadata. Live
+provider execution and review loops are future station work.
 
 `workflows/plan-review.workflow.ts` runs one fixed spec-review step. The
 plan-review command/runtime omits git diff scope and relies on `context/plan.md`
@@ -302,6 +315,21 @@ the tracker key, for example `dev/plans/FER-123.md`; local/manual items fall
 back to title-derived slugs. Tracker-backed planning approval records
 `factoryStage: "plan-pr-open"` until the plan PR URL and merge commit are
 registered through the planning publication commands.
+
+Factory implementation dry-run artifacts include:
+
+- `context/work-item.json`
+- `context/implementation-input.json`
+- `context/plan-ref.json` for planned work
+- `context/source-material.json` for direct work
+- `implementation/prompt.md`
+- `implementation/change-review-handoff.md`
+- `summary.md`
+- `meta.json`
+
+The implementation station shell is dry-run only. It does not invoke providers,
+write run `events.jsonl`, append lifecycle events under `.harness/factory`,
+mutate Linear, create branches, create worktrees, or open PRs.
 
 ## Factory inbox lifecycle
 

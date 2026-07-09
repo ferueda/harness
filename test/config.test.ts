@@ -346,9 +346,61 @@ test("resolveFactoryRoleAgent resolves missing role entries through fallback", (
   });
 });
 
+test("resolveFactoryRoleAgent reads configured implementation Cursor role", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    defaultAgent: "codex",
+    factory: {
+      implementation: {
+        roles: {
+          implementer: { agent: "cursor", model: "gpt-5.5" },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "implementation", role: "implementer" }, "/"),
+  ).toMatchObject({
+    agent: "cursor",
+    model: "gpt-5.5",
+  });
+});
+
+test("resolveFactoryRoleAgent preserves Codex implementation role fields", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    factory: {
+      implementation: {
+        roles: {
+          implementer: {
+            agent: "codex",
+            model: "gpt-implementation",
+            executable: "/opt/codex",
+            sandboxMode: "workspace-write",
+            approvalPolicy: "on-request",
+            modelReasoningEffort: "xhigh",
+          },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "implementation", role: "implementer" }, "/"),
+  ).toMatchObject({
+    agent: "codex",
+    model: "gpt-implementation",
+    codexPathOverride: "/opt/codex",
+    sandboxMode: "workspace-write",
+    approvalPolicy: "on-request",
+    modelReasoningEffort: "xhigh",
+  });
+});
+
 test("factory config rejects unknown station, role, and role fields", () => {
   const cases = [
-    [{ factory: { implementation: {} } }, /factory: Unrecognized key/],
+    [{ factory: { deployment: {} } }, /factory: Unrecognized key/],
     [
       { factory: { triage: { roles: { reviewer: {} } } } },
       /factory\.triage\.roles: Unrecognized key/,
@@ -405,6 +457,10 @@ test("factory config rejects Codex-only fields on effective Cursor roles", () =>
     },
     {
       factory: { planning: { roles: { planner: { approvalPolicy: "never" } } } },
+    },
+    {
+      defaultAgent: "cursor",
+      factory: { implementation: { roles: { implementer: { sandboxMode: "workspace-write" } } } },
     },
   ];
 

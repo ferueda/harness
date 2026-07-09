@@ -160,28 +160,28 @@ or mutate Linear.
 
 ## Commands you will need
 
-| Purpose | Command | Expected on success |
-| --- | --- | --- |
-| Install | `pnpm install --frozen-lockfile` | exit 0 |
-| Existing resolver baseline | `pnpm test -- test/factory-implementation-input.test.ts` | exit 0; all existing implementation-input tests pass |
-| Config tests | `pnpm test -- test/config.test.ts` | exit 0; implementation role config tests pass |
-| New implementation station tests | `pnpm test -- test/factory-implementation-run-context.test.ts test/factory-implementation-cli.test.ts` | exit 0; planned and direct artifact tests pass |
-| CLI help smoke from source | `node bin/harness.ts factory implementation run --help` | exit 0; help includes `--item-file`, `--linear-issue`, `--runs-dir`, `--dry-run` |
-| Focused factory tests | `pnpm test -- test/factory-implementation-input.test.ts test/factory-implementation-run-context.test.ts test/factory-implementation-cli.test.ts test/config.test.ts` | exit 0 |
-| Typecheck | `pnpm typecheck` | exit 0, no TypeScript errors |
-| Lint | `pnpm lint` | exit 0, no lint errors |
-| Dist smoke | `pnpm smoke:dist` | exit 0; built CLI help includes factory implementation |
-| Full local gate | `pnpm check` | exit 0; format, lint, typecheck, tests, build, smoke-dist pass |
+| Purpose                          | Command                                                                                                                                                              | Expected on success                                                              |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Install                          | `pnpm install --frozen-lockfile`                                                                                                                                     | exit 0                                                                           |
+| Existing resolver baseline       | `pnpm test -- test/factory-implementation-input.test.ts`                                                                                                             | exit 0; all existing implementation-input tests pass                             |
+| Config tests                     | `pnpm test -- test/config.test.ts`                                                                                                                                   | exit 0; implementation role config tests pass                                    |
+| New implementation station tests | `pnpm test -- test/factory-implementation-run-context.test.ts test/factory-implementation-cli.test.ts`                                                               | exit 0; planned and direct artifact tests pass                                   |
+| CLI help smoke from source       | `node bin/harness.ts factory implementation run --help`                                                                                                              | exit 0; help includes `--item-file`, `--linear-issue`, `--runs-dir`, `--dry-run` |
+| Focused factory tests            | `pnpm test -- test/factory-implementation-input.test.ts test/factory-implementation-run-context.test.ts test/factory-implementation-cli.test.ts test/config.test.ts` | exit 0                                                                           |
+| Typecheck                        | `pnpm typecheck`                                                                                                                                                     | exit 0, no TypeScript errors                                                     |
+| Lint                             | `pnpm lint`                                                                                                                                                          | exit 0, no lint errors                                                           |
+| Dist smoke                       | `pnpm smoke:dist`                                                                                                                                                    | exit 0; built CLI help includes factory implementation                           |
+| Full local gate                  | `pnpm check`                                                                                                                                                         | exit 0; format, lint, typecheck, tests, build, smoke-dist pass                   |
 
 ## Skills for the executor
 
-| Step | Skill/tool | Why |
-| --- | --- | --- |
-| All steps | `implement-plan` | Execute this approved plan phase by phase, preserving scope boundaries and updating plan checkboxes if copied to `dev/plans/`. |
-| Type/config/run-context steps | `typescript-refactor` | Keep new discriminated unions, exported meta types, and command option types idiomatic for strict TypeScript. |
-| Config/schema step | `zod` | Extend strict Zod config schemas and validation errors without weakening existing boundary checks. |
-| Test steps | `vitest` | Add isolated station and CLI regression tests matching the repo's Vitest style. |
-| After implementation | `change-review-workflow` | Prepare/run the repository's standard review handoff after code changes, using the generated handoff model as reference. |
+| Step                          | Skill/tool               | Why                                                                                                                            |
+| ----------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| All steps                     | `implement-plan`         | Execute this approved plan phase by phase, preserving scope boundaries and updating plan checkboxes if copied to `dev/plans/`. |
+| Type/config/run-context steps | `typescript-refactor`    | Keep new discriminated unions, exported meta types, and command option types idiomatic for strict TypeScript.                  |
+| Config/schema step            | `zod`                    | Extend strict Zod config schemas and validation errors without weakening existing boundary checks.                             |
+| Test steps                    | `vitest`                 | Add isolated station and CLI regression tests matching the repo's Vitest style.                                                |
+| After implementation          | `change-review-workflow` | Prepare/run the repository's standard review handoff after code changes, using the generated handoff model as reference.       |
 
 ## Scope
 
@@ -228,17 +228,16 @@ Update `lib/schemas.ts`:
 - Shape:
 
 ```ts
-implementation: z
-  .object({
-    roles: z
-      .object({
-        implementer: FactoryRoleSchema.optional(),
-      })
-      .strict()
-      .optional(),
-  })
+implementation: z.object({
+  roles: z
+    .object({
+      implementer: FactoryRoleSchema.optional(),
+    })
+    .strict()
+    .optional(),
+})
   .strict()
-  .optional()
+  .optional();
 ```
 
 - Add `validateFactoryRole(config, ctx, ["factory", "implementation", "roles", "implementer"], config.factory?.implementation?.roles?.implementer)`.
@@ -262,7 +261,7 @@ Update `test/config.test.ts`:
 - Change the unknown-station case so it still checks a truly unknown station,
   not `implementation`.
 - Add a test that `resolveFactoryRoleAgent({ station: "implementation", role:
-  "implementer" })` reads a configured Cursor role.
+"implementer" })` reads a configured Cursor role.
 - Add a test that a Codex implementation role preserves optional fields:
   `model`, `executable`, `sandboxMode`, `approvalPolicy`,
   `modelReasoningEffort`.
@@ -432,7 +431,7 @@ Command behavior order:
    role/config resolution.
 3. Resolve implementer role with
    `resolveFactoryRoleAgent({ workspace: options.workspace, station:
-   "implementation", role: "implementer" })`.
+"implementation", role: "implementer" })`.
 4. Resolve Linear settings only when `options.linearIssue` is present.
 5. Resolve the work item through `resolveFactoryWorkItemInput`.
 6. Resolve implementation input through `resolveFactoryImplementationInput`,
@@ -625,37 +624,37 @@ Expected:
 
 All must hold:
 
-- [ ] `harness factory implementation run --help` exists and exposes
+- [x] `harness factory implementation run --help` exists and exposes
       `--workspace`, `--item-file`, `--linear-issue`, `--runs-dir`, and
       `--dry-run`.
-- [ ] `harness factory implementation run` without `--dry-run` fails with a
+- [x] `harness factory implementation run` without `--dry-run` fails with a
       clear v1 dry-run-only error before role/config/Linear resolution.
-- [ ] `--item-file` and `--linear-issue` are mutually exclusive and exactly one
+- [x] `--item-file` and `--linear-issue` are mutually exclusive and exactly one
       is required.
-- [ ] The command calls `resolveFactoryWorkItemInput` and
+- [x] The command calls `resolveFactoryWorkItemInput` and
       `resolveFactoryImplementationInput`.
-- [ ] Linear implementation input passes configured
+- [x] Linear implementation input passes configured
       `factory.linear.statuses.readyToImplement` as `linearReadyStatus`.
-- [ ] Planned mode writes `context/plan-ref.json` with relative
+- [x] Planned mode writes `context/plan-ref.json` with relative
       `approvedPlanPath`, absolute `planPath`, and `approvedPlanCommit`.
-- [ ] Direct mode writes `context/source-material.json` with title, body,
+- [x] Direct mode writes `context/source-material.json` with title, body,
       labels, url when present, tracker metadata when present, and source
       material.
-- [ ] Both modes write `context/work-item.json`,
+- [x] Both modes write `context/work-item.json`,
       `context/implementation-input.json`, `implementation/prompt.md`,
       `implementation/change-review-handoff.md`, `summary.md`, and `meta.json`.
-- [ ] Dry-run implementation writes no `events.jsonl` and appends no lifecycle
+- [x] Dry-run implementation writes no `events.jsonl` and appends no lifecycle
       events.
-- [ ] No implementation provider/agent is invoked.
-- [ ] No `--apply`, PR creation, Linear mutation, branch/worktree orchestration,
+- [x] No implementation provider/agent is invoked.
+- [x] No `--apply`, PR creation, Linear mutation, branch/worktree orchestration,
       Git checkout, Git object verification, or change-review loop is added.
-- [ ] `factory.implementation.roles.implementer` validates and resolves through
+- [x] `factory.implementation.roles.implementer` validates and resolves through
       the existing role config pattern.
-- [ ] `implementation/change-review-handoff.md` uses the exact seven required
+- [x] `implementation/change-review-handoff.md` uses the exact seven required
       sections and placeholders for post-implementation fields.
-- [ ] README, factory docs, script-command-surface docs, and smoke-dist help
+- [x] README, factory docs, script-command-surface docs, and smoke-dist help
       coverage are updated.
-- [ ] `pnpm typecheck`, `pnpm lint`, focused tests, `pnpm smoke:dist`, and
+- [x] `pnpm typecheck`, `pnpm lint`, focused tests, `pnpm smoke:dist`, and
       `pnpm check` exit 0.
 
 ## STOP conditions

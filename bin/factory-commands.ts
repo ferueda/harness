@@ -1,6 +1,7 @@
 import { InvalidArgumentError, type Command } from "commander";
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { factoryImplementationCliOutput } from "./factory-implementation-cli.ts";
 import {
   factoryPlanningCliOutput,
   type FactoryPlanningLinearUpdate,
@@ -13,6 +14,12 @@ import {
   resolveFactoryRoleAgent,
   resolveHarnessOptions,
 } from "../lib/config.ts";
+import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
+import {
+  FACTORY_IMPLEMENTATION_DRY_RUN_ERROR,
+  FactoryImplementationRunError,
+  createFactoryImplementationRunContext,
+} from "../lib/factory-implementation-run-context.ts";
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
 import {
   appendPlanPrMergedEvent,
@@ -64,6 +71,7 @@ import {
 } from "../lib/factory-schemas.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
+import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
 import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
 import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
 
@@ -110,6 +118,14 @@ type FactoryPlanningMarkMergedOptions = {
   apply: boolean;
 };
 
+type FactoryImplementationStationOptions = {
+  workspace?: string;
+  itemFile?: string;
+  linearIssue?: string;
+  runsDir?: string;
+  dryRun: boolean;
+};
+
 type FactoryLinearFetchOptions = {
   workspace?: string;
 };
@@ -134,6 +150,7 @@ export function addFactoryCommands(parent: Command, options: FactoryCommandOptio
   addFactoryLinearCommand(factory);
   addFactoryTriageStationCommand(factory, options);
   addFactoryPlanningStationCommand(factory, options);
+  addFactoryImplementationStationCommand(factory);
 }
 
 function addFactoryStatusCommand(parent: Command): void {
@@ -274,6 +291,56 @@ function addFactoryPlanningStationCommand(parent: Command, config: FactoryComman
       if (result.terminalApplyError) {
         throw result.terminalApplyError;
       }
+    });
+}
+
+function addFactoryImplementationStationCommand(parent: Command): void {
+  const implementation = parent
+    .command("implementation")
+    .description("Manage factory implementation station");
+  implementation
+    .command("run", { isDefault: true })
+    .description("Run one factory work item through the implementation station")
+    .option("--workspace <path>", "target repo")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
+    .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/factory)")
+    .option("--dry-run", "prepare implementation prompt and handoff artifacts", false)
+    .action(async (options: FactoryImplementationStationOptions) => {
+      if (!options.dryRun) {
+        throw new FactoryImplementationRunError(FACTORY_IMPLEMENTATION_DRY_RUN_ERROR);
+      }
+      validateFactoryWorkItemInput(options);
+      const implementerRole = resolveFactoryRoleAgent({
+        workspace: options.workspace,
+        station: "implementation",
+        role: "implementer",
+      });
+      const linearSettings = options.linearIssue
+        ? resolveFactoryLinearSettings({ workspace: implementerRole.workspace })
+        : undefined;
+      const input = await resolveFactoryWorkItemInput({
+        workspace: implementerRole.workspace,
+        itemFile: options.itemFile,
+        linearIssue: options.linearIssue,
+        linearSettings,
+        env: process.env,
+      });
+      const implementationInput = resolveFactoryImplementationInput({
+        workspace: implementerRole.workspace,
+        resolvedInput: input,
+        linearReadyStatus: linearSettings?.statuses.readyToImplement,
+      });
+      const ctx = createFactoryImplementationRunContext({
+        workspace: implementerRole.workspace,
+        runsDir: options.runsDir,
+        workItem: input.workItem,
+        implementationInput,
+        implementerRole,
+        dryRun: true,
+      });
+      const meta = await runFactoryImplementation(ctx);
+      console.log(JSON.stringify(factoryImplementationCliOutput(meta), null, 2));
     });
 }
 

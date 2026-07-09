@@ -145,6 +145,29 @@ const factoryPlanningMergedHelp = runHarness(["factory", "planning", "mark-plan-
 if (!factoryPlanningMergedHelp.includes("harness factory planning mark-plan-merged")) {
   throw new Error("Expected factory planning mark-plan-merged help to include command usage");
 }
+const factoryImplementationHelp = runHarness(["factory", "implementation", "--help"]);
+if (!factoryImplementationHelp.includes("harness factory implementation")) {
+  throw new Error("Expected factory implementation help to include command usage");
+}
+const factoryImplementationRunHelp = runHarness(["factory", "implementation", "run", "--help"]);
+if (!factoryImplementationRunHelp.includes("harness factory implementation run")) {
+  throw new Error("Expected factory implementation run help to include command usage");
+}
+if (!factoryImplementationRunHelp.includes("--workspace <path>")) {
+  throw new Error("Expected factory implementation run help to include --workspace");
+}
+if (!factoryImplementationRunHelp.includes("--item-file <path>")) {
+  throw new Error("Expected factory implementation run help to include --item-file");
+}
+if (!factoryImplementationRunHelp.includes("--linear-issue <issue>")) {
+  throw new Error("Expected factory implementation run help to include --linear-issue");
+}
+if (!factoryImplementationRunHelp.includes("--runs-dir <path>")) {
+  throw new Error("Expected factory implementation run help to include --runs-dir");
+}
+if (!factoryImplementationRunHelp.includes("--dry-run")) {
+  throw new Error("Expected factory implementation run help to include --dry-run");
+}
 const factoryDispatchHelp = runHarnessAllowFailure(["factory", "dispatch", "--help"]);
 const factoryDispatchHelpText = `${factoryDispatchHelp.stderr}\n${factoryDispatchHelp.stdout}`;
 if (/factory dispatch/i.test(factoryDispatchHelpText)) {
