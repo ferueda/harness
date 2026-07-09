@@ -530,9 +530,11 @@ async function validateStatusMap(
   const team = await fetchTeam(client, settings.teamKey);
   const states = await team.states({ first: STATUS_FETCH_LIMIT });
   const existingNames = new Set(states.nodes.map((state) => normalizeName(state.name)));
-  const missing = unique(Object.values(settings.statuses)).filter(
-    (statusName) => !existingNames.has(normalizeName(statusName)),
-  );
+  const missing = unique(
+    Object.values(settings.statuses).filter((statusName): statusName is string =>
+      Boolean(statusName),
+    ),
+  ).filter((statusName) => !existingNames.has(normalizeName(statusName)));
 
   if (missing.length > 0) {
     throw new Error(
