@@ -14,12 +14,7 @@ export type FactoryRunStartedProgress = {
  * to events.jsonl.
  */
 export function announceFactoryRunStarted(
-  input: {
-    station: FactoryRunStartedStation;
-    runId: string;
-    runDir: string;
-    workspace: string;
-  },
+  input: Omit<FactoryRunStartedProgress, "harnessFactory">,
   write: (line: string) => void = (line) => {
     process.stderr.write(`${line}\n`);
   },
