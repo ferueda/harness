@@ -17,7 +17,7 @@
       "roles": {
         "triager": {
           "agent": "cursor",
-          "model": "composer-2.5"
+          "model": "grok-4.5"
         }
       }
     },
@@ -31,7 +31,7 @@
         },
         "reviewer": {
           "agent": "cursor",
-          "model": "composer-2.5"
+          "model": "grok-4.5"
         }
       }
     },
