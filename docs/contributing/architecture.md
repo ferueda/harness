@@ -333,8 +333,9 @@ Factory implementation dry-run artifacts include:
 - `context/source-material.json` for direct work
 - `implementation/prompt.md`
 - `implementation/change-review-handoff.md`
-- live only: `implementer.raw.json`, `implementer.stream.jsonl`,
-  `workspace-status.json`, `diff.patch`, run `events.jsonl`
+- live only: `implementer.raw.json`, optional `implementer.stream.jsonl`
+  when the provider streams, `workspace-status.json`, `diff.patch`, run
+  `events.jsonl`
 - `summary.md`
 - `meta.json`
 
