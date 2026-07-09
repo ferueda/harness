@@ -105,6 +105,33 @@ export function schemaAccepts(schema: JsonSchema, value: unknown): boolean {
   return validateJsonSchema(value, schema, "$") === undefined;
 }
 
+export function assertCodexStrictSchema(schema: JsonSchema, path = "$"): void {
+  const properties = schema.properties ?? {};
+  if (isObjectSchema(schema) && Object.keys(properties).length > 0) {
+    if (schema.additionalProperties !== false) {
+      throw new Error(`${path}: object schemas must set additionalProperties=false`);
+    }
+
+    const required = new Set(schema.required ?? []);
+    const missing = Object.keys(properties).filter((key) => !required.has(key));
+    if (missing.length > 0) {
+      throw new Error(`${path}: properties missing from required: ${missing.join(", ")}`);
+    }
+  }
+
+  for (const [key, propertySchema] of Object.entries(properties)) {
+    assertCodexStrictSchema(propertySchema, `${path}.${key}`);
+  }
+
+  if (schema.items) {
+    assertCodexStrictSchema(schema.items, `${path}[]`);
+  }
+
+  if (typeof schema.additionalProperties === "object") {
+    assertCodexStrictSchema(schema.additionalProperties, `${path}.*`);
+  }
+}
+
 function jsonTypeOf(value: unknown): JsonTypeName {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
@@ -120,4 +147,9 @@ function jsonTypeOf(value: unknown): JsonTypeName {
     default:
       return "object";
   }
+}
+
+function isObjectSchema(schema: JsonSchema): boolean {
+  const types = schema.type ? (Array.isArray(schema.type) ? schema.type : [schema.type]) : [];
+  return types.includes("object") || schema.properties !== undefined;
 }

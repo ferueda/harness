@@ -112,19 +112,19 @@ export const FactoryTriageOutputSchema = z
         z
           .object({
             kind: z.enum(FACTORY_EVIDENCE_KINDS),
-            path: z.string().optional(),
+            path: z.string().min(1).nullable(),
             summary: z.string().min(1),
           })
           .strict(),
       )
       .min(1),
-    questions: z.array(z.string().min(1)).optional(),
-    reconsiderWhen: z.string().min(1).optional(),
+    questions: z.array(z.string().min(1)),
+    reconsiderWhen: z.string().min(1).nullable(),
     suggestedNext: z
       .object({
         action: z.enum(FACTORY_NEXT_ACTIONS),
-        command: z.string().optional(),
-        artifact: z.string().optional(),
+        command: z.string().min(1).nullable(),
+        artifact: z.string().min(1).nullable(),
       })
       .strict(),
   })
@@ -132,11 +132,11 @@ export const FactoryTriageOutputSchema = z
   .superRefine((output, ctx) => {
     if (output.route === "ready-to-implement") {
       requireAction(output, ctx, "implement-directly");
-      if (output.questions && output.questions.length > 0) {
+      if (output.questions.length > 0) {
         ctx.addIssue({
           code: "custom",
           path: ["questions"],
-          message: "ready-to-implement must not include required questions",
+          message: "ready-to-implement must use questions: []",
         });
       }
     }
@@ -147,7 +147,7 @@ export const FactoryTriageOutputSchema = z
 
     if (output.route === "needs-info") {
       requireAction(output, ctx, "ask-human");
-      if (!output.questions || output.questions.length === 0) {
+      if (output.questions.length === 0) {
         ctx.addIssue({
           code: "custom",
           path: ["questions"],
@@ -158,7 +158,7 @@ export const FactoryTriageOutputSchema = z
 
     if (output.route === "wait-to-implement") {
       requireAction(output, ctx, "park");
-      if (!output.reconsiderWhen) {
+      if (output.reconsiderWhen === null) {
         ctx.addIssue({
           code: "custom",
           path: ["reconsiderWhen"],

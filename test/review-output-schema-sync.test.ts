@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { ReviewOutputSchema } from "../lib/schemas.ts";
-import { loadSchema, schemaAccepts } from "../lib/schema-validation.ts";
+import { assertCodexStrictSchema, loadSchema, schemaAccepts } from "../lib/schema-validation.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REVIEW_SCHEMA_PATH = join(REPO_ROOT, "schemas/review-output.schema.json");
@@ -41,6 +41,7 @@ function finding(overrides: Partial<Record<(typeof FINDING_REQUIRED)[number], un
 }
 
 test("review-output JSON schema file defines expected root shape", () => {
+  expect(() => assertCodexStrictSchema(REVIEW_SCHEMA)).not.toThrow();
   expect(REVIEW_SCHEMA.required).toEqual(
     expect.arrayContaining(["verdict", "summary", "findings"]),
   );

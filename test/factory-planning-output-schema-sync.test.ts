@@ -6,7 +6,7 @@ import {
   FACTORY_PLANNING_OUTCOMES,
   FactoryPlanningOutputSchema,
 } from "../lib/factory-planning-schemas.ts";
-import { loadSchema, schemaAccepts } from "../lib/schema-validation.ts";
+import { assertCodexStrictSchema, loadSchema, schemaAccepts } from "../lib/schema-validation.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FACTORY_PLANNING_SCHEMA_PATH = join(REPO_ROOT, "schemas/factory-planning-output.schema.json");
@@ -34,10 +34,7 @@ const VALID_NEEDS_HUMAN = {
 
 test("factory planning JSON schema file defines expected root shape", () => {
   expect(FACTORY_PLANNING_SCHEMA.additionalProperties).toBe(false);
-  // Codex strict structured outputs require every property to be required.
-  expect(new Set(FACTORY_PLANNING_SCHEMA.required)).toEqual(
-    new Set(Object.keys(FACTORY_PLANNING_SCHEMA.properties ?? {})),
-  );
+  expect(() => assertCodexStrictSchema(FACTORY_PLANNING_SCHEMA)).not.toThrow();
   expect(FACTORY_PLANNING_SCHEMA.properties?.outcome?.enum).toEqual([...FACTORY_PLANNING_OUTCOMES]);
   expect(
     FACTORY_PLANNING_SCHEMA.properties?.findingDecisions?.items?.properties?.decision?.enum,

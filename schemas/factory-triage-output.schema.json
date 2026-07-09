@@ -3,7 +3,15 @@
   "title": "FactoryTriageOutput",
   "type": "object",
   "additionalProperties": false,
-  "required": ["route", "confidence", "rationale", "evidence", "suggestedNext"],
+  "required": [
+    "route",
+    "confidence",
+    "rationale",
+    "evidence",
+    "questions",
+    "reconsiderWhen",
+    "suggestedNext"
+  ],
   "properties": {
     "route": {
       "type": "string",
@@ -14,24 +22,27 @@
       "enum": ["high", "medium", "low"]
     },
     "rationale": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "evidence": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["kind", "summary"],
+        "required": ["kind", "path", "summary"],
         "properties": {
           "kind": {
             "type": "string",
             "enum": ["tracker", "code", "docs", "test", "repo-state"]
           },
           "path": {
-            "type": "string"
+            "type": ["string", "null"],
+            "minLength": 1
           },
           "summary": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         }
       }
@@ -39,26 +50,30 @@
     "questions": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1
       }
     },
     "reconsiderWhen": {
-      "type": "string"
+      "type": ["string", "null"],
+      "minLength": 1
     },
     "suggestedNext": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["action"],
+      "required": ["action", "command", "artifact"],
       "properties": {
         "action": {
           "type": "string",
           "enum": ["implement-directly", "create-plan", "ask-human", "park"]
         },
         "command": {
-          "type": "string"
+          "type": ["string", "null"],
+          "minLength": 1
         },
         "artifact": {
-          "type": "string"
+          "type": ["string", "null"],
+          "minLength": 1
         }
       }
     }

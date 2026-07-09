@@ -28,8 +28,20 @@ const TRIAGE_OUTPUT = {
   route: "ready-to-plan",
   confidence: "medium",
   rationale: "The request affects export behavior and needs a short implementation plan.",
-  evidence: [{ kind: "repo-state", summary: "No target intent docs were found in the fixture." }],
-  suggestedNext: { action: "create-plan", command: "ignored by deterministic router" },
+  evidence: [
+    {
+      kind: "repo-state",
+      path: null,
+      summary: "No target intent docs were found in the fixture.",
+    },
+  ],
+  questions: [],
+  reconsiderWhen: null,
+  suggestedNext: {
+    action: "create-plan",
+    command: "ignored by deterministic router",
+    artifact: null,
+  },
 } satisfies FactoryTriageOutput;
 
 test("factory triage dry-run writes placeholder artifacts without calling provider", async () => {
@@ -112,8 +124,8 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   );
   const prompt = readFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "utf8");
   expect(prompt).toContain("Include blocking questions only for needs-info");
-  expect(prompt).toContain("ready-to-implement must not include questions");
-  expect(prompt).toContain("ready-to-plan may include optional non-blocking planning questions");
+  expect(prompt).toContain("ready-to-implement must use questions: []");
+  expect(prompt).toContain("ready-to-plan may include non-blocking planning questions");
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain(
     "Use the planning-workflow coordinator",
   );
@@ -194,7 +206,7 @@ test("factory triage invalid provider output writes failed metadata and preserve
             ok: true,
             structuredOutput: {
               ...TRIAGE_OUTPUT,
-              suggestedNext: { action: "implement-directly" },
+              suggestedNext: { action: "implement-directly", command: null, artifact: null },
             },
             raw: { finalResponse: "route/action mismatch" },
           };
