@@ -470,13 +470,31 @@ test("createCodexAgent supports non-review sandbox and approval modes", async ()
   });
 });
 
-test("createCodexAgent returns invalid JSON failures", async () => {
+test("createCodexAgent accepts prose finals when no schema is set", async () => {
   const workspace = createGitWorkspace();
   const { codexFactory } = createFakeCodex({ finalResponse: "not json" });
 
   const result = await createCodexAgent({ codexFactory }).run({
     workspace,
     prompt: "review this",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.structuredOutput).toBeUndefined();
+  expect(result.raw).toMatchObject({ finalResponse: "not json" });
+});
+
+test("createCodexAgent returns invalid JSON failures when schema is set", async () => {
+  const workspace = createGitWorkspace();
+  const schemaPath = createSchemaFile(workspace);
+  const { codexFactory } = createFakeCodex({ finalResponse: "not json" });
+
+  const result = await createCodexAgent({ codexFactory }).run({
+    workspace,
+    prompt: "review this",
+    schemaPath,
     maxRuntimeMs: 1_000,
   });
 

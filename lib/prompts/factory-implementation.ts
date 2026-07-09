@@ -1,3 +1,4 @@
+import type { AgentSessionRef } from "../agents.ts";
 import type { FactoryStationAgentMeta } from "../factory-agent-meta.ts";
 import type { FactoryImplementationInput } from "../factory-implementation-input.ts";
 
@@ -5,6 +6,41 @@ export type FactoryImplementationPromptInput = {
   implementationInput: FactoryImplementationInput;
   implementerAgent: FactoryStationAgentMeta;
 };
+
+export type FactoryImplementationHandoffInput =
+  | {
+      mode: "dry-run";
+      implementationInput: FactoryImplementationInput;
+      implementerAgent: FactoryStationAgentMeta;
+    }
+  | {
+      mode: "live";
+      status: "implementation-complete" | "implementation-failed";
+      implementationInput: FactoryImplementationInput;
+      implementerAgent: FactoryStationAgentMeta;
+      artifacts: {
+        diff: string;
+        rawOutput: string;
+        workspaceStatus: string;
+        changeReviewHandoff: string;
+        streamLog?: string;
+      };
+      changedFiles: string[];
+      provider: {
+        session?: AgentSessionRef;
+        error?: string;
+      };
+      review?: {
+        reviewBase: string;
+        reviewHead: string;
+        reviewCommitSha: string;
+      };
+      warnings: {
+        dirtyBefore: boolean;
+        emptyPatchWithStatusChange: boolean;
+        patchTruncated: boolean;
+      };
+    };
 
 export function renderFactoryImplementationPrompt(input: FactoryImplementationPromptInput): string {
   const details =
@@ -29,14 +65,22 @@ export function renderFactoryImplementationPrompt(input: FactoryImplementationPr
     "- This station does not own PR creation.",
     "- This station does not own branch or worktree orchestration.",
     "- This station does not own change-review execution.",
-    "- This station does not own lifecycle updates.",
+    "- The implementer agent must not run git commit, branch, checkout, push, update-ref, or other ref-mutating git commands. The harness command owns the internal review ref after the provider returns.",
+    "- The implementer agent must not append or mutate lifecycle state; the harness command owns lifecycle writes before/after provider invocation.",
     "",
   ].join("\n");
 }
 
 export function renderFactoryImplementationChangeReviewHandoff(
-  input: FactoryImplementationPromptInput,
+  input: FactoryImplementationHandoffInput,
 ): string {
+  const statusLine =
+    input.mode === "dry-run"
+      ? "**Status:** in_progress"
+      : input.status === "implementation-complete"
+        ? "**Status:** complete"
+        : "**Status:** blocked";
+
   const implementationInput = input.implementationInput;
   const modeNotes =
     implementationInput.mode === "planned"
@@ -61,36 +105,124 @@ export function renderFactoryImplementationChangeReviewHandoff(
             : []),
         ];
 
+  if (input.mode === "dry-run") {
+    return [
+      "## Review Handoff",
+      "",
+      statusLine,
+      "",
+      "### Goal",
+      "",
+      `Implement ${implementationInput.workItem.id}: ${implementationInput.workItem.title}.`,
+      "",
+      "### Scope",
+      "",
+      ...modeNotes,
+      "- Stay within the factory implementation input boundaries.",
+      "",
+      "### Files changed",
+      "",
+      "_To be filled after implementation._",
+      "",
+      "### Implementation notes",
+      "",
+      "_To be filled after implementation._",
+      "",
+      "### Verification",
+      "",
+      "_Not run yet._",
+      "",
+      "### Risks to scrutinize",
+      "",
+      "- Verify the implementation follows the resolved factory implementation input.",
+      "- Verify no unrelated tracker, lifecycle, branch, worktree, or PR automation was added.",
+      "",
+      "### Open items",
+      "",
+      "_To be filled after implementation._",
+      "",
+    ].join("\n");
+  }
+
+  const filesChanged =
+    input.changedFiles.length > 0
+      ? input.changedFiles.map((path) => `- \`${path}\``)
+      : ["_No changed files recorded._"];
+
+  const warnings: string[] = [];
+  if (input.warnings.dirtyBefore) {
+    warnings.push(
+      "- Pre-run porcelain status was non-empty; live v1 fails closed before provider invocation when the workspace is dirty.",
+    );
+  }
+  if (input.warnings.emptyPatchWithStatusChange) {
+    warnings.push(
+      "- `implementation/diff.patch` is empty while porcelain status changed; inspect `workspace-status.json` for the status-derived file list.",
+    );
+  }
+  if (input.warnings.patchTruncated) {
+    warnings.push(
+      "- Best-effort workspace patch capture truncated untracked expansion under the v1 file/byte cap; inspect `workspace-status.json` for truncation details. On completed runs, the review-ref diff remains authoritative.",
+    );
+  }
+
+  const reviewNotes = input.review
+    ? [
+        `- Review base: \`${input.review.reviewBase}\``,
+        `- Review head: \`${input.review.reviewHead}\``,
+        `- Review commit: \`${input.review.reviewCommitSha}\``,
+        `- Next operator step: \`harness run change-review --base ${input.review.reviewBase} --head ${input.review.reviewHead} --handoff-stdin --verbose\` with this handoff.`,
+      ]
+    : ["- Review ref: not created."];
+
   return [
-    "## Goal",
+    "## Review Handoff",
+    "",
+    statusLine,
+    "",
+    "### Goal",
     "",
     `Implement ${implementationInput.workItem.id}: ${implementationInput.workItem.title}.`,
     "",
-    "## Scope",
+    "### Scope",
     "",
     ...modeNotes,
     "- Stay within the factory implementation input boundaries.",
     "",
-    "## Files changed",
+    "### Files changed",
     "",
-    "_To be filled after implementation._",
+    ...filesChanged,
     "",
-    "## Implementation notes",
+    "### Implementation notes",
     "",
-    "_To be filled after implementation._",
+    `- Diff artifact: \`${input.artifacts.diff}\``,
+    `- Raw provider output: \`${input.artifacts.rawOutput}\``,
+    `- Workspace status: \`${input.artifacts.workspaceStatus}\``,
+    ...(input.artifacts.streamLog ? [`- Stream log: \`${input.artifacts.streamLog}\``] : []),
+    ...(input.provider.session
+      ? [`- Provider session: ${input.provider.session.provider} ${input.provider.session.id}`]
+      : []),
+    ...(input.provider.error ? [`- Provider error: ${input.provider.error}`] : []),
+    ...reviewNotes,
+    "- Reviewer invocation: not run.",
+    "- This handoff does not claim approval, PR readiness, or merge readiness.",
+    ...(warnings.length > 0 ? ["", "Warnings:", ...warnings] : []),
     "",
-    "## Verification",
+    "### Verification",
     "",
-    "_Not run yet._",
+    "Not run by factory implementation station.",
     "",
-    "## Risks to scrutinize",
+    "### Risks to scrutinize",
     "",
     "- Verify the implementation follows the resolved factory implementation input.",
     "- Verify no unrelated tracker, lifecycle, branch, worktree, or PR automation was added.",
+    "- Verify the internal review ref matches the candidate changes before running change-review.",
     "",
-    "## Open items",
+    "### Open items",
     "",
-    "_To be filled after implementation._",
+    input.status === "implementation-complete"
+      ? "- Run change-review separately using the recorded review base/head."
+      : "- Resolve the implementation failure, then retry from preserved plan/direct context.",
     "",
   ].join("\n");
 }

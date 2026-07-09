@@ -152,6 +152,12 @@ test("parseStructuredOutput without schema prefers rightmost root across object 
   expect(parseStructuredOutput(text, undefined)).toEqual({ value: [1, 2, 3] });
 });
 
+test("parseStructuredOutput without schema accepts prose finals", () => {
+  expect(parseStructuredOutput("Appended `# smoke` to tracked.txt.", undefined)).toEqual({
+    value: undefined,
+  });
+});
+
 test("parseStructuredOutput parses fenced JSON with trailing prose", () => {
   const text = `\`\`\`json\n${JSON.stringify(MINIMAL_REVIEW)}\n\`\`\`\n\nDone!`;
   expect(parseStructuredOutput(text, REVIEW_SCHEMA)).toEqual({ value: MINIMAL_REVIEW });

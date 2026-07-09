@@ -2,10 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import {
-  FACTORY_IMPLEMENTATION_DRY_RUN_ERROR,
-  createFactoryImplementationRunContextForTest,
-} from "../lib/factory-implementation-run-context.ts";
+import { createFactoryImplementationRunContextForTest } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
@@ -63,11 +60,15 @@ test("planned dry-run writes implementation artifacts without events", async () 
   const prompt = readFileSync(join(ctx.runDir, "implementation/prompt.md"), "utf8");
   expect(prompt).toContain("Follow the approved plan");
   expect(prompt).toContain("provenance/readiness marker");
+  expect(prompt).toContain("must not run git commit");
+  expect(prompt).toContain("must not append or mutate lifecycle state");
   const summary = readFileSync(join(ctx.runDir, "summary.md"), "utf8");
   expect(summary).toContain("Approved plan path: dev/plans/FER-47.md");
   expect(summary).toContain("Approved plan commit: abc1234");
+  expect(summary).toContain("Reviewer invocation: not run.");
   const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
   expectHandoffModel(handoff);
+  expect(handoff).toContain("**Status:** in_progress");
   expect(handoff).toContain("_To be filled after implementation._");
   expect(handoff).toContain("_Not run yet._");
 });
@@ -103,6 +104,7 @@ test("direct dry-run writes source material artifacts", async () => {
   expect(prompt).toContain("Build the dry-run shell.");
   expect(prompt).toContain("linear");
   const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
+  expectHandoffModel(handoff);
   expect(handoff).toContain("- Labels: factory");
   expect(handoff).toContain("- Body excerpt: Build the dry-run shell.");
   expect(handoff).toContain("- Tracker:");
@@ -111,19 +113,92 @@ test("direct dry-run writes source material artifacts", async () => {
   expect(summary).toContain("Tracker:");
 });
 
-test("non-dry-run implementation workflow fails before provider support exists", async () => {
+test("live context creation requires maxRuntimeMs and agentProviderFactory", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-implementation-"));
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  expect(() =>
+    createFactoryImplementationRunContextForTest({
+      workspace,
+      runsDir,
+      workItem: WORK_ITEM,
+      implementationInput: directInput(),
+      implementerRole: { agent: "cursor" },
+      dryRun: false,
+      agentProviderFactory: () => ({
+        name: "cursor",
+        async run() {
+          return { ok: true, raw: {} };
+        },
+      }),
+    }),
+  ).toThrow(/maxRuntimeMs/);
+
+  expect(() =>
+    createFactoryImplementationRunContextForTest({
+      workspace,
+      runsDir,
+      workItem: WORK_ITEM,
+      implementationInput: directInput(),
+      implementerRole: { agent: "cursor" },
+      dryRun: false,
+      maxRuntimeMs: 1_000,
+    }),
+  ).toThrow(/agentProviderFactory/);
+});
+
+test("live context exposes implementerRole and creates events.jsonl on export", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-implementation-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const events: unknown[] = [];
   const ctx = createFactoryImplementationRunContextForTest({
     workspace,
     runsDir,
     workItem: WORK_ITEM,
     implementationInput: directInput(),
-    implementerRole: { agent: "cursor" },
+    implementerRole: {
+      agent: "codex",
+      model: "gpt-5.5",
+      sandboxMode: "workspace-write",
+      approvalPolicy: "never",
+      modelReasoningEffort: "high",
+    },
     dryRun: false,
+    maxRuntimeMs: 5_000,
+    eventSink(event) {
+      events.push(event);
+    },
+    agentProviderFactory() {
+      return {
+        name: "codex",
+        async run() {
+          return { ok: true, raw: {}, session: { provider: "codex", id: "sess-1" } };
+        },
+      };
+    },
   });
 
-  await expect(runFactoryImplementation(ctx)).rejects.toThrow(FACTORY_IMPLEMENTATION_DRY_RUN_ERROR);
+  expect(ctx.implementerRole.sandboxMode).toBe("workspace-write");
+  expect(ctx.implementerAgent.name).toBe("codex");
+  ctx.eventSink({
+    type: "run:start",
+    runId: ctx.runId,
+    status: "running",
+  });
+  const meta = ctx.export({
+    status: "implementation-complete",
+    implementerSession: { provider: "codex", id: "sess-1" },
+    reviewBase: "aaa",
+    reviewHead: "refs/harness/factory/x/implementation",
+    reviewCommitSha: "bbb",
+    includeLiveArtifacts: false,
+  });
+  expect(meta.eventsFile).toBe("events.jsonl");
+  expect(meta.implementerSession).toEqual({ provider: "codex", id: "sess-1" });
+  expect(existsSync(join(ctx.runDir, "events.jsonl"))).toBe(true);
+  expect(readFileSync(join(ctx.runDir, "summary.md"), "utf8")).toContain(
+    "Reviewer invocation: not run.",
+  );
+  expect(events).toHaveLength(1);
 });
 
 function createWorkspaceWithPlan(): string {
@@ -172,13 +247,15 @@ function directInput(): FactoryImplementationInput {
 }
 
 function expectHandoffModel(handoff: string): void {
-  expect(handoff).toContain("## Goal");
-  expect(handoff).toContain("## Scope");
-  expect(handoff).toContain("## Files changed");
-  expect(handoff).toContain("## Implementation notes");
-  expect(handoff).toContain("## Verification");
-  expect(handoff).toContain("## Risks to scrutinize");
-  expect(handoff).toContain("## Open items");
+  expect(handoff).toContain("## Review Handoff");
+  expect(handoff).toMatch(/\*\*Status:\*\*/);
+  expect(handoff).toContain("### Goal");
+  expect(handoff).toContain("### Scope");
+  expect(handoff).toContain("### Files changed");
+  expect(handoff).toContain("### Implementation notes");
+  expect(handoff).toContain("### Verification");
+  expect(handoff).toContain("### Risks to scrutinize");
+  expect(handoff).toContain("### Open items");
 }
 
 function readJson(path: string): unknown {

@@ -168,6 +168,12 @@ if (!factoryImplementationRunHelp.includes("--runs-dir <path>")) {
 if (!factoryImplementationRunHelp.includes("--dry-run")) {
   throw new Error("Expected factory implementation run help to include --dry-run");
 }
+if (!factoryImplementationRunHelp.includes("--max-runtime-ms")) {
+  throw new Error("Expected factory implementation run help to include --max-runtime-ms");
+}
+if (!factoryImplementationRunHelp.includes("--verbose")) {
+  throw new Error("Expected factory implementation run help to include --verbose");
+}
 const factoryDispatchHelp = runHarnessAllowFailure(["factory", "dispatch", "--help"]);
 const factoryDispatchHelpText = `${factoryDispatchHelp.stderr}\n${factoryDispatchHelp.stdout}`;
 if (/factory dispatch/i.test(factoryDispatchHelpText)) {

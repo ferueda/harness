@@ -33,6 +33,7 @@ export const FACTORY_STAGES = [
   "planning-failed",
   "implementation-started",
   "implementation-complete",
+  "implementation-failed",
   "review-running",
   "review-complete",
   "ready-for-human",

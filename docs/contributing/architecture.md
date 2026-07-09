@@ -115,8 +115,9 @@ canonical local machine state; `.harness/factory/state/*.json` is a
 rebuildable projection.
 
 `lib/factory-lifecycle-writes.ts` owns lifecycle event construction for current
-operator station commands. Live triage, planning, plan publication, and
-plan-merge paths append lifecycle events; dry-run station commands do not.
+operator station commands. Live triage, planning, plan publication, plan-merge,
+and implementation paths append lifecycle events; dry-run station commands do
+not.
 
 `lib/factory-planning-input.ts` owns planning-specific work-item input guards.
 Linear-backed planning input accepts issues mapped to `ready-to-plan`,
@@ -142,12 +143,19 @@ implementation stations.
 contract. It classifies resolved work-item input into planned or direct mode,
 validates approved-plan handoff metadata, and treats Linear
 `Ready to Implement` as a projection guard rather than source of truth.
-`lib/factory-implementation-run-context.ts` owns the dry-run implementation
-station run directory, context artifacts, prompt and change-review handoff
-artifacts, summary, and metadata. `harness factory implementation run` is
-currently dry-run only; it prepares implementation artifacts and does not
-invoke a provider, append lifecycle events, mutate Linear, create branches, or
-open PRs.
+`lib/factory-implementation-run-context.ts` owns the implementation station run
+directory, context artifacts, prompt and change-review handoff artifacts,
+provider raw/status/diff outputs, summary, and metadata.
+`lib/factory-workspace-changes.ts` owns porcelain status parsing, patch
+material capture (including untracked no-index diffs and truncation caps), and
+changed-file lists for live implementation.
+`lib/factory-review-head.ts` owns harness-owned review-ref materialization via
+a temporary index and `commit-tree`, writing
+`refs/harness/factory/<run-id>/implementation` without moving `HEAD` or using
+the real index.
+`harness factory implementation run` supports dry-run or one live provider pass
+plus harness-owned review-ref materialization. It does not mutate Linear, create
+human branches, or open PRs.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
@@ -216,10 +224,11 @@ against tracked source edits during planner turns, and reuses the captured
 planner session for revisions until the plan is approved, needs human input,
 fails, or reaches the review-iteration limit.
 
-`workflows/factory-implementation.workflow.ts` runs the current dry-run
-implementation station shell. It renders implementation prompt and
-change-review handoff artifacts, then exports summary and metadata. Live
-provider execution and review loops are future station work.
+`workflows/factory-implementation.workflow.ts` runs dry-run or one live
+implementer pass. Live mode records workspace changes, materializes
+`refs/harness/factory/<run-id>/implementation`, and exports handoff artifacts
+for a separate operator-run `change-review`. Nested review loops remain out of
+scope.
 
 `workflows/plan-review.workflow.ts` runs one fixed spec-review step. The
 plan-review command/runtime omits git diff scope and relies on `context/plan.md`
@@ -324,12 +333,16 @@ Factory implementation dry-run artifacts include:
 - `context/source-material.json` for direct work
 - `implementation/prompt.md`
 - `implementation/change-review-handoff.md`
+- live only: `implementer.raw.json`, optional `implementer.stream.jsonl`
+  when the provider streams, `workspace-status.json`, `diff.patch`, run
+  `events.jsonl`
 - `summary.md`
 - `meta.json`
 
-The implementation station shell is dry-run only. It does not invoke providers,
-write run `events.jsonl`, append lifecycle events under `.harness/factory`,
-mutate Linear, create branches, create worktrees, or open PRs.
+Dry-run prepares prompt/handoff artifacts only. Live mode invokes one
+implementer with `workspaceGuard: "record"`, writes lifecycle events, and
+creates the internal review ref. It does not mutate Linear, create human
+branches/worktrees, or open PRs.
 
 ## Factory inbox lifecycle
 

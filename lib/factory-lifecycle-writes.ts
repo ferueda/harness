@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
+import type { FactoryImplementationRunMeta } from "./factory-implementation-run-context.ts";
 import type { FactoryRunMeta } from "./factory-run-context.ts";
 import {
   appendFactoryLifecycleEvent,
@@ -25,7 +26,8 @@ export function appendWorkItemImportedEvent(
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
   const parsedMetadata = FactoryWorkItemMetadataSchema.safeParse(input.workItem.metadata ?? {});
-  const tracker = parsedMetadata.success ? parsedMetadata.data.tracker : undefined;
+  const metadata = parsedMetadata.success ? parsedMetadata.data : undefined;
+  const tracker = metadata?.tracker;
   return appendFactoryLifecycleEvent({
     factoryStateRoot: resolveFactoryStateRoot(input),
     event: {
@@ -42,6 +44,11 @@ export function appendWorkItemImportedEvent(
         ...(tracker ? { tracker } : {}),
         ...(input.workItem.url ? { url: input.workItem.url } : {}),
         ...(input.workItem.labels.length > 0 ? { labels: input.workItem.labels } : {}),
+        ...(metadata?.approvedPlanPath ? { approvedPlanPath: metadata.approvedPlanPath } : {}),
+        ...(metadata?.approvedPlanPrUrl ? { approvedPlanPrUrl: metadata.approvedPlanPrUrl } : {}),
+        ...(metadata?.approvedPlanCommit
+          ? { approvedPlanCommit: metadata.approvedPlanCommit }
+          : {}),
       },
     },
   });
@@ -222,6 +229,153 @@ export function appendPlanningTerminalEvent(input: {
   });
 }
 
+export function appendImplementationStartedEvent(
+  input: {
+    workspace: string;
+    workItem: FactoryWorkItem;
+    runId: string;
+    execution: FactoryLifecycleExecution;
+    linearIssue?: string;
+    itemFile?: string;
+  } & FactoryLifecycleWriteOptions,
+): FactoryLifecycleEvent {
+  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
+  return appendFactoryLifecycleEvent({
+    factoryStateRoot: resolveFactoryStateRoot(input),
+    event: {
+      version: 1,
+      id: `implementation.started:${input.runId}`,
+      type: "implementation.started",
+      workItemKey,
+      occurredAt: occurredAt(input),
+      runId: input.runId,
+      source: "harness",
+      execution: input.execution,
+      data: {
+        ...(input.linearIssue ? { linearIssue: input.linearIssue } : {}),
+        ...(input.itemFile ? { itemFile: input.itemFile } : {}),
+      },
+    },
+  });
+}
+
+export function appendImplementationTerminalEvent(input: {
+  meta: FactoryImplementationRunMeta;
+  factoryStateRoot?: string;
+  error?: string;
+}): FactoryLifecycleEvent | undefined {
+  if (input.meta.status === "dry_run") return undefined;
+  const workItem = implementationMetaWorkItem(input.meta);
+  const workItemKey = deriveFactoryWorkItemKey(workItem);
+  const factoryStateRoot = resolveFactoryStateRoot({
+    workspace: input.meta.workspace,
+    factoryStateRoot: input.factoryStateRoot,
+  });
+  const execution = implementationExecution(input.meta);
+  if (input.meta.status === "implementation-failed") {
+    return appendFactoryLifecycleEvent({
+      factoryStateRoot,
+      event: {
+        version: 1,
+        id: `implementation.failed:${input.meta.runId}`,
+        type: "implementation.failed",
+        workItemKey,
+        occurredAt: new Date().toISOString(),
+        runId: input.meta.runId,
+        source: "harness",
+        execution,
+        data: {
+          error: input.error ?? input.meta.error ?? "Factory implementation failed.",
+          summaryPath: relative(input.meta.workspace, input.meta.summaryPath),
+          ...(input.meta.artifacts.rawOutput
+            ? {
+                rawOutputPath: relative(
+                  input.meta.workspace,
+                  join(input.meta.runDir, input.meta.artifacts.rawOutput),
+                ),
+              }
+            : {}),
+          ...(input.meta.artifacts.streamLog
+            ? {
+                streamLogPath: relative(
+                  input.meta.workspace,
+                  join(input.meta.runDir, input.meta.artifacts.streamLog),
+                ),
+              }
+            : {}),
+          ...(input.meta.artifacts.workspaceStatus
+            ? {
+                workspaceStatusPath: relative(
+                  input.meta.workspace,
+                  join(input.meta.runDir, input.meta.artifacts.workspaceStatus),
+                ),
+              }
+            : {}),
+          ...(input.meta.reviewBase ? { reviewBase: input.meta.reviewBase } : {}),
+        },
+      },
+    });
+  }
+  return appendFactoryLifecycleEvent({
+    factoryStateRoot,
+    event: {
+      version: 1,
+      id: `implementation.completed:${input.meta.runId}`,
+      type: "implementation.completed",
+      workItemKey,
+      occurredAt: new Date().toISOString(),
+      runId: input.meta.runId,
+      source: "harness",
+      execution,
+      data: {
+        diffPath: relative(
+          input.meta.workspace,
+          join(input.meta.runDir, required(input.meta.artifacts.diff, "diff artifact")),
+        ),
+        changeReviewHandoffPath: relative(
+          input.meta.workspace,
+          join(input.meta.runDir, input.meta.artifacts.changeReviewHandoff),
+        ),
+        reviewBase: required(input.meta.reviewBase, "reviewBase"),
+        reviewHead: required(input.meta.reviewHead, "reviewHead"),
+        reviewCommitSha: required(input.meta.reviewCommitSha, "reviewCommitSha"),
+        ...(input.meta.artifacts.rawOutput
+          ? {
+              rawOutputPath: relative(
+                input.meta.workspace,
+                join(input.meta.runDir, input.meta.artifacts.rawOutput),
+              ),
+            }
+          : {}),
+        ...(input.meta.artifacts.streamLog
+          ? {
+              streamLogPath: relative(
+                input.meta.workspace,
+                join(input.meta.runDir, input.meta.artifacts.streamLog),
+              ),
+            }
+          : {}),
+        ...(input.meta.artifacts.workspaceStatus
+          ? {
+              workspaceStatusPath: relative(
+                input.meta.workspace,
+                join(input.meta.runDir, input.meta.artifacts.workspaceStatus),
+              ),
+            }
+          : {}),
+        ...(input.meta.implementerSession
+          ? {
+              session: {
+                provider: input.meta.implementerSession.provider,
+                id: input.meta.implementerSession.id,
+              },
+            }
+          : {}),
+      },
+    },
+  });
+}
+
 export function appendPlanPrOpenedEvent(input: {
   meta: FactoryPlanningRunMeta;
   factoryStateRoot?: string;
@@ -289,6 +443,24 @@ function planningMetaWorkItem(meta: FactoryPlanningRunMeta): FactoryWorkItem {
 }
 
 function planningExecution(meta: FactoryPlanningRunMeta): FactoryLifecycleExecution {
+  return {
+    workspace: meta.workspace,
+    runDir: meta.runDir,
+  };
+}
+
+function implementationMetaWorkItem(meta: FactoryImplementationRunMeta): FactoryWorkItem {
+  return {
+    id: meta.workItem.id,
+    source: meta.workItem.source,
+    title: meta.workItem.title,
+    body: "",
+    labels: [],
+    metadata: meta.factoryMetadata,
+  };
+}
+
+function implementationExecution(meta: FactoryImplementationRunMeta): FactoryLifecycleExecution {
   return {
     workspace: meta.workspace,
     runDir: meta.runDir,
