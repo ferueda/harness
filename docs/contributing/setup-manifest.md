@@ -104,15 +104,16 @@ Cursor SDK review provider runs require `CURSOR_API_KEY` in the environment.
 Codex SDK provider follows local Codex CLI auth via `codex login`, or
 `CODEX_API_KEY` in the environment.
 
-Linear list, fetch, and Linear-backed station input use `LINEAR_API_KEY` for
-`harness factory linear list`, `harness factory linear fetch`,
+Linear list, fetch, create, and Linear-backed station input use
+`LINEAR_API_KEY` for `harness factory linear list`,
+`harness factory linear fetch`, `harness factory linear create`,
 `harness factory triage --linear-issue TEAM-123`, and
-`harness factory planning run --linear-issue TEAM-123`. Adding `--apply` to
-Linear triage, planning, or planning publication commands mutates Linear issue
-status and marker comments. Planning run `--apply` never moves an issue to
-`Ready to Implement`; `harness factory planning mark-plan-merged
---linear-issue TEAM-123 --apply` owns that transition after the plan commit is
-recorded.
+`harness factory planning run --linear-issue TEAM-123`. Create is a constrained
+intake write (no `--apply`); adding `--apply` to Linear triage, planning, or
+planning publication commands mutates Linear issue status and marker comments.
+Planning run `--apply` never moves an issue to `Ready to Implement`;
+`harness factory planning mark-plan-merged --linear-issue TEAM-123 --apply` owns
+that transition after the plan commit is recorded.
 
 Do not write secrets into docs, plans, generated artifacts, committed
 `harness.json`, or checked-in config.

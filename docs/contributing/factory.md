@@ -17,7 +17,9 @@ harness run plan-review --plan path/to/implementation-plan.md
 
 ```bash
 harness factory status --workspace /path/to/repo
+harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
+harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
@@ -237,6 +239,24 @@ recent comments, merges lifecycle state when present, then prints JSON suitable
 for `--item-file`. Comment-derived planning-attention stages such as
 `plan-needs-human` require fetch; list mode does not read comments and omits
 `factoryStage` for the configured `needsInfo` status.
+
+### Linear Create
+
+Use Linear create to author one intake issue in the configured factory project:
+
+```bash
+LINEAR_API_KEY=... harness factory linear create --workspace /path/to/repo --title "Example intake" --body "Details"
+LINEAR_API_KEY=... harness factory linear create --workspace /path/to/repo --title "Example intake" --body-file notes.md
+printf '%s\n' "Details" | LINEAR_API_KEY=... harness factory linear create --workspace /path/to/repo --title "Example intake"
+```
+
+Create is a constrained intake helper, not a station. It requires
+`factory.linear.projectId`, a non-empty title, and a non-empty body from exactly
+one of `--body`, `--body-file`, or stdin. It always uses configured
+`factory.linear.teamKey`, `projectId`, and `statuses.intake`. It prints compact
+JSON with `identifier`, `url`, and `id: "linear:<identifier>"`. Create does not
+append lifecycle events, write factory run artifacts, or accept `--dry-run` /
+`--apply`. Use Linear fetch afterward when you need a full `FactoryWorkItem`.
 
 Linear team and project serve different purposes:
 
@@ -567,8 +587,10 @@ Stop and re-check scope if the work requires:
 - reviving `harness factory dispatch`
 - moving every inbox item in a batch
 - mutating GitHub, Jira, or Inngest from current station commands
-- mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
-  or `harness factory planning run --linear-issue ... --apply`
+- mutating Linear outside documented `harness factory linear create` or explicit
+  `harness factory triage --linear-issue ... --apply`,
+  `harness factory planning run --linear-issue ... --apply`, or explicit
+  planning publication commands with `--linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked files

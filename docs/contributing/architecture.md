@@ -17,6 +17,7 @@ Current public CLI surfaces:
 - `harness factory status`
 - `harness factory linear list`
 - `harness factory linear fetch`
+- `harness factory linear create`
 - `harness factory triage`
 - `harness factory planning`
 - `harness factory implementation`
@@ -160,9 +161,11 @@ human branches, or open PRs.
 `lib/factory-inbox.ts` owns local factory inbox inspection. `harness factory
 status` reads `.harness/inbox/factory/` without moving files or creating runs.
 
-`lib/factory-linear-adapter.ts` owns Linear issue import and explicit station
-apply updates. `lib/factory-linear-list.ts` owns read-only status-key listing,
-query pagination, and lightweight summary mapping behind the adapter facade.
+`lib/factory-linear-adapter.ts` owns Linear issue import, constrained intake
+create, and explicit station apply updates. `lib/factory-linear-list.ts` owns
+read-only status-key listing, query pagination, and lightweight summary mapping
+behind the adapter facade. `lib/factory-linear-create.ts` owns constrained
+intake issue creation behind the same adapter facade.
 `lib/factory-linear-planning-apply.ts` owns planning run apply markers,
 target-status mapping, comments, and mutation helpers.
 `lib/factory-linear-planning-handoff.ts` owns planning publication apply
@@ -172,15 +175,20 @@ mapping, queries the configured team and optional project scope, and prints
 lightweight issue summaries for configured status keys. `harness factory linear
 fetch TEAM-123` reads one Linear issue through `@linear/sdk` and prints a
 normalized `FactoryWorkItem` JSON object with description, labels, and recent
-comments. Linear team owns the issue key and workflow statuses;
-`factory.linear.projectId`, when set, scopes issues to the target repo project.
-Linear status and recent marker comments are bootstrap fallback metadata;
-lifecycle state wins when present.
+comments. `harness factory linear create` creates one configured-project intake
+issue and prints compact JSON; it does not write lifecycle events or factory
+run artifacts. Linear team owns the issue key and workflow statuses;
+`factory.linear.projectId`, when set, scopes issues to the target repo project
+and is required for create. Linear status and recent marker comments are
+bootstrap fallback metadata; lifecycle state wins when present.
 `harness factory triage --linear-issue TEAM-123` uses the same adapter as an
 input source before running the station. List, fetch, and default Linear-backed
-triage do not mutate Linear. `harness factory triage --linear-issue TEAM-123
---apply` additionally moves the issue to `Triaging`, then to the terminal
-triage status, and writes a marker comment.
+triage do not mutate Linear. Create is the only non-station Linear
+issue-creation path; other Linear writes stay on explicit station `--apply`
+or planning publication commands with `--linear-issue ... --apply`.
+`harness factory triage --linear-issue TEAM-123 --apply` additionally moves the
+issue to `Triaging`, then to the terminal triage status, and writes a marker
+comment.
 
 `harness factory triage --item-file ...` or
 `harness factory triage --linear-issue ...` runs one work item through the

@@ -132,6 +132,9 @@ function fakeClient(overrides: Partial<LinearClientLike> = {}): LinearClientLike
     issue: async () => ISSUE,
     issues: async () => ({ nodes: [ISSUE] }),
     teams: async () => ({ nodes: [TEAM] }),
+    createIssue: async () => {
+      throw new Error("createIssue should not run");
+    },
     updateIssue: async () => ({ success: true }),
     createComment: async () => ({ success: true }),
     ...overrides,
@@ -687,6 +690,176 @@ test("Linear adapter fetches an issue as a factory work item", async () => {
   expect(item.body).toContain("Users need a keyboard shortcut");
   expect(item.body).toContain("## Linear Comments");
   expect(item.body).toContain("Please keep the shortcut configurable.");
+});
+
+test("Linear adapter creates one intake issue with configured team, project, and state", async () => {
+  const creates: unknown[] = [];
+  const updates: unknown[] = [];
+  const comments: unknown[] = [];
+  const createdIssue = {
+    id: "issue-124",
+    identifier: "ENG-124",
+    number: 124,
+    title: "Trimmed title",
+    url: "https://linear.app/acme/issue/ENG-124/trimmed-title",
+  };
+  const client = fakeClient({
+    createIssue: async (input) => {
+      creates.push(input);
+      return {
+        success: true,
+        issue: Promise.resolve(createdIssue as typeof ISSUE),
+      };
+    },
+    updateIssue: async (...args) => {
+      updates.push(args);
+      throw new Error("updateIssue should not run while creating");
+    },
+    createComment: async (...args) => {
+      comments.push(args);
+      throw new Error("createComment should not run while creating");
+    },
+  });
+  const adapter = createLinearFactoryAdapterForClient({
+    client,
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.createWorkItem({
+    title: "  Trimmed title  ",
+    body: "  Trimmed body  ",
+  });
+
+  expect(creates).toEqual([
+    {
+      teamId: TEAM.id,
+      projectId: PROJECT.id,
+      stateId: "state-Backlog",
+      title: "Trimmed title",
+      description: "Trimmed body",
+    },
+  ]);
+  expect(result).toEqual({
+    identifier: "ENG-124",
+    url: "https://linear.app/acme/issue/ENG-124/trimmed-title",
+    id: "linear:ENG-124",
+  });
+  expect(updates).toEqual([]);
+  expect(comments).toEqual([]);
+});
+
+test("Linear adapter create rejects missing projectId before mutation", async () => {
+  let createCalled = false;
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      createIssue: async () => {
+        createCalled = true;
+        throw new Error("createIssue should not run");
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.createWorkItem({ title: "Title", body: "Body" })).rejects.toThrow(
+    /factory\.linear\.projectId is required for Linear create/,
+  );
+  expect(createCalled).toBe(false);
+});
+
+test("Linear adapter create rejects whitespace title and body before mutation", async () => {
+  let createCalled = false;
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      createIssue: async () => {
+        createCalled = true;
+        throw new Error("createIssue should not run");
+      },
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.createWorkItem({ title: "   ", body: "Body" })).rejects.toThrow(
+    /Linear create title must be non-empty/,
+  );
+  await expect(adapter.createWorkItem({ title: "Title", body: "\n\t  " })).rejects.toThrow(
+    /Linear create body must be non-empty/,
+  );
+  expect(createCalled).toBe(false);
+});
+
+test("Linear adapter create validates configured statuses before creation", async () => {
+  let createCalled = false;
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      teams: async () => ({
+        nodes: [
+          {
+            ...TEAM,
+            states: async () => ({
+              nodes: [{ id: "state-Backlog", name: "Backlog", type: "unstarted" }],
+            }),
+          },
+        ],
+      }),
+      createIssue: async () => {
+        createCalled = true;
+        throw new Error("createIssue should not run");
+      },
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.createWorkItem({ title: "Title", body: "Body" })).rejects.toThrow(
+    /missing configured statuses/,
+  );
+  expect(createCalled).toBe(false);
+});
+
+test("Linear adapter create throws when mutation success is false", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      createIssue: async () => ({ success: false }),
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+
+  await expect(adapter.createWorkItem({ title: "Title", body: "Body" })).rejects.toThrow(
+    /Linear issue create failed/,
+  );
+});
+
+test("Linear adapter create awaits lazy issue relation and rejects missing identifier or url", async () => {
+  const missingIdentifier = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      createIssue: async () => ({
+        success: true,
+        issue: Promise.resolve({
+          id: "issue-124",
+          url: "https://linear.app/acme/issue/ENG-124/example",
+        } as typeof ISSUE),
+      }),
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+  await expect(missingIdentifier.createWorkItem({ title: "Title", body: "Body" })).rejects.toThrow(
+    /did not return identifier and url/,
+  );
+
+  const missingUrl = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      createIssue: async () => ({
+        success: true,
+        issue: Promise.resolve({
+          id: "issue-124",
+          identifier: "ENG-124",
+        } as typeof ISSUE),
+      }),
+    }),
+    settings: SCOPED_LINEAR_SETTINGS,
+  });
+  await expect(missingUrl.createWorkItem({ title: "Title", body: "Body" })).rejects.toThrow(
+    /did not return identifier and url/,
+  );
 });
 
 test("Linear adapter lists lightweight issue summaries by configured status keys", async () => {

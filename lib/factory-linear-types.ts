@@ -1,7 +1,21 @@
+export type LinearIssueCreateInput = {
+  teamId: string;
+  projectId: string;
+  stateId: string;
+  title: string;
+  description: string;
+};
+
+export type LinearIssueCreatePayload = {
+  success: boolean;
+  issue?: Promise<LinearIssueLike | undefined> | LinearIssueLike | undefined;
+};
+
 export type LinearClientLike = {
   issue: (id: string) => Promise<LinearIssueLike>;
   issues: (variables?: unknown) => Promise<LinearConnectionLike<LinearIssueLike>>;
   teams: (variables?: unknown) => Promise<LinearConnectionLike<LinearTeamLike>>;
+  createIssue: (input: LinearIssueCreateInput) => Promise<LinearIssueCreatePayload>;
   updateIssue: (id: string, input: { stateId: string }) => Promise<unknown>;
   createComment: (input: { issueId: string; body: string }) => Promise<unknown>;
 };

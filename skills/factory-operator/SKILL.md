@@ -10,10 +10,9 @@ Operate the current local harness factory one work item at a time.
 ## When To Use
 
 Use this skill when the user wants to inspect factory inbox state, triage a
-factory work item, fetch a Linear issue as a factory work item, run the
-planning station for a `ready-to-plan` item, run implementation dry-run or live
-mode for a `ready-to-implement` item, or understand factory artifacts and
-statuses.
+factory work item, fetch or create a Linear intake issue, run the planning
+station for a `ready-to-plan` item, run implementation dry-run or live mode for
+a `ready-to-implement` item, or understand factory artifacts and statuses.
 
 ## Waiting For Station Runs
 
@@ -48,6 +47,7 @@ Station commands:
 harness factory status --workspace /path/to/repo
 harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
+harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
@@ -133,7 +133,7 @@ states; stations do not require them.
   `implementer`.
 - `agent`: backend identity such as `cursor` or `codex`.
 
-## Linear List And Fetch
+## Linear List, Fetch, And Create
 
 Use Linear list for read-only backlog discovery by configured status key:
 
@@ -161,6 +161,19 @@ merges it into the printed work item. `teamKey` owns issue identifiers and
 statuses; `projectId` scopes the target repo. Redirect the output to an item
 file before planning, or pass the issue directly to triage with
 `--linear-issue`.
+
+Use Linear create only for Harness backlog intake when the target repo's
+`factory.linear` config should own team, project, and intake status:
+
+```bash
+LINEAR_API_KEY=... harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
+```
+
+Create is not a station. It requires `factory.linear.projectId`, a non-empty
+title, and a non-empty body from exactly one of `--body`, `--body-file`, or
+stdin. It prints compact JSON and does not write lifecycle or run artifacts.
+Prefer Linear UI or chief tooling for rich editing outside this constrained
+intake path.
 
 ## Triage
 
@@ -328,8 +341,9 @@ Stop before proceeding if the task requires:
 - running or restoring `harness factory dispatch`
 - batch-moving every inbox item
 - mutating GitHub, Jira, or Inngest
-- mutating Linear outside explicit `harness factory triage --linear-issue ... --apply`
-  or `harness factory planning run --linear-issue ... --apply`, or explicit
+- mutating Linear outside documented `harness factory linear create` or explicit
+  `harness factory triage --linear-issue ... --apply`,
+  `harness factory planning run --linear-issue ... --apply`, or explicit
   planning publication commands with `--linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan

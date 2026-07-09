@@ -88,6 +88,7 @@ Route one local work item through factory triage or planning:
 harness factory status --workspace /path/to/repo
 harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
+harness factory linear create --workspace /path/to/repo --title "Example intake" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
 harness factory planning run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json --dry-run
@@ -121,11 +122,12 @@ harness run plan-review --plan path/to/implementation-plan.md --verbose
 
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear list and fetch use `LINEAR_API_KEY` and
-`factory.linear` config. Linear list is read-only and prints issue summaries for
-configured status keys; fetch prints one full `FactoryWorkItem`. Factory triage
-and planning can use `--linear-issue`; `--apply` is explicit. Triage moves
-Linear through `Triaging`; planning moves eligible planning statuses to
-`Planning`, routes human attention to `Needs Clarification` or
+`factory.linear` config and are read-only. Linear create is a constrained write
+that creates one configured-project intake issue and prints compact JSON; it
+does not use `--apply` and does not write factory lifecycle or run artifacts.
+Factory triage and planning can use `--linear-issue`; `--apply` is explicit.
+Triage moves Linear through `Triaging`; planning moves eligible planning
+statuses to `Planning`, routes human attention to `Needs Clarification` or
 `Plan Needs Review`, and leaves Ready to Implement for the plan-merge handoff.
 Publication commands are local-only unless `--apply` is present; apply mode
 moves Linear to `Plan Needs Review` after the plan PR is registered and to

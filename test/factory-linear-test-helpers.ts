@@ -50,6 +50,9 @@ export function fakeLinearAdapter(
     listWorkItemsByStatus: async () => {
       throw new Error("listWorkItemsByStatus should not run");
     },
+    createWorkItem: async () => {
+      throw new Error("createWorkItem should not run");
+    },
     validateStatusMap: async () => ({
       teamKey: "ENG",
       statuses: [],
