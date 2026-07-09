@@ -28,7 +28,7 @@ import {
 import { errorArtifact, errorMessage, raceWithTimeout } from "../../lib/agent-invoke.ts";
 import { readWorkspaceStatus, withWorkspaceGuard } from "../../lib/review-guard.ts";
 import { parseStructuredOutput } from "../../lib/structured-output.ts";
-import { loadSchema } from "../../lib/schema-validation.ts";
+import { assertCodexStrictSchema, loadSchema } from "../../lib/schema-validation.ts";
 
 type CodexThread = {
   id: string | null;
@@ -71,6 +71,9 @@ async function invokeCodexAgent(
   let outputSchema;
   try {
     outputSchema = input.schemaPath ? loadSchema({ schemaPath: input.schemaPath }) : undefined;
+    if (outputSchema) {
+      assertCodexStrictSchema(outputSchema);
+    }
   } catch (error) {
     return {
       ok: false,

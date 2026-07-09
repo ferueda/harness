@@ -157,8 +157,10 @@ const TRIAGE_READY_TO_PLAN = {
   route: "ready-to-plan",
   confidence: "high",
   rationale: "Needs a reviewed plan.",
-  evidence: [{ kind: "tracker", summary: "Issue asks for a larger workflow." }],
-  suggestedNext: { action: "create-plan" },
+  evidence: [{ kind: "tracker", path: null, summary: "Issue asks for a larger workflow." }],
+  questions: [],
+  reconsiderWhen: null,
+  suggestedNext: { action: "create-plan", command: null, artifact: null },
 } satisfies FactoryTriageOutput;
 
 const NEXT_ACTION_BY_ROUTE = {
@@ -176,8 +178,10 @@ function triageOutput(
     route,
     confidence: "high",
     rationale: "Route-specific triage.",
-    evidence: [{ kind: "tracker", summary: "Issue metadata supports this route." }],
-    suggestedNext: { action: NEXT_ACTION_BY_ROUTE[route] },
+    evidence: [{ kind: "tracker", path: null, summary: "Issue metadata supports this route." }],
+    questions: [],
+    reconsiderWhen: null,
+    suggestedNext: { action: NEXT_ACTION_BY_ROUTE[route], command: null, artifact: null },
     ...extra,
   };
 }
@@ -634,8 +638,9 @@ test("Linear triage helpers map routes and render concise comments", () => {
     route: "needs-info",
     targetStatus: "Needs Clarification",
     rationale: "Human input is required.",
-    evidence: [{ kind: "tracker", summary: "Issue is missing scope." }],
+    evidence: [{ kind: "tracker", path: null, summary: "Issue is missing scope." }],
     questions: ["Which provider should own this?"],
+    reconsiderWhen: null,
   });
   expect(comment).toContain("<!-- harness-factory:triage:run-1 -->");
   expect(comment).not.toContain("Why Needs Plan:");
@@ -2211,7 +2216,7 @@ test("Linear adapter applies completed triage status and comment", async () => {
     triage: {
       ...TRIAGE_READY_TO_PLAN,
       evidence: [
-        { kind: "tracker", summary: "Issue asks for a larger workflow." },
+        { kind: "tracker", path: null, summary: "Issue asks for a larger workflow." },
         { kind: "docs", path: "docs/contributing/factory.md", summary: "Factory docs apply." },
         { kind: "code", path: "lib/factory-linear-adapter.ts", summary: "Adapter needs updates." },
         {

@@ -10,9 +10,10 @@ export const DRY_RUN_FACTORY_TRIAGE = {
   route: "needs-info",
   confidence: "low",
   rationale: "(dry-run placeholder)",
-  evidence: [{ kind: "repo-state", summary: "(dry-run placeholder)" }],
+  evidence: [{ kind: "repo-state", path: null, summary: "(dry-run placeholder)" }],
   questions: ["(dry-run placeholder)"],
-  suggestedNext: { action: "ask-human" },
+  reconsiderWhen: null,
+  suggestedNext: { action: "ask-human", command: null, artifact: null },
 } satisfies FactoryTriageOutput;
 
 const ROUTE_PLANS = {

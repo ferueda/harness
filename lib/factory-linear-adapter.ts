@@ -297,8 +297,8 @@ export function renderLinearTriageCompleteComment(input: {
   targetStatus: string;
   rationale: string;
   evidence: FactoryTriageOutput["evidence"];
-  questions?: string[];
-  reconsiderWhen?: string;
+  questions: string[];
+  reconsiderWhen: string | null;
 }): string {
   return [
     linearTriageCommentMarker(input.runId),
@@ -309,10 +309,10 @@ export function renderLinearTriageCompleteComment(input: {
     `Run: \`${input.runDir}\``,
     `Next: ${input.targetStatus}`,
     ...readyToPlanContext(input),
-    ...(input.questions && input.questions.length > 0
+    ...(input.questions.length > 0
       ? ["", "Questions:", ...input.questions.map((question) => `- ${question}`)]
       : []),
-    ...(input.reconsiderWhen ? ["", `Reconsider when: ${input.reconsiderWhen}`] : []),
+    ...(input.reconsiderWhen !== null ? ["", `Reconsider when: ${input.reconsiderWhen}`] : []),
     "",
   ].join("\n");
 }

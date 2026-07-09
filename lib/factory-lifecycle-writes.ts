@@ -90,8 +90,8 @@ export function appendTriageTerminalEvent(input: {
   meta: FactoryRunMeta;
   triage?: {
     rationale: string;
-    questions?: string[];
-    reconsiderWhen?: string;
+    questions: string[];
+    reconsiderWhen: string | null;
   };
   factoryStateRoot?: string;
 }): FactoryLifecycleEvent {
@@ -119,8 +119,12 @@ export function appendTriageTerminalEvent(input: {
             "route artifact path",
           ),
           triageArtifactPath: required(input.meta.artifacts?.triage, "triage artifact path"),
-          ...(input.triage?.questions?.length ? { questions: input.triage.questions } : {}),
-          ...(input.triage?.reconsiderWhen ? { reconsiderWhen: input.triage.reconsiderWhen } : {}),
+          ...(input.triage && input.triage.questions.length
+            ? { questions: input.triage.questions }
+            : {}),
+          ...(input.triage && input.triage.reconsiderWhen !== null
+            ? { reconsiderWhen: input.triage.reconsiderWhen }
+            : {}),
         },
       },
     });

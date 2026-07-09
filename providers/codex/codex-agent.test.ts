@@ -33,6 +33,7 @@ function createSchemaFile(workspace: string): string {
     schemaPath,
     JSON.stringify({
       type: "object",
+      additionalProperties: false,
       properties: { verdict: { type: "string" } },
       required: ["verdict"],
     }),
@@ -551,6 +552,7 @@ test("createCodexAgent recovers top-level object when nested fragments parse", a
     schemaPath,
     JSON.stringify({
       type: "object",
+      additionalProperties: false,
       required: ["verdict", "findings"],
       properties: {
         verdict: { type: "string" },
@@ -558,6 +560,7 @@ test("createCodexAgent recovers top-level object when nested fragments parse", a
           type: "array",
           items: {
             type: "object",
+            additionalProperties: false,
             required: ["title"],
             properties: { title: { type: "string" } },
           },
@@ -593,6 +596,7 @@ test("createCodexAgent returns schema validation failures for parseable invalid 
     schemaPath,
     JSON.stringify({
       type: "object",
+      additionalProperties: false,
       required: ["verdict"],
       properties: { verdict: { enum: ["pass", "fail"] } },
     }),
@@ -640,6 +644,44 @@ test("createCodexAgent returns invalid schema failures", async () => {
   if (missingResult.ok) return;
   expect(missingResult.exitCode).toBe(1);
   expect(missingResult.error).toMatch(/Invalid Codex output schema/);
+});
+
+test("createCodexAgent rejects non-strict schemas before SDK use", async () => {
+  const workspace = createGitWorkspace();
+  const schemaPath = join(workspace, "schema.json");
+  writeFileSync(
+    schemaPath,
+    JSON.stringify({
+      type: "object",
+      additionalProperties: false,
+      required: ["verdict"],
+      properties: {
+        verdict: { type: "string" },
+        summary: { type: "string" },
+      },
+    }),
+    "utf8",
+  );
+  let factoryCalled = false;
+
+  const result = await createCodexAgent({
+    codexFactory: () => {
+      factoryCalled = true;
+      throw new Error("should not create codex client");
+    },
+  }).run({
+    workspace,
+    prompt: "review this",
+    schemaPath,
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.exitCode).toBe(1);
+  expect(result.error).toContain("Invalid Codex output schema");
+  expect(result.error).toContain("properties missing from required: summary");
+  expect(factoryCalled).toBe(false);
 });
 
 test("createCodexAgent does not register signal state when pre-run workspace check fails", async () => {

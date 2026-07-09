@@ -26,6 +26,11 @@ const BASE_TRIAGE = {
   evidence: [{ kind: "docs", path: "README.md", summary: "Export is supported." }],
 } satisfies Pick<FactoryTriageOutput, "confidence" | "rationale" | "evidence">;
 
+const NO_FOLLOWUP = {
+  questions: [],
+  reconsiderWhen: null,
+} satisfies Pick<FactoryTriageOutput, "questions" | "reconsiderWhen">;
+
 test("work items default labels and reject unknown fields", () => {
   const parsed = FactoryWorkItemSchema.parse({
     id: "manual-1",
@@ -77,8 +82,9 @@ test("work item metadata reserves factory tracker and handoff keys", () => {
 test("ready-to-implement maps to deterministic direct implementation plan", () => {
   const triage = parseFactoryTriageOutput({
     ...BASE_TRIAGE,
+    ...NO_FOLLOWUP,
     route: "ready-to-implement",
-    suggestedNext: { action: "implement-directly", command: "ignored" },
+    suggestedNext: { action: "implement-directly", command: "ignored", artifact: null },
   });
 
   const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
@@ -95,8 +101,9 @@ test("ready-to-implement maps to deterministic direct implementation plan", () =
 test("ready-to-plan maps to planning workflow handoff guidance", () => {
   const triage = parseFactoryTriageOutput({
     ...BASE_TRIAGE,
+    ...NO_FOLLOWUP,
     route: "ready-to-plan",
-    suggestedNext: { action: "create-plan" },
+    suggestedNext: { action: "create-plan", command: null, artifact: null },
   });
 
   const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
@@ -108,8 +115,9 @@ test("ready-to-plan maps to planning workflow handoff guidance", () => {
 test("needs-info requires questions and maps to ask-human", () => {
   const invalid = {
     ...BASE_TRIAGE,
+    ...NO_FOLLOWUP,
     route: "needs-info",
-    suggestedNext: { action: "ask-human" },
+    suggestedNext: { action: "ask-human", command: null, artifact: null },
   };
   expect(FactoryTriageOutputSchema.safeParse(invalid).success).toBe(false);
 
@@ -124,8 +132,9 @@ test("needs-info requires questions and maps to ask-human", () => {
 test("wait-to-implement requires reconsiderWhen and maps to park", () => {
   const invalid = {
     ...BASE_TRIAGE,
+    ...NO_FOLLOWUP,
     route: "wait-to-implement",
-    suggestedNext: { action: "park" },
+    suggestedNext: { action: "park", command: null, artifact: null },
   };
   expect(FactoryTriageOutputSchema.safeParse(invalid).success).toBe(false);
 
@@ -142,8 +151,9 @@ test("route/action mismatches fail validation", () => {
   expect(
     FactoryTriageOutputSchema.safeParse({
       ...BASE_TRIAGE,
+      ...NO_FOLLOWUP,
       route: "ready-to-plan",
-      suggestedNext: { action: "implement-directly" },
+      suggestedNext: { action: "implement-directly", command: null, artifact: null },
     }).success,
   ).toBe(false);
 });
@@ -151,8 +161,9 @@ test("route/action mismatches fail validation", () => {
 test("factory route and summary markdown include stable operator sections", () => {
   const triage = parseFactoryTriageOutput({
     ...BASE_TRIAGE,
+    ...NO_FOLLOWUP,
     route: "ready-to-plan",
-    suggestedNext: { action: "create-plan" },
+    suggestedNext: { action: "create-plan", command: null, artifact: null },
   });
   const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
   const routeMarkdown = renderFactoryRouteMarkdown(WORK_ITEM, triage, routePlan);
@@ -172,28 +183,28 @@ test("factory route markdown includes route-specific operator guidance", () => {
     {
       route: "ready-to-implement",
       action: "implement-directly",
-      questions: undefined,
-      reconsiderWhen: undefined,
+      questions: [],
+      reconsiderWhen: null,
       expected: "no harness command in PR 1",
     },
     {
       route: "ready-to-plan",
       action: "create-plan",
-      questions: undefined,
-      reconsiderWhen: undefined,
+      questions: [],
+      reconsiderWhen: null,
       expected: "planning-workflow coordinator",
     },
     {
       route: "needs-info",
       action: "ask-human",
       questions: ["Which export formats are in scope?"],
-      reconsiderWhen: undefined,
+      reconsiderWhen: null,
       expected: "Ask the emitted questions[]",
     },
     {
       route: "wait-to-implement",
       action: "park",
-      questions: undefined,
+      questions: [],
       reconsiderWhen: "Roadmap includes export shortcuts.",
       expected: "Park until reconsiderWhen is true",
     },
@@ -205,7 +216,7 @@ test("factory route markdown includes route-specific operator guidance", () => {
       route: item.route,
       questions: item.questions,
       reconsiderWhen: item.reconsiderWhen,
-      suggestedNext: { action: item.action },
+      suggestedNext: { action: item.action, command: null, artifact: null },
     });
     const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
     expect(renderFactoryRouteMarkdown(WORK_ITEM, triage, routePlan)).toContain(item.expected);
