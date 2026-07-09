@@ -367,6 +367,62 @@ test("resolveFactoryRoleAgent resolves missing role entries through fallback", (
   });
 });
 
+test("resolveFactoryRoleAgent defaults Codex implementation implementer to workspace-write", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    defaultAgent: "codex",
+    agents: {
+      codex: {
+        sandboxMode: "read-only",
+        approvalPolicy: "never",
+      },
+    },
+    factory: {
+      implementation: {
+        roles: {
+          implementer: { agent: "codex" },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "implementation", role: "implementer" }, "/"),
+  ).toMatchObject({
+    agent: "codex",
+    sandboxMode: "workspace-write",
+    approvalPolicy: "never",
+  });
+});
+
+test("resolveFactoryRoleAgent preserves Codex implementation role-level sandbox override", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    agents: {
+      codex: {
+        sandboxMode: "workspace-write",
+      },
+    },
+    factory: {
+      implementation: {
+        roles: {
+          implementer: {
+            agent: "codex",
+            sandboxMode: "read-only",
+          },
+        },
+      },
+    },
+  });
+
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "implementation", role: "implementer" }, "/"),
+  ).toMatchObject({
+    agent: "codex",
+    sandboxMode: "read-only",
+  });
+});
+
 test("resolveFactoryRoleAgent reads configured implementation Cursor role", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeHarnessJson(workspace, {
