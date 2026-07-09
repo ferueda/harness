@@ -21,13 +21,13 @@ harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file work-item.json
-harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 ```
 
@@ -273,19 +273,19 @@ against Linear.
 The triage station can also fetch Linear directly:
 
 ```bash
-LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123
 LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --apply
 ```
 
 `--linear-issue` and `--item-file` are mutually exclusive. Every
 `--linear-issue` triage invocation performs a live Linear read before creating
-local factory artifacts, including dry-runs. Linear-backed triage currently
-uses Linear only as the input source unless `--apply` is passed.
+local factory artifacts. Linear-backed triage currently uses Linear only as the
+input source unless `--apply` is passed.
 
 The planning station can fetch Linear directly too:
 
 ```bash
-LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --linear-issue ENG-123
 LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --apply
 ```
 
@@ -386,7 +386,7 @@ planning retry:
 
 ```bash
 harness factory planning run --workspace /path/to/repo --item-file work-item.json
-harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+harness factory planning run --workspace /path/to/repo --linear-issue ENG-123
 harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --apply
 ```
 
@@ -395,8 +395,7 @@ planning requires `LINEAR_API_KEY` and `factory.linear` config. It accepts
 issues in `Needs Plan`, `Needs Clarification` when the latest factory planning
 marker identifies `plan-needs-human`, `Plan Needs Review`, or
 `Planning Failed`; other Linear statuses are rejected before a factory run
-directory is created. Dry-run still performs the live Linear read but does not
-mutate Linear.
+directory is created.
 
 With `--apply`, planning moves the Linear issue to `Planning` before planner
 work starts. Terminal outcomes post one marker comment: approved plans stay in
@@ -511,10 +510,10 @@ non-Linear tracker metadata before local metadata writes.
 
 ## Implementation Station
 
-Implementation supports dry-run prep and one live implementer pass:
+Run one live implementer pass:
 
 ```bash
-harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 harness factory implementation run --workspace /path/to/repo --linear-issue ENG-123
 ```
 
@@ -536,17 +535,18 @@ Direct mode requires explicit factory readiness markers:
 a projection consistency guard for Linear-backed input; it is not the source of
 truth for direct or planned readiness.
 
-Dry-run prepares prompt and handoff drafts without invoking a provider or
-writing lifecycle state. Live mode requires a clean workspace porcelain status
-(excluding `.harness/`), invokes one configured implementer with
-`workspaceGuard: "record"`, writes candidate change artifacts, and materializes
-an internal review ref:
+Live mode requires a clean workspace porcelain status (excluding `.harness/`),
+invokes one configured implementer with `workspaceGuard: "record"`, writes
+candidate change artifacts, and materializes an internal review ref:
 
 - `reviewBase` is the `HEAD` commit captured before the implementer runs
 - `reviewHead` is `refs/harness/factory/<run-id>/implementation`
 - `reviewCommitSha` is the internal commit object behind that ref
 - `implementation-complete` means candidate changes and that review ref exist;
   it does not mean reviewed, approved, PR-ready, or merged
+
+Optional `--dry-run` prepares prompt and handoff drafts without invoking a
+provider or writing lifecycle state.
 
 Live artifacts:
 
