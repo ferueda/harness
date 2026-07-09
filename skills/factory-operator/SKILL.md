@@ -11,8 +11,8 @@ Operate the current local harness factory one work item at a time.
 
 Use this skill when the user wants to inspect factory inbox state, triage a
 factory work item, fetch a Linear issue as a factory work item, run the
-planning station for a `ready-to-plan` item, prepare implementation dry-run
-artifacts for a `ready-to-implement` item, or understand factory artifacts and
+planning station for a `ready-to-plan` item, run implementation dry-run or live
+mode for a `ready-to-implement` item, or understand factory artifacts and
 statuses.
 
 ## Waiting For Station Runs
@@ -59,7 +59,7 @@ harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-i
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 ```
 
 Low-level workflow escape hatches:
@@ -248,14 +248,17 @@ Run implementation only for work items already ready to implement:
 
 ```bash
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 ```
 
-The implementation station is dry-run only in the current factory shell. It
-resolves direct or planned implementation input, validates readiness, resolves
-`factory.implementation.roles.implementer`, and writes implementation prep
-artifacts. It does not invoke a provider, run change review, mutate Linear,
-append lifecycle events, create branches, create worktrees, or open PRs.
+Dry-run prepares prompt and handoff artifacts without invoking a provider or
+writing lifecycle state. Live mode resolves direct or planned implementation
+input, validates readiness, resolves `factory.implementation.roles.implementer`,
+invokes one implementer, writes candidate change artifacts, creates
+`refs/harness/factory/<run-id>/implementation`, and appends lifecycle events.
+It does not run change-review, mutate Linear, create human branches/worktrees,
+or open PRs. After `implementation-complete`, run
+`harness run change-review --base <reviewBase> --head <reviewHead>` separately.
 
 Planned mode requires `factoryStage: "plan-approved"`, `approvedPlanPath`, and
 `approvedPlanCommit`; the approved plan file must exist in the workspace. Direct
@@ -265,7 +268,7 @@ mode requires `factoryStage: "ready-to-implement"`,
 `Ready to Implement` is a projection consistency guard; lifecycle metadata is
 the source of truth.
 
-Implementation artifacts:
+Live implementation artifacts:
 
 ```text
 .harness/runs/factory/<run-id>/
@@ -276,7 +279,12 @@ Implementation artifacts:
     source-material.json       # direct only
   implementation/
     prompt.md
+    implementer.raw.json
+    implementer.stream.jsonl   # when provider streams
+    workspace-status.json
+    diff.patch
     change-review-handoff.md
+  events.jsonl
   summary.md
   meta.json
 ```

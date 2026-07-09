@@ -16,12 +16,14 @@ import {
 } from "../lib/config.ts";
 import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import {
-  FACTORY_IMPLEMENTATION_DRY_RUN_ERROR,
-  FactoryImplementationRunError,
   createFactoryImplementationRunContext,
+  type FactoryImplementationRunContext,
+  type FactoryImplementationRunMeta,
 } from "../lib/factory-implementation-run-context.ts";
 import { factoryInboxStatus } from "../lib/factory-inbox.ts";
 import {
+  appendImplementationStartedEvent,
+  appendImplementationTerminalEvent,
   appendPlanPrMergedEvent,
   appendPlanPrOpenedEvent,
   appendPlanningStartedEvent,
@@ -124,7 +126,9 @@ type FactoryImplementationStationOptions = {
   itemFile?: string;
   linearIssue?: string;
   runsDir?: string;
+  maxRuntimeMs: number;
   dryRun: boolean;
+  verbose: boolean;
 };
 
 type FactoryLinearFetchOptions = {
@@ -151,7 +155,7 @@ export function addFactoryCommands(parent: Command, options: FactoryCommandOptio
   addFactoryLinearCommand(factory);
   addFactoryTriageStationCommand(factory, options);
   addFactoryPlanningStationCommand(factory, options);
-  addFactoryImplementationStationCommand(factory);
+  addFactoryImplementationStationCommand(factory, options);
 }
 
 function addFactoryStatusCommand(parent: Command): void {
@@ -295,7 +299,10 @@ function addFactoryPlanningStationCommand(parent: Command, config: FactoryComman
     });
 }
 
-function addFactoryImplementationStationCommand(parent: Command): void {
+function addFactoryImplementationStationCommand(
+  parent: Command,
+  config: FactoryCommandOptions,
+): void {
   const implementation = parent
     .command("implementation")
     .description("Manage factory implementation station");
@@ -306,11 +313,15 @@ function addFactoryImplementationStationCommand(parent: Command): void {
     .option("--item-file <path>", "factory work item JSON file")
     .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
     .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/factory)")
+    .option(
+      "--max-runtime-ms <ms>",
+      `per-agent timeout (default: ${config.defaultMaxRuntimeMs})`,
+      config.positiveNumber,
+      config.defaultMaxRuntimeMs,
+    )
     .option("--dry-run", "prepare implementation prompt and handoff artifacts", false)
+    .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryImplementationStationOptions) => {
-      if (!options.dryRun) {
-        throw new FactoryImplementationRunError(FACTORY_IMPLEMENTATION_DRY_RUN_ERROR);
-      }
       validateFactoryWorkItemInput(options);
       const implementerRole = resolveFactoryRoleAgent({
         workspace: options.workspace,
@@ -332,23 +343,113 @@ function addFactoryImplementationStationCommand(parent: Command): void {
         resolvedInput: input,
         linearReadyStatus: linearSettings?.statuses.readyToImplement,
       });
-      const ctx = createFactoryImplementationRunContext({
-        workspace: implementerRole.workspace,
-        runsDir: options.runsDir,
-        workItem: input.workItem,
-        implementationInput,
-        implementerRole,
-        dryRun: true,
-      });
-      announceFactoryRunStarted({
-        station: "implementation",
-        runId: ctx.runId,
-        runDir: ctx.runDir,
-        workspace: ctx.workspace,
-      });
-      const meta = await runFactoryImplementation(ctx);
-      console.log(JSON.stringify(factoryImplementationCliOutput(meta), null, 2));
+      const runAbort = new AbortController();
+      const onRunAbort = () => runAbort.abort();
+      process.once("SIGINT", onRunAbort);
+      process.once("SIGTERM", onRunAbort);
+      let meta: FactoryImplementationRunMeta | undefined;
+      try {
+        const ctx = createFactoryImplementationRunContext({
+          workspace: implementerRole.workspace,
+          runsDir: options.runsDir,
+          workItem: input.workItem,
+          implementationInput,
+          implementerRole,
+          dryRun: Boolean(options.dryRun),
+          maxRuntimeMs: options.maxRuntimeMs,
+          signal: runAbort.signal,
+          eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
+          agentProviderFactory: createAgentProvider,
+        });
+        announceFactoryRunStarted({
+          station: "implementation",
+          runId: ctx.runId,
+          runDir: ctx.runDir,
+          workspace: ctx.workspace,
+        });
+        meta = await runFactoryImplementationWithLifecycle({
+          ctx,
+          issueRef: options.linearIssue,
+          itemFile: options.itemFile,
+        });
+        console.log(JSON.stringify(factoryImplementationCliOutput(meta), null, 2));
+        if (meta.status === "implementation-failed") process.exitCode = 1;
+      } finally {
+        process.off("SIGINT", onRunAbort);
+        process.off("SIGTERM", onRunAbort);
+      }
     });
+}
+
+export async function runFactoryImplementationWithLifecycle(input: {
+  ctx: FactoryImplementationRunContext;
+  issueRef?: string;
+  itemFile?: string;
+  factoryStateRoot?: string;
+  runImplementation?: (
+    ctx: FactoryImplementationRunContext,
+  ) => Promise<FactoryImplementationRunMeta>;
+}): Promise<FactoryImplementationRunMeta> {
+  const runImplementation = input.runImplementation ?? runFactoryImplementation;
+  if (input.ctx.dryRun) {
+    return runImplementation(input.ctx);
+  }
+
+  const itemFileRelative = input.itemFile
+    ? relative(input.ctx.workspace, input.itemFile)
+    : undefined;
+  appendWorkItemImportedEvent({
+    workspace: input.ctx.workspace,
+    workItem: input.ctx.workItem,
+    factoryStateRoot: input.factoryStateRoot,
+    execution: {
+      workspace: input.ctx.workspace,
+      runDir: input.ctx.runDir,
+    },
+  });
+  appendImplementationStartedEvent({
+    workspace: input.ctx.workspace,
+    workItem: input.ctx.workItem,
+    runId: input.ctx.runId,
+    factoryStateRoot: input.factoryStateRoot,
+    execution: {
+      workspace: input.ctx.workspace,
+      runDir: input.ctx.runDir,
+    },
+    ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
+    ...(itemFileRelative ? { itemFile: itemFileRelative } : {}),
+  });
+
+  let meta: FactoryImplementationRunMeta;
+  try {
+    meta = await runImplementation(input.ctx);
+  } catch (error) {
+    let failedMeta: FactoryImplementationRunMeta;
+    try {
+      failedMeta = input.ctx.export({
+        status: "implementation-failed",
+        error: errorMessage(error),
+        includeLiveArtifacts: false,
+      });
+      appendImplementationTerminalEvent({
+        meta: failedMeta,
+        factoryStateRoot: input.factoryStateRoot,
+        error: errorMessage(error),
+      });
+    } catch (terminalizationError) {
+      throw new AggregateError(
+        [error, terminalizationError],
+        `Failed to terminalize factory implementation failure: ${errorMessage(error)}; terminalization failed: ${errorMessage(terminalizationError)}`,
+      );
+    }
+    return failedMeta;
+  }
+
+  appendImplementationTerminalEvent({
+    meta,
+    factoryStateRoot: input.factoryStateRoot,
+  });
+  return meta;
 }
 
 function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOptions): void {

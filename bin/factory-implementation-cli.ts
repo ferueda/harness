@@ -1,3 +1,4 @@
+import type { AgentSessionRef } from "../lib/agents.ts";
 import type { FactoryImplementationRunMeta } from "../lib/factory-implementation-run-context.ts";
 
 export type FactoryImplementationCliOutput = {
@@ -12,6 +13,11 @@ export type FactoryImplementationCliOutput = {
   artifacts: FactoryImplementationRunMeta["artifacts"];
   summaryPath: string;
   metaPath: string;
+  error?: string;
+  implementerSession?: AgentSessionRef;
+  reviewBase?: string;
+  reviewHead?: string;
+  reviewCommitSha?: string;
 };
 
 export function factoryImplementationCliOutput(
@@ -29,5 +35,10 @@ export function factoryImplementationCliOutput(
     artifacts: meta.artifacts,
     summaryPath: meta.summaryPath,
     metaPath: meta.metaPath,
+    ...(meta.error ? { error: meta.error } : {}),
+    ...(meta.implementerSession ? { implementerSession: meta.implementerSession } : {}),
+    ...(meta.reviewBase ? { reviewBase: meta.reviewBase } : {}),
+    ...(meta.reviewHead ? { reviewHead: meta.reviewHead } : {}),
+    ...(meta.reviewCommitSha ? { reviewCommitSha: meta.reviewCommitSha } : {}),
   };
 }
