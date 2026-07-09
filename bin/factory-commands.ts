@@ -66,6 +66,7 @@ import {
   validateFactoryWorkItemInput,
 } from "../lib/factory-triage-input.ts";
 import { createFactoryRunContext, type FactoryRunMeta } from "../lib/factory-run-context.ts";
+import { announceFactoryRunStarted } from "../lib/factory-run-started.ts";
 import {
   parseFactoryTriageOutput,
   type FactoryTriageOutput,
@@ -360,6 +361,12 @@ function addFactoryImplementationStationCommand(
           eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
           agentProviderFactory: createAgentProvider,
         });
+        announceFactoryRunStarted({
+          station: "implementation",
+          runId: ctx.runId,
+          runDir: ctx.runDir,
+          workspace: ctx.workspace,
+        });
         meta = await runFactoryImplementationWithLifecycle({
           ctx,
           issueRef: options.linearIssue,
@@ -524,6 +531,12 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
           signal: runAbort.signal,
           eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
           agentProviderFactory: createAgentProvider,
+        });
+        announceFactoryRunStarted({
+          station: "planning",
+          runId: ctx.runId,
+          runDir: ctx.runDir,
+          workspace: ctx.workspace,
         });
         const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
         ({ meta, linearUpdate, terminalApplyError } = await runFactoryPlanningWithLinearApply({
@@ -919,6 +932,12 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
           signal: runAbort.signal,
           eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
           agentProviderFactory: createAgentProvider,
+        });
+        announceFactoryRunStarted({
+          station: "triage",
+          runId: ctx.runId,
+          runDir: ctx.runDir,
+          workspace: ctx.workspace,
         });
         const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
         if (!options.dryRun) {
