@@ -26,7 +26,7 @@ harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 -
 harness factory planning publish --run-dir .harness/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir .harness/runs/factory/<run-id> --commit abc1234
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --dry-run
-harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 ```
 
 There is no batch dispatch command. Run an explicit station for an explicit
@@ -98,9 +98,10 @@ Linear status and comments are human board projections. Per-run `meta.json`
 and `.harness/runs/factory/<run-id>/events.jsonl` are execution evidence. Git
 remains source of truth for committed plans and code.
 
-`triage.started` and `planning.started` events are audit history only; they do
-not move durable `factoryStage`. Terminal events such as `triage.completed`,
-`planning.completed`, `planning.failed`, `plan_pr.opened`, and
+`triage.started`, `planning.started`, and `implementation.started` events are
+audit history only; they do not move durable `factoryStage`. Terminal events
+such as `triage.completed`, `planning.completed`, `planning.failed`,
+`implementation.completed`, `implementation.failed`, `plan_pr.opened`, and
 `plan_pr.merged` own durable transitions.
 
 ## Station Config
@@ -425,11 +426,11 @@ non-Linear tracker metadata before local metadata writes.
 
 ## Implementation Station
 
-Implementation is currently a dry-run station shell:
+Implementation supports dry-run prep and one live implementer pass:
 
 ```bash
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json --dry-run
-harness factory implementation run --workspace /path/to/repo --linear-issue ENG-123 --dry-run
+harness factory implementation run --workspace /path/to/repo --linear-issue ENG-123
 ```
 
 The station first calls `resolveFactoryWorkItemInput`, then
@@ -450,7 +451,19 @@ Direct mode requires explicit factory readiness markers:
 a projection consistency guard for Linear-backed input; it is not the source of
 truth for direct or planned readiness.
 
-Dry-run artifacts:
+Dry-run prepares prompt and handoff drafts without invoking a provider or
+writing lifecycle state. Live mode requires a clean workspace porcelain status
+(excluding `.harness/`), invokes one configured implementer with
+`workspaceGuard: "record"`, writes candidate change artifacts, and materializes
+an internal review ref:
+
+- `reviewBase` is the `HEAD` commit captured before the implementer runs
+- `reviewHead` is `refs/harness/factory/<run-id>/implementation`
+- `reviewCommitSha` is the internal commit object behind that ref
+- `implementation-complete` means candidate changes and that review ref exist;
+  it does not mean reviewed, approved, PR-ready, or merged
+
+Live artifacts:
 
 ```text
 .harness/runs/factory/<run-id>/
@@ -461,17 +474,29 @@ Dry-run artifacts:
     source-material.json       # direct only
   implementation/
     prompt.md
+    implementer.raw.json
+    implementer.stream.jsonl
+    workspace-status.json
+    diff.patch
     change-review-handoff.md
+  events.jsonl
   summary.md
   meta.json
 ```
 
 `implementation/change-review-handoff.md` uses the same handoff section model as
-`change-review-workflow`.
+`change-review-workflow`. After `implementation-complete`, run
+`harness run change-review --base <reviewBase> --head <reviewHead>` separately.
 
-Non-goals for the current station shell: no provider invocation, no
-change-review loop, no PR creation, no Linear mutation, no lifecycle events, no
-branch/worktree orchestration, and no Git checkout or commit verification.
+Lifecycle: `implementation.started` is audit-only;
+`implementation.completed` / `implementation.failed` move durable stage while
+preserving plan/direct retry metadata. There is no Linear apply path for
+implementation in this station.
+
+Non-goals: no nested change-review loop, no PR creation, no Linear mutation, no
+human branch/worktree orchestration, and no Git checkout or commit verification
+of `approvedPlanCommit`. The implementer agent must not mutate refs; the harness
+command owns the internal review ref.
 
 ## Local Inbox
 
