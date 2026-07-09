@@ -26,7 +26,7 @@ Required behavior:
   - `runs/reviews/<run-id>/` for plan-review runs spawned from factory planning only.
 - Store override precedence: CLI override, then env override, then `harness.json`, then default user data root `${XDG_DATA_HOME:-~/.local/share}/harness/store`.
 - Repo identity must not key on disposable workspace path when Git origin is available. Use `<repo-name>-<short-hash-of-normalized-origin-url>`.
-- Support explicit project id override with `factory.store.projectId`; also add CLI/env escape hatches for tests/operators.
+- Support explicit project id override with `factory.store.projectId`; also add CLI/env escape hatches for tests/operators. Every explicit project id must be validated as one safe path segment before it is joined under `storeRoot/projects`.
 - Existing low-level overrides (`factoryStateRoot` in helper/test inputs and `--runs-dir` / context `runsDir`) remain explicit escape hatches, but defaults must resolve through one store policy and metadata must record any override.
 - Lifecycle append stays JSONL. Do not introduce SQLite.
 - Add per-work-item file locks. Different work items can run concurrently; same work item writes serialize.
@@ -65,7 +65,7 @@ Verified on 2026-07-09.
 - `README.md` documents installing the harness checkout at `~/.harness`; this means the default durable store must not be `~/.harness/store`, because that would put operator data inside the tool checkout. The harness repo `.gitignore` ignores `.harness/`, `node_modules/`, `dist/`, and `logs/`, not `store/`.
 - `docs/project-intent.md` says Harness owns reusable workflow machinery, durable improvements, and generic docs; provider/workflow boundaries must stay clean.
 - `docs/project-intent.md` also currently says target repos own generated `.harness/` artifacts and generated review artifacts belong under target-repo `.harness/`; this plan must revise that invariant for factory lifecycle/run evidence before code lands.
-- `README.md` and `docs/contributing/factory.md` currently describe workspace-local `.harness/factory` and `.harness/runs/factory`.
+- `README.md` currently describes workspace-local `.harness/runs/factory`; `docs/contributing/factory.md`, `docs/contributing/architecture.md`, and `docs/contributing/setup-manifest.md` describe workspace-local `.harness/factory` lifecycle paths.
 - `docs/contributing/architecture.md` currently lists target repos as owning `.harness/factory/events`, `.harness/factory/state`, `.harness/runs/reviews`, and `.harness/runs/factory`.
 - `docs/contributing/setup-manifest.md:65` documents workspace-local `.harness/factory/events`, `.harness/factory/state`, and `.harness/runs/factory`; the `factory lifecycle generated artifacts are documented` test in `test/docs-contracts.test.ts` asserts those lifecycle strings.
 - `lib/factory-lifecycle.ts:31` already has `execution.workspace`, optional `runDir`, `branch`, and `head`, but no repo/store identity.
@@ -195,6 +195,13 @@ Precedence:
 3. Config: `factory.store.root` and `factory.store.projectId`.
 4. Defaults: `join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local/share"), "harness/store")` and derived repo id.
 
+Project id validation:
+
+- Apply one shared parser to CLI, env, config, and derived project ids before constructing `projectRoot`.
+- Require the input to equal its trimmed form, require 1-120 characters, allow only `[A-Za-z0-9._-]`, require an alphanumeric first character, and reject `.` / `..` explicitly.
+- Reject path separators and invalid values with a source-specific configuration/CLI error; do not silently sanitize explicit overrides into a different id.
+- After `projectRoot = resolve(storeRoot, "projects", projectId)`, verify it is a strict descendant of `resolve(storeRoot, "projects")` before returning the resolution. This is a defense-in-depth containment check.
+
 The default must be outside `~/.harness` so it does not collide with the documented checkout install path. Tests must cover that a documented install at `~/.harness` resolves the default store outside that checkout.
 
 Resolver side-effect invariant:
@@ -219,12 +226,19 @@ Repo id derivation:
 Use local filesystem lock directories, not SQLite:
 
 - Lock path: `<factoryStateRoot>/locks/<work-item-filename>.lock/owner.json`.
-- Acquire with atomic `mkdirSync(lockDir)`.
+- The write-path acquire helper first creates only the parent `join(factoryStateRoot, "locks")` with `mkdirSync(..., { recursive: true })`, then acquires exclusivity with non-recursive atomic `mkdirSync(lockDir)`. Resolver, inspection, dry-run, fetch, and status paths must not create the parent.
+- After acquiring the directory, publish `owner.json` immediately. If owner publication fails in-process, remove the just-acquired directory best-effort and rethrow.
+- Define incomplete-owner behavior explicitly:
+  - Missing `owner.json` is `owner-missing`; malformed/schema-invalid `owner.json` is `owner-invalid`.
+  - Status reports either classification, lock-dir age, and a remediation warning without blocking or mutating it.
+  - Acquire treats a recent incomplete owner as indeterminate and fails closed after the normal timeout.
+  - An owner-missing lock may be broken after the same 30-minute stale threshold only with `rmdirSync(lockDir)` after re-checking that the same directory is still empty; `rmdirSync` must fail if an owner appeared. Never recursively remove an owner-missing lock.
+  - An owner-invalid non-empty lock is never auto-broken because pid/hostname/token ownership cannot be confirmed; fail closed with typed diagnostics and require operator cleanup.
 - Keep lifecycle lock helpers synchronous in v1 to match the current synchronous lifecycle API surface (`appendFactoryLifecycleEvent`, `loadFactoryLifecycleState`, `mergeLifecycleState`, and existing CLI/helper callers). Do not convert lifecycle APIs to async in FER-53.
 - On lock exists, read `owner.json` non-blockingly for diagnostics, then sleep/retry until a bounded timeout. Use a dependency-free synchronous wait helper, for example `sleepSync(ms)` backed by `Atomics.wait` on a local `SharedArrayBuffer`, or an equivalent Node primitive with blocking semantics. Do not busy-spin.
 - Use explicit bounded defaults:
   - `writeTimeoutMs = 5000` for append/rebuild/write paths.
-  - `readTimeoutMs = 2000` for lock-aware station input/readiness/fetch paths that may rebuild stale projections.
+  - `readTimeoutMs = 2000` for live lock-aware station input/readiness paths that may rebuild stale or corrupt projections. Inspect-only fetch/dry-run/status paths never wait on locks.
   - `pollIntervalMs = 50` by default, bounded to 25-100ms with simple jitter.
   - Expose test-only injectable timeout overrides so lock tests can run with short deterministic waits.
 - If smoke testing shows the 5000ms write default or 2000ms read default is too long/short for normal local factory use, STOP and report with measured evidence instead of silently choosing another value.
@@ -245,7 +259,7 @@ Use local filesystem lock directories, not SQLite:
   - `factory status` never breaks locks.
   - Append/rebuild acquire may break stale locks: if a lock is classified stale, remove the lock directory only after re-reading `owner.json` and confirming the same `pid`/`hostname`/`token` still owns it, then retry acquire once.
 - If stale removal fails, if ownership changed, or if acquire still times out after the stale-break retry, fail closed with owner metadata, age, and stale classification.
-- Lock timeout errors must use a typed error shape or class, not generic strings. CLI JSON/stderr must expose at least `workItemKey`, `lockPath`, owner `pid`, `hostname`, `token`, `workspace`, `runDir` when present, `startedAt`, `ageMs`, `stale`, and whether the operation was a read or write. Triage/planning/implementation/fetch must fail closed with those fields when a non-stale lock blocks beyond the configured timeout.
+- Lock timeout errors must use a typed error shape or class, not generic strings. CLI JSON/stderr must expose at least `workItemKey`, `lockPath`, owner `pid`, `hostname`, `token`, `workspace`, `runDir` when present, `startedAt`, `ageMs`, `stale`, incomplete-owner classification when present, and whether the operation was a read or write. Only live load-mode triage/planning/implementation readiness paths fail closed with those fields when a non-stale lock blocks beyond the configured timeout. `factory linear fetch`, factory dry-runs, and `factory status` are inspect-only: they never wait on or acquire lifecycle locks and report `lifecycle-lock-held` warnings instead.
 
 ### Legacy Workspace State
 
@@ -302,11 +316,7 @@ Update `docs/contributing/architecture.md` ownership language in the same step:
 - State that target repos remain execution sandboxes and Git materialization points.
 - State that standalone reviews remain workspace-local by default.
 
-Add the durable plan artifact before or with the docs wording:
-
-- Copy this reviewed plan into `dev/plans/FER-53-durable-factory-store.md`.
-- Register `dev/plans/FER-53-durable-factory-store.md` in `dev/plans/README.md` as the active FER-53 durable factory store plan with the current status.
-- Any planned-work note in `docs/project-intent.md` must point at that active plan entry so the intent document does not reference only ignored `.harness/runs/` artifacts.
+Plan artifact registration is already satisfied before execution: this reviewed plan exists at `dev/plans/FER-53-durable-factory-store.md`, and `dev/plans/README.md` registers it as `planned`. Do not copy or re-register it in Step 1. Any planned-work note in `docs/project-intent.md` must point at that active plan entry so the intent document does not reference only ignored `.harness/runs/` artifacts.
 
 Tests:
 
@@ -333,7 +343,7 @@ Implement:
 Update `lib/schemas.ts`:
 
 - Add `factory.store.root?: string`.
-- Add `factory.store.projectId?: string`.
+- Add `factory.store.projectId?: string` using the shared safe-project-id schema/parser from Store Policy rather than an unconstrained string.
 - Keep schema strict under `factory.store`; unknown store keys should fail like other factory config sections.
 
 Update `lib/config.ts`:
@@ -346,6 +356,7 @@ Tests:
 - Add `test/factory-store.test.ts`.
 - Cover CLI > env > config > default store root precedence.
 - Cover CLI/env/config project id override.
+- Cover invalid CLI/env/config project ids: empty/whitespace, `.`, `..`, separators, leading punctuation, over-length values, and traversal attempts. Assert resolver rejection and no directory creation outside or inside the temp store.
 - Cover origin URL normalization for HTTPS and SSH/SCP forms.
 - Cover no-origin fallback warning.
 - Cover non-git workspace fallback from a plain temporary directory passed with explicit `--workspace <tempdir>` and a temp store root: `idSource: "workspace-fallback"`, sanitized basename repo name, project id with a hash of the resolved absolute workspace path, warning recommending `factory.store.projectId`, and no throw from factory planning dry-run.
@@ -399,6 +410,10 @@ Tests:
 - Same work item concurrent appends serialize. Do not try to prove overlapping synchronous critical sections with same-thread promises. Add a test-only injectable lock/wait seam for deterministic timeout and stale-break unit tests, and add at most one `child_process` integration test for real `mkdir` lock contention if needed. Keep timeouts short and deterministic; do not make `worker_threads`/`SharedArrayBuffer` the only proof.
 - Different work item locks are independent.
 - Lock metadata includes pid, hostname, token, workspace, startedAt.
+- First acquire creates the `locks/` parent and still uses non-recursive atomic creation for the work-item lock directory.
+- Owner publication failure releases the just-acquired lock directory best-effort.
+- Missing owner files report `owner-missing`; recent owner-missing locks fail closed, while old owner-missing empty directories are removed only with an empty-directory `rmdirSync` re-check.
+- Malformed owner files report `owner-invalid`, are never auto-broken, and fail closed with remediation diagnostics.
 - State write uses temp+rename; no leftover temp file after success.
 - Same-host dead pid reports stale.
 - Lock older than 30 minutes reports stale.
@@ -419,18 +434,18 @@ Add two lifecycle read modes:
 - Enable lock-aware load/rebuild only after the Step 3b call-site checklist below is complete.
 - `loadFactoryLifecycleState` first performs a side-effect-free read of JSONL and the state cache.
 - If there are no events, or if the cache is fresh for the last event id, return without acquiring a lock or creating any store directories.
-- If state is missing or stale and a rebuild/write is required, acquire the per-work-item lock bounded by `readTimeoutMs`, re-read events/cache under the lock, rebuild only if still needed, atomically write state, then release.
-- `loadFactoryLifecycleState` remains lock-aware and may rebuild stale/missing state. Use this for station input/readiness and any path that can safely wait/fail while preparing a station.
-- Add a lock-free inspection helper, for example `inspectFactoryLifecycleState`, that reads existing events/state as present and never rebuilds or acquires a lock. Use this for `factory status` and station dry-run input with `lifecycleReadMode: "inspect"` only.
+- Treat malformed JSON or schema-invalid state JSON as a corrupt rebuildable projection, not as canonical-log corruption. If state is missing, stale, or corrupt and a rebuild/write is required, acquire the per-work-item lock bounded by `readTimeoutMs`, re-read events/cache under the lock, rebuild only if still needed, atomically replace state, then release. Canonical JSONL parse/schema errors remain hard failures.
+- `loadFactoryLifecycleState` remains lock-aware and may rebuild stale/missing/corrupt state. Use this for live station input/readiness and any path that can safely wait/fail while preparing a station.
+- Add a lock-free inspection helper, for example `inspectFactoryLifecycleState`, that reads existing events/state and never writes, rebuilds on disk, or acquires a lock. When the cache is missing, stale, or corrupt, it may reduce valid canonical events in memory for a best-effort overlay and must return the matching lifecycle warning; corrupt cache uses `durable-state-stale` with a message that identifies invalid cached state.
 - `factory status` must not call `loadFactoryLifecycleState` or any helper that can acquire a lifecycle write lock.
-- Live station `resolveFactoryWorkItemInput` and `mergeLifecycleState` must use the load path that rebuilds stale/missing projections under the lock when needed. They may wait up to `readTimeoutMs` only when a rebuild/write is required and then fail closed with owner metadata; they must not silently serve stale projections for live stations.
-- `fetchFactoryLinearWorkItem` must use inspect/read-only mode by default. It must not rebuild/write lifecycle state, acquire lifecycle locks, or create store dirs; stale/missing lifecycle state becomes a warning in fetch output.
-- Dry-run station input must pass `lifecycleReadMode: "inspect"` and may use the side-effect-free inspection/read path while emitting stale/missing-state warnings instead of rebuilding.
-- Only `factory status` and station dry-run input with `lifecycleReadMode: "inspect"` may use lock-free inspection.
+- Live station `resolveFactoryWorkItemInput` and `mergeLifecycleState` must use the load path that rebuilds stale/missing/corrupt projections under the lock when needed. They may wait up to `readTimeoutMs` only when a rebuild/write is required and then fail closed with owner metadata; they must not silently serve stale projections for live stations.
+- `fetchFactoryLinearWorkItem` must use inspect/read-only mode by default. It must not rebuild/write lifecycle state, acquire lifecycle locks, or create store dirs; stale/missing/corrupt lifecycle state becomes a warning in fetch output.
+- Dry-run station input must pass `lifecycleReadMode: "inspect"` and may use the side-effect-free inspection/read path while emitting stale/missing/corrupt-state warnings instead of rebuilding.
+- Only `factory status`, `factory linear fetch`, and station dry-run input with `lifecycleReadMode: "inspect"` may use lock-free inspection.
 
 Warning delivery contract:
 
-- Add `FactoryLifecycleWarning = { code: "durable-state-missing" | "durable-state-stale" | "lifecycle-lock-held"; message: string; factoryStateRoot?: string; workItemKey?: string; lockOwner?: { pid?: number; hostname?: string; token?: string; startedAt?: string; ageMs?: number } }`.
+- Add `FactoryLifecycleWarning = { code: "durable-state-missing" | "durable-state-stale" | "lifecycle-lock-held"; message: string; factoryStateRoot?: string; workItemKey?: string; lockOwner?: { pid?: number; hostname?: string; token?: string; startedAt?: string; ageMs?: number; classification?: "owner-missing" | "owner-invalid" } }`.
 - Extend `FactoryResolvedWorkItemInput` and any station dry-run CLI JSON output that includes resolved input with `warnings?: FactoryLifecycleWarning[]`.
 - Exact CLI JSON shapes:
   - `factory linear fetch` remains backward-compatible by keeping the fetched work item fields at the top level and adding optional `warnings?: FactoryLifecycleWarning[]`. Implement this as a `FactoryLinearFetchOutput = FactoryWorkItem & { warnings?: FactoryLifecycleWarning[] }` or equivalent; do not wrap existing output under `{ workItem }`.
@@ -439,9 +454,9 @@ Warning delivery contract:
   - Implementation dry-run output from `bin/factory-implementation-cli.ts` adds top-level `warnings?: FactoryLifecycleWarning[]` and forwards resolved-input/readiness lifecycle warnings.
   - Human-readable dry-run output should print warning messages in the existing warning/output channel, but JSON assertions are authoritative.
 - Live station paths should surface lock failures as typed errors, not warnings.
-- Add focused triage and planning dry-run tests where durable lifecycle state is missing/stale or a lock is held; assert `warnings[].code` and `factoryStateRoot` are present and no lifecycle lock/state directories are created by the dry-run.
-- Add focused fetch tests where durable lifecycle state is stale/missing or a lock is held; assert existing work item fields remain top-level and `warnings[].code` is present without lifecycle writes.
-- Add `test/factory-linear-fetch.test.ts` for helper-level fetch coverage if focused fetch tests do not already exist outside `test/cli.test.ts`. It must assert `fetchFactoryLinearWorkItem` uses inspect/read-only mode, returns top-level `warnings[].code`, and creates no lifecycle lock/state directories when durable state is stale/missing or a lock is held.
+- Add focused triage and planning dry-run tests where durable lifecycle state is missing/stale/corrupt or a lock is held; assert `warnings[].code` and `factoryStateRoot` are present and no lifecycle lock/state directories are created by the dry-run.
+- Add focused fetch tests where durable lifecycle state is stale/missing/corrupt or a lock is held; assert existing work item fields remain top-level and `warnings[].code` is present without lifecycle writes.
+- Add `test/factory-linear-fetch.test.ts` for helper-level fetch coverage if focused fetch tests do not already exist outside `test/cli.test.ts`. It must assert `fetchFactoryLinearWorkItem` uses inspect/read-only mode, returns top-level `warnings[].code`, and creates no lifecycle lock/state directories when durable state is stale/missing/corrupt or a lock is held.
 - Add focused tests that omitted `lifecycleReadMode` on station-facing helpers throws a clear configuration error.
 - Add focused CLI/helper tests proving dry-run triage/planning/implementation pass `"inspect"`, live triage/planning/implementation pass `"load"`, and `factory linear fetch` passes `"inspect"` before lock-aware rebuild behavior is enabled.
 
@@ -468,19 +483,21 @@ STOP if any dry-run path omits warning forwarding, still calls `"load"`, or reli
 Read-mode tests:
 
 - Lock-free inspection returns current state/event facts without rebuilding a stale cache.
+- Lock-free inspection ignores malformed/schema-invalid cached state, returns a best-effort in-memory projection from valid JSONL, emits `durable-state-stale`, and performs no writes.
 - Lock-free inspection does not wait on a held lock.
 - Lock-aware load rebuilds stale cache under the lock.
-- A held non-stale lock causes live station `resolveFactoryWorkItemInput` to fail closed with the typed lock timeout error and owner metadata within the configured `readTimeoutMs` test timeout only when stale/missing state requires a rebuild; fresh-cache and empty-event reads create no lock dirs and do not wait. `factory linear fetch` remains inspect/read-only and reports lock/stale state as warnings.
-- Dry-run station input with stale/missing lifecycle state does not rebuild or acquire locks; it returns best-effort overlay plus a warning.
-- Append/rebuild write paths use `writeTimeoutMs`; station input/readiness/fetch paths use `readTimeoutMs`. Tests override both to short deterministic values and assert CLI JSON/stderr exposes the required owner fields instead of a generic `Error` string.
+- Lock-aware load rebuilds malformed/schema-invalid cached state from valid JSONL under the lock and atomically replaces it.
+- A held non-stale lock causes live station `resolveFactoryWorkItemInput` to fail closed with the typed lock timeout error and owner metadata within the configured `readTimeoutMs` test timeout only when stale/missing/corrupt state requires a rebuild; fresh-cache and empty-event reads create no lock dirs and do not wait. `factory linear fetch` remains inspect/read-only and reports lock/stale/corrupt state as warnings.
+- Dry-run station input with stale/missing/corrupt lifecycle state does not rebuild or acquire locks; it returns best-effort overlay plus a warning.
+- Append paths use `writeTimeoutMs`; live load-mode station input/readiness rebuilds use `readTimeoutMs`. Fetch, dry-run, and status inspection never use either wait timeout because they never acquire lifecycle locks. Tests override write/read timeouts to short deterministic values and assert live CLI JSON/stderr exposes the required owner fields instead of a generic `Error` string.
 - Lock acquire tests use low test timeouts and prove the synchronous wait helper does not busy-spin indefinitely. For timeout/stale-break behavior, use the injectable wait/lock seam; for real filesystem contention, use a single `child_process` integration test if unit coverage is insufficient.
 
 Docs/contracts in this step:
 
 - Update `docs/contributing/script-command-surface.md` mutability language in the same step as read-mode behavior changes:
   - `factory linear fetch` remains read-only for lifecycle state; it can report lifecycle warnings but must not rebuild/write lifecycle projections.
-  - Dry-run factory stations are side-effect-free for lifecycle state and can warn when durable lifecycle state is stale/missing.
-  - Live triage/planning/implementation readiness paths may rebuild stale/missing lifecycle projections under lock.
+  - Dry-run factory stations are side-effect-free for lifecycle state and can warn when durable lifecycle state is stale/missing/corrupt.
+  - Live triage/planning/implementation readiness paths may rebuild stale/missing/corrupt lifecycle projections under lock.
 - Update `docs/contributing/factory.md` lock/rebuild/dry-run language for these behavior changes, but keep durable path ownership claims planned-tense until the final docs step.
 - Update docs-contract tests only for command mutability/read-mode claims here; do not add present-tense durable path ownership assertions in Step 3.
 
@@ -508,8 +525,8 @@ Update station command setup in `bin/factory-commands.ts`:
 - Read `HARNESS_FACTORY_STORE_ROOT` and `HARNESS_FACTORY_STORE_PROJECT_ID` via `process.env`.
 - Before flipping defaults or routing direct helper reads through durable state, add a concrete shared test helper module for all factory command and lifecycle-helper tests that can reach durable store resolution:
   - Create `test/factory-store-test-helpers.ts`.
-  - Export `withTempFactoryStore(fn)` that creates a temp store root/project id, injects `HARNESS_FACTORY_STORE_ROOT` / `HARNESS_FACTORY_STORE_PROJECT_ID` or explicit CLI flags, and runs after-test assertions.
-  - Export `runFactoryHarness(args, options)` for `harness factory ...` CLI tests. It must inject the temp durable store by default and fail if called for a production factory command without a temp store.
+  - Export `withTempFactoryStore(fn)` that creates a temp store root/project id, passes an explicit env object/override values to the callback, and runs after-test assertions. It must not mutate ambient `process.env`; in-process resolver/helper tests pass the provided env explicitly.
+  - Export `runFactoryHarness(args, options)` for `harness factory ...` CLI tests. It must inject the temp durable store by default through CLI flags or the spawned process's explicit `env` object, never by mutating ambient `process.env`, and fail if called for a production factory command without a temp store.
   - `runFactoryHarness()` must apply a mechanical rule: if `args[0] === "factory"` and the command is status/fetch/triage/planning/implementation/publication or any path that may reach `resolveFactoryStore`, inject temp store env/flags automatically. Only allowlist help/usage/error-before-resolve invocations such as `["factory", "--help"]`, unknown subcommands that exit before store resolution, or explicit low-level workspace-local tests with an inline reason.
   - Explicitly exempt non-store factory commands that do not resolve durable state: `factory linear list`, `factory linear create`, and `factory dispatch`. Future non-store factory commands need an inline exemption reason in tests before bypassing temp-store injection.
   - Export helper assertions that fail if any test writes under the real `homedir()`/`XDG_DATA_HOME` default `harness/store` or creates unexpected durable store files outside the temp root.
@@ -598,7 +615,7 @@ Apply the station fail-closed cutover in this exact sub-order:
   - Extend input with `factoryStateRoot?: string`, `factoryStoreRoot?: string`, `factoryStoreProjectId?: string`, and `env?: NodeJS.ProcessEnv`.
   - If `factoryStateRoot` is supplied, pass it directly to `mergeLifecycleState` with `lifecycleReadMode: "inspect"` and do not re-resolve the store.
   - Otherwise resolve through `resolveFactoryStore({ workspace, cli/env/config })`, then pass `factoryStateRoot: resolution.factoryStateRoot` and `lifecycleReadMode: "inspect"` into `mergeLifecycleState`.
-  - Direct station-input tests and CLI tests must cover both explicit `factoryStateRoot` and CLI/env/config durable-store paths, and assert fetch remains read-only when lifecycle state is stale/missing.
+  - Direct station-input tests and CLI tests must cover both explicit `factoryStateRoot` and CLI/env/config durable-store paths, and assert fetch remains read-only when lifecycle state is stale/missing/corrupt.
 - Pass factory run root into `createFactoryRunContext`, `createFactoryPlanningRunContext`, and `createFactoryImplementationRunContext` unless `--runs-dir` is explicitly set.
 - Pass `factoryStateRoot` into all lifecycle append helpers. Explicit call-site checklist:
   - Triage station action passes `resolution.factoryStateRoot` into `appendWorkItemImportedEvent`, `appendTriageStartedEvent`, and `appendTriageTerminalEvent`.
@@ -637,7 +654,9 @@ Update run context types:
 - Add a shared serializable `FactoryStoreMeta` shape, derived from `FactoryStoreResolution`, with `storeRoot`, `projectId`, `projectRoot`, `factoryStateRoot`, `factoryRunsDir`, `reviewRunsDir`, `repo`, `overrides`, and `warnings`.
 - Before any lifecycle append helper writes store/repo fields into `execution`, extend `ExecutionSchema` in `lib/factory-lifecycle.ts` to allow those fields. This schema change is part of Step 4, not a later phase, because Step 4 routes station writes through durable roots and immediately starts exporting `factoryStore` provenance. The updated `ExecutionSchema` must:
   - keep old event files valid when they only contain `workspace` and optional `runDir`/`branch`/`head`;
-  - allow optional `storeRoot`, `projectId`, `factoryStateRoot`, and safe `repo` identity fields;
+  - allow optional `storeRoot`, `projectId`, and `factoryStateRoot`;
+  - allow optional strict `repo: { name: string; id: string; idSource: "config" | "cli" | "env" | "origin" | "no-origin-fallback" | "workspace-fallback"; originHash?: string; workspaceHash?: string }`;
+  - exclude `normalizedOriginUrl` from lifecycle events even after credential scrubbing; it may remain in local run `factoryStore` metadata, but lifecycle execution provenance uses identifiers/hashes only;
   - remain strict so accidental provenance keys still fail validation.
 - Extend context options:
   - `FactoryRunContextFactoryOptions.factoryStore?: FactoryStoreMeta`
@@ -708,7 +727,7 @@ Private execution helper guidance:
   - `executionFromMeta(meta: FactoryRunMeta)`
   - `planningExecution(meta: FactoryPlanningRunMeta)`
   - `implementationExecution(meta: FactoryImplementationRunMeta)`
-- These helpers should copy optional execution fields from run meta/factory store metadata into lifecycle `execution`: `workspace`, `runDir`, `branch`, `head`, `storeRoot`, `projectId`, `factoryStateRoot`, and safe `repo` identity. They must not copy credentials or raw remote URLs.
+- These helpers should copy optional execution fields from run meta/factory store metadata into lifecycle `execution`: `workspace`, `runDir`, `branch`, `head`, `storeRoot`, `projectId`, `factoryStateRoot`, and the exact strict `repo` identity above. They must not copy `normalizedOriginUrl`, credentials, or raw remote URLs into lifecycle events.
 - Publication events should reuse the same execution/provenance contract when they derive lifecycle state from planning `meta.json`.
 
 ### Step 5: Make factory status report store, locks, and legacy warnings
@@ -720,7 +739,7 @@ Update `lib/factory-inbox.ts` or add `lib/factory-status.ts`:
 - Add `store` object:
   - `storeRoot`, `projectId`, `projectRoot`, `factoryStateRoot`, `factoryRunsDir`, `reviewRunsDir`, `repo`, `warnings`.
 - Add `locks`:
-  - held locks with workItemKey/filename, owner pid/hostname/workspace/runDir, startedAt, ageMs, stale boolean/warning.
+  - held locks with workItemKey/filename, owner pid/hostname/workspace/runDir when parseable, startedAt, ageMs, stale boolean/warning, and `owner-missing` / `owner-invalid` classification when applicable.
 - Add `legacyFactoryState`:
   - workspace-local path, event count, state count, ignored boolean, warnings.
 - If the durable store has no lifecycle events/state for the project but legacy workspace-local `.harness/factory` exists, status must show a first-class warning: durable store starts empty for this project and legacy workspace-local lifecycle is ignored in v1.
@@ -736,8 +755,8 @@ Tests:
 
 - Existing inbox status tests still pass after output grows.
 - Status reports active store root/project id.
-- Status reports held/stale locks using prepared lock dirs.
-- Status reports same-host dead pid stale, old lock stale, and remote/unknown-owner hostname mismatch.
+- Status reports held/stale/incomplete-owner locks using prepared lock dirs.
+- Status reports same-host dead pid stale, old lock stale, remote/unknown-owner hostname mismatch, owner-missing, and owner-invalid without mutating any lock.
 - Status reports ignored workspace-local `.harness/factory` when files exist.
 - Status reports the empty-durable-store plus ignored-legacy warning as a top-level warning, not only nested detail.
 - Status does not create `.harness/runs/factory`.
@@ -867,7 +886,8 @@ All must hold:
 - [ ] Default factory station run artifacts write under `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory`.
 - [ ] Factory planning nested plan-review artifacts write under `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/reviews`.
 - [ ] Default store root is outside a documented harness checkout at `~/.harness`.
-- [ ] Factory CLI tests inject temp store roots for station/status/publication/fetch commands and fail if verification writes outside those temp roots.
+- [ ] Explicit project ids from CLI/env/config are validated as safe single path segments, traversal attempts fail before directory creation, and `projectRoot` containment is checked.
+- [ ] Factory CLI tests inject temp store roots for station/status/publication/fetch commands through spawn-scoped env/flags, in-process tests pass explicit env objects without mutating ambient `process.env`, and verification fails if it writes outside those temp roots.
 - [ ] Gate 1 wrapper adoption is complete: every production `harness factory ...` test path uses `runFactoryHarness()` or explicit temp durable store env/flags; help/error-before-resolve exemptions are documented.
 - [ ] Gate 2 artifact-path migration is complete before durable run-dir flips: no lifecycle artifact path or Linear planning comment/display path under temp durable run roots starts with `..`.
 - [ ] Gate 3 station cutover is complete as a unit: production call sites pass `resolution.factoryStateRoot`, fail-closed missing-root behavior is enabled only after that wiring, `factoryStore` meta is written, and nested `reviewRunsDir` uses the durable store.
@@ -875,15 +895,15 @@ All must hold:
 - [ ] Low-level `harness run factory-triage` still defaults to workspace `.harness/runs/factory` unless `--runs-dir` is set.
 - [ ] CLI/env/config/default precedence is tested.
 - [ ] Repo id derivation and explicit project id override are tested, including no-origin fallback.
-- [ ] Per-work-item locking is tested for same issue serialization, different issue independence, idempotent duplicate handling, and stale lock reporting.
-- [ ] Stale/missing state projection rebuilds from JSONL.
+- [ ] Per-work-item locking is tested for first-use parent creation, atomic non-recursive acquisition, same issue serialization, different issue independence, idempotent duplicate handling, stale lock reporting, and incomplete-owner handling.
+- [ ] Stale/missing/corrupt state projection rebuilds from valid JSONL; inspect-only paths warn and perform no writes.
 - [ ] `resolveFactoryWorkItemInput` merges lifecycle state from the durable store.
-- [ ] `factory linear fetch` overlays durable lifecycle state in inspect/read-only mode and reports stale/missing/lock warnings without rebuilding or writing lifecycle projections.
+- [ ] `factory linear fetch` overlays durable lifecycle state in inspect/read-only mode and reports stale/missing/corrupt/lock warnings without waiting, rebuilding, or writing lifecycle projections.
 - [ ] Planned implementation still fails when the approved plan file is absent from the execution workspace.
 - [ ] `factory status` reports store root, locks, stale warnings, and ignored legacy workspace-local state without blocking.
 - [ ] `factory status` reports empty durable store plus ignored legacy workspace-local lifecycle as a first-class warning.
 - [ ] `factory status` uses lock-free lifecycle inspection and never acquires/rebuilds lifecycle state.
-- [ ] Factory station `meta.json` files include `factoryStore` metadata, and lifecycle `execution` fields include store/project/repo provenance.
+- [ ] Factory station `meta.json` files include `factoryStore` metadata, and lifecycle `execution` fields include the exact strict store/project/repo provenance schema without `normalizedOriginUrl`.
 - [ ] Lifecycle artifact paths for durable run dirs never start with `..` and use run-relative or store-relative/absolute paths.
 - [ ] Docs reflect workspace/store/projection/Git split.
 - [ ] Step 1 docs remained planned-tense only; no present-tense durable-store docs-contract assertions were added before the runtime cutover and final docs step.
@@ -901,7 +921,7 @@ Stop and report if:
 - A clean implementation appears to require changing Linear status semantics.
 - A clean implementation appears to require worktree orchestration, batch dispatch, Inngest, GitHub/Jira mutation, or Cos archiving.
 - You cannot implement per-work-item locking with local filesystem primitives without a new dependency.
-- Stale-lock recovery cannot safely compare owner `pid`/`hostname`/`token` before removing a lock.
+- Valid-owner stale-lock recovery cannot safely compare owner `pid`/`hostname`/`token` before removing a lock, or owner-missing recovery cannot use empty-directory-only `rmdirSync` after the age/recheck contract.
 - `factory.store` config cannot be added without breaking existing `harness.json` parsing.
 - Publication commands cannot reliably find durable lifecycle state from run metadata.
 - Any production path would rely on `resolveFactoryStateRoot({ workspace })` to find the durable store instead of passing a root from `resolveFactoryStore`.
