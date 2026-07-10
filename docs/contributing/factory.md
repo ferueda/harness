@@ -381,7 +381,6 @@ Use triage to classify an idea or issue into one deterministic route:
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue ENG-123
 harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --apply
-harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --rerun --apply
 ```
 
 Routes:
