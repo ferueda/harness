@@ -64,13 +64,14 @@ authoritative and the least-privilege defaults intact.
   timed-out turn instead writes `planner.failure.json` with its error, exit
   code, and abort/timeout classification. Preserve provider-owned stream output
   when available.
-- Every non-publishable planner attempt—provider failure/abort/timeout, thrown
-  invocation, malformed structured output, tracked-workspace guard failure,
-  invalid revision finding decisions, or unsafe/missing draft—must persist the
-  prompt, raw/error evidence, and a classified `planner.failure.json` before
-  terminalizing. It must not validate/read scratch, publish canonical or
-  iteration artifacts, start review, or run cleanup. Keep scratch retained and
-  untrusted; a later run must use a new run id and never reuse it.
+- Every non-publishable planner attempt—provider failure/abort/timeout (including
+  adapter-level malformed output), thrown invocation, workflow-local malformed
+  structured output, tracked-workspace guard failure,
+  invalid revision finding decisions, unsafe/missing draft, or durable
+  publication failure—must persist the prompt, raw/error evidence, and a
+  classified `planner.failure.json` before terminalizing. It must not read
+  scratch after a provider failure, start review, or run cleanup. Keep scratch
+  retained and untrusted; a later run must use a new run id and never reuse it.
 - “No iteration snapshot” means `iterations/<n>/plan.md` is absent; it does not
   mean the iteration directory or planner metadata is removed.
 - Initial `needs-human`: keep planner metadata for iteration 1; create no
@@ -370,9 +371,18 @@ then do not validate/read scratch or publish durable plan artifacts.
 raw/error artifact. Use exactly one classification:
 `provider-failed`, `provider-aborted`, `provider-timeout` (exit code 124),
 `invocation-threw`, `structured-output-invalid`, `workspace-guard-failed`,
-`finding-decisions-invalid`, or `draft-invalid`. A reviewer failure occurs only
-after a successful immutable snapshot and therefore retains normal successful
-planner artifacts rather than adding a planner failure record.
+`finding-decisions-invalid`, `draft-invalid`, or `publication-failed`. A
+reviewer failure occurs only after a successful immutable snapshot and therefore
+retains normal successful planner artifacts rather than adding a planner failure
+record.
+
+Provider adapters own their external structured-output parsing. An adapter-level
+malformed provider response is therefore `provider-failed`, because the workflow
+receives only its generic false result. Reserve `structured-output-invalid` for
+the workflow-local `parseFactoryPlanningOutput` failure after an agent returns
+`ok: true` with invalid `structuredOutput` (covered with a fake agent). This
+keeps classification accurate without adding provider-specific parsing contracts
+to FER-61.
 
 Add optional `failureKind: "workspace-guard"` to the false arm of
 `AgentRunResult`. `applyWorkspaceGuard` sets it only when enforced tracked
@@ -388,9 +398,12 @@ providers and test doubles. Capture status before invoking the planner; pass
 `workspaceGuard: "record"` to `Agent.run`; normalize a thrown invocation into a
 false `AgentRunResult`; then call `withWorkspaceGuard(..., "enforce")` exactly
 once before parsing, finding-decision validation, or scratch access. Remove the
-separate `assertTrackedStatusUnchanged` path. A tracked mutation always reaches
-the result handler as typed `failureKind: "workspace-guard"` and is recorded as
-`workspace-guard-failed` without scratch publication.
+separate `assertTrackedStatusUnchanged` path. A tracked mutation on a successful
+or ordinary provider-failure result reaches the handler as typed
+`failureKind: "workspace-guard"` and is recorded as `workspace-guard-failed`
+without scratch publication. Preserve the current guard bypass for `aborted`
+results and extend it to exit code 124: provider-aborted/provider-timeout wins
+over a concurrent tracked mutation, while raw workspace status remains recorded.
 
 Persist prompt/raw before downstream validation, then use this exact artifact
 matrix. `raw` means the returned provider raw value or a Harness error artifact
@@ -399,14 +412,20 @@ when invocation throws:
 | Classification | `planner.json` | `planner.failure.json` | Scratch access |
 | --- | --- | --- | --- |
 | `provider-failed`, `provider-aborted`, `provider-timeout`, `invocation-threw` | No | Yes | None after return |
-| `workspace-guard-failed`, `structured-output-invalid` | No | Yes | None |
+| `workspace-guard-failed`, workflow-local `structured-output-invalid` | No | Yes | None |
 | `finding-decisions-invalid`, `draft-invalid` | Yes | Yes | Decision validation: none; draft validation: one validation read only |
+| `publication-failed` | Yes | Yes | Draft was already read into the stable buffer; no further scratch access |
 
 All rows retain prompt/raw and available stream evidence. `draft-invalid` may
 read only enough to diagnose the invalid/unsafe draft; it never publishes,
 reviews, cleans, or trusts the scratch. A successful `needs-human` is not a
 failure and writes `planner.json` only. A reviewer failure follows successful
-publication and keeps normal successful planner artifacts.
+publication and keeps normal successful planner artifacts. For
+`publication-failed`, include `publicationStage` (`stage`, `iteration-link`,
+`canonical-rename`, or `rollback`) in `planner.failure.json`; retain
+`planner.json`, keep `meta.iterations` without `planPath`, preserve the original
+publication error as the terminal error, and assert that staging/link/rename/
+rollback failures write this evidence without starting review.
 
 ### Default policy contract
 
@@ -663,7 +682,10 @@ Inject failures for both stages, link, canonical rename, and rollback. Add an
 existing `iterations/<n>/plan.md` sentinel collision. Assert it and all prior
 evidence remain byte-identical. If hard-link no-replace is unavailable on a
 supported filesystem, STOP; do not use overwriting `renameSync` or direct
-exclusive writes as a non-atomic fallback.
+exclusive writes as a non-atomic fallback. For each publication failure, assert
+`planner.json` plus `planner.failure.json` with `publication-failed` and the
+exact `publicationStage`, no iteration `planPath` metadata, the primary terminal
+error, and no review invocation.
 
 **Verify**:
 
@@ -697,8 +719,10 @@ In `workflows/factory-planning.workflow.ts`:
   derive all other provider classifications from typed `aborted`/`exitCode` or
   the local workflow operation, never from an error string;
 - classify and persist provider failure, abort, timeout, thrown invocation,
-  malformed structured output, workspace-guard failure, invalid revision
-  finding decisions, and draft validation failure before terminalizing;
+  workflow-local malformed structured output (adapter-level parse failures remain
+  provider-failed), workspace-guard failure, invalid revision
+  finding decisions, draft validation failure, and durable publication failure
+  before terminalizing;
 - after any non-publishable attempt, do not call draft validation (unless that
   validation itself is the classified failure),
   `writePlannerArtifacts`, canonical/iteration publication, review, or cleanup.
@@ -713,13 +737,18 @@ Leave `bin/factory-commands.ts` unchanged. Extend
 - invalid handoff leaves scratch absent;
 - planner-provider construction failure leaves scratch absent;
 - once workflow starts, terminal outcomes retain scratch intentionally.
-- provider failure, abort, timeout, thrown invocation, malformed output,
+- provider failure, abort, timeout, thrown invocation, workflow-local malformed
+  output (with adapter parse failures treated as provider-failed),
   workspace-guard failure, and invalid finding decisions preserve classified
   failure evidence while publishing no plan/canonical/review and never reading
   scratch after a provider failure returns.
+- staging, link, canonical-rename, and rollback failures preserve
+  `planner.json` plus classified `publication-failed` evidence, the original
+  terminal error, and no review invocation.
 - the existing fake-agent tracked-mutation workflow regression reaches the same
   `workspace-guard-failed` classification as a real provider and publishes no
-  scratch-derived artifact.
+  scratch-derived artifact; aborted/time-limited mutations instead retain their
+  `provider-aborted`/`provider-timeout` classification with raw guard status.
 - the focused review-guard regression proves the typed workspace-guard kind is
   present only for the enforced mutation path.
 
@@ -746,7 +775,8 @@ Keep tests in their existing ownership layers:
 - `test/factory-planning.workflow.test.ts`: revisions, needs-human metadata,
   successful publication, and scratch non-export behavior.
 - `test/factory-planning.workflow-failures.test.ts`: classified provider failure,
-  abort, timeout, thrown invocation, malformed output, workspace-guard,
+  abort, timeout, thrown invocation, workflow-local malformed output,
+  workspace-guard,
   decision-validation, and draft-validation evidence plus the
   no-post-failure-scratch-use contract.
 - `test/factory-planning-run-context.test.ts`: path preparation, validation,
@@ -825,12 +855,14 @@ the packaged operator-skill validation, and format pass.
 Run all focused and full gates, then `change-review-workflow`. Triage every
 finding; fix justified findings and rerun affected gates/review.
 
-Before review, stage only the in-scope implementation/docs/test/skill files
+Before review, run the full gate so `dist/` is current, then stage only the
+in-scope implementation/docs/test/skill files
 after inspecting `git status --short` and `git diff --cached`. Create a temporary
 immutable review commit with the staged tree only—do not move `HEAD`, create a
 branch, or include `.harness`:
 
 ```bash
+pnpm check
 git add <exact-in-scope-files>
 git diff --cached --check
 base=$(git merge-base origin/main HEAD)
@@ -887,8 +919,8 @@ unresolved must-fix finding.
 | Run-id collision then success | no stale prior metadata | new exclusive run only | new exclusive scratch only |
 | Exhausted run-id/scratch collision | none or current error evidence only | existing sentinel unchanged | stale scratch never read |
 | Existing plan collision | planner metadata retained | plan sentinel/canonical unchanged | retained |
-| Stage/link failure | planner metadata retained | old durable evidence unchanged | retained |
-| Canonical rename failure | planner metadata retained | current plan rolled back; old canonical retained | retained |
+| Stage/link failure | `planner.json` + publication-failed evidence | old durable evidence unchanged; no review | retained |
+| Canonical rename failure | `planner.json` + publication-failed evidence | current plan rolled back; old canonical retained; no review | retained |
 | Hard interruption after link | durable metadata may be incomplete | complete unreferenced plan + old canonical | retained |
 | Every non-publishable planner attempt | exact prompt/raw/planner.json/failure matrix and available stream | no plan, canonical update, or review | retained and untrusted; draft-invalid only diagnoses once |
 | Lifecycle/apply/handoff pre-draft failure | normal pre-draft artifacts only | wrapper behavior unchanged | none |
@@ -912,13 +944,15 @@ All must hold:
 - [ ] Iteration publication atomically fails on existing destination and never
       overwrites immutable evidence.
 - [ ] Staged durable publication/injected failures preserve prior canonical and
-      iterations without truncation.
+      iterations without truncation, preserve the primary error, and write the
+      exact `publication-failed` evidence without review.
 - [ ] Needs-human retains planner prompt/raw/JSON metadata while omitting only
       new plan snapshot/canonical update/review.
 - [ ] Failed provider turns retain prompt/raw/failure evidence and preserve the
       terminal error without claiming a structured planner result.
 - [ ] Failure classification is typed: workspace-guard mutation is not inferred
-      from strings, and provider abort/timeout derives from existing typed fields.
+      from strings, provider abort/timeout derives from existing typed fields,
+      and abort/timeout wins over a concurrent tracked-workspace mutation.
 - [ ] Parsed metadata, lifecycle events, review refs, and handoff text for every
       outcome omit scratch paths and `factory-drafts` fields.
 - [ ] Scratch is created only for draft-producing workflow paths and
