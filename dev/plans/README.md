@@ -8,6 +8,7 @@
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
 | [FER-37.md](./FER-37.md)                                               | `approved`    | Lifecycle-authoritative triage rerun policy                |
 | [FER-61.md](./FER-61.md)                                               | `approved`    | Workspace-local planning scratch; Harness durable evidence |
+| [FER-62.md](./FER-62.md)                                               | `blocked`     | Durable implementation review and remediation; waits for FER-52/61 implementation |
 
 **Next factory issue (Linear, no plan file yet):** [FER-52](https://linear.app/ferueda/issue/FER-52/add-linear-apply-projection-for-implementation-station).
 
