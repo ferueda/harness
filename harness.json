@@ -6,7 +6,7 @@
       "model": "auto"
     },
     "codex": {
-      "model": "gpt-5.6-sol",
+      "model": "gpt-5.6-terra",
       "modelReasoningEffort": "high",
       "sandboxMode": "read-only",
       "approvalPolicy": "never"
@@ -32,7 +32,7 @@
         },
         "reviewer": {
           "agent": "codex",
-          "model": "gpt-5.6-luna",
+          "model": "gpt-5.6-terra",
           "modelReasoningEffort": "high"
         }
       }
