@@ -17,8 +17,8 @@
       "roles": {
         "triager": {
           "agent": "codex",
-          "model": "gpt-5.6-terra",
-          "modelReasoningEffort": "medium"
+          "model": "gpt-5.6-luna",
+          "modelReasoningEffort": "high"
         }
       }
     },
