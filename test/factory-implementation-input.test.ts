@@ -8,6 +8,7 @@ import {
   resolveFactoryStateRoot,
 } from "../lib/factory-lifecycle.ts";
 import {
+  factoryImplementationAttempt,
   FactoryImplementationInputError,
   resolveFactoryImplementationInput,
 } from "../lib/factory-implementation-input.ts";
@@ -24,6 +25,7 @@ import {
 } from "./factory-linear-test-helpers.ts";
 
 const READY_STATUS = LINEAR_SETTINGS.statuses.readyToImplement;
+const FAILED_STATUS = LINEAR_SETTINGS.statuses.implementationFailed;
 
 test("planned Linear input resolves with approved plan metadata and file", () => {
   const { workspace } = createWorkspacePlan();
@@ -46,6 +48,7 @@ test("planned Linear input resolves with approved plan metadata and file", () =>
     planPath: join(workspace, "dev/plans/FER-32.md"),
     approvedPlanCommit: "abc1234",
   });
+  expect(factoryImplementationAttempt(input)).toBe("first");
 });
 
 test("planned input fails when approved plan file is missing", () => {
@@ -104,6 +107,118 @@ test("direct Linear input resolves only with explicit direct markers", () => {
       tracker: { source: "linear", id: "ENG-123" },
     },
   });
+  expect(factoryImplementationAttempt(input)).toBe("first");
+});
+
+test.each(["planned", "direct"] as const)(
+  "applied %s retry accepts matching lifecycle and Failed projection",
+  (mode) => {
+    const { workspace } = createWorkspacePlan();
+    const metadata: NonNullable<FactoryWorkItem["metadata"]> =
+      mode === "planned"
+        ? {
+            linearStatus: FAILED_STATUS,
+            factoryStage: "implementation-failed" as const,
+            approvedPlanPath: "dev/plans/FER-32.md",
+            approvedPlanCommit: "abc1234",
+          }
+        : {
+            linearStatus: FAILED_STATUS,
+            factoryStage: "implementation-failed" as const,
+            factoryRoute: "ready-to-implement" as const,
+            factoryNextAction: "implement-directly" as const,
+          };
+
+    const input = resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput: linearInput(metadata),
+      linearProjection: implementationProjection("apply"),
+    });
+
+    expect(input.mode).toBe(mode);
+    expect(factoryImplementationAttempt(input)).toBe("retry");
+  },
+);
+
+test.each(["Ready to Implement", "Implementing"])(
+  "applied retry rejects cross-paired Linear status %s",
+  (linearStatus) => {
+    const { workspace } = createWorkspacePlan();
+
+    expect(() =>
+      resolveFactoryImplementationInput({
+        workspace,
+        resolvedInput: linearInput({
+          linearStatus,
+          factoryStage: "implementation-failed",
+          factoryRoute: "ready-to-implement",
+          factoryNextAction: "implement-directly",
+        }),
+        linearProjection: implementationProjection("apply"),
+      }),
+    ).toThrow(new RegExp(`implementation retry runs accepts ${FAILED_STATUS}`));
+  },
+);
+
+test.each(["planned", "direct"] as const)(
+  "observe-only %s retry is rejected before readiness classification",
+  (mode) => {
+    const { workspace } = createWorkspacePlan();
+    const metadata: NonNullable<FactoryWorkItem["metadata"]> =
+      mode === "planned"
+        ? {
+            linearStatus: FAILED_STATUS,
+            factoryStage: "implementation-failed" as const,
+            approvedPlanPath: "dev/plans/FER-32.md",
+            approvedPlanCommit: "abc1234",
+          }
+        : {
+            linearStatus: FAILED_STATUS,
+            factoryStage: "implementation-failed" as const,
+            factoryRoute: "ready-to-implement" as const,
+            factoryNextAction: "implement-directly" as const,
+          };
+
+    expect(() =>
+      resolveFactoryImplementationInput({
+        workspace,
+        resolvedInput: linearInput(metadata),
+        linearProjection: implementationProjection("observe"),
+      }),
+    ).toThrow(/Linear implementation retries require --apply/);
+  },
+);
+
+test("applied planned retry requires approved plan provenance", () => {
+  const { workspace } = createWorkspacePlan();
+
+  expect(() =>
+    resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput: linearInput({
+        linearStatus: FAILED_STATUS,
+        factoryStage: "implementation-failed",
+        approvedPlanPath: "dev/plans/FER-32.md",
+      }),
+      linearProjection: implementationProjection("apply"),
+    }),
+  ).toThrow(/approvedPlanCommit/);
+});
+
+test("applied direct retry requires direct route provenance", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-input-"));
+
+  expect(() =>
+    resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput: linearInput({
+        linearStatus: FAILED_STATUS,
+        factoryStage: "implementation-failed",
+        factoryRoute: "ready-to-implement",
+      }),
+      linearProjection: implementationProjection("apply"),
+    }),
+  ).toThrow(/Factory work item is not ready for implementation/);
 });
 
 test("direct input rejects Linear Ready to Implement without route markers", () => {
@@ -377,6 +492,20 @@ test("planned handoff errors propagate unchanged", () => {
   ).toThrow(FactoryPlanningError);
 });
 
+test("item-file planned retries remain rejected without applied Linear projection", () => {
+  const { workspace } = createWorkspacePlan();
+  expect(() =>
+    resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput: itemFileInput({
+        factoryStage: "implementation-failed",
+        approvedPlanPath: "dev/plans/FER-32.md",
+        approvedPlanCommit: "abc1234",
+      }),
+    }),
+  ).toThrow(/Planned work is not ready to implement/);
+});
+
 function createWorkspacePlan(): { workspace: string } {
   const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-input-"));
   mkdirSync(join(workspace, "dev/plans"), { recursive: true });
@@ -414,6 +543,14 @@ function itemFileInput(
       labels: ["factory"],
       metadata,
     },
+  };
+}
+
+function implementationProjection(mode: "observe" | "apply") {
+  return {
+    mode,
+    readyToImplement: READY_STATUS,
+    implementationFailed: FAILED_STATUS,
   };
 }
 

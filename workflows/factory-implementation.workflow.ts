@@ -37,6 +37,7 @@ function runDry(ctx: FactoryImplementationRunContext): FactoryImplementationRunM
   const promptInput = {
     implementationInput: ctx.implementationInput,
     implementerAgent: ctx.implementerAgent,
+    linearApplyRequested: ctx.linearApplyRequested,
   };
   ctx.writeDryRunArtifacts({
     prompt: renderFactoryImplementationPrompt(promptInput),
@@ -69,6 +70,7 @@ async function runLive(
     const prompt = renderFactoryImplementationPrompt({
       implementationInput: ctx.implementationInput,
       implementerAgent: ctx.implementerAgent,
+      linearApplyRequested: ctx.linearApplyRequested,
     });
     ctx.writePromptArtifact({ prompt });
 

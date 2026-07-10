@@ -34,6 +34,8 @@ const FactoryLinearStatusesSchema = z
     needsPlan: z.string().min(1),
     needsPlanReview: z.string().min(1),
     readyToImplement: z.string().min(1),
+    implementing: z.string().min(1),
+    implementationFailed: z.string().min(1),
     triaging: z.string().min(1),
     planning: z.string().min(1),
     triageFailed: z.string().min(1),

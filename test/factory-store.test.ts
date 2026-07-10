@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { expect, test } from "vitest";
 import {
@@ -252,4 +252,71 @@ test("factory status reports ignored legacy state and stale locks without mutati
   expect(readFileSync(ownerPath, "utf8")).toContain("lock-token");
   expect(existsSync(join(store.factoryStateRoot, "events"))).toBe(false);
   expect(existsSync(join(store.factoryStateRoot, "state"))).toBe(false);
+});
+
+test("factory status applies execution-lease staleness without changing ordinary locks", () => {
+  const workspace = tempWorkspace();
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: join(workspace, "durable-store"),
+    env: {},
+  });
+  const owners = [
+    {
+      filename: "linear-ENG-1.implementation-execution",
+      workItemKey: "linear:ENG-1",
+      pid: process.pid,
+      hostname: hostname(),
+    },
+    {
+      filename: "linear-ENG-2.implementation-execution",
+      workItemKey: "linear:ENG-2",
+      pid: 2_147_483_647,
+      hostname: hostname(),
+    },
+    {
+      filename: "linear-ENG-3.implementation-execution",
+      workItemKey: "linear:ENG-3",
+      pid: 1,
+      hostname: "remote-test-host",
+    },
+    {
+      filename: "linear-ENG-4",
+      workItemKey: "linear:ENG-4",
+      pid: 1,
+      hostname: "remote-test-host",
+    },
+  ];
+  for (const owner of owners) {
+    const lockDir = join(store.factoryStateRoot, "locks", `${owner.filename}.lock`);
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(
+      join(lockDir, "owner.json"),
+      `${JSON.stringify({
+        ...owner,
+        token: `token-${owner.workItemKey}`,
+        workspace,
+        startedAt: "2000-01-01T00:00:00.000Z",
+      })}\n`,
+      "utf8",
+    );
+  }
+
+  const locks = factoryStatus({ workspace, store }).locks;
+  expect(locks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ workItemKey: "linear:ENG-1", stale: false }),
+      expect.objectContaining({ workItemKey: "linear:ENG-2", stale: true }),
+      expect.objectContaining({
+        workItemKey: "linear:ENG-3",
+        stale: false,
+        classification: "remote-owner",
+      }),
+      expect.objectContaining({
+        workItemKey: "linear:ENG-4",
+        stale: true,
+        classification: "remote-owner",
+      }),
+    ]),
+  );
 });

@@ -28,12 +28,22 @@ import {
   type LinearPlanningFailedInput,
   type LinearPlanningUpdatePlan,
 } from "./factory-linear-planning-apply.ts";
+import {
+  applyLinearImplementationCompleted,
+  applyLinearImplementationFailed,
+  applyLinearImplementationStarted,
+  type LinearImplementationCompletedInput,
+  type LinearImplementationFailedInput,
+  type LinearImplementationStartedInput,
+  type LinearImplementationUpdatePlan,
+} from "./factory-linear-implementation-apply.ts";
 import type {
   LinearClientLike,
   LinearCommentLike,
   LinearConnectionLike,
   LinearIssueLabelLike,
   LinearIssueLike,
+  LinearMutationPayload,
   LinearProjectLike,
   LinearTeamLike,
   LinearUserLike,
@@ -84,6 +94,15 @@ export type LinearFactoryAdapter = {
   applyPlanningMerged: (
     input: LinearPlanningMergedInput,
   ) => Promise<LinearPlanningHandoffUpdatePlan>;
+  applyImplementationStarted: (
+    input: LinearImplementationStartedInput,
+  ) => Promise<LinearImplementationUpdatePlan>;
+  applyImplementationCompleted: (
+    input: LinearImplementationCompletedInput,
+  ) => Promise<LinearImplementationUpdatePlan>;
+  applyImplementationFailed: (
+    input: LinearImplementationFailedInput,
+  ) => Promise<LinearImplementationUpdatePlan>;
 };
 
 export type LinearStatusMapValidation = {
@@ -186,6 +205,27 @@ export function createLinearFactoryAdapterForClient(input: {
         input.settings,
         applyInput,
       ),
+    applyImplementationStarted: (applyInput) =>
+      applyLinearImplementationStarted(
+        LINEAR_IMPLEMENTATION_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
+    applyImplementationCompleted: (applyInput) =>
+      applyLinearImplementationCompleted(
+        LINEAR_IMPLEMENTATION_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
+    applyImplementationFailed: (applyInput) =>
+      applyLinearImplementationFailed(
+        LINEAR_IMPLEMENTATION_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
   };
 }
 
@@ -197,6 +237,18 @@ const LINEAR_PLANNING_APPLY_DEPS = {
   fetchWorkflowState,
   updateIssueStatusIfNeeded,
   issueHasCommentMarker,
+  createComment: createCheckedLinearComment,
+};
+
+const LINEAR_IMPLEMENTATION_APPLY_DEPS = {
+  validateStatusMap,
+  fetchIssue,
+  resolveOptional,
+  assertIssueInConfiguredScope,
+  fetchWorkflowState,
+  assertMutationSuccess: assertLinearMutationSuccess,
+  issueHasCommentMarker,
+  createComment: createCheckedLinearComment,
 };
 
 const LINEAR_LIST_DEPS = {
@@ -348,7 +400,10 @@ async function applyTriageStarted(
   assertLinearTriageApplyAllowed(settings, state?.name, input.rerun);
 
   const target = await fetchWorkflowState(client, settings, settings.statuses.triaging);
-  await client.updateIssue(issue.id, { stateId: target.id });
+  assertLinearMutationSuccess(
+    await client.updateIssue(issue.id, { stateId: target.id }),
+    "triage start",
+  );
   return {
     issueIdentifier: issue.identifier,
     runId: input.runId,
@@ -387,7 +442,10 @@ async function applyTriageCompleted(
     reconsiderWhen: input.triage.reconsiderWhen,
   });
   if (!(await issueHasCommentMarker(issue, commentMarker))) {
-    await client.createComment({ issueId: issue.id, body: commentBody });
+    assertLinearMutationSuccess(
+      await client.createComment({ issueId: issue.id, body: commentBody }),
+      "triage completion comment",
+    );
   }
 
   return {
@@ -439,7 +497,10 @@ async function applyTriageFailed(
     error: input.error,
   });
   if (!(await issueHasCommentMarker(issue, commentMarker))) {
-    await client.createComment({ issueId: issue.id, body: commentBody });
+    assertLinearMutationSuccess(
+      await client.createComment({ issueId: issue.id, body: commentBody }),
+      "triage failure comment",
+    );
   }
 
   return {
@@ -589,8 +650,26 @@ async function updateIssueStatusIfNeeded(
   target: LinearWorkflowStateLike,
 ): Promise<void> {
   if (normalizeName(current?.name ?? "") !== normalizeName(target.name)) {
-    await client.updateIssue(issue.id, { stateId: target.id });
+    assertLinearMutationSuccess(
+      await client.updateIssue(issue.id, { stateId: target.id }),
+      "status update",
+    );
   }
+}
+
+export function assertLinearMutationSuccess(
+  result: LinearMutationPayload,
+  operation: string,
+): void {
+  if (!result.success) throw new Error(`Linear ${operation} failed.`);
+}
+
+export async function createCheckedLinearComment(
+  client: LinearClientLike,
+  input: { issueId: string; body: string },
+  operation: string,
+): Promise<void> {
+  assertLinearMutationSuccess(await client.createComment(input), operation);
 }
 
 async function fetchTeam(client: LinearClientLike, teamKey: string): Promise<LinearTeamLike> {
@@ -730,6 +809,12 @@ function factoryStageForStatus(
   if (normalized === normalizeName(statuses.needsPlan)) return "ready-to-plan";
   if (normalized === normalizeName(statuses.needsPlanReview)) return "plan-review-unresolved";
   if (normalized === normalizeName(statuses.readyToImplement)) return "ready-to-implement";
+  if (normalized === normalizeName(statuses.implementing)) {
+    return "implementation-started";
+  }
+  if (normalized === normalizeName(statuses.implementationFailed)) {
+    return "implementation-failed";
+  }
   if (normalized === normalizeName(statuses.parked)) return "wait-to-implement";
   if (normalized === normalizeName(statuses.planning)) return "planning";
   if (normalized === normalizeName(statuses.planningFailed)) return "planning-failed";

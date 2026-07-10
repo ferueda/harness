@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import type { ZodError } from "zod";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
@@ -298,10 +299,37 @@ function readHarnessConfig(workspace: string): HarnessConfig {
 
   const result = HarnessConfigSchema.safeParse(parsed);
   if (!result.success) {
-    throw new Error(`Invalid ${CONFIG_FILE}: ${formatZodError(result.error)}`);
+    throw new Error(`Invalid ${CONFIG_FILE}: ${formatHarnessConfigError(result.error)}`);
   }
 
   return result.data;
+}
+
+function formatHarnessConfigError(error: ZodError): string {
+  const missingImplementationStatuses = error.issues
+    .filter(
+      (issue) =>
+        issue.code === "invalid_type" &&
+        issue.message === "Invalid input: expected string, received undefined" &&
+        (issue.path.join(".") === "factory.linear.statuses.implementing" ||
+          issue.path.join(".") === "factory.linear.statuses.implementationFailed"),
+    )
+    .map((issue) => issue.path.join("."));
+  if (
+    missingImplementationStatuses.length > 0 &&
+    error.issues.every(
+      (issue) =>
+        issue.path.join(".") === "factory.linear.statuses.implementing" ||
+        issue.path.join(".") === "factory.linear.statuses.implementationFailed",
+    )
+  ) {
+    const paths = [...new Set(missingImplementationStatuses)].sort();
+    return [
+      `Missing required Linear implementation status mapping${paths.length === 1 ? "" : "s"}: ${paths.join(", ")}.`,
+      "Create or confirm the Implementing and Implementation Failed team states, add both mappings to harness.json, then rerun.",
+    ].join(" ");
+  }
+  return formatZodError(error);
 }
 
 function factoryRoleConfig(

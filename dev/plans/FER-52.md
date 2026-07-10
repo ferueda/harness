@@ -57,8 +57,10 @@ state remains machine truth; Linear remains a coarse, fail-closed human guard.
 - Every live implementation command, applied or not, must acquire one
   implementation-specific execution lease for the canonical work-item key,
   reload lifecycle state after acquisition, and rerun readiness before context
-  creation, lifecycle writes, Linear mutation, or provider invocation. Dry-run
-  remains lease-free.
+  creation, lifecycle writes, Linear mutation, or provider invocation. For
+  Linear-backed input, re-fetch and merge the issue after acquisition before
+  that readiness check; a status observed before waiting for the lease is never
+  sufficient. Dry-run remains lease-free.
 - The execution lease must fail fast on contention and remain held through
   local terminalization and terminal Linear handling. It is distinct from the
   short lifecycle projection lock; never hold that short lock across network or
@@ -259,7 +261,8 @@ Add `lib/factory-implementation-policy.ts` with:
 - a stable `.implementation-execution` filename suffix/predicate;
 - awaited `withFactoryImplementationExecutionLease` using existing acquire/
   release primitives, `timeoutMs: 0`, and `staleAfterMs: Infinity`;
-- fresh lifecycle reload and readiness classification inside the lease.
+- fresh lifecycle reload and readiness classification inside the lease, with a
+  new Linear fetch/merge for Linear-backed work before classification.
 
 Add a generic per-filename stale-threshold resolver to lock inspection rather
 than hard-coding station behavior into the lock parser. `factoryStatus` supplies
@@ -352,9 +355,11 @@ schemas.
   tracker and the Harness command owns requested pre/post-provider projection.
 - Extend context export with an internal pre-provider-failure option. It writes
   `meta.json` and `summary.md`, omits unwritten prompt/handoff/live artifact
-  paths, states provider/reviewer were not invoked, and states lifecycle contains
-  imported/started audit evidence but no terminal event. Normal applied and all
-  no-apply artifact manifests remain unchanged.
+  paths **and** `eventsFile`, and states provider/reviewer were not invoked and
+  lifecycle contains imported/started audit evidence but no terminal event.
+  Make the affected artifact/event fields optional only for this result shape;
+  normal applied and all no-apply manifests remain unchanged. Do not create an
+  empty workflow event log merely to preserve the old field.
 
 Preserve the existing exported local helper as a compatibility wrapper:
 
@@ -391,7 +396,8 @@ record but no terminal record. No-apply callers continue receiving plain meta.
 Applied live order:
 
 1. acquire execution lease;
-2. reload lifecycle, reclassify, create/announce run from fresh input;
+2. reload lifecycle; for Linear-backed work re-fetch/merge the issue; reclassify,
+   then create/announce run from that fresh input;
 3. append imported and audit-only started events;
 4. apply start, then independently re-fetch/revalidate exact `Implementing`;
 5. invoke provider workflow;
@@ -403,7 +409,7 @@ Applied live order:
 
 On start failure, catch only the apply error, export pre-provider failed meta/
 summary, append no `implementation.failed`, return `startApplyError`, and release
-the lease. The command prints `linearApplied: true` with no `linearUpdate`, then
+the lease. The command prints `linearApplied: false` with no `linearUpdate`, then
 throws the original start error so stderr/exit are non-zero. If that evidence
 export fails, throw `AggregateError([startApplyError, exportError])`; no stdout is
 required because no reliable meta exists. Retry remains the same first/retry
@@ -420,7 +426,7 @@ AggregateError behavior when failed-meta export or local terminalization fails.
 Use planning/triage CLI result convention only for apply:
 
 ```ts
-linearApplied?: boolean; // present as true only for --apply
+linearApplied?: boolean; // present only for --apply; true only when all requested projections succeed
 linearUpdate?: { started?: LinearImplementationUpdatePlan; terminal?: LinearImplementationUpdatePlan };
 ```
 
@@ -600,7 +606,9 @@ retry, while existing no-apply first-run behavior remains green.
   Acquire fail-fast with unbounded age, await callback in `try/finally`, and
   release only after terminal handling settles.
 - Add fresh lifecycle reload/classification within the lease and return fresh
-  work item/input for context creation.
+  work item/input for context creation. Linear-backed work must re-fetch and
+  merge the issue within the lease before classification; never reuse its
+  pre-lease Ready/Failed status.
 - Extend generic lock inspection with a per-filename age-policy seam.
   `factoryStatus` supplies unbounded age only for implementation execution lease
   filenames; ordinary lifecycle lock behavior stays unchanged.
@@ -612,8 +620,11 @@ retry, while existing no-apply first-run behavior remains green.
   - same-host dead execution lease -> `stale: true`;
   - remote old execution lease -> `stale: false`, `remote-owner` warning;
   - existing ordinary old remote lifecycle-lock behavior remains unchanged.
-- Test fresh revalidation blocking a complete run and forcing a new retry
-  classification after a failed run.
+- Test fresh lifecycle revalidation blocking a complete run and forcing a new
+  retry classification after a failed run. Separately hold a same-item lease,
+  change a Linear issue from the pre-lease Ready/Failed state, release it, and
+  prove the waiting command re-fetches, fails closed before context/lifecycle/
+  provider work, and does not use stale metadata.
 
 **Verify:**
 
@@ -680,13 +691,15 @@ fresh exact state agree, and external terminal drift is never overwritten.
   prohibition from Harness command projection ownership and records request,
   not claimed terminal success.
 - Add the pre-provider-failure export option: omit prompt/handoff/live artifact
-  paths that were never written; state provider/reviewer not invoked and
-  imported/started-only lifecycle evidence. Keep this option internal rather
-  than widening persisted input/meta schemas.
+  paths and `eventsFile` when they were never written; state provider/reviewer
+  not invoked and imported/started-only lifecycle evidence. Update the internal
+  artifact/event typing so only this result may omit those fields; keep the
+  option internal rather than widening persisted input/meta schemas.
 - Add tests for applied and no-apply planned/direct prompt and summary text,
   plus assertions that no-apply artifact keys/meta/context JSON shapes remain
   unchanged. Add a start-failure export assertion that every advertised path
-  exists and no provider/handoff/diff artifact is advertised.
+  exists, `eventsFile` is absent, and no provider/prompt/handoff/diff artifact
+  is advertised.
 
 **Verify:**
 
@@ -702,8 +715,8 @@ projection, while no-apply artifacts retain the current line and shape.
 - Add the option and call `validateFactoryApplyOptions` before all other
   resolution. Reuse one cached Linear adapter for input fetch and apply.
 - Dry-run follows current context path and takes no lease. Every live path enters
-  the execution lease, reloads/classifies, then creates/announces context from
-  fresh input.
+  the execution lease, reloads lifecycle and (for Linear-backed work) re-fetches/
+  merges Linear, reclassifies, then creates/announces context from fresh input.
 - Preserve `runFactoryImplementationWithLifecycle` as the plain-meta
   compatibility wrapper. Extract one internal lifecycle core and add
   `runFactoryImplementationWithLinearApply` returning the exact
@@ -719,7 +732,7 @@ projection, while no-apply artifacts retain the current line and shape.
 - On start failure, create pre-provider failed meta/summary, omit unwritten
   provider artifacts, append no terminal lifecycle event, call no terminal
   adapter, and return `{ meta, startApplyError }`. The command prints stdout
-  with `linearApplied: true` and no `linearUpdate`, releases the lease, then
+  with `linearApplied: false` and no `linearUpdate`, releases the lease, then
   throws the original error. Test the resulting non-zero exit/stderr and that a
   same-status retry remains lifecycle-eligible because started is audit-only.
 - Complete requires all review refs and exact terminal entry/postcondition
@@ -755,7 +768,9 @@ projection, while no-apply artifacts retain the current line and shape.
     zero terminal mutation/comment, stdout before terminal apply error;
   - failed transition success true followed by fresh Implementing/other:
     terminal apply error before comment.
-  Keep thrown-rejection cases separate.
+  Keep thrown-rejection cases separate. Add a held-lease regression in which
+  Linear changes after the initial fetch; when the lease releases, stale status
+  must block before context creation, lifecycle writes, or provider invocation.
 - Also cover lease/freshness order, attempt forwarding, complete refs, returned
   and thrown provider failure, local terminal append failure, no-apply lease,
   dry-run no lease, and exact no-apply CLI shape.
@@ -788,6 +803,9 @@ no terminal lifecycle, and all terminal drift/failure surfaces after local outpu
   - architecture text containing `It does not mutate Linear, create` in the
     implementation station sections;
   - operator skill sentence `It does not run change-review, mutate Linear`.
+  - `docs/contributing/factory.md` text stating `There is no Linear apply path
+    for implementation in this station` and listing `no Linear mutation` as an
+    implementation non-goal.
   Conditional text such as “without `--apply` does not mutate Linear” is valid
   and must not be rejected by a broad regex.
 - Add the new policy/apply modules to architecture ownership and command/setup
@@ -802,6 +820,8 @@ test "$(wc -l < README.md | tr -d ' ')" -le 300
 if rg -n -F 'stops before change-review; it does not mutate Linear' README.md; then exit 1; else test $? -eq 1; fi
 if rg -n -F 'It does not mutate Linear, create' docs/contributing/architecture.md; then exit 1; else test $? -eq 1; fi
 if rg -n -F 'It does not run change-review, mutate Linear' skills/factory-operator/SKILL.md; then exit 1; else test $? -eq 1; fi
+if rg -n -F 'There is no Linear apply path for implementation in this station' docs/contributing/factory.md; then exit 1; else test $? -eq 1; fi
+if rg -n -F 'Non-goals: no nested change-review loop, no PR creation, no Linear mutation' docs/contributing/factory.md; then exit 1; else test $? -eq 1; fi
 rg -n 'implementationFailed|Implementing|implementation run.*--apply' README.md docs/contributing skills/factory-operator/SKILL.md
 pnpm exec vitest run test/docs-contracts.test.ts
 ```
@@ -894,7 +914,9 @@ finding has one recorded disposition.
 - **Execution lease/status:** same-item fail-fast; different items independent;
   async retention; cleanup; dead recovery; remote/missing/invalid fail closed;
   >30-minute live lease not stale in factory status; dead stale; remote non-stale;
-  ordinary lifecycle-lock age behavior unchanged; fresh lifecycle gate.
+  ordinary lifecycle-lock age behavior unchanged; fresh lifecycle gate; Linear
+  status changed while waiting for the lease is re-fetched and fails closed
+  before context/lifecycle/provider work.
 - **Mutation contract:** every fake returns a success payload; update/comment
   resolved false and thrown rejection are separate tests; existing triage/
   planning and new implementation paths never report unchecked success;
@@ -908,7 +930,8 @@ finding has one recorded disposition.
 - **Artifacts:** applied/no-apply summary and prompt ownership wording; applied
   records request only; no-apply summary/prompt/context/meta shape unchanged;
   pre-provider failure advertises only files that exist and explains
-  provider-not-run plus imported/started-only lifecycle evidence.
+  provider-not-run plus imported/started-only lifecycle evidence; it omits
+  `eventsFile` rather than advertising an unwritten workflow event log.
 - **Orchestration/CLI:** lease -> fresh input -> context -> local audit -> checked
   and freshly verified start -> provider -> local terminal -> guarded/verified
   terminal order; start false or unchanged fresh state means zero provider and
@@ -927,7 +950,8 @@ All must hold:
 - [ ] Required mappings parse, validate, bootstrap, and have actionable manual migration guidance.
 - [ ] Implementation `--apply` exists; invalid combinations fail before config/provider work.
 - [ ] First runs accept only Ready; failed retries accept only Failed; Implementing and disagreements fail before provider.
-- [ ] Every live implementation uses the distinct lease and fresh lifecycle gate; dry-run does not.
+- [ ] Every live implementation uses the distinct lease and fresh lifecycle gate;
+  Linear-backed work re-fetches/merges the issue after acquisition; dry-run does not.
 - [ ] Factory status does not age-stale a live execution lease, but still identifies dead/remote/incomplete/invalid ownership safely.
 - [ ] Every Linear status/comment result is checked; start and failed-terminal
   transitions require exact fresh post-state; success true with unchanged state
@@ -938,7 +962,8 @@ All must hold:
 - [ ] Local terminal state precedes terminal apply; resolved-false terminal apply prints local output then exits non-zero.
 - [ ] Start apply failure writes truthful failed meta/summary and imported/
   started audit evidence only, advertises no unwritten provider artifacts,
-  prints local output, appends no terminal lifecycle, and exits non-zero.
+  including no unwritten `eventsFile`, prints local output, appends no terminal
+  lifecycle, and exits non-zero.
 - [ ] Existing lifecycle helper still returns plain meta; the apply wrapper
   returns the documented meta/update/start-error/terminal-error result and
   command printing/error precedence is covered.

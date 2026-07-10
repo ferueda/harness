@@ -11,6 +11,8 @@ export const LINEAR_SETTINGS = {
     needsPlanReview: "Plan Needs Review",
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
+    implementing: "Implementing",
+    implementationFailed: "Implementation Failed",
     triaging: "Triaging",
     planning: "Planning",
     triageFailed: "Triage Failed",
@@ -80,6 +82,15 @@ export function fakeLinearAdapter(
     },
     applyPlanningMerged: async () => {
       throw new Error("applyPlanningMerged should not run");
+    },
+    applyImplementationStarted: async () => {
+      throw new Error("applyImplementationStarted should not run");
+    },
+    applyImplementationCompleted: async () => {
+      throw new Error("applyImplementationCompleted should not run");
+    },
+    applyImplementationFailed: async () => {
+      throw new Error("applyImplementationFailed should not run");
     },
     ...overrides,
   };

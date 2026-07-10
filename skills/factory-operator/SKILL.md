@@ -75,6 +75,7 @@ harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/run
 harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 ```
 
 Low-level workflow escape hatches:
@@ -114,6 +115,8 @@ Minimal shape:
         "needsPlan": "Needs Plan",
         "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
+        "implementing": "Implementing",
+        "implementationFailed": "Implementation Failed",
         "triaging": "Triaging",
         "planning": "Planning",
         "triageFailed": "Triage Failed",
@@ -139,6 +142,11 @@ Minimal shape:
 Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
 `factory.linear.statuses` when operator list/move tools need those board
 states; stations do not require them.
+
+`needsPlanReview`, `implementing`, and `implementationFailed` are a required
+upgrade migration for the whole `factory.linear` config, including read-only
+and no-apply use. Add the corresponding Linear team statuses and config
+mappings together.
 
 - `station`: lifecycle step such as `triage`, `planning`, or `implementation`.
 - `role`: job inside a station such as `triager`, `planner`, `reviewer`, or
@@ -288,14 +296,26 @@ Run implementation only for work items already ready to implement:
 
 ```bash
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 ```
+
+Entry matrix:
+
+| Input | Flags | Entry status | Linear mutation |
+| --- | --- | --- | --- |
+| item file | live or `--dry-run` | direct/planned readiness | no |
+| Linear issue | live or `--dry-run` | `Ready to Implement` | no |
+| Linear issue | live `--apply` | `Ready to Implement`, or `Implementation Failed` retry | yes |
+
+`--apply` requires `--linear-issue` and rejects `--item-file` and `--dry-run`.
+Retries are Linear apply-only so the station can validate a fresh failed
+projection before changing it.
 
 Live mode resolves direct or planned implementation input, validates readiness,
 resolves `factory.implementation.roles.implementer`, invokes one implementer,
 writes candidate change artifacts, creates
 `refs/harness/factory/<run-id>/implementation`, and appends lifecycle events.
-It does not run change-review, mutate Linear, create human branches/worktrees,
+It does not run change-review, and without `--apply` does not mutate Linear, create human branches/worktrees,
 or open PRs. After `implementation-complete`, run
 `harness run change-review --base <reviewBase> --head <reviewHead>` separately.
 Optional `--dry-run` prepares prompt and handoff artifacts without invoking a
@@ -308,6 +328,29 @@ mode requires `factoryStage: "ready-to-implement"`,
 `factoryNextAction: "implement-directly"`. For Linear-backed input, Linear
 `Ready to Implement` is a projection consistency guard; lifecycle metadata is
 the source of truth.
+
+Live runs hold a per-work-item execution lease from the final input refresh
+through provider execution, local terminal lifecycle, and requested Linear
+terminal projection. Contention fails immediately. Same-host dead-process
+leases are recoverable. Remote-host leases never expire by age; remove one
+only after independently verifying its owner has stopped.
+
+Apply moves a first run from `Ready to Implement` to `Implementing`; retry
+moves `Implementation Failed` to `Implementing`. Completion leaves the issue
+in `Implementing` and posts the review handoff marker. Failure moves it to
+`Implementation Failed` and posts the retry marker. The command re-fetches and
+checks scope/status immediately before mutations; the implementer must not
+write the tracker.
+
+On start apply failure, no provider runs and `meta.json` truthfully omits
+prompt, handoff, and events paths. On a later terminal apply failure, local
+lifecycle and run artifacts remain terminal, stdout reports
+`linearApplied: false`, and the command exits non-zero. Inspect `meta.json` and
+`linearUpdate`; partial terminal progress identifies whether the status
+mutation/postcondition completed, whether the marker comment is present, and
+the intended marker/body. Manually complete only the missing Linear projection
+from that evidence; do not rerun the provider solely to repair it. There is no
+terminal-projection replay command in this slice.
 
 Live implementation artifacts:
 

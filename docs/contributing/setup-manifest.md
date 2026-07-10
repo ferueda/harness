@@ -112,8 +112,11 @@ Linear list, fetch, create, and Linear-backed station input use
 `harness factory linear fetch`, `harness factory linear create`,
 `harness factory triage --linear-issue TEAM-123`, and
 `harness factory planning run --linear-issue TEAM-123`. Create is a constrained
-intake write (no `--apply`); adding `--apply` to Linear triage, planning, or
-planning publication commands mutates Linear issue status and marker comments.
+intake write (no `--apply`); adding `--apply` to Linear triage, planning,
+implementation, or planning publication commands mutates constrained Linear
+issue status and marker comments. Implementation apply accepts only
+`Ready to Implement` first runs or `Implementation Failed` retries, moves them
+through `Implementing`, and requires `LINEAR_API_KEY`.
 Planning run `--apply` never moves an issue to `Ready to Implement`;
 `harness factory planning mark-plan-merged --linear-issue TEAM-123 --apply` owns
 that transition after the plan commit is recorded.

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { factoryInboxStatus, type FactoryInboxStatus } from "./factory-inbox.ts";
 import { inspectFactoryLocks, type FactoryLockInspection } from "./factory-locks.ts";
+import { isFactoryImplementationExecutionLeaseFilename } from "./factory-implementation-policy.ts";
 import {
   countFactoryStateFiles,
   detectLegacyFactoryState,
@@ -46,7 +47,10 @@ export function factoryStatus(input: {
       repo: input.store.repo,
       warnings: input.store.warnings,
     },
-    locks: inspectFactoryLocks(input.store.factoryStateRoot),
+    locks: inspectFactoryLocks(input.store.factoryStateRoot, {
+      staleAfterMsForFilename: (filename) =>
+        isFactoryImplementationExecutionLeaseFilename(filename) ? Infinity : undefined,
+    }),
     legacyFactoryState,
     warnings,
   };

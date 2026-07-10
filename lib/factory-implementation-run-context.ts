@@ -35,22 +35,35 @@ export type FactoryImplementationRunStatus =
 
 export type FactoryImplementationAgentMeta = FactoryStationAgentMeta;
 
-export type FactoryImplementationArtifacts = {
+type FactoryImplementationBaseArtifacts = {
   workItem: string;
   implementationInput: string;
   planRef?: string;
   sourceMaterial?: string;
-  prompt: string;
-  changeReviewHandoff: string;
   summary: string;
   meta: string;
+};
+
+export type FactoryImplementationArtifacts = FactoryImplementationBaseArtifacts & {
+  prompt: string;
+  changeReviewHandoff: string;
   rawOutput?: "implementation/implementer.raw.json";
   streamLog?: "implementation/implementer.stream.jsonl";
   workspaceStatus?: "implementation/workspace-status.json";
   diff?: "implementation/diff.patch";
 };
 
-export type FactoryImplementationRunMeta = {
+export type FactoryImplementationPreProviderFailureArtifacts =
+  FactoryImplementationBaseArtifacts & {
+    prompt?: never;
+    changeReviewHandoff?: never;
+    rawOutput?: never;
+    streamLog?: never;
+    workspaceStatus?: never;
+    diff?: never;
+  };
+
+type FactoryImplementationRunMetaBase = {
   runId: string;
   workflow: typeof FACTORY_IMPLEMENTATION_WORKFLOW;
   status: FactoryImplementationRunStatus;
@@ -63,14 +76,12 @@ export type FactoryImplementationRunMeta = {
     title: string;
   };
   implementerAgent: FactoryImplementationAgentMeta;
-  artifacts: FactoryImplementationArtifacts;
   summaryPath: string;
   metaPath: string;
   startedAt: string;
   durationMs: number;
   error?: string;
   implementerSession?: AgentSessionRef;
-  eventsFile?: typeof WORKFLOW_EVENTS_FILE;
   reviewBase?: string;
   reviewHead?: string;
   reviewCommitSha?: string;
@@ -78,6 +89,19 @@ export type FactoryImplementationRunMeta = {
   factoryStore?: FactoryStoreMeta;
   execution?: FactoryExecutionProvenance;
 };
+
+export type FactoryImplementationRunMeta =
+  | (FactoryImplementationRunMetaBase & {
+      preProviderFailure: true;
+      status: "implementation-failed";
+      artifacts: FactoryImplementationPreProviderFailureArtifacts;
+      eventsFile?: never;
+    })
+  | (FactoryImplementationRunMetaBase & {
+      preProviderFailure?: false;
+      artifacts: FactoryImplementationArtifacts;
+      eventsFile?: typeof WORKFLOW_EVENTS_FILE;
+    });
 
 export type FactoryImplementationRunContextOptions = {
   workspace: string;
@@ -90,6 +114,7 @@ export type FactoryImplementationRunContextOptions = {
   maxRuntimeMs?: number;
   signal?: AbortSignal;
   eventSink?: WorkflowEventSink;
+  linearApplyRequested?: boolean;
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
 };
 
@@ -100,8 +125,7 @@ export type FactoryImplementationLiveArtifactsInput = {
   changeReviewHandoff: string;
 };
 
-export type FactoryImplementationExportInput = {
-  status: FactoryImplementationRunStatus;
+type FactoryImplementationExportInputBase = {
   error?: string;
   implementerSession?: AgentSessionRef;
   reviewBase?: string;
@@ -109,6 +133,18 @@ export type FactoryImplementationExportInput = {
   reviewCommitSha?: string;
   includeLiveArtifacts?: boolean;
 };
+
+export type FactoryImplementationExportInput = FactoryImplementationExportInputBase &
+  (
+    | {
+        status: "implementation-failed";
+        preProviderFailure: true;
+      }
+    | {
+        status: FactoryImplementationRunStatus;
+        preProviderFailure?: never;
+      }
+  );
 
 export type FactoryImplementationRunContext = {
   runId: string;
@@ -122,6 +158,7 @@ export type FactoryImplementationRunContext = {
   implementerRole: FactoryRoleAgent;
   dryRun: boolean;
   maxRuntimeMs: number;
+  linearApplyRequested: boolean;
   signal?: AbortSignal;
   eventSink: WorkflowEventSink;
   writeDryRunArtifacts(input: { prompt: string; changeReviewHandoff: string }): void;
@@ -219,6 +256,7 @@ function createFactoryImplementationRunContextInternal(
     implementerRole: options.implementerRole,
     dryRun: options.dryRun,
     maxRuntimeMs: options.maxRuntimeMs ?? 0,
+    linearApplyRequested: Boolean(options.linearApplyRequested),
     signal: options.signal,
     eventSink,
     writeDryRunArtifacts(input): void {
@@ -279,8 +317,9 @@ function createFactoryImplementationRunContextInternal(
         implementerAgent,
         factoryMetadata: options.implementationInput.metadata,
         factoryStore: options.factoryStore,
-        includeEventsFile: !options.dryRun,
+        includeEventsFile: !options.dryRun && !input.preProviderFailure,
         includeLiveArtifacts: options.dryRun ? false : includeLiveArtifacts,
+        preProviderFailure: Boolean(input.preProviderFailure),
         error: input.error,
         implementerSession: input.implementerSession,
         reviewBase: input.reviewBase,
@@ -290,7 +329,7 @@ function createFactoryImplementationRunContextInternal(
       });
       writeFileSync(
         join(runDir, "summary.md"),
-        renderSummary(meta, options.implementationInput),
+        renderSummary(meta, options.implementationInput, Boolean(options.linearApplyRequested)),
         "utf8",
       );
       writeJson(join(runDir, "meta.json"), meta);
@@ -312,6 +351,7 @@ function buildMeta(input: {
   factoryStore?: FactoryStoreMeta;
   includeEventsFile: boolean;
   includeLiveArtifacts: boolean;
+  preProviderFailure: boolean;
   error?: string;
   implementerSession?: AgentSessionRef;
   reviewBase?: string;
@@ -319,28 +359,16 @@ function buildMeta(input: {
   reviewCommitSha?: string;
   streamLogExists: boolean;
 }): FactoryImplementationRunMeta {
-  const artifacts: FactoryImplementationArtifacts = {
+  const baseArtifacts: FactoryImplementationBaseArtifacts = {
     workItem: "context/work-item.json",
     implementationInput: "context/implementation-input.json",
     ...(input.mode === "planned"
       ? { planRef: "context/plan-ref.json" }
       : { sourceMaterial: "context/source-material.json" }),
-    prompt: "implementation/prompt.md",
-    changeReviewHandoff: "implementation/change-review-handoff.md",
     summary: "summary.md",
     meta: "meta.json",
-    ...(input.includeLiveArtifacts
-      ? {
-          rawOutput: "implementation/implementer.raw.json" as const,
-          workspaceStatus: "implementation/workspace-status.json" as const,
-          diff: "implementation/diff.patch" as const,
-          ...(input.streamLogExists
-            ? { streamLog: "implementation/implementer.stream.jsonl" as const }
-            : {}),
-        }
-      : {}),
   };
-  return {
+  const common = {
     runId: input.runId,
     workflow: FACTORY_IMPLEMENTATION_WORKFLOW,
     status: input.status,
@@ -354,12 +382,10 @@ function buildMeta(input: {
     },
     implementerAgent: input.implementerAgent,
     factoryMetadata: input.factoryMetadata,
-    artifacts,
     summaryPath: join(input.runDir, "summary.md"),
     metaPath: join(input.runDir, "meta.json"),
     startedAt: input.startedAt.toISOString(),
     durationMs: Date.now() - input.startedAt.getTime(),
-    ...(input.includeEventsFile ? { eventsFile: WORKFLOW_EVENTS_FILE } : {}),
     ...(input.error ? { error: input.error } : {}),
     ...(input.implementerSession ? { implementerSession: input.implementerSession } : {}),
     ...(input.reviewBase ? { reviewBase: input.reviewBase } : {}),
@@ -368,11 +394,40 @@ function buildMeta(input: {
     ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
     execution: factoryExecutionProvenance(input.workspace, input.runDir),
   };
+  if (input.preProviderFailure) {
+    return {
+      ...common,
+      status: "implementation-failed",
+      preProviderFailure: true,
+      artifacts: baseArtifacts,
+    };
+  }
+  const artifacts: FactoryImplementationArtifacts = {
+    ...baseArtifacts,
+    prompt: "implementation/prompt.md",
+    changeReviewHandoff: "implementation/change-review-handoff.md",
+    ...(input.includeLiveArtifacts
+      ? {
+          rawOutput: "implementation/implementer.raw.json" as const,
+          workspaceStatus: "implementation/workspace-status.json" as const,
+          diff: "implementation/diff.patch" as const,
+          ...(input.streamLogExists
+            ? { streamLog: "implementation/implementer.stream.jsonl" as const }
+            : {}),
+        }
+      : {}),
+  };
+  return {
+    ...common,
+    artifacts,
+    ...(input.includeEventsFile ? { eventsFile: WORKFLOW_EVENTS_FILE } : {}),
+  };
 }
 
 function renderSummary(
   meta: FactoryImplementationRunMeta,
   implementationInput: FactoryImplementationInput,
+  linearApplyRequested: boolean,
 ): string {
   const modeDetails =
     implementationInput.mode === "planned"
@@ -402,23 +457,29 @@ function renderSummary(
           "- Reviewer invocation: not run.",
           "- Lifecycle events: not written.",
         ]
-      : [
-          `- Provider run status: ${meta.status}`,
-          ...(meta.implementerSession
-            ? [
-                `- Implementer session: ${meta.implementerSession.provider} ${meta.implementerSession.id}`,
-              ]
-            : []),
-          ...(meta.reviewBase ? [`- Review base: ${meta.reviewBase}`] : []),
-          ...(meta.reviewHead ? [`- Review head: ${meta.reviewHead}`] : []),
-          ...(meta.reviewCommitSha ? [`- Review commit: ${meta.reviewCommitSha}`] : []),
-          ...(meta.artifacts.diff ? [`- Diff path: ${meta.artifacts.diff}`] : []),
-          ...(meta.artifacts.changeReviewHandoff
-            ? [`- Handoff path: ${meta.artifacts.changeReviewHandoff}`]
-            : []),
-          "- Reviewer invocation: not run.",
-          "- Lifecycle events: written by harness command.",
-        ];
+      : meta.preProviderFailure
+        ? [
+            "- Provider invocation: not run.",
+            "- Reviewer invocation: not run.",
+            "- Lifecycle events: imported/started audit evidence only; no terminal event.",
+          ]
+        : [
+            `- Provider run status: ${meta.status}`,
+            ...(meta.implementerSession
+              ? [
+                  `- Implementer session: ${meta.implementerSession.provider} ${meta.implementerSession.id}`,
+                ]
+              : []),
+            ...(meta.reviewBase ? [`- Review base: ${meta.reviewBase}`] : []),
+            ...(meta.reviewHead ? [`- Review head: ${meta.reviewHead}`] : []),
+            ...(meta.reviewCommitSha ? [`- Review commit: ${meta.reviewCommitSha}`] : []),
+            ...(meta.artifacts.diff ? [`- Diff path: ${meta.artifacts.diff}`] : []),
+            ...(meta.artifacts.changeReviewHandoff
+              ? [`- Handoff path: ${meta.artifacts.changeReviewHandoff}`]
+              : []),
+            "- Reviewer invocation: not run.",
+            "- Lifecycle events: written by harness command.",
+          ];
 
   return [
     "# Factory Implementation",
@@ -439,7 +500,9 @@ function renderSummary(
     "## Actions",
     "",
     ...liveActions,
-    "- Linear mutation: not run.",
+    linearApplyRequested
+      ? "- Linear apply: requested; Harness command owns start and terminal projection."
+      : "- Linear mutation: not run.",
     "- GitHub/PR mutation: not run.",
     "- Branch/worktree orchestration: not run.",
     "",

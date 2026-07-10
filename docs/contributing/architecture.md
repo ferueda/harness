@@ -164,6 +164,8 @@ implementation stations.
 contract. It classifies resolved work-item input into planned or direct mode,
 validates approved-plan handoff metadata, and treats Linear
 `Ready to Implement` as a projection guard rather than source of truth.
+`lib/factory-implementation-policy.ts` owns the per-work-item live execution
+lease and its inspectable filename policy.
 `lib/factory-implementation-run-context.ts` owns the implementation station run
 directory, context artifacts, prompt and change-review handoff artifacts,
 provider raw/status/diff outputs, summary, and metadata.
@@ -174,9 +176,15 @@ changed-file lists for live implementation.
 a temporary index and `commit-tree`, writing
 `refs/harness/factory/<run-id>/implementation` without moving `HEAD` or using
 the real index.
+`lib/factory-linear-implementation-apply.ts` owns exact Linear implementation
+entry/postcondition checks, status projection, and terminal marker comments;
+`lib/factory-linear-adapter.ts` exposes that behavior to station commands.
 `harness factory implementation run` supports dry-run or one live provider pass
-plus harness-owned review-ref materialization. It does not mutate Linear, create
-human branches, or open PRs.
+plus harness-owned review-ref materialization. Live runs hold a per-item
+execution lease through local and requested Linear terminalization. With
+`--apply`, the command owns fail-closed Linear status/comment projection;
+without it, implementation does not mutate Linear, create human branches, or
+open PRs.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `lib/factory-status.ts`
 composes that inbox data with durable-store, lock, and legacy-state inspection
@@ -377,7 +385,7 @@ Factory implementation dry-run artifacts include:
 
 Dry-run prepares prompt/handoff artifacts only. Live mode invokes one
 implementer with `workspaceGuard: "record"`, writes lifecycle events, and
-creates the internal review ref. It does not mutate Linear, create human
+creates the internal review ref. Without `--apply`, it does not mutate Linear, create human
 branches/worktrees, or open PRs.
 
 ## Factory inbox lifecycle

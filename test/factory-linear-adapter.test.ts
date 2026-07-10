@@ -38,6 +38,8 @@ const LINEAR_SETTINGS = {
     needsPlanReview: "Plan Needs Review",
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
+    implementing: "Implementing",
+    implementationFailed: "Implementation Failed",
     triaging: "Triaging",
     planning: "Planning",
     triageFailed: "Triage Failed",
@@ -1069,6 +1071,24 @@ test("Linear adapter validates and lists without optional terminal statuses", as
     },
   });
   expect(result.statusNames).toEqual(["Backlog"]);
+});
+
+test.each([
+  ["Implementing", "implementation-started"],
+  ["Implementation Failed", "implementation-failed"],
+] as const)("Linear fetch bootstraps %s as %s", async (status, expectedStage) => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient({
+      issues: async () => ({ nodes: [issueWithState(status)] }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const item = await adapter.fetchWorkItem("ENG-123");
+  expect(item.metadata).toMatchObject({
+    linearStatus: status,
+    factoryStage: expectedStage,
+  });
 });
 
 test("Linear adapter skips undefined optional terminal values during status-map validation", async () => {

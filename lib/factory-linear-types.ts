@@ -11,13 +11,15 @@ export type LinearIssueCreatePayload = {
   issue?: Promise<LinearIssueLike | undefined> | LinearIssueLike | undefined;
 };
 
+export type LinearMutationPayload = { success: boolean };
+
 export type LinearClientLike = {
   issue: (id: string) => Promise<LinearIssueLike>;
   issues: (variables?: unknown) => Promise<LinearConnectionLike<LinearIssueLike>>;
   teams: (variables?: unknown) => Promise<LinearConnectionLike<LinearTeamLike>>;
   createIssue: (input: LinearIssueCreateInput) => Promise<LinearIssueCreatePayload>;
-  updateIssue: (id: string, input: { stateId: string }) => Promise<unknown>;
-  createComment: (input: { issueId: string; body: string }) => Promise<unknown>;
+  updateIssue: (id: string, input: { stateId: string }) => Promise<LinearMutationPayload>;
+  createComment: (input: { issueId: string; body: string }) => Promise<LinearMutationPayload>;
 };
 
 export type LinearConnectionLike<T> = {

@@ -70,6 +70,13 @@ export type FactoryLockRuntimeOptions = {
   beforeStaleRemoval?: () => void;
 };
 
+export type FactoryLockInspectionOptions = Pick<
+  FactoryLockRuntimeOptions,
+  "now" | "hostname" | "staleAfterMs"
+> & {
+  staleAfterMsForFilename?: (filename: string) => number | undefined;
+};
+
 export type WithFactoryWorkItemLockInput = {
   factoryStateRoot: string;
   workItemKey: string;
@@ -88,12 +95,16 @@ export function inspectFactoryWorkItemLock(input: {
   factoryStateRoot: string;
   workItemKey: string;
   workItemFilename: string;
-  options?: Pick<FactoryLockRuntimeOptions, "now" | "hostname" | "staleAfterMs">;
+  options?: FactoryLockInspectionOptions;
 }): FactoryLockInspection | undefined {
   const lockPath = factoryWorkItemLockPath(input.factoryStateRoot, input.workItemFilename);
   if (!existsSync(lockPath)) return undefined;
 
   const now = input.options?.now?.() ?? Date.now();
+  const staleAfterMs =
+    input.options?.staleAfterMsForFilename?.(input.workItemFilename) ??
+    input.options?.staleAfterMs ??
+    FACTORY_LOCK_STALE_MS;
   const directoryAgeMs = Math.max(0, now - statSync(lockPath).mtimeMs);
   const ownerPath = join(lockPath, "owner.json");
   if (!existsSync(ownerPath)) {
@@ -102,7 +113,7 @@ export function inspectFactoryWorkItemLock(input: {
       filename: input.workItemFilename,
       lockPath,
       ageMs: directoryAgeMs,
-      stale: directoryAgeMs > (input.options?.staleAfterMs ?? FACTORY_LOCK_STALE_MS),
+      stale: directoryAgeMs > staleAfterMs,
       classification: "owner-missing",
       warning: "Lifecycle lock owner.json is missing; operator cleanup may be required.",
     };
@@ -122,7 +133,6 @@ export function inspectFactoryWorkItemLock(input: {
   }
 
   const currentHostname = input.options?.hostname ?? hostname();
-  const staleAfterMs = input.options?.staleAfterMs ?? FACTORY_LOCK_STALE_MS;
   const sameHost = owner.hostname === currentHostname;
   const liveness = sameHost ? pidLiveness(owner.pid) : "unknown";
   const ageMs = Math.max(0, now - Date.parse(owner.startedAt));
@@ -144,7 +154,7 @@ export function inspectFactoryWorkItemLock(input: {
 /** Inspect existing lock directories only. This never creates or mutates paths. */
 export function inspectFactoryLocks(
   factoryStateRoot: string,
-  options?: Pick<FactoryLockRuntimeOptions, "now" | "hostname" | "staleAfterMs">,
+  options?: FactoryLockInspectionOptions,
 ): FactoryLockInspection[] {
   const locksRoot = join(resolve(factoryStateRoot), "locks");
   if (!existsSync(locksRoot)) return [];
