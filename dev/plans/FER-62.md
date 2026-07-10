@@ -11,7 +11,11 @@
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
-- **Depends on**: FER-52 (implementation Linear projection) and FER-61 (workspace/durable-store writer boundary)
+- **Execution status**: blocked pending merged implementations of FER-52 and
+  FER-61; this reviewed plan is not approved for execution on the current branch.
+- **Depends on**: merged implementations of FER-52 (implementation Linear
+  projection) and FER-61 (workspace/durable-store writer boundary). Merged plan
+  PRs alone do not satisfy this gate.
 - **Category**: direction
 - **Issue**: https://linear.app/ferueda/issue/FER-62/automate-factory-implementation-review-and-remediation
 
@@ -61,13 +65,30 @@ These requirements are the contract. Do not weaken them to simplify the code.
   `.unresolved`, and `.failed` events. Checkpoints contain artifact/ref pointers,
   counters, and provenance, never full findings.
 - Add an optional internal implementation checkpoint to the lifecycle read model:
-  owning implementation run, original base, latest candidate ref/commit/tree,
-  implementer session, workspace/store provenance, candidate version, completed
-  review count, active attempt, prior attempt, latest review/decision pointers,
-  and latest outcome/error classification.
+  owning implementation run, original base, approved latest-candidate
+  ref/commit/tree, implementer session, workspace/store provenance, candidate
+  version, completed review count, immutable effective review limit and its
+  config/CLI provenance, active attempt, prior attempt, latest review/decision
+  pointers, optional partial-recovery ref/commit/tree plus attempt/index, and
+  latest outcome/error classification. Partial recovery evidence never replaces
+  the approved candidate tuple.
 - Every ownership transition is conditional and is evaluated while holding the
   per-work-item lifecycle lock. Idempotency lookup happens before precondition
   evaluation so retrying the same event remains safe.
+- Add a separate durable workspace writer lease, keyed by the physical Git
+  checkout plus Factory store project rather than work item. Define one shared
+  canonicalizer: resolve the workspace's Git top-level, `realpath` that existing
+  directory, and derive a stable key from the physical path; failure to resolve
+  either value fails closed. Use that value for lease acquisition, tuple
+  revalidation, owner diagnostics, and status inspection—never the caller's
+  lexical/symlinked workspace path. Any live implementation or remediation
+  provider turn must acquire it before the final clean/tree check and retain it
+  through provider completion plus candidate/partial-ref materialization and
+  terminal/checkpoint persistence. It is not the lifecycle lock and is never
+  held for nested read-only review, artifact rendering, or Linear I/O. Contention
+  fails closed with owner diagnostics; stale-owner recovery follows existing
+  durable lease liveness rules. Revalidate the approved/partial tuple after
+  acquisition and immediately before ref creation.
 - `implementation.started` must become a real ownership stage. A fresh
   implementation may claim only a canonical ready stage and must reject an
   existing `implementation-started`, `implementation-complete`, every review
@@ -78,6 +99,9 @@ These requirements are the contract. Do not weaken them to simplify the code.
   idempotently. `ready-for-human` remains terminal.
 - Never hold the lifecycle lock around Git work, provider execution, reviewer
   execution, or artifact rendering.
+- A separate work item may not begin an implementation/remediation provider turn
+  in the same workspace while the workspace writer lease is held; reviews remain
+  read-only and may run without it.
 
 ### Git/workspace lineage
 
@@ -89,10 +113,14 @@ These requirements are the contract. Do not weaken them to simplify the code.
   The temporary index starts from the prior candidate, stages the current
   workspace, rejects `.harness/` in the tree, and updates the ref only if it does
   not already exist.
-- Before review/resume, require workspace `HEAD == originalReviewBase`, current
-  materialized workspace tree == recorded checkpoint tree, candidate ref ==
-  recorded commit, candidate commit tree == recorded tree, workspace/store
-  provenance match, and exact lifecycle owner/checkpoint match.
+- Before an ordinary review/resume, require workspace `HEAD ==
+  originalReviewBase`, current materialized workspace tree == recorded approved
+  candidate tree, approved candidate ref == recorded commit, candidate commit
+  tree == recorded tree, workspace/store provenance match, and exact lifecycle
+  owner/checkpoint match. A `review-failed` resume with partial recovery instead
+  validates the distinct recorded partial ref/commit/tree and its attempt/index;
+  it must not substitute that tuple for the approved candidate or accept an
+  unrecorded tree.
 - A provider failure after edits gets a create-only partial evidence ref under
   `refs/harness/factory/<implementation-run-id>/review-attempt/<attempt-run-id>/<review-index>/partial`,
   plus status, patch, stream, and recovery manifest. It does not replace the
@@ -159,7 +187,9 @@ These requirements are the contract. Do not weaken them to simplify the code.
   `review-complete`, and `ready-for-human`; it lacks `review-failed`.
 - `lib/schemas.ts:72-112` configures only `factory.implementation.roles.implementer`;
   `lib/config.ts:73-107,137-183` has no implementation reviewer role or
-  implementation review-limit resolver.
+  implementation review-limit resolver. Existing Cursor review execution uses
+  agent mode, and `workspaceGuard` detects post-run drift rather than preventing
+  writes; Factory therefore needs a Codex-only enforced read-only reviewer role.
 - `lib/agents.ts:24,70-89`, `providers/codex/codex-agent.ts`, and
   `providers/cursor/cursor-sdk-agent.ts` already support `AgentSessionRef`
   resumption and provider-owned `logPath` streaming. `lib/agent-session.ts:33-65`
@@ -167,11 +197,12 @@ These requirements are the contract. Do not weaken them to simplify the code.
 - `docs/contributing/factory.md:543-616`, `README.md:139`, and
   `docs/contributing/architecture.md:163-177,246-266` document the current manual
   stop before `change-review`; all are stale after this work and must change.
-- FER-52 is not present on this branch: `lib/schemas.ts` has no `implementing` or
-  `implementationFailed` Linear status keys, and `LinearFactoryAdapter` has no
-  implementation apply methods. `dev/plans/README.md:11` still names FER-52 as
-  the next unplanned issue. FER-61 is also not present as a merged code contract.
-  This is why Step 0 is mandatory.
+- Neither dependency implementation is present on this branch. In particular,
+  `lib/schemas.ts` has no `implementing` or `implementationFailed` Linear status
+  keys, and `LinearFactoryAdapter` has no implementation-apply methods; FER-61's
+  plan is merged but its writer-boundary code is not. This is why Step 0 blocks
+  all edits until both implementation PRs merge and this plan is reconciled to
+  their exact committed APIs.
 - Baseline verification: `pnpm typecheck` exits 0. The six-file focused command
   below passes 137 tests. A full `pnpm test` currently passes 882 tests and fails
   only `skills/sessions/test/cli.test.ts > installed sessions skill bootstraps
@@ -203,8 +234,8 @@ These requirements are the contract. Do not weaken them to simplify the code.
 | Purpose | Command | Expected on success |
 | --- | --- | --- |
 | Install | `pnpm install --frozen-lockfile` | exit 0 using `pnpm@11.9.0` |
-| Focused baseline | `pnpm exec vitest run test/factory-lifecycle.test.ts test/factory-implementation-cli.test.ts test/factory-implementation.workflow.test.ts test/factory-review-head.test.ts test/workflow-context.test.ts test/config.test.ts` | 6 files and all tests pass |
-| New review suite | `pnpm exec vitest run test/factory-implementation-review-*.test.ts test/factory-lifecycle.test.ts test/factory-review-head.test.ts test/factory-implementation-cli.test.ts test/config.test.ts` | all named files pass |
+| Focused baseline | `pnpm exec vitest run test/factory-lifecycle.test.ts test/factory-locks.test.ts test/factory-status.test.ts test/factory-implementation-cli.test.ts test/factory-implementation.workflow.test.ts test/factory-review-head.test.ts test/workflow-context.test.ts test/config.test.ts` | 8 files and all tests pass |
+| New review suite | `pnpm exec vitest run test/factory-implementation-review-*.test.ts test/factory-lifecycle.test.ts test/factory-locks.test.ts test/factory-status.test.ts test/factory-review-head.test.ts test/factory-implementation-cli.test.ts test/config.test.ts` | all named files pass |
 | Linear integration | `pnpm exec vitest run test/factory-linear-adapter.test.ts test/factory-implementation-cli.test.ts test/factory-implementation-review-cli.test.ts` | all named files pass |
 | Typecheck | `pnpm typecheck` | exit 0, no diagnostics |
 | Format check | `pnpm format:check` | exit 0 |
@@ -230,6 +261,15 @@ executed the entire suite during planning. Use `pnpm exec vitest run <files>`.
 
 ## Scope and ownership
 
+### Step 0 reconciliation exception
+
+Before implementation, only Step 0 may edit the tracked source plan
+`dev/plans/FER-62.md` to record the merged FER-52/FER-61 implementation commits,
+their exact APIs/files/tests, and the reconciled scope. Never edit a generated
+`.harness/runs/.../context/plan.md` copy. Update `dev/plans/README.md` from
+`blocked` only after the reconciled source plan passes `plan-review`; until then
+it remains `blocked`.
+
 ### In scope (only these production/docs files)
 
 - `schemas/factory-implementation-remediation-output.schema.json` (new)
@@ -238,8 +278,11 @@ executed the entire suite during planning. Use `pnpm exec vitest run <files>`.
 - `lib/factory-implementation-review-run-context.ts` (new)
 - `lib/factory-implementation-review-lifecycle-writes.ts` (new)
 - `lib/factory-implementation-review-findings.ts` (new; reviewer adapter only)
+- `lib/factory-run-allocation.ts` (new)
 - `lib/factory-lifecycle.ts`
 - `lib/factory-lifecycle-writes.ts`
+- `lib/factory-locks.ts`
+- `lib/factory-status.ts`
 - `lib/factory-schemas.ts`
 - `lib/factory-review-head.ts`
 - `lib/factory-implementation-run-context.ts`
@@ -259,17 +302,22 @@ executed the entire suite during planning. Use `pnpm exec vitest run <files>`.
 - `docs/contributing/architecture.md`
 - `docs/contributing/setup-manifest.md`
 - `docs/contributing/script-command-surface.md`
+- `dev/plans/FER-62.md` (Step 0 reconciliation only)
+- `dev/plans/README.md` (Step 0 status update only, after a passing re-review)
 
 ### In-scope tests
 
 - `test/factory-implementation-review-output-schema-sync.test.ts` (new)
 - `test/factory-implementation-review-input.test.ts` (new)
 - `test/factory-implementation-review-run-context.test.ts` (new)
+- `test/factory-run-allocation.test.ts` (new)
 - `test/factory-implementation-review-findings.test.ts` (new)
 - `test/factory-implementation-review.workflow.test.ts` (new)
 - `test/factory-implementation-review-cli.test.ts` (new)
 - `test/factory-implementation-review-test-helpers.ts` (new, only if shared setup avoids duplication)
 - `test/factory-lifecycle.test.ts`
+- `test/factory-locks.test.ts` (new)
+- `test/factory-status.test.ts` (new)
 - `test/factory-review-head.test.ts`
 - `test/factory-implementation-run-context.test.ts`
 - `test/factory-implementation.workflow.test.ts`
@@ -301,22 +349,29 @@ files.
 
 ## Ordered implementation steps
 
-### Step 0: Rebase dependencies and re-verify anchors
+### Step 0: Block on dependency implementations, then reconcile exact APIs
 
-Before editing, rebase/merge the approved FER-52 and FER-61 changes. Read their
-diffs and rerun the focused baseline. Confirm:
+Do not edit FER-62 while either dependency has only a merged plan. First wait for
+the implementation PRs for FER-52 and FER-61 to merge to `main`, rebase this
+branch, record their merge commits in this plan, read their diffs, and rerun the
+focused baseline. Then replace the current-state dependency notes and this step's
+file/symbol/test references with the actual merged names before any FER-62 code
+edit; make those edits to this tracked source plan, never a generated
+`.harness/runs/.../context/plan.md` copy; then run `plan-review` again after that
+reconciliation. Confirm:
 
-- FER-52 provides implementation started/terminal Linear apply with configured
-  `Implementing` and `Implementation Failed` targets, and does not make comments
-  canonical input.
-- FER-61 preserves `Agent.run({ workspace, logPath, schemaPath, session })`, makes
-  Harness/provider adapters the durable writers, and does not require agents to
-  write outside the workspace.
-- The current-state anchors above still have the same ownership. Small line drift
-  is fine; changed responsibility or data contracts are not.
+- FER-52 provides the exact implementation started/terminal Linear-apply APIs,
+  configured `Implementing` and `Implementation Failed` targets, and never makes
+  comments canonical input.
+- FER-61 preserves `Agent.run({ workspace, logPath, schemaPath, session })`,
+  makes Harness/provider adapters the durable writers, and does not require
+  agents to write outside the workspace.
+- The current-state anchors below still have the same ownership. Small line drift
+  is fine; changed responsibility, API names, or file ownership require updating
+  scope and re-review before implementation.
 
-Do not combine FER-52/FER-61 implementation with this branch. This plan extends
-their merged contracts.
+Do not combine either dependency implementation with this branch. FER-62 extends
+their merged contracts; it does not infer or finish them.
 
 **Verify**:
 
@@ -327,23 +382,36 @@ pnpm exec vitest run test/factory-lifecycle.test.ts test/factory-implementation-
 pnpm typecheck
 ```
 
-Expected: FER-52 symbols/tests exist; FER-61's two-plane contract is visible;
-focused tests and typecheck pass. Otherwise STOP and revise the plan against the
-merged dependency surface.
+Expected: both dependency implementations and their recorded symbols/tests exist;
+FER-61's two-plane contract is visible; focused tests and typecheck pass.
+Otherwise STOP, reconcile this plan against the merged dependency surface, and
+re-run `plan-review` before editing.
 
 ### Step 1: Define review configuration and structured decision contracts
 
 1. In `lib/schemas.ts`, extend `factory.implementation` with:
    - `maxReviewIterations?: positive integer`;
-   - `roles.reviewer?: FactoryRoleSchema` next to `implementer`;
-   - the same Codex-only/provider-model validation applied to the new reviewer.
+   - an optional `roles.reviewer` dedicated schema next to `implementer` that,
+     when present, accepts only `agent: "codex"`, requires
+     `sandboxMode: "read-only"` and `approvalPolicy: "never"`, and rejects
+     Cursor and write-capable overrides. Do not make existing
+     implementation-only configs invalid at general config parse time;
+   - a secure explicit default used only by the new review command when the
+     optional role is absent: Codex plus `read-only`/`never` and the configured
+     or standard Codex review model. The command must reject an omitted/default
+     provider that cannot resolve to this exact secure role;
+   - explicit command-resolution errors explaining that Factory reviewers have
+     no target workspace write authority.
 2. In `lib/config.ts`:
-   - allow `{ station: "implementation", role: "reviewer" }`;
-   - resolve it from `factory.implementation.roles.reviewer`;
+   - add a review-command-specific resolver for
+     `{ station: "implementation", role: "reviewer" }` that applies the secure
+     default above; preserve existing generic `resolveFactoryRoleAgent` fallback
+     behavior for all current stations and implementation-only configs;
    - add `resolveFactoryImplementationSettings(...)`, defaulting
      `maxReviewIterations` to 3, independent of planning's limit;
-   - preserve implementation implementer's workspace-write default and let the
-     existing review context retain read-only/never review defaults.
+   - preserve implementation implementer's workspace-write default; construct the
+     Factory nested-review input from the validated reviewer role with fixed
+     Codex `read-only`/`never`, never from Cursor/default review settings.
 3. Add `lib/factory-implementation-review-schemas.ts` with strict Zod schemas and
    inferred types for remediation output:
 
@@ -371,9 +439,11 @@ pnpm exec vitest run test/factory-implementation-review-output-schema-sync.test.
 pnpm typecheck
 ```
 
-Expected: all named tests pass; configuration defaults to 3; reviewer provider
-and Codex-only fields validate exactly like existing roles; runtime and JSON
-schemas accept/reject the same fixtures.
+Expected: all named tests pass; existing implementation-only configs still parse;
+review-command input is always Codex `read-only`/`never`; Cursor and any
+write-capable reviewer configuration are rejected; an absent optional reviewer
+uses the documented secure command-only default; runtime and JSON schemas
+accept/reject the same fixtures.
 
 ### Step 2: Make lifecycle ownership conditional and project review checkpoints
 
@@ -392,13 +462,45 @@ schemas accept/reject the same fixtures.
    Guard implementation start and terminal event writers so a fresh run cannot
    overwrite active/completed/review state and a terminal event must match its
    active implementation owner.
+   In `lib/factory-locks.ts`, add the workspace-writer lease primitive and one
+   exported physical-workspace canonicalizer. It must resolve Git top-level then
+   `realpath` it, derive the durable lease filename from that physical path, and
+   fail closed on non-Git/missing/unresolvable paths; no caller-supplied lexical
+   path may choose the key. Durable owner metadata includes the physical path,
+   store provenance, work-item/run/attempt identifiers, liveness data, and
+   operation (`implementation` or `remediation`). Expose a dedicated retained
+   handle API—`acquireFactoryWorkspaceWriterLease(...)` returns an owner handle;
+   `releaseFactoryWorkspaceWriterLease({ handle })` removes only that exact
+   token. It is deliberately not `withFactoryWorkItemLock` and never accepts an
+   async callback. Acquisition is fail-fast: one immediate mkdir/inspection plus
+   at most one safe stale-owner reclaim, then a typed contention error containing
+   current owner diagnostics; it must never wait or block while another in-process
+   provider is running. Callers retain the handle across awaited provider work
+   and release it in async `finally` only after provider-result lineage is
+   terminalized. Reuse existing stale/liveness semantics without widening the
+   short lifecycle lock. Extend `factory status` to canonicalize before
+   inspecting and report an active workspace writer lease and physical owner
+   diagnostics without acquiring or releasing it.
+   Add `lib/factory-run-allocation.ts` for the shared pre-claim allocator used by
+   live implementation runs and review attempts. For writer paths, allocate after
+   workspace-lease acquisition; for a read-only review attempt, allocate directly
+   before lifecycle claim. In both cases reserve `<factoryRunsDir>/<id>` with
+   non-recursive no-replace directory creation; retry collisions with a bounded
+   8-attempt budget, then fail without provider invocation. Return only
+   `{ runId, runDir, reservationToken }`; it writes no context/meta artifacts.
+   The run contexts accept this allocation and create their children only under
+   the reserved directory. If lifecycle claim or context setup fails before
+   durable meta exists, remove only the matching empty reservation; once
+   artifacts/meta exist, preserve it as failure evidence.
 3. Add strict schemas/types for the five review events. Payloads store only IDs,
-   counters, classifications, provenance, and relative/store artifact pointers:
+   counters, immutable limits, provenance, and relative/store artifact pointers:
    - `started`: implementation owner, attempt owner, optional prior attempt,
-     resume flag, expected checkpoint;
+     resume flag, expected checkpoint, and the effective review limit with its
+     config/CLI provenance. Initial start persists this value; resume must match
+     it exactly and may not replace it;
    - `checkpointed`: phase (`review` or `remediation`), completed-review count,
-     candidate version/ref/commit/tree, workspace tree/status pointer, and
-     optional nested review/findings/decision/candidate/recovery pointers;
+     approved candidate version/ref/commit/tree, workspace tree/status pointer,
+     and optional nested review/findings/decision/candidate/recovery pointers;
    - `completed`: owner IDs, final candidate tuple, handoff path, accepted-debt
      pointer/count;
    - `unresolved`: owner IDs, reason (`blocked`, `missing-session`,
@@ -406,12 +508,19 @@ schemas accept/reject the same fixtures.
      and latest checkpoint pointers;
    - `failed`: owner IDs, classification (`reviewer`, `provider`, `git`,
      `artifact`, `protocol`, `workspace`), retryable flag, error, summary path,
-     and recovery pointers.
+     recovery pointers, and—only for failure after edits—a distinct immutable
+     partial-evidence tuple of ref, commit, tree, attempt ID, and review index.
+     The tuple is absent when no partial ref was created and never changes the
+     approved candidate tuple.
 4. Extend the optional lifecycle state checkpoint. On
    `implementation.completed`, seed owner/base/candidate/session/workspace/store
-   provenance and zero counters from the event. Review started/checkpointed events
-   update active owner, lineage, counters, and latest pointers. Terminal review
-   events map stages exactly:
+   provenance and zero counters from the event. Initial review start persists the
+   effective review limit; resume rejects an effective config/CLI limit that
+   differs from it. Review started/checkpointed events update active owner,
+   approved lineage, counters, and latest pointers. A failure after edits projects
+   its validated partial-evidence tuple separately; a resume validates that exact
+   tuple before allowing work to continue. Terminal review events map stages
+   exactly:
    - active -> `review-running`;
    - completed -> `review-complete`;
    - unresolved -> `ready-for-human`;
@@ -426,18 +535,32 @@ schemas accept/reject the same fixtures.
 7. Add reducer/replay/backward-compatibility tests, event parsing failures,
    pointer-only assertions (no full finding bodies), idempotent retry tests, and
    deterministic race tests where two distinct start attempts target the same
-   state and only one succeeds.
+   state and only one succeeds. Cover persisted limit defaults/overrides and
+   rejected config or CLI changes on resume; cover missing, malformed, and
+   tampered partial-evidence tuples independently of approved-candidate lineage.
+   Add lease tests for release on success/failure/throw, stale recovery, and two
+   different work-item keys targeting one workspace: only one provider turn may
+   enter; the waiting run must not invoke its provider or materialize a ref. Add
+   a real-path versus symlink alias case proving both resolve to one lease key and
+   cannot run provider turns concurrently. Use an unresolved fake provider to
+   prove its retained handle remains held while awaited and a second command gets
+   immediate typed contention rather than polling or invoking its provider.
+   Add allocator tests for no-replace collision retry/exhaustion, ownership-token
+   cleanup of an empty pre-claim reservation, preserved post-context evidence,
+   and lease contention producing neither allocation nor lifecycle event.
 
 **Verify**:
 
 ```bash
-pnpm exec vitest run test/factory-lifecycle.test.ts test/factory-implementation-cli.test.ts
+pnpm exec vitest run test/factory-lifecycle.test.ts test/factory-locks.test.ts test/factory-status.test.ts test/factory-implementation-cli.test.ts
 pnpm typecheck
 ```
 
 Expected: all tests pass; stale/concurrent transitions append no event; repeated
 same-ID appends are idempotent; historical implementation events still replay;
-fresh implementation cannot claim implementation/review stages.
+fresh implementation cannot claim implementation/review stages; workspace-lease
+tests prove live-owner contention, stale recovery, release on error, and
+read-only status inspection without acquiring a lease.
 
 ### Step 3: Generalize temporary-index lineage and exact workspace validation
 
@@ -455,15 +578,18 @@ fresh implementation cannot claim implementation/review stages.
    but add the tree SHA to its result/meta/lifecycle event.
 3. Add narrowly named helpers for:
    - approved remediation candidate creation with prior candidate as parent;
-   - best-effort partial failure ref creation without promoting it;
+   - best-effort partial failure ref creation that returns its ref/commit/tree
+     tuple without promoting it;
    - resolving and comparing `HEAD`, ref commit, commit tree, and current workspace
-     tree to recorded values.
+     tree to recorded approved-candidate or partial-evidence values.
 4. Treat ignored `.harness/` as Harness evidence, not workspace source. Do not
    include it in comparisons or commits. Do not silently omit other changed
    source files.
 5. Test parent chains, create-only collision failure, binary/untracked/delete
    capture, `.harness/` exclusion, original-base cumulative diff, latest-ref
-   tampering, HEAD drift, tree drift, and partial ref non-promotion.
+   tampering, HEAD drift, tree drift, and partial ref non-promotion. Assert the
+   partial helper exposes a complete immutable tuple and rejects missing/tampered
+   ref, commit, or tree rather than falling back to the approved candidate.
 
 **Verify**:
 
@@ -487,7 +613,8 @@ recorded-lineage mismatches fail closed.
      from its checkpoint and recorded store provenance;
    - validate work-item key, implementation run ID, workspace, project/store,
      implementation status, meta schema/shape, handoff, optional approved plan,
-     and candidate tuple. Never select a run by scanning for “latest”.
+     approved candidate tuple, and (for `review-failed` recovery) the distinct
+     partial-evidence tuple. Never select a run by scanning for “latest”.
 2. Separate identity resolution from full validation so every syntactically valid
    command can create append-only attempt evidence before validation terminalizes.
    State/owner claim remains atomic through Step 2's lifecycle API.
@@ -551,69 +678,117 @@ Add `workflows/factory-implementation-review.workflow.ts`. Keep orchestration
 explicit and split pure validation/render helpers into the Step 4 modules rather
 than growing one monolith.
 
-1. On initial/review resume:
-   - atomically claim the attempt with expected stage/implementation owner/active
-     attempt/checkpoint;
+1. On initial/ordinary-review resume:
+   - allocate and exclusively reserve a review-attempt run ID/directory before
+     lifecycle claim, then atomically claim that exact attempt with expected
+     stage/implementation owner/active attempt/checkpoint. On rejected/idempotent
+     claim, remove only the matching empty reservation; create the attempt context
+     only after successful claim;
    - for `review-complete`, export an idempotent result pointing at the existing
      handoff without invoking providers or appending lifecycle;
    - reject `ready-for-human`; for stale ownership, export rejected attempt
      evidence without mutating lifecycle;
+   - validate the persisted effective review limit before claim: an initial
+     command stores its resolved config/CLI value, while resume rejects any
+     changed config or explicit CLI override rather than increasing the limit;
    - validate Git/workspace/artifact/session/provider compatibility after claim;
      missing/incompatible session becomes unresolved; Git/artifact/workspace
-     validation becomes review-failed with recovery evidence.
-2. For each review needed, create `WorkflowContext` with:
+     validation becomes review-failed with recovery evidence;
+   - immediately before any remediation provider turn, acquire the durable
+     workspace writer lease using the shared physical Git-top-level canonicalizer,
+     retaining its exact owner handle across awaited work. A live owner returns
+     immediate typed contention diagnostics—never polling/waiting—before provider
+     invocation;
+     revalidate Git/workspace/artifact/session/provider compatibility against that
+     physical checkout after acquisition and immediately before materializing a
+     candidate or partial ref, and keep the lease through terminal/checkpoint
+     writes. Release it in `finally` for success, failure, abort, and throw.
+     Nested `change-review` remains outside the lease because its role is
+     enforced read-only.
+2. Handle `review-failed` with a persisted partial-evidence tuple as a separate
+   recovery transition, not an ordinary review:
+   - allocate/reserve a new recovery attempt before atomically claiming it, then
+     validate the stored partial ref/commit/tree and attempt/index and restore the
+     immutable finding snapshot and remediation index referenced by the failed
+     checkpoint; clean only a matching empty reservation on rejected claim;
+   - acquire the physical-workspace writer lease, validate that the materialized
+     physical checkout is exactly the partial tree, then resume the original implementer session
+     directly with those persisted findings. Do not invoke `change-review` and do
+     not point a reviewer at the old approved candidate while partial edits exist;
+   - require a complete valid decision set for the restored findings. Evaluate
+     changes against the prior approved candidate, not merely the tree at recovery
+     entry. A valid implement/adapt outcome with a differing partial tree creates
+     the next approved candidate using that prior approved candidate as sole
+     parent; all-decline with partial edits is protocol failure, not implicit
+     acceptance;
+   - only after that new approved candidate is checkpointed, start the next full
+     three-role review at the next review index. Preserve the completed-review
+     count until that review actually completes. A repeat failure writes a new
+     partial tuple linked to the recovery attempt; no partial ref is ever used as
+     `headRef` or promoted by resume alone.
+3. For each review needed, create `WorkflowContext` with:
    - `runsDir: factoryStore.reviewRunsDir`;
    - `baseRef: originalReviewBase`;
    - `headRef: latestCandidateRef`;
    - approved plan path only for planned mode;
    - implementation handoff read by Harness and passed as `handoffText`;
-   - configured implementation reviewer provider/model/policy;
+   - the validated Factory reviewer role, always Codex with `sandbox: read-only`
+     and `approval-policy: never` (reject Cursor/default/write-capable input
+     before invoking the nested workflow);
    - Factory event sink, signal, timeout, and provider factory.
    Invoke `runChangeReview(reviewCtx)` without `steps`, guaranteeing all three roles.
-3. On nested review failure, persist its ref/successful coverage and emit
+4. On nested review failure, persist its ref/successful coverage and emit
    review-failed without incrementing completed reviews. On complete result:
    normalize/write findings, increment the durable completed count, and checkpoint
    before making a terminal/remediation decision.
-4. Terminal rules in exact order:
+5. Terminal rules in exact order:
    - aggregate `blocked` -> unresolved;
    - no findings and aggregate `pass` -> PR-ready;
    - findings present -> continue even when aggregate passes, because every
      finding needs a decision;
-   - if completed count reached the configured limit while findings remain ->
+   - if completed count reached the persisted effective limit while findings remain ->
      unresolved before another remediation turn.
-5. Resume the original implementer provider with the recorded session and current
+6. Resume the original implementer provider with the recorded session and current
    configured implementer role only when `role.agent === session.provider`.
    Pass `schemaPath`, Harness-owned `logPath`, `workspaceGuard: "record"`, current
    model/policy/timeout/signal, and the inlined remediation prompt. Never create a
    fresh implementation session.
-6. Parse and persist output; validate exact set equality (no missing, duplicate,
+7. Parse and persist output; validate exact set equality (no missing, duplicate,
    or unknown IDs). Apply decision rules:
    - any `implement`/`adapt` plus unchanged tree -> protocol failure;
    - all declines, unchanged tree, any declined `must_fix` -> unresolved;
    - all declines, unchanged tree, only non-blockers -> PR-ready with accepted debt;
    - any changed tree -> materialize/checkpoint the next approved candidate and
      start another full review, regardless of decision mix.
-7. If remediation fails/aborts/returns invalid output after changing files,
-   capture status, patch, stream, partial ref/tree, and recovery manifest
-   best-effort; preserve the prior approved candidate; emit review-failed. If
-   partial capture itself fails, preserve every artifact that succeeded and name
-   both errors without masking the provider error.
-8. Render success handoff solely from lifecycle events plus validated attempt
+8. If remediation fails/aborts/returns invalid output after changing files,
+   capture status, patch, stream, partial ref/commit/tree, and recovery manifest
+   best-effort; write the complete tuple to the failed event/checkpoint before
+   returning `review-failed`, while preserving the prior approved candidate. If
+   partial capture itself fails, preserve every artifact that succeeded, record
+   that no resumable partial tuple exists, and name both errors without masking
+   the provider error.
+9. Render success handoff solely from lifecycle events plus validated attempt
    artifacts, so it includes prior-attempt lineage and every nested review and
    decision. Write handoff before the conditional completed event; if lifecycle
    completion fails, do not report success.
-9. Workflow tests must cover:
+10. Workflow tests must cover:
    - immediate pass/no findings;
    - advisory findings all declined with accepted debt;
    - implement/adapt edits -> cumulative ref -> full re-review -> pass;
    - declined must-fix, blocked, missing/incompatible session, max limit;
    - reviewer failure (not counted), invalid decisions, implement-without-change;
-   - provider failure before/after edits and resumable partial checkpoint;
+   - provider failure before/after edits; recovery restores findings/index,
+     resumes remediation before review, materializes only a post-decision
+     candidate, then performs a full review; missing/malformed/tampered partial
+     tuple rejection and all-decline-with-partial-edits protocol failure;
    - HEAD/tree/ref/workspace/store drift and stale/concurrent ownership;
    - resume from review-running/review-failed, complete idempotency, human terminal;
    - planned review receives plan, direct review does not;
    - every nested review sees fixed original base and current immutable head;
-   - no lifecycle lock is held while fake reviewers/providers are awaiting.
+   - persisted limit on initial claim, rejected config/CLI limit drift on resume,
+     physical-workspace lease acquisition/revalidation/release, cross-work-item
+     contention including real-path/symlink aliases, and no lifecycle lock held
+     while fake reviewers/providers are awaiting.
 
 **Verify**:
 
@@ -623,8 +798,9 @@ pnpm typecheck
 ```
 
 Expected: all scenarios pass; only complete three-role reviews increment the
-limit; material edits always receive another full review; failure evidence is
-resumable but never promoted implicitly.
+persisted limit; material edits always receive another full review; failure
+evidence is resumable only through its exact recorded tuple and is never
+promoted implicitly.
 
 ### Step 6: Add the command, resume contract, and FER-52 projection extension
 
@@ -635,12 +811,16 @@ resumable but never promoted implicitly.
    - `--workspace`, exactly one of `--item-file`/`--linear-issue`;
    - `--resume`;
    - `--runs-dir`, store root/project ID overrides;
-   - `--max-review-iterations`, `--max-runtime-ms`, `--verbose`;
+   - `--max-review-iterations`, `--max-runtime-ms`, `--verbose`. The max flag
+     supplies the initial effective limit only; a resume must resolve to the
+     checkpoint's persisted limit and rejects any explicit or config-derived
+     difference;
    - FER-52's existing Linear apply flag/adapter contract, if it is opt-in.
    Do not add `--run-dir`, `--base`, `--head`, partial-review steps, or a fresh-session flag.
-2. Resolve both implementation roles: reviewer for nested review, implementer for
-   compatible session resume. Build the attempt context under Factory runs and
-   point nested review context at `store.reviewRunsDir`.
+2. Resolve both implementation roles: the validated Codex-only read-only reviewer
+   for nested review, and the implementer for compatible session resume. Build
+   the attempt context under Factory runs and point nested review context at
+   `store.reviewRunsDir`.
 3. Add `bin/factory-implementation-review-cli.ts` to emit stable JSON containing
    attempt/implementation IDs, status, lineage, current candidate, completed
    review count, artifact/meta/summary/handoff paths, and warnings/error. Return
@@ -655,10 +835,23 @@ resumable but never promoted implicitly.
    to state/resume/decisions.
 5. Add CLI tests for help/options, mutual exclusions, initial/resume stage gates,
    no-comment identity, run/store placement, output/exit codes, signal forwarding,
-   and terminal Linear apply failure preservation. Extend FER-52's table-driven
-   projection tests for every new stage.
-6. Harden existing `runFactoryImplementationWithLifecycle` to use Step 2's atomic
-   start/terminal ownership. Preserve dry-run behavior and FER-52 apply ordering.
+   terminal Linear apply failure preservation, rejected Cursor/default/write-capable
+   reviewer input, and persisted-limit config/CLI drift across resume. Extend
+   FER-52's table-driven projection tests for every new stage.
+6. Harden the existing implementation command/wrapper to use Step 2's atomic
+   start/terminal ownership and the physical-workspace writer lease. After
+   canonical identity resolution but before any clean-tree check, context
+   creation, or provider call, canonicalize physical Git top-level and acquire
+   the retained fail-fast workspace lease handle; allocate/reserve the run ID and
+   directory, then reload/revalidate readiness, conditionally claim
+   `implementation.started` using that exact run ID, and create the context from
+   the allocation. A rejected claim removes only its empty reservation. Keep the
+   lease through provider execution, review-head materialization, and terminal
+   lifecycle persistence; revalidate tree/HEAD immediately before materializing
+   the ref; release that exact handle in async `finally`. A contended lease
+   returns typed owner diagnostics, invokes no provider, allocates no run
+   directory, and appends no competing implementation-start event. Preserve
+   dry-run behavior and FER-52 apply ordering.
 7. Extend `scripts/smoke-dist.ts` with review command help and required options.
 
 **Verify**:
@@ -675,11 +868,14 @@ projects as Implementation Failed.
 
 ### Step 7: Replace manual-stop documentation and run release gates
 
-1. Update `README.md` and `docs/contributing/factory.md` with the review command,
+1. Keep `README.md` entrypoint-sized: add only the review command, a concise
+   current-behavior summary, and a link to `docs/contributing/factory.md`. Put
    canonical identity, attempt lineage, resume matrix, stage outcomes, artifact
-   tree, immutable ref chain, two-plane ownership, and explicit “no branch or PR”
-   handoff statement. Remove instructions to manually run standalone change-review
-   after `implementation-complete`; keep standalone review docs for non-Factory use.
+   tree, immutable ref chain, two-plane ownership, workspace writer-lease
+   contention/recovery, and the explicit “no branch or PR” handoff statement in
+   `docs/contributing/factory.md`. Remove README instructions to manually run
+   standalone change-review after `implementation-complete`; keep standalone
+   review docs for non-Factory use.
 2. Update `docs/contributing/architecture.md` to assign ownership to the new input,
    run-context, lifecycle-write, findings adapter, prompt, command, and workflow
    modules; state that the workflow composes existing `change-review`.
@@ -699,7 +895,7 @@ projects as Implementation Failed.
 pnpm format:check
 pnpm lint
 pnpm typecheck
-pnpm exec vitest run test/factory-implementation-review-output-schema-sync.test.ts test/factory-implementation-review-input.test.ts test/factory-implementation-review-run-context.test.ts test/factory-implementation-review-findings.test.ts test/factory-implementation-review.workflow.test.ts test/factory-implementation-review-cli.test.ts test/factory-lifecycle.test.ts test/factory-review-head.test.ts test/factory-implementation-run-context.test.ts test/factory-implementation.workflow.test.ts test/factory-implementation-cli.test.ts test/config.test.ts test/factory-linear-adapter.test.ts test/docs-contracts.test.ts
+pnpm exec vitest run test/factory-implementation-review-output-schema-sync.test.ts test/factory-implementation-review-input.test.ts test/factory-implementation-review-run-context.test.ts test/factory-implementation-review-findings.test.ts test/factory-implementation-review.workflow.test.ts test/factory-implementation-review-cli.test.ts test/factory-lifecycle.test.ts test/factory-locks.test.ts test/factory-status.test.ts test/factory-review-head.test.ts test/factory-implementation-run-context.test.ts test/factory-implementation.workflow.test.ts test/factory-implementation-cli.test.ts test/config.test.ts test/factory-linear-adapter.test.ts test/docs-contracts.test.ts
 make check
 ```
 
@@ -710,19 +906,25 @@ unchanged external baseline failure.
 
 ## Test plan summary
 
-- **Schemas/config**: strict Zod/JSON parity; reviewer role/provider policy;
-  independent positive review limit and default.
+- **Schemas/config**: strict Zod/JSON parity; Codex-only enforced read-only
+  reviewer policy; independent positive review limit/default and persisted-limit
+  resume rejection.
 - **Lifecycle**: old replay compatibility, new reducer stages/checkpoint fields,
-  pointer-only events, atomic implementation/review ownership, idempotency,
-  stale owner/checkpoint and deterministic concurrency rejection.
-- **Git**: exact HEAD/tree/ref validation, immutable compare-and-swap refs,
-  cumulative parent chain/diff, `.harness/` exclusion, partial evidence refs.
+  pointer-only events, immutable effective limit, approved versus partial lineage,
+  atomic implementation/review ownership, no-replace pre-claim run/attempt
+  allocation, workspace writer lease, idempotency, stale owner/checkpoint and
+  deterministic same-/cross-work-item concurrency rejection.
+- **Git**: exact approved and partial HEAD/tree/ref validation, immutable
+  compare-and-swap refs, cumulative parent chain/diff, `.harness/` exclusion,
+  partial evidence refs without promotion.
 - **Input/artifacts**: canonical owner resolution, no latest-run scanning, no
   Linear comments, store/workspace provenance, absent/corrupt artifact failures,
   only-written artifact metadata, deterministic handoff.
-- **Workflow**: pass, accepted advisory debt, material remediation loop, every
-  human outcome, every retryable failure, resumption, max counts, planned/direct
-  context, all-reviewer fixed-base scope, no lock across long operations.
+- **Workflow**: pass, accepted advisory debt, material remediation loop, explicit
+  partial recovery from persisted findings/index, every human outcome, every
+  retryable failure, resumption, max counts, planned/direct context, all-reviewer
+  fixed-base scope, physical-workspace lease across writer turns only, and no
+  lifecycle lock across long operations.
 - **CLI/Linear**: source flags, resume legality, status/exit JSON, signals,
   durable roots, help/smoke, all review stages -> Implementing, only execution
   failure -> Implementation Failed.
@@ -734,17 +936,34 @@ unchanged external baseline failure.
 
 All must hold:
 
-- [ ] FER-52 and FER-61 are merged and their contracts were reconciled before edits.
+- [ ] FER-52 and FER-61 implementation PRs—not merely their plan PRs—are merged;
+  their exact commits, symbols, files, and tests were reconciled in this plan and
+  the reconciled revision passed `plan-review` before edits.
 - [ ] Initial and resumed review identity derives from canonical lifecycle plus recorded implementation metadata; no command accepts an arbitrary run directory.
 - [ ] Implementation start/terminal and every review transition use conditional state checks under the per-work-item lock.
+- [ ] Live implementation and remediation provider turns hold one durable
+  physical-workspace writer lease through ref/terminal persistence; a different
+  work item or lexical/symlink alias cannot write the same checkout concurrently,
+  while read-only review remains lease-free.
+- [ ] Every live implementation/review attempt reserves a collision-safe run ID
+  before lifecycle claim; rejected claims clean only their empty reservation and
+  lease contention creates neither an allocation nor lifecycle ownership.
 - [ ] All three existing reviewers run via `change-review` against original base -> latest immutable candidate; no duplicate reviewer engine exists.
 - [ ] Every current finding receives exactly one validated decision; material remediation always creates a cumulative immutable ref and receives a full re-review.
 - [ ] Missing/incompatible sessions, blocked reviews, max iterations, and declined must-fix findings end in `ready-for-human`, not `implementation-failed`.
 - [ ] Reviewer/provider/Git/artifact/protocol/workspace failures preserve recovery evidence and end in `review-failed`; only completed review cycles count.
-- [ ] Resume enforces owner/checkpoint/tree/ref provenance and never resets limits or starts a fresh implementation/session.
+- [ ] Partial recovery restores its recorded findings/index, resumes the original
+  session against the exact partial tree, creates an approved candidate only after
+  valid decisions, then starts a full review; it never reviews or promotes partial
+  evidence directly.
+- [ ] Resume enforces owner/checkpoint/approved-or-partial tree/ref provenance,
+  preserves the immutable effective limit across config/CLI changes, and never
+  starts a fresh implementation/session.
 - [ ] PR-ready handoff deterministically includes work item, stable implementation owner, attempt lineage, original/final refs, cumulative diff, all nested review refs/decisions, accepted debt, verdict/provenance, and “no branch or PR created”.
 - [ ] Linear comments are never parsed/read as review workflow input; all active/review/human/failure stages project to Implementing; only genuine implementation execution failure projects to Implementation Failed.
-- [ ] Agents write only intended workspace changes and structured output; Harness exclusively writes durable artifacts, lifecycle, streams, refs, recovery, and handoffs.
+- [ ] The reviewer is enforced as Codex `read-only`/`never`; agents otherwise
+  write only intended workspace changes and structured output; Harness exclusively
+  writes durable artifacts, lifecycle, streams, refs, recovery, and handoffs.
 - [ ] No PR, branch, push, worktree, Inngest, new Linear status, or tracker completion behavior was added.
 - [ ] New/focused tests, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, `pnpm smoke:dist`, and `make check` exit 0.
 - [ ] Final `change-review-workflow` findings are each Implemented, Adapted, or Declined with rationale, and material fixes are re-reviewed.
@@ -754,20 +973,25 @@ All must hold:
 
 Stop and report instead of improvising if:
 
-- FER-52 or FER-61 is not merged, or its actual API/ownership differs from Step 0.
+- Either dependency implementation PR is not merged (a merged plan PR is
+  insufficient), or its actual API/ownership differs from Step 0.
 - Lifecycle JSONL cannot identify exactly one completed implementation owner and
   its run/store/workspace provenance without using tracker comments or run scans.
 - Supporting historical completed implementations requires guessing missing
   refs/session/workspace provenance; classify as human attention rather than
   synthesizing ownership.
 - The provider recorded in `AgentSessionRef` differs from current implementation
-  role configuration, or a provider no longer supports resume through the shared
-  `Agent.run` contract.
+  role configuration, a provider no longer supports resume through the shared
+  `Agent.run` contract, or the nested reviewer cannot be enforced as Codex
+  `read-only`/`never`.
 - Exact workspace tree validation or cumulative commit creation would require the
   real Git index, checking out/resetting the workspace, overwriting an existing
   ref, or allowing an agent to mutate Git refs.
 - A proposed design asks an agent to write a decision, prompt, stream, checkpoint,
   ref, recovery bundle, summary, or handoff outside the workspace.
+- A durable workspace writer lease cannot be acquired/revalidated around every
+  implementation/remediation provider turn without holding the short lifecycle
+  lock or weakening same-workspace exclusion.
 - A review result cannot be represented by the existing three-role
   `change-review` output without changing standalone reviewer semantics.
 - Resume would need to discard an unrecognized workspace tree, reset the review
@@ -784,13 +1008,15 @@ Stop and report instead of improvising if:
 - The lifecycle checkpoint is an internal recovery read model, not generic tracker
   metadata. Future PR-linking should consume the PR-ready handoff and
   `review-complete`; it must not redefine review ownership.
-- Candidate version and completed review count are deliberately separate. Future
-  retry work must not conflate refs created with reviews completed.
+- Candidate version and completed review count are deliberately separate. The
+  effective review limit is immutable after initial claim, and partial evidence is
+  a separate non-promoted tuple. Future retry work must not conflate any of these.
 - Lifecycle events remain the reconstruction source of truth; state JSON is a
   cache. Any new checkpoint field needs replay tests from JSONL alone.
-- Reviewers should scrutinize lock boundaries, create-only ref updates, provider
-  failure after partial edits, artifact path/provenance validation, and whether
-  any prompt accidentally turns a durable path into an agent output target.
+- Reviewers should scrutinize lifecycle versus workspace-lease boundaries,
+  create-only ref updates, provider failure after partial edits, artifact
+  path/provenance validation, and whether any prompt accidentally turns a durable
+  path into an agent output target.
 - Retention/pruning of implementation/review lineage is deferred. A future policy
   must preserve refs/artifacts reachable from active lifecycle checkpoints and
   PR-ready handoffs.
