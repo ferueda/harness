@@ -1,9 +1,9 @@
 {
   "base": "main",
-  "defaultAgent": "codex",
+  "defaultAgent": "cursor",
   "agents": {
     "cursor": {
-      "model": "auto"
+      "model": "grok-4.5"
     },
     "codex": {
       "model": "gpt-5.6-sol",
@@ -16,9 +16,8 @@
     "triage": {
       "roles": {
         "triager": {
-          "agent": "codex",
-          "model": "gpt-5.6-terra",
-          "modelReasoningEffort": "medium"
+          "agent": "cursor",
+          "model": "grok-4.5"
         }
       }
     },
@@ -31,18 +30,16 @@
           "modelReasoningEffort": "high"
         },
         "reviewer": {
-          "agent": "codex",
-          "model": "gpt-5.6-luna",
-          "modelReasoningEffort": "high"
+          "agent": "cursor",
+          "model": "grok-4.5"
         }
       }
     },
     "implementation": {
       "roles": {
         "implementer": {
-          "agent": "codex",
-          "model": "gpt-5.6-terra",
-          "modelReasoningEffort": "high"
+          "agent": "cursor",
+          "model": "grok-4.5"
         }
       }
     },
