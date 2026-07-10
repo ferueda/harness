@@ -96,6 +96,9 @@ one work item and do not move pending inbox files. Current factory station
 commands do not batch-process every inbox file. `processed/` and `failed/` are
 historical local paths from earlier batch experiments; current station commands
 may report them in status output but do not mutate them.
+Triage first checks durable lifecycle history: a prior `triage.completed`
+exits before run creation and leaves the inbox item untouched unless the
+operator supplies `--rerun`.
 
 ## Provider auth assumptions
 

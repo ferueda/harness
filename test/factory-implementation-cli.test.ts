@@ -21,7 +21,7 @@ import { runFactoryHarness } from "./factory-store-test-helpers.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 
-test("implementation item-file direct dry-run writes artifacts without lifecycle state", () => {
+test("implementation item-file direct dry-run rebuilds missing lifecycle projection in memory", () => {
   const workspace = createWorkspace();
   const workItem = directWorkItem();
   const itemFile = writeWorkItem(workspace, workItem);
@@ -38,6 +38,25 @@ test("implementation item-file direct dry-run writes artifacts without lifecycle
       occurredAt: "2026-07-09T00:00:00.000Z",
       source: "harness",
       data: { source: "file", title: workItem.title },
+    },
+  });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    event: {
+      version: 1,
+      id: "triage.completed:direct-run",
+      type: "triage.completed",
+      workItemKey,
+      occurredAt: "2026-07-09T00:01:00.000Z",
+      runId: "direct-run",
+      source: "harness",
+      data: {
+        route: "ready-to-implement",
+        nextAction: "implement-directly",
+        rationale: "Ready for direct implementation.",
+        routeArtifactPath: "factory-route.md",
+        triageArtifactPath: "factory-triage.json",
+      },
     },
   });
   rmSync(factoryLifecycleStatePath(store.factoryStateRoot, workItemKey));

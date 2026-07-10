@@ -392,9 +392,7 @@ test("pre-commit hook config stays scoped to staged hygiene", () => {
   expect(Object.keys(lintStaged)).toContain(
     "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts,.oxlintrc.json,.oxfmtrc.json}",
   );
-  expect(Object.keys(lintStaged)).toContain(
-    "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts}",
-  );
+  expect(Object.keys(lintStaged)).toContain("./vitest.config.ts");
   expect(Object.keys(lintStaged)).not.toContain(
     "{package,tsconfig,tsconfig.build,vitest.config,.oxlintrc,.oxfmtrc}.{json,ts}",
   );
@@ -404,6 +402,21 @@ test("pre-commit hook config stays scoped to staged hygiene", () => {
   const lintStagedConfig = JSON.stringify(lintStaged);
   expect(lintStagedConfig).toContain("pnpm exec oxfmt --write");
   expect(lintStagedConfig).toContain("pnpm exec oxlint -c .oxlintrc.json --fix");
+  const oxlintGlobs = Object.entries(lintStaged)
+    .filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === "string" && entry[1].includes("pnpm exec oxlint"),
+    )
+    .map(([glob]) => glob);
+  expect(oxlintGlobs).toEqual([
+    "{bin,lib,providers,scripts,workflows,test,skills/sessions}/**/*.{ts,js}",
+    "./vitest.config.ts",
+  ]);
+  expect(oxlintGlobs.every((glob) => !glob.includes(".json"))).toBe(true);
+  expect(scripts.lint).not.toContain(" package.json");
+  expect(scripts.lint).not.toContain(" tsconfig.json");
+  expect(scripts["lint:fix"]).not.toContain(" package.json");
+  expect(scripts["lint:fix"]).not.toContain(" tsconfig.json");
   expect(lintStagedConfig).not.toContain("pnpm check");
   expect(lintStagedConfig).not.toContain("pnpm test");
   expect(lintStagedConfig).not.toContain("smoke:dist");

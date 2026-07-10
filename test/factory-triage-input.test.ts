@@ -287,6 +287,72 @@ test("resolveFactoryWorkItemInput overlays lifecycle state over Linear fallback 
   });
 });
 
+test("lifecycle triage clears stale source plan publication metadata", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-work-item-lifecycle-clear-"));
+  const factoryStateRoot = resolveFactoryStateRoot({ workspace });
+  const workItemKey = deriveFactoryWorkItemKey(LINEAR_WORK_ITEM);
+  appendFactoryLifecycleEvent({
+    factoryStateRoot,
+    event: {
+      version: 1,
+      id: `work_item.imported:${workItemKey}`,
+      type: "work_item.imported",
+      workItemKey,
+      occurredAt: "2026-07-08T00:00:00.000Z",
+      source: "harness",
+      data: { source: "linear", title: LINEAR_WORK_ITEM.title },
+    },
+  });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot,
+    event: {
+      version: 1,
+      id: "triage.completed:run-direct",
+      type: "triage.completed",
+      workItemKey,
+      occurredAt: "2026-07-08T00:01:00.000Z",
+      runId: "run-direct",
+      source: "harness",
+      data: {
+        route: "ready-to-implement",
+        nextAction: "implement-directly",
+        rationale: "Direct",
+        routeArtifactPath: "factory-route.md",
+        triageArtifactPath: "factory-triage.json",
+      },
+    },
+  });
+  const input = await resolveFactoryWorkItemInput({
+    workspace,
+    linearIssue: "ENG-123",
+    factoryStateRoot,
+    linearSettings: LINEAR_SETTINGS,
+    env: { LINEAR_API_KEY: "test-key" },
+    lifecycleReadMode: "load",
+    linearAdapterFactory: () =>
+      fakeLinearAdapter({
+        fetchWorkItem: async () => ({
+          ...LINEAR_WORK_ITEM,
+          metadata: {
+            ...LINEAR_WORK_ITEM.metadata,
+            approvedPlanPath: "dev/plans/stale.md",
+            approvedPlanPrUrl: "https://github.com/example/repo/pull/1",
+            approvedPlanCommit: "abc1234",
+          },
+        }),
+      }),
+  });
+  expect(input.workItem.metadata).toMatchObject({
+    linearStatus: "Backlog",
+    factoryStage: "ready-to-implement",
+    factoryRoute: "ready-to-implement",
+    factoryNextAction: "implement-directly",
+  });
+  expect(input.workItem.metadata).not.toHaveProperty("approvedPlanPath");
+  expect(input.workItem.metadata).not.toHaveProperty("approvedPlanPrUrl");
+  expect(input.workItem.metadata).not.toHaveProperty("approvedPlanCommit");
+});
+
 test("validateFactoryWorkItemInput rejects multiple input sources", () => {
   expect(() =>
     validateFactoryWorkItemInput({ itemFile: "item.json", linearIssue: "ENG-123" }),

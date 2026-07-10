@@ -130,6 +130,9 @@ if (!factoryTriageStationHelp.includes("--apply")) {
 if (!factoryTriageStationHelp.includes("--dry-run")) {
   throw new Error("Expected factory triage help to include --dry-run");
 }
+if (!factoryTriageStationHelp.includes("--rerun")) {
+  throw new Error("Expected factory triage help to include --rerun");
+}
 const factoryPlanningStationHelp = runHarness(["factory", "planning", "--help"]);
 if (!factoryPlanningStationHelp.includes("harness factory planning")) {
   throw new Error("Expected factory planning help to include command usage");

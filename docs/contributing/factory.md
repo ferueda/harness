@@ -296,6 +296,7 @@ The triage station can also fetch Linear directly:
 ```bash
 LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123
 LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --apply
+LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --rerun --apply
 ```
 
 `--linear-issue` and `--item-file` are mutually exclusive. Every
@@ -336,6 +337,14 @@ then moves to the terminal status and writes one marker comment:
 - `needs-info` -> `Needs Clarification`
 - `wait-to-implement` -> `Parked`
 - triage failure -> `Triage Failed`
+
+Durable lifecycle history is authoritative for triage eligibility. Any prior
+`triage.completed` blocks normal live and dry-run triage before run artifacts,
+lifecycle writes, provider calls, or Linear mutations. Use `--rerun` only for
+intentional re-triage. Normal apply retains the three entry statuses above;
+`--rerun --apply` accepts any present status after the existing issue and
+team/project scope checks. The new completion invalidates prior approved plan
+path, PR URL, and commit metadata.
 
 Comment dedupe and planning-attention detection check the most recent Linear
 comments fetched by the adapter (currently 20). If the relevant marker is older
@@ -394,7 +403,9 @@ Triage artifacts under the durable factory `runs/factory/<run-id>/` include:
 - `events.jsonl` for live runs
 
 Live triage appends lifecycle events for work-item import, station start, and
-terminal completion/failure. Dry-run does not write lifecycle events.
+terminal completion/failure. Dry-run does not write lifecycle events. Both
+modes enforce prior-completion history before creating a run; an eligible
+first dry-run needs no `--rerun`, while a dry-run over completed history does.
 
 Triage does not mutate tracker state, labels, branches, or source files unless
 `--apply` is used with `--linear-issue`. Apply mode mutates Linear status and

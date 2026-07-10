@@ -1734,6 +1734,52 @@ test("Linear adapter rejects triage apply from terminal statuses before mutation
   expect(updates).toEqual([]);
 });
 
+test("Linear adapter rerun accepts any present in-scope status", async () => {
+  for (const statusName of ["Needs Plan", "Ready to Implement", "Parked", "Planning", "Done"]) {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            { ...ISSUE, state: Promise.resolve({ id: `state-${statusName}`, name: statusName }) },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+      }),
+      settings: LINEAR_SETTINGS,
+    });
+    const result = await adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-rerun",
+      runDir: ".harness/runs/factory/run-rerun",
+      rerun: true,
+    });
+    expect(result.fromStatus).toBe(statusName);
+    expect(result.targetStatus).toBe("Triaging");
+    expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Triaging" } }]);
+  }
+});
+
+test("Linear adapter rerun still rejects a missing status", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({ nodes: [{ ...ISSUE, state: undefined }] }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+  await expect(
+    adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-rerun",
+      runDir: ".harness/runs/factory/run-rerun",
+      rerun: true,
+    }),
+  ).rejects.toThrow(/missing a status/);
+});
+
 test("Linear adapter rejects triage apply outside configured project before mutation", async () => {
   const updates: Array<{ id: string; input: { stateId: string } }> = [];
   const adapter = createLinearFactoryAdapterForClient({
@@ -1761,6 +1807,7 @@ test("Linear adapter rejects triage apply outside configured project before muta
       issueRef: "ENG-123",
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
+      rerun: true,
     }),
   ).rejects.toThrow(/belongs to project Other Repo \(project-2\)/);
   expect(updates).toEqual([]);
