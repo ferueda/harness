@@ -35,6 +35,12 @@ authoritative and the least-privilege defaults intact.
 - Treat scratch as ignored, transient agent state—not canonical evidence and not
   recovery state. Do not export it in `meta.json`, lifecycle events, review
   refs, or implementation handoff metadata.
+- Draft-validation failures cross a redaction boundary before `fail()`,
+  `export()`, or lifecycle terminalization. Serialize only a path-free reason
+  (`missing`, `symlinked`, `non-regular`, `empty`, `parent-unsafe`,
+  `outside-workspace`, or `read-failed`), never `ctx.draftPath`,
+  `factory-drafts`, or a raw filesystem exception, in meta, summary, lifecycle,
+  review references, handoffs, or `planner.failure.json`.
 - Intentionally retain run-scoped scratch after the run. Do not automatically
   delete it. This is the safer cleanup policy for Node's path APIs and is
   explicitly permitted by FER-61. Later runs use new ids and never trust/reuse
@@ -102,6 +108,12 @@ authoritative and the least-privilege defaults intact.
   scratch run directory, or final `draft.md`. Require a regular, non-empty draft
   whose resolved path remains in the prepared scratch directory/workspace.
   Read with final-component `O_NOFOLLOW` plus `fstat` into one stable buffer.
+- The durable `planner.prompt.md` is the sole intentional artifact that may name
+  the local scratch destination because it is the agent instruction itself.
+  Opaque provider `planner.raw.json` and `planner.stream.jsonl` are a separate,
+  explicitly noncanonical diagnostic exception: they may echo provider prompts
+  or paths and are never parsed as Factory state. All Harness-rendered
+  failure/metadata artifacts remain path-free.
 - A successful `draft-ready` result is the only admission to post-turn scratch
   validation and durable publication. Do not treat `Agent.run(...)` as a
   quiescence boundary for aborts or timeouts: current adapters can return from
@@ -299,10 +311,19 @@ Add narrow helpers in `lib/factory-planning-run-context.ts`:
    file.
 5. Open the final file with `O_RDONLY | O_NOFOLLOW`, fstat it again, read one
    stable buffer, and close in `finally`.
-6. Provide a narrow filesystem/test-boundary seam only through
+6. Return a typed, path-free `DraftValidationReason` on every validation/read
+   failure instead of propagating a filesystem exception. Render the public
+   terminal/failure message from that reason only; retain any path-bearing detail
+   in process-local diagnostics, not durable Factory artifacts.
+7. Split validation into two contracts: `readValidatedScratchDraft()` applies
+   workspace/scratch containment, symlink checks, and stable-buffer reads before
+   publication; `validateDurablePlanSnapshot(planPath)` checks only the completed
+   immutable snapshot under `runDir/iterations/` before `writeFinalPlan` copies
+   it. Never apply scratch containment to the durable snapshot.
+8. Provide a narrow filesystem/test-boundary seam only through
    `createFactoryPlanningRunContextForTest`. Tests may swap a parent after an
    early check but before final validation; the final validation must reject.
-7. State in helper comments that these checks reject unsafe completed state,
+9. State in helper comments that these checks reject unsafe completed state,
    not a concurrently racing same-account process. Do not claim directory-fd
    safety.
 
@@ -405,6 +426,15 @@ without scratch publication. Preserve the current guard bypass for `aborted`
 results and extend it to exit code 124: provider-aborted/provider-timeout wins
 over a concurrent tracked mutation, while raw workspace status remains recorded.
 
+When pre-run Git status is unavailable, skip workflow-level enforcement and
+preserve the agent result rather than failing a non-Git fake-provider smoke.
+Real Codex/Cursor adapters retain their existing requirement for readable Git
+status and can return their normal provider failure in a non-Git workspace; this
+plan does not widen that provider contract. Add one approval-path regression in
+a non-Git temporary workspace with fake planner/reviewer agents, and one Git
+workspace regression proving an enforced tracked mutation becomes
+`workspace-guard-failed` with no scratch-derived publication.
+
 Persist prompt/raw before downstream validation, then use this exact artifact
 matrix. `raw` means the returned provider raw value or a Harness error artifact
 when invocation throws:
@@ -426,6 +456,15 @@ publication and keeps normal successful planner artifacts. For
 `planner.json`, keep `meta.iterations` without `planPath`, preserve the original
 publication error as the terminal error, and assert that staging/link/rename/
 rollback failures write this evidence without starting review.
+
+For `draft-invalid`, `planner.failure.json`, meta, summary, lifecycle failure
+data, review references, and handoffs contain only the typed public reason and
+path-free rendered message. `planner.prompt.md` may name the scratch destination
+so the planner can write there; opaque `planner.raw.json` and
+`planner.stream.jsonl` may also echo it as provider diagnostics. Tests must
+assert that every Harness-rendered failure/metadata artifact omits
+`ctx.draftPath` and `factory-drafts`, without attempting to sanitize or parse
+opaque provider evidence.
 
 ### Default policy contract
 
@@ -451,7 +490,7 @@ default regression.
 | Purpose | Command | Expected on success |
 | --- | --- | --- |
 | Install | `pnpm install --frozen-lockfile` | exit 0; lockfile unchanged |
-| Focused planning | `pnpm exec vitest run test/factory-planning-run-context.test.ts test/factory-planning.workflow.test.ts test/factory-planning.workflow-failures.test.ts test/factory-planning-policy.test.ts test/factory-planning-apply-command.test.ts test/config.test.ts` | selected tests pass |
+| Focused planning | `pnpm exec vitest run test/factory-planning-run-context.test.ts test/factory-planning.workflow.test.ts test/factory-planning.workflow-failures.test.ts test/factory-planning-smoke.test.ts test/factory-planning-policy.test.ts test/factory-planning-apply-command.test.ts test/config.test.ts` | selected tests pass |
 | CLI regression | `pnpm exec vitest run test/cli.test.ts -t "harness factory planning dry-run works in non-git workspaces"` | selected test passes |
 | Docs/skills | `pnpm exec vitest run test/docs-contracts.test.ts test/skills.test.ts` | all pass |
 | Typecheck | `pnpm typecheck` | exit 0; no errors |
@@ -502,6 +541,10 @@ Before editing, read `docs/project-intent.md`,
 - `test/factory-planning.workflow-failures.test.ts`
   - provider failure/abort/timeout evidence, no post-failure scratch use, and
     terminal error preservation.
+- `test/factory-planning-smoke.test.ts` (new)
+  - full planning-loop smoke runs using real temporary directories, actual run
+    contexts/artifact writers, tiny work items/plans, and injected fake planner
+    and reviewer agents.
 - `lib/review-guard.test.ts`
   - assert enforced tracked-workspace mutation carries the typed failure kind.
 - `test/factory-planning-apply-command.test.ts`
@@ -654,6 +697,13 @@ Inject a parent replacement before final validation and a final-file symlink.
 Both must fail before review/canonical publication; no external sentinel bytes
 may appear in durable artifacts.
 
+For missing draft, final symlink, parent replacement, and `O_NOFOLLOW` read
+failure, assert `planner.failure.json`, meta, summary, lifecycle terminal data,
+review references, and any handoff omit `ctx.draftPath` and `factory-drafts` and
+contain the expected path-free reason. `planner.prompt.md` plus opaque provider
+raw/stream artifacts may contain the scratch destination; assert they are never
+read as lifecycle or recovery input.
+
 Document the remaining concurrent same-account race limit in code comments.
 
 **Verify**:
@@ -781,6 +831,11 @@ Keep tests in their existing ownership layers:
   no-post-failure-scratch-use contract.
 - `test/factory-planning-run-context.test.ts`: path preparation, validation,
   staging, collision, and atomic publication only.
+- `test/factory-planning-smoke.test.ts`: the actual `runFactoryPlanning` loop
+  with a real temporary workspace, external durable runs/review roots, real
+  context artifact writers, and fake provider/reviewer responses. It must not
+  mock `FactoryPlanningRunContext`, `writePlannerArtifacts`, or filesystem
+  publication.
 
 Cover:
 - two-turn revision/same session and retained same scratch path;
@@ -795,6 +850,17 @@ Cover:
 - parse `meta.json` and lifecycle events and inspect review refs/handoff text for
   approved, revision, needs-human, dry-run, and failure outcomes; each must omit
   `factory-drafts` and expose no scratch path/field.
+- for every draft-validation failure, assert the explicit provider-diagnostics
+  exception:
+  prompt/raw/stream provider diagnostics may name scratch, while failure JSON,
+  meta, summary, lifecycle terminal data, review refs, and handoff contain only
+  the typed safe reason.
+- run the focused real-filesystem smoke matrix below with tiny plan markdown and
+  fake planner/reviewer agents, asserting exact on-disk artifacts rather than
+  only returned metadata.
+- prove `writeFinalPlan` copies only from the validated immutable iteration
+  snapshot and still succeeds when that snapshot is external to workspace-local
+  scratch.
 
 Extend `test/cli.test.ts:2187` to assert prompt-local scratch, external durable
 canonical/iteration, retained run-scoped scratch placeholder, existing progress
@@ -806,6 +872,7 @@ assertion, and absent `events.jsonl`/lifecycle state.
 pnpm exec vitest run test/factory-planning-run-context.test.ts \
   test/factory-planning.workflow.test.ts \
   test/factory-planning.workflow-failures.test.ts \
+  test/factory-planning-smoke.test.ts \
   test/factory-planning-policy.test.ts \
   test/factory-planning-apply-command.test.ts test/config.test.ts
 pnpm exec vitest run test/cli.test.ts \
@@ -886,6 +953,7 @@ commit; never rely on the temporary ref as publication history.
 pnpm exec vitest run test/factory-planning-run-context.test.ts \
   test/factory-planning.workflow.test.ts \
   test/factory-planning.workflow-failures.test.ts \
+  test/factory-planning-smoke.test.ts \
   test/factory-planning-policy.test.ts \
   test/factory-planning-apply-command.test.ts test/config.test.ts \
   test/docs-contracts.test.ts test/skills.test.ts lib/review-guard.test.ts
@@ -903,6 +971,106 @@ Expected: all gates pass; no tracked `.harness` files; status contains only the
 approved plan and in-scope source/test/docs/skill changes; review has no
 unresolved must-fix finding.
 
+## Smoke matrix and post-merge live acceptance
+
+These are integration smokes, not replacements for focused unit/regression
+tests. Keep their work item and plan intentionally small so failures identify
+artifact-boundary behavior rather than planning complexity.
+
+### Automated real-filesystem smoke suite
+
+Add `test/factory-planning-smoke.test.ts`. Each case must use:
+
+- `mkdtempSync` to create a real temporary workspace, external factory-runs
+  root, and external review-runs root;
+- `createFactoryPlanningRunContextForTest(...)` plus the actual
+  `runFactoryPlanning(...)` loop and real artifact writers;
+- a minimal file work item:
+
+  ```ts
+  {
+    id: "smoke-item",
+    source: "file",
+    title: "Smoke planner artifact ownership",
+    body: "Produce a short plan only; do not implement.",
+    labels: [],
+    metadata: { factoryRoute: "ready-to-plan", factoryNextAction: "create-plan" }
+  }
+  ```
+
+- a tiny planner-authored markdown draft, for example
+  `# Smoke Plan\n\n1. Preserve artifact ownership.\n`;
+- fake planner/reviewer agents that write the real scratch path named by the
+  context and return normal structured provider outputs. Do not mock the
+  context, run loop, artifact writers, or filesystem publication.
+
+| Case | Fake sequence | Expected result |
+| --- | --- | --- |
+| One-pass approval, non-Git workspace | Fake planner writes tiny draft; fake reviewer passes. | `plan-approved` without workflow-level Git enforcement; external canonical draft, immutable iteration 1 snapshot, and output plan have identical bytes; scratch remains only in the workspace; Harness-rendered metadata/events/review refs/handoff contain no scratch path. |
+| One revision | Reviewer returns one `must_fix`; resumed planner writes a revised tiny draft with the required decision; reviewer passes. | Two immutable snapshots; snapshot 1 unchanged after revision; canonical/output plan equal snapshot 2; same planner session and same context-owned scratch path are used. |
+| Initial and revision `needs-human` | Planner returns `needs-human` before a draft, then after a first approved draft on a separate case. | Planner prompt/raw/JSON evidence exists for the human turn; no new `plan.md`, canonical replacement, or review exists; prior snapshot/canonical survive the revision case. |
+| Failure matrix | One fake per provider failure, abort, timeout, thrown invocation, workflow-local malformed output, invalid finding decision, unsafe draft, and publication stage/link/rename/rollback failure; use a Git temp workspace for tracked mutation. | Exact `planner.failure.json` classification/stage and terminal error; Git tracked mutation becomes `workspace-guard-failed`, while non-Git fake approval remains allowed; no review for an unpublished attempt; no durable bytes copied from untrusted scratch; publication failures retain `planner.json` plus failure evidence; pre-existing durable sentinels remain byte-identical. |
+| Ownership/rejection | Request a live workspace-local run root, seed run-id/scratch collisions, and inject a parent/draft symlink swap. | Provider is not called for rejected local run root; no stale run/scratch is reused; existing sentinels survive; successful smoke runs always use an external durable root. |
+
+For every case, assert both the returned metadata and on-disk paths. Do not use
+only snapshots or mock call counts as evidence. Add the suite to the focused and
+full-gate commands above.
+
+### Successful live smoke after merge
+
+Run this only from a clean, disposable worktree at the merged commit. It uses no
+Linear issue and never passes `--apply`, so it cannot change tracker state.
+
+1. Create a disposable worktree and external artifact roots. Do **not** use a
+   workspace-local `--runs-dir` for this live command.
+
+   ```bash
+   smoke_root=$(mktemp -d)
+   git worktree add --detach "$smoke_root/harness" <merged-fer-61-commit>
+   store_root=$(mktemp -d)
+   runs_root=$(mktemp -d)
+   cd "$smoke_root/harness"
+   pnpm install --frozen-lockfile
+   pnpm build
+   ```
+
+2. Create `.harness/inbox/factory/fer61-live-smoke.json` with the small file
+   work item shown above, but set its body to request a short plan for one
+   README ownership sentence and no implementation. Use only this disposable
+   checkout and remove the item after the smoke.
+
+3. Run the real configured planner and reviewer with an external durable root:
+
+   ```bash
+   node dist/bin/harness.js factory planning run \
+     --workspace "$smoke_root/harness" \
+     --item-file .harness/inbox/factory/fer61-live-smoke.json \
+     --factory-store-root "$store_root" \
+     --runs-dir "$runs_root" \
+     --output-plan dev/plans/fer61-live-smoke.md
+   ```
+
+4. A successful live smoke means all of the following are true:
+
+   - the command exits 0 with `status: "plan-approved"`;
+   - the reported run directory is under `$runs_root`, never under the
+     worktree; it contains `planning/draft.md`, `iterations/1/plan.md`,
+     `meta.json`, `summary.md`, and a completed review reference;
+   - the canonical draft, immutable snapshot, and temporary output plan have
+     identical bytes;
+   - `.harness/factory-drafts/<run-id>/draft.md` exists in the disposable
+     workspace, remains ignored, and no scratch path appears in durable metadata,
+     events, review references, or the output plan;
+   - `git status --porcelain` shows only the temporary output plan (and no
+     tracked source modification by the planner).
+
+5. Any other terminal status, missing artifact, nonzero exit, durable path under
+   the worktree, scratch-path leak, or tracked workspace modification fails the
+   smoke. Preserve the external run directory and command output for diagnosis;
+   do not retry by widening sandbox permissions or moving `--runs-dir` into the
+   workspace. Remove the disposable output plan/item and worktree only after the
+   evidence is captured.
+
 ## Test plan
 
 | Scenario | Planner metadata | Plan/canonical behavior | Scratch behavior |
@@ -911,7 +1079,7 @@ unresolved must-fix finding.
 | Revision | metadata for both turns | canonical revision 2; plans 1/2 immutable | same path retained |
 | Initial `needs-human` | iteration 1 prompt/raw/JSON | no plan/canonical/review | directory retained; draft optional |
 | Revision `needs-human` | new turn prompt/raw/JSON | no new plan/review; prior durable retained | same directory retained |
-| Draft/parent symlink | planner metadata retained | no external content published | unsafe path not deleted |
+| Draft/parent symlink | prompt may name scratch; all derived failure evidence is path-free | no external content published | unsafe path not deleted |
 | Deterministic parent swap | depends on turn boundary | final validation rejects | external sentinel survives |
 | Overlapping runsDir | none | no run created | none |
 | Live workspace-local runsDir | planner is never invoked | no durable live run; sentinel unchanged | none |
@@ -955,6 +1123,9 @@ All must hold:
       and abort/timeout wins over a concurrent tracked-workspace mutation.
 - [ ] Parsed metadata, lifecycle events, review refs, and handoff text for every
       outcome omit scratch paths and `factory-drafts` fields.
+- [ ] Draft-validation failure JSON, meta, summary, and lifecycle messages expose
+      only typed path-free reasons; planner prompt/raw/stream are the explicit
+      opaque provider-diagnostics exception and are never canonical input.
 - [ ] Scratch is created only for draft-producing workflow paths and
       intentionally retained afterward as ignored, non-authoritative state.
 - [ ] Default resolver-to-provider Codex policy is workspace-write/never with no
@@ -965,6 +1136,12 @@ All must hold:
 - [ ] All docs and `skills/factory-operator/SKILL.md` state the same ownership
       contract.
 - [ ] `quick_validate.py` passes for the changed packaged operator skill.
+- [ ] Real-filesystem smoke tests cover approval, revision, needs-human,
+      failure/publication, ownership, and collision paths with tiny inputs and
+      fake planner/reviewer agents.
+- [ ] A disposable live-agent smoke can prove external durable publication,
+      workspace-local scratch retention, immutable snapshot equality, no scratch
+      leak, and no tracked workspace mutation without changing Linear.
 - [ ] Durable layout/meta/lifecycle/handoff, triage, reviewer, implementation,
       and publication contracts remain unchanged.
 - [ ] Focused/full gates pass; no `.harness` artifact is tracked.
