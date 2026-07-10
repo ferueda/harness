@@ -71,10 +71,42 @@ test("factory triage dry-run writes placeholder artifacts without calling provid
   expect(existsSync(join(ctx.runDir, "context/work-item.json"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "context/diff.patch"))).toBe(false);
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("# Factory Route");
+  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain(
+    "live factory triage without --rerun",
+  );
   expect(JSON.parse(readFileSync(join(ctx.runDir, "factory-route.json"), "utf8"))).toMatchObject({
     route: "needs-info",
     nextAction: "ask-human",
   });
+});
+
+test("factory triage renders rerun guidance only when requested", async () => {
+  for (const nextLiveRunRequiresRerun of [false, true]) {
+    const workspace = createWorkspace();
+    const ctx = createFactoryRunContextForTest({
+      workspace,
+      runsDir: mkdtempSync(join(tmpdir(), "harness-factory-runs-")),
+      workItem: WORK_ITEM,
+      dryRun: true,
+      maxRuntimeMs: 1_000,
+      agentProviderFactory(options) {
+        return {
+          name: options.provider,
+          async run() {
+            throw new Error("not called");
+          },
+        };
+      },
+    });
+    await runFactoryTriage(ctx, { nextLiveRunRequiresRerun });
+    const route = readFileSync(join(ctx.runDir, "factory-route.md"), "utf8");
+    if (nextLiveRunRequiresRerun) {
+      expect(route).toContain("Use --rerun");
+      expect(route).not.toContain("without --rerun");
+    } else {
+      expect(route).toContain("live factory triage without --rerun");
+    }
+  }
 });
 
 test("factory triage live run writes artifacts and workflow events", async () => {

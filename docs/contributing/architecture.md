@@ -124,6 +124,11 @@ reads or Linear fetches after station settings are known. When a lifecycle log
 exists, it merges lifecycle state over tracker-derived fallback metadata before
 the station consumes the work item.
 
+`lib/factory-triage-policy.ts` reads canonical lifecycle event history before
+triage run creation. A prior `triage.completed` blocks live and dry-run triage
+unless the operator supplies `--rerun`; blocked commands create no station
+artifacts or tracker mutations.
+
 `lib/factory-lifecycle.ts` owns the factory lifecycle event contract, JSONL
 store, read-model reducer, state cache, work-item key derivation, and lifecycle
 metadata merge helper. Durable-store `factory/events/*.jsonl` is canonical
@@ -208,6 +213,9 @@ or planning publication commands with `--linear-issue ... --apply`.
 `harness factory triage --linear-issue TEAM-123 --apply` additionally moves the
 issue to `Triaging`, then to the terminal triage status, and writes a marker
 comment.
+Normal apply retains its entry-status allowlist. With `--rerun`, lifecycle
+history remains authoritative and apply accepts any present in-scope Linear
+status before moving it to `Triaging`.
 
 `harness factory triage --item-file ...` or
 `harness factory triage --linear-issue ...` runs one work item through the

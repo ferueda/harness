@@ -127,6 +127,12 @@ test("needs-info requires questions and maps to ask-human", () => {
   });
   const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
   expect(routePlan.nextAction).toBe("ask-human");
+  expect(
+    buildFactoryRoutePlan(WORK_ITEM, triage, { nextLiveRunRequiresRerun: true }).command,
+  ).toContain("--rerun");
+  expect(buildFactoryRoutePlan(WORK_ITEM, triage, { isDryRun: true }).command).toContain(
+    "live factory triage without --rerun",
+  );
 });
 
 test("wait-to-implement requires reconsiderWhen and maps to park", () => {
@@ -145,6 +151,9 @@ test("wait-to-implement requires reconsiderWhen and maps to park", () => {
   const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
   expect(routePlan.nextAction).toBe("park");
   expect(routePlan.command).toContain("reconsiderWhen");
+  expect(
+    buildFactoryRoutePlan(WORK_ITEM, triage, { nextLiveRunRequiresRerun: true }).command,
+  ).toContain("--rerun");
 });
 
 test("route/action mismatches fail validation", () => {

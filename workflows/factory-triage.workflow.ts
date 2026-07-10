@@ -9,7 +9,10 @@ import { FactoryTriageError } from "../lib/factory-schemas.ts";
 
 export const meta = { name: "factory-triage" };
 
-export async function run(ctx: FactoryRunContext): Promise<FactoryRunMeta> {
+export async function run(
+  ctx: FactoryRunContext,
+  options: { nextLiveRunRequiresRerun?: boolean } = {},
+): Promise<FactoryRunMeta> {
   const runStartedAt = Date.now();
   const stepStartedAt = new Date();
   ctx.eventSink({
@@ -33,7 +36,10 @@ export async function run(ctx: FactoryRunContext): Promise<FactoryRunMeta> {
 
   try {
     const triage = await ctx.invokeTriageAgent();
-    const routePlan = buildFactoryRoutePlan(ctx.workItem, triage);
+    const routePlan = buildFactoryRoutePlan(ctx.workItem, triage, {
+      ...options,
+      isDryRun: ctx.dryRun,
+    });
     const result = ctx.export({ triage, routePlan });
     ctx.eventSink({
       type: "step:end",

@@ -97,6 +97,7 @@ export type LinearTriageApplyInput = {
   issueRef: string;
   runId: string;
   runDir: string;
+  rerun?: boolean;
 };
 
 export type LinearTriageCompletedInput = LinearTriageApplyInput & {
@@ -267,10 +268,12 @@ export function linearTriageTargetStatus(
 export function assertLinearTriageApplyAllowed(
   settings: FactoryLinearSettings,
   statusName: string | undefined,
+  rerun = false,
 ): void {
   if (!statusName) {
     throw new Error("Linear issue is missing a status; cannot apply factory triage.");
   }
+  if (rerun) return;
   const allowed = [
     settings.statuses.intake,
     settings.statuses.needsInfo,
@@ -342,7 +345,7 @@ async function applyTriageStarted(
   const issue = await fetchIssue(client, settings, input.issueRef);
   const state = await resolveOptional(issue.state);
   await assertIssueInConfiguredScope(issue, settings);
-  assertLinearTriageApplyAllowed(settings, state?.name);
+  assertLinearTriageApplyAllowed(settings, state?.name, input.rerun);
 
   const target = await fetchWorkflowState(client, settings, settings.statuses.triaging);
   await client.updateIssue(issue.id, { stateId: target.id });

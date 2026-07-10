@@ -600,7 +600,7 @@ export function mergeFactoryStateIntoWorkItem(
   return {
     ...workItem,
     metadata: compactMetadata({
-      ...metadata,
+      ...withoutLifecycleMetadata(metadata),
       ...definedLifecycleMetadata(state),
     }),
   };
@@ -638,13 +638,13 @@ function reduceFactoryLifecycleEvent(
     case "implementation.started":
       return base;
     case "triage.completed":
-      return {
+      return withoutAllPublicationFields({
         ...base,
         factoryStage: stageForTriageRoute(event.data.route),
         factoryRoute: event.data.route,
         factoryNextAction: event.data.nextAction,
         factoryRunId: event.runId,
-      };
+      });
     case "triage.failed":
       return {
         ...base,
@@ -742,6 +742,16 @@ function withoutPublicationReadyFields(state: FactoryLifecycleState): FactoryLif
   return rest;
 }
 
+function withoutAllPublicationFields(state: FactoryLifecycleState): FactoryLifecycleState {
+  const {
+    approvedPlanPath: _path,
+    approvedPlanPrUrl: _url,
+    approvedPlanCommit: _commit,
+    ...rest
+  } = state;
+  return rest;
+}
+
 function withoutApprovedPlanCommit(state: FactoryLifecycleState): FactoryLifecycleState {
   const { approvedPlanCommit: _commit, ...rest } = state;
   return rest;
@@ -757,6 +767,22 @@ function definedLifecycleMetadata(state: FactoryLifecycleState): Partial<Factory
     ...(state.approvedPlanPrUrl ? { approvedPlanPrUrl: state.approvedPlanPrUrl } : {}),
     ...(state.approvedPlanCommit ? { approvedPlanCommit: state.approvedPlanCommit } : {}),
   };
+}
+
+function withoutLifecycleMetadata(
+  metadata: FactoryWorkItemMetadata,
+): Partial<FactoryWorkItemMetadata> {
+  const {
+    factoryStage: _stage,
+    factoryRoute: _route,
+    factoryNextAction: _nextAction,
+    factoryRunId: _runId,
+    approvedPlanPath: _planPath,
+    approvedPlanPrUrl: _planPrUrl,
+    approvedPlanCommit: _planCommit,
+    ...rest
+  } = metadata;
+  return rest;
 }
 
 function compactMetadata(

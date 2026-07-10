@@ -291,6 +291,27 @@ test("later triage completed event wins durable route fields", () => {
   });
 });
 
+test.each([
+  ["ready-to-plan", "create-plan"],
+  ["ready-to-implement", "implement-directly"],
+] as const)("new %s triage clears every prior plan publication field", (route, nextAction) => {
+  const workItemKey = "linear:FER-34";
+  const state = reduceFactoryLifecycleEvents([
+    importedEvent(workItemKey, {
+      tracker: { source: "linear", id: "FER-34" },
+      approvedPlanPath: "dev/plans/FER-34.md",
+      approvedPlanPrUrl: "https://github.com/example/repo/pull/1",
+      approvedPlanCommit: "abc1234",
+    }),
+    triageCompletedEvent(workItemKey, route, nextAction),
+  ]);
+
+  expect(state).not.toHaveProperty("approvedPlanPath");
+  expect(state).not.toHaveProperty("approvedPlanPrUrl");
+  expect(state).not.toHaveProperty("approvedPlanCommit");
+  expect(state).toMatchObject({ factoryRoute: route, factoryNextAction: nextAction });
+});
+
 test("started-only events do not change durable stage or factory run id", () => {
   const state = reduceFactoryLifecycleEvents([
     importedEvent("linear:FER-34"),
@@ -655,7 +676,7 @@ test("merge overlays lifecycle fields while preserving tracker-specific metadata
   });
 });
 
-test("merge preserves existing stage when lifecycle import has no durable stage", () => {
+test("merge replaces every lifecycle-owned source field when durable state exists", () => {
   const workItem: FactoryWorkItem = {
     id: "linear:FER-34",
     source: "linear",
@@ -666,17 +687,36 @@ test("merge preserves existing stage when lifecycle import has no durable stage"
       tracker: { source: "linear", id: "FER-34" },
       linearStatus: "Backlog",
       factoryStage: "incoming",
+      factoryRoute: "ready-to-plan",
+      factoryNextAction: "create-plan",
+      factoryRunId: "stale-run",
+      approvedPlanPath: "dev/plans/stale.md",
+      approvedPlanPrUrl: "https://github.com/example/repo/pull/1",
+      approvedPlanCommit: "abc1234",
+      linearIssueId: "issue-1",
     },
   };
   const state = reduceFactoryLifecycleEvents([
     importedEvent("linear:FER-34", { tracker: { source: "linear", id: "FER-34" } }),
   ]);
 
-  expect(mergeFactoryStateIntoWorkItem(workItem, state).metadata).toMatchObject({
-    factoryStage: "incoming",
+  const metadata = mergeFactoryStateIntoWorkItem(workItem, state).metadata;
+  expect(metadata).toMatchObject({
     linearStatus: "Backlog",
+    linearIssueId: "issue-1",
     tracker: { source: "linear", id: "FER-34" },
   });
+  for (const key of [
+    "factoryStage",
+    "factoryRoute",
+    "factoryNextAction",
+    "factoryRunId",
+    "approvedPlanPath",
+    "approvedPlanPrUrl",
+    "approvedPlanCommit",
+  ]) {
+    expect(metadata).not.toHaveProperty(key);
+  }
 });
 
 test("factory state root is independent from execution workspace", () => {
@@ -881,6 +921,9 @@ function importedEvent(
   overrides: {
     source?: string;
     tracker?: { source: "linear" | "file" | "github" | "jira" | "manual"; id: string };
+    approvedPlanPath?: string;
+    approvedPlanPrUrl?: string;
+    approvedPlanCommit?: string;
   } = {},
 ): FactoryLifecycleEvent {
   return {
@@ -891,6 +934,9 @@ function importedEvent(
       title: "Lifecycle issue",
       labels: ["factory"],
       ...(overrides.tracker ? { tracker: overrides.tracker } : {}),
+      ...(overrides.approvedPlanPath ? { approvedPlanPath: overrides.approvedPlanPath } : {}),
+      ...(overrides.approvedPlanPrUrl ? { approvedPlanPrUrl: overrides.approvedPlanPrUrl } : {}),
+      ...(overrides.approvedPlanCommit ? { approvedPlanCommit: overrides.approvedPlanCommit } : {}),
     },
   };
 }
