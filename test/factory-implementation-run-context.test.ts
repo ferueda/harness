@@ -255,7 +255,7 @@ test("pre-provider failure metadata omits artifacts and events that were not wri
     preProviderFailure: true,
   });
 
-  expect(meta.preProviderFailure).toBe(true);
+  expect(meta).not.toHaveProperty("preProviderFailure");
   expect(meta.eventsFile).toBeUndefined();
   expect(meta.artifacts).not.toHaveProperty("prompt");
   expect(meta.artifacts).not.toHaveProperty("changeReviewHandoff");

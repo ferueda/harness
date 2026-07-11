@@ -310,7 +310,8 @@ function formatHarnessConfigError(error: ZodError): string {
     .filter(
       (issue) =>
         issue.code === "invalid_type" &&
-        issue.message === "Invalid input: expected string, received undefined" &&
+        issue.expected === "string" &&
+        issue.input === undefined &&
         (issue.path.join(".") === "factory.linear.statuses.implementing" ||
           issue.path.join(".") === "factory.linear.statuses.implementationFailed"),
     )
@@ -319,8 +320,11 @@ function formatHarnessConfigError(error: ZodError): string {
     missingImplementationStatuses.length > 0 &&
     error.issues.every(
       (issue) =>
-        issue.path.join(".") === "factory.linear.statuses.implementing" ||
-        issue.path.join(".") === "factory.linear.statuses.implementationFailed",
+        issue.code === "invalid_type" &&
+        issue.expected === "string" &&
+        issue.input === undefined &&
+        (issue.path.join(".") === "factory.linear.statuses.implementing" ||
+          issue.path.join(".") === "factory.linear.statuses.implementationFailed"),
     )
   ) {
     const paths = [...new Set(missingImplementationStatuses)].sort();

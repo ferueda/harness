@@ -114,8 +114,8 @@ test("start apply failure exports a truthful pre-provider result without termina
   expect(result.startApplyError).toBe(startError);
   expect(result.meta).toMatchObject({
     status: "implementation-failed",
-    preProviderFailure: true,
   });
+  expect(result.meta).not.toHaveProperty("preProviderFailure");
   expect(result.meta.artifacts).not.toHaveProperty("prompt");
   expect(
     readFactoryLifecycleEvents({
@@ -426,6 +426,20 @@ test("real command prints truthful output before resolved-false start mutation e
   });
 });
 
+test("real command treats a falsy start rejection as an apply failure", async () => {
+  const fixture = commandFixture({
+    behavior: { update: async () => Promise.reject(undefined) },
+  });
+
+  await expect(fixture.program.parseAsync(commandArgs(fixture))).rejects.toBeUndefined();
+
+  expect(fixture.runner).not.toHaveBeenCalled();
+  expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({
+    status: "implementation-failed",
+    linearApplied: false,
+  });
+});
+
 test("real command rejects success-true start when fresh state did not change", async () => {
   const fixture = commandFixture({
     behavior: { update: async () => ({ success: true }) },
@@ -470,6 +484,41 @@ test("real command preserves local completion when terminal comment resolves fal
       },
     },
   });
+});
+
+test("real command treats a wrapped falsy terminal rejection as an apply failure", async () => {
+  const fixture = commandFixture({
+    behavior: { comment: async () => Promise.reject(undefined) },
+  });
+
+  await expect(fixture.program.parseAsync(commandArgs(fixture))).rejects.toThrow("undefined");
+
+  expect(fixture.runner).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({
+    status: "implementation-complete",
+    linearApplied: false,
+  });
+});
+
+test("apply result records a falsy terminal rejection by presence", async () => {
+  const { ctx, factoryStateRoot } = context();
+  const result = await runFactoryImplementationWithLinearApply({
+    ctx,
+    factoryStateRoot,
+    issueRef: "ENG-123",
+    adapter: fakeLinearAdapter({
+      applyImplementationStarted: async () => ({
+        ...STARTED,
+        runId: ctx.runId,
+        runDir: ctx.runDir,
+      }),
+      applyImplementationCompleted: async () => Promise.reject(undefined),
+    }),
+    runImplementation: completeImplementation,
+  });
+
+  expect(result.terminalApplyFailed).toBe(true);
+  expect(result.terminalApplyError).toBeUndefined();
 });
 
 test("real command reports verified failed-status progress when its retry comment resolves false", async () => {
@@ -567,6 +616,31 @@ test("real command preserves local completion when Linear drifts before terminal
     "implementation.completed",
   ]);
   expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({ linearApplied: false });
+});
+
+test("real command preserves local failure when Linear drifts before terminal apply", async () => {
+  let fixture!: ReturnType<typeof commandFixture>;
+  fixture = commandFixture({
+    runner: async (ctx) => {
+      fixture.setLinearState("Ready to Implement");
+      return failedImplementation(ctx);
+    },
+  });
+
+  await expect(fixture.program.parseAsync(commandArgs(fixture))).rejects.toThrow(
+    /failure requires Implementing/,
+  );
+
+  expect(fixture.updates).toHaveLength(1);
+  expect(fixture.commentInputs).toEqual([]);
+  expect(implementationEventTypes(fixture)).toEqual([
+    "implementation.started",
+    "implementation.failed",
+  ]);
+  expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({
+    status: "implementation-failed",
+    linearApplied: false,
+  });
 });
 
 test("real command re-fetches Linear inside the execution lease before context creation", async () => {

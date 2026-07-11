@@ -92,13 +92,11 @@ type FactoryImplementationRunMetaBase = {
 
 export type FactoryImplementationRunMeta =
   | (FactoryImplementationRunMetaBase & {
-      preProviderFailure: true;
       status: "implementation-failed";
       artifacts: FactoryImplementationPreProviderFailureArtifacts;
       eventsFile?: never;
     })
   | (FactoryImplementationRunMetaBase & {
-      preProviderFailure?: false;
       artifacts: FactoryImplementationArtifacts;
       eventsFile?: typeof WORKFLOW_EVENTS_FILE;
     });
@@ -398,7 +396,6 @@ function buildMeta(input: {
     return {
       ...common,
       status: "implementation-failed",
-      preProviderFailure: true,
       artifacts: baseArtifacts,
     };
   }
@@ -457,7 +454,7 @@ function renderSummary(
           "- Reviewer invocation: not run.",
           "- Lifecycle events: not written.",
         ]
-      : meta.preProviderFailure
+      : isPreProviderFailureMeta(meta)
         ? [
             "- Provider invocation: not run.",
             "- Reviewer invocation: not run.",
@@ -507,6 +504,15 @@ function renderSummary(
     "- Branch/worktree orchestration: not run.",
     "",
   ].join("\n");
+}
+
+function isPreProviderFailureMeta(
+  meta: FactoryImplementationRunMeta,
+): meta is FactoryImplementationRunMeta & {
+  status: "implementation-failed";
+  artifacts: FactoryImplementationPreProviderFailureArtifacts;
+} {
+  return meta.status === "implementation-failed" && meta.artifacts.prompt === undefined;
 }
 
 function writeJson(path: string, value: unknown): void {

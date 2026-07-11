@@ -1459,6 +1459,27 @@ test("Linear adapter validates configured statuses against team states", async (
   );
 });
 
+test.each([
+  ["implementing", "Ready to Implement", /implementing must differ from.*readyToImplement/],
+  ["implementationFailed", "Implementing", /implementationFailed must differ from.*implementing/],
+  [
+    "implementationFailed",
+    " ready TO implement ",
+    /implementationFailed must differ from.*readyToImplement/,
+  ],
+] as const)(
+  "Linear adapter rejects aliased implementation status %s",
+  async (key, value, error) => {
+    const settings = {
+      ...LINEAR_SETTINGS,
+      statuses: { ...LINEAR_SETTINGS.statuses, [key]: value },
+    } satisfies FactoryLinearSettings;
+    const adapter = createLinearFactoryAdapterForClient({ client: fakeClient(), settings });
+
+    await expect(adapter.validateStatusMap()).rejects.toThrow(error);
+  },
+);
+
 test("Linear adapter validates status map during fetch", async () => {
   const missingStatusTeam = {
     ...TEAM,

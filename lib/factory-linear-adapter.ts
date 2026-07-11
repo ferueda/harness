@@ -605,6 +605,7 @@ async function validateStatusMap(
   client: LinearClientLike,
   settings: FactoryLinearSettings,
 ): Promise<LinearStatusMapValidation> {
+  assertDistinctImplementationStatuses(settings);
   const team = await fetchTeam(client, settings.teamKey);
   const states = await team.states({ first: STATUS_FETCH_LIMIT });
   const existingNames = new Set(states.nodes.map((state) => normalizeName(state.name)));
@@ -625,6 +626,25 @@ async function validateStatusMap(
     teamKey: team.key,
     statuses: states.nodes,
   };
+}
+
+function assertDistinctImplementationStatuses(settings: FactoryLinearSettings): void {
+  const entries = [
+    ["readyToImplement", settings.statuses.readyToImplement],
+    ["implementing", settings.statuses.implementing],
+    ["implementationFailed", settings.statuses.implementationFailed],
+  ] as const;
+  const seen = new Map<string, string>();
+  for (const [key, value] of entries) {
+    const normalized = normalizeName(value);
+    const prior = seen.get(normalized);
+    if (prior) {
+      throw new Error(
+        `factory.linear.statuses.${key} must differ from factory.linear.statuses.${prior}.`,
+      );
+    }
+    seen.set(normalized, key);
+  }
 }
 
 async function fetchWorkflowState(

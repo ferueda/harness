@@ -367,6 +367,8 @@ fallback when no lifecycle log exists:
 - `Plan Needs Review` -> `plan-review-unresolved`
 - `Needs Plan` -> `ready-to-plan`
 - `Ready to Implement` -> `ready-to-implement`
+- `Implementing` -> `implementation-started`
+- `Implementation Failed` -> `implementation-failed`
 - `Parked` -> `wait-to-implement`
 - `Planning` -> `planning`
 - `Planning Failed` -> `planning-failed`
@@ -657,10 +659,10 @@ not mutated.
 
 Failure recovery:
 
-- Start projection failure: the provider is not invoked. `meta.json` has
-  `preProviderFailure: true`, omits prompt/handoff/events paths, and local
-  lifecycle has only imported/started audit evidence. Correct the Linear state
-  or mutation failure, then rerun.
+- Start projection failure: the provider is not invoked. `meta.json` records
+  `implementation-failed` and omits prompt/handoff/events paths; local lifecycle
+  has only imported/started audit evidence. Correct the Linear state or mutation
+  failure, then rerun.
 - Provider or local implementation failure after start: local lifecycle moves
   to `implementation-failed`; successful terminal apply moves Linear to
   `Implementation Failed`. Inspect the run, correct the cause, and rerun the

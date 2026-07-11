@@ -665,6 +665,11 @@ function addFactoryImplementationStationCommand(
                     ? { runImplementation: config.implementationRunner }
                     : {}),
                 }),
+                linearUpdate: undefined,
+                startApplyFailed: false,
+                terminalApplyFailed: false,
+                startApplyError: undefined,
+                terminalApplyError: undefined,
               };
           meta = result.meta;
           console.log(
@@ -673,7 +678,7 @@ function addFactoryImplementationStationCommand(
                 warnings: activeInput.warnings,
                 ...(options.apply
                   ? {
-                      linearApplied: !result.startApplyError && !result.terminalApplyError,
+                      linearApplied: !result.startApplyFailed && !result.terminalApplyFailed,
                       linearUpdate: result.linearUpdate,
                     }
                   : {}),
@@ -683,8 +688,8 @@ function addFactoryImplementationStationCommand(
             ),
           );
           if (meta.status === "implementation-failed") process.exitCode = 1;
-          if (result.startApplyError) throw result.startApplyError;
-          if (result.terminalApplyError) throw result.terminalApplyError;
+          if (result.startApplyFailed) throw result.startApplyError;
+          if (result.terminalApplyFailed) throw result.terminalApplyError;
         };
         if (options.dryRun) await run();
         else {
@@ -794,26 +799,23 @@ function appendFactoryImplementationStartAudit(input: {
   issueRef?: string;
   itemFile?: string;
 }): void {
+  const execution = lifecycleExecutionForRun(
+    input.ctx.workspace,
+    input.ctx.runDir,
+    input.ctx.factoryStore,
+  );
   appendWorkItemImportedEvent({
     workspace: input.ctx.workspace,
     workItem: input.ctx.workItem,
     factoryStateRoot: input.factoryStateRoot,
-    execution: lifecycleExecutionForRun(
-      input.ctx.workspace,
-      input.ctx.runDir,
-      input.ctx.factoryStore,
-    ),
+    execution,
   });
   appendImplementationStartedEvent({
     workspace: input.ctx.workspace,
     workItem: input.ctx.workItem,
     runId: input.ctx.runId,
     factoryStateRoot: input.factoryStateRoot,
-    execution: lifecycleExecutionForRun(
-      input.ctx.workspace,
-      input.ctx.runDir,
-      input.ctx.factoryStore,
-    ),
+    execution,
     ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
     ...(input.itemFile ? { itemFile: input.itemFile } : {}),
   });
@@ -863,6 +865,8 @@ async function runFactoryImplementationToLocalTerminal(input: {
 export type FactoryImplementationApplyRunResult = {
   meta: FactoryImplementationRunMeta;
   linearUpdate?: LinearImplementationUpdateSummary;
+  startApplyFailed: boolean;
+  terminalApplyFailed: boolean;
   startApplyError?: unknown;
   terminalApplyError?: unknown;
 };
@@ -904,7 +908,12 @@ export async function runFactoryImplementationWithLinearApply(input: {
         `Failed to export implementation start-apply failure: ${errorMessage(startApplyError)}; export failed: ${errorMessage(exportError)}`,
       );
     }
-    return { meta, startApplyError };
+    return {
+      meta,
+      startApplyFailed: true,
+      terminalApplyFailed: false,
+      startApplyError,
+    };
   }
   const meta = await runFactoryImplementationToLocalTerminal({
     ctx: input.ctx,
@@ -931,7 +940,12 @@ export async function runFactoryImplementationWithLinearApply(input: {
             runDir: meta.runDir,
             error: meta.error ?? "Factory implementation failed.",
           });
-    return { meta, linearUpdate: { started, terminal } };
+    return {
+      meta,
+      linearUpdate: { started, terminal },
+      startApplyFailed: false,
+      terminalApplyFailed: false,
+    };
   } catch (terminalApplyError) {
     return {
       meta,
@@ -941,6 +955,8 @@ export async function runFactoryImplementationWithLinearApply(input: {
           ? { terminal: terminalApplyError.update }
           : {}),
       },
+      startApplyFailed: false,
+      terminalApplyFailed: true,
       terminalApplyError,
     };
   }

@@ -136,7 +136,13 @@ function parseImplementationMetadata(value: unknown): FactoryWorkItemMetadata {
 export function factoryImplementationAttempt(
   implementationInput: FactoryImplementationInput,
 ): FactoryImplementationAttempt {
-  return implementationInput.metadata.factoryStage === "implementation-failed" ? "retry" : "first";
+  return implementationAttemptForMetadata(implementationInput.metadata);
+}
+
+function implementationAttemptForMetadata(
+  metadata: FactoryWorkItemMetadata,
+): FactoryImplementationAttempt {
+  return metadata.factoryStage === "implementation-failed" ? "retry" : "first";
 }
 
 function assertLinearProjection(
@@ -151,7 +157,7 @@ function assertLinearProjection(
         : "Linear implementation projection statuses are required for Linear implementation input.",
     );
   }
-  const attempt = metadata.factoryStage === "implementation-failed" ? "retry" : "first";
+  const attempt = implementationAttemptForMetadata(metadata);
   if (attempt === "retry" && projection.mode !== "apply") {
     throw new FactoryImplementationInputError("Linear implementation retries require --apply.");
   }

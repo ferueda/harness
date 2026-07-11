@@ -15,7 +15,7 @@ import type {
 } from "../lib/factory-linear-types.ts";
 import { LINEAR_SETTINGS } from "./factory-linear-test-helpers.ts";
 
-function issue(stateName: string, comments: LinearCommentLike[] = []): LinearIssueLike {
+function issue(stateName: string | undefined, comments: LinearCommentLike[] = []): LinearIssueLike {
   return {
     id: "issue-1",
     identifier: "ENG-123",
@@ -23,13 +23,13 @@ function issue(stateName: string, comments: LinearCommentLike[] = []): LinearIss
     title: "Implement Linear projection",
     url: "https://linear.app/acme/issue/ENG-123",
     projectId: "project-1",
-    state: { id: `state-${stateName}`, name: stateName },
+    state: stateName ? { id: `state-${stateName}`, name: stateName } : undefined,
     comments: async () => ({ nodes: comments }),
   };
 }
 
 function harness(
-  initialState: string,
+  initialState: string | undefined,
   options: {
     updateSuccess?: boolean;
     applyUpdate?: boolean;
@@ -38,7 +38,7 @@ function harness(
     commentError?: Error;
   } = {},
 ) {
-  let currentState = initialState;
+  let currentState: string | undefined = initialState;
   const comments: LinearCommentLike[] = [];
   const updateIssue = vi.fn(async (_id: string, input: { stateId: string }) => {
     if (options.updateError) throw options.updateError;
@@ -84,7 +84,7 @@ function harness(
     deps,
     updateIssue,
     createComment,
-    setState: (state: string) => (currentState = state),
+    setState: (state: string | undefined) => (currentState = state),
   };
 }
 
@@ -183,6 +183,20 @@ test("implementation start treats success false as a failed mutation", async () 
   ).rejects.toThrow(/implementation start mutation failed/);
 });
 
+test("implementation retry start treats success false as a failed mutation", async () => {
+  const state = harness("Implementation Failed", { updateSuccess: false });
+
+  await expect(
+    applyLinearImplementationStarted(state.deps, state.client, LINEAR_SETTINGS, {
+      issueRef: "ENG-123",
+      runId: "run-retry-failed-mutation",
+      runDir: ".harness/runs/factory/run-retry-failed-mutation",
+      attempt: "retry",
+    }),
+  ).rejects.toThrow(/implementation start mutation failed/);
+  expect(state.createComment).not.toHaveBeenCalled();
+});
+
 test("implementation start preserves thrown mutation failures", async () => {
   const state = harness("Ready to Implement", { updateError: new Error("network unavailable") });
 
@@ -266,6 +280,24 @@ test.each(["Ready to Implement", "Implementation Failed", "Planning"])(
         reviewCommitSha: "commit",
       }),
     ).rejects.toThrow(/completion requires Implementing/);
+    expect(state.updateIssue).not.toHaveBeenCalled();
+    expect(state.createComment).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["Ready to Implement", "Implementation Failed", "Planning", undefined])(
+  "implementation failure rejects terminal entry %s before mutation",
+  async (entry) => {
+    const state = harness(entry);
+
+    await expect(
+      applyLinearImplementationFailed(state.deps, state.client, LINEAR_SETTINGS, {
+        issueRef: "ENG-123",
+        runId: "run-invalid-failure",
+        runDir: ".harness/runs/factory/run-invalid-failure",
+        error: "provider failed",
+      }),
+    ).rejects.toThrow(/failure requires Implementing/);
     expect(state.updateIssue).not.toHaveBeenCalled();
     expect(state.createComment).not.toHaveBeenCalled();
   },

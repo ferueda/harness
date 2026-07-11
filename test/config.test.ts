@@ -384,6 +384,18 @@ test("implementation status migration does not hide unrelated config errors", ()
   );
 });
 
+test("implementation status migration does not mask a malformed implementation mapping", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  const { implementationFailed: _implementationFailed, ...statuses } = LINEAR_STATUSES;
+  writeHarnessJson(workspace, {
+    factory: { linear: { teamKey: "ENG", statuses: { ...statuses, implementing: "" } } },
+  });
+
+  expect(() => resolveFactoryLinearSettings({ workspace }, "/")).toThrow(
+    /factory\.linear\.statuses\.implementing: Too small/,
+  );
+});
+
 test("resolveFactoryRoleAgent defaults Codex planning planner to workspace-write", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeHarnessJson(workspace, {

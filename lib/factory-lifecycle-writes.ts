@@ -284,7 +284,7 @@ export function appendImplementationTerminalEvent(input: {
   allowWorkspaceLocalStateRoot?: boolean;
   error?: string;
 }): FactoryLifecycleEvent | undefined {
-  if (input.meta.status === "dry_run" || input.meta.preProviderFailure) return undefined;
+  if (input.meta.status === "dry_run") return undefined;
   const workItem = implementationMetaWorkItem(input.meta);
   const workItemKey = deriveFactoryWorkItemKey(workItem);
   const factoryStateRoot = requireFactoryStateRoot({
@@ -349,7 +349,7 @@ export function appendImplementationTerminalEvent(input: {
         ),
         changeReviewHandoffPath: formatMetaArtifactPath(
           input.meta,
-          required(input.meta.artifacts.changeReviewHandoff, "change-review handoff artifact"),
+          input.meta.artifacts.changeReviewHandoff,
         ),
         reviewBase: required(input.meta.reviewBase, "reviewBase"),
         reviewHead: required(input.meta.reviewHead, "reviewHead"),

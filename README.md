@@ -97,6 +97,7 @@ harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/run
 harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
 harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
 harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
 ```
