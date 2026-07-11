@@ -30,6 +30,7 @@ harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<rep
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
+harness factory implementation review --workspace /path/to/repo --linear-issue TEAM-123
 ```
 
 There is no batch dispatch command. Run an explicit station for an explicit
@@ -665,8 +666,27 @@ ${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<
 ```
 
 `implementation/change-review-handoff.md` uses the same handoff section model as
-`change-review-workflow`. After `implementation-complete`, run
-`harness run change-review --base <reviewBase> --head <reviewHead>` separately.
+`change-review-workflow`. After `implementation-complete`, run the Factory-owned
+review by the same work-item identity:
+
+```bash
+harness factory implementation review --workspace /path/to/repo --item-file work-item.json
+harness factory implementation review --workspace /path/to/repo --linear-issue ENG-123
+```
+
+Review validates the completed implementation run, handoff, store provenance,
+and Git refs, then calls the existing three-role `change-review` workflow with
+the recorded `reviewBase` and immutable `reviewCommitSha`. Review artifacts live
+under the same durable project's `runs/reviews/<review-run-id>/`. A passing run
+projects `review-complete`; needs-changes, blocked, or failed review projects
+`ready-for-human` and exits non-zero. The command does not mutate Linear, apply
+findings, create new Git objects, or accept `--runs-dir`.
+
+Review lifecycle contains one terminal `implementation.review.completed` event
+pointing to the nested review run. Concurrent review invocations are not
+coordinated and may create duplicate immutable review runs; the latest valid
+lifecycle event is authoritative. If lifecycle append fails after review, the
+error reports the preserved review paths; rerun the command normally.
 
 Lifecycle: `implementation.started` is audit-only;
 `implementation.completed` / `implementation.failed` move durable stage while
@@ -693,10 +713,11 @@ Failure recovery:
   missing status/comment projection from that evidence. This initial slice
   intentionally has no comment-only replay command.
 
-Non-goals: nested change-review execution; PR creation; Linear mutation without
-`--apply`; terminal-projection replay; human branch/worktree orchestration; and
-Git checkout or commit verification of `approvedPlanCommit`. The implementer
-agent must not mutate refs; the harness command owns the internal review ref.
+Non-goals: review remediation or recovery loops; PR creation; Linear mutation
+without `--apply`; terminal-projection replay; human branch/worktree
+orchestration; and Git checkout or commit verification of
+`approvedPlanCommit`. The implementer agent must not mutate refs; the harness
+command owns the internal review ref.
 
 ## Local Inbox
 

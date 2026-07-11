@@ -1,6 +1,6 @@
 ---
 name: factory-operator
-description: Operate the current harness factory flow for one local work item through status, triage, planning, or implementation stations.
+description: Operate the current harness factory flow for one local work item through status, triage, planning, implementation, or implementation review.
 ---
 
 # Factory Operator
@@ -12,7 +12,8 @@ Operate the current local harness factory one work item at a time.
 Use this skill when the user wants to inspect factory inbox state, triage a
 factory work item, fetch or create a Linear intake issue, run the planning
 station for a `ready-to-plan` item, run implementation for a
-`ready-to-implement` item, or understand factory artifacts and statuses.
+`ready-to-implement` item, review an `implementation-complete` item, or
+understand factory artifacts and statuses.
 
 ## Waiting For Station Runs
 
@@ -25,7 +26,13 @@ After run context creation, those station commands emit exactly one always-on
 stderr JSON progress line so operators can learn `runDir` before exit:
 
 ```json
-{"harnessFactory":"run-started","station":"triage","runId":"...","runDir":"...","workspace":"..."}
+{
+  "harnessFactory": "run-started",
+  "station": "triage",
+  "runId": "...",
+  "runDir": "...",
+  "workspace": "..."
+}
 ```
 
 `station` is `triage`, `planning`, or `implementation`. This line is CLI
@@ -33,6 +40,10 @@ progress only — not a `WorkflowEvent`, not written to `events.jsonl`, and not
 lifecycle/Linear source of truth. Final stdout JSON contracts stay unchanged.
 Low-level `harness run factory-triage` / `harness run plan-review` escape
 hatches do not emit this progress line.
+
+`harness factory implementation review` does not emit the station
+`run-started` line. With `--verbose`, it emits the reused change-review workflow
+events; its final stdout JSON and durable review artifacts remain authoritative.
 
 Optional: background the command only when needed, parse that one progress
 line, then wait once for completion. After exit, trust stdout JSON and read
@@ -76,6 +87,8 @@ harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<rep
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
+harness factory implementation review --workspace /path/to/repo --item-file work-item.json
+harness factory implementation review --workspace /path/to/repo --linear-issue TEAM-123
 ```
 
 Low-level workflow escape hatches:
@@ -304,11 +317,11 @@ harness factory implementation run --workspace /path/to/repo --linear-issue TEAM
 
 Entry matrix:
 
-| Input | Flags | Entry status | Linear mutation |
-| --- | --- | --- | --- |
-| item file | live or `--dry-run` | direct/planned readiness | no |
-| Linear issue | live or `--dry-run` | `Ready to Implement` | no |
-| Linear issue | live `--apply` | `Ready to Implement`, or `Implementation Failed` retry | yes |
+| Input        | Flags               | Entry status                                           | Linear mutation |
+| ------------ | ------------------- | ------------------------------------------------------ | --------------- |
+| item file    | live or `--dry-run` | direct/planned readiness                               | no              |
+| Linear issue | live or `--dry-run` | `Ready to Implement`                                   | no              |
+| Linear issue | live `--apply`      | `Ready to Implement`, or `Implementation Failed` retry | yes             |
 
 `--apply` requires `--linear-issue` and rejects `--item-file` and `--dry-run`.
 Retries are Linear apply-only so the station can validate a fresh failed
@@ -318,9 +331,19 @@ Live mode resolves direct or planned implementation input, validates readiness,
 resolves `factory.implementation.roles.implementer`, invokes one implementer,
 writes candidate change artifacts, creates
 `refs/harness/factory/<run-id>/implementation`, and appends lifecycle events.
-It does not run change-review, and without `--apply` does not mutate Linear, create human branches/worktrees,
-or open PRs. After `implementation-complete`, run
-`harness run change-review --base <reviewBase> --head <reviewHead>` separately.
+The implementation pass does not run change-review, and without `--apply` does
+not mutate Linear, create human branches/worktrees, or open PRs. After
+`implementation-complete`, run `harness factory implementation review` with the
+same item-file or Linear identity. It validates the completed run and invokes
+the existing implementation, quality, and simplify reviewers against the
+recorded commit SHA.
+
+A pass projects `review-complete`. Needs-changes, blocked, or failed review
+projects `ready-for-human` and exits non-zero. Review artifacts live under the
+durable store's `runs/reviews/`; review does not mutate Linear or remediate
+findings. Concurrent review commands may create duplicate immutable runs; use
+the latest valid lifecycle event. If the terminal lifecycle append fails, use
+the reported preserved review paths and rerun normally.
 Optional `--dry-run` prepares prompt and handoff artifacts without invoking a
 provider or writing lifecycle state.
 

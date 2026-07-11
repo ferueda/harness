@@ -173,6 +173,10 @@ lease and its inspectable filename policy.
 `lib/factory-implementation-run-context.ts` owns the implementation station run
 directory, context artifacts, prompt and change-review handoff artifacts,
 provider raw/status/diff outputs, summary, and metadata.
+`lib/factory-implementation-review.ts` validates completed implementation
+evidence and invokes the existing change-review workflow against its recorded
+commit SHA. Nested review artifacts use the durable Factory review-runs root;
+the Factory lifecycle stores only the terminal review-run pointer and outcome.
 `lib/factory-workspace-changes.ts` owns porcelain status parsing, patch
 material capture (including untracked no-index diffs and truncation caps), and
 changed-file lists for live implementation.
@@ -275,9 +279,10 @@ limit.
 
 `workflows/factory-implementation.workflow.ts` runs dry-run or one live
 implementer pass. Live mode records workspace changes, materializes
-`refs/harness/factory/<run-id>/implementation`, and exports handoff artifacts
-for a separate operator-run `change-review`. Nested review loops remain out of
-scope.
+`refs/harness/factory/<run-id>/implementation`, and exports handoff artifacts.
+`harness factory implementation review` validates that completed evidence and
+calls `workflows/change-review.workflow.ts` once. Remediation and nested review
+loops remain out of scope.
 
 `workflows/plan-review.workflow.ts` runs one fixed spec-review step. The
 plan-review command/runtime omits git diff scope and relies on `context/plan.md`
