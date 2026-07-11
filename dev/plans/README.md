@@ -8,7 +8,7 @@
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
 | [260711-factory-plan-simplicity.md](./260711-factory-plan-simplicity.md) | `in_progress` | Minimum-sufficient Factory plans and scope-first review |
 | [FER-61.md](./FER-61.md)                                               | `approved`    | Workspace-local planning scratch; Harness durable evidence |
-| [FER-62.md](./FER-62.md)                                               | `blocked`     | Durable implementation review and remediation; waits for FER-61 implementation |
+| [FER-62.md](./FER-62.md)                                               | `approved`    | Durable implementation review and remediation; dependencies merged, ready to implement |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
