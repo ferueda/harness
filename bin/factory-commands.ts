@@ -39,6 +39,10 @@ import {
   type FactoryImplementationRunContext,
   type FactoryImplementationRunMeta,
 } from "../lib/factory-implementation-run-context.ts";
+import type {
+  FactoryImplementationReviewRunContext,
+  FactoryImplementationReviewRunMeta,
+} from "../lib/factory-implementation-review-run-context.ts";
 import { factoryStatus } from "../lib/factory-status.ts";
 import {
   appendImplementationStartedEvent,
@@ -108,6 +112,7 @@ import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
 import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
+import { addFactoryImplementationReviewCommand } from "./factory-implementation-review-command.ts";
 import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
 
 type FactoryStatusOptions = {
@@ -209,16 +214,21 @@ export type FactoryCommandOptions = {
   implementationRunner?: (
     ctx: FactoryImplementationRunContext,
   ) => Promise<FactoryImplementationRunMeta>;
+  implementationReviewRunner?: (
+    ctx: FactoryImplementationReviewRunContext,
+  ) => Promise<FactoryImplementationReviewRunMeta>;
   implementationExecutionLease?: typeof withFactoryImplementationExecutionLease;
 };
 
 function factoryStoreForRun(
   resolution: FactoryStoreResolution,
   runsDir: string | undefined,
+  persistRunsDir = false,
 ): FactoryStoreMeta {
   const meta = factoryStoreMetadata(resolution);
   return {
     ...meta,
+    ...(persistRunsDir && runsDir ? { factoryRunsDir: resolve(runsDir) } : {}),
     overrides: {
       ...meta.overrides,
       ...(runsDir ? { runsDir: resolve(runsDir) } : {}),
@@ -587,7 +597,7 @@ function addFactoryImplementationStationCommand(
         factoryStoreProjectId: options.factoryStoreProjectId,
         env: process.env,
       });
-      const factoryStore = factoryStoreForRun(store, options.runsDir);
+      const factoryStore = factoryStoreForRun(store, options.runsDir, true);
       const implementationAdapter = options.apply
         ? (config.implementationLinearAdapterFactory ?? createLinearFactoryAdapter)({
             apiKey:
@@ -754,6 +764,13 @@ function addFactoryImplementationStationCommand(
         process.off("SIGTERM", onRunAbort);
       }
     });
+  addFactoryImplementationReviewCommand(implementation, {
+    defaultMaxRuntimeMs: config.defaultMaxRuntimeMs,
+    positiveNumber: config.positiveNumber,
+    writeVerboseWorkflowEvent: config.writeVerboseWorkflowEvent,
+    implementationAgentProviderFactory: config.implementationAgentProviderFactory,
+    implementationReviewRunner: config.implementationReviewRunner,
+  });
 }
 
 function implementationLinearProjection(settings: FactoryLinearSettings, apply: boolean) {

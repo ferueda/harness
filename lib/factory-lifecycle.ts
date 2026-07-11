@@ -13,12 +13,22 @@ import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import { AGENT_PROVIDERS } from "./agents.ts";
 import {
+  AgentSessionRefSchema,
+  ArtifactPointerSchema,
+  CandidateTupleSchema,
+  EffectiveReviewLimitSchema,
+  ImplementationReviewCheckpointSchema,
+  PartialRecoverySchema,
+  RunRootProvenanceSchema,
+  WorkspaceProvenanceSchema,
+  type ImplementationReviewCheckpoint,
+} from "./factory-implementation-review-schemas.ts";
+import {
   FactoryNextActionSchema,
   FactoryRouteSchema,
   FactoryStageSchema,
   FactoryTrackerRefSchema,
   FactoryWorkItemMetadataSchema,
-  type FactoryNextAction,
   type FactoryRoute,
   type FactoryStage,
   type FactoryTrackerRef,
@@ -183,6 +193,7 @@ const PlanningFailedEventSchema = BaseEventSchema.extend({
 
 const ImplementationStartedEventSchema = BaseEventSchema.extend({
   type: z.literal("implementation.started"),
+  runId: z.string().min(1),
   data: z
     .object({
       linearIssue: z.string().min(1).optional(),
@@ -211,6 +222,9 @@ const ImplementationCompletedEventSchema = BaseEventSchema.extend({
         })
         .strict()
         .optional(),
+      candidateTree: z.string().min(1).optional(),
+      workspace: WorkspaceProvenanceSchema.optional(),
+      runRoots: RunRootProvenanceSchema.optional(),
     })
     .strict(),
 });
@@ -253,6 +267,125 @@ const PlanPrMergedEventSchema = BaseEventSchema.extend({
     .strict(),
 });
 
+const ReviewReasonSchema = z.enum([
+  "blocked",
+  "missing-session",
+  "incompatible-session",
+  "legacy-incomplete",
+  "declined-must-fix",
+  "max-iterations",
+  "stale-owner",
+]);
+const ReviewFailureClassificationSchema = z.enum([
+  "reviewer",
+  "provider",
+  "git",
+  "artifact",
+  "protocol",
+  "workspace",
+]);
+
+const ImplementationReviewStartedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.review.started"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      owningImplementationRunId: z.string().min(1),
+      activeReviewAttemptId: z.string().min(1),
+      attemptIndex: z.number().int().positive(),
+      priorReviewAttemptId: z.string().min(1).optional(),
+      resume: z.boolean(),
+      expectedCheckpointId: z.string().min(1).nullable(),
+      originalReviewBase: z.string().min(1),
+      approvedCandidate: CandidateTupleSchema,
+      implementerSession: AgentSessionRefSchema,
+      workspace: WorkspaceProvenanceSchema,
+      runRoots: RunRootProvenanceSchema,
+      effectiveReviewLimit: EffectiveReviewLimitSchema,
+      candidateVersion: z.number().int().nonnegative(),
+      completedReviewCount: z.number().int().nonnegative(),
+    })
+    .strict(),
+});
+
+const ImplementationReviewCheckpointedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.review.checkpointed"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      checkpointId: z.string().min(1),
+      owningImplementationRunId: z.string().min(1),
+      activeReviewAttemptId: z.string().min(1),
+      phase: z.enum(["review", "remediation"]),
+      completedReviewCount: z.number().int().nonnegative(),
+      candidateVersion: z.number().int().nonnegative(),
+      originalReviewBase: z.string().min(1),
+      approvedCandidate: CandidateTupleSchema,
+      implementerSession: AgentSessionRefSchema,
+      workspace: WorkspaceProvenanceSchema,
+      runRoots: RunRootProvenanceSchema,
+      activeReviewIndex: z.number().int().positive().optional(),
+      priorReviewAttemptId: z.string().min(1).optional(),
+      review: ArtifactPointerSchema.optional(),
+      decision: ArtifactPointerSchema.optional(),
+      candidate: ArtifactPointerSchema.optional(),
+      workspaceStatus: ArtifactPointerSchema.optional(),
+      partialRecovery: PartialRecoverySchema.optional(),
+      effectiveReviewLimit: EffectiveReviewLimitSchema,
+      latestOutcome: z.string().min(1).optional(),
+      latestErrorClass: z.string().min(1).optional(),
+    })
+    .strict(),
+});
+
+const ImplementationReviewCompletedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.review.completed"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      owningImplementationRunId: z.string().min(1),
+      activeReviewAttemptId: z.string().min(1),
+      latestCheckpointId: z.string().min(1),
+      finalCandidate: CandidateTupleSchema,
+      handoff: ArtifactPointerSchema,
+      acceptedDebt: ArtifactPointerSchema.optional(),
+      acceptedDebtCount: z.number().int().nonnegative(),
+    })
+    .strict(),
+});
+
+const ImplementationReviewUnresolvedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.review.unresolved"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      owningImplementationRunId: z.string().min(1),
+      activeReviewAttemptId: z.string().min(1),
+      latestCheckpointId: z.string().min(1),
+      reason: ReviewReasonSchema,
+      summary: ArtifactPointerSchema,
+    })
+    .strict(),
+});
+
+const ImplementationReviewFailedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.review.failed"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      owningImplementationRunId: z.string().min(1),
+      activeReviewAttemptId: z.string().min(1),
+      latestCheckpointId: z.string().min(1),
+      classification: ReviewFailureClassificationSchema,
+      retryable: z.boolean(),
+      error: z.string().min(1),
+      summary: ArtifactPointerSchema,
+      recovery: ArtifactPointerSchema.optional(),
+      partialRecovery: PartialRecoverySchema.optional(),
+    })
+    .strict(),
+});
+
 export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   WorkItemImportedEventSchema,
   TriageStartedEventSchema,
@@ -264,6 +397,11 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   ImplementationStartedEventSchema,
   ImplementationCompletedEventSchema,
   ImplementationFailedEventSchema,
+  ImplementationReviewStartedEventSchema,
+  ImplementationReviewCheckpointedEventSchema,
+  ImplementationReviewCompletedEventSchema,
+  ImplementationReviewUnresolvedEventSchema,
+  ImplementationReviewFailedEventSchema,
   PlanPrOpenedEventSchema,
   PlanPrMergedEventSchema,
 ]);
@@ -282,6 +420,16 @@ export const FactoryLifecycleStateSchema = z
     approvedPlanPath: z.string().min(1).optional(),
     approvedPlanPrUrl: z.url().optional(),
     approvedPlanCommit: z.string().min(1).optional(),
+    implementationReviewCheckpoint: ImplementationReviewCheckpointSchema.optional(),
+    legacyReviewBlock: z
+      .object({
+        owningImplementationRunId: z.string().min(1),
+        missing: z
+          .array(z.enum(["session", "candidate-tree", "workspace-provenance", "store-provenance"]))
+          .min(1),
+      })
+      .strict()
+      .optional(),
     lastEventId: z.string().min(1).optional(),
     updatedAt: z.iso.datetime().optional(),
   })
@@ -289,6 +437,7 @@ export const FactoryLifecycleStateSchema = z
 
 export type FactoryLifecycleEvent = z.infer<typeof FactoryLifecycleEventSchema>;
 export type FactoryLifecycleState = z.infer<typeof FactoryLifecycleStateSchema>;
+export type FactoryImplementationReviewCheckpoint = ImplementationReviewCheckpoint;
 export type FactoryLifecycleExecution = z.infer<typeof ExecutionSchema>;
 export type FactoryLifecycleWarning = {
   code: "durable-state-missing" | "durable-state-stale" | "lifecycle-lock-held";
@@ -314,6 +463,15 @@ export type AppendFactoryLifecycleEventInput = {
   factoryStateRoot: string;
   event: FactoryLifecycleEvent;
   lockOptions?: FactoryLockRuntimeOptions;
+  precondition?: FactoryLifecyclePrecondition;
+};
+
+export type FactoryLifecyclePrecondition = {
+  allowedStages?: readonly (FactoryStage | undefined)[];
+  expectedFactoryRunId?: string;
+  expectedImplementationRunId?: string;
+  expectedActiveReviewAttemptId?: string | null;
+  expectedLastCheckpointId?: string | null;
 };
 
 export function deriveFactoryWorkItemKey(workItem: FactoryWorkItem): string {
@@ -386,6 +544,9 @@ export function appendFactoryLifecycleEvent(
       const existing = existingEvents.find((candidate) => candidate.id === event.id);
       if (existing) return existing;
 
+      const current = reduceFactoryLifecycleEvents(existingEvents);
+      assertFactoryLifecyclePrecondition(current, input.precondition);
+
       appendFactoryLifecycleEventLine(
         factoryLifecycleEventPath(factoryStateRoot, event.workItemKey),
         event,
@@ -397,6 +558,55 @@ export function appendFactoryLifecycleEvent(
       return event;
     },
   );
+}
+
+function assertFactoryLifecyclePrecondition(
+  state: FactoryLifecycleState | undefined,
+  precondition: FactoryLifecyclePrecondition | undefined,
+): void {
+  if (!precondition) return;
+  const actualStage = state?.factoryStage;
+  if (precondition.allowedStages && !precondition.allowedStages.includes(actualStage)) {
+    throw new FactoryLifecycleError(
+      `Lifecycle precondition failed: expected stage ${precondition.allowedStages
+        .map((stage) => stage ?? "uninitialized")
+        .join(", ")}, actual ${actualStage ?? "uninitialized"}`,
+    );
+  }
+  if (
+    precondition.expectedFactoryRunId !== undefined &&
+    state !== undefined &&
+    state?.factoryRunId !== precondition.expectedFactoryRunId
+  ) {
+    throw new FactoryLifecycleError(
+      `Lifecycle precondition failed: expected factoryRunId ${precondition.expectedFactoryRunId}, actual ${state?.factoryRunId ?? "absent"}`,
+    );
+  }
+  if (
+    precondition.expectedImplementationRunId !== undefined &&
+    state?.implementationReviewCheckpoint?.owningImplementationRunId !==
+      precondition.expectedImplementationRunId
+  ) {
+    throw new FactoryLifecycleError(
+      `Lifecycle precondition failed: expected implementation owner ${precondition.expectedImplementationRunId}, actual ${state?.implementationReviewCheckpoint?.owningImplementationRunId ?? "absent"}`,
+    );
+  }
+  if (precondition.expectedActiveReviewAttemptId !== undefined) {
+    const actual = state?.implementationReviewCheckpoint?.activeReviewAttemptId ?? null;
+    if (actual !== precondition.expectedActiveReviewAttemptId) {
+      throw new FactoryLifecycleError(
+        `Lifecycle precondition failed: expected active review attempt ${precondition.expectedActiveReviewAttemptId ?? "absent"}, actual ${actual ?? "absent"}`,
+      );
+    }
+  }
+  if (precondition.expectedLastCheckpointId !== undefined) {
+    const actual = state?.implementationReviewCheckpoint?.latestCheckpointId ?? null;
+    if (actual !== precondition.expectedLastCheckpointId) {
+      throw new FactoryLifecycleError(
+        `Lifecycle precondition failed: expected checkpoint ${precondition.expectedLastCheckpointId ?? "absent"}, actual ${actual ?? "absent"}`,
+      );
+    }
+  }
 }
 
 export function inspectFactoryLifecycleLock(input: {
@@ -635,8 +845,13 @@ function reduceFactoryLifecycleEvent(
       };
     case "triage.started":
     case "planning.started":
-    case "implementation.started":
       return base;
+    case "implementation.started":
+      return {
+        ...base,
+        factoryStage: "implementation-started",
+        factoryRunId: event.runId,
+      };
     case "triage.completed":
       return withoutAllPublicationFields({
         ...base,
@@ -659,17 +874,30 @@ function reduceFactoryLifecycleEvent(
         factoryRunId: event.runId,
       });
     case "implementation.completed":
-      return {
-        ...base,
-        factoryStage: "implementation-complete",
-        factoryRunId: event.runId,
-      };
+      return implementationCompletedState(
+        {
+          ...base,
+          factoryStage: "implementation-complete",
+          factoryRunId: event.runId,
+        },
+        event,
+      );
     case "implementation.failed":
       return {
         ...base,
         factoryStage: "implementation-failed",
         factoryRunId: event.runId,
       };
+    case "implementation.review.started":
+      return reviewStartedState(base, event);
+    case "implementation.review.checkpointed":
+      return reviewCheckpointedState(base, event);
+    case "implementation.review.completed":
+      return reviewCompletedState(base, event);
+    case "implementation.review.unresolved":
+      return reviewUnresolvedState(base, event);
+    case "implementation.review.failed":
+      return reviewFailedState(base, event);
     case "plan_pr.opened":
       return withoutApprovedPlanCommit({
         ...base,
@@ -707,6 +935,214 @@ function stateAfterPlanningCompleted(
     factoryStage: event.data.status,
     factoryRunId: event.runId,
   });
+}
+
+function implementationCompletedState(
+  state: FactoryLifecycleState,
+  event: Extract<FactoryLifecycleEvent, { type: "implementation.completed" }>,
+): FactoryLifecycleState {
+  const missing: Array<"session" | "candidate-tree" | "workspace-provenance" | "store-provenance"> =
+    [];
+  if (!event.data.session) missing.push("session");
+  if (!event.data.candidateTree) missing.push("candidate-tree");
+  if (!event.data.workspace) missing.push("workspace-provenance");
+  if (!event.data.runRoots) missing.push("store-provenance");
+  if (missing.length > 0) {
+    return {
+      ...state,
+      legacyReviewBlock: {
+        owningImplementationRunId: event.runId,
+        missing,
+      },
+    };
+  }
+
+  const session = event.data.session;
+  const workspace = event.data.workspace;
+  const runRoots = event.data.runRoots;
+  if (!session || !workspace || !runRoots || !event.data.candidateTree) return state;
+  const checkpoint: ImplementationReviewCheckpoint = {
+    version: 1,
+    checkpointId: event.id,
+    owningImplementationRunId: event.runId,
+    originalReviewBase: event.data.reviewBase,
+    approvedCandidate: {
+      ref: event.data.reviewHead,
+      commit: event.data.reviewCommitSha,
+      tree: event.data.candidateTree,
+    },
+    implementerSession: session,
+    workspace,
+    runRoots,
+    latestCheckpointId: event.id,
+    candidateVersion: 0,
+    completedReviewCount: 0,
+    effectiveReviewLimit: { value: 3, source: "default" },
+  };
+  return {
+    ...state,
+    implementationReviewCheckpoint: checkpoint,
+    legacyReviewBlock: undefined,
+  };
+}
+
+function reviewStartedState(
+  state: FactoryLifecycleState,
+  event: Extract<FactoryLifecycleEvent, { type: "implementation.review.started" }>,
+): FactoryLifecycleState {
+  const data = event.data;
+  const previous = state.implementationReviewCheckpoint;
+  const checkpoint: ImplementationReviewCheckpoint = {
+    version: 1,
+    checkpointId: event.id,
+    owningImplementationRunId: data.owningImplementationRunId,
+    originalReviewBase: data.originalReviewBase,
+    approvedCandidate: data.approvedCandidate,
+    implementerSession: data.implementerSession,
+    workspace: data.workspace,
+    runRoots: data.runRoots,
+    latestCheckpointId: event.id,
+    candidateVersion: data.candidateVersion,
+    completedReviewCount: data.completedReviewCount,
+    effectiveReviewLimit: data.effectiveReviewLimit,
+    activeReviewAttemptId: data.activeReviewAttemptId,
+    ...(data.priorReviewAttemptId ? { priorReviewAttemptId: data.priorReviewAttemptId } : {}),
+    ...(data.attemptIndex > 0 ? { activeReviewIndex: data.attemptIndex } : {}),
+    ...(previous?.partialRecovery ? { partialRecovery: previous.partialRecovery } : {}),
+    ...(previous?.latestReview ? { latestReview: previous.latestReview } : {}),
+    ...(previous?.latestDecision ? { latestDecision: previous.latestDecision } : {}),
+  };
+  return {
+    ...state,
+    factoryStage: "review-running",
+    factoryRunId: state.factoryRunId ?? data.owningImplementationRunId,
+    implementationReviewCheckpoint: checkpoint,
+    legacyReviewBlock: undefined,
+  };
+}
+
+function reviewCheckpointedState(
+  state: FactoryLifecycleState,
+  event: Extract<FactoryLifecycleEvent, { type: "implementation.review.checkpointed" }>,
+): FactoryLifecycleState {
+  const data = event.data;
+  const previous = state.implementationReviewCheckpoint;
+  const checkpoint: ImplementationReviewCheckpoint = {
+    version: 1,
+    checkpointId: data.checkpointId,
+    owningImplementationRunId: data.owningImplementationRunId,
+    originalReviewBase: data.originalReviewBase,
+    approvedCandidate: data.approvedCandidate,
+    implementerSession: data.implementerSession,
+    workspace: data.workspace,
+    runRoots: data.runRoots,
+    latestCheckpointId: data.checkpointId,
+    candidateVersion: data.candidateVersion,
+    completedReviewCount: data.completedReviewCount,
+    effectiveReviewLimit: data.effectiveReviewLimit,
+    ...(data.activeReviewIndex !== undefined ? { activeReviewIndex: data.activeReviewIndex } : {}),
+    ...(data.activeReviewAttemptId ? { activeReviewAttemptId: data.activeReviewAttemptId } : {}),
+    ...(data.priorReviewAttemptId ? { priorReviewAttemptId: data.priorReviewAttemptId } : {}),
+    ...(data.review
+      ? { latestReview: data.review }
+      : previous?.latestReview
+        ? { latestReview: previous.latestReview }
+        : {}),
+    ...(data.decision
+      ? { latestDecision: data.decision }
+      : previous?.latestDecision
+        ? { latestDecision: previous.latestDecision }
+        : {}),
+    ...(data.partialRecovery ? { partialRecovery: data.partialRecovery } : {}),
+    ...(data.latestOutcome ? { latestOutcome: data.latestOutcome } : {}),
+    ...(data.latestErrorClass ? { latestErrorClass: data.latestErrorClass } : {}),
+  };
+  // A checkpoint must never silently move to another implementation owner.
+  if (previous && previous.owningImplementationRunId !== checkpoint.owningImplementationRunId) {
+    throw new FactoryLifecycleError(
+      `Review checkpoint owner changed from ${previous.owningImplementationRunId} to ${checkpoint.owningImplementationRunId}`,
+    );
+  }
+  return {
+    ...state,
+    factoryStage: "review-running",
+    factoryRunId: state.factoryRunId ?? data.owningImplementationRunId,
+    implementationReviewCheckpoint: checkpoint,
+  };
+}
+
+function reviewCompletedState(
+  state: FactoryLifecycleState,
+  event: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>,
+): FactoryLifecycleState {
+  const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
+  return {
+    ...state,
+    factoryStage: "review-complete",
+    factoryRunId: checkpoint.owningImplementationRunId,
+    implementationReviewCheckpoint: {
+      ...checkpoint,
+      checkpointId: event.data.latestCheckpointId,
+      latestCheckpointId: event.data.latestCheckpointId,
+      approvedCandidate: event.data.finalCandidate,
+      latestOutcome: "review-complete",
+      activeReviewAttemptId: undefined,
+    },
+  };
+}
+
+function reviewUnresolvedState(
+  state: FactoryLifecycleState,
+  event: Extract<FactoryLifecycleEvent, { type: "implementation.review.unresolved" }>,
+): FactoryLifecycleState {
+  const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
+  return {
+    ...state,
+    factoryStage: "ready-for-human",
+    factoryRunId: checkpoint.owningImplementationRunId,
+    implementationReviewCheckpoint: {
+      ...checkpoint,
+      checkpointId: event.data.latestCheckpointId,
+      latestCheckpointId: event.data.latestCheckpointId,
+      latestOutcome: event.data.reason,
+      activeReviewAttemptId: undefined,
+    },
+  };
+}
+
+function reviewFailedState(
+  state: FactoryLifecycleState,
+  event: Extract<FactoryLifecycleEvent, { type: "implementation.review.failed" }>,
+): FactoryLifecycleState {
+  const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
+  return {
+    ...state,
+    factoryStage: "review-failed",
+    factoryRunId: checkpoint.owningImplementationRunId,
+    implementationReviewCheckpoint: {
+      ...checkpoint,
+      checkpointId: event.data.latestCheckpointId,
+      latestCheckpointId: event.data.latestCheckpointId,
+      ...(event.data.partialRecovery ? { partialRecovery: event.data.partialRecovery } : {}),
+      latestOutcome: "review-failed",
+      latestErrorClass: event.data.classification,
+      activeReviewAttemptId: undefined,
+      priorReviewAttemptId: event.data.activeReviewAttemptId,
+    },
+  };
+}
+
+function requireReviewCheckpoint(
+  state: FactoryLifecycleState,
+  owner: string,
+): ImplementationReviewCheckpoint {
+  const checkpoint = state.implementationReviewCheckpoint;
+  if (!checkpoint || checkpoint.owningImplementationRunId !== owner) {
+    throw new FactoryLifecycleError(
+      `Review event references implementation owner ${owner} without a matching checkpoint`,
+    );
+  }
+  return checkpoint;
 }
 
 function markEvent(

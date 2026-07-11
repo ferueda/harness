@@ -12,6 +12,7 @@ import {
 import type { FactoryPlanningRunMeta } from "./factory-planning-run-context.ts";
 import { FactoryWorkItemMetadataSchema, type FactoryWorkItem } from "./factory-schemas.ts";
 import { factoryLifecycleExecutionProvenance } from "./factory-store.ts";
+import { canonicalizeFactoryWorkspace } from "./factory-locks.ts";
 
 export type FactoryLifecycleWriteOptions = {
   factoryStateRoot?: string;
@@ -259,6 +260,8 @@ export function appendImplementationStartedEvent(
   } & FactoryLifecycleWriteOptions,
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
+  const metadata = FactoryWorkItemMetadataSchema.safeParse(input.workItem.metadata ?? {});
+  const retry = metadata.success && metadata.data.factoryStage === "implementation-failed";
   return appendFactoryLifecycleEvent({
     factoryStateRoot: requireFactoryStateRoot(input),
     event: {
@@ -274,6 +277,12 @@ export function appendImplementationStartedEvent(
         ...(input.linearIssue ? { linearIssue: input.linearIssue } : {}),
         ...(input.itemFile ? { itemFile: input.itemFile } : {}),
       },
+    },
+    precondition: {
+      allowedStages: [undefined, "ready-to-implement", "implementation-failed"],
+      ...(retry && metadata.data.factoryRunId
+        ? { expectedFactoryRunId: metadata.data.factoryRunId }
+        : {}),
     },
   });
 }
@@ -329,6 +338,10 @@ export function appendImplementationTerminalEvent(input: {
           ...(input.meta.reviewBase ? { reviewBase: input.meta.reviewBase } : {}),
         },
       },
+      precondition: {
+        allowedStages: [undefined, "implementation-started"],
+        expectedFactoryRunId: input.meta.runId,
+      },
     });
   }
   return appendFactoryLifecycleEvent({
@@ -380,7 +393,24 @@ export function appendImplementationTerminalEvent(input: {
               },
             }
           : {}),
+        ...(input.meta.reviewTree && input.meta.factoryStore
+          ? {
+              candidateTree: input.meta.reviewTree,
+              workspace: {
+                ...canonicalizeFactoryWorkspace(input.meta.workspace),
+                factoryProjectId: input.meta.factoryStore.projectId,
+              },
+              runRoots: {
+                factoryRunsDir: input.meta.factoryStore.factoryRunsDir,
+                reviewRunsDir: input.meta.factoryStore.reviewRunsDir,
+              },
+            }
+          : {}),
       },
+    },
+    precondition: {
+      allowedStages: [undefined, "implementation-started"],
+      expectedFactoryRunId: input.meta.runId,
     },
   });
 }

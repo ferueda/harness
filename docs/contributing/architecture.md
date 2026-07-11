@@ -177,9 +177,9 @@ provider raw/status/diff outputs, summary, and metadata.
 material capture (including untracked no-index diffs and truncation caps), and
 changed-file lists for live implementation.
 `lib/factory-review-head.ts` owns harness-owned review-ref materialization via
-a temporary index and `commit-tree`, writing
-`refs/harness/factory/<run-id>/implementation` without moving `HEAD` or using
-the real index.
+a temporary index and `commit-tree`, writing the initial
+`refs/harness/factory/<run-id>/implementation` plus immutable remediation and
+partial-evidence refs without moving `HEAD` or using the real index.
 `lib/factory-linear-implementation-apply.ts` owns exact Linear implementation
 entry/postcondition checks, status projection, and terminal marker comments;
 `lib/factory-linear-adapter.ts` exposes that behavior to station commands.
@@ -274,10 +274,12 @@ plan is approved, needs human input, fails, or reaches the review-iteration
 limit.
 
 `workflows/factory-implementation.workflow.ts` runs dry-run or one live
-implementer pass. Live mode records workspace changes, materializes
-`refs/harness/factory/<run-id>/implementation`, and exports handoff artifacts
-for a separate operator-run `change-review`. Nested review loops remain out of
-scope.
+implementer pass. `workflows/factory-implementation-review.workflow.ts` then
+coordinates the existing implementation/quality/simplify reviewers, original
+implementer-session remediation, cumulative immutable candidates, partial
+recovery, and deterministic PR-ready handoff. Both stations write lifecycle
+state and artifacts through the durable factory store; agents write only the
+target workspace's source/test/documentation tree.
 
 `workflows/plan-review.workflow.ts` runs one fixed spec-review step. The
 plan-review command/runtime omits git diff scope and relies on `context/plan.md`
