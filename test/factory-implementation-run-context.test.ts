@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import { createFactoryImplementationRunContextForTest } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
+import { factoryStoreMetadata, resolveFactoryStore } from "../lib/factory-store.ts";
 import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
 
 const WORK_ITEM = {
@@ -269,6 +270,48 @@ test("pre-provider failure metadata omits artifacts and events that were not wri
     // @ts-expect-error Pre-provider failures cannot report a completed run.
     ctx.export({ status: "implementation-complete", preProviderFailure: true });
   }
+});
+
+test("implementation rejection evidence records reservation and lifecycle provenance", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-implementation-rejected-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-rejected-runs-"));
+  const runDir = join(runsDir, "implementation-rejected");
+  mkdirSync(runDir, { recursive: true });
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: mkdtempSync(join(tmpdir(), "harness-factory-implementation-rejected-store-")),
+    factoryStoreProjectId: "project",
+  });
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    implementationInput: directInput(),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    allocation: {
+      runId: "implementation-rejected",
+      runDir,
+      reservationToken: "reservation-token",
+    },
+    factoryStore: factoryStoreMetadata(store),
+    maxRuntimeMs: 5_000,
+    agentProviderFactory: () => {
+      throw new Error("provider must not be created");
+    },
+  });
+
+  ctx.writeRejection("invalid lifecycle transition");
+  const rejection = JSON.parse(
+    readFileSync(join(ctx.runDir, "implementation-rejected.json"), "utf8"),
+  );
+  expect(rejection).toMatchObject({
+    status: "rejected",
+    reservationToken: "reservation-token",
+    workspace,
+    expectedFactoryStages: ["ready-to-implement", "implementation-failed"],
+    actualFactoryStage: "unknown",
+  });
 });
 
 function createWorkspaceWithPlan(): string {

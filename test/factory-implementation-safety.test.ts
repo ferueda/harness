@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   readFileSync,
   symlinkSync,
-  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -38,7 +37,6 @@ import {
 import {
   assertFactoryWriterBoundary,
   captureFactoryWriterBoundary,
-  FactoryWriterBoundaryError,
 } from "../lib/factory-writer-boundary.ts";
 import {
   acquireFactoryWorkspaceWriterLease,
@@ -114,7 +112,7 @@ test("artifact pointers reject nested run IDs", () => {
   ).toThrow(FactoryImplementationReviewInputError);
 });
 
-test("writer boundary fingerprints the canonical Git workspace and symlink targets", () => {
+test("writer boundary rejects external symlink targets in protected roots", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-boundary-"));
   const external = mkdtempSync(join(tmpdir(), "harness-factory-boundary-target-"));
   execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
@@ -130,13 +128,7 @@ test("writer boundary fingerprints the canonical Git workspace and symlink targe
   mkdirSync(join(workspace, ".harness"), { recursive: true });
   symlinkSync(external, join(workspace, ".harness", "external"));
 
-  const before = captureFactoryWriterBoundary({ workspace });
-  const replacement = mkdtempSync(join(tmpdir(), "harness-factory-boundary-replacement-"));
-  unlinkSync(join(workspace, ".harness", "external"));
-  symlinkSync(replacement, join(workspace, ".harness", "external"));
-  const after = captureFactoryWriterBoundary({ workspace });
-
-  expect(() => assertFactoryWriterBoundary(before, after)).toThrow(FactoryWriterBoundaryError);
+  expect(() => captureFactoryWriterBoundary({ workspace })).toThrow(/rejects external symlink/);
 });
 
 test("writer boundary canonicalizes missing allowed logs through symlinked durable roots", () => {

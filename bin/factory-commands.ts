@@ -48,6 +48,7 @@ import { buildRunId } from "../lib/context.ts";
 import {
   acquireFactoryWorkspaceWriterLease,
   releaseFactoryWorkspaceWriterLease,
+  type FactoryWorkspaceWriterLeaseHandle,
 } from "../lib/factory-locks.ts";
 import {
   createFactoryImplementationRunContext,
@@ -894,13 +895,13 @@ export async function runFactoryImplementationWithLifecycle(input: {
       input.ctx.initialize();
     } catch (error) {
       const message = errorMessage(error);
+      input.ctx.writeRejection(message);
       const meta = input.ctx.export({
         status: "implementation-failed",
         error: message,
         includeLiveArtifacts: false,
         preProviderFailure: true,
       });
-      input.ctx.writeRejection(message);
       return meta;
     }
     try {
@@ -1031,15 +1032,16 @@ export async function recoverStaleImplementationOwner(input: {
     }
   }
 
-  const workspaceLease = acquireFactoryWorkspaceWriterLease({
-    workspace: input.workspace,
-    factoryProjectId: input.factoryStore.projectId,
-    storeRoot: input.factoryStore.storeRoot,
-    workItemKey: deriveFactoryWorkItemKey(input.workItem),
-    runId,
-    operation: "implementation",
-    ...(input.workspaceLeaseEnv ? { env: input.workspaceLeaseEnv } : {}),
-  });
+  let workspaceLease: FactoryWorkspaceWriterLeaseHandle | undefined =
+    acquireFactoryWorkspaceWriterLease({
+      workspace: input.workspace,
+      factoryProjectId: input.factoryStore.projectId,
+      storeRoot: input.factoryStore.storeRoot,
+      workItemKey: deriveFactoryWorkItemKey(input.workItem),
+      runId,
+      operation: "implementation",
+      ...(input.workspaceLeaseEnv ? { env: input.workspaceLeaseEnv } : {}),
+    });
   try {
     let treeDrift = false;
     try {
@@ -1085,6 +1087,7 @@ export async function recoverStaleImplementationOwner(input: {
     if (linearStage === "implementation-started" && input.linearAdapter && input.issueRef) {
       if (workspaceLease) {
         releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
+        workspaceLease = undefined;
       }
       await input.linearAdapter.applyImplementationFailed({
         issueRef: input.issueRef,
@@ -1546,13 +1549,13 @@ async function terminalizeNotStartedImplementationFailure(
   failure: unknown,
 ): Promise<FactoryImplementationApplyRunResult> {
   const error = errorMessage(failure);
+  input.ctx.writeRejection(error);
   const meta = input.ctx.export({
     status: "implementation-failed",
     error,
     includeLiveArtifacts: false,
     preProviderFailure: true,
   });
-  input.ctx.writeRejection(error);
   return {
     meta,
     linearUpdate: undefined,

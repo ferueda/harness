@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -18,6 +18,7 @@ import {
   createReviewContext,
   createReviewFixture,
   MIXED_REVIEW,
+  PASS_REVIEW,
   scriptedProvider,
 } from "./factory-implementation-review-test-helpers.ts";
 
@@ -152,6 +153,43 @@ test("review CLI keeps a partial ready-for-human checkpoint terminal", async () 
       { defaultMaxRuntimeMs: 1_000, positiveNumber: Number },
     ),
   ).rejects.toThrow("Factory review is terminal at ready-for-human");
+});
+
+test("review command records an idempotent terminal attempt", async () => {
+  const fixture = createReviewFixture();
+  await runImplementationReview(
+    createReviewContext(
+      fixture,
+      scriptedProvider({ workspace: fixture.workspace, reviews: [PASS_REVIEW] }),
+    ),
+  );
+
+  const result = await runFactoryImplementationReviewCommand(
+    {
+      workspace: fixture.workspace,
+      linearIssue: "ENG-123",
+      resume: false,
+      factoryStoreRoot: fixture.store.storeRoot,
+      factoryStoreProjectId: fixture.store.projectId,
+      maxRuntimeMs: 1_000,
+      verbose: false,
+    },
+    { defaultMaxRuntimeMs: 1_000, positiveNumber: Number },
+  );
+
+  expect(result.status).toBe("already-complete");
+  const markerRun = readdirSync(fixture.store.reviewRunsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(fixture.store.reviewRunsDir, entry.name))
+    .find((runDir) => existsSync(join(runDir, "attempt-idempotent.json")));
+  expect(markerRun).toBeDefined();
+  expect(
+    JSON.parse(readFileSync(join(markerRun!, "attempt-idempotent.json"), "utf8")),
+  ).toMatchObject({
+    status: "already-complete",
+    terminalRunId: fixture.implementationRunId,
+    workspace: fixture.workspace,
+  });
 });
 
 test("legacy review input is durably terminalized without invoking a provider", async () => {

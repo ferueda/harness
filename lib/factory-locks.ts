@@ -727,12 +727,29 @@ function removeMatchingWorkspaceLease(
   const ownerPath = join(path, "owner.json");
   const current = readWorkspaceLeaseOwner(ownerPath);
   if (!current || current.token !== owner.token) return false;
+  const reclaimPath = join(
+    path,
+    `.owner-reclaiming-${owner.token}-${randomBytes(8).toString("hex")}`,
+  );
   try {
-    // Move the token-checked owner record first. A concurrent reclaimer can no
-    // longer observe this token and replace the lease before removal.
-    const tombstone = join(path, `.owner-releasing-${owner.token}`);
-    renameSync(ownerPath, tombstone);
-    rmSync(path, { recursive: true, force: false });
+    // Claim the owner file atomically. Reclaimers cannot delete a lease that
+    // replaced the stale record between the token check and removal.
+    renameSync(ownerPath, reclaimPath);
+    const claimed = readWorkspaceLeaseOwner(reclaimPath);
+    if (!claimed || claimed.token !== owner.token) {
+      try {
+        renameSync(reclaimPath, ownerPath);
+      } catch {
+        rmSync(reclaimPath, { force: true });
+      }
+      return false;
+    }
+    rmSync(reclaimPath, { force: true });
+    try {
+      rmdirSync(path);
+    } catch {
+      // A new owner may have published while the stale record was reclaimed.
+    }
     return true;
   } catch {
     return false;

@@ -63,6 +63,7 @@ export type FactoryImplementationArtifacts = FactoryImplementationBaseArtifacts 
 
 export type FactoryImplementationPreProviderFailureArtifacts =
   FactoryImplementationBaseArtifacts & {
+    rejection?: "implementation-rejected.json";
     prompt?: never;
     changeReviewHandoff?: never;
     rawOutput?: never;
@@ -339,12 +340,21 @@ function createFactoryImplementationRunContextInternal(
     },
     writeRejection(error: string): void {
       mkdirSync(runDir, { recursive: true });
-      writeJson(join(runDir, "attempt-rejected.json"), {
+      const rejection = {
         status: "rejected",
+        workflow: FACTORY_IMPLEMENTATION_WORKFLOW,
+        station: "implementation",
         runId,
         ...(options.allocation ? { reservationToken: options.allocation.reservationToken } : {}),
+        workspace,
+        ...(options.factoryStore ? { factoryStore: options.factoryStore } : {}),
+        expectedFactoryStages: ["ready-to-implement", "implementation-failed"],
+        actualFactoryStage: options.workItem.metadata?.factoryStage ?? "unknown",
         error,
-      });
+      };
+      writeJson(join(runDir, "implementation-rejected.json"), rejection);
+      // Keep the generic marker for consumers that only know the legacy name.
+      writeJson(join(runDir, "attempt-rejected.json"), rejection);
       writeFileSync(
         join(runDir, "summary.md"),
         `# Factory Implementation\n\n- Status: rejected\n- Error: ${error}\n`,
@@ -496,7 +506,12 @@ function buildMeta(input: {
     return {
       ...common,
       status: "implementation-failed",
-      artifacts: baseArtifacts,
+      artifacts: {
+        ...baseArtifacts,
+        ...(existsSync(join(input.runDir, "implementation-rejected.json"))
+          ? { rejection: "implementation-rejected.json" as const }
+          : {}),
+      },
     };
   }
   const artifacts: FactoryImplementationArtifacts = {

@@ -420,7 +420,29 @@ async function runReviewLoop(
         !changed &&
         result.output.findingDecisions.every((decision) => decision.decision === "decline")
       ) {
-        releaseFactoryWorkspaceWriterLease({ handle: result.lease });
+        const checkpointId = `implementation.review.checkpointed:${ctx.runId}:${reviewIndex}:remediation`;
+        appendImplementationReviewCheckpointedEvent({
+          factoryStateRoot: ctx.factoryStore.factoryStateRoot,
+          workItem: ctx.workItem,
+          checkpointId,
+          expectedCheckpointId: checkpoint.latestCheckpointId,
+          owningImplementationRunId: ctx.implementationRunId,
+          activeReviewAttemptId: ctx.runId,
+          phase: "remediation",
+          completedReviewCount,
+          candidateVersion,
+          originalReviewBase: checkpoint.originalReviewBase,
+          approvedCandidate: candidate,
+          implementerSession: checkpoint.implementerSession,
+          workspace: checkpoint.workspace,
+          runRoots: checkpoint.runRoots,
+          activeReviewIndex: reviewIndex,
+          ...(checkpoint.latestReview ? { review: checkpoint.latestReview } : {}),
+          decision: pointer(ctx.runId, `iterations/${reviewIndex}/remediation.json`),
+          effectiveReviewLimit: checkpoint.effectiveReviewLimit,
+          execution: reviewExecution(ctx),
+        });
+        checkpoint = { ...checkpoint, checkpointId, latestCheckpointId: checkpointId };
         remediationLeaseReleased = true;
         return complete(
           ctx,
@@ -430,6 +452,7 @@ async function runReviewLoop(
           candidateVersion,
           attempts,
           acceptedDebt,
+          result.lease,
         );
       }
       if (changed) {
@@ -1477,41 +1500,20 @@ function complete(
     decisions: ReadonlyArray<{ findingId: string; decision: string; rationale: string }>;
   }>,
   acceptedDebt: ReadonlyArray<AcceptedDebt>,
+  existingLease?: FactoryWorkspaceWriterLeaseHandle,
 ): FactoryImplementationReviewRunMeta {
-  validateFactoryCandidateTuple({
-    workspace: ctx.workspace,
-    candidate,
-    expectedOriginalBase: checkpoint.originalReviewBase,
-    expectedWorkspaceTree: true,
-    expectedImplementationRunId: ctx.implementationRunId,
-    expectedCandidateVersion: candidateVersion,
-  });
-  ctx.writeArtifact("accepted-debt.json", acceptedDebt);
-  const handoff = renderFactoryImplementationPrReadyHandoff({
-    workItem: ctx.workItem,
-    implementationRunId: ctx.implementationRunId,
-    attempts,
-    originalReviewBase: checkpoint.originalReviewBase,
-    finalCandidate: candidate,
-    cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
-    implementerSession: checkpoint.implementerSession,
-    workspace: checkpoint.workspace,
-    acceptedDebt,
-  });
-  const handoffPath = ctx.writeHandoff(handoff);
-  ctx.writeSummary(
-    `# Factory Implementation Review\n\n- Status: review-complete\n- Candidate: ${candidate.ref}\n`,
-  );
-  const lease = acquireFactoryWorkspaceWriterLease({
-    workspace: ctx.workspace,
-    factoryProjectId: ctx.factoryStore.projectId,
-    storeRoot: ctx.factoryStore.storeRoot,
-    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
-    runId: ctx.implementationRunId,
-    attemptId: ctx.runId,
-    operation: "remediation",
-    ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
-  });
+  const lease =
+    existingLease ??
+    acquireFactoryWorkspaceWriterLease({
+      workspace: ctx.workspace,
+      factoryProjectId: ctx.factoryStore.projectId,
+      storeRoot: ctx.factoryStore.storeRoot,
+      workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+      runId: ctx.implementationRunId,
+      attemptId: ctx.runId,
+      operation: "remediation",
+      ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
+    });
   try {
     validateFactoryCandidateTuple({
       workspace: ctx.workspace,
@@ -1521,6 +1523,22 @@ function complete(
       expectedImplementationRunId: ctx.implementationRunId,
       expectedCandidateVersion: candidateVersion,
     });
+    ctx.writeArtifact("accepted-debt.json", acceptedDebt);
+    const handoff = renderFactoryImplementationPrReadyHandoff({
+      workItem: ctx.workItem,
+      implementationRunId: ctx.implementationRunId,
+      attempts,
+      originalReviewBase: checkpoint.originalReviewBase,
+      finalCandidate: candidate,
+      cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
+      implementerSession: checkpoint.implementerSession,
+      workspace: checkpoint.workspace,
+      acceptedDebt,
+    });
+    const handoffPath = ctx.writeHandoff(handoff);
+    ctx.writeSummary(
+      `# Factory Implementation Review\n\n- Status: review-complete\n- Candidate: ${candidate.ref}\n`,
+    );
     appendImplementationReviewCompletedEvent({
       factoryStateRoot: ctx.factoryStore.factoryStateRoot,
       workItem: ctx.workItem,
@@ -1534,16 +1552,16 @@ function complete(
       acceptedDebtCount: acceptedDebt.length,
       execution: reviewExecution(ctx),
     });
+    return ctx.export({
+      status: "review-complete",
+      completedReviewCount,
+      candidateVersion,
+      approvedCandidate: candidate,
+      handoffPath,
+    });
   } finally {
     releaseFactoryWorkspaceWriterLease({ handle: lease });
   }
-  return ctx.export({
-    status: "review-complete",
-    completedReviewCount,
-    candidateVersion,
-    approvedCandidate: candidate,
-    handoffPath,
-  });
 }
 
 function pointer(runId: string, path: string, root: "factory" | "review" = "review") {
@@ -1636,6 +1654,21 @@ function captureUnexpectedPartialRecovery(
           simplify: readNestedReview(reviewDir, "simplify-review.json"),
         })
       : undefined;
+    if (!review || !normalized) return {};
+    let candidateValidationError: string | undefined;
+    try {
+      validateFactoryCandidateTuple({
+        workspace: ctx.workspace,
+        candidate: checkpoint.approvedCandidate,
+        expectedOriginalBase: checkpoint.originalReviewBase,
+        expectedWorkspaceTree: true,
+        expectedImplementationRunId: ctx.implementationRunId,
+        expectedCandidateVersion: checkpoint.candidateVersion,
+      });
+    } catch (error) {
+      candidateValidationError = errorMessage(error);
+    }
+    if (!candidateValidationError) return {};
     return capturePartial(
       ctx,
       checkpoint.approvedCandidate,
@@ -1643,8 +1676,8 @@ function captureUnexpectedPartialRecovery(
       emptyWorkspaceCapture(),
       after,
       reason,
-      normalized?.findings ?? [],
-      normalized?.roles ?? emptyReviewRoles(),
+      normalized.findings,
+      normalized.roles,
     );
   } catch (error) {
     return { failure: errorMessage(error) };

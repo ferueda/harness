@@ -219,11 +219,13 @@ export async function runFactoryImplementationReviewCommand(
     throw error;
   }
   if (resolved.state.factoryStage === "review-complete") {
-    releaseEmptyFactoryRunReservation({
-      runDir: allocation.runDir,
-      factoryRunsDir: dirname(allocation.runDir),
-      reservationToken: allocation.reservationToken,
-    });
+    writeReviewIdempotentMarker(
+      allocation,
+      resolved.factoryStore,
+      options,
+      store.workspace,
+      resolved,
+    );
     return existingCompletedResult(resolved);
   }
   const allowed = options.resume
@@ -383,6 +385,36 @@ function writeReviewRejection(
         runDir: allocation.runDir,
         identity: options.linearIssue ?? options.itemFile,
         error: message,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
+function writeReviewIdempotentMarker(
+  allocation: { runId: string; runDir: string; reservationToken: string },
+  store: FactoryStoreResolution | FactoryStoreMeta,
+  options: FactoryImplementationReviewOptions,
+  workspace: string,
+  resolved: ReturnType<typeof resolveFactoryImplementationReviewInput>,
+): void {
+  writeFileSync(
+    join(allocation.runDir, "attempt-idempotent.json"),
+    `${JSON.stringify(
+      {
+        status: "already-complete",
+        workflow: "factory-implementation-review",
+        station: "implementation-review",
+        runId: allocation.runId,
+        reservationToken: allocation.reservationToken,
+        terminalRunId: resolved.implementationRunId,
+        terminalRunDir: resolved.implementationRunDir,
+        identity: options.linearIssue ?? options.itemFile,
+        workspace,
+        factoryStore: store,
+        lifecycleStage: resolved.state.factoryStage,
       },
       null,
       2,

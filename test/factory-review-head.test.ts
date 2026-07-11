@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   createFactoryRemediationCandidate,
   createFactoryReviewHead,
+  validateFactoryCandidateTuple,
 } from "../lib/factory-review-head.ts";
 
 test("createFactoryReviewHead succeeds with populated ignored .harness and omits it from the review tree", () => {
@@ -78,6 +79,35 @@ test("candidate materialization removes a ref when post-ref evidence generation 
   ).toThrow();
 
   expect(git(workspace, ["for-each-ref", "--format=%(refname)", "refs/harness"]).trim()).toBe("");
+});
+
+test("candidate materialization supports linked Git worktrees", () => {
+  const source = createGitWorkspace({ ignoreHarness: true });
+  const linkedParent = mkdtempSync(join(tmpdir(), "harness-factory-linked-worktree-"));
+  const linked = join(linkedParent, "linked");
+  execFileSync("git", ["worktree", "add", "-b", "linked-review", linked, "HEAD"], {
+    cwd: source,
+    stdio: "ignore",
+  });
+  const runDir = join(linked, ".harness", "runs", "factory", "run-linked");
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(linked, "tracked.txt"), "linked edit\n", "utf8");
+
+  const result = createFactoryReviewHead({
+    workspace: linked,
+    runDir,
+    runId: "run-linked",
+    reviewBase: git(linked, ["rev-parse", "HEAD"]).trim(),
+  });
+
+  validateFactoryCandidateTuple({
+    workspace: linked,
+    candidate: result,
+    expectedOriginalBase: result.reviewBase,
+    expectedWorkspaceTree: true,
+  });
+  expect(result.diffPatch).toContain("linked edit");
+  rmSync(linkedParent, { recursive: true, force: true });
 });
 
 function createGitWorkspace(options: { ignoreHarness: boolean }): string {

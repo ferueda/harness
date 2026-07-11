@@ -125,8 +125,23 @@ function fingerprintPath(path: string | undefined, allowedPaths: readonly string
   const visitedRealpaths = new Set<string>();
   const maxEntries = 10_000;
   const visit = (current: string): void => {
-    if (allowedPaths.some((allowed) => current === allowed || current.startsWith(`${allowed}/`))) {
+    const allowedFile = allowedPaths.find((allowed) => current === allowed);
+    if (allowedFile) {
+      const stat = lstatSync(current);
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        throw new Error(
+          `Factory writer boundary allowlisted path is not a regular file: ${current}`,
+        );
+      }
+      const rel = relative(root, current) || ".";
+      // Allow stream contents to change, but keep replacement/type changes visible.
+      entries.push(`${rel}:allowed-file:${stat.mode}`);
       return;
+    }
+    if (allowedPaths.some((allowed) => current.startsWith(`${allowed}/`))) {
+      throw new Error(
+        `Factory writer boundary allowlisted path was replaced by a directory: ${current}`,
+      );
     }
     const stat = lstatSync(current);
     const realCurrent = realpathSync(current);
@@ -140,7 +155,10 @@ function fingerprintPath(path: string | undefined, allowedPaths: readonly string
     if (stat.isSymbolicLink()) {
       const target = realpathSync(current);
       entries.push(`target:${target}`);
-      if (isContainedPath(root, target)) visit(target);
+      if (!isContainedPath(root, target)) {
+        throw new Error(`Factory writer boundary rejects external symlink: ${current}`);
+      }
+      visit(target);
       return;
     }
     if (!stat.isDirectory()) {

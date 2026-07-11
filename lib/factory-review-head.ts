@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export class FactoryReviewHeadError extends Error {
@@ -299,9 +300,10 @@ function materializeCandidate(input: {
 }
 
 function materializeWorkspaceTree(workspace: string, parent: string): string {
-  const indexDir = join(workspace, ".git", "harness-review-tree");
-  const indexPath = join(indexDir, `${process.pid}-${Date.now()}`);
-  mkdirSync(indexDir, { recursive: true });
+  // Linked worktrees expose `.git` as a file. Keep the temporary index outside
+  // the workspace so both regular and linked worktrees are supported.
+  const indexDir = mkdtempSync(join(tmpdir(), "harness-review-tree-"));
+  const indexPath = join(indexDir, "index");
   const env = { ...process.env, GIT_INDEX_FILE: indexPath };
   try {
     git(workspace, ["read-tree", parent], env);
@@ -309,7 +311,7 @@ function materializeWorkspaceTree(workspace: string, parent: string): string {
     return git(workspace, ["write-tree"], env).trim();
   } finally {
     try {
-      rmSync(indexPath, { force: true });
+      rmSync(indexDir, { recursive: true, force: true });
     } catch {
       // Best effort.
     }

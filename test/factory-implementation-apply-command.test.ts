@@ -801,9 +801,9 @@ test("real command recovers a stale implementation owner before acquiring a new 
   });
   fixture.setLinearState("Implementing");
 
-  await expect(
-    fixture.program.parseAsync([...commandArgs(fixture), "--runs-dir", runsDir]),
-  ).rejects.toThrow(/Recovered a stale implementation owner/);
+  await expect(fixture.program.parseAsync(commandArgs(fixture))).rejects.toThrow(
+    /Recovered a stale implementation owner/,
+  );
   expect(fixture.runner).not.toHaveBeenCalled();
   expect(implementationEventTypes(fixture)).toEqual([
     "implementation.started",

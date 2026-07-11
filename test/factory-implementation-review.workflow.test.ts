@@ -185,6 +185,47 @@ test("provider failure after edits persists a partial tuple and resume restores 
   ).toBeUndefined();
 });
 
+test("partial-capture failure preserves the partial ref and both failure causes", async () => {
+  const fixture = createReviewFixture();
+  const provider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [NEEDS_CHANGES_REVIEW],
+    remediation: { edit: "partial capture failure\n", fail: true },
+  });
+  const ctx = createReviewContext(fixture, provider);
+  const writeArtifact = ctx.writeArtifact;
+  ctx.writeArtifact = (relativePath, value) => {
+    if (relativePath.endsWith("/recovery.json")) {
+      throw new Error("recovery artifact store unavailable");
+    }
+    return writeArtifact(relativePath, value);
+  };
+
+  const result = await runImplementationReview(ctx);
+  const events = readFactoryLifecycleEvents({
+    factoryStateRoot: fixture.store.factoryStateRoot,
+    workItemKey: "linear:ENG-123",
+  });
+  const failure = events.at(-1);
+
+  expect(result.status).toBe("review-failed");
+  expect(result.error).toContain("provider stopped after editing");
+  expect(result.error).toContain("partial capture failed: recovery artifact store unavailable");
+  expect(failure).toMatchObject({
+    type: "implementation.review.failed",
+    data: {
+      recovery: {
+        runId: result.runId,
+        path: "iterations/1/partial-capture-failure.json",
+      },
+    },
+  });
+  expect(failure).not.toHaveProperty("data.partialRecovery");
+  expect(
+    readFileSync(join(result.runDir, "iterations/1/partial-capture-failure.json"), "utf8"),
+  ).toContain('"partialRefPreserved": true');
+});
+
 test("invalid partial status evidence remains retryable for recovery", async () => {
   const { fixture, first, checkpoint } = await createPartialReview();
   rmSync(join(first.runDir, "iterations/1/workspace-status.json"));
