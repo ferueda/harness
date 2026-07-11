@@ -17,7 +17,6 @@ import {
   createReviewContext,
   createReviewFixture,
   MIXED_REVIEW,
-  PASS_REVIEW,
   scriptedProvider,
 } from "./factory-implementation-review-test-helpers.ts";
 
@@ -84,7 +83,7 @@ test("review CLI emits stable JSON for parser rejection", async () => {
   }
 });
 
-test("review CLI resumes a partial ready-for-human checkpoint", async () => {
+test("review CLI keeps a partial ready-for-human checkpoint terminal", async () => {
   const fixture = createReviewFixture();
   const firstProvider = scriptedProvider({
     workspace: fixture.workspace,
@@ -111,54 +110,20 @@ test("review CLI resumes a partial ready-for-human checkpoint", async () => {
   const first = await runImplementationReview(createReviewContext(fixture, firstProvider));
   expect(first.status).toBe("ready-for-human");
 
-  const resumedProvider = scriptedProvider({
-    workspace: fixture.workspace,
-    reviews: [PASS_REVIEW],
-    remediation: {
-      edit: "completed command remediation\n",
-      output: {
-        summary: "Apply the blocking correction and retain accepted debt.",
-        findingDecisions: ["implementation", "quality", "simplify"].flatMap((role) => [
-          {
-            findingId: `${role}-001`,
-            decision: "decline" as const,
-            rationale: "Track the advisory note separately.",
-          },
-          {
-            findingId: `${role}-002`,
-            decision: "implement" as const,
-            rationale: "Applied the blocking correction.",
-          },
-        ]),
+  await expect(
+    runFactoryImplementationReviewCommand(
+      {
+        workspace: fixture.workspace,
+        linearIssue: "ENG-123",
+        resume: true,
+        factoryStoreRoot: fixture.store.storeRoot,
+        factoryStoreProjectId: fixture.store.projectId,
+        maxRuntimeMs: 1_000,
+        verbose: false,
       },
-    },
-  });
-  const result = await runFactoryImplementationReviewCommand(
-    {
-      workspace: fixture.workspace,
-      linearIssue: "ENG-123",
-      resume: true,
-      factoryStoreRoot: fixture.store.storeRoot,
-      factoryStoreProjectId: fixture.store.projectId,
-      maxRuntimeMs: 1_000,
-      verbose: false,
-    },
-    {
-      defaultMaxRuntimeMs: 1_000,
-      positiveNumber: Number,
-      workspaceLeaseEnv: {
-        ...process.env,
-        XDG_DATA_HOME: fixture.leaseDataHome,
-      },
-      implementationAgentProviderFactory: () => resumedProvider,
-      implementationReviewRunner: runImplementationReview,
-    },
-  );
-
-  expect(result.status).toBe("review-complete");
-  expect(result.handoffPath && readFileSync(result.handoffPath, "utf8")).toContain(
-    "implementation-001: Track the advisory note separately.",
-  );
+      { defaultMaxRuntimeMs: 1_000, positiveNumber: Number },
+    ),
+  ).rejects.toThrow("Factory review is terminal at ready-for-human");
 });
 
 test("legacy review input is durably terminalized without invoking a provider", async () => {

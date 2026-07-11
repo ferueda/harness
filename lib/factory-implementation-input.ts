@@ -142,7 +142,10 @@ export function factoryImplementationAttempt(
 function implementationAttemptForMetadata(
   metadata: FactoryWorkItemMetadata,
 ): FactoryImplementationAttempt {
-  return metadata.factoryStage === "implementation-failed" ? "retry" : "first";
+  return metadata.factoryStage === "implementation-failed" &&
+    metadata.linearStartState !== "not-started"
+    ? "retry"
+    : "first";
 }
 
 function assertLinearProjection(

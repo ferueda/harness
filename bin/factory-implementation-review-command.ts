@@ -229,12 +229,8 @@ export async function runFactoryImplementationReviewCommand(
     });
     return existingCompletedResult(resolved);
   }
-  const resumableReadyForHuman =
-    options.resume &&
-    resolved.state.factoryStage === "ready-for-human" &&
-    resolved.checkpoint.partialRecovery !== undefined;
   const allowed = options.resume
-    ? ["review-running", "review-failed", ...(resumableReadyForHuman ? ["ready-for-human"] : [])]
+    ? ["review-running", "review-failed"]
     : ["implementation-complete"];
   if (!allowed.includes(resolved.state.factoryStage ?? "")) {
     writeReviewRejection(

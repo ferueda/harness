@@ -140,6 +140,23 @@ test.each(["planned", "direct"] as const)(
   },
 );
 
+test("stale recovery with Linear still Ready starts a first implementation attempt", () => {
+  const { workspace } = createWorkspacePlan();
+  const input = resolveFactoryImplementationInput({
+    workspace,
+    resolvedInput: linearInput({
+      linearStatus: READY_STATUS,
+      factoryStage: "implementation-failed",
+      linearStartState: "not-started",
+      factoryRoute: "ready-to-implement",
+      factoryNextAction: "implement-directly",
+    }),
+    linearProjection: implementationProjection("apply"),
+  });
+
+  expect(factoryImplementationAttempt(input)).toBe("first");
+});
+
 test.each(["Ready to Implement", "Implementing"])(
   "applied retry rejects cross-paired Linear status %s",
   (linearStatus) => {

@@ -18,6 +18,7 @@ import type { FactoryImplementationInput } from "../lib/factory-implementation-i
 import {
   appendFactoryLifecycleEvent,
   deriveFactoryWorkItemKey,
+  loadFactoryLifecycleState,
   readFactoryLifecycleEvents,
 } from "../lib/factory-lifecycle.ts";
 import { inspectFactoryWorkspaceWriterLease } from "../lib/factory-locks.ts";
@@ -565,7 +566,8 @@ function commandFixture(
   const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-command-workspace-"));
   const storeRoot = mkdtempSync(join(tmpdir(), "harness-implementation-command-store-"));
   const factoryStateRoot = join(storeRoot, "projects/test-project/factory");
-  if (overrides.git) initializeGitWorkspace(workspace);
+  const git = overrides.git ?? true;
+  if (git) initializeGitWorkspace(workspace);
   let linearState = "Ready to Implement";
   const comments: LinearCommentLike[] = [];
   const updates: Array<{ stateId: string }> = [];
@@ -631,7 +633,7 @@ function commandFixture(
     })}\n`,
     "utf8",
   );
-  if (overrides.git) {
+  if (git) {
     execFileSync("git", ["add", "harness.json"], { cwd: workspace, stdio: "ignore" });
     execFileSync("git", ["commit", "-m", "factory config"], {
       cwd: workspace,
@@ -739,13 +741,14 @@ function implementationEventTypes(fixture: ReturnType<typeof commandFixture>): s
 
 test("real command recovers a stale implementation owner before acquiring a new writer lease", async () => {
   const fixture = commandFixture({ git: true });
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-implementation-stale-runs-"));
   const store = resolveFactoryStore({
     workspace: fixture.workspace,
     factoryStoreRoot: fixture.storeRoot,
     factoryStoreProjectId: "test-project",
   });
   const runId = "implementation-stale-command";
-  const runDir = join(store.factoryRunsDir, runId);
+  const runDir = join(runsDir, runId);
   mkdirSync(join(runDir, "context"), { recursive: true });
   const reservation = {
     station: "implementation",
@@ -756,7 +759,7 @@ test("real command recovers a stale implementation owner before acquiring a new 
     storeRoot: store.storeRoot,
     factoryProjectId: store.projectId,
     factoryStateRoot: store.factoryStateRoot,
-    factoryRunsDir: store.factoryRunsDir,
+    factoryRunsDir: runsDir,
     reviewRunsDir: store.reviewRunsDir,
   };
   writeFileSync(join(runDir, "attempt-reservation.json"), `${JSON.stringify(reservation)}\n`);
@@ -797,14 +800,31 @@ test("real command recovers a stale implementation owner before acquiring a new 
   });
   fixture.setLinearState("Implementing");
 
-  await expect(fixture.program.parseAsync(commandArgs(fixture))).rejects.toThrow(
-    /Recovered a stale implementation owner/,
-  );
+  await expect(
+    fixture.program.parseAsync([...commandArgs(fixture), "--runs-dir", runsDir]),
+  ).rejects.toThrow(/Recovered a stale implementation owner/);
   expect(fixture.runner).not.toHaveBeenCalled();
   expect(implementationEventTypes(fixture)).toEqual([
     "implementation.started",
     "implementation.failed",
   ]);
+  expect(
+    loadFactoryLifecycleState({
+      factoryStateRoot: fixture.factoryStateRoot,
+      workItemKey: "linear:ENG-123",
+      workspace: fixture.workspace,
+    })?.linearStartState,
+  ).toBe("implementing");
+});
+
+test("real command fails closed before allocating a run for a non-Git workspace", async () => {
+  const fixture = commandFixture({ git: false });
+
+  await expect(fixture.program.parseAsync(commandArgs(fixture))).rejects.toThrow(
+    /Cannot resolve Git top-level/,
+  );
+  expect(fixture.runner).not.toHaveBeenCalled();
+  expect(implementationEventTypes(fixture)).toEqual([]);
 });
 
 test("real command records retryable local failure when start mutation is rejected", async () => {
@@ -1087,6 +1107,7 @@ test("item-file identity change releases and reacquires the refreshed work-item 
     }),
     "utf8",
   );
+  initializeGitWorkspace(workspace);
   const leasedIds: string[] = [];
   const lease: NonNullable<FactoryCommandOptions["implementationExecutionLease"]> = async (
     input,

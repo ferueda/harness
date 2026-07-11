@@ -662,7 +662,7 @@ function addFactoryImplementationStationCommand(
           let workspaceLease: ReturnType<typeof acquireFactoryWorkspaceWriterLease> | undefined;
           let allocation: ReturnType<typeof allocateFactoryRun> | undefined;
           try {
-            if (runId && isGitWorkspace(implementerRole.workspace)) {
+            if (runId) {
               workspaceLease = acquireFactoryWorkspaceWriterLease({
                 workspace: implementerRole.workspace,
                 factoryProjectId: store.projectId,
@@ -810,7 +810,10 @@ function addFactoryImplementationStationCommand(
                     workspace: implementerRole.workspace,
                     workItem: activeInput.workItem,
                     factoryStateRoot: store.factoryStateRoot,
-                    factoryStore: store,
+                    factoryStore: {
+                      ...store,
+                      factoryRunsDir: factoryStore.factoryRunsDir,
+                    },
                     ...(options.linearIssue && implementationAdapter
                       ? { issueRef: options.linearIssue, linearAdapter: implementationAdapter }
                       : {}),
@@ -1009,7 +1012,7 @@ export async function recoverStaleImplementationOwner(input: {
   assertImplementationRunReservation({
     runDir: started.data.owner.runDir,
     runId,
-    factoryRunsDir: recoveryStore.factoryRunsDir,
+    factoryRunsDir: input.factoryStore.factoryRunsDir,
     workspace: input.workspace,
     workItem: input.workItem,
     factoryStore: recoveryStore,
@@ -1028,17 +1031,15 @@ export async function recoverStaleImplementationOwner(input: {
     }
   }
 
-  const workspaceLease = isGitWorkspace(input.workspace)
-    ? acquireFactoryWorkspaceWriterLease({
-        workspace: input.workspace,
-        factoryProjectId: input.factoryStore.projectId,
-        storeRoot: input.factoryStore.storeRoot,
-        workItemKey: deriveFactoryWorkItemKey(input.workItem),
-        runId,
-        operation: "implementation",
-        ...(input.workspaceLeaseEnv ? { env: input.workspaceLeaseEnv } : {}),
-      })
-    : undefined;
+  const workspaceLease = acquireFactoryWorkspaceWriterLease({
+    workspace: input.workspace,
+    factoryProjectId: input.factoryStore.projectId,
+    storeRoot: input.factoryStore.storeRoot,
+    workItemKey: deriveFactoryWorkItemKey(input.workItem),
+    runId,
+    operation: "implementation",
+    ...(input.workspaceLeaseEnv ? { env: input.workspaceLeaseEnv } : {}),
+  });
   try {
     let treeDrift = false;
     try {
@@ -1570,7 +1571,7 @@ function releaseImplementationWriterLease(ctx: FactoryImplementationRunContext):
 }
 
 function ensureImplementationWriterLease(ctx: FactoryImplementationRunContext): void {
-  if (ctx.writerLease || !ctx.factoryStore || !isGitWorkspace(ctx.workspace)) return;
+  if (ctx.writerLease || !ctx.factoryStore) return;
   ctx.writerLease = acquireFactoryWorkspaceWriterLease({
     workspace: ctx.workspace,
     factoryProjectId: ctx.factoryStore.projectId,

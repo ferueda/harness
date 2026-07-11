@@ -466,6 +466,7 @@ export const FactoryLifecycleStateSchema = z
     factoryRoute: FactoryRouteSchema.optional(),
     factoryNextAction: FactoryNextActionSchema.optional(),
     factoryRunId: z.string().min(1).optional(),
+    linearStartState: z.enum(["not-started", "implementing", "unknown"]).optional(),
     approvedPlanPath: z.string().min(1).optional(),
     approvedPlanPrUrl: z.url().optional(),
     approvedPlanCommit: z.string().min(1).optional(),
@@ -945,7 +946,7 @@ function reduceFactoryLifecycleEvent(
       // Pre-owner records are historical audit evidence, not live ownership.
       if (!event.runId || !event.data.owner) return base;
       return {
-        ...base,
+        ...withoutLinearStartState(base),
         factoryStage: "implementation-started",
         factoryRunId: event.runId,
       };
@@ -973,7 +974,7 @@ function reduceFactoryLifecycleEvent(
     case "implementation.completed":
       return implementationCompletedState(
         {
-          ...base,
+          ...withoutLinearStartState(base),
           factoryStage: "implementation-complete",
           factoryRunId: event.runId,
         },
@@ -981,19 +982,20 @@ function reduceFactoryLifecycleEvent(
       );
     case "implementation.failed":
       return {
-        ...base,
+        ...withoutLinearStartState(base),
         factoryStage: "implementation-failed",
         factoryRunId: event.runId,
+        ...(event.data.linearStartState ? { linearStartState: event.data.linearStartState } : {}),
       };
     case "implementation.stale-owner":
       return {
-        ...base,
+        ...withoutLinearStartState(base),
         factoryStage: "ready-for-human",
         factoryRunId: event.runId,
       };
     case "implementation.start-unresolved":
       return {
-        ...base,
+        ...withoutLinearStartState(base),
         factoryStage: "ready-for-human",
         factoryRunId: event.runId,
       };
@@ -1327,6 +1329,7 @@ function definedLifecycleMetadata(state: FactoryLifecycleState): Partial<Factory
     ...(state.factoryRoute ? { factoryRoute: state.factoryRoute } : {}),
     ...(state.factoryNextAction ? { factoryNextAction: state.factoryNextAction } : {}),
     ...(state.factoryRunId ? { factoryRunId: state.factoryRunId } : {}),
+    ...(state.linearStartState ? { linearStartState: state.linearStartState } : {}),
     ...(state.approvedPlanPath ? { approvedPlanPath: state.approvedPlanPath } : {}),
     ...(state.approvedPlanPrUrl ? { approvedPlanPrUrl: state.approvedPlanPrUrl } : {}),
     ...(state.approvedPlanCommit ? { approvedPlanCommit: state.approvedPlanCommit } : {}),
@@ -1341,11 +1344,17 @@ function withoutLifecycleMetadata(
     factoryRoute: _route,
     factoryNextAction: _nextAction,
     factoryRunId: _runId,
+    linearStartState: _linearStartState,
     approvedPlanPath: _planPath,
     approvedPlanPrUrl: _planPrUrl,
     approvedPlanCommit: _planCommit,
     ...rest
   } = metadata;
+  return rest;
+}
+
+function withoutLinearStartState(state: FactoryLifecycleState): FactoryLifecycleState {
+  const { linearStartState: _linearStartState, ...rest } = state;
   return rest;
 }
 

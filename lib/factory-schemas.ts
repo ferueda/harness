@@ -97,6 +97,7 @@ export const FactoryWorkItemMetadataSchema = z
     factoryNextAction: FactoryNextActionSchema.optional(),
     factoryStage: FactoryStageSchema.optional(),
     factoryRunId: z.string().min(1).optional(),
+    linearStartState: z.enum(["not-started", "implementing", "unknown"]).optional(),
     approvedPlanPath: z.string().min(1).optional(),
     approvedPlanPrUrl: z.url().optional(),
     approvedPlanCommit: z.string().min(1).optional(),

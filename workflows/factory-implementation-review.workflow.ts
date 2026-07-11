@@ -272,7 +272,6 @@ async function runReviewLoop(
         candidateVersion,
         attempts,
         acceptedDebt,
-        undefined,
       );
     }
     if (!partialRecovery && completedReviewCount >= checkpoint.effectiveReviewLimit.value) {
@@ -420,6 +419,7 @@ async function runReviewLoop(
         !changed &&
         result.output.findingDecisions.every((decision) => decision.decision === "decline")
       ) {
+        releaseFactoryWorkspaceWriterLease({ handle: result.lease });
         return complete(
           ctx,
           checkpoint,
@@ -428,7 +428,6 @@ async function runReviewLoop(
           candidateVersion,
           attempts,
           acceptedDebt,
-          result.lease,
         );
       }
       if (changed) {
@@ -982,6 +981,18 @@ async function remediate(
       ctx.writeArtifact(boundaryAfterArtifactPath, boundaryAfter);
       boundaryAfterPath = boundaryAfterArtifactPath;
     } catch (error) {
+      try {
+        ctx.writeArtifact(`iterations/${reviewIndex}/workspace-status.json`, { before, after });
+        ctx.writeText(`iterations/${reviewIndex}/diff.patch`, after.patch);
+        if (result) {
+          ctx.writeArtifact(
+            `iterations/${reviewIndex}/remediation.raw.json`,
+            result.ok ? result.raw : result,
+          );
+        }
+      } catch {
+        // Preserve the boundary failure as the primary result if evidence capture also fails.
+      }
       return {
         kind: "failed",
         error: errorMessage(error),
@@ -996,6 +1007,18 @@ async function remediate(
     try {
       assertFactoryWriterBoundary(boundaryBefore, boundaryAfter);
     } catch (error) {
+      try {
+        ctx.writeArtifact(`iterations/${reviewIndex}/workspace-status.json`, { before, after });
+        ctx.writeText(`iterations/${reviewIndex}/diff.patch`, after.patch);
+        if (result) {
+          ctx.writeArtifact(
+            `iterations/${reviewIndex}/remediation.raw.json`,
+            result.ok ? result.raw : result,
+          );
+        }
+      } catch {
+        // Preserve the boundary failure as the primary result if evidence capture also fails.
+      }
       return {
         kind: "failed",
         error: providerError
@@ -1444,21 +1467,41 @@ function complete(
     decisions: ReadonlyArray<{ findingId: string; decision: string; rationale: string }>;
   }>,
   acceptedDebt: ReadonlyArray<AcceptedDebt>,
-  existingLease?: FactoryWorkspaceWriterLeaseHandle,
 ): FactoryImplementationReviewRunMeta {
-  const ownsLease = !existingLease;
-  const lease =
-    existingLease ??
-    acquireFactoryWorkspaceWriterLease({
-      workspace: ctx.workspace,
-      factoryProjectId: ctx.factoryStore.projectId,
-      storeRoot: ctx.factoryStore.storeRoot,
-      workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
-      runId: ctx.implementationRunId,
-      attemptId: ctx.runId,
-      operation: "remediation",
-      ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
-    });
+  validateFactoryCandidateTuple({
+    workspace: ctx.workspace,
+    candidate,
+    expectedOriginalBase: checkpoint.originalReviewBase,
+    expectedWorkspaceTree: true,
+    expectedImplementationRunId: ctx.implementationRunId,
+    expectedCandidateVersion: candidateVersion,
+  });
+  ctx.writeArtifact("accepted-debt.json", acceptedDebt);
+  const handoff = renderFactoryImplementationPrReadyHandoff({
+    workItem: ctx.workItem,
+    implementationRunId: ctx.implementationRunId,
+    attempts,
+    originalReviewBase: checkpoint.originalReviewBase,
+    finalCandidate: candidate,
+    cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
+    implementerSession: checkpoint.implementerSession,
+    workspace: checkpoint.workspace,
+    acceptedDebt,
+  });
+  const handoffPath = ctx.writeHandoff(handoff);
+  ctx.writeSummary(
+    `# Factory Implementation Review\n\n- Status: review-complete\n- Candidate: ${candidate.ref}\n`,
+  );
+  const lease = acquireFactoryWorkspaceWriterLease({
+    workspace: ctx.workspace,
+    factoryProjectId: ctx.factoryStore.projectId,
+    storeRoot: ctx.factoryStore.storeRoot,
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+    runId: ctx.implementationRunId,
+    attemptId: ctx.runId,
+    operation: "remediation",
+    ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
+  });
   try {
     validateFactoryCandidateTuple({
       workspace: ctx.workspace,
@@ -1468,22 +1511,6 @@ function complete(
       expectedImplementationRunId: ctx.implementationRunId,
       expectedCandidateVersion: candidateVersion,
     });
-    ctx.writeArtifact("accepted-debt.json", acceptedDebt);
-    const handoff = renderFactoryImplementationPrReadyHandoff({
-      workItem: ctx.workItem,
-      implementationRunId: ctx.implementationRunId,
-      attempts,
-      originalReviewBase: checkpoint.originalReviewBase,
-      finalCandidate: candidate,
-      cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
-      implementerSession: checkpoint.implementerSession,
-      workspace: checkpoint.workspace,
-      acceptedDebt,
-    });
-    const handoffPath = ctx.writeHandoff(handoff);
-    ctx.writeSummary(
-      `# Factory Implementation Review\n\n- Status: review-complete\n- Candidate: ${candidate.ref}\n`,
-    );
     appendImplementationReviewCompletedEvent({
       factoryStateRoot: ctx.factoryStore.factoryStateRoot,
       workItem: ctx.workItem,
@@ -1497,16 +1524,16 @@ function complete(
       acceptedDebtCount: acceptedDebt.length,
       execution: reviewExecution(ctx),
     });
-    return ctx.export({
-      status: "review-complete",
-      completedReviewCount,
-      candidateVersion,
-      approvedCandidate: candidate,
-      handoffPath,
-    });
   } finally {
-    if (ownsLease) releaseFactoryWorkspaceWriterLease({ handle: lease });
+    releaseFactoryWorkspaceWriterLease({ handle: lease });
   }
+  return ctx.export({
+    status: "review-complete",
+    completedReviewCount,
+    candidateVersion,
+    approvedCandidate: candidate,
+    handoffPath,
+  });
 }
 
 function pointer(runId: string, path: string, root: "factory" | "review" = "review") {

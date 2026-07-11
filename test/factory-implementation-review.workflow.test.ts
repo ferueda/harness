@@ -233,7 +233,7 @@ test("tampered partial patch evidence becomes non-resumable human recovery", asy
   expect(state?.implementationReviewCheckpoint?.partialRecovery).toBeUndefined();
 });
 
-test("resumed partial remediation reconstructs accepted debt from its source review", async () => {
+test("partial ready-for-human recovery preserves its evidence for inspection", async () => {
   const fixture = createReviewFixture();
   const firstProvider = scriptedProvider({
     workspace: fixture.workspace,
@@ -269,36 +269,8 @@ test("resumed partial remediation reconstructs accepted debt from its source rev
   const resumedCheckpoint = failedState?.implementationReviewCheckpoint;
   if (!resumedCheckpoint) throw new Error("Expected partial remediation checkpoint");
 
-  const resumedProvider = scriptedProvider({
-    workspace: fixture.workspace,
-    reviews: [PASS_REVIEW],
-    remediation: {
-      edit: "completed mixed remediation\n",
-      output: {
-        summary: "Applied the blocking fix and retained the advisory debt.",
-        findingDecisions: ["implementation", "quality", "simplify"].flatMap((role) => [
-          {
-            findingId: `${role}-001`,
-            decision: "decline" as const,
-            rationale: "Track the documentation note separately.",
-          },
-          {
-            findingId: `${role}-002`,
-            decision: "implement" as const,
-            rationale: "Applied the blocking correction.",
-          },
-        ]),
-      },
-    },
-  });
-  const second = await runImplementationReview(
-    createReviewContext({ ...fixture, checkpoint: resumedCheckpoint }, resumedProvider),
-  );
-
-  expect(second.status).toBe("review-complete");
-  expect(second.handoffPath && readFile(second.handoffPath)).toContain(
-    "implementation-001: Track the documentation note separately.",
-  );
+  expect(resumedCheckpoint.partialRecovery).toBeDefined();
+  expect(resumedCheckpoint.latestOutcome).toBe("declined-must-fix");
 });
 
 test("mixed non-blocking declines remain accepted debt", async () => {
