@@ -35,7 +35,6 @@ export const FACTORY_STAGES = [
   "implementation-complete",
   "implementation-failed",
   "review-running",
-  "review-failed",
   "review-complete",
   "ready-for-human",
 ] as const;

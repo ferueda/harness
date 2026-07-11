@@ -85,7 +85,6 @@ type FactoryImplementationRunMetaBase = {
   reviewBase?: string;
   reviewHead?: string;
   reviewCommitSha?: string;
-  reviewTree?: string;
   factoryMetadata?: FactoryWorkItemMetadata;
   factoryStore?: FactoryStoreMeta;
   execution?: FactoryExecutionProvenance;
@@ -130,7 +129,6 @@ type FactoryImplementationExportInputBase = {
   reviewBase?: string;
   reviewHead?: string;
   reviewCommitSha?: string;
-  reviewTree?: string;
   includeLiveArtifacts?: boolean;
 };
 
@@ -325,7 +323,6 @@ function createFactoryImplementationRunContextInternal(
         reviewBase: input.reviewBase,
         reviewHead: input.reviewHead,
         reviewCommitSha: input.reviewCommitSha,
-        reviewTree: input.reviewTree,
         streamLogExists: existsSync(join(runDir, "implementation/implementer.stream.jsonl")),
       });
       writeFileSync(
@@ -358,7 +355,6 @@ function buildMeta(input: {
   reviewBase?: string;
   reviewHead?: string;
   reviewCommitSha?: string;
-  reviewTree?: string;
   streamLogExists: boolean;
 }): FactoryImplementationRunMeta {
   const baseArtifacts: FactoryImplementationBaseArtifacts = {
@@ -393,7 +389,6 @@ function buildMeta(input: {
     ...(input.reviewBase ? { reviewBase: input.reviewBase } : {}),
     ...(input.reviewHead ? { reviewHead: input.reviewHead } : {}),
     ...(input.reviewCommitSha ? { reviewCommitSha: input.reviewCommitSha } : {}),
-    ...(input.reviewTree ? { reviewTree: input.reviewTree } : {}),
     ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
     execution: factoryExecutionProvenance(input.workspace, input.runDir),
   };
@@ -463,7 +458,7 @@ function renderSummary(
         ? [
             "- Provider invocation: not run.",
             "- Reviewer invocation: not run.",
-            "- Lifecycle events: imported/started/failed terminal evidence written.",
+            "- Lifecycle events: imported/started audit evidence only; no terminal event.",
           ]
         : [
             `- Provider run status: ${meta.status}`,

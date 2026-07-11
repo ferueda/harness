@@ -103,7 +103,7 @@ export function resolveFactoryImplementationInput(input: {
     };
   }
 
-  if (hasAllDirectMarkers(metadata)) {
+  if (hasAllDirectMarkers(metadata, input.linearProjection)) {
     return {
       mode: "direct",
       ...base,
@@ -184,10 +184,13 @@ function hasAnyPlannedPublicationSignal(metadata: FactoryWorkItemMetadata): bool
   );
 }
 
-function hasAllDirectMarkers(metadata: FactoryWorkItemMetadata): boolean {
+function hasAllDirectMarkers(
+  metadata: FactoryWorkItemMetadata,
+  projection: FactoryImplementationLinearProjection | undefined,
+): boolean {
   return (
     (metadata.factoryStage === "ready-to-implement" ||
-      metadata.factoryStage === "implementation-failed") &&
+      (metadata.factoryStage === "implementation-failed" && projection?.mode === "apply")) &&
     metadata.factoryRoute === "ready-to-implement" &&
     metadata.factoryNextAction === "implement-directly"
   );

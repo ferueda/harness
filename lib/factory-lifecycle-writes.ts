@@ -12,7 +12,6 @@ import {
 import type { FactoryPlanningRunMeta } from "./factory-planning-run-context.ts";
 import { FactoryWorkItemMetadataSchema, type FactoryWorkItem } from "./factory-schemas.ts";
 import { factoryLifecycleExecutionProvenance } from "./factory-store.ts";
-import { canonicalizeFactoryWorkspace } from "./factory-locks.ts";
 
 export type FactoryLifecycleWriteOptions = {
   factoryStateRoot?: string;
@@ -257,17 +256,9 @@ export function appendImplementationStartedEvent(
     execution: FactoryLifecycleExecution;
     linearIssue?: string;
     itemFile?: string;
-    owner?: {
-      pid: number;
-      hostname: string;
-      runDir: string;
-      startedAt: string;
-    };
   } & FactoryLifecycleWriteOptions,
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
-  const metadata = FactoryWorkItemMetadataSchema.safeParse(input.workItem.metadata ?? {});
-  const retry = metadata.success && metadata.data.factoryStage === "implementation-failed";
   return appendFactoryLifecycleEvent({
     factoryStateRoot: requireFactoryStateRoot(input),
     event: {
@@ -282,82 +273,7 @@ export function appendImplementationStartedEvent(
       data: {
         ...(input.linearIssue ? { linearIssue: input.linearIssue } : {}),
         ...(input.itemFile ? { itemFile: input.itemFile } : {}),
-        ...(input.owner ? { owner: input.owner } : {}),
       },
-    },
-    precondition: {
-      allowedStages: [undefined, "ready-to-implement", "implementation-failed"],
-      ...(retry && metadata.data.factoryRunId
-        ? { expectedFactoryRunId: metadata.data.factoryRunId }
-        : {}),
-    },
-  });
-}
-
-export function appendImplementationStaleOwnerEvent(input: {
-  workspace: string;
-  workItem: FactoryWorkItem;
-  runId: string;
-  factoryStateRoot?: string;
-  execution: FactoryLifecycleExecution;
-  runDir: string;
-  error: string;
-  treeDrift: boolean;
-}): FactoryLifecycleEvent {
-  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
-  return appendFactoryLifecycleEvent({
-    factoryStateRoot: requireFactoryStateRoot(input),
-    event: {
-      version: 1,
-      id: `implementation.stale-owner:${input.runId}`,
-      type: "implementation.stale-owner",
-      workItemKey,
-      occurredAt: new Date().toISOString(),
-      runId: input.runId,
-      source: "harness",
-      execution: input.execution,
-      data: {
-        error: input.error,
-        runDir: input.runDir,
-        treeDrift: input.treeDrift,
-      },
-    },
-    precondition: {
-      allowedStages: ["implementation-started"],
-      expectedFactoryRunId: input.runId,
-    },
-  });
-}
-
-export function appendImplementationRecoveredFailureEvent(input: {
-  workspace: string;
-  workItem: FactoryWorkItem;
-  runId: string;
-  factoryStateRoot?: string;
-  execution: FactoryLifecycleExecution;
-  error: string;
-  summaryPath?: string;
-}): FactoryLifecycleEvent {
-  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
-  return appendFactoryLifecycleEvent({
-    factoryStateRoot: requireFactoryStateRoot(input),
-    event: {
-      version: 1,
-      id: `implementation.failed:${input.runId}`,
-      type: "implementation.failed",
-      workItemKey,
-      occurredAt: new Date().toISOString(),
-      runId: input.runId,
-      source: "harness",
-      execution: input.execution,
-      data: {
-        error: input.error,
-        ...(input.summaryPath ? { summaryPath: input.summaryPath } : {}),
-      },
-    },
-    precondition: {
-      allowedStages: ["implementation-started"],
-      expectedFactoryRunId: input.runId,
     },
   });
 }
@@ -413,10 +329,6 @@ export function appendImplementationTerminalEvent(input: {
           ...(input.meta.reviewBase ? { reviewBase: input.meta.reviewBase } : {}),
         },
       },
-      precondition: {
-        allowedStages: [undefined, "implementation-started"],
-        expectedFactoryRunId: input.meta.runId,
-      },
     });
   }
   return appendFactoryLifecycleEvent({
@@ -468,24 +380,7 @@ export function appendImplementationTerminalEvent(input: {
               },
             }
           : {}),
-        ...(input.meta.reviewTree && input.meta.factoryStore
-          ? {
-              candidateTree: input.meta.reviewTree,
-              workspace: {
-                ...canonicalizeFactoryWorkspace(input.meta.workspace),
-                factoryProjectId: input.meta.factoryStore.projectId,
-              },
-              runRoots: {
-                factoryRunsDir: input.meta.factoryStore.factoryRunsDir,
-                reviewRunsDir: input.meta.factoryStore.reviewRunsDir,
-              },
-            }
-          : {}),
       },
-    },
-    precondition: {
-      allowedStages: [undefined, "implementation-started"],
-      expectedFactoryRunId: input.meta.runId,
     },
   });
 }
