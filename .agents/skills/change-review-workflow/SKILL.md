@@ -15,12 +15,6 @@ Coordinate harness review runs and close the loop on reviewer findings.
   - `simplify`: unnecessary complexity and smaller equivalent shapes.
 - Use `--steps <ids>` only when the caller intentionally selected roles, or on a follow-up run where you intentionally skip a role that already passed. Record the skip reason.
 
-## Preferred Runtime
-
-- Use Cursor SDK for `harness run change-review` (default provider).
-- Include `--verbose` for day-to-day agent and automation runs so callers receive live workflow events while reviewers are still running.
-- For Codex-backed review, use `--agent codex`; keep default `read-only`, `never`, and `high` unless the caller explicitly requests otherwise.
-
 ## Before Running
 
 1. Compose a self-contained review handoff using [references/review-handoff.md](references/review-handoff.md). Completion criterion: a reviewer can understand the goal, scope, changed files, verification, and scrutiny points without chat history.
@@ -36,15 +30,14 @@ Use the available harness executable: `harness`, `.harness/bin/harness`, or `nod
 printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --handoff-stdin --verbose
 ```
 
+Use `--verbose` for day-to-day and automation runs so callers receive live
+workflow events while reviewers are still running.
+
 For a deliberate partial run:
 
 ```bash
 printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --steps implementation,quality --handoff-stdin --verbose
 ```
-
-Defaults: Cursor SDK `grok-4.5`; Codex SDK `gpt-5.6-sol` with effort `high`. Use `--agent` or `--model` only when the caller asks or repo config requires it. Cursor SDK review models are constrained to `composer-2.5`, `claude-opus-4-8`, `grok-4.5`, `gpt-5.6-sol-medium`, `gpt-5.6-sol-high`, `gpt-5.6-sol-xhigh`, `gpt-5.6-terra-high`, and `gpt-5.6-terra-xhigh`. Selecting `grok-4.5` uses harness-mapped `effort=high` and `fast=false` (not Cursor's catalog default `fast=true`). Combined GPT-5.6 modes map to base SDK ids (`gpt-5.6-sol` / `gpt-5.6-terra`) with `reasoning` + `context=272k` + `fast=false`.
-
-Run `harness models` before choosing a non-default model or checking the SDK params behind each mode.
 
 ## After Results
 

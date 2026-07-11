@@ -7,7 +7,7 @@
     },
     "codex": {
       "model": "gpt-5.6-luna",
-      "modelReasoningEffort": "high",
+      "modelReasoningEffort": "xhigh",
       "sandboxMode": "read-only",
       "approvalPolicy": "never"
     }
