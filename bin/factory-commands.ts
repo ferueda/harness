@@ -1012,7 +1012,7 @@ export async function recoverStaleImplementationOwner(input: {
   assertImplementationRunReservation({
     runDir: started.data.owner.runDir,
     runId,
-    factoryRunsDir: input.factoryStore.factoryRunsDir,
+    factoryRunsDir: recoveryStore.factoryRunsDir,
     workspace: input.workspace,
     workItem: input.workItem,
     factoryStore: recoveryStore,

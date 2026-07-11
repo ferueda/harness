@@ -6,6 +6,7 @@ import {
   type FactoryStoreMeta,
   type FactoryStoreResolution,
 } from "../lib/factory-store.ts";
+import { canonicalizeFactoryWorkspace } from "../lib/factory-locks.ts";
 import { dirname, join } from "node:path";
 import { writeFileSync } from "node:fs";
 import { deriveFactoryWorkItemKey, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
@@ -64,6 +65,20 @@ export type FactoryImplementationReviewCommandConfig = {
   ) => Promise<FactoryImplementationReviewRunMeta>;
 };
 
+function printRejectedReview(error: unknown): void {
+  console.log(
+    JSON.stringify(
+      {
+        workflow: "factory-implementation-review",
+        status: "rejected",
+        error: errorMessage(error),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 export function addFactoryImplementationReviewCommand(
   parent: Command,
   config: FactoryImplementationReviewCommandConfig,
@@ -97,33 +112,13 @@ export function addFactoryImplementationReviewCommand(
           process.exitCode = 1;
         }
       } catch (error) {
-        console.log(
-          JSON.stringify(
-            {
-              workflow: "factory-implementation-review",
-              status: "rejected",
-              error: errorMessage(error),
-            },
-            null,
-            2,
-          ),
-        );
+        printRejectedReview(error);
         process.exitCode = 1;
       }
     });
   review.exitOverride((error) => {
     if (error.exitCode !== 0) {
-      console.log(
-        JSON.stringify(
-          {
-            workflow: "factory-implementation-review",
-            status: "rejected",
-            error: errorMessage(error),
-          },
-          null,
-          2,
-        ),
-      );
+      printRejectedReview(error);
       process.exitCode = 1;
     }
     throw error;
@@ -144,6 +139,8 @@ export async function runFactoryImplementationReviewCommand(
     factoryStoreProjectId: options.factoryStoreProjectId,
     env: process.env,
   });
+  // Reject unsupported workspaces before creating durable review-run evidence.
+  canonicalizeFactoryWorkspace(store.workspace);
   let allocation = allocateFactoryRun({
     factoryRunsDir: store.reviewRunsDir,
     idPrefix: "implementation-review",
@@ -168,7 +165,7 @@ export async function runFactoryImplementationReviewCommand(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    writeReviewRejection(allocation, store, options, message);
+    writeReviewRejection(allocation, store, options, store.workspace, message);
     if (
       error &&
       typeof error === "object" &&
@@ -237,6 +234,7 @@ export async function runFactoryImplementationReviewCommand(
       allocation,
       resolved.factoryStore,
       options,
+      store.workspace,
       `${options.resume ? "--resume" : "Initial review"} is not allowed from ${resolved.state.factoryStage ?? "uninitialized"}.`,
     );
     throw new Error(
@@ -256,6 +254,7 @@ export async function runFactoryImplementationReviewCommand(
       allocation,
       resolved.factoryStore,
       options,
+      store.workspace,
       error instanceof Error ? error.message : String(error),
     );
     throw error;
@@ -272,6 +271,7 @@ export async function runFactoryImplementationReviewCommand(
       allocation,
       resolved.factoryStore,
       options,
+      store.workspace,
       `Review limit provenance changed on resume: persisted ${JSON.stringify(resolved.checkpoint.effectiveReviewLimit)}, current ${JSON.stringify({ value: settings.maxReviewIterations, source: settings.source })}.`,
     );
     throw new Error(
@@ -292,6 +292,7 @@ export async function runFactoryImplementationReviewCommand(
       allocation,
       resolved.factoryStore,
       options,
+      store.workspace,
       error instanceof Error ? error.message : String(error),
     );
     throw error;
@@ -346,9 +347,9 @@ function writeReviewRejection(
   allocation: { runId: string; runDir: string; reservationToken: string },
   store: FactoryStoreResolution | FactoryStoreMeta,
   options: FactoryImplementationReviewOptions,
+  workspace: string,
   message: string,
 ): void {
-  const workspace = "workspace" in store ? store.workspace : store.projectRoot;
   writeFileSync(
     join(allocation.runDir, "summary.md"),
     `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${message}\n`,

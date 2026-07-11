@@ -286,6 +286,7 @@ async function runReviewLoop(
     }
 
     const result = await remediate(ctx, checkpoint, candidate, normalized.findings, reviewIndex);
+    let remediationLeaseReleased = false;
     try {
       if (result.kind === "failed") {
         const changed = workspaceCaptureChanged(result.before, result.after);
@@ -420,6 +421,7 @@ async function runReviewLoop(
         result.output.findingDecisions.every((decision) => decision.decision === "decline")
       ) {
         releaseFactoryWorkspaceWriterLease({ handle: result.lease });
+        remediationLeaseReleased = true;
         return complete(
           ctx,
           checkpoint,
@@ -505,7 +507,9 @@ async function runReviewLoop(
         }
       }
     } finally {
-      if (result.lease) releaseFactoryWorkspaceWriterLease({ handle: result.lease });
+      if (result.lease && !remediationLeaseReleased) {
+        releaseFactoryWorkspaceWriterLease({ handle: result.lease });
+      }
     }
   }
 }
@@ -1254,10 +1258,14 @@ function failedAfterRemediation(
     activeReviewAttemptId: ctx.runId,
     latestCheckpointId: checkpoint.latestCheckpointId,
     classification: result.classification,
-    retryable: result.classification !== "protocol",
+    retryable: true,
     error: `${result.error}${captureError}`,
     summary: pointer(ctx.runId, "summary.md"),
-    ...(partial.recovery ? { partialRecovery: partial.recovery } : {}),
+    ...(partial.recovery
+      ? { partialRecovery: partial.recovery }
+      : checkpoint.partialRecovery
+        ? { partialRecovery: checkpoint.partialRecovery }
+        : {}),
     ...(partial.failurePointer ? { recovery: partial.failurePointer } : {}),
     ...(result.boundaryBeforePath
       ? { writerBoundaryBefore: pointer(ctx.runId, result.boundaryBeforePath) }
@@ -1370,9 +1378,10 @@ function failedArtifact(
     activeReviewAttemptId: ctx.runId,
     latestCheckpointId: checkpoint.latestCheckpointId,
     classification: "artifact",
-    retryable: false,
+    retryable: true,
     error,
     summary: pointer(ctx.runId, "summary.md"),
+    ...(checkpoint.partialRecovery ? { partialRecovery: checkpoint.partialRecovery } : {}),
     execution: reviewExecution(ctx),
   });
   return ctx.export({
@@ -1403,9 +1412,10 @@ function failedProtocol(
     activeReviewAttemptId: ctx.runId,
     latestCheckpointId: checkpoint.latestCheckpointId,
     classification: "protocol",
-    retryable: false,
+    retryable: true,
     error,
     summary: pointer(ctx.runId, "summary.md"),
+    ...(checkpoint.partialRecovery ? { partialRecovery: checkpoint.partialRecovery } : {}),
     execution: reviewExecution(ctx),
   });
   return ctx.export({
@@ -1573,10 +1583,14 @@ function failUnexpectedReview(
     activeReviewAttemptId: ctx.runId,
     latestCheckpointId: checkpoint.latestCheckpointId,
     classification,
-    retryable: classification !== "protocol",
+    retryable: true,
     error: `${errorText}${recoveryError}`,
     summary: pointer(ctx.runId, "summary.md"),
-    ...(partial.recovery ? { partialRecovery: partial.recovery } : {}),
+    ...(partial.recovery
+      ? { partialRecovery: partial.recovery }
+      : checkpoint.partialRecovery
+        ? { partialRecovery: checkpoint.partialRecovery }
+        : {}),
     ...(partial.failurePointer ? { recovery: partial.failurePointer } : {}),
     execution: reviewExecution(ctx),
   });

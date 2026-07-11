@@ -379,7 +379,8 @@ test("stale-owner recovery probes Linear without a lease and serializes terminal
     env: workspaceLeaseEnv,
   });
   const runId = "implementation-stale-owner";
-  const runDir = join(store.factoryRunsDir, runId);
+  const recordedRunsDir = mkdtempSync(join(tmpdir(), "harness-stale-owner-recorded-runs-"));
+  const runDir = join(recordedRunsDir, runId);
   mkdirSync(join(runDir, "context"), { recursive: true });
   const reservation = {
     station: "implementation",
@@ -390,7 +391,7 @@ test("stale-owner recovery probes Linear without a lease and serializes terminal
     storeRoot: store.storeRoot,
     factoryProjectId: store.projectId,
     factoryStateRoot: store.factoryStateRoot,
-    factoryRunsDir: store.factoryRunsDir,
+    factoryRunsDir: recordedRunsDir,
     reviewRunsDir: store.reviewRunsDir,
   };
   writeFileSync(join(runDir, "attempt-reservation.json"), `${JSON.stringify(reservation)}\n`);

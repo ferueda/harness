@@ -543,14 +543,19 @@ export function acquireFactoryWorkspaceWriterLease(
     startedAt: new Date(now()).toISOString(),
     processTitle: process.title,
   };
+  let created = false;
   try {
     mkdirSync(path);
+    created = true;
     writeFileSync(join(path, "owner.json"), `${JSON.stringify(owner)}\n`, {
       encoding: "utf8",
       mode: 0o600,
     });
     return { path, owner, canonical };
   } catch (error) {
+    if (created) {
+      removeUnpublishedWorkspaceLease(path);
+    }
     if (!isAlreadyExistsError(error)) {
       throw new FactoryWorkspaceCanonicalizationError(
         `Cannot acquire factory workspace writer lease: ${path}`,
@@ -572,14 +577,19 @@ export function acquireFactoryWorkspaceWriterLease(
   ) {
     const liveness = pidLiveness(inspection.owner.pid);
     if (liveness === "dead" && removeMatchingWorkspaceLease(path, inspection.owner)) {
+      let created = false;
       try {
         mkdirSync(path);
+        created = true;
         writeFileSync(join(path, "owner.json"), `${JSON.stringify(owner)}\n`, {
           encoding: "utf8",
           mode: 0o600,
         });
         return { path, owner, canonical };
       } catch (error) {
+        if (created) {
+          removeUnpublishedWorkspaceLease(path);
+        }
         if (!isAlreadyExistsError(error)) {
           throw new FactoryWorkspaceCanonicalizationError(
             `Cannot acquire reclaimed factory workspace writer lease: ${path}`,
@@ -598,6 +608,14 @@ export function acquireFactoryWorkspaceWriterLease(
       warning: "Lease exists but owner diagnostics could not be inspected.",
     },
   );
+}
+
+function removeUnpublishedWorkspaceLease(path: string): void {
+  try {
+    rmSync(path, { recursive: true, force: true });
+  } catch {
+    // Preserve the original publication error; cleanup is best effort.
+  }
 }
 
 export function releaseFactoryWorkspaceWriterLease(input: {

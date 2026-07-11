@@ -185,7 +185,7 @@ test("provider failure after edits persists a partial tuple and resume restores 
   ).toBeUndefined();
 });
 
-test("invalid partial status evidence becomes non-resumable human recovery", async () => {
+test("invalid partial status evidence remains retryable for recovery", async () => {
   const { fixture, first, checkpoint } = await createPartialReview();
   rmSync(join(first.runDir, "iterations/1/workspace-status.json"));
 
@@ -205,11 +205,11 @@ test("invalid partial status evidence becomes non-resumable human recovery", asy
     workItemKey: "linear:ENG-123",
     workspace: fixture.workspace,
   });
-  expect(state?.factoryStage).toBe("ready-for-human");
-  expect(state?.implementationReviewCheckpoint?.partialRecovery).toBeUndefined();
+  expect(state?.factoryStage).toBe("review-failed");
+  expect(state?.implementationReviewCheckpoint?.partialRecovery).toBeDefined();
 });
 
-test("tampered partial patch evidence becomes non-resumable human recovery", async () => {
+test("tampered partial patch evidence remains retryable for recovery", async () => {
   const { fixture, first, checkpoint } = await createPartialReview();
   writeFileSync(join(first.runDir, "iterations/1/diff.patch"), "tampered\n", "utf8");
 
@@ -229,8 +229,36 @@ test("tampered partial patch evidence becomes non-resumable human recovery", asy
     workItemKey: "linear:ENG-123",
     workspace: fixture.workspace,
   });
-  expect(state?.factoryStage).toBe("ready-for-human");
-  expect(state?.implementationReviewCheckpoint?.partialRecovery).toBeUndefined();
+  expect(state?.factoryStage).toBe("review-failed");
+  expect(state?.implementationReviewCheckpoint?.partialRecovery).toBeDefined();
+});
+
+test("partial recovery tuple survives a no-change protocol failure", async () => {
+  const { fixture, first, checkpoint } = await createPartialReview();
+  const resumed = await runImplementationReview(
+    createReviewContext(
+      { ...fixture, checkpoint },
+      scriptedProvider({
+        workspace: fixture.workspace,
+        reviews: [PASS_REVIEW],
+        remediation: {
+          edit: "partial artifact validation\n",
+          output: decisionsForCurrentFindings(),
+        },
+      }),
+    ),
+  );
+
+  expect(resumed.status).toBe("review-failed");
+  const state = loadFactoryLifecycleState({
+    factoryStateRoot: fixture.store.factoryStateRoot,
+    workItemKey: "linear:ENG-123",
+    workspace: fixture.workspace,
+  });
+  expect(state?.implementationReviewCheckpoint?.partialRecovery).toEqual(
+    checkpoint.partialRecovery,
+  );
+  expect(first.status).toBe("review-failed");
 });
 
 test("partial ready-for-human recovery preserves its evidence for inspection", async () => {

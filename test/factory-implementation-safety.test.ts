@@ -10,7 +10,22 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+
+type WriteFileSync = typeof writeFileSync;
+type NodeFsModule = { [key: string]: unknown; writeFileSync: WriteFileSync };
+
+const fsMocks = vi.hoisted(() => ({
+  realWriteFileSync: undefined as WriteFileSync | undefined,
+  writeFileSync: vi.fn(),
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<NodeFsModule>();
+  fsMocks.realWriteFileSync = actual.writeFileSync;
+  fsMocks.writeFileSync.mockImplementation(actual.writeFileSync);
+  return { ...actual, writeFileSync: fsMocks.writeFileSync };
+});
 import {
   allocateFactoryRun,
   releaseEmptyFactoryRunReservation,
@@ -25,6 +40,10 @@ import {
   captureFactoryWriterBoundary,
   FactoryWriterBoundaryError,
 } from "../lib/factory-writer-boundary.ts";
+import {
+  acquireFactoryWorkspaceWriterLease,
+  inspectFactoryWorkspaceWriterLease,
+} from "../lib/factory-locks.ts";
 
 test("run reservation cleanup requires the persisted token", () => {
   const factoryRunsDir = mkdtempSync(join(tmpdir(), "harness-factory-allocation-"));
@@ -118,4 +137,66 @@ test("writer boundary fingerprints the canonical Git workspace and symlink targe
   const after = captureFactoryWriterBoundary({ workspace });
 
   expect(() => assertFactoryWriterBoundary(before, after)).toThrow(FactoryWriterBoundaryError);
+});
+
+test("writer boundary canonicalizes missing allowed logs through symlinked durable roots", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-boundary-log-workspace-"));
+  const durableTarget = mkdtempSync(join(tmpdir(), "harness-factory-boundary-log-target-"));
+  const durableLink = join(workspace, "runs");
+  const runDir = join(durableTarget, "run-1");
+  const logPath = join(runDir, "implementation/stream.jsonl");
+  const logicalLogPath = join(durableLink, "run-1/implementation/stream.jsonl");
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, "tracked.txt"), "tracked\n", "utf8");
+  execFileSync("git", ["add", "tracked.txt"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "init"], { cwd: workspace, stdio: "ignore" });
+  mkdirSync(join(runDir, "implementation"), { recursive: true });
+  symlinkSync(durableTarget, durableLink, "dir");
+  writeFileSync(logPath, "{}\n", "utf8");
+
+  const before = captureFactoryWriterBoundary({
+    workspace,
+    durablePaths: [durableLink],
+    allowedPaths: [logicalLogPath],
+  });
+  writeFileSync(logPath, '{"event":true}\n', "utf8");
+  const after = captureFactoryWriterBoundary({
+    workspace,
+    durablePaths: [durableLink],
+    allowedPaths: [logicalLogPath],
+  });
+
+  expect(() => assertFactoryWriterBoundary(before, after)).not.toThrow();
+});
+
+test("writer lease removes a newly created lock when owner publication fails", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-lease-publication-workspace-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  const env = {
+    ...process.env,
+    XDG_DATA_HOME: mkdtempSync(join(tmpdir(), "harness-factory-lease-publication-data-")),
+  };
+  fsMocks.writeFileSync.mockImplementation(() => {
+    throw new Error("owner publication failed");
+  });
+
+  expect(() =>
+    acquireFactoryWorkspaceWriterLease({
+      workspace,
+      factoryProjectId: "test-project",
+      storeRoot: mkdtempSync(join(tmpdir(), "harness-factory-lease-publication-store-")),
+      workItemKey: "linear:ENG-123",
+      runId: "implementation-test",
+      operation: "implementation",
+      env,
+    }),
+  ).toThrow(/Cannot acquire factory workspace writer lease/);
+  fsMocks.writeFileSync.mockImplementation(fsMocks.realWriteFileSync!);
+
+  expect(inspectFactoryWorkspaceWriterLease({ workspace, env })).toBeUndefined();
 });

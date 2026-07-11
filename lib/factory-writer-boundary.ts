@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 export type FactoryWriterBoundarySnapshot = {
   workspace: string;
@@ -168,8 +168,14 @@ function hashFile(path: string): string {
 
 function canonicalPath(path: string): string {
   const resolved = resolve(path);
+  let existing = resolved;
+  const suffix: string[] = [];
+  while (!existsSync(existing) && existing !== dirname(existing)) {
+    suffix.unshift(basename(existing));
+    existing = dirname(existing);
+  }
   try {
-    return realpathSync(resolved);
+    return join(realpathSync(existing), ...suffix);
   } catch {
     return resolved;
   }

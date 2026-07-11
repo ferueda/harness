@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -22,6 +23,7 @@ import {
 
 test("review CLI emits stable JSON for rejected input", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-review-command-rejected-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
   const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
   const previousExitCode = process.exitCode;
   process.exitCode = undefined;
@@ -53,6 +55,32 @@ test("review CLI emits stable JSON for rejected input", async () => {
     process.exitCode = previousExitCode;
     output.mockRestore();
   }
+});
+
+test("review command fails closed before allocating a run for a non-Git workspace", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-review-command-non-git-"));
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: mkdtempSync(join(tmpdir(), "harness-review-command-non-git-store-")),
+    factoryStoreProjectId: "test-project",
+    env: process.env,
+  });
+
+  await expect(
+    runFactoryImplementationReviewCommand(
+      {
+        workspace,
+        itemFile: join(workspace, "missing-work-item.json"),
+        resume: false,
+        factoryStoreRoot: store.storeRoot,
+        factoryStoreProjectId: store.projectId,
+        maxRuntimeMs: 1_000,
+        verbose: false,
+      },
+      { defaultMaxRuntimeMs: 1_000, positiveNumber: Number },
+    ),
+  ).rejects.toThrow("Cannot resolve Git top-level");
+  expect(existsSync(store.reviewRunsDir)).toBe(false);
 });
 
 test("review CLI emits stable JSON for parser rejection", async () => {
@@ -128,6 +156,7 @@ test("review CLI keeps a partial ready-for-human checkpoint terminal", async () 
 
 test("legacy review input is durably terminalized without invoking a provider", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-review-command-workspace-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
   const store = resolveFactoryStore({
     workspace,
     factoryStoreRoot: mkdtempSync(join(tmpdir(), "harness-review-command-store-")),

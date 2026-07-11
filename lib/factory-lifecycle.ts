@@ -1244,6 +1244,7 @@ function reviewFailedState(
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.failed" }>,
 ): FactoryLifecycleState {
   const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
+  const partialRecovery = event.data.partialRecovery ?? checkpoint.partialRecovery;
   return {
     ...state,
     factoryStage: event.data.retryable ? "review-failed" : "ready-for-human",
@@ -1252,8 +1253,7 @@ function reviewFailedState(
       ...checkpoint,
       checkpointId: event.data.latestCheckpointId,
       latestCheckpointId: event.data.latestCheckpointId,
-      ...(event.data.partialRecovery ? { partialRecovery: event.data.partialRecovery } : {}),
-      ...(!event.data.partialRecovery ? { partialRecovery: undefined } : {}),
+      ...(partialRecovery ? { partialRecovery } : { partialRecovery: undefined }),
       latestOutcome: "review-failed",
       latestErrorClass: event.data.classification,
       activeReviewAttemptId: undefined,

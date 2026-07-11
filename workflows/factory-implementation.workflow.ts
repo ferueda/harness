@@ -123,6 +123,9 @@ async function runLive(
 
     reviewBase = readFactoryReviewBase(ctx.workspace);
     const logPath = join(ctx.runDir, "implementation/implementer.stream.jsonl");
+    // Pre-create the provider log so a symlinked custom runs root has stable
+    // boundary metadata before the provider starts appending to it.
+    writeFileSync(logPath, "", "utf8");
     const role = ctx.implementerRole;
     const writerBoundary = ctx.factoryStore
       ? (boundaryBefore = captureFactoryWriterBoundary({
