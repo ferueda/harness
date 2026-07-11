@@ -465,6 +465,13 @@ function validateCheckpointProvenance(input: {
     );
   }
   const initialCommit = String(implementationMeta.reviewCommitSha ?? "");
+  const resolvedInitialCommit = readGit(input.workspace, ["rev-parse", initialRef]);
+  if (resolvedInitialCommit !== initialCommit) {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation candidate ref no longer matches the recorded implementation commit.",
+      "provenance",
+    );
+  }
   if (checkpoint.candidateVersion === 0 && checkpoint.approvedCandidate.commit !== initialCommit) {
     throw new FactoryImplementationReviewInputError(
       "Approved candidate is not the immutable implementation candidate.",
@@ -482,18 +489,24 @@ function validateCheckpointProvenance(input: {
       "provenance",
     );
   }
-  if (checkpoint.candidateVersion > 0) {
-    const parentRef =
-      checkpoint.candidateVersion === 1
-        ? initialRef
-        : `refs/harness/factory/${checkpoint.owningImplementationRunId}/review/${checkpoint.candidateVersion - 1}`;
-    const parent = readGit(input.workspace, ["rev-parse", parentRef]);
-    if (readGit(input.workspace, ["rev-parse", `${candidateCommit}^`]) !== parent) {
+  let priorCommit = initialCommit;
+  for (let version = 1; version <= checkpoint.candidateVersion; version += 1) {
+    const remediationRef = `refs/harness/factory/${checkpoint.owningImplementationRunId}/review/${version}`;
+    const remediationCommit = readGit(input.workspace, ["rev-parse", remediationRef]);
+    const parent = readGit(input.workspace, ["rev-parse", `${remediationCommit}^`]);
+    if (parent !== priorCommit) {
       throw new FactoryImplementationReviewInputError(
-        "Approved remediation candidate does not descend from the prior candidate.",
+        "Approved remediation candidate lineage does not descend from the prior candidate.",
         "provenance",
       );
     }
+    if (version === checkpoint.candidateVersion && remediationCommit !== candidateCommit) {
+      throw new FactoryImplementationReviewInputError(
+        "Approved remediation candidate ref does not match the checkpoint tuple.",
+        "provenance",
+      );
+    }
+    priorCommit = remediationCommit;
   }
 }
 

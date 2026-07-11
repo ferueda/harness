@@ -7,10 +7,16 @@ export type FactoryWriterBoundarySnapshot = {
   workspace: string;
   refs: Record<string, string>;
   head: string;
+  headRef: string;
   index: string;
   harness: string;
   lifecycle: string;
   factoryStore: string;
+  volatileFactoryStore: Array<{
+    root: string;
+    rootFingerprint: string;
+    children: Record<string, string>;
+  }>;
   allowedPaths: string[];
 };
 
@@ -37,6 +43,7 @@ export type FactoryWriterBoundaryInput = {
   lifecycleRoot?: string;
   factoryStoreRoot?: string;
   durablePaths?: readonly string[];
+  volatileDurablePaths?: readonly string[];
   allowedPaths?: readonly string[];
 };
 
@@ -52,17 +59,31 @@ export function captureFactoryWriterBoundary(
     .map(canonicalPath)
     .filter((path, index, paths) => paths.indexOf(path) === index)
     .sort();
+  const volatileDurablePaths = (input.volatileDurablePaths ?? [])
+    .map(canonicalPath)
+    .filter((path, index, paths) => paths.indexOf(path) === index)
+    .sort();
+  const stableDurablePaths = durablePaths.filter((path) => !volatileDurablePaths.includes(path));
   const gitRoot = canonicalPath(gitValue(workspace, ["rev-parse", "--show-toplevel"]));
   return {
     workspace,
     refs: readRefs(gitRoot),
     head: gitValue(gitRoot, ["rev-parse", "HEAD"]),
+    headRef: gitValueOrEmpty(gitRoot, ["symbolic-ref", "--short", "-q", "HEAD"]),
     index: hashGitIndex(gitRoot),
     harness: fingerprintPath(join(gitRoot, ".harness"), allowedPaths),
     lifecycle: fingerprintPath(input.lifecycleRoot, allowedPaths),
-    factoryStore: durablePaths
-      .map((path) => `${path}:${fingerprintPath(path, allowedPaths)}`)
+    factoryStore: stableDurablePaths
+      .map((path) => {
+        const excluded = volatileDurablePaths.filter((volatilePath) =>
+          isContainedPath(path, volatilePath),
+        );
+        return `${path}:${fingerprintPath(path, allowedPaths, excluded)}`;
+      })
       .join("|"),
+    volatileFactoryStore: volatileDurablePaths.map((root) =>
+      fingerprintVolatileRoot(root, allowedPaths),
+    ),
     allowedPaths,
   };
 }
@@ -74,10 +95,14 @@ export function assertFactoryWriterBoundary(
   const changed: string[] = [];
   if (!sameRefs(before.refs, after.refs)) changed.push("refs");
   if (before.head !== after.head) changed.push("HEAD");
+  if (before.headRef !== after.headRef) changed.push("HEAD symbolic ref");
   if (before.index !== after.index) changed.push("index");
   if (before.harness !== after.harness) changed.push("workspace .harness");
   if (before.lifecycle !== after.lifecycle) changed.push("lifecycle");
   if (before.factoryStore !== after.factoryStore) changed.push("Factory store");
+  if (!sameVolatileFactoryStore(before.volatileFactoryStore, after.volatileFactoryStore)) {
+    changed.push("Factory store");
+  }
   if (changed.length > 0) throw new FactoryWriterBoundaryError(changed, before, after);
 }
 
@@ -100,7 +125,12 @@ function hashGitIndex(workspace: string): string {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
-    return createHash("sha256").update(entries).digest("hex");
+    const flags = execFileSync("git", ["ls-files", "-v", "-z"], {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return createHash("sha256").update(`${entries}\0${flags}`).digest("hex");
   } catch {
     throw new Error("Factory writer boundary Git probe failed: ls-files --stage");
   }
@@ -118,13 +148,30 @@ function gitValue(workspace: string, args: string[]): string {
   }
 }
 
-function fingerprintPath(path: string | undefined, allowedPaths: readonly string[]): string {
+function gitValueOrEmpty(workspace: string, args: string[]): string {
+  try {
+    return execFileSync("git", args, {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function fingerprintPath(
+  path: string | undefined,
+  allowedPaths: readonly string[],
+  excludedPaths: readonly string[] = [],
+): string {
   if (!path || !existsSync(path)) return "missing";
   const root = canonicalPath(path);
   const entries: string[] = [];
   const visitedRealpaths = new Set<string>();
   const maxEntries = 10_000;
   const visit = (current: string): void => {
+    if (excludedPaths.includes(current)) return;
     const allowedFile = allowedPaths.find((allowed) => current === allowed);
     if (allowedFile) {
       const stat = lstatSync(current);
@@ -169,6 +216,68 @@ function fingerprintPath(path: string | undefined, allowedPaths: readonly string
   };
   visit(root);
   return entries.sort().join("|");
+}
+
+function fingerprintVolatileRoot(
+  root: string,
+  allowedPaths: readonly string[],
+): FactoryWriterBoundarySnapshot["volatileFactoryStore"][number] {
+  if (!existsSync(root)) return { root, rootFingerprint: "missing", children: {} };
+  const stat = lstatSync(root);
+  if (!stat.isDirectory()) {
+    return { root, rootFingerprint: fingerprintPath(root, allowedPaths), children: {} };
+  }
+  // Directory mtime/size changes whenever an expected sibling run is created.
+  // Compare the root type only; existing children remain fully fingerprinted.
+  const rootEntries = [`.:${stat.mode}:${stat.isSymbolicLink()}`];
+  const children: Record<string, string> = {};
+  for (const entry of readdirSync(root)) {
+    const child = join(root, entry);
+    const childStat = lstatSync(child);
+    if (childStat.isDirectory()) {
+      children[entry] = fingerprintPath(child, allowedPaths);
+    } else {
+      rootEntries.push(`${entry}:${fingerprintPath(child, allowedPaths)}`);
+    }
+  }
+  return { root, rootFingerprint: rootEntries.sort().join("|"), children };
+}
+
+function sameVolatileFactoryStore(
+  before: FactoryWriterBoundarySnapshot["volatileFactoryStore"],
+  after: FactoryWriterBoundarySnapshot["volatileFactoryStore"],
+): boolean {
+  for (const beforeRoot of before) {
+    const afterRoot = after.find((candidate) => candidate.root === beforeRoot.root);
+    if (!afterRoot || beforeRoot.rootFingerprint !== afterRoot.rootFingerprint) return false;
+    for (const [name, fingerprint] of Object.entries(beforeRoot.children)) {
+      if (afterRoot.children[name] !== fingerprint) return false;
+    }
+    for (const name of Object.keys(afterRoot.children)) {
+      if (!(name in beforeRoot.children) && !isHarnessOwnedReviewRun(afterRoot.root, name)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function isHarnessOwnedReviewRun(root: string, name: string): boolean {
+  try {
+    const value = JSON.parse(readFileSync(join(root, name, "meta.json"), "utf8")) as unknown;
+    if (typeof value !== "object" || value === null) return false;
+    const record = value as Record<string, unknown>;
+    return (
+      record.runId === name &&
+      typeof record.workspace === "string" &&
+      typeof record.agent === "object" &&
+      record.agent !== null &&
+      typeof record.scope === "object" &&
+      record.scope !== null
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isContainedPath(root: string, candidate: string): boolean {

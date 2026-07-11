@@ -623,9 +623,10 @@ export function releaseFactoryWorkspaceWriterLease(input: {
   handle: FactoryWorkspaceWriterLeaseHandle;
 }): void {
   if (!lstatExists(input.handle.path)) return;
-  assertWorkspaceLeaseEntrySafe(input.handle.path);
+  assertWorkspaceLeaseDirectorySafe(input.handle.path);
   const ownerPath = join(input.handle.path, "owner.json");
   if (!lstatExists(ownerPath)) return;
+  assertWorkspaceLeaseOwnerSafe(ownerPath);
   const current = readWorkspaceLeaseOwner(ownerPath);
   if (!current || !sameWorkspaceLeaseOwnerIdentity(current, input.handle.owner)) return;
   removeMatchingWorkspaceLease(input.handle.path, input.handle.owner);
@@ -639,7 +640,7 @@ export function inspectFactoryWorkspaceWriterLease(input: {
 }): FactoryWorkspaceWriterLeaseInspection | undefined {
   const { canonical, path } = factoryWorkspaceLeasePath(input);
   if (!lstatExists(path)) return undefined;
-  assertWorkspaceLeaseEntrySafe(path);
+  assertWorkspaceLeaseDirectorySafe(path);
   const ownerPath = join(path, "owner.json");
   const now = input.now ?? Date.now;
   if (!lstatExists(ownerPath)) {
@@ -652,6 +653,7 @@ export function inspectFactoryWorkspaceWriterLease(input: {
       warning: "Workspace writer lease owner.json is missing; operator cleanup required.",
     };
   }
+  assertWorkspaceLeaseOwnerSafe(ownerPath);
   const owner = readWorkspaceLeaseOwner(ownerPath);
   if (!owner) {
     return {
@@ -741,8 +743,10 @@ function removeMatchingWorkspaceLease(
   path: string,
   owner: FactoryWorkspaceWriterLeaseOwner,
 ): boolean {
-  assertWorkspaceLeaseEntrySafe(path);
+  assertWorkspaceLeaseDirectorySafe(path);
   const ownerPath = join(path, "owner.json");
+  if (!lstatExists(ownerPath)) return false;
+  assertWorkspaceLeaseOwnerSafe(ownerPath);
   const current = readWorkspaceLeaseOwner(ownerPath);
   if (!current || !sameWorkspaceLeaseOwnerIdentity(current, owner)) return false;
   const reclaimPath = join(
@@ -774,7 +778,7 @@ function removeMatchingWorkspaceLease(
   }
 }
 
-function assertWorkspaceLeaseEntrySafe(path: string): void {
+function assertWorkspaceLeaseDirectorySafe(path: string): void {
   let entry: ReturnType<typeof lstatSync>;
   try {
     entry = lstatSync(path);
@@ -789,7 +793,9 @@ function assertWorkspaceLeaseEntrySafe(path: string): void {
       `Factory workspace lease entry is symlinked or not a directory: ${path}`,
     );
   }
-  const ownerPath = join(path, "owner.json");
+}
+
+function assertWorkspaceLeaseOwnerSafe(ownerPath: string): void {
   let owner: ReturnType<typeof lstatSync>;
   try {
     owner = lstatSync(ownerPath);
@@ -821,7 +827,17 @@ function ensureSafeLeaseNamespace(root: string): void {
       }
     } catch (error) {
       if (!isNodeError(error) || error.code !== "ENOENT") throw error;
-      mkdirSync(current, { mode: 0o700 });
+      try {
+        mkdirSync(current, { mode: 0o700 });
+      } catch (mkdirError) {
+        if (!isAlreadyExistsError(mkdirError)) throw mkdirError;
+        const entry = lstatSync(current);
+        if (!isSafeLeaseDirectoryEntry(current, entry)) {
+          throw new FactoryWorkspaceCanonicalizationError(
+            `Factory workspace lease namespace is symlinked or not a directory: ${current}`,
+          );
+        }
+      }
     }
   }
 }

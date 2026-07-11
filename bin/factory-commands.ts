@@ -693,24 +693,36 @@ function addFactoryImplementationStationCommand(
             throw error;
           }
           try {
-            const ctx = createFactoryImplementationRunContext({
-              workspace: implementerRole.workspace,
-              runsDir: options.runsDir ?? store.factoryRunsDir,
-              ...(allocation ? { allocation } : {}),
-              ...(workspaceLease ? { writerLease: workspaceLease } : {}),
-              deferInitialization: !options.dryRun,
-              factoryStore,
-              workItem: activeInput.workItem,
-              implementationInput: implementationInput!,
-              implementerRole,
-              dryRun: Boolean(options.dryRun),
-              maxRuntimeMs: options.maxRuntimeMs,
-              signal: runAbort.signal,
-              eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
-              linearApplyRequested: options.apply,
-              agentProviderFactory:
-                config.implementationAgentProviderFactory ?? createAgentProvider,
-            });
+            let ctx: ReturnType<typeof createFactoryImplementationRunContext>;
+            try {
+              ctx = createFactoryImplementationRunContext({
+                workspace: implementerRole.workspace,
+                runsDir: options.runsDir ?? store.factoryRunsDir,
+                ...(allocation ? { allocation } : {}),
+                ...(workspaceLease ? { writerLease: workspaceLease } : {}),
+                deferInitialization: !options.dryRun,
+                factoryStore,
+                workItem: activeInput.workItem,
+                implementationInput: implementationInput!,
+                implementerRole,
+                dryRun: Boolean(options.dryRun),
+                maxRuntimeMs: options.maxRuntimeMs,
+                signal: runAbort.signal,
+                eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
+                linearApplyRequested: options.apply,
+                agentProviderFactory:
+                  config.implementationAgentProviderFactory ?? createAgentProvider,
+              });
+            } catch (error) {
+              if (allocation) {
+                releaseEmptyFactoryRunReservation({
+                  runDir: allocation.runDir,
+                  factoryRunsDir: dirname(allocation.runDir),
+                  reservationToken: allocation.reservationToken,
+                });
+              }
+              throw error;
+            }
             announceFactoryRunStarted({
               station: "implementation",
               runId: ctx.runId,
@@ -892,6 +904,17 @@ export async function runFactoryImplementationWithLifecycle(input: {
   const itemFileRelative = lifecycleItemFilePath(input.ctx.workspace, input.itemFile);
   try {
     try {
+      appendFactoryImplementationStartAudit({
+        ctx: input.ctx,
+        factoryStateRoot: input.factoryStateRoot,
+        issueRef: input.issueRef,
+        itemFile: itemFileRelative,
+      });
+    } catch (error) {
+      input.ctx.writeRejection(errorMessage(error));
+      throw error;
+    }
+    try {
       input.ctx.initialize();
     } catch (error) {
       const message = errorMessage(error);
@@ -902,18 +925,13 @@ export async function runFactoryImplementationWithLifecycle(input: {
         includeLiveArtifacts: false,
         preProviderFailure: true,
       });
-      return meta;
-    }
-    try {
-      appendFactoryImplementationStartAudit({
-        ctx: input.ctx,
+      appendImplementationTerminalEvent({
+        meta,
         factoryStateRoot: input.factoryStateRoot,
-        issueRef: input.issueRef,
-        itemFile: itemFileRelative,
+        error: message,
+        linearStartState: "not-started",
       });
-    } catch (error) {
-      input.ctx.writeRejection(errorMessage(error));
-      throw error;
+      return meta;
     }
     return await runFactoryImplementationToLocalTerminal({
       ctx: input.ctx,
@@ -1307,11 +1325,6 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
   ) => Promise<FactoryImplementationRunMeta>;
 }): Promise<FactoryImplementationApplyRunResult> {
   try {
-    input.ctx.initialize();
-  } catch (initializationError) {
-    return terminalizeNotStartedImplementationFailure(input, initializationError);
-  }
-  try {
     appendFactoryImplementationStartAudit({
       ctx: input.ctx,
       factoryStateRoot: input.factoryStateRoot,
@@ -1320,6 +1333,11 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
   } catch (error) {
     input.ctx.writeRejection(errorMessage(error));
     throw error;
+  }
+  try {
+    input.ctx.initialize();
+  } catch (initializationError) {
+    return terminalizeNotStartedImplementationFailure(input, initializationError);
   }
   const workspaceBeforeStartProjection = captureImplementationWorkspaceState(input.ctx);
   releaseImplementationWriterLease(input.ctx);
@@ -1397,10 +1415,11 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
         };
       }
     } else if (
-      linearStage === "ready-to-implement" ||
-      linearStage === "implementation-failed" ||
-      typedStartError?.phase === "validation" ||
-      typedStartError?.phase === "fetch"
+      !startMutationConfirmed &&
+      (linearStage === "ready-to-implement" ||
+        linearStage === "implementation-failed" ||
+        typedStartError?.phase === "validation" ||
+        typedStartError?.phase === "fetch")
     ) {
       appendImplementationTerminalEvent({
         meta,
@@ -1545,6 +1564,7 @@ async function terminalizeNotStartedImplementationFailure(
     ctx: FactoryImplementationRunContext;
     adapter: LinearFactoryAdapter;
     issueRef: string;
+    factoryStateRoot?: string;
   },
   failure: unknown,
 ): Promise<FactoryImplementationApplyRunResult> {
@@ -1555,6 +1575,12 @@ async function terminalizeNotStartedImplementationFailure(
     error,
     includeLiveArtifacts: false,
     preProviderFailure: true,
+  });
+  appendImplementationTerminalEvent({
+    meta,
+    factoryStateRoot: input.factoryStateRoot,
+    error,
+    linearStartState: "not-started",
   });
   return {
     meta,

@@ -584,6 +584,9 @@ test("failed provider results still enforce the protected writer boundary", asyn
     factoryStoreProjectId: "test-project",
     env: process.env,
   });
+  const siblingReviewRun = join(factoryStore.reviewRunsDir, "sibling-review");
+  mkdirSync(siblingReviewRun, { recursive: true });
+  writeFileSync(join(siblingReviewRun, "meta.json"), "review evidence\n", "utf8");
   const ctx = createLiveCtx({
     workspace,
     runsDir,
@@ -592,6 +595,8 @@ test("failed provider results still enforce the protected writer boundary", asyn
       return {
         name: "cursor",
         async run() {
+          writeFileSync(join(workspace, "tracked.txt"), "protected ref violation\n", "utf8");
+          writeFileSync(join(siblingReviewRun, "meta.json"), "tampered review evidence\n", "utf8");
           execFileSync("git", ["update-ref", "refs/harness/test-protected", "HEAD"], {
             cwd: workspace,
             stdio: "ignore",
@@ -606,6 +611,45 @@ test("failed provider results still enforce the protected writer boundary", asyn
 
   expect(meta.status).toBe("implementation-failed");
   expect(meta.error).toContain("writer boundary");
+  expect(meta.failureEvidence?.boundaryViolation).toBe(true);
+  expect(meta.artifacts).toHaveProperty("writerBoundaryBefore");
+  expect(meta.artifacts).toHaveProperty("writerBoundaryAfter");
+  expect(existsSync(join(ctx.runDir, "implementation/writer-boundary-before.json"))).toBe(true);
+  expect(existsSync(join(ctx.runDir, "implementation/writer-boundary-after.json"))).toBe(true);
+});
+
+test("failed evidence does not publish boundary pointers when boundary persistence fails", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const factoryStore = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: mkdtempSync(join(tmpdir(), "harness-factory-implementation-store-")),
+    factoryStoreProjectId: "test-project",
+    env: process.env,
+  });
+  const ctx = createLiveCtx({
+    workspace,
+    runsDir,
+    factoryStore: factoryStoreMetadata(factoryStore),
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          return { ok: false, error: "provider failed", exitCode: 1, raw: {} };
+        },
+      };
+    },
+  });
+  mkdirSync(join(ctx.runDir, "implementation"), { recursive: true });
+  mkdirSync(join(ctx.runDir, "implementation/writer-boundary-before.json"));
+
+  const meta = await runFactoryImplementation(ctx);
+
+  expect(meta.status).toBe("implementation-failed");
+  expect(meta.failureEvidence).toBeUndefined();
+  expect(meta.artifacts).not.toHaveProperty("writerBoundaryBefore");
+  expect(meta.artifacts).not.toHaveProperty("writerBoundaryAfter");
+  expect(existsSync(join(ctx.runDir, "implementation/partial-capture-failure.json"))).toBe(true);
 });
 
 test("provider run rejection maps to implementation-failed with artifacts", async () => {

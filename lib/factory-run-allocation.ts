@@ -7,9 +7,9 @@ import {
   readdirSync,
   rmdirSync,
   unlinkSync,
-  writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { ensureFactoryRunDirectory, writeFactoryRunFile } from "./factory-run-files.ts";
 
 const MAX_ALLOCATION_ATTEMPTS = 8;
 
@@ -20,15 +20,16 @@ export type FactoryRunAllocation = {
 };
 
 export function writeFactoryRunReservation(allocation: FactoryRunAllocation): void {
-  writeFileSync(
-    join(allocation.runDir, "attempt-reservation.json"),
-    `${JSON.stringify(
+  writeFactoryRunFile({
+    runDir: allocation.runDir,
+    relativePath: "attempt-reservation.json",
+    value: `${JSON.stringify(
       { runId: allocation.runId, reservationToken: allocation.reservationToken },
       null,
       2,
     )}\n`,
-    { flag: "wx" },
-  );
+    flag: "wx",
+  });
 }
 
 export class FactoryRunAllocationError extends Error {
@@ -50,7 +51,7 @@ export function allocateFactoryRun(input: {
   }
   const root = resolve(input.factoryRunsDir);
   try {
-    mkdirSync(root, { recursive: true });
+    ensureFactoryRunDirectory(root);
   } catch (error) {
     throw new FactoryRunAllocationError(`Cannot create Factory runs root: ${root}`, {
       cause: error,
@@ -92,13 +93,18 @@ export function releaseEmptyFactoryRunReservation(input: {
     const runStat = lstatSync(runDir);
     if (runStat.isSymbolicLink() || !runStat.isDirectory()) return false;
     const manifestPath = join(runDir, "attempt-reservation.json");
+    const entries = readdirSync(runDir);
+    if (!existsSync(manifestPath)) {
+      if (entries.length !== 0) return false;
+      rmdirSync(runDir);
+      return true;
+    }
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
       runId?: unknown;
       reservationToken?: unknown;
     };
     if (manifest.runId !== relativeRun || manifest.reservationToken !== input.reservationToken)
       return false;
-    const entries = readdirSync(runDir);
     const reservationFiles = new Set([
       "attempt-reservation.json",
       "implementation-review-reservation.json",

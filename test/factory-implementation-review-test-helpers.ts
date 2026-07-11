@@ -329,6 +329,7 @@ export function createReviewContext(
 export function scriptedProvider(input: {
   workspace: string;
   reviews: ReviewOutput[];
+  failReviewAt?: number;
   remediation?: {
     output?: unknown;
     edit: string;
@@ -343,9 +344,13 @@ export function scriptedProvider(input: {
     async run(runInput): Promise<AgentRunResult> {
       calls.push(runInput);
       if (runInput.schemaPath?.endsWith("review-output.schema.json")) {
+        const currentReviewIndex = reviewIndex++;
+        if (input.failReviewAt === currentReviewIndex) {
+          return { ok: false, error: "review provider crashed", exitCode: 1, raw: {} };
+        }
         return {
           ok: true,
-          structuredOutput: input.reviews[Math.min(reviewIndex++, input.reviews.length - 1)],
+          structuredOutput: input.reviews[Math.min(currentReviewIndex, input.reviews.length - 1)],
           raw: { kind: "review" },
           session: { provider: "codex", id: "reviewer-session" },
         };

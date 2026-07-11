@@ -335,11 +335,13 @@ mode requires `factoryStage: "ready-to-implement"`,
 `Ready to Implement` is a projection consistency guard; lifecycle metadata is
 the source of truth.
 
-Live runs hold a per-work-item execution lease from the final input refresh
-through provider execution, local terminal lifecycle, and requested Linear
-terminal projection. Contention fails immediately. Same-host dead-process
-leases are recoverable. Remote-host leases never expire by age; remove one
-only after independently verifying its owner has stopped.
+Live runs hold a per-work-item claim/recovery lease for the final input refresh
+and readiness validation. That lease ends before provider execution. A
+physical-workspace writer lease serializes provider execution and local
+terminal lifecycle writes, then is released before Linear calls. Contention
+fails immediately. Same-host dead-process leases are recoverable. Remote-host
+leases never expire by age; remove one only after independently verifying its
+owner has stopped.
 
 Apply moves a first run from `Ready to Implement` to `Implementing`; retry
 moves `Implementation Failed` to `Implementing`. Completion leaves the issue

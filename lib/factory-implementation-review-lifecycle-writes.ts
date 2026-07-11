@@ -107,6 +107,7 @@ export type FactoryImplementationReviewCheckpointInput = ReviewLifecycleBase & {
   activeReviewIndex?: number;
   priorReviewAttemptId?: string;
   review?: ArtifactPointer;
+  reviewSnapshot?: ArtifactPointer;
   decision?: ArtifactPointer;
   candidate?: ArtifactPointer;
   workspaceStatus?: ArtifactPointer;
@@ -150,6 +151,9 @@ export function appendImplementationReviewCheckpointedEvent(
         : {}),
       ...(input.priorReviewAttemptId ? { priorReviewAttemptId: input.priorReviewAttemptId } : {}),
       ...(input.review ? { review: ArtifactPointerSchema.parse(input.review) } : {}),
+      ...(input.reviewSnapshot
+        ? { reviewSnapshot: ArtifactPointerSchema.parse(input.reviewSnapshot) }
+        : {}),
       ...(input.decision ? { decision: ArtifactPointerSchema.parse(input.decision) } : {}),
       ...(input.candidate ? { candidate: ArtifactPointerSchema.parse(input.candidate) } : {}),
       ...(input.workspaceStatus
@@ -256,6 +260,7 @@ export function appendImplementationReviewUnresolvedEvent(
 
 export function appendImplementationReviewFailedEvent(
   input: ReviewTerminalBase & {
+    activeReviewIndex?: number;
     classification: "reviewer" | "provider" | "git" | "artifact" | "protocol" | "workspace";
     retryable: boolean;
     error: string;
@@ -280,6 +285,9 @@ export function appendImplementationReviewFailedEvent(
       owningImplementationRunId: input.owningImplementationRunId,
       activeReviewAttemptId: input.activeReviewAttemptId,
       latestCheckpointId: input.latestCheckpointId,
+      ...(input.activeReviewIndex !== undefined
+        ? { activeReviewIndex: input.activeReviewIndex }
+        : {}),
       classification: input.classification,
       retryable: input.retryable,
       error: input.error,

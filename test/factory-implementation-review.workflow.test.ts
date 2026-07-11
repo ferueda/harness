@@ -185,6 +185,54 @@ test("provider failure after edits persists a partial tuple and resume restores 
   ).toBeUndefined();
 });
 
+test("resume consumes a persisted review before starting another review", async () => {
+  const fixture = createReviewFixture();
+  const firstProvider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [NEEDS_CHANGES_REVIEW],
+    remediation: {
+      edit: "resumed review checkpoint\n",
+      output: decisionsForCurrentFindings(),
+    },
+  });
+  const firstContext = createReviewContext(fixture, firstProvider);
+  const writePrompt = firstContext.writePrompt;
+  let promptWrites = 0;
+  firstContext.writePrompt = (prompt, relativePath) => {
+    promptWrites += 1;
+    if (promptWrites === 1) throw new Error("simulated interruption after review checkpoint");
+    return writePrompt(prompt, relativePath);
+  };
+
+  const first = await runImplementationReview(firstContext);
+  expect(first.status).toBe("review-failed");
+  expect(firstProvider.calls).toHaveLength(3);
+  const failedState = loadFactoryLifecycleState({
+    factoryStateRoot: fixture.store.factoryStateRoot,
+    workItemKey: "linear:ENG-123",
+    workspace: fixture.workspace,
+  });
+  const checkpoint = failedState?.implementationReviewCheckpoint;
+  if (!checkpoint) throw new Error("Expected pending review checkpoint");
+  expect(checkpoint.latestReview).toBeDefined();
+  expect(checkpoint.latestDecision).toBeUndefined();
+
+  const resumedProvider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [PASS_REVIEW],
+    remediation: {
+      edit: "resumed review checkpoint\n",
+      output: decisionsForCurrentFindings(),
+    },
+  });
+  const resumed = await runImplementationReview(
+    createReviewContext({ ...fixture, checkpoint }, resumedProvider),
+  );
+
+  expect(resumed.status).toBe("review-complete");
+  expect(resumedProvider.calls).toHaveLength(4);
+});
+
 test("partial-capture failure preserves the partial ref and both failure causes", async () => {
   const fixture = createReviewFixture();
   const provider = scriptedProvider({
@@ -366,6 +414,48 @@ test("mixed non-blocking declines remain accepted debt", async () => {
   expect(result.handoffPath).toBeDefined();
   expect(result.handoffPath && readFile(result.handoffPath)).toContain(
     "implementation-001: The advisory documentation can follow in a later change.",
+  );
+});
+
+test("partial-recovery accepted debt survives a crash after candidate checkpoint", async () => {
+  const fixture = createReviewFixture();
+  const firstProvider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [NON_BLOCKING_REVIEW],
+    failReviewAt: 3,
+    remediation: {
+      edit: "partial recovery candidate\n",
+      output: {
+        summary: "Accepted the advisory debt.",
+        findingDecisions: ["implementation", "quality", "simplify"].map((role) => ({
+          findingId: `${role}-001`,
+          decision: "decline" as const,
+          rationale: "Carry this advisory item as accepted debt.",
+        })),
+      },
+    },
+  });
+
+  const first = await runImplementationReview(createReviewContext(fixture, firstProvider));
+  expect(first.status).toBe("review-failed");
+  const failedState = loadFactoryLifecycleState({
+    factoryStateRoot: fixture.store.factoryStateRoot,
+    workItemKey: "linear:ENG-123",
+    workspace: fixture.workspace,
+  });
+  const checkpoint = failedState?.implementationReviewCheckpoint;
+  if (!checkpoint) throw new Error("Expected candidate checkpoint after reviewer crash");
+
+  const second = await runImplementationReview(
+    createReviewContext(
+      { ...fixture, checkpoint },
+      scriptedProvider({ workspace: fixture.workspace, reviews: [PASS_REVIEW] }),
+    ),
+  );
+
+  expect(second.status).toBe("review-complete");
+  expect(second.handoffPath && readFile(second.handoffPath)).toContain(
+    "implementation-001: Carry this advisory item as accepted debt.",
   );
 });
 

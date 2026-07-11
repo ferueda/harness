@@ -116,6 +116,7 @@ async function runReviewLoop(
     );
   }
   const restoredHistory = restoreReviewHistory(ctx);
+  let pendingReview = restorePendingReview(ctx, checkpoint);
   const attempts: Array<{
     attemptId: string;
     reviewIndex: number;
@@ -152,6 +153,19 @@ async function runReviewLoop(
         expectedPartialAttemptId: checkpoint.partialRecovery!.attemptId,
         expectedPartialReviewIndex: checkpoint.partialRecovery!.reviewIndex,
       });
+    } else if (pendingReview) {
+      reviewIndex = pendingReview.reviewIndex;
+      normalized = pendingReview.normalized;
+      nestedReviewRefs = [pendingReview.nestedRunDir];
+      pendingReview = undefined;
+      validateFactoryCandidateTuple({
+        workspace: ctx.workspace,
+        candidate,
+        expectedOriginalBase: checkpoint.originalReviewBase,
+        expectedWorkspaceTree: true,
+        expectedImplementationRunId: ctx.implementationRunId,
+        expectedCandidateVersion: candidateVersion,
+      });
     } else {
       validateFactoryCandidateTuple({
         workspace: ctx.workspace,
@@ -181,6 +195,7 @@ async function runReviewLoop(
           owningImplementationRunId: ctx.implementationRunId,
           activeReviewAttemptId: ctx.runId,
           latestCheckpointId: checkpoint.latestCheckpointId,
+          activeReviewIndex: reviewIndex,
           classification: "reviewer",
           retryable: true,
           error: nested.error,
@@ -207,6 +222,7 @@ async function runReviewLoop(
       normalized = normalizeFactoryImplementationReviewFindings(nested.reviews);
       nestedReviewRefs = [nested.runDir];
       ctx.writeArtifact(`iterations/${reviewIndex}/review-findings.json`, normalized.findings);
+      ctx.writeArtifact(`iterations/${reviewIndex}/review-snapshot.json`, normalized);
       ctx.writeArtifact(`iterations/${reviewIndex}/change-review-ref.json`, {
         runId: nested.runId,
         runDir: nested.runDir,
@@ -274,6 +290,7 @@ async function runReviewLoop(
         candidateVersion,
         attempts,
         acceptedDebt,
+        normalized.verdict,
       );
     }
     if (!partialRecovery && completedReviewCount >= checkpoint.effectiveReviewLimit.value) {
@@ -400,7 +417,7 @@ async function runReviewLoop(
             workspace: checkpoint.workspace,
             runRoots: checkpoint.runRoots,
             activeReviewIndex: reviewIndex,
-            ...(checkpoint.latestReview ? { review: checkpoint.latestReview } : {}),
+            reviewSnapshot: pointer(ctx.runId, `iterations/${reviewIndex}/review-snapshot.json`),
             decision: pointer(ctx.runId, `iterations/${reviewIndex}/remediation.json`),
             latestOutcome: "declined-must-fix",
             effectiveReviewLimit: checkpoint.effectiveReviewLimit,
@@ -495,6 +512,7 @@ async function runReviewLoop(
           candidateVersion,
           attempts,
           acceptedDebt,
+          normalized.verdict,
         );
       }
       if (changed) {
@@ -536,6 +554,7 @@ async function runReviewLoop(
             workspace: checkpoint.workspace,
             runRoots: checkpoint.runRoots,
             activeReviewIndex: reviewIndex,
+            reviewSnapshot: pointer(ctx.runId, `iterations/${reviewIndex}/review-snapshot.json`),
             decision: pointer(ctx.runId, `iterations/${reviewIndex}/remediation.json`),
             candidate: pointer(ctx.runId, `iterations/${reviewIndex}/candidate-ref.json`),
             effectiveReviewLimit: checkpoint.effectiveReviewLimit,
@@ -709,6 +728,46 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
   const findingsByAttempt = new Map<string, FactoryImplementationReviewFinding[]>();
   for (const event of events) {
     if (
+      event.type === "implementation.review.failed" &&
+      event.data.owningImplementationRunId === ctx.implementationRunId &&
+      event.data.activeReviewIndex !== undefined &&
+      event.data.recovery
+    ) {
+      const attempt = upsertAttempt(attempts, {
+        attemptId: event.data.activeReviewAttemptId,
+        reviewIndex: event.data.activeReviewIndex,
+        nestedReviewRefs: [],
+        decisions: [],
+      });
+      try {
+        const recoveryPath = resolveFactoryArtifactPointer({
+          pointer: event.data.recovery,
+          runRoots: ctx.checkpoint.runRoots,
+        });
+        const recovery = JSON.parse(readFileSync(recoveryPath, "utf8")) as unknown;
+        if (
+          isRecord(recovery) &&
+          typeof recovery.nestedRunId === "string" &&
+          recovery.nestedRunId.length > 0
+        ) {
+          const nestedMetaPath = resolveFactoryArtifactPointer({
+            pointer: {
+              root: "review",
+              runId: recovery.nestedRunId,
+              path: "meta.json",
+            },
+            runRoots: ctx.checkpoint.runRoots,
+          });
+          attempt.nestedReviewRefs = [
+            ...new Set([...attempt.nestedReviewRefs, dirname(nestedMetaPath)]),
+          ];
+        }
+      } catch {
+        // Preserve the failed attempt even when nested metadata is unavailable.
+      }
+      continue;
+    }
+    if (
       event.type !== "implementation.review.checkpointed" ||
       event.data.owningImplementationRunId !== ctx.implementationRunId
     ) {
@@ -722,6 +781,7 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
       nestedReviewRefs: [],
       decisions: [],
     });
+    let normalized: NormalizedFactoryImplementationReview | undefined;
     if (event.data.review) {
       const nestedMetaPath = resolveFactoryArtifactPointer({
         pointer: event.data.review,
@@ -741,11 +801,34 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
           : undefined,
       );
       attempt.nestedReviewRefs = [...new Set([...attempt.nestedReviewRefs, nestedRunDir])];
-      const normalized = normalizeFactoryImplementationReviewFindings({
+      normalized = normalizeFactoryImplementationReviewFindings({
         implementation: readNestedReview(nestedRunDir, "implementation-review.json"),
         quality: readNestedReview(nestedRunDir, "quality-review.json"),
         simplify: readNestedReview(nestedRunDir, "simplify-review.json"),
       });
+    } else if (event.data.reviewSnapshot) {
+      const snapshotPath = resolveFactoryArtifactPointer({
+        pointer: event.data.reviewSnapshot,
+        runRoots: event.data.runRoots,
+      });
+      if (
+        event.data.reviewSnapshot.runId !== event.data.activeReviewAttemptId ||
+        event.data.reviewSnapshot.root !== "review" ||
+        event.data.reviewSnapshot.path !== `iterations/${index}/review-snapshot.json`
+      ) {
+        throw new Error("Review finding snapshot is not bound to its owning attempt/index.");
+      }
+      const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8")) as unknown;
+      if (!isRecord(snapshot) || !isRecord(snapshot.roles)) {
+        throw new Error("Review finding snapshot is invalid.");
+      }
+      normalized = normalizeFactoryImplementationReviewFindings({
+        implementation: snapshot.roles.implementation,
+        quality: snapshot.roles.quality,
+        simplify: snapshot.roles.simplify,
+      });
+    }
+    if (normalized) {
       findingsByAttempt.set(
         reviewHistoryKey(event.data.activeReviewAttemptId, index),
         normalized.findings,
@@ -792,6 +875,41 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
     }
   }
   return { attempts, acceptedDebt };
+}
+
+function restorePendingReview(
+  ctx: FactoryImplementationReviewRunContext,
+  checkpoint: ReviewState,
+):
+  | { reviewIndex: number; normalized: NormalizedFactoryImplementationReview; nestedRunDir: string }
+  | undefined {
+  if (checkpoint.partialRecovery || checkpoint.latestDecision || !checkpoint.latestReview) {
+    return undefined;
+  }
+  const reviewMetaPath = resolveFactoryArtifactPointer({
+    pointer: checkpoint.latestReview,
+    runRoots: checkpoint.runRoots,
+  });
+  const nestedRunDir = dirname(reviewMetaPath);
+  validateNestedReviewProvenance(
+    ctx,
+    nestedRunDir,
+    checkpoint.approvedCandidate,
+    checkpoint.latestReview.runId,
+  );
+  const reviewIndex = checkpoint.activeReviewIndex;
+  if (reviewIndex === undefined) {
+    throw new Error("Pending review checkpoint is missing its active review index.");
+  }
+  return {
+    reviewIndex,
+    nestedRunDir,
+    normalized: normalizeFactoryImplementationReviewFindings({
+      implementation: readNestedReview(nestedRunDir, "implementation-review.json"),
+      quality: readNestedReview(nestedRunDir, "quality-review.json"),
+      simplify: readNestedReview(nestedRunDir, "simplify-review.json"),
+    }),
+  };
 }
 
 function reviewHistoryKey(attemptId: string, reviewIndex: number): string {
@@ -913,6 +1031,8 @@ async function runNestedReview(
     }
   | { status: "failed"; error: string; runId?: string; runDir?: string }
 > {
+  let nestedRunId: string | undefined;
+  let nestedRunDir: string | undefined;
   try {
     if (
       ctx.reviewerRole.agent !== "codex" ||
@@ -940,13 +1060,15 @@ async function runNestedReview(
       signal: ctx.signal,
       agentProviderFactory: () => ctx.reviewerProvider(),
     });
+    nestedRunId = nested.runId;
+    nestedRunDir = nested.runDir;
     const result = await runChangeReview(nested);
     if (result.status === "failed") {
       return {
         status: "failed",
         error: "Nested change-review failed; inspect its durable artifacts.",
-        runId: nested.runId,
-        runDir: nested.runDir,
+        runId: nestedRunId,
+        runDir: nestedRunDir,
       };
     }
     validateNestedReviewProvenance(ctx, nested.runDir, candidate, nested.runId);
@@ -961,7 +1083,12 @@ async function runNestedReview(
       },
     };
   } catch (error) {
-    return { status: "failed", error: errorMessage(error) };
+    return {
+      status: "failed",
+      error: errorMessage(error),
+      ...(nestedRunId ? { runId: nestedRunId } : {}),
+      ...(nestedRunDir ? { runDir: nestedRunDir } : {}),
+    };
   }
 }
 
@@ -1108,7 +1235,8 @@ async function remediate(
       workspace: ctx.workspace,
       lifecycleRoot: ctx.factoryStore.factoryStateRoot,
       factoryStoreRoot: ctx.factoryStore.storeRoot,
-      durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
+      durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.runDir],
+      volatileDurablePaths: [ctx.factoryStore.reviewRunsDir],
       allowedPaths: [logPath],
     });
     let result: AgentRunResult | undefined;
@@ -1136,7 +1264,8 @@ async function remediate(
       workspace: ctx.workspace,
       lifecycleRoot: ctx.factoryStore.factoryStateRoot,
       factoryStoreRoot: ctx.factoryStore.storeRoot,
-      durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
+      durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.runDir],
+      volatileDurablePaths: [ctx.factoryStore.reviewRunsDir],
       allowedPaths: [logPath],
     });
     const boundaryBeforeArtifactPath = `iterations/${reviewIndex}/writer-boundary-before.json`;
@@ -1646,6 +1775,7 @@ function complete(
     decisions: ReadonlyArray<{ findingId: string; decision: string; rationale: string }>;
   }>,
   acceptedDebt: ReadonlyArray<AcceptedDebt>,
+  finalVerdict: NormalizedFactoryImplementationReview["verdict"],
 ): FactoryImplementationReviewRunMeta {
   validateFactoryCandidateTuple({
     workspace: ctx.workspace,
@@ -1663,6 +1793,7 @@ function complete(
     originalReviewBase: checkpoint.originalReviewBase,
     finalCandidate: candidate,
     cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
+    finalVerdict,
     implementerSession: checkpoint.implementerSession,
     workspace: checkpoint.workspace,
     acceptedDebt,

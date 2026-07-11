@@ -372,6 +372,7 @@ const ImplementationReviewCheckpointedEventSchema = BaseEventSchema.extend({
       activeReviewIndex: z.number().int().positive().optional(),
       priorReviewAttemptId: z.string().min(1).optional(),
       review: ArtifactPointerSchema.optional(),
+      reviewSnapshot: ArtifactPointerSchema.optional(),
       decision: ArtifactPointerSchema.optional(),
       candidate: ArtifactPointerSchema.optional(),
       workspaceStatus: ArtifactPointerSchema.optional(),
@@ -437,6 +438,7 @@ const ImplementationReviewFailedEventSchema = BaseEventSchema.extend({
       owningImplementationRunId: z.string().min(1),
       activeReviewAttemptId: z.string().min(1),
       latestCheckpointId: z.string().min(1),
+      activeReviewIndex: z.number().int().positive().optional(),
       classification: ReviewFailureClassificationSchema,
       retryable: z.boolean(),
       error: z.string().min(1),
@@ -1198,11 +1200,13 @@ function reviewCheckpointedState(
       : previous?.latestReview
         ? { latestReview: previous.latestReview }
         : {}),
-    ...(data.decision
-      ? { latestDecision: data.decision }
-      : previous?.latestDecision
-        ? { latestDecision: previous.latestDecision }
-        : {}),
+    ...(data.phase === "review"
+      ? {}
+      : data.decision
+        ? { latestDecision: data.decision }
+        : previous?.latestDecision
+          ? { latestDecision: previous.latestDecision }
+          : {}),
     ...(data.partialRecovery ? { partialRecovery: data.partialRecovery } : {}),
     ...(data.latestOutcome ? { latestOutcome: data.latestOutcome } : {}),
     ...(data.latestErrorClass ? { latestErrorClass: data.latestErrorClass } : {}),

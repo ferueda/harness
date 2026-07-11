@@ -364,6 +364,21 @@ test("item-file input skips Linear projection guard and enforces readiness", () 
   ).toThrow(/Factory work item is not ready for implementation/);
 });
 
+test("item-file implementation retry requires a fresh Linear projection", () => {
+  const { workspace } = createWorkspacePlan();
+
+  expect(() =>
+    resolveFactoryImplementationInput({
+      workspace,
+      resolvedInput: itemFileInput({
+        factoryStage: "implementation-failed",
+        factoryRoute: "ready-to-implement",
+        factoryNextAction: "implement-directly",
+      }),
+    }),
+  ).toThrow(/Item-file implementation retries require a fresh Linear/);
+});
+
 test("invalid metadata shape fails with implementation input parse error", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-input-"));
   let thrown: unknown;
@@ -537,7 +552,7 @@ test("item-file planned retries remain rejected without applied Linear projectio
         approvedPlanCommit: "abc1234",
       }),
     }),
-  ).toThrow(/Planned work is not ready to implement/);
+  ).toThrow(/Item-file implementation retries require a fresh Linear/);
 });
 
 function createWorkspacePlan(): { workspace: string } {

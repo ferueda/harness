@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
@@ -22,6 +22,7 @@ import {
   noopEventSink,
   type WorkflowEventSink,
 } from "./workflow-events.ts";
+import { ensureFactoryRunDirectory, writeFactoryRunFile } from "./factory-run-files.ts";
 
 export const FACTORY_IMPLEMENTATION_WORKFLOW = "factory-implementation" as const;
 
@@ -108,6 +109,7 @@ type FactoryImplementationRunMetaBase = {
 export type FactoryImplementationFailureEvidence = {
   partialCandidate?: FactoryCandidateTuple;
   boundary?: boolean;
+  boundaryViolation?: boolean;
 };
 
 export type FactoryImplementationRunMeta =
@@ -193,6 +195,8 @@ export type FactoryImplementationRunContext = {
   writeRejection(error: string): void;
   writeDryRunArtifacts(input: { prompt: string; changeReviewHandoff: string }): void;
   writePromptArtifact(input: { prompt: string }): void;
+  writeArtifact(relativePath: string, value: unknown): string;
+  writeText(relativePath: string, value: string): string;
   writeLiveArtifacts(input: FactoryImplementationLiveArtifactsInput): void;
   /** @deprecated Prefer writeDryRunArtifacts / writePromptArtifact / writeLiveArtifacts. */
   writeImplementationArtifacts(input: { prompt: string; changeReviewHandoff: string }): void;
@@ -245,13 +249,17 @@ function createFactoryImplementationRunContextInternal(
   let implementerProvider: Agent | undefined;
   let liveArtifactsWritten = false;
 
+  const writeRunText = (relativePath: string, value: string): string =>
+    writeFactoryRunFile({ runDir, relativePath, value });
+  const writeRunJson = (relativePath: string, value: unknown): string =>
+    writeRunText(relativePath, `${JSON.stringify(value, null, 2)}\n`);
+
   const initializeRunArtifacts = (): void => {
-    mkdirSync(join(runDir, "context"), { recursive: true });
-    mkdirSync(join(runDir, "implementation"), { recursive: true });
-    writeJson(join(runDir, "context/work-item.json"), options.workItem);
-    writeJson(join(runDir, "context/implementation-input.json"), options.implementationInput);
+    ensureFactoryRunDirectory(runDir);
+    writeRunJson("context/work-item.json", options.workItem);
+    writeRunJson("context/implementation-input.json", options.implementationInput);
     if (options.allocation) {
-      writeJson(join(runDir, "context/run-reservation.json"), {
+      const reservation = {
         station: "implementation",
         workItemKey: deriveFactoryWorkItemKey(options.workItem),
         runId: options.allocation.runId,
@@ -266,26 +274,12 @@ function createFactoryImplementationRunContextInternal(
               reviewRunsDir: options.factoryStore.reviewRunsDir,
             }
           : {}),
-      });
-      writeJson(join(runDir, "implementation-reservation.json"), {
-        station: "implementation",
-        workItemKey: deriveFactoryWorkItemKey(options.workItem),
-        runId: options.allocation.runId,
-        reservationToken: options.allocation.reservationToken,
-        workspace,
-        ...(options.factoryStore
-          ? {
-              storeRoot: options.factoryStore.storeRoot,
-              factoryProjectId: options.factoryStore.projectId,
-              factoryStateRoot: options.factoryStore.factoryStateRoot,
-              factoryRunsDir: options.factoryStore.factoryRunsDir,
-              reviewRunsDir: options.factoryStore.reviewRunsDir,
-            }
-          : {}),
-      });
+      };
+      writeRunJson("context/run-reservation.json", reservation);
+      writeRunJson("implementation-reservation.json", reservation);
     }
     if (options.implementationInput.mode === "planned") {
-      writeJson(join(runDir, "context/plan-ref.json"), {
+      writeRunJson("context/plan-ref.json", {
         approvedPlanPath: options.implementationInput.approvedPlanPath,
         planPath: options.implementationInput.planPath,
         approvedPlanCommit: options.implementationInput.approvedPlanCommit,
@@ -294,10 +288,7 @@ function createFactoryImplementationRunContextInternal(
           : {}),
       });
     } else {
-      writeJson(
-        join(runDir, "context/source-material.json"),
-        options.implementationInput.sourceMaterial,
-      );
+      writeRunJson("context/source-material.json", options.implementationInput.sourceMaterial);
     }
   };
 
@@ -341,7 +332,7 @@ function createFactoryImplementationRunContextInternal(
       }
     },
     writeRejection(error: string): void {
-      mkdirSync(runDir, { recursive: true });
+      ensureFactoryRunDirectory(runDir);
       const rejection = {
         status: "rejected",
         workflow: FACTORY_IMPLEMENTATION_WORKFLOW,
@@ -354,47 +345,38 @@ function createFactoryImplementationRunContextInternal(
         actualFactoryStage: options.workItem.metadata?.factoryStage ?? "unknown",
         error,
       };
-      writeJson(join(runDir, "implementation-rejected.json"), rejection);
+      writeRunJson("implementation-rejected.json", rejection);
       // Keep the generic marker for consumers that only know the legacy name.
-      writeJson(join(runDir, "attempt-rejected.json"), rejection);
-      writeFileSync(
-        join(runDir, "summary.md"),
+      writeRunJson("attempt-rejected.json", rejection);
+      writeRunText(
+        "summary.md",
         `# Factory Implementation\n\n- Status: rejected\n- Error: ${error}\n`,
-        "utf8",
       );
     },
     writeDryRunArtifacts(input): void {
-      writeFileSync(join(runDir, "implementation/prompt.md"), input.prompt, "utf8");
-      writeFileSync(
-        join(runDir, "implementation/change-review-handoff.md"),
-        input.changeReviewHandoff,
-        "utf8",
-      );
+      writeRunText("implementation/prompt.md", input.prompt);
+      writeRunText("implementation/change-review-handoff.md", input.changeReviewHandoff);
     },
     writePromptArtifact(input): void {
-      writeFileSync(join(runDir, "implementation/prompt.md"), input.prompt, "utf8");
+      writeRunText("implementation/prompt.md", input.prompt);
+    },
+    writeArtifact(relativePath, value): string {
+      return writeRunJson(relativePath, value);
+    },
+    writeText(relativePath, value): string {
+      return writeRunText(relativePath, value);
     },
     writeLiveArtifacts(input): void {
-      writeJson(join(runDir, "implementation/implementer.raw.json"), input.raw);
-      writeJson(join(runDir, "implementation/workspace-status.json"), input.workspaceStatus);
-      writeFileSync(join(runDir, "implementation/diff.patch"), input.diff, "utf8");
+      writeRunJson("implementation/implementer.raw.json", input.raw);
+      writeRunJson("implementation/workspace-status.json", input.workspaceStatus);
+      writeRunText("implementation/diff.patch", input.diff);
       if (input.writerBoundaryBefore !== undefined) {
-        writeJson(
-          join(runDir, "implementation/writer-boundary-before.json"),
-          input.writerBoundaryBefore,
-        );
+        writeRunJson("implementation/writer-boundary-before.json", input.writerBoundaryBefore);
       }
       if (input.writerBoundaryAfter !== undefined) {
-        writeJson(
-          join(runDir, "implementation/writer-boundary-after.json"),
-          input.writerBoundaryAfter,
-        );
+        writeRunJson("implementation/writer-boundary-after.json", input.writerBoundaryAfter);
       }
-      writeFileSync(
-        join(runDir, "implementation/change-review-handoff.md"),
-        input.changeReviewHandoff,
-        "utf8",
-      );
+      writeRunText("implementation/change-review-handoff.md", input.changeReviewHandoff);
       liveArtifactsWritten = true;
     },
     writeImplementationArtifacts(input): void {
@@ -445,12 +427,11 @@ function createFactoryImplementationRunContextInternal(
         streamLogExists: existsSync(join(runDir, "implementation/implementer.stream.jsonl")),
         failureEvidence: input.failureEvidence,
       });
-      writeFileSync(
-        join(runDir, "summary.md"),
+      writeRunText(
+        "summary.md",
         renderSummary(meta, options.implementationInput, Boolean(options.linearApplyRequested)),
-        "utf8",
       );
-      writeJson(join(runDir, "meta.json"), meta);
+      writeRunJson("meta.json", meta);
       return meta;
     },
   };
@@ -548,7 +529,7 @@ function buildMeta(input: {
           recovery: "implementation/recovery.json" as const,
         }
       : {}),
-    ...(input.failureEvidence?.boundary
+    ...(input.failureEvidence?.boundary || input.failureEvidence?.boundaryViolation
       ? {
           writerBoundaryBefore: "implementation/writer-boundary-before.json" as const,
           writerBoundaryAfter: "implementation/writer-boundary-after.json" as const,
@@ -654,10 +635,6 @@ function isPreProviderFailureMeta(
   artifacts: FactoryImplementationPreProviderFailureArtifacts;
 } {
   return meta.status === "implementation-failed" && meta.artifacts.prompt === undefined;
-}
-
-function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, JSON.stringify(value, null, 2), "utf8");
 }
 
 function cleanupOrphanedFactoryImplementationRunDir(runDir: string): boolean {

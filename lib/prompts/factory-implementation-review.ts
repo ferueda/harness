@@ -72,6 +72,7 @@ export function renderFactoryImplementationPrReadyHandoff(input: {
   originalReviewBase: string;
   finalCandidate: CandidateTuple;
   cumulativeDiff: string;
+  finalVerdict: "pass" | "needs_changes" | "blocked";
   implementerSession: AgentSessionRef;
   workspace: WorkspaceProvenance;
   acceptedDebt: ReadonlyArray<{
@@ -104,6 +105,7 @@ export function renderFactoryImplementationPrReadyHandoff(input: {
     "# Factory Implementation Review Handoff",
     "",
     "**Status:** PR-ready",
+    `- Final review verdict: ${input.finalVerdict}`,
     "",
     `- Work item: ${input.workItem.id} — ${input.workItem.title}`,
     `- Owning implementation run: ${input.implementationRunId}`,

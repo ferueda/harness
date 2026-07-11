@@ -13,18 +13,27 @@ import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 
 type WriteFileSync = typeof writeFileSync;
-type NodeFsModule = { [key: string]: unknown; writeFileSync: WriteFileSync };
+type MkdirSync = typeof mkdirSync;
+type NodeFsModule = {
+  [key: string]: unknown;
+  writeFileSync: WriteFileSync;
+  mkdirSync: MkdirSync;
+};
 
 const fsMocks = vi.hoisted(() => ({
   realWriteFileSync: undefined as WriteFileSync | undefined,
   writeFileSync: vi.fn(),
+  realMkdirSync: undefined as MkdirSync | undefined,
+  mkdirSync: vi.fn(),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<NodeFsModule>();
   fsMocks.realWriteFileSync = actual.writeFileSync;
   fsMocks.writeFileSync.mockImplementation(actual.writeFileSync);
-  return { ...actual, writeFileSync: fsMocks.writeFileSync };
+  fsMocks.realMkdirSync = actual.mkdirSync;
+  fsMocks.mkdirSync.mockImplementation(actual.mkdirSync);
+  return { ...actual, writeFileSync: fsMocks.writeFileSync, mkdirSync: fsMocks.mkdirSync };
 });
 import {
   allocateFactoryRun,
@@ -69,6 +78,35 @@ test("run reservation cleanup requires the persisted token", () => {
     }),
   ).toBe(true);
   expect(existsSync(allocation.runDir)).toBe(false);
+});
+
+test("run reservation cleanup removes an empty allocation without a manifest", () => {
+  const factoryRunsDir = mkdtempSync(join(tmpdir(), "harness-factory-allocation-empty-"));
+  const allocation = allocateFactoryRun({ factoryRunsDir, runId: "implementation-empty" });
+
+  expect(
+    releaseEmptyFactoryRunReservation({
+      runDir: allocation.runDir,
+      factoryRunsDir,
+      reservationToken: allocation.reservationToken,
+    }),
+  ).toBe(true);
+  expect(existsSync(allocation.runDir)).toBe(false);
+});
+
+test("run reservation cleanup preserves non-empty evidence without a manifest", () => {
+  const factoryRunsDir = mkdtempSync(join(tmpdir(), "harness-factory-allocation-evidence-"));
+  const allocation = allocateFactoryRun({ factoryRunsDir, runId: "implementation-evidence" });
+  writeFileSync(join(allocation.runDir, "implementation-review-reservation.json"), "{}\n", "utf8");
+
+  expect(
+    releaseEmptyFactoryRunReservation({
+      runDir: allocation.runDir,
+      factoryRunsDir,
+      reservationToken: allocation.reservationToken,
+    }),
+  ).toBe(false);
+  expect(existsSync(allocation.runDir)).toBe(true);
 });
 
 test("artifact pointers reject traversal and symlink targets", () => {
@@ -168,6 +206,90 @@ test("writer boundary canonicalizes missing allowed logs through symlinked durab
   expect(() => assertFactoryWriterBoundary(before, after)).not.toThrow();
 });
 
+test("writer boundary tolerates new sibling review runs but detects existing-run edits", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-boundary-review-store-"));
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-factory-boundary-review-store-root-"));
+  const reviewRunsDir = join(storeRoot, "runs", "reviews");
+  const existingRun = join(reviewRunsDir, "review-1");
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, "tracked.txt"), "tracked\n", "utf8");
+  execFileSync("git", ["add", "tracked.txt"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "init"], { cwd: workspace, stdio: "ignore" });
+  mkdirSync(existingRun, { recursive: true });
+  writeFileSync(join(existingRun, "meta.json"), "before\n", "utf8");
+
+  const before = captureFactoryWriterBoundary({
+    workspace,
+    factoryStoreRoot: storeRoot,
+    volatileDurablePaths: [reviewRunsDir],
+  });
+  mkdirSync(join(reviewRunsDir, "review-2"), { recursive: true });
+  writeFileSync(
+    join(reviewRunsDir, "review-2/meta.json"),
+    JSON.stringify({ runId: "review-2", workspace, agent: {}, scope: {} }) + "\n",
+    "utf8",
+  );
+  const concurrentAfter = captureFactoryWriterBoundary({
+    workspace,
+    factoryStoreRoot: storeRoot,
+    volatileDurablePaths: [reviewRunsDir],
+  });
+  expect(() => assertFactoryWriterBoundary(before, concurrentAfter)).not.toThrow();
+
+  mkdirSync(join(reviewRunsDir, "review-3"), { recursive: true });
+  writeFileSync(join(reviewRunsDir, "review-3/meta.json"), "unauthorized\n", "utf8");
+  const unauthorizedAfter = captureFactoryWriterBoundary({
+    workspace,
+    factoryStoreRoot: storeRoot,
+    volatileDurablePaths: [reviewRunsDir],
+  });
+  expect(() => assertFactoryWriterBoundary(before, unauthorizedAfter)).toThrow(/Factory store/);
+
+  writeFileSync(join(existingRun, "meta.json"), "tampered\n", "utf8");
+  const tamperedAfter = captureFactoryWriterBoundary({
+    workspace,
+    factoryStoreRoot: storeRoot,
+    volatileDurablePaths: [reviewRunsDir],
+  });
+  expect(() => assertFactoryWriterBoundary(before, tamperedAfter)).toThrow(/Factory store/);
+});
+
+test("writer boundary records symbolic HEAD and index flags", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-boundary-git-state-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace, stdio: "ignore" });
+  writeFileSync(join(workspace, "tracked.txt"), "tracked\n", "utf8");
+  execFileSync("git", ["add", "tracked.txt"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "init"], { cwd: workspace, stdio: "ignore" });
+
+  const beforeBranch = captureFactoryWriterBoundary({ workspace });
+  execFileSync("git", ["switch", "-c", "same-commit"], { cwd: workspace, stdio: "ignore" });
+  const afterBranch = captureFactoryWriterBoundary({ workspace });
+  expect(() => assertFactoryWriterBoundary(beforeBranch, afterBranch)).toThrow(/HEAD symbolic ref/);
+
+  execFileSync("git", ["switch", "main"], { cwd: workspace, stdio: "ignore" });
+  const beforeFlags = captureFactoryWriterBoundary({ workspace });
+  execFileSync("git", ["update-index", "--skip-worktree", "tracked.txt"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  const afterFlags = captureFactoryWriterBoundary({ workspace });
+  execFileSync("git", ["update-index", "--no-skip-worktree", "tracked.txt"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  expect(() => assertFactoryWriterBoundary(beforeFlags, afterFlags)).toThrow(/index/);
+});
+
 test("writer lease removes a newly created lock when owner publication fails", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-lease-publication-workspace-"));
   execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
@@ -219,6 +341,42 @@ test("writer lease inspection and release reject symlinked lease entries", () =>
   expect(() => releaseFactoryWorkspaceWriterLease({ handle })).toThrow(/symlinked/);
 });
 
+test("writer lease namespace tolerates a concurrent first-acquisition mkdir", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-lease-race-workspace-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  const env = {
+    ...process.env,
+    XDG_DATA_HOME: mkdtempSync(join(tmpdir(), "harness-factory-lease-race-data-")),
+  };
+  let raced = false;
+  fsMocks.mkdirSync.mockImplementation((...args: Parameters<MkdirSync>) => {
+    if (!raced) {
+      raced = true;
+      fsMocks.realMkdirSync!(...args);
+      const error = Object.assign(new Error("concurrent mkdir"), { code: "EEXIST" });
+      throw error;
+    }
+    return fsMocks.realMkdirSync!(...args);
+  });
+
+  try {
+    const handle = acquireFactoryWorkspaceWriterLease({
+      workspace,
+      factoryProjectId: "test-project",
+      storeRoot: mkdtempSync(join(tmpdir(), "harness-factory-lease-race-store-")),
+      workItemKey: "linear:ENG-123",
+      runId: "implementation-test",
+      operation: "implementation",
+      env,
+    });
+    releaseFactoryWorkspaceWriterLease({ handle });
+  } finally {
+    fsMocks.mkdirSync.mockImplementation(fsMocks.realMkdirSync!);
+  }
+
+  expect(raced).toBe(true);
+});
+
 test("writer lease release requires full owner identity and rejects dangling owners", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-lease-owner-workspace-"));
   execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
@@ -245,6 +403,11 @@ test("writer lease release requires full owner identity and rejects dangling own
   expect(existsSync(handle.path)).toBe(true);
 
   rmSync(join(handle.path, "owner.json"), { force: true });
+  expect(inspectFactoryWorkspaceWriterLease({ workspace, env })).toMatchObject({
+    classification: "owner-missing",
+    stale: false,
+  });
+  expect(() => releaseFactoryWorkspaceWriterLease({ handle })).not.toThrow();
   symlinkSync(join(handle.path, "missing-owner.json"), join(handle.path, "owner.json"));
   expect(() => inspectFactoryWorkspaceWriterLease({ workspace, env })).toThrow(/symlinked/);
   expect(() => releaseFactoryWorkspaceWriterLease({ handle })).toThrow(/symlinked/);

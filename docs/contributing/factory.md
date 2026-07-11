@@ -621,14 +621,15 @@ candidate change artifacts, and materializes an internal review ref:
 Optional `--dry-run` prepares prompt and handoff drafts without invoking a
 provider or writing lifecycle state.
 
-Every live implementation acquires a per-work-item execution lease before its
-final item/lifecycle read and readiness validation. The lease is held through
-the provider run, local terminal event, and requested Linear terminal
-projection, so two implementations cannot race the same item. Contention fails
-immediately. A same-host lease whose process is dead can be recovered; a lease
-owned by another hostname never becomes stale by age. Inspect the reported
-owner and remove a remote lease only after independently proving that owner is
-gone.
+Every live implementation acquires a per-work-item claim/recovery lease for its
+final item/lifecycle read and readiness validation. That lease ends before
+provider execution. A physical-workspace writer lease then serializes provider
+execution and local terminal lifecycle writes; it is released before Linear
+calls, so blocked tracker I/O cannot strand workspace ownership. Contention
+fails immediately. A same-host lease whose process is dead can be recovered; a
+lease owned by another hostname never becomes stale by age. Inspect the
+reported owner and remove a remote lease only after independently proving that
+owner is gone.
 
 Apply order is fail closed:
 

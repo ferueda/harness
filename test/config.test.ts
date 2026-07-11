@@ -19,6 +19,9 @@ import {
   type InitHarnessOptions,
   findHarnessConfig,
   initHarnessConfig,
+  parsePositiveIntegerOption,
+  resolveFactoryImplementationReviewer,
+  resolveFactoryImplementationSettings,
   resolveFactoryLinearSettings,
   resolveFactoryPlanningSettings,
   resolveFactoryRoleAgent,
@@ -267,6 +270,63 @@ test("resolveFactoryPlanningSettings reads configured value and defaults to thre
   expect(resolveFactoryPlanningSettings({ workspace: defaultWorkspace }, "/")).toMatchObject({
     workspace: defaultWorkspace,
     maxReviewIterations: 3,
+  });
+});
+
+test("implementation review settings honor CLI, config, and default precedence", () => {
+  const configuredWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(configuredWorkspace, {
+    factory: { implementation: { maxReviewIterations: 7 } },
+  });
+  expect(
+    resolveFactoryImplementationSettings({ workspace: configuredWorkspace }, "/"),
+  ).toMatchObject({
+    maxReviewIterations: 7,
+    source: "config",
+  });
+  expect(
+    resolveFactoryImplementationSettings(
+      { workspace: configuredWorkspace, maxReviewIterations: "2" },
+      "/",
+    ),
+  ).toMatchObject({ maxReviewIterations: 2, source: "cli" });
+
+  const defaultWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  expect(resolveFactoryImplementationSettings({ workspace: defaultWorkspace }, "/")).toMatchObject({
+    maxReviewIterations: 3,
+    source: "default",
+  });
+});
+
+test("implementation review settings enforce positive integers and secure reviewer policy", () => {
+  expect(parsePositiveIntegerOption(1)).toBe(1);
+  expect(parsePositiveIntegerOption("9")).toBe(9);
+  expect(() => parsePositiveIntegerOption(0)).toThrow(/positive integer/);
+  expect(() => parsePositiveIntegerOption("1.5")).toThrow(/positive integer/);
+
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    agents: {
+      codex: { model: "gpt-config", sandboxMode: "workspace-write", approvalPolicy: "on-request" },
+    },
+    factory: {
+      implementation: {
+        roles: {
+          reviewer: {
+            agent: "codex",
+            model: "gpt-review",
+            sandboxMode: "read-only",
+            approvalPolicy: "never",
+          },
+        },
+      },
+    },
+  });
+  expect(resolveFactoryImplementationReviewer({ workspace }, "/")).toMatchObject({
+    agent: "codex",
+    model: "gpt-review",
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
   });
 });
 

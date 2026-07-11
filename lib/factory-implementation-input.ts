@@ -64,6 +64,15 @@ export function resolveFactoryImplementationInput(input: {
     metadata,
   };
 
+  if (
+    input.resolvedInput.source === "item-file" &&
+    metadata.factoryStage === "implementation-failed"
+  ) {
+    throw new FactoryImplementationInputError(
+      "Item-file implementation retries require a fresh Linear implementation-failed projection.",
+    );
+  }
+
   if (input.resolvedInput.source === "linear") {
     const legacyProjection = !input.linearProjection;
     assertLinearProjection(
