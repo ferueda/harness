@@ -14,6 +14,7 @@ import { expect, test } from "vitest";
 import {
   allocateFactoryRun,
   releaseEmptyFactoryRunReservation,
+  writeFactoryRunReservation,
 } from "../lib/factory-run-allocation.ts";
 import {
   resolveFactoryArtifactPointer,
@@ -28,6 +29,7 @@ import {
 test("run reservation cleanup requires the persisted token", () => {
   const factoryRunsDir = mkdtempSync(join(tmpdir(), "harness-factory-allocation-"));
   const allocation = allocateFactoryRun({ factoryRunsDir, runId: "implementation-test" });
+  writeFactoryRunReservation(allocation);
 
   expect(
     JSON.parse(readFileSync(join(allocation.runDir, "attempt-reservation.json"), "utf8")),

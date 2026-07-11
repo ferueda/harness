@@ -4,6 +4,11 @@ import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
 import type { FactoryWorkItem } from "./factory-schemas.ts";
 import type { WorkflowEventSink } from "./workflow-events.ts";
+import {
+  createCompositeEventSink,
+  createFileEventSink,
+  WORKFLOW_EVENTS_FILE,
+} from "./workflow-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import type { FactoryStoreMeta } from "./factory-store.ts";
 import type {
@@ -135,6 +140,7 @@ function createFactoryImplementationReviewRunContextInternal(
   let provider: Agent | undefined;
   let reviewer: Agent | undefined;
   if (!existsSync(runDir)) throw new Error(`Allocated Factory review run is missing: ${runDir}`);
+  writeFileSync(join(runDir, WORKFLOW_EVENTS_FILE), "", { flag: "a" });
 
   const writeText = (relativePath: string, value: string): string => {
     const path = safeRunPath(runDir, relativePath);
@@ -160,7 +166,6 @@ function createFactoryImplementationReviewRunContextInternal(
       reviewRunsDir: options.factoryStore.reviewRunsDir,
       attempt: "review",
     };
-    writeArtifact("attempt-reservation.json", reservation);
     writeArtifact("implementation-review-reservation.json", reservation);
   };
   const writeIdentityContext = (): void => {
@@ -222,6 +227,10 @@ function createFactoryImplementationReviewRunContextInternal(
     return meta;
   };
 
+  const eventSink = options.eventSink
+    ? createCompositeEventSink(createFileEventSink(runDir), options.eventSink)
+    : createFileEventSink(runDir);
+
   return {
     runId: options.allocation.runId,
     runDir,
@@ -236,7 +245,7 @@ function createFactoryImplementationReviewRunContextInternal(
     implementerRole: options.implementerRole,
     ...(options.approvedPlanPath ? { approvedPlanPath: options.approvedPlanPath } : {}),
     maxRuntimeMs: options.maxRuntimeMs,
-    ...(options.eventSink ? { eventSink: options.eventSink } : {}),
+    eventSink,
     signal: options.signal,
     writeReservation,
     writeIdentityContext,

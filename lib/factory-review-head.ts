@@ -96,6 +96,8 @@ export function validateFactoryCandidateTuple(input: {
   expectedImplementationRunId?: string;
   expectedCandidateVersion?: number;
   expectedParentCommit?: string;
+  expectedPartialAttemptId?: string;
+  expectedPartialReviewIndex?: number;
 }): void {
   if (
     input.expectedImplementationRunId !== undefined &&
@@ -108,6 +110,17 @@ export function validateFactoryCandidateTuple(input: {
     if (input.candidate.ref !== expectedRef) {
       throw new FactoryReviewHeadError(
         `Candidate ref ${input.candidate.ref} is not the expected immutable ref ${expectedRef}`,
+      );
+    }
+  }
+  if (
+    input.expectedPartialAttemptId !== undefined &&
+    input.expectedPartialReviewIndex !== undefined
+  ) {
+    const expectedRef = `refs/harness/factory/${input.expectedImplementationRunId ?? ""}/review-attempt/${input.expectedPartialAttemptId}/${input.expectedPartialReviewIndex}/partial`;
+    if (input.candidate.ref !== expectedRef) {
+      throw new FactoryReviewHeadError(
+        `Partial candidate ref ${input.candidate.ref} is not the expected immutable ref ${expectedRef}`,
       );
     }
   }
@@ -139,8 +152,17 @@ export function validateFactoryCandidateTuple(input: {
       );
     }
   }
+  const parents = git(input.workspace, ["rev-list", "--parents", "-n", "1", commit])
+    .trim()
+    .split(/\s+/)
+    .slice(1);
+  if (parents.length !== 1) {
+    throw new FactoryReviewHeadError(
+      `Candidate commit ${commit} must have exactly one parent; found ${parents.length}`,
+    );
+  }
   if (input.expectedOriginalBase) {
-    const parent = git(input.workspace, ["rev-parse", `${commit}^`]).trim();
+    const parent = parents[0]!;
     const expectedParent =
       input.expectedParentCommit ??
       (input.candidate.ref.endsWith("/implementation") ? input.expectedOriginalBase : undefined);
@@ -151,7 +173,7 @@ export function validateFactoryCandidateTuple(input: {
     }
   }
   if (input.expectedParentCommit && !input.expectedOriginalBase) {
-    const parent = git(input.workspace, ["rev-parse", `${commit}^`]).trim();
+    const parent = parents[0]!;
     if (parent !== input.expectedParentCommit) {
       throw new FactoryReviewHeadError(
         `Candidate parent ${parent} does not match expected parent ${input.expectedParentCommit}`,

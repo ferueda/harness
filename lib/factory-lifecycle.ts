@@ -250,6 +250,10 @@ const ImplementationFailedEventSchema = BaseEventSchema.extend({
       workspaceStatusPath: z.string().min(1).optional(),
       reviewBase: z.string().min(1).optional(),
       linearStartState: z.enum(["not-started", "implementing", "unknown"]).optional(),
+      partialCandidatePath: z.string().min(1).optional(),
+      recoveryPath: z.string().min(1).optional(),
+      writerBoundaryBeforePath: z.string().min(1).optional(),
+      writerBoundaryAfterPath: z.string().min(1).optional(),
     })
     .strict(),
 });
@@ -513,6 +517,7 @@ export type FactoryLifecyclePrecondition = {
   expectedImplementationRunId?: string;
   expectedActiveReviewAttemptId?: string | null;
   expectedLastCheckpointId?: string | null;
+  expectedRetryFactoryRunId?: string;
 };
 
 export function deriveFactoryWorkItemKey(workItem: FactoryWorkItem): string {
@@ -627,6 +632,22 @@ function assertFactoryLifecyclePrecondition(
   ) {
     throw new FactoryLifecycleError(
       `Lifecycle precondition failed: expected factoryRunId ${precondition.expectedFactoryRunId}, actual ${state?.factoryRunId ?? "absent"}`,
+    );
+  }
+  if (
+    actualStage === "implementation-failed" &&
+    precondition.expectedRetryFactoryRunId === undefined
+  ) {
+    throw new FactoryLifecycleError(
+      "Lifecycle precondition failed: retry from implementation-failed requires the prior factoryRunId",
+    );
+  }
+  if (
+    actualStage !== "implementation-failed" &&
+    precondition.expectedRetryFactoryRunId !== undefined
+  ) {
+    throw new FactoryLifecycleError(
+      "Lifecycle precondition failed: retry evidence supplied for a non-failed implementation stage",
     );
   }
   if (

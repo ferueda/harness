@@ -12,6 +12,7 @@ import { readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import {
   allocateFactoryRun,
   releaseEmptyFactoryRunReservation,
+  writeFactoryRunReservation,
 } from "../lib/factory-run-allocation.ts";
 import {
   resolveFactoryImplementationReviewer,
@@ -150,6 +151,7 @@ export async function runFactoryImplementationReviewCommand(
       factoryRunsDir: resolved.factoryStore.reviewRunsDir,
       idPrefix: "implementation-review",
     });
+    writeReviewReservationManifest(allocation, resolved.factoryStore, options);
   }
   if (resolved.state.factoryStage === "review-complete") {
     releaseEmptyFactoryRunReservation({
@@ -195,17 +197,17 @@ export async function runFactoryImplementationReviewCommand(
     : { value: settings.maxReviewIterations, source: settings.source };
   if (
     options.resume &&
-    (options.maxReviewIterations !== undefined || settings.source === "config") &&
-    settings.maxReviewIterations !== resolved.checkpoint.effectiveReviewLimit.value
+    (settings.maxReviewIterations !== resolved.checkpoint.effectiveReviewLimit.value ||
+      settings.source !== resolved.checkpoint.effectiveReviewLimit.source)
   ) {
     writeReviewRejection(
       allocation,
       resolved.factoryStore,
       options,
-      `Review limit changed on resume: persisted ${resolved.checkpoint.effectiveReviewLimit.value}, requested ${settings.maxReviewIterations}.`,
+      `Review limit provenance changed on resume: persisted ${JSON.stringify(resolved.checkpoint.effectiveReviewLimit)}, current ${JSON.stringify({ value: settings.maxReviewIterations, source: settings.source })}.`,
     );
     throw new Error(
-      `Review limit changed on resume: persisted ${resolved.checkpoint.effectiveReviewLimit.value}, requested ${settings.maxReviewIterations}.`,
+      `Review limit provenance changed on resume: persisted ${JSON.stringify(resolved.checkpoint.effectiveReviewLimit)}, current ${JSON.stringify({ value: settings.maxReviewIterations, source: settings.source })}.`,
     );
   }
   let reviewerRole: ReturnType<typeof resolveFactoryImplementationReviewer>;
@@ -230,6 +232,10 @@ export async function runFactoryImplementationReviewCommand(
     ...resolved.checkpoint,
     effectiveReviewLimit,
   };
+  const reviewAbort = new AbortController();
+  const onReviewAbort = () => reviewAbort.abort();
+  process.once("SIGINT", onReviewAbort);
+  process.once("SIGTERM", onReviewAbort);
   const ctx = createFactoryImplementationReviewRunContext({
     allocation,
     workspace: store.workspace,
@@ -243,6 +249,7 @@ export async function runFactoryImplementationReviewCommand(
     implementerRole,
     ...(resolved.approvedPlanPath ? { approvedPlanPath: resolved.approvedPlanPath } : {}),
     maxRuntimeMs: options.maxRuntimeMs,
+    signal: reviewAbort.signal,
     ...(options.verbose && config.writeVerboseWorkflowEvent
       ? { eventSink: config.writeVerboseWorkflowEvent }
       : {}),
@@ -260,6 +267,9 @@ export async function runFactoryImplementationReviewCommand(
       `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${error instanceof Error ? error.message : String(error)}\n`,
     );
     throw error;
+  } finally {
+    process.off("SIGINT", onReviewAbort);
+    process.off("SIGTERM", onReviewAbort);
   }
 }
 
@@ -313,28 +323,28 @@ function writeReviewRejection(
 
 function writeReviewReservationManifest(
   allocation: { runId: string; runDir: string; reservationToken: string },
-  store: FactoryStoreResolution,
+  store: FactoryStoreResolution | FactoryStoreMeta,
   options: FactoryImplementationReviewOptions,
 ): void {
+  writeFactoryRunReservation(allocation);
+  const workspace = "workspace" in store ? store.workspace : store.projectRoot;
   const reservation = {
     station: "implementation-review",
     runId: allocation.runId,
     reservationToken: allocation.reservationToken,
     identity: options.linearIssue ?? options.itemFile,
-    workspace: store.workspace,
+    workspace,
     storeRoot: store.storeRoot,
     factoryProjectId: store.projectId,
     factoryStateRoot: store.factoryStateRoot,
     factoryRunsDir: store.factoryRunsDir,
     reviewRunsDir: store.reviewRunsDir,
   };
-  for (const name of ["attempt-reservation.json", "implementation-review-reservation.json"]) {
-    writeFileSync(
-      join(allocation.runDir, name),
-      `${JSON.stringify(reservation, null, 2)}\n`,
-      "utf8",
-    );
-  }
+  writeFileSync(
+    join(allocation.runDir, "implementation-review-reservation.json"),
+    `${JSON.stringify(reservation, null, 2)}\n`,
+    { encoding: "utf8", flag: "wx" },
+  );
 }
 
 function terminalizeLegacyReview(

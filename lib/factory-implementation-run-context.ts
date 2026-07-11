@@ -9,6 +9,7 @@ import { factoryRoleAgentMeta, type FactoryStationAgentMeta } from "./factory-ag
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
 import type { FactoryWorkItem, FactoryWorkItemMetadata } from "./factory-schemas.ts";
+import type { FactoryCandidateTuple } from "./factory-review-head.ts";
 import {
   factoryExecutionProvenance,
   type FactoryExecutionProvenance,
@@ -54,6 +55,10 @@ export type FactoryImplementationArtifacts = FactoryImplementationBaseArtifacts 
   streamLog?: "implementation/implementer.stream.jsonl";
   workspaceStatus?: "implementation/workspace-status.json";
   diff?: "implementation/diff.patch";
+  partialCandidate?: "implementation/partial-candidate-ref.json";
+  recovery?: "implementation/recovery.json";
+  writerBoundaryBefore?: "implementation/writer-boundary-before.json";
+  writerBoundaryAfter?: "implementation/writer-boundary-after.json";
 };
 
 export type FactoryImplementationPreProviderFailureArtifacts =
@@ -64,6 +69,10 @@ export type FactoryImplementationPreProviderFailureArtifacts =
     streamLog?: never;
     workspaceStatus?: never;
     diff?: never;
+    partialCandidate?: never;
+    recovery?: never;
+    writerBoundaryBefore?: never;
+    writerBoundaryAfter?: never;
   };
 
 type FactoryImplementationRunMetaBase = {
@@ -92,6 +101,12 @@ type FactoryImplementationRunMetaBase = {
   factoryMetadata?: FactoryWorkItemMetadata;
   factoryStore?: FactoryStoreMeta;
   execution?: FactoryExecutionProvenance;
+  failureEvidence?: FactoryImplementationFailureEvidence;
+};
+
+export type FactoryImplementationFailureEvidence = {
+  partialCandidate?: FactoryCandidateTuple;
+  boundary?: boolean;
 };
 
 export type FactoryImplementationRunMeta =
@@ -120,6 +135,7 @@ export type FactoryImplementationRunContextOptions = {
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
   allocation?: FactoryRunAllocation;
   writerLease?: FactoryWorkspaceWriterLeaseHandle;
+  deferInitialization?: boolean;
 };
 
 export type FactoryImplementationLiveArtifactsInput = {
@@ -137,6 +153,7 @@ type FactoryImplementationExportInputBase = {
   reviewCommitSha?: string;
   reviewTree?: string;
   includeLiveArtifacts?: boolean;
+  failureEvidence?: FactoryImplementationFailureEvidence;
 };
 
 export type FactoryImplementationExportInput = FactoryImplementationExportInputBase &
@@ -167,6 +184,8 @@ export type FactoryImplementationRunContext = {
   signal?: AbortSignal;
   eventSink: WorkflowEventSink;
   writerLease?: FactoryWorkspaceWriterLeaseHandle;
+  initialize(): void;
+  writeRejection(error: string): void;
   writeDryRunArtifacts(input: { prompt: string; changeReviewHandoff: string }): void;
   writePromptArtifact(input: { prompt: string }): void;
   writeLiveArtifacts(input: FactoryImplementationLiveArtifactsInput): void;
@@ -221,7 +240,7 @@ function createFactoryImplementationRunContextInternal(
   let implementerProvider: Agent | undefined;
   let liveArtifactsWritten = false;
 
-  try {
+  const initializeRunArtifacts = (): void => {
     mkdirSync(join(runDir, "context"), { recursive: true });
     mkdirSync(join(runDir, "implementation"), { recursive: true });
     writeJson(join(runDir, "context/work-item.json"), options.workItem);
@@ -275,9 +294,15 @@ function createFactoryImplementationRunContextInternal(
         options.implementationInput.sourceMaterial,
       );
     }
-  } catch (error) {
-    cleanupOrphanedFactoryImplementationRunDir(runDir);
-    throw asFactoryImplementationRunError(error);
+  };
+
+  if (!options.deferInitialization) {
+    try {
+      initializeRunArtifacts();
+    } catch (error) {
+      cleanupOrphanedFactoryImplementationRunDir(runDir);
+      throw asFactoryImplementationRunError(error);
+    }
   }
 
   const eventSink = options.dryRun
@@ -302,6 +327,27 @@ function createFactoryImplementationRunContextInternal(
     signal: options.signal,
     eventSink,
     ...(options.writerLease ? { writerLease: options.writerLease } : {}),
+    initialize(): void {
+      try {
+        initializeRunArtifacts();
+      } catch (error) {
+        throw asFactoryImplementationRunError(error);
+      }
+    },
+    writeRejection(error: string): void {
+      mkdirSync(runDir, { recursive: true });
+      writeJson(join(runDir, "attempt-rejected.json"), {
+        status: "rejected",
+        runId,
+        ...(options.allocation ? { reservationToken: options.allocation.reservationToken } : {}),
+        error,
+      });
+      writeFileSync(
+        join(runDir, "summary.md"),
+        `# Factory Implementation\n\n- Status: rejected\n- Error: ${error}\n`,
+        "utf8",
+      );
+    },
     writeDryRunArtifacts(input): void {
       writeFileSync(join(runDir, "implementation/prompt.md"), input.prompt, "utf8");
       writeFileSync(
@@ -370,6 +416,7 @@ function createFactoryImplementationRunContextInternal(
         reviewCommitSha: input.reviewCommitSha,
         reviewTree: input.reviewTree,
         streamLogExists: existsSync(join(runDir, "implementation/implementer.stream.jsonl")),
+        failureEvidence: input.failureEvidence,
       });
       writeFileSync(
         join(runDir, "summary.md"),
@@ -403,6 +450,7 @@ function buildMeta(input: {
   reviewCommitSha?: string;
   reviewTree?: string;
   streamLogExists: boolean;
+  failureEvidence?: FactoryImplementationFailureEvidence;
 }): FactoryImplementationRunMeta {
   const baseArtifacts: FactoryImplementationBaseArtifacts = {
     workItem: "context/work-item.json",
@@ -438,6 +486,7 @@ function buildMeta(input: {
     ...(input.reviewCommitSha ? { reviewCommitSha: input.reviewCommitSha } : {}),
     ...(input.reviewTree ? { reviewTree: input.reviewTree } : {}),
     ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
+    ...(input.failureEvidence ? { failureEvidence: input.failureEvidence } : {}),
     execution: factoryExecutionProvenance(input.workspace, input.runDir),
   };
   if (input.preProviderFailure) {
@@ -459,6 +508,18 @@ function buildMeta(input: {
           ...(input.streamLogExists
             ? { streamLog: "implementation/implementer.stream.jsonl" as const }
             : {}),
+        }
+      : {}),
+    ...(input.failureEvidence?.partialCandidate
+      ? {
+          partialCandidate: "implementation/partial-candidate-ref.json" as const,
+          recovery: "implementation/recovery.json" as const,
+        }
+      : {}),
+    ...(input.failureEvidence?.boundary
+      ? {
+          writerBoundaryBefore: "implementation/writer-boundary-before.json" as const,
+          writerBoundaryAfter: "implementation/writer-boundary-after.json" as const,
         }
       : {}),
   };

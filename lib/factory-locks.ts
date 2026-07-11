@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   readdirSync,
   rmSync,
   rmdirSync,
@@ -709,6 +710,10 @@ function removeMatchingWorkspaceLease(
   const current = readWorkspaceLeaseOwner(ownerPath);
   if (!current || current.token !== owner.token) return false;
   try {
+    // Move the token-checked owner record first. A concurrent reclaimer can no
+    // longer observe this token and replace the lease before removal.
+    const tombstone = join(path, `.owner-releasing-${owner.token}`);
+    renameSync(ownerPath, tombstone);
     rmSync(path, { recursive: true, force: false });
     return true;
   } catch {

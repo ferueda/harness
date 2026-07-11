@@ -138,6 +138,10 @@ async function runReviewLoop(
         candidate: checkpoint.partialRecovery!.tuple,
         expectedOriginalBase: checkpoint.originalReviewBase,
         expectedWorkspaceTree: true,
+        expectedParentCommit: checkpoint.approvedCandidate.commit,
+        expectedImplementationRunId: ctx.implementationRunId,
+        expectedPartialAttemptId: checkpoint.partialRecovery!.attemptId,
+        expectedPartialReviewIndex: checkpoint.partialRecovery!.reviewIndex,
       });
     } else {
       validateFactoryCandidateTuple({
@@ -386,16 +390,6 @@ async function runReviewLoop(
         !changed &&
         result.output.findingDecisions.every((decision) => decision.decision === "decline")
       ) {
-        if (checkpoint.partialRecovery) {
-          return unresolved(
-            ctx,
-            checkpoint,
-            candidate,
-            completedReviewCount,
-            candidateVersion,
-            "declined-must-fix",
-          );
-        }
         return complete(
           ctx,
           checkpoint,
@@ -602,7 +596,10 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
         quality: readNestedReview(nestedRunDir, "quality-review.json"),
         simplify: readNestedReview(nestedRunDir, "simplify-review.json"),
       });
-      findingsByAttempt.set(event.data.activeReviewAttemptId, normalized.findings);
+      findingsByAttempt.set(
+        reviewHistoryKey(event.data.activeReviewAttemptId, index),
+        normalized.findings,
+      );
       const decisionPointer = event.data.decision;
       if (decisionPointer) {
         const decisionPath = resolveFactoryArtifactPointer({
@@ -624,11 +621,17 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
         JSON.parse(readFileSync(decisionPath, "utf8")) as unknown,
       );
       attempt.decisions.push(...output.findingDecisions);
-      const findings = findingsByAttempt.get(event.data.activeReviewAttemptId);
+      const findings = findingsByAttempt.get(
+        reviewHistoryKey(event.data.activeReviewAttemptId, index),
+      );
       if (findings) addAcceptedDebt(acceptedDebt, findings, output.findingDecisions);
     }
   }
   return { attempts, acceptedDebt };
+}
+
+function reviewHistoryKey(attemptId: string, reviewIndex: number): string {
+  return `${attemptId}:${reviewIndex}`;
 }
 
 function restorePartialRecovery(
@@ -820,6 +823,14 @@ async function remediate(
       candidate: checkpoint.partialRecovery?.tuple ?? candidate,
       expectedOriginalBase: checkpoint.originalReviewBase,
       expectedWorkspaceTree: true,
+      ...(checkpoint.partialRecovery
+        ? {
+            expectedParentCommit: candidate.commit,
+            expectedImplementationRunId: ctx.implementationRunId,
+            expectedPartialAttemptId: checkpoint.partialRecovery.attemptId,
+            expectedPartialReviewIndex: checkpoint.partialRecovery.reviewIndex,
+          }
+        : {}),
     });
     // Git status may refresh the index stat cache; establish the boundary after
     // capturing the pre-run workspace so Harness probes do not trip their own guard.
@@ -890,6 +901,14 @@ async function remediate(
         candidate: checkpoint.partialRecovery?.tuple ?? candidate,
         expectedOriginalBase: checkpoint.originalReviewBase,
         expectedWorkspaceTree: false,
+        ...(checkpoint.partialRecovery
+          ? {
+              expectedParentCommit: candidate.commit,
+              expectedImplementationRunId: ctx.implementationRunId,
+              expectedPartialAttemptId: checkpoint.partialRecovery.attemptId,
+              expectedPartialReviewIndex: checkpoint.partialRecovery.reviewIndex,
+            }
+          : {}),
       });
       const output = parseFactoryImplementationRemediationOutput(result.structuredOutput);
       ctx.writeArtifact(`iterations/${reviewIndex}/remediation.json`, output);
@@ -1288,8 +1307,10 @@ function failUnexpectedReview(
 
   const errorText = errorMessage(error);
   const classification = classifyUnexpectedReviewError(error);
+  const partial = captureUnexpectedPartialRecovery(ctx, checkpoint, errorText);
+  const recoveryError = partial.failure ? `; partial capture failed: ${partial.failure}` : "";
   ctx.writeSummary(
-    `# Factory Implementation Review\n\n- Status: review-failed\n- Classification: ${classification}\n- Error: ${errorText}\n`,
+    `# Factory Implementation Review\n\n- Status: review-failed\n- Classification: ${classification}\n- Error: ${errorText}${recoveryError}\n`,
   );
   appendImplementationReviewFailedEvent({
     factoryStateRoot: ctx.factoryStore.factoryStateRoot,
@@ -1300,8 +1321,10 @@ function failUnexpectedReview(
     latestCheckpointId: checkpoint.latestCheckpointId,
     classification,
     retryable: classification !== "protocol",
-    error: errorText,
+    error: `${errorText}${recoveryError}`,
     summary: pointer(ctx.runId, "summary.md"),
+    ...(partial.recovery ? { partialRecovery: partial.recovery } : {}),
+    ...(partial.failurePointer ? { recovery: partial.failurePointer } : {}),
     execution: reviewExecution(ctx),
   });
   return ctx.export({
@@ -1309,8 +1332,65 @@ function failUnexpectedReview(
     completedReviewCount: checkpoint.completedReviewCount,
     candidateVersion: checkpoint.candidateVersion,
     approvedCandidate: checkpoint.approvedCandidate,
-    error: errorText,
+    error: `${errorText}${recoveryError}`,
   });
+}
+
+function captureUnexpectedPartialRecovery(
+  ctx: FactoryImplementationReviewRunContext,
+  checkpoint: ReviewState,
+  reason: string,
+): PartialCaptureResult {
+  let lease: FactoryWorkspaceWriterLeaseHandle | undefined;
+  try {
+    lease = acquireFactoryWorkspaceWriterLease({
+      workspace: ctx.workspace,
+      factoryProjectId: ctx.factoryStore.projectId,
+      storeRoot: ctx.factoryStore.storeRoot,
+      workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+      runId: ctx.implementationRunId,
+      attemptId: ctx.runId,
+      operation: "remediation",
+    });
+    const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
+    if (!after.porcelain && !after.patchSha256) return {};
+    const review = checkpoint.latestReview
+      ? resolveFactoryArtifactPointer({
+          pointer: checkpoint.latestReview,
+          runRoots: checkpoint.runRoots,
+        })
+      : undefined;
+    const reviewDir = review ? dirname(review) : undefined;
+    const normalized = reviewDir
+      ? normalizeFactoryImplementationReviewFindings({
+          implementation: readNestedReview(reviewDir, "implementation-review.json"),
+          quality: readNestedReview(reviewDir, "quality-review.json"),
+          simplify: readNestedReview(reviewDir, "simplify-review.json"),
+        })
+      : undefined;
+    return capturePartial(
+      ctx,
+      checkpoint.approvedCandidate,
+      checkpoint.activeReviewIndex ?? checkpoint.completedReviewCount + 1,
+      emptyWorkspaceCapture(),
+      after,
+      reason,
+      normalized?.findings ?? [],
+      normalized?.roles ?? emptyReviewRoles(),
+    );
+  } catch (error) {
+    return { failure: errorMessage(error) };
+  } finally {
+    if (lease) releaseFactoryWorkspaceWriterLease({ handle: lease });
+  }
+}
+
+function emptyReviewRoles(): NormalizedFactoryImplementationReview["roles"] {
+  return {
+    implementation: { verdict: "blocked", summary: "Unavailable", findings: [] },
+    quality: { verdict: "blocked", summary: "Unavailable", findings: [] },
+    simplify: { verdict: "blocked", summary: "Unavailable", findings: [] },
+  };
 }
 
 function classifyUnexpectedReviewError(error: unknown): ReviewFailureClassification {

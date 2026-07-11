@@ -19,6 +19,18 @@ export type FactoryRunAllocation = {
   reservationToken: string;
 };
 
+export function writeFactoryRunReservation(allocation: FactoryRunAllocation): void {
+  writeFileSync(
+    join(allocation.runDir, "attempt-reservation.json"),
+    `${JSON.stringify(
+      { runId: allocation.runId, reservationToken: allocation.reservationToken },
+      null,
+      2,
+    )}\n`,
+    { flag: "wx" },
+  );
+}
+
 export class FactoryRunAllocationError extends Error {
   constructor(message: string, options: { cause?: unknown } = {}) {
     super(message, options);
@@ -53,11 +65,6 @@ export function allocateFactoryRun(input: {
     try {
       mkdirSync(runDir);
       const reservationToken = randomBytes(16).toString("hex");
-      writeFileSync(
-        join(runDir, "attempt-reservation.json"),
-        `${JSON.stringify({ runId, reservationToken }, null, 2)}\n`,
-        { flag: "wx" },
-      );
       return { runId, runDir, reservationToken };
     } catch (error) {
       if (isAlreadyExistsError(error)) continue;

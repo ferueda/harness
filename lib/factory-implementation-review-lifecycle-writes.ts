@@ -173,6 +173,16 @@ type ReviewTerminalBase = ReviewLifecycleBase & {
   latestCheckpointId: string;
 };
 
+type ReviewCompletedEvent = Extract<
+  FactoryLifecycleEvent,
+  { type: "implementation.review.completed" }
+>;
+type ReviewUnresolvedEvent = Extract<
+  FactoryLifecycleEvent,
+  { type: "implementation.review.unresolved" }
+>;
+type ReviewFailedEvent = Extract<FactoryLifecycleEvent, { type: "implementation.review.failed" }>;
+
 export function appendImplementationReviewCompletedEvent(
   input: ReviewTerminalBase & {
     finalCandidate: CandidateTuple;
@@ -181,9 +191,15 @@ export function appendImplementationReviewCompletedEvent(
     acceptedDebtCount: number;
   },
 ): FactoryLifecycleEvent {
-  return appendReviewTerminalEvent({
-    ...input,
+  const event: ReviewCompletedEvent = {
+    version: 1,
+    id: `implementation.review.completed:${input.runId}`,
     type: "implementation.review.completed",
+    workItemKey: deriveFactoryWorkItemKey(input.workItem),
+    occurredAt: input.occurredAt ?? new Date().toISOString(),
+    runId: input.runId,
+    source: "harness",
+    ...(input.execution ? { execution: input.execution } : {}),
     data: {
       owningImplementationRunId: input.owningImplementationRunId,
       activeReviewAttemptId: input.activeReviewAttemptId,
@@ -193,7 +209,8 @@ export function appendImplementationReviewCompletedEvent(
       ...(input.acceptedDebt ? { acceptedDebt: input.acceptedDebt } : {}),
       acceptedDebtCount: input.acceptedDebtCount,
     },
-  });
+  };
+  return appendReviewTerminalEvent({ input, event });
 }
 
 export function appendImplementationReviewUnresolvedEvent(
@@ -209,9 +226,15 @@ export function appendImplementationReviewUnresolvedEvent(
     summary: ArtifactPointer;
   },
 ): FactoryLifecycleEvent {
-  return appendReviewTerminalEvent({
-    ...input,
+  const event: ReviewUnresolvedEvent = {
+    version: 1,
+    id: `implementation.review.unresolved:${input.runId}`,
     type: "implementation.review.unresolved",
+    workItemKey: deriveFactoryWorkItemKey(input.workItem),
+    occurredAt: input.occurredAt ?? new Date().toISOString(),
+    runId: input.runId,
+    source: "harness",
+    ...(input.execution ? { execution: input.execution } : {}),
     data: {
       owningImplementationRunId: input.owningImplementationRunId,
       activeReviewAttemptId: input.activeReviewAttemptId,
@@ -219,7 +242,8 @@ export function appendImplementationReviewUnresolvedEvent(
       reason: input.reason,
       summary: input.summary,
     },
-  });
+  };
+  return appendReviewTerminalEvent({ input, event });
 }
 
 export function appendImplementationReviewFailedEvent(
@@ -232,9 +256,15 @@ export function appendImplementationReviewFailedEvent(
     partialRecovery?: PartialRecovery;
   },
 ): FactoryLifecycleEvent {
-  return appendReviewTerminalEvent({
-    ...input,
+  const event: ReviewFailedEvent = {
+    version: 1,
+    id: `implementation.review.failed:${input.runId}`,
     type: "implementation.review.failed",
+    workItemKey: deriveFactoryWorkItemKey(input.workItem),
+    occurredAt: input.occurredAt ?? new Date().toISOString(),
+    runId: input.runId,
+    source: "harness",
+    ...(input.execution ? { execution: input.execution } : {}),
     data: {
       owningImplementationRunId: input.owningImplementationRunId,
       activeReviewAttemptId: input.activeReviewAttemptId,
@@ -246,45 +276,24 @@ export function appendImplementationReviewFailedEvent(
       ...(input.recovery ? { recovery: input.recovery } : {}),
       ...(input.partialRecovery ? { partialRecovery: input.partialRecovery } : {}),
     },
-  });
+  };
+  return appendReviewTerminalEvent({ input, event });
 }
 
 function appendReviewTerminalEvent(input: {
-  factoryStateRoot: string;
-  workItem: FactoryWorkItem;
-  execution?: FactoryLifecycleExecution;
-  occurredAt?: string;
-  runId: string;
-  owningImplementationRunId: string;
-  activeReviewAttemptId: string;
-  latestCheckpointId: string;
-  type:
-    | "implementation.review.completed"
-    | "implementation.review.unresolved"
-    | "implementation.review.failed";
-  data: Record<string, unknown>;
+  input: ReviewTerminalBase;
+  event: ReviewCompletedEvent | ReviewUnresolvedEvent | ReviewFailedEvent;
 }): FactoryLifecycleEvent {
-  const event: FactoryLifecycleEvent = {
-    version: 1,
-    id: `${input.type}:${input.runId}`,
-    type: input.type,
-    workItemKey: deriveFactoryWorkItemKey(input.workItem),
-    occurredAt: input.occurredAt ?? new Date().toISOString(),
-    runId: input.runId,
-    source: "harness",
-    ...(input.execution ? { execution: input.execution } : {}),
-    data: input.data,
-  } as FactoryLifecycleEvent;
   const precondition: FactoryLifecyclePrecondition = {
     allowedStages: ["review-running"],
-    expectedFactoryRunId: input.owningImplementationRunId,
-    expectedImplementationRunId: input.owningImplementationRunId,
-    expectedActiveReviewAttemptId: input.activeReviewAttemptId,
-    expectedLastCheckpointId: input.latestCheckpointId,
+    expectedFactoryRunId: input.input.owningImplementationRunId,
+    expectedImplementationRunId: input.input.owningImplementationRunId,
+    expectedActiveReviewAttemptId: input.input.activeReviewAttemptId,
+    expectedLastCheckpointId: input.input.latestCheckpointId,
   };
   return appendFactoryLifecycleEvent({
-    factoryStateRoot: input.factoryStateRoot,
-    event,
+    factoryStateRoot: input.input.factoryStateRoot,
+    event: input.event,
     precondition,
   });
 }

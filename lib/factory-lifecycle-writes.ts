@@ -267,7 +267,10 @@ export function appendImplementationStartedEvent(
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
   const metadata = FactoryWorkItemMetadataSchema.safeParse(input.workItem.metadata ?? {});
-  const retry = metadata.success && metadata.data.factoryStage === "implementation-failed";
+  const expectedRetryFactoryRunId =
+    metadata.success && metadata.data.factoryStage === "implementation-failed"
+      ? metadata.data.factoryRunId
+      : undefined;
   return appendFactoryLifecycleEvent({
     factoryStateRoot: requireFactoryStateRoot(input),
     event: {
@@ -287,8 +290,11 @@ export function appendImplementationStartedEvent(
     },
     precondition: {
       allowedStages: [undefined, "ready-to-implement", "implementation-failed"],
-      ...(retry && metadata.data.factoryRunId
-        ? { expectedFactoryRunId: metadata.data.factoryRunId }
+      ...(expectedRetryFactoryRunId
+        ? {
+            expectedFactoryRunId: expectedRetryFactoryRunId,
+            expectedRetryFactoryRunId,
+          }
         : {}),
     },
   });
@@ -499,6 +505,33 @@ export function appendImplementationTerminalEvent(input: {
               }
             : {}),
           ...(input.meta.reviewBase ? { reviewBase: input.meta.reviewBase } : {}),
+          ...(input.meta.artifacts.partialCandidate
+            ? {
+                partialCandidatePath: formatMetaArtifactPath(
+                  input.meta,
+                  input.meta.artifacts.partialCandidate,
+                ),
+              }
+            : {}),
+          ...(input.meta.artifacts.recovery
+            ? { recoveryPath: formatMetaArtifactPath(input.meta, input.meta.artifacts.recovery) }
+            : {}),
+          ...(input.meta.artifacts.writerBoundaryBefore
+            ? {
+                writerBoundaryBeforePath: formatMetaArtifactPath(
+                  input.meta,
+                  input.meta.artifacts.writerBoundaryBefore,
+                ),
+              }
+            : {}),
+          ...(input.meta.artifacts.writerBoundaryAfter
+            ? {
+                writerBoundaryAfterPath: formatMetaArtifactPath(
+                  input.meta,
+                  input.meta.artifacts.writerBoundaryAfter,
+                ),
+              }
+            : {}),
         },
       },
       precondition: {

@@ -1,14 +1,17 @@
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentRunInput, AgentRunResult, AgentSessionRef } from "../lib/agents.ts";
 import { DEFAULT_CODEX_REASONING_EFFORT } from "../lib/agents.ts";
 import {
   type FactoryImplementationRunContext,
+  type FactoryImplementationFailureEvidence,
   type FactoryImplementationRunMeta,
 } from "../lib/factory-implementation-run-context.ts";
 import {
   createFactoryReviewHead,
+  createFactoryPartialEvidenceCandidate,
   FactoryReviewHeadError,
+  readFactoryCandidateTree,
   readFactoryReviewBase,
 } from "../lib/factory-review-head.ts";
 import {
@@ -77,6 +80,8 @@ async function runLive(
   let providerInvoked = false;
   let workspaceLease: FactoryWorkspaceWriterLeaseHandle | undefined = ctx.writerLease;
   const ownsWorkspaceLease = !workspaceLease;
+  let boundaryBefore: ReturnType<typeof captureFactoryWriterBoundary> | undefined;
+  let boundaryAfter: ReturnType<typeof captureFactoryWriterBoundary> | undefined;
 
   try {
     const prompt = renderFactoryImplementationPrompt({
@@ -118,13 +123,13 @@ async function runLive(
     const logPath = join(ctx.runDir, "implementation/implementer.stream.jsonl");
     const role = ctx.implementerRole;
     const writerBoundary = ctx.factoryStore
-      ? captureFactoryWriterBoundary({
+      ? (boundaryBefore = captureFactoryWriterBoundary({
           workspace: ctx.workspace,
           lifecycleRoot: ctx.factoryStore.factoryStateRoot,
           factoryStoreRoot: ctx.factoryStore.storeRoot,
           durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
           allowedPaths: [logPath],
-        })
+        }))
       : undefined;
     providerInvoked = true;
     let result: AgentRunResult | undefined;
@@ -145,16 +150,14 @@ async function runLive(
     }
     if (writerBoundary && ctx.factoryStore) {
       try {
-        assertFactoryWriterBoundary(
-          writerBoundary,
-          captureFactoryWriterBoundary({
-            workspace: ctx.workspace,
-            lifecycleRoot: ctx.factoryStore.factoryStateRoot,
-            factoryStoreRoot: ctx.factoryStore.storeRoot,
-            durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
-            allowedPaths: [logPath],
-          }),
-        );
+        boundaryAfter = captureFactoryWriterBoundary({
+          workspace: ctx.workspace,
+          lifecycleRoot: ctx.factoryStore.factoryStateRoot,
+          factoryStoreRoot: ctx.factoryStore.storeRoot,
+          durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
+          allowedPaths: [logPath],
+        });
+        assertFactoryWriterBoundary(writerBoundary, boundaryAfter);
       } catch (boundaryError) {
         if (providerError) {
           throw new AggregateError(
@@ -173,6 +176,14 @@ async function runLive(
     }
 
     const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
+    const failureEvidence = tryPersistInitialFailureEvidence({
+      ctx,
+      before,
+      after,
+      reviewBase,
+      boundaryBefore,
+      boundaryAfter,
+    });
     if (!result.ok) {
       const meta = exportFailedLive({
         ctx,
@@ -183,6 +194,7 @@ async function runLive(
         after,
         raw: rawAgentArtifact(result),
         reviewBase,
+        failureEvidence,
       });
       emitRunEnd(ctx, startedAt, meta);
       return meta;
@@ -298,6 +310,29 @@ async function runLive(
       } catch {
         // Best-effort after capture for failure artifacts.
       }
+      if (ctx.factoryStore && !boundaryAfter) {
+        try {
+          boundaryAfter = captureFactoryWriterBoundary({
+            workspace: ctx.workspace,
+            lifecycleRoot: ctx.factoryStore.factoryStateRoot,
+            factoryStoreRoot: ctx.factoryStore.storeRoot,
+            durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
+          });
+        } catch {
+          // Best-effort boundary evidence for failure artifacts.
+        }
+      }
+      const failureEvidence =
+        before && after
+          ? tryPersistInitialFailureEvidence({
+              ctx,
+              before,
+              after,
+              reviewBase,
+              boundaryBefore,
+              boundaryAfter,
+            })
+          : undefined;
       const meta = exportFailedLive({
         ctx,
         error: errorMessage(error),
@@ -305,6 +340,7 @@ async function runLive(
         after: after ?? before,
         dirtyBefore: before ? !isEmptyPorcelainStatus(before.porcelain) : false,
         reviewBase,
+        failureEvidence,
       });
       emitRunEnd(ctx, startedAt, meta);
       return meta;
@@ -335,6 +371,7 @@ function exportFailedLive(input: {
   dirtyBefore?: boolean;
   reviewBase?: string;
   implementerSession?: AgentSessionRef;
+  failureEvidence?: FactoryImplementationFailureEvidence;
 }): FactoryImplementationRunMeta {
   const before = input.before ?? emptyCapture();
   const after = input.after ?? before;
@@ -393,7 +430,95 @@ function exportFailedLive(input: {
     implementerSession: input.implementerSession,
     reviewBase: input.reviewBase,
     includeLiveArtifacts: true,
+    ...(input.failureEvidence ? { failureEvidence: input.failureEvidence } : {}),
   });
+}
+
+function persistInitialFailureEvidence(input: {
+  ctx: FactoryImplementationRunContext;
+  before: FactoryWorkspacePatchCapture;
+  after: FactoryWorkspacePatchCapture;
+  reviewBase?: string;
+  boundaryBefore?: ReturnType<typeof captureFactoryWriterBoundary>;
+  boundaryAfter?: ReturnType<typeof captureFactoryWriterBoundary>;
+}): FactoryImplementationFailureEvidence | undefined {
+  const changed =
+    input.before.porcelain !== input.after.porcelain ||
+    input.before.patchSha256 !== input.after.patchSha256;
+  if (!changed || !input.reviewBase) {
+    if (input.boundaryBefore && input.boundaryAfter) {
+      writeFileSync(
+        join(input.ctx.runDir, "implementation/writer-boundary-before.json"),
+        `${JSON.stringify(input.boundaryBefore, null, 2)}\n`,
+        "utf8",
+      );
+      writeFileSync(
+        join(input.ctx.runDir, "implementation/writer-boundary-after.json"),
+        `${JSON.stringify(input.boundaryAfter, null, 2)}\n`,
+        "utf8",
+      );
+      return { boundary: true };
+    }
+    return undefined;
+  }
+  const partial = createFactoryPartialEvidenceCandidate({
+    workspace: input.ctx.workspace,
+    runDir: input.ctx.runDir,
+    implementationRunId: input.ctx.runId,
+    attemptId: input.ctx.runId,
+    reviewIndex: 0,
+    parentCandidate: {
+      ref: input.reviewBase,
+      commit: input.reviewBase,
+      tree: readFactoryCandidateTree(input.ctx.workspace, input.reviewBase),
+    },
+    originalReviewBase: input.reviewBase,
+  });
+  writeFileSync(
+    join(input.ctx.runDir, "implementation/partial-candidate-ref.json"),
+    `${JSON.stringify(partial, null, 2)}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(input.ctx.runDir, "implementation/recovery.json"),
+    `${JSON.stringify({ before: input.before, after: input.after, partialCandidate: partial }, null, 2)}\n`,
+    "utf8",
+  );
+  if (input.boundaryBefore && input.boundaryAfter) {
+    writeFileSync(
+      join(input.ctx.runDir, "implementation/writer-boundary-before.json"),
+      `${JSON.stringify(input.boundaryBefore, null, 2)}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      join(input.ctx.runDir, "implementation/writer-boundary-after.json"),
+      `${JSON.stringify(input.boundaryAfter, null, 2)}\n`,
+      "utf8",
+    );
+  }
+  return {
+    partialCandidate: { ref: partial.ref, commit: partial.commit, tree: partial.tree },
+    ...(input.boundaryBefore && input.boundaryAfter ? { boundary: true } : {}),
+  };
+}
+
+function tryPersistInitialFailureEvidence(
+  input: Parameters<typeof persistInitialFailureEvidence>[0],
+): FactoryImplementationFailureEvidence | undefined {
+  try {
+    return persistInitialFailureEvidence(input);
+  } catch (error) {
+    try {
+      writeFileSync(
+        join(input.ctx.runDir, "implementation/partial-capture-failure.json"),
+        `${JSON.stringify({ error: errorMessage(error), before: input.before, after: input.after }, null, 2)}\n`,
+        "utf8",
+      );
+    } catch {
+      // Preserve the provider/boundary failure when the durable store is also unavailable.
+    }
+    return input.boundaryBefore && input.boundaryAfter ? { boundary: true } : undefined;
+  }
 }
 
 function emitRunEnd(
