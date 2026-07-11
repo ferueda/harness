@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 export type FactoryWriterBoundarySnapshot = {
@@ -36,6 +36,7 @@ export type FactoryWriterBoundaryInput = {
   workspace: string;
   lifecycleRoot?: string;
   factoryStoreRoot?: string;
+  durablePaths?: readonly string[];
   allowedPaths?: readonly string[];
 };
 
@@ -43,7 +44,14 @@ export function captureFactoryWriterBoundary(
   input: FactoryWriterBoundaryInput,
 ): FactoryWriterBoundarySnapshot {
   const workspace = resolve(input.workspace);
-  const allowedPaths = (input.allowedPaths ?? []).map((path) => resolve(path)).sort();
+  const allowedPaths = (input.allowedPaths ?? []).map(canonicalPath).sort();
+  const durablePaths = [
+    ...(input.factoryStoreRoot ? [input.factoryStoreRoot] : []),
+    ...(input.durablePaths ?? []),
+  ]
+    .map(canonicalPath)
+    .filter((path, index, paths) => paths.indexOf(path) === index)
+    .sort();
   const gitRoot = workspace;
   return {
     workspace,
@@ -52,7 +60,9 @@ export function captureFactoryWriterBoundary(
     index: hashGitIndex(gitRoot),
     harness: fingerprintPath(join(workspace, ".harness"), allowedPaths),
     lifecycle: fingerprintPath(input.lifecycleRoot, allowedPaths),
-    factoryStore: fingerprintPath(input.factoryStoreRoot, allowedPaths),
+    factoryStore: durablePaths
+      .map((path) => `${path}:${fingerprintPath(path, allowedPaths)}`)
+      .join("|"),
     allowedPaths,
   };
 }
@@ -110,7 +120,7 @@ function gitValue(workspace: string, args: string[]): string {
 
 function fingerprintPath(path: string | undefined, allowedPaths: readonly string[]): string {
   if (!path || !existsSync(path)) return "missing";
-  const root = resolve(path);
+  const root = canonicalPath(path);
   const entries: string[] = [];
   const visit = (current: string): void => {
     if (allowedPaths.some((allowed) => current === allowed || current.startsWith(`${allowed}/`))) {
@@ -134,6 +144,15 @@ function hashFile(path: string): string {
     return createHash("sha256").update(readFileSync(path)).digest("hex");
   } catch {
     return "unreadable";
+  }
+}
+
+function canonicalPath(path: string): string {
+  const resolved = resolve(path);
+  try {
+    return realpathSync(resolved);
+  } catch {
+    return resolved;
   }
 }
 

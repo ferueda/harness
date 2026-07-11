@@ -85,6 +85,18 @@ async function runLive(
     });
     ctx.writePromptArtifact({ prompt });
 
+    if (ctx.factoryStore) {
+      workspaceLease = acquireFactoryWorkspaceWriterLease({
+        workspace: ctx.workspace,
+        factoryProjectId: ctx.factoryStore.projectId,
+        storeRoot: ctx.factoryStore.storeRoot,
+        workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+        runId: ctx.runId,
+        operation: "implementation",
+      });
+    }
+    // Acquire the physical-workspace lease before the final clean/tree probe.
+    // This closes the check-to-provider race with another Factory station.
     before = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
     if (!isEmptyPorcelainStatus(before.porcelain)) {
       const meta = exportFailedLive({
@@ -101,16 +113,6 @@ async function runLive(
     }
 
     reviewBase = readFactoryReviewBase(ctx.workspace);
-    if (ctx.factoryStore) {
-      workspaceLease = acquireFactoryWorkspaceWriterLease({
-        workspace: ctx.workspace,
-        factoryProjectId: ctx.factoryStore.projectId,
-        storeRoot: ctx.factoryStore.storeRoot,
-        workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
-        runId: ctx.runId,
-        operation: "implementation",
-      });
-    }
     const logPath = join(ctx.runDir, "implementation/implementer.stream.jsonl");
     const role = ctx.implementerRole;
     const writerBoundary = ctx.factoryStore
@@ -118,6 +120,7 @@ async function runLive(
           workspace: ctx.workspace,
           lifecycleRoot: ctx.factoryStore.factoryStateRoot,
           factoryStoreRoot: ctx.factoryStore.storeRoot,
+          durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
           allowedPaths: [logPath],
         })
       : undefined;
@@ -139,6 +142,7 @@ async function runLive(
           workspace: ctx.workspace,
           lifecycleRoot: ctx.factoryStore.factoryStateRoot,
           factoryStoreRoot: ctx.factoryStore.storeRoot,
+          durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
           allowedPaths: [logPath],
         }),
       );

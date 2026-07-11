@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadFactoryLifecycleState } from "../lib/factory-lifecycle.ts";
 import { inspectFactoryWorkspaceWriterLease } from "../lib/factory-locks.ts";
@@ -11,6 +12,23 @@ import {
   PASS_REVIEW,
   scriptedProvider,
 } from "./factory-implementation-review-test-helpers.ts";
+import type { ReviewOutput } from "../lib/schemas.ts";
+
+const NON_BLOCKING_REVIEW = {
+  verdict: "needs_changes",
+  summary: "One advisory finding.",
+  findings: [
+    {
+      title: "Document the behavior",
+      severity: "Low",
+      location: "tracked.txt",
+      issue: "The behavior needs a small documentation note.",
+      recommendation: "Record the decision in the handoff.",
+      rationale: "The implementation is otherwise complete.",
+      must_fix: false,
+    },
+  ],
+} satisfies ReviewOutput;
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -108,7 +126,63 @@ test("provider failure after edits persists a partial tuple and resume restores 
   ).toBeUndefined();
 });
 
+test("mixed non-blocking declines remain accepted debt", async () => {
+  const fixture = createReviewFixture();
+  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
+  const provider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [NON_BLOCKING_REVIEW],
+    remediation: {
+      edit: "implementation candidate\n",
+      output: {
+        summary: "Accepted the advisory debt.",
+        findingDecisions: ["implementation", "quality", "simplify"].map((role) => ({
+          findingId: `${role}-001`,
+          decision: "decline" as const,
+          rationale: "The advisory documentation can follow in a later change.",
+        })),
+      },
+    },
+  });
+
+  const result = await runImplementationReview(createReviewContext(fixture, provider));
+
+  expect(result.status).toBe("review-complete");
+  expect(result.handoffPath).toBeDefined();
+  expect(result.handoffPath && readFile(result.handoffPath)).toContain(
+    "implementation-001: The advisory documentation can follow in a later change.",
+  );
+});
+
+test("incompatible implementer sessions become ready-for-human without invocation", async () => {
+  const fixture = createReviewFixture();
+  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
+  const provider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [NEEDS_CHANGES_REVIEW],
+  });
+  const result = await runImplementationReview(
+    createReviewContext(
+      {
+        ...fixture,
+        checkpoint: {
+          ...fixture.checkpoint,
+          implementerSession: { provider: "cursor", id: "cursor-session" },
+        },
+      },
+      provider,
+    ),
+  );
+
+  expect(result.status).toBe("ready-for-human");
+  expect(provider.calls).toHaveLength(3);
+});
+
 function git(workspace: string, args: string[]): string {
   // Kept local so the test asserts the actual Git parent rather than coordinator metadata.
   return execFileSync("git", args, { cwd: workspace, encoding: "utf8" });
+}
+
+function readFile(path: string): string {
+  return readFileSync(path, "utf8");
 }

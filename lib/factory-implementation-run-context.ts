@@ -463,7 +463,7 @@ function renderSummary(
         ? [
             "- Provider invocation: not run.",
             "- Reviewer invocation: not run.",
-            "- Lifecycle events: imported/started audit evidence only; no terminal event.",
+            "- Lifecycle events: imported/started/failed terminal evidence written.",
           ]
         : [
             `- Provider run status: ${meta.status}`,

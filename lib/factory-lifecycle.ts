@@ -198,6 +198,15 @@ const ImplementationStartedEventSchema = BaseEventSchema.extend({
     .object({
       linearIssue: z.string().min(1).optional(),
       itemFile: z.string().min(1).optional(),
+      owner: z
+        .object({
+          pid: z.number().int().positive(),
+          hostname: z.string().min(1),
+          runDir: z.string().min(1),
+          startedAt: z.iso.datetime(),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
 });
@@ -240,6 +249,18 @@ const ImplementationFailedEventSchema = BaseEventSchema.extend({
       streamLogPath: z.string().min(1).optional(),
       workspaceStatusPath: z.string().min(1).optional(),
       reviewBase: z.string().min(1).optional(),
+    })
+    .strict(),
+});
+
+const ImplementationStaleOwnerEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.stale-owner"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      error: z.string().min(1),
+      runDir: z.string().min(1),
+      treeDrift: z.boolean(),
     })
     .strict(),
 });
@@ -397,6 +418,7 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   ImplementationStartedEventSchema,
   ImplementationCompletedEventSchema,
   ImplementationFailedEventSchema,
+  ImplementationStaleOwnerEventSchema,
   ImplementationReviewStartedEventSchema,
   ImplementationReviewCheckpointedEventSchema,
   ImplementationReviewCompletedEventSchema,
@@ -886,6 +908,12 @@ function reduceFactoryLifecycleEvent(
       return {
         ...base,
         factoryStage: "implementation-failed",
+        factoryRunId: event.runId,
+      };
+    case "implementation.stale-owner":
+      return {
+        ...base,
+        factoryStage: "ready-for-human",
         factoryRunId: event.runId,
       };
     case "implementation.review.started":

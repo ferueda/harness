@@ -257,6 +257,12 @@ export function appendImplementationStartedEvent(
     execution: FactoryLifecycleExecution;
     linearIssue?: string;
     itemFile?: string;
+    owner?: {
+      pid: number;
+      hostname: string;
+      runDir: string;
+      startedAt: string;
+    };
   } & FactoryLifecycleWriteOptions,
 ): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
@@ -276,6 +282,7 @@ export function appendImplementationStartedEvent(
       data: {
         ...(input.linearIssue ? { linearIssue: input.linearIssue } : {}),
         ...(input.itemFile ? { itemFile: input.itemFile } : {}),
+        ...(input.owner ? { owner: input.owner } : {}),
       },
     },
     precondition: {
@@ -283,6 +290,74 @@ export function appendImplementationStartedEvent(
       ...(retry && metadata.data.factoryRunId
         ? { expectedFactoryRunId: metadata.data.factoryRunId }
         : {}),
+    },
+  });
+}
+
+export function appendImplementationStaleOwnerEvent(input: {
+  workspace: string;
+  workItem: FactoryWorkItem;
+  runId: string;
+  factoryStateRoot?: string;
+  execution: FactoryLifecycleExecution;
+  runDir: string;
+  error: string;
+  treeDrift: boolean;
+}): FactoryLifecycleEvent {
+  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
+  return appendFactoryLifecycleEvent({
+    factoryStateRoot: requireFactoryStateRoot(input),
+    event: {
+      version: 1,
+      id: `implementation.stale-owner:${input.runId}`,
+      type: "implementation.stale-owner",
+      workItemKey,
+      occurredAt: new Date().toISOString(),
+      runId: input.runId,
+      source: "harness",
+      execution: input.execution,
+      data: {
+        error: input.error,
+        runDir: input.runDir,
+        treeDrift: input.treeDrift,
+      },
+    },
+    precondition: {
+      allowedStages: ["implementation-started"],
+      expectedFactoryRunId: input.runId,
+    },
+  });
+}
+
+export function appendImplementationRecoveredFailureEvent(input: {
+  workspace: string;
+  workItem: FactoryWorkItem;
+  runId: string;
+  factoryStateRoot?: string;
+  execution: FactoryLifecycleExecution;
+  error: string;
+  summaryPath?: string;
+}): FactoryLifecycleEvent {
+  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
+  return appendFactoryLifecycleEvent({
+    factoryStateRoot: requireFactoryStateRoot(input),
+    event: {
+      version: 1,
+      id: `implementation.failed:${input.runId}`,
+      type: "implementation.failed",
+      workItemKey,
+      occurredAt: new Date().toISOString(),
+      runId: input.runId,
+      source: "harness",
+      execution: input.execution,
+      data: {
+        error: input.error,
+        ...(input.summaryPath ? { summaryPath: input.summaryPath } : {}),
+      },
+    },
+    precondition: {
+      allowedStages: ["implementation-started"],
+      expectedFactoryRunId: input.runId,
     },
   });
 }

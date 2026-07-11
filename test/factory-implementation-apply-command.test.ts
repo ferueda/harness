@@ -93,7 +93,7 @@ function context(): {
   };
 }
 
-test("start apply failure exports a truthful pre-provider result without terminal lifecycle", async () => {
+test("start apply failure exports a truthful result with terminal lifecycle", async () => {
   const { ctx, factoryStateRoot } = context();
   const runImplementation = vi.fn();
   const startError = new Error("Linear implementation start mutation failed");
@@ -122,7 +122,7 @@ test("start apply failure exports a truthful pre-provider result without termina
       factoryStateRoot,
       workItemKey: deriveFactoryWorkItemKey(WORK_ITEM),
     }).map((event) => event.type),
-  ).toEqual(["work_item.imported", "implementation.started"]);
+  ).toEqual(["work_item.imported", "implementation.started", "implementation.failed"]);
 });
 
 test("successful implementation records lifecycle before terminal Linear projection", async () => {
@@ -419,7 +419,10 @@ test("real command prints truthful output before resolved-false start mutation e
 
   expect(fixture.runner).not.toHaveBeenCalled();
   expect(fixture.commentInputs).toEqual([]);
-  expect(implementationEventTypes(fixture)).toEqual(["implementation.started"]);
+  expect(implementationEventTypes(fixture)).toEqual([
+    "implementation.started",
+    "implementation.failed",
+  ]);
   expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({
     status: "implementation-failed",
     linearApplied: false,
@@ -451,7 +454,10 @@ test("real command rejects success-true start when fresh state did not change", 
 
   expect(fixture.runner).not.toHaveBeenCalled();
   expect(fixture.commentInputs).toEqual([]);
-  expect(implementationEventTypes(fixture)).toEqual(["implementation.started"]);
+  expect(implementationEventTypes(fixture)).toEqual([
+    "implementation.started",
+    "implementation.failed",
+  ]);
   expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({ linearApplied: false });
 });
 
@@ -480,7 +486,9 @@ test("real command preserves local completion when terminal comment resolves fal
         statusPostconditionVerified: true,
         commentPresent: false,
         commentMarker: expect.stringContaining("harness-factory:implementation:"),
-        commentBody: expect.stringContaining("Factory implementation ready for review."),
+        commentBody: expect.stringContaining(
+          "Factory implementation complete; durable Factory review is ready.",
+        ),
       },
     },
   });

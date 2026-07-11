@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   loadFactoryLifecycleState,
@@ -152,16 +153,28 @@ export function resolveFactoryImplementationReviewInput(
       "provenance",
     );
   }
+  // Implementation metadata records the immutable initial candidate. The
+  // checkpoint may intentionally advance to a later remediation candidate.
   const reviewHead = implementationMeta.reviewHead;
   const reviewCommitSha = implementationMeta.reviewCommitSha;
   if (
-    reviewHead !== checkpoint.approvedCandidate.ref ||
-    reviewCommitSha !== checkpoint.approvedCandidate.commit
+    typeof reviewHead !== "string" ||
+    typeof reviewCommitSha !== "string" ||
+    reviewHead !== `refs/harness/factory/${checkpoint.owningImplementationRunId}/implementation`
   ) {
     throw new FactoryImplementationReviewInputError(
-      "Implementation candidate provenance does not match the lifecycle checkpoint.",
+      "Implementation metadata does not contain the immutable initial candidate provenance.",
       "provenance",
     );
+  }
+  if (typeof implementationMeta.reviewTree === "string") {
+    const initialTree = readCandidateTree(workspace, reviewCommitSha);
+    if (initialTree !== implementationMeta.reviewTree) {
+      throw new FactoryImplementationReviewInputError(
+        "Implementation metadata initial candidate tree does not match its commit.",
+        "provenance",
+      );
+    }
   }
   return {
     workspace,
@@ -178,6 +191,22 @@ export function resolveFactoryImplementationReviewInput(
       : {}),
     factoryStore: normalizeStoreMeta(storeResolution, storeMeta),
   };
+}
+
+function readCandidateTree(workspace: string, commit: string): string {
+  try {
+    return execFileSync("git", ["rev-parse", `${commit}^{tree}`], {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (error) {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation metadata initial candidate commit is unavailable.",
+      "provenance",
+      { cause: error },
+    );
+  }
 }
 
 /** Resolve a durable pointer only through its recorded immutable run root. */
