@@ -73,4 +73,3 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 ---
 
 **New plans:** `YYMMDD-short-slug.md` in this directory — reconcile here before adding. Todo-like backlog spikes live in Linear; this directory is for approved implementation plans and handoffs. **When done:** remove the plan file and update this README shipped table; do not keep an `archive/` copy.
-

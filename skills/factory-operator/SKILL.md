@@ -448,4 +448,3 @@ Stop before proceeding if the task requires:
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked source files
-
