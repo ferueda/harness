@@ -56,7 +56,11 @@ export async function applyLinearPlanningPublished(
   const commentMarker = linearPlanningReadyCommentMarker(input.runId);
   const commentBody = renderLinearPlanningReadyComment(input);
   if (!(await deps.issueHasCommentMarker(issue, commentMarker))) {
-    await client.createComment({ issueId: issue.id, body: commentBody });
+    await deps.createComment(
+      client,
+      { issueId: issue.id, body: commentBody },
+      "planning publish comment",
+    );
   }
 
   return {
@@ -93,7 +97,11 @@ export async function applyLinearPlanningMerged(
   const commentMarker = linearPlanningApprovedCommentMarker(input.runId);
   const commentBody = renderLinearPlanningApprovedComment(input);
   if (!(await deps.issueHasCommentMarker(issue, commentMarker))) {
-    await client.createComment({ issueId: issue.id, body: commentBody });
+    await deps.createComment(
+      client,
+      { issueId: issue.id, body: commentBody },
+      "planning merged comment",
+    );
   }
 
   return {

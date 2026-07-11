@@ -113,6 +113,37 @@ test("direct dry-run writes source material artifacts", async () => {
   expect(summary).toContain("Tracker:");
 });
 
+test.each(["direct", "planned"] as const)(
+  "applied %s dry-run records Harness-owned projection without claiming success",
+  async (mode) => {
+    const workspace =
+      mode === "planned"
+        ? createWorkspaceWithPlan()
+        : mkdtempSync(join(tmpdir(), "harness-factory-implementation-"));
+    const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+    const ctx = createFactoryImplementationRunContextForTest({
+      workspace,
+      runsDir,
+      workItem: WORK_ITEM,
+      implementationInput: mode === "planned" ? plannedInput(workspace) : directInput(),
+      implementerRole: { agent: "cursor" },
+      dryRun: true,
+      linearApplyRequested: true,
+    });
+
+    await runFactoryImplementation(ctx);
+
+    expect(readFileSync(join(ctx.runDir, "implementation/prompt.md"), "utf8")).toContain(
+      "implementer must not mutate the tracker; the Harness command owns requested start and terminal Linear projection",
+    );
+    const summary = readFileSync(join(ctx.runDir, "summary.md"), "utf8");
+    expect(summary).toContain(
+      "Linear apply: requested; Harness command owns start and terminal projection.",
+    );
+    expect(summary).not.toContain("Linear apply: succeeded");
+  },
+);
+
 test("live context creation requires maxRuntimeMs and agentProviderFactory", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-implementation-"));
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
@@ -199,6 +230,45 @@ test("live context exposes implementerRole and creates events.jsonl on export", 
     "Reviewer invocation: not run.",
   );
   expect(events).toHaveLength(1);
+});
+
+test("pre-provider failure metadata omits artifacts and events that were not written", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-implementation-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    implementationInput: directInput(),
+    implementerRole: { agent: "cursor" },
+    dryRun: false,
+    maxRuntimeMs: 5_000,
+    linearApplyRequested: true,
+    agentProviderFactory: () => {
+      throw new Error("provider must not be created");
+    },
+  });
+
+  const meta = ctx.export({
+    status: "implementation-failed",
+    error: "Linear implementation start mutation failed.",
+    preProviderFailure: true,
+  });
+
+  expect(meta).not.toHaveProperty("preProviderFailure");
+  expect(meta.eventsFile).toBeUndefined();
+  expect(meta.artifacts).not.toHaveProperty("prompt");
+  expect(meta.artifacts).not.toHaveProperty("changeReviewHandoff");
+  expect(existsSync(join(ctx.runDir, "implementation/prompt.md"))).toBe(false);
+  expect(existsSync(join(ctx.runDir, "events.jsonl"))).toBe(false);
+  expect(readFileSync(join(ctx.runDir, "summary.md"), "utf8")).toContain(
+    "Provider invocation: not run.",
+  );
+
+  if (false) {
+    // @ts-expect-error Pre-provider failures cannot report a completed run.
+    ctx.export({ status: "implementation-complete", preProviderFailure: true });
+  }
 });
 
 function createWorkspaceWithPlan(): string {

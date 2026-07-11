@@ -1,4 +1,7 @@
-import { validatePlannedWorkHandoff } from "./factory-planning-handoff.ts";
+import {
+  validateApprovedPlanArtifacts,
+  validatePlannedWorkHandoff,
+} from "./factory-planning-handoff.ts";
 import { parseFactoryWorkItemMetadata, type FactoryWorkItemMetadata } from "./factory-schemas.ts";
 import type { FactoryResolvedWorkItemInput } from "./factory-triage-input.ts";
 
@@ -39,9 +42,19 @@ export type FactoryImplementationInput =
   | FactoryPlannedImplementationInput
   | FactoryDirectImplementationInput;
 
+export type FactoryImplementationAttempt = "first" | "retry";
+
+export type FactoryImplementationLinearProjection = {
+  mode: "observe" | "apply";
+  readyToImplement: string;
+  implementationFailed: string;
+};
+
 export function resolveFactoryImplementationInput(input: {
   workspace: string;
   resolvedInput: FactoryResolvedWorkItemInput;
+  linearProjection?: FactoryImplementationLinearProjection;
+  /** Compatibility input for existing observe-only callers. */
   linearReadyStatus?: string;
 }): FactoryImplementationInput {
   const metadata = parseImplementationMetadata(input.resolvedInput.workItem.metadata);
@@ -52,12 +65,29 @@ export function resolveFactoryImplementationInput(input: {
   };
 
   if (input.resolvedInput.source === "linear") {
-    assertLinearReadyProjection(metadata, input.linearReadyStatus);
+    const legacyProjection = !input.linearProjection;
+    assertLinearProjection(
+      metadata,
+      input.linearProjection ??
+        (input.linearReadyStatus
+          ? {
+              mode: "observe",
+              readyToImplement: input.linearReadyStatus,
+              implementationFailed: "Implementation Failed",
+            }
+          : undefined),
+      legacyProjection,
+    );
   }
 
   // Any publication signal means planned work; validate it before direct mode.
   if (hasAnyPlannedPublicationSignal(metadata)) {
-    const handoff = validatePlannedWorkHandoff(metadata, input.workspace);
+    const handoff =
+      metadata.factoryStage === "implementation-failed" &&
+      input.resolvedInput.source === "linear" &&
+      input.linearProjection?.mode === "apply"
+        ? validateApprovedPlanArtifacts(metadata, input.workspace)
+        : validatePlannedWorkHandoff(metadata, input.workspace);
     const approvedPlanPath = metadata.approvedPlanPath;
     if (!approvedPlanPath) {
       throw new FactoryImplementationInputError(
@@ -73,7 +103,7 @@ export function resolveFactoryImplementationInput(input: {
     };
   }
 
-  if (hasAllDirectMarkers(metadata)) {
+  if (hasAllDirectMarkers(metadata, input.linearProjection)) {
     return {
       mode: "direct",
       ...base,
@@ -103,20 +133,45 @@ function parseImplementationMetadata(value: unknown): FactoryWorkItemMetadata {
   }
 }
 
-function assertLinearReadyProjection(
+export function factoryImplementationAttempt(
+  implementationInput: FactoryImplementationInput,
+): FactoryImplementationAttempt {
+  return implementationAttemptForMetadata(implementationInput.metadata);
+}
+
+function implementationAttemptForMetadata(
   metadata: FactoryWorkItemMetadata,
-  linearReadyStatus: string | undefined,
+): FactoryImplementationAttempt {
+  return metadata.factoryStage === "implementation-failed" ? "retry" : "first";
+}
+
+function assertLinearProjection(
+  metadata: FactoryWorkItemMetadata,
+  projection: FactoryImplementationLinearProjection | undefined,
+  legacyProjection: boolean,
 ): void {
-  if (!linearReadyStatus?.trim()) {
+  if (!projection?.readyToImplement.trim() || !projection.implementationFailed.trim()) {
     throw new FactoryImplementationInputError(
-      "linearReadyStatus is required for Linear implementation input.",
+      legacyProjection
+        ? "linearReadyStatus is required for Linear implementation input."
+        : "Linear implementation projection statuses are required for Linear implementation input.",
     );
   }
-  if (metadata.linearStatus !== linearReadyStatus) {
+  const attempt = implementationAttemptForMetadata(metadata);
+  if (attempt === "retry" && projection.mode !== "apply") {
+    throw new FactoryImplementationInputError("Linear implementation retries require --apply.");
+  }
+  const expected =
+    attempt === "retry" ? projection.implementationFailed : projection.readyToImplement;
+  if (!sameStatus(metadata.linearStatus, expected)) {
     throw new FactoryImplementationInputError(
-      `Linear issue is in ${String(metadata.linearStatus ?? "none")}; implementation accepts ${linearReadyStatus}.`,
+      `Linear issue is in ${String(metadata.linearStatus ?? "none")}; implementation${attempt === "first" ? "" : ` ${attempt} runs`} accepts ${expected}.`,
     );
   }
+}
+
+function sameStatus(left: unknown, right: string): boolean {
+  return typeof left === "string" && left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
 function hasAnyPlannedPublicationSignal(metadata: FactoryWorkItemMetadata): boolean {
@@ -129,9 +184,13 @@ function hasAnyPlannedPublicationSignal(metadata: FactoryWorkItemMetadata): bool
   );
 }
 
-function hasAllDirectMarkers(metadata: FactoryWorkItemMetadata): boolean {
+function hasAllDirectMarkers(
+  metadata: FactoryWorkItemMetadata,
+  projection: FactoryImplementationLinearProjection | undefined,
+): boolean {
   return (
-    metadata.factoryStage === "ready-to-implement" &&
+    (metadata.factoryStage === "ready-to-implement" ||
+      (metadata.factoryStage === "implementation-failed" && projection?.mode === "apply")) &&
     metadata.factoryRoute === "ready-to-implement" &&
     metadata.factoryNextAction === "implement-directly"
   );

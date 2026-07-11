@@ -1,6 +1,7 @@
 import type { AgentSessionRef } from "../lib/agents.ts";
 import type { FactoryImplementationRunMeta } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryLifecycleWarning } from "../lib/factory-lifecycle.ts";
+import type { LinearImplementationUpdateSummary } from "../lib/factory-linear-implementation-apply.ts";
 
 export type FactoryImplementationCliOutput = {
   runId: FactoryImplementationRunMeta["runId"];
@@ -20,11 +21,17 @@ export type FactoryImplementationCliOutput = {
   reviewHead?: string;
   reviewCommitSha?: string;
   warnings?: FactoryLifecycleWarning[];
+  linearApplied?: boolean;
+  linearUpdate?: LinearImplementationUpdateSummary;
 };
 
 export function factoryImplementationCliOutput(
   meta: FactoryImplementationRunMeta,
-  options: { warnings?: FactoryLifecycleWarning[] } = {},
+  options: {
+    warnings?: FactoryLifecycleWarning[];
+    linearApplied?: boolean;
+    linearUpdate?: LinearImplementationUpdateSummary;
+  } = {},
 ): FactoryImplementationCliOutput {
   return {
     runId: meta.runId,
@@ -44,5 +51,7 @@ export function factoryImplementationCliOutput(
     ...(meta.reviewHead ? { reviewHead: meta.reviewHead } : {}),
     ...(meta.reviewCommitSha ? { reviewCommitSha: meta.reviewCommitSha } : {}),
     ...(options.warnings && options.warnings.length > 0 ? { warnings: options.warnings } : {}),
+    ...(options.linearApplied !== undefined ? { linearApplied: options.linearApplied } : {}),
+    ...(options.linearUpdate ? { linearUpdate: options.linearUpdate } : {}),
   };
 }

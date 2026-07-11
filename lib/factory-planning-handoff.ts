@@ -227,6 +227,14 @@ export function validatePlannedWorkHandoff(
       `Planned work is not ready to implement: factoryStage=${metadata.factoryStage ?? "none"}`,
     );
   }
+  return validateApprovedPlanArtifacts(metadata, workspace);
+}
+
+/** Validates plan provenance without imposing a lifecycle stage gate. */
+export function validateApprovedPlanArtifacts(
+  metadata: FactoryWorkItemMetadata,
+  workspace: string,
+): PlannedWorkHandoff {
   if (!metadata.approvedPlanPath) {
     throw new FactoryPlanningError("Planned work is missing approvedPlanPath");
   }

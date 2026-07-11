@@ -54,6 +54,8 @@ const LINEAR_STATUSES = {
   needsPlanReview: "Plan Needs Review",
   needsPlan: "Needs Plan",
   readyToImplement: "Ready to Implement",
+  implementing: "Implementing",
+  implementationFailed: "Implementation Failed",
   triaging: "Triaging",
   planning: "Planning",
   triageFailed: "Triage Failed",
@@ -329,6 +331,68 @@ test("resolveFactoryLinearSettings requires explicit Linear config", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   expect(() => resolveFactoryLinearSettings({ workspace }, "/")).toThrow(
     /factory\.linear is required/,
+  );
+});
+
+test("resolveFactoryLinearSettings reports the implementation status migration", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  const {
+    implementing: _implementing,
+    implementationFailed: _implementationFailed,
+    ...legacyStatuses
+  } = LINEAR_STATUSES;
+  writeHarnessJson(workspace, {
+    factory: {
+      linear: {
+        teamKey: "ENG",
+        statuses: legacyStatuses,
+      },
+    },
+  });
+
+  expect(() => resolveFactoryLinearSettings({ workspace }, "/")).toThrow(
+    /Missing required Linear implementation status mappings: factory\.linear\.statuses\.implementationFailed, factory\.linear\.statuses\.implementing.*add both mappings to harness\.json/,
+  );
+});
+
+test.each([
+  ["implementing", /factory\.linear\.statuses\.implementing/],
+  ["implementationFailed", /factory\.linear\.statuses\.implementationFailed/],
+] as const)("resolveFactoryLinearSettings reports a missing %s mapping", (key, expected) => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  const statuses = { ...LINEAR_STATUSES };
+  delete statuses[key];
+  writeHarnessJson(workspace, { factory: { linear: { teamKey: "ENG", statuses } } });
+
+  expect(() => resolveFactoryLinearSettings({ workspace }, "/")).toThrow(expected);
+});
+
+test("implementation status migration does not hide unrelated config errors", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  const {
+    implementing: _implementing,
+    implementationFailed: _implementationFailed,
+    ...legacyStatuses
+  } = LINEAR_STATUSES;
+  writeHarnessJson(workspace, {
+    base: 123,
+    factory: { linear: { teamKey: "ENG", statuses: legacyStatuses } },
+  });
+
+  expect(() => resolveFactoryLinearSettings({ workspace }, "/")).toThrow(
+    /base: Invalid input: expected string, received number/,
+  );
+});
+
+test("implementation status migration does not mask a malformed implementation mapping", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  const { implementationFailed: _implementationFailed, ...statuses } = LINEAR_STATUSES;
+  writeHarnessJson(workspace, {
+    factory: { linear: { teamKey: "ENG", statuses: { ...statuses, implementing: "" } } },
+  });
+
+  expect(() => resolveFactoryLinearSettings({ workspace }, "/")).toThrow(
+    /factory\.linear\.statuses\.implementing: Too small/,
   );
 });
 

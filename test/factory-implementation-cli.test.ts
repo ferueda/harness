@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { factoryImplementationCliOutput } from "../bin/factory-implementation-cli.ts";
 import { runFactoryImplementationWithLifecycle } from "../bin/factory-commands.ts";
 import {
   createFactoryImplementationRunContextForTest,
@@ -20,6 +21,23 @@ import { parseFactoryRunStartedProgress } from "./factory-run-started-test-helpe
 import { runFactoryHarness } from "./factory-store-test-helpers.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
+
+test("implementation CLI output preserves an explicit failed Linear projection", () => {
+  const workspace = createWorkspace();
+  const ctx = createFactoryImplementationRunContextForTest({
+    workspace,
+    workItem: directWorkItem(),
+    implementationInput: directInput(directWorkItem()),
+    implementerRole: { agent: "cursor" },
+    dryRun: true,
+  });
+  const meta = ctx.export({ status: "dry_run" });
+
+  expect(factoryImplementationCliOutput(meta)).not.toHaveProperty("linearApplied");
+  expect(factoryImplementationCliOutput(meta, { linearApplied: false })).toMatchObject({
+    linearApplied: false,
+  });
+});
 
 test("implementation item-file direct dry-run rebuilds missing lifecycle projection in memory", () => {
   const workspace = createWorkspace();

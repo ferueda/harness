@@ -98,6 +98,7 @@ harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<rep
 harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
 harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
 ```
 
@@ -136,9 +137,12 @@ Publication commands are local-only unless `--apply` is present; apply mode
 moves Linear to `Plan Needs Review` after the plan PR is registered and to
 `Ready to Implement` after the merge commit is recorded.
 Live implementation runs one implementer, writes candidate changes plus an
-internal review ref, and stops before change-review; it does not mutate Linear
-or create a human branch/PR/commit. Optional `--dry-run` prepares prompt/handoff
-artifacts without a provider.
+internal review ref, and stops before change-review. Linear `--apply` moves an
+eligible first run or retry to `Implementing`, then posts the terminal handoff
+or failure projection; without `--apply` it does not mutate Linear or create a
+human branch/PR/commit. Optional `--dry-run` prepares prompt/handoff artifacts
+without a provider. See the factory guide for lease and projection-recovery
+behavior.
 Harness adapters for GitHub, Jira, and Inngest remain future layers. Linking
 factory PRs to Linear issues via branch/title naming is current operator
 practice (see Linear PR linking in

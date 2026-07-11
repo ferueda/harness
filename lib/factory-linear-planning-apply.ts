@@ -66,6 +66,11 @@ export type LinearPlanningApplyDeps = {
     target: LinearWorkflowStateLike,
   ) => Promise<void>;
   issueHasCommentMarker: (issue: LinearIssueLike, marker: string) => Promise<boolean>;
+  createComment: (
+    client: LinearClientLike,
+    input: { issueId: string; body: string },
+    operation: string,
+  ) => Promise<void>;
 };
 
 export async function applyLinearPlanningStarted(
@@ -115,7 +120,11 @@ export async function applyLinearPlanningCompleted(
     targetStatus: target.name,
   });
   if (!(await deps.issueHasCommentMarker(issue, commentMarker))) {
-    await client.createComment({ issueId: issue.id, body: commentBody });
+    await deps.createComment(
+      client,
+      { issueId: issue.id, body: commentBody },
+      "planning completion comment",
+    );
   }
 
   return {
@@ -146,7 +155,11 @@ export async function applyLinearPlanningFailed(
   const commentMarker = linearPlanningApplyFailedCommentMarker(input.runId);
   const commentBody = renderLinearPlanningApplyFailedComment(input);
   if (!(await deps.issueHasCommentMarker(issue, commentMarker))) {
-    await client.createComment({ issueId: issue.id, body: commentBody });
+    await deps.createComment(
+      client,
+      { issueId: issue.id, body: commentBody },
+      "planning failure comment",
+    );
   }
 
   return {

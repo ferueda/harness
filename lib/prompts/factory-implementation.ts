@@ -5,6 +5,7 @@ import type { FactoryImplementationInput } from "../factory-implementation-input
 export type FactoryImplementationPromptInput = {
   implementationInput: FactoryImplementationInput;
   implementerAgent: FactoryStationAgentMeta;
+  linearApplyRequested?: boolean;
 };
 
 export type FactoryImplementationHandoffInput =
@@ -61,7 +62,9 @@ export function renderFactoryImplementationPrompt(input: FactoryImplementationPr
     "",
     "## Station Boundaries",
     "",
-    "- This station does not own tracker mutation.",
+    input.linearApplyRequested
+      ? "- The implementer must not mutate the tracker; the Harness command owns requested start and terminal Linear projection."
+      : "- This station does not own tracker mutation.",
     "- This station does not own PR creation.",
     "- This station does not own branch or worktree orchestration.",
     "- This station does not own change-review execution.",

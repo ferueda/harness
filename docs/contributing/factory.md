@@ -28,6 +28,7 @@ harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 -
 harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
 harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 ```
 
@@ -166,6 +167,8 @@ Factory station roles use `harness.json`:
         "needsPlan": "Needs Plan",
         "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
+        "implementing": "Implementing",
+        "implementationFailed": "Implementation Failed",
         "triaging": "Triaging",
         "planning": "Planning",
         "triageFailed": "Triage Failed",
@@ -223,9 +226,12 @@ other Codex roles: `executable`, `sandboxMode`, `approvalPolicy`, and
 
 Linear status config is a coordinated board/config contract. When upgrading an
 existing repo, rename the old human-input status to `Needs Clarification`, add
-`Plan Needs Review`, and update `factory.linear.statuses.needsPlanReview` in
-`harness.json` in the same change. Commands fail fast if the configured status
-does not exist on the Linear team.
+`Plan Needs Review`, `Implementing`, and `Implementation Failed`, then add the
+matching `needsPlanReview`, `implementing`, and `implementationFailed` mappings
+to `harness.json` in the same change. These mappings are a required config
+migration, including for observe-only commands; they are not enabled lazily by
+`--apply`. Commands fail fast if a configured status does not exist on the
+Linear team.
 
 ## Linear Adapter
 
@@ -361,6 +367,8 @@ fallback when no lifecycle log exists:
 - `Plan Needs Review` -> `plan-review-unresolved`
 - `Needs Plan` -> `ready-to-plan`
 - `Ready to Implement` -> `ready-to-implement`
+- `Implementing` -> `implementation-started`
+- `Implementation Failed` -> `implementation-failed`
 - `Parked` -> `wait-to-implement`
 - `Planning` -> `planning`
 - `Planning Failed` -> `planning-failed`
@@ -546,12 +554,26 @@ Run one live implementer pass:
 
 ```bash
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
-harness factory implementation run --workspace /path/to/repo --linear-issue ENG-123
+harness factory implementation run --workspace /path/to/repo --linear-issue ENG-123 --apply
 ```
 
+Entry modes:
+
+| Input        | Flags               | Accepted entry                                                  | Linear writes             |
+| ------------ | ------------------- | --------------------------------------------------------------- | ------------------------- |
+| item file    | live or `--dry-run` | normal direct/planned readiness                                 | none                      |
+| Linear issue | live or `--dry-run` | `Ready to Implement` first run                                  | none                      |
+| Linear issue | live `--apply`      | `Ready to Implement` first run or `Implementation Failed` retry | status and marker comment |
+
+`--apply` requires `--linear-issue` and `LINEAR_API_KEY`; it rejects
+`--item-file` and `--dry-run`. Linear retries require `--apply`. Item-file
+retries remain rejected because an item file cannot provide a fresh tracker
+projection.
+
 The station first calls `resolveFactoryWorkItemInput`, then
-`resolveFactoryImplementationInput`. Linear-backed input passes
-`factory.linear.statuses.readyToImplement` as `linearReadyStatus`.
+`resolveFactoryImplementationInput`. Linear-backed first runs require `Ready to
+Implement`; applied retries require `Implementation Failed`. Lifecycle metadata
+remains authoritative and the Linear state is a fail-closed projection guard.
 
 Planned mode requires lifecycle/factory metadata with
 `factoryStage: "plan-approved"`, `approvedPlanPath`, `approvedPlanCommit`, and
@@ -580,6 +602,30 @@ candidate change artifacts, and materializes an internal review ref:
 Optional `--dry-run` prepares prompt and handoff drafts without invoking a
 provider or writing lifecycle state.
 
+Every live implementation acquires a per-work-item execution lease before its
+final item/lifecycle read and readiness validation. The lease is held through
+the provider run, local terminal event, and requested Linear terminal
+projection, so two implementations cannot race the same item. Contention fails
+immediately. A same-host lease whose process is dead can be recovered; a lease
+owned by another hostname never becomes stale by age. Inspect the reported
+owner and remove a remote lease only after independently proving that owner is
+gone.
+
+Apply order is fail closed:
+
+1. Re-fetch and validate the issue while holding the execution lease.
+2. Append imported/started lifecycle audit evidence.
+3. Re-fetch Linear immediately before moving the issue from `Ready to
+Implement` (or retry `Implementation Failed`) to `Implementing`.
+4. Invoke the implementer and append the local terminal lifecycle event.
+5. Re-fetch Linear before the terminal projection. Success posts a
+   marker-deduped review handoff comment while leaving the issue in
+   `Implementing`; failure moves it to `Implementation Failed` and posts a
+   marker-deduped retry comment.
+
+The implementer prompt forbids tracker mutation. The station command owns all
+requested Linear writes.
+
 Live artifacts:
 
 ```text
@@ -607,13 +653,33 @@ ${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<
 
 Lifecycle: `implementation.started` is audit-only;
 `implementation.completed` / `implementation.failed` move durable stage while
-preserving plan/direct retry metadata. There is no Linear apply path for
-implementation in this station.
+preserving plan/direct retry metadata. With `--apply`, eligible Ready or
+Implementation Failed work moves through Implementing; without it, Linear is
+not mutated.
 
-Non-goals: no nested change-review loop, no PR creation, no Linear mutation, no
-human branch/worktree orchestration, and no Git checkout or commit verification
-of `approvedPlanCommit`. The implementer agent must not mutate refs; the harness
-command owns the internal review ref.
+Failure recovery:
+
+- Start projection failure: the provider is not invoked. `meta.json` records
+  `implementation-failed` and omits prompt/handoff/events paths; local lifecycle
+  has only imported/started audit evidence. Correct the Linear state or mutation
+  failure, then rerun.
+- Provider or local implementation failure after start: local lifecycle moves
+  to `implementation-failed`; successful terminal apply moves Linear to
+  `Implementation Failed`. Inspect the run, correct the cause, and rerun the
+  same Linear issue with `--apply`.
+- Terminal Linear projection failure: local terminal lifecycle and run
+  artifacts remain authoritative; stdout reports `linearApplied: false` and
+  the command exits non-zero. Do not rerun the provider merely to repair the
+  tracker. Inspect `meta.json` and `linearUpdate`; partial terminal progress
+  records `statusMutationCompleted`, `statusPostconditionVerified`,
+  `commentPresent`, and the intended marker/body. Manually finish only the
+  missing status/comment projection from that evidence. This initial slice
+  intentionally has no comment-only replay command.
+
+Non-goals: nested change-review execution; PR creation; Linear mutation without
+`--apply`; terminal-projection replay; human branch/worktree orchestration; and
+Git checkout or commit verification of `approvedPlanCommit`. The implementer
+agent must not mutate refs; the harness command owns the internal review ref.
 
 ## Local Inbox
 

@@ -38,6 +38,8 @@ const LINEAR_SETTINGS = {
     needsPlanReview: "Plan Needs Review",
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
+    implementing: "Implementing",
+    implementationFailed: "Implementation Failed",
     triaging: "Triaging",
     planning: "Planning",
     triageFailed: "Triage Failed",
@@ -1071,6 +1073,24 @@ test("Linear adapter validates and lists without optional terminal statuses", as
   expect(result.statusNames).toEqual(["Backlog"]);
 });
 
+test.each([
+  ["Implementing", "implementation-started"],
+  ["Implementation Failed", "implementation-failed"],
+] as const)("Linear fetch bootstraps %s as %s", async (status, expectedStage) => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeReadOnlyLinearClient({
+      issues: async () => ({ nodes: [issueWithState(status)] }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const item = await adapter.fetchWorkItem("ENG-123");
+  expect(item.metadata).toMatchObject({
+    linearStatus: status,
+    factoryStage: expectedStage,
+  });
+});
+
 test("Linear adapter skips undefined optional terminal values during status-map validation", async () => {
   const settings = {
     ...LINEAR_SETTINGS,
@@ -1438,6 +1458,27 @@ test("Linear adapter validates configured statuses against team states", async (
     /missing configured statuses: Parked, Needs Clarification/,
   );
 });
+
+test.each([
+  ["implementing", "Ready to Implement", /implementing must differ from.*readyToImplement/],
+  ["implementationFailed", "Implementing", /implementationFailed must differ from.*implementing/],
+  [
+    "implementationFailed",
+    " ready TO implement ",
+    /implementationFailed must differ from.*readyToImplement/,
+  ],
+] as const)(
+  "Linear adapter rejects aliased implementation status %s",
+  async (key, value, error) => {
+    const settings = {
+      ...LINEAR_SETTINGS,
+      statuses: { ...LINEAR_SETTINGS.statuses, [key]: value },
+    } satisfies FactoryLinearSettings;
+    const adapter = createLinearFactoryAdapterForClient({ client: fakeClient(), settings });
+
+    await expect(adapter.validateStatusMap()).rejects.toThrow(error);
+  },
+);
 
 test("Linear adapter validates status map during fetch", async () => {
   const missingStatusTeam = {

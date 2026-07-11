@@ -122,6 +122,8 @@ function writeLinearConfig(workspace: string): void {
               needsPlanReview: "Plan Needs Review",
               needsPlan: "Needs Plan",
               readyToImplement: "Ready to Implement",
+              implementing: "Implementing",
+              implementationFailed: "Implementation Failed",
               triaging: "Triaging",
               planning: "Planning",
               triageFailed: "Triage Failed",
@@ -2127,6 +2129,8 @@ test("harness factory triage with Linear input requires a Linear API key", () =>
               needsPlanReview: "Plan Needs Review",
               needsPlan: "Needs Plan",
               readyToImplement: "Ready to Implement",
+              implementing: "Implementing",
+              implementationFailed: "Implementation Failed",
               triaging: "Triaging",
               planning: "Planning",
               triageFailed: "Triage Failed",
@@ -2900,4 +2904,57 @@ test("harness run change-review dry-run uses self-contained simplify prompt", ()
   expect(simplifyPrompt).toContain("Prefer explicit, boring code");
   expect(simplifyPrompt).not.toContain("SKILL.md");
   expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
+});
+
+test("harness factory implementation apply requires a Linear issue", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "factory",
+    "implementation",
+    "run",
+    "--workspace",
+    workspace,
+    "--apply",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply requires --linear-issue/);
+  expect(result.stderr).not.toMatch(/factory\.linear is required/);
+});
+
+test("harness factory implementation apply rejects item-file mode", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "factory",
+    "implementation",
+    "run",
+    "--workspace",
+    workspace,
+    "--item-file",
+    "item.json",
+    "--apply",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply cannot be used with --item-file/);
+  expect(result.stderr).not.toMatch(/factory\.linear is required/);
+});
+
+test("harness factory implementation apply rejects dry-run", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "factory",
+    "implementation",
+    "run",
+    "--workspace",
+    workspace,
+    "--linear-issue",
+    "ENG-123",
+    "--apply",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--apply cannot be combined with --dry-run/);
+  expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
