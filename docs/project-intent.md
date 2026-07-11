@@ -56,6 +56,12 @@ skill installs, and committed plans and code. Standalone review artifacts keep t
 projections, while Git remains the source of truth for committed plans and
 code.
 
+Factory planning keeps planner scratch separate from Harness evidence. The
+planner writes only the retained, ignored workspace-local
+`.harness/factory-drafts/<run-id>/draft.md`; Harness validates that draft and
+publishes canonical and immutable snapshots into the external durable store.
+Scratch is transient, non-authoritative, and never recovery state.
+
 ## Harness-repo vs target-repo boundary
 
 The harness repo owns reusable workflow machinery and repo-local planning

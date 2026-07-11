@@ -112,8 +112,11 @@ by default. Factory lifecycle JSONL and rebuildable state live under that
 project's `factory/` directory. This default is intentionally outside the
 documented harness checkout at `~/.harness`. Triage routes are
 `ready-to-implement`, `ready-to-plan`, `needs-info`, or `wait-to-implement`.
-Planning writes reviewed plans into the target repo only after approval. For
-tracker-backed work, publish the plan file through a plan PR, then register the
+Planning keeps mutable planner scratch under ignored workspace
+`.harness/factory-drafts/<run-id>/` and writes reviewed plans into the target
+repo only after approval. Harness alone publishes canonical and immutable
+planning evidence to the durable store. For tracker-backed work, publish the
+plan file through a plan PR, then register the
 PR URL and merge commit with the planning publication commands before treating
 the tracker item as ready to implement.
 

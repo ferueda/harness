@@ -274,10 +274,13 @@ station finishes. Approved plans stay in `Planning`; human questions move to
 station/runtime failures move to `Planning Failed`. Planning apply never moves
 the issue to `Ready to Implement`.
 
-The planner writes `runs/factory/<run-id>/planning/draft.md` in the durable
-factory store. Harness
-snapshots the draft, runs `plan-review`, and reinvokes the same planner session
-for review findings until the station reaches a terminal status.
+The planner writes only the mutable draft at
+`.harness/factory-drafts/<run-id>/draft.md` in the workspace. Harness validates
+that ignored scratch, publishes canonical and immutable snapshots in the
+durable factory store, runs `plan-review` on the immutable snapshot, and
+reinvokes the same planner session for review findings. Scratch is retained,
+non-authoritative agent state; revisions edit the same path and add a new
+immutable snapshot. Never write durable `planning/draft.md` directly.
 
 Terminal statuses:
 

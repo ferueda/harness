@@ -147,13 +147,17 @@ creating a planning run. Planning-attention `Needs Clarification` issues are
 identified by the latest factory planning marker. Item-file planning remains
 manual/local and is not gated by Linear tracker metadata.
 
-`lib/factory-planning-run-context.ts` creates local file-backed factory planning
-runs, copies `context/work-item.json`, resolves the harness-owned planning JSON
-schema, prepares `planning/draft.md` for planner writes, snapshots
-per-iteration planner artifacts, writes `factoryMetadata` into `meta.json`, and
-writes an approved final plan under `dev/plans/` when the planning station
-finishes successfully. Tracker-backed plans should be published through a plan
-PR before tracker status moves to `Ready to Implement`.
+`lib/factory-planning-run-context.ts` creates file-backed factory planning runs,
+copies `context/work-item.json`, and keeps three paths separate: planner scratch
+at `.harness/factory-drafts/<run-id>/draft.md`, canonical latest evidence at
+`<runDir>/planning/draft.md`, and immutable review snapshots at
+`<runDir>/iterations/<n>/plan.md`. Scratch is prepared lazily, validated with
+real-path and no-follow checks, and intentionally retained as ignored,
+non-authoritative state. Harness publishes snapshots through completed
+same-directory staging and no-replace hard links, writes `factoryMetadata` into
+`meta.json`, and writes an approved final plan under `dev/plans/`. Tracker-backed
+plans should be published through a plan PR before tracker status moves to
+`Ready to Implement`.
 
 `lib/factory-planning-handoff.ts` owns planning handoff metadata helpers:
 loading validated planning `meta.json`, rendering planning summaries, patching
@@ -262,11 +266,12 @@ one route plan. Current input is `--item-file`; future GitHub, Linear, Jira, or
 orchestrator adapters should feed the same `FactoryWorkItem` contract.
 
 `workflows/factory-planning.workflow.ts` runs one planning station loop. The
-planner writes/edits the run draft file and returns small structured metadata.
-Harness snapshots the draft, runs `plan-review` against that snapshot, guards
-against tracked source edits during planner turns, and reuses the captured
-planner session for revisions until the plan is approved, needs human input,
-fails, or reaches the review-iteration limit.
+planner writes/edits the workspace-local scratch draft and returns small
+structured metadata. Harness publishes validated snapshots, runs `plan-review`
+against the immutable snapshot, guards against tracked source edits during
+planner turns, and reuses the captured planner session for revisions until the
+plan is approved, needs human input, fails, or reaches the review-iteration
+limit.
 
 `workflows/factory-implementation.workflow.ts` runs dry-run or one live
 implementer pass. Live mode records workspace changes, materializes
@@ -340,16 +345,31 @@ events in the durable factory store.
 Factory planning artifacts include:
 
 - `context/work-item.json`
-- `planning/draft.md`
+- `planning/draft.md` (canonical latest successful draft)
 - `iterations/<n>/planner.prompt.md`
 - `iterations/<n>/planner.raw.json`
-- `iterations/<n>/planner.json`
+- `iterations/<n>/planner.json` when structured planner output parses
+- `iterations/<n>/planner.failure.json` for failed or non-publishable turns
+- `iterations/<n>/planner.stream.jsonl` when the provider streams output
 - `iterations/<n>/plan.md` when the planner produced a draft
 - `iterations/<n>/plan-review-ref.json` when a review ran
 - `iterations/<n>/review-findings.json` when review findings need revision
 - `summary.md`
 - `meta.json`
 - `events.jsonl` for live runs
+
+`planner.failure.json` records the classified failure. If structured output
+parsed before a later validation or publication failure, `planner.json` may
+also remain alongside it.
+
+The planner scratch path is outside the durable run and is not exported in
+metadata, lifecycle events, review references, or handoffs. Live planning
+rejects a workspace-local `--runs-dir`, because a workspace-write planner must
+not be able to alter durable evidence. Dry-run may use a local run root and
+still announces `run-started` on stderr; it suppresses provider/reviewer,
+workflow-event, and lifecycle writes. Retained scratch may be removed manually
+only after checking that it still resolves inside the workspace and remains
+disjoint from the durable run directory.
 
 Live planning runs create nested plan-review runs under the durable store's
 `runs/reviews/<run-id>/`. When a plan is approved, the station writes

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { factoryPlanningCliOutput } from "../bin/factory-planning-cli.ts";
@@ -12,7 +12,9 @@ import type {
   FactoryPlanningRunContext,
   FactoryPlanningRunMeta,
 } from "../lib/factory-planning-run-context.ts";
+import { createFactoryPlanningRunContextForTest } from "../lib/factory-planning-run-context.ts";
 import { fakeLinearAdapter, LINEAR_SETTINGS } from "./factory-linear-test-helpers.ts";
+import { WORK_ITEM } from "./factory-planning-test-helpers.ts";
 
 const APPLY_WORKSPACE = mkdtempSync(join(tmpdir(), "harness-planning-apply-workspace-"));
 const APPLY_RUN_DIR = join(APPLY_WORKSPACE, ".harness/runs/factory/run-1");
@@ -197,6 +199,45 @@ test("planning apply cleanup preserves original planning error", async () => {
       error: "Planner exploded",
     },
   ]);
+  expect(existsSync(join(CTX.workspace, ".harness/factory-drafts"))).toBe(false);
+});
+
+test("planning apply start failure leaves real-context scratch uncreated", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-planning-real-workspace-"));
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-planning-real-runs-"));
+  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-planning-real-state-"));
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 1,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          throw new Error("planner must not run");
+        },
+      };
+    },
+  });
+  const adapter = fakeLinearAdapter({
+    applyPlanningStarted: async () => {
+      throw new Error("Linear start failed");
+    },
+  });
+
+  await expect(
+    runFactoryPlanningWithLinearApply({
+      ctx,
+      issueRef: "ENG-123",
+      applyAdapter: adapter,
+      factoryStateRoot,
+    }),
+  ).rejects.toThrow("Linear start failed");
+  expect(existsSync(join(workspace, ".harness/factory-drafts"))).toBe(false);
 });
 
 test("planning apply cleanup calls failed apply after planning error", async () => {

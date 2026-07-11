@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Agent,
@@ -9,6 +9,11 @@ import {
 } from "../lib/agents.ts";
 import {
   FACTORY_PLANNING_SCHEMA_PATH,
+  DraftValidationError,
+  FactoryPlanningPublicationError,
+  type DraftValidationReason,
+  type PlannerFailureClassification,
+  type PublicationStage,
   type FactoryPlanningAgentRole,
   type FactoryPlanningReviewRef,
   type FactoryPlanningReviewMeta,
@@ -25,7 +30,8 @@ import {
   renderFactoryPlanningInitialPrompt,
   renderFactoryPlanningRevisionPrompt,
 } from "../lib/prompts/index.ts";
-import { readWorkspaceStatus } from "../lib/review-guard.ts";
+import { errorArtifact } from "../lib/agent-invoke.ts";
+import { readWorkspaceStatus, withWorkspaceGuard } from "../lib/review-guard.ts";
 import { ReviewOutputSchema, type ReviewOutput } from "../lib/schemas.ts";
 import { createWorkflowContext } from "../lib/workflow-context.ts";
 import { run as runPlanReview } from "./plan-review.workflow.ts";
@@ -64,6 +70,7 @@ export async function run(ctx: FactoryPlanningRunContext): Promise<FactoryPlanni
   try {
     result = await runPlanningLoop(ctx);
   } catch (error) {
+    const safeError = publicFailureMessage(ctx, errorMessage(error));
     ctx.eventSink({
       type: "run:end",
       runId: ctx.runId,
@@ -71,9 +78,9 @@ export async function run(ctx: FactoryPlanningRunContext): Promise<FactoryPlanni
       workspace: ctx.workspace,
       status: "failed",
       durationMs: Date.now() - startedAt.getTime(),
-      error: errorMessage(error),
+      error: safeError,
     });
-    throw error;
+    throw new FactoryPlanningError(safeError, { cause: error });
   }
 
   if (!ctx.dryRun) {
@@ -91,8 +98,6 @@ export async function run(ctx: FactoryPlanningRunContext): Promise<FactoryPlanni
 }
 
 async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryPlanningRunMeta> {
-  if (ctx.dryRun) return runDryRun(ctx);
-
   const handoffFailure = validateWorkItemHandoff(ctx);
   if (handoffFailure) {
     return ctx.export({
@@ -101,8 +106,10 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
       error: handoffFailure,
     });
   }
+  if (ctx.dryRun) return runDryRun(ctx);
 
   const planner = ctx.plannerProvider();
+  ctx.preparePlannerScratch();
 
   const iterations: PlanningIteration[] = [];
   let plannerSession: AgentSessionRef | undefined;
@@ -120,8 +127,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
               reviewFindingsJson: JSON.stringify(latestFindings ?? [], null, 2),
             });
 
-      const trackedStatusBefore = readTrackedStatus(ctx.workspace);
-      const plannerResult = await invokePlanner({
+      const plannerAttempt = await invokePlanner({
         ctx,
         planner,
         role: ctx.plannerRole,
@@ -129,19 +135,85 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
         prompt,
         session: index === 1 ? undefined : plannerSession,
       });
-      assertTrackedStatusUnchanged(ctx.workspace, trackedStatusBefore);
-      if (index === 1) plannerSession = plannerResult.session;
-      const output = parseFactoryPlanningOutput(plannerResult.structuredOutput);
-      if (index > 1 && output.outcome === "draft-ready") {
-        validateFindingDecisions(output, latestFindings ?? []);
+      const plannerResult = plannerAttempt.result;
+      try {
+        ctx.writePlannerEvidence({
+          index,
+          prompt,
+          raw: rawAgentArtifact(plannerResult),
+        });
+      } catch (error) {
+        return failPlannerTurn({
+          ctx,
+          iterations,
+          index,
+          plannerSession,
+          classification: "publication-failed",
+          message: `Failed to persist planner evidence: ${errorMessage(error)}`,
+          raw: rawAgentArtifact(plannerResult),
+          publicationStage: "stage",
+        });
       }
+      if (!plannerResult.ok) {
+        const failure = classifyPlannerFailure(plannerResult, plannerAttempt.invocationThrew);
+        return failPlannerTurn({
+          ctx,
+          iterations,
+          index,
+          plannerSession,
+          classification: failure.classification,
+          message: failure.message,
+          raw: rawAgentArtifact(plannerResult),
+          exitCode: plannerResult.exitCode,
+          aborted: plannerResult.aborted,
+        });
+      }
+      if (index === 1) plannerSession = plannerResult.session;
 
-      const planPath = ctx.writePlannerArtifacts({
-        index,
-        prompt,
-        raw: rawAgentArtifact(plannerResult),
-        output,
-      });
+      let output: FactoryPlanningOutput;
+      try {
+        output = parseFactoryPlanningOutput(plannerResult.structuredOutput);
+        assertPlannerOutputPathSafe(ctx, output);
+      } catch (error) {
+        return failPlannerTurn({
+          ctx,
+          iterations,
+          index,
+          plannerSession,
+          classification: "structured-output-invalid",
+          message: errorMessage(error),
+          raw: rawAgentArtifact(plannerResult),
+        });
+      }
+      try {
+        ctx.writePlannerStructuredArtifact(index, output);
+      } catch (error) {
+        return failPlannerTurn({
+          ctx,
+          iterations,
+          index,
+          plannerSession,
+          classification: "publication-failed",
+          message: `Failed to persist planner output: ${errorMessage(error)}`,
+          raw: rawAgentArtifact(plannerResult),
+          publicationStage: "stage",
+        });
+      }
+      if (index > 1 && output.outcome === "draft-ready") {
+        try {
+          validateFindingDecisions(output, latestFindings ?? []);
+        } catch (error) {
+          return failPlannerTurn({
+            ctx,
+            iterations,
+            index,
+            plannerSession,
+            classification: "finding-decisions-invalid",
+            message: errorMessage(error),
+            raw: rawAgentArtifact(plannerResult),
+          });
+        }
+      }
 
       if (output.outcome === "needs-human") {
         return ctx.export({
@@ -152,10 +224,22 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
         });
       }
 
-      if (!planPath) {
-        throw new FactoryPlanningError(
-          "Planner draft-ready output did not produce a plan snapshot",
-        );
+      let planPath: string;
+      try {
+        planPath = ctx.publishPlannerDraft(index);
+      } catch (error) {
+        const failure = classifyPublicationFailure(error);
+        return failPlannerTurn({
+          ctx,
+          iterations,
+          index,
+          plannerSession,
+          classification: failure.classification,
+          message: failure.message,
+          raw: rawAgentArtifact(plannerResult),
+          ...(failure.draftReason ? { draftReason: failure.draftReason } : {}),
+          publicationStage: failure.publicationStage,
+        });
       }
 
       const iteration: PlanningIteration = { index, planPath };
@@ -193,7 +277,9 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
           status: "plan-needs-human",
           iterations,
           plannerSession,
-          humanQuestions: blockedReviewQuestions(review.ref),
+          humanQuestions: blockedReviewQuestions(review.ref).map((question) =>
+            publicFailureMessage(ctx, question),
+          ),
         });
       }
       if (review.meta.verdict !== "needs_changes") {
@@ -202,7 +288,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
 
       const specReview = readSpecReview(review.ref.specReviewPath);
       latestFindings = enrichFindings(specReview.findings);
-      ctx.writeReviewFindings(index, latestFindings);
+      ctx.writeReviewFindings(index, sanitizePublicReviewerValue(ctx, latestFindings));
       if (completedReviews >= ctx.maxReviewIterations) {
         return ctx.export({
           status: "plan-review-unresolved",
@@ -221,17 +307,15 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
 }
 
 function runDryRun(ctx: FactoryPlanningRunContext): FactoryPlanningRunMeta {
+  ctx.preparePlannerScratch();
   const prompt = renderFactoryPlanningInitialPrompt(planningPromptContext(ctx));
   writeFileSync(ctx.draftPath, DRY_RUN_PLAN_MARKDOWN, "utf8");
-  const planPath = ctx.writePlannerArtifacts({
-    index: 1,
-    prompt,
-    raw: DRY_RUN_PLANNING,
-    output: DRY_RUN_PLANNING,
-  });
+  ctx.writePlannerEvidence({ index: 1, prompt, raw: DRY_RUN_PLANNING });
+  ctx.writePlannerStructuredArtifact(1, DRY_RUN_PLANNING);
+  const planPath = ctx.publishPlannerDraft(1);
   return ctx.export({
     status: "dry_run",
-    iterations: planPath ? [{ index: 1, planPath }] : [],
+    iterations: [{ index: 1, planPath }],
   });
 }
 
@@ -255,27 +339,39 @@ async function invokePlanner(input: {
   index: number;
   prompt: string;
   session?: AgentSessionRef;
-}): Promise<Extract<AgentRunResult, { ok: true }>> {
+}): Promise<{ result: AgentRunResult; invocationThrew: boolean }> {
+  input.ctx.preparePlannerIteration(input.index);
   const iterationDir = input.ctx.iterationDir(input.index);
-  mkdirSync(iterationDir, { recursive: true });
-  const result = await input.planner.run({
-    workspace: input.ctx.workspace,
-    prompt: input.prompt,
-    schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
-    model: input.ctx.plannerAgent.model,
-    ...plannerPolicyOptions(input.planner.name, input.role),
-    maxRuntimeMs: input.ctx.maxRuntimeMs,
-    logPath: join(iterationDir, "planner.stream.jsonl"),
-    session: input.session,
-    signal: input.ctx.signal,
-  });
-  if (!result.ok) {
-    const error = result.aborted
-      ? "Agent was aborted: factory-planning"
-      : `factory-planning failed: ${result.error}`;
-    throw new FactoryPlanningError(error);
+  const trackedStatusBefore = readTrackedStatus(input.ctx.workspace);
+  let result: AgentRunResult;
+  let invocationThrew = false;
+  try {
+    result = await input.planner.run({
+      workspace: input.ctx.workspace,
+      prompt: input.prompt,
+      schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
+      model: input.ctx.plannerAgent.model,
+      ...plannerPolicyOptions(input.planner.name, input.role),
+      workspaceGuard: "record",
+      maxRuntimeMs: input.ctx.maxRuntimeMs,
+      logPath: join(iterationDir, "planner.stream.jsonl"),
+      session: input.session,
+      signal: input.ctx.signal,
+    });
+  } catch (error) {
+    invocationThrew = true;
+    result = {
+      ok: false,
+      error: `factory-planning invocation threw: ${errorMessage(error)}`,
+      raw: errorArtifact(error),
+      exitCode: 1,
+    };
   }
-  return result;
+  if (trackedStatusBefore === undefined) return { result, invocationThrew };
+  return {
+    result: withWorkspaceGuard(result, input.ctx.workspace, trackedStatusBefore, "enforce"),
+    invocationThrew,
+  };
 }
 
 async function runReview(
@@ -405,11 +501,12 @@ function fail(
   plannerSession: AgentSessionRef | undefined,
   error: string,
 ): FactoryPlanningRunMeta {
+  const safeError = publicFailureMessage(ctx, error);
   return ctx.export({
     status: "planning-failed",
     iterations,
     plannerSession,
-    error,
+    error: safeError,
   });
 }
 
@@ -441,6 +538,120 @@ function rawAgentArtifact(result: AgentRunResult): unknown {
   return { error: result.error };
 }
 
+function classifyPlannerFailure(
+  result: Extract<AgentRunResult, { ok: false }>,
+  invocationThrew: boolean,
+): {
+  classification: Extract<
+    PlannerFailureClassification,
+    | "provider-failed"
+    | "provider-aborted"
+    | "provider-timeout"
+    | "invocation-threw"
+    | "workspace-guard-failed"
+  >;
+  message: string;
+} {
+  if (result.failureKind === "workspace-guard") {
+    return {
+      classification: "workspace-guard-failed",
+      message: `Planner modified tracked workspace files: ${result.error}`,
+    };
+  }
+  if (invocationThrew) return { classification: "invocation-threw", message: result.error };
+  if (result.exitCode === 124) return { classification: "provider-timeout", message: result.error };
+  if (result.aborted) return { classification: "provider-aborted", message: result.error };
+  return { classification: "provider-failed", message: result.error };
+}
+
+function classifyPublicationFailure(error: unknown): {
+  classification: Extract<PlannerFailureClassification, "draft-invalid" | "publication-failed">;
+  message: string;
+  publicationStage?: PublicationStage;
+  draftReason?: DraftValidationReason;
+} {
+  if (error instanceof DraftValidationError) {
+    return { classification: "draft-invalid", message: error.message, draftReason: error.reason };
+  }
+  if (error instanceof FactoryPlanningPublicationError) {
+    return {
+      classification: "publication-failed",
+      message: error.message,
+      publicationStage: error.stage,
+    };
+  }
+  return { classification: "publication-failed", message: errorMessage(error) };
+}
+
+function failPlannerTurn(input: {
+  ctx: FactoryPlanningRunContext;
+  iterations: PlanningIteration[];
+  index: number;
+  plannerSession?: AgentSessionRef;
+  classification: PlannerFailureClassification;
+  message: string;
+  raw: unknown;
+  exitCode?: number;
+  aborted?: boolean;
+  publicationStage?: PublicationStage;
+  draftReason?: DraftValidationReason;
+}): FactoryPlanningRunMeta {
+  const safeMessage = publicFailureMessage(input.ctx, input.message);
+  input.ctx.writePlannerFailureArtifacts({
+    index: input.index,
+    classification: input.classification,
+    message: safeMessage,
+    raw: input.raw,
+    ...(input.draftReason ? { draftReason: input.draftReason } : {}),
+    ...(input.exitCode !== undefined ? { exitCode: input.exitCode } : {}),
+    ...(input.aborted !== undefined ? { aborted: input.aborted } : {}),
+    ...(input.publicationStage ? { publicationStage: input.publicationStage } : {}),
+  });
+  return fail(
+    input.ctx,
+    [...input.iterations, { index: input.index }],
+    input.plannerSession,
+    safeMessage,
+  );
+}
+
+export function publicFailureMessage(ctx: FactoryPlanningRunContext, message: string): string {
+  return message
+    .replaceAll(ctx.draftPath, "[planner-scratch]/draft.md")
+    .replaceAll(ctx.scratchRunDir, "[planner-scratch]")
+    .replaceAll(join(ctx.workspace, ".harness/factory-drafts"), "[planner-scratch-root]")
+    .replaceAll("factory-drafts", "[planner-scratch-root]");
+}
+
+function assertPlannerOutputPathSafe(
+  ctx: FactoryPlanningRunContext,
+  output: FactoryPlanningOutput,
+): void {
+  const serialized = JSON.stringify(output);
+  if (
+    serialized.includes(ctx.draftPath) ||
+    serialized.includes(ctx.scratchRunDir) ||
+    serialized.includes(join(ctx.workspace, ".harness/factory-drafts")) ||
+    serialized.includes("factory-drafts")
+  ) {
+    throw new FactoryPlanningError("Planner structured output contains a forbidden scratch path");
+  }
+}
+
+function sanitizePublicReviewerValue(ctx: FactoryPlanningRunContext, value: unknown): unknown {
+  if (typeof value === "string") return publicFailureMessage(ctx, value);
+  if (Array.isArray(value)) return value.map((item) => sanitizePublicReviewerValue(ctx, item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        publicFailureMessage(ctx, key),
+        sanitizePublicReviewerValue(ctx, item),
+      ]),
+    );
+  }
+  return value;
+}
+
 function isReviewVerdict(value: unknown): value is FactoryPlanningReviewRef["verdict"] {
   return value === "pass" || value === "needs_changes" || value === "blocked";
 }
@@ -452,11 +663,4 @@ function errorMessage(error: unknown): string {
 function readTrackedStatus(workspace: string): string | undefined {
   const status = readWorkspaceStatus(workspace);
   return status.ok ? status.value : undefined;
-}
-
-function assertTrackedStatusUnchanged(workspace: string, before: string | undefined): void {
-  if (before === undefined) return;
-  const after = readTrackedStatus(workspace);
-  if (after === undefined || after === before) return;
-  throw new FactoryPlanningError(`Planner modified tracked workspace files:\n${after}`);
 }

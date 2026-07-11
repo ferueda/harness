@@ -2254,6 +2254,15 @@ test("harness factory planning dry-run works in non-git workspaces", () => {
   expect(readFileSync(join(output.runDir, "iterations/1/plan.md"), "utf8")).toContain(
     "Dry Run Plan",
   );
+  expect(readFileSync(join(output.runDir, "planning/draft.md"), "utf8")).toBe(
+    readFileSync(join(output.runDir, "iterations/1/plan.md"), "utf8"),
+  );
+  expect(
+    readFileSync(join(workspace, ".harness/factory-drafts", output.runId, "draft.md"), "utf8"),
+  ).toContain("Dry Run Plan");
+  expect(readFileSync(join(output.runDir, "iterations/1/planner.prompt.md"), "utf8")).toContain(
+    join(workspace, ".harness/factory-drafts", output.runId, "draft.md"),
+  );
   expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain(
     '"workflow": "factory-planning"',
   );

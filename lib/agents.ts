@@ -95,6 +95,7 @@ export type AgentRunResult =
       exitCode: number;
       stderr?: string;
       aborted?: boolean;
+      failureKind?: "workspace-guard";
     };
 
 export type Agent = {

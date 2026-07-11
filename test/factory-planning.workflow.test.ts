@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { AgentRunInput, AgentSessionRef } from "../lib/agents.ts";
 import {
   createFactoryPlanningRunContextForTest,
+  type FactoryPlanningRunContext,
   type FactoryPlanningReviewContext,
 } from "../lib/factory-planning-run-context.ts";
 import type { FactoryPlanningOutput } from "../lib/factory-planning-schemas.ts";
@@ -310,6 +311,16 @@ test("factory planning needs-human skips plan-review and preserves planner itera
   expect(readFileSync(join(ctx.runDir, "iterations/1/planner.json"), "utf8")).toContain(
     "needs-human",
   );
+  expect(existsSync(ctx.durableDraftPath)).toBe(false);
+  expect(existsSync(join(ctx.runDir, "iterations/1/plan.md"))).toBe(false);
+  expect(existsSync(join(ctx.runDir, "iterations/1/plan-review-ref.json"))).toBe(false);
+  expect(
+    [
+      JSON.stringify(meta),
+      readFileSync(join(ctx.runDir, "summary.md"), "utf8"),
+      readFileSync(join(ctx.runDir, "events.jsonl"), "utf8"),
+    ].join("\n"),
+  ).not.toContain("factory-drafts");
 });
 
 test("factory planning allows revision turn to request human input", async () => {
@@ -364,6 +375,17 @@ test("factory planning allows revision turn to request human input", async () =>
   expect(calls).toHaveLength(2);
   expect(calls[1]?.session).toEqual(session);
   expect(meta.iterations).toEqual([expect.objectContaining({ index: 1 }), { index: 2 }]);
+  expect(readFileSync(join(ctx.runDir, "planning/draft.md"), "utf8")).toBe("# Initial Plan\n");
+  expect(readFileSync(join(ctx.runDir, "iterations/1/plan.md"), "utf8")).toBe("# Initial Plan\n");
+  expect(existsSync(join(ctx.runDir, "iterations/2/plan.md"))).toBe(false);
+  expect(existsSync(join(ctx.runDir, "iterations/2/plan-review-ref.json"))).toBe(false);
+  expect(
+    [
+      JSON.stringify(meta),
+      readFileSync(join(ctx.runDir, "summary.md"), "utf8"),
+      readFileSync(join(ctx.runDir, "events.jsonl"), "utf8"),
+    ].join("\n"),
+  ).not.toContain("factory-drafts");
 });
 
 test("factory planning fails when revision omits required finding decisions", async () => {
@@ -409,8 +431,10 @@ test("factory planning fails when revision omits required finding decisions", as
 
   expect(meta.status).toBe("planning-failed");
   expect(meta.error).toContain("Missing finding decision id: spec-001");
-  expect(meta.iterations).toHaveLength(1);
+  expect(meta.iterations).toHaveLength(2);
   expect(meta.iterations[0]?.review).toMatchObject({ verdict: "needs_changes" });
+  expect(meta.iterations[1]).not.toHaveProperty("planPath");
+  expectRevisionFailureArtifacts(ctx);
 });
 
 test("factory planning fails when revision includes unknown finding decision", async () => {
@@ -465,6 +489,7 @@ test("factory planning fails when revision includes unknown finding decision", a
 
   expect(meta.status).toBe("planning-failed");
   expect(meta.error).toContain("Unknown finding decision id: spec-999");
+  expectRevisionFailureArtifacts(ctx);
 });
 
 test("factory planning fails when revision duplicates finding decision", async () => {
@@ -519,7 +544,26 @@ test("factory planning fails when revision duplicates finding decision", async (
 
   expect(meta.status).toBe("planning-failed");
   expect(meta.error).toContain("Duplicate finding decision id: spec-001");
+  expectRevisionFailureArtifacts(ctx);
 });
+
+function expectRevisionFailureArtifacts(ctx: FactoryPlanningRunContext): void {
+  const failure = JSON.parse(
+    readFileSync(join(ctx.runDir, "iterations/2/planner.failure.json"), "utf8"),
+  ) as Record<string, unknown>;
+  expect(failure.classification).toBe("finding-decisions-invalid");
+  expect(existsSync(join(ctx.runDir, "iterations/2/planner.json"))).toBe(true);
+  expect(existsSync(join(ctx.runDir, "iterations/2/plan.md"))).toBe(false);
+  expect(existsSync(join(ctx.runDir, "iterations/2/plan-review-ref.json"))).toBe(false);
+  expect(readFileSync(join(ctx.runDir, "planning/draft.md"), "utf8")).toBe("# Initial Plan\n");
+  expect(
+    [
+      readFileSync(join(ctx.runDir, "summary.md"), "utf8"),
+      readFileSync(join(ctx.runDir, "events.jsonl"), "utf8"),
+      JSON.stringify(failure),
+    ].join("\n"),
+  ).not.toContain("factory-drafts");
+}
 
 test("factory planning fails when planner session is missing before revision", async () => {
   const workspace = createWorkspace();

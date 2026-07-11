@@ -61,8 +61,9 @@ test("factory planning preserves prior iteration when revision planner fails", a
 
   expect(meta.status).toBe("planning-failed");
   expect(meta.error).toContain("planner crashed");
-  expect(meta.iterations).toHaveLength(1);
+  expect(meta.iterations).toHaveLength(2);
   expect(meta.iterations[0]?.review).toMatchObject({ verdict: "needs_changes" });
+  expect(meta.iterations[1]).not.toHaveProperty("planPath");
   expect(existsSync(join(workspace, "dev/plans/260705-provider-fail.md"))).toBe(false);
 });
 
@@ -662,6 +663,9 @@ test("factory planning fails when planner mutates tracked workspace files", asyn
 
   expect(meta.status).toBe("planning-failed");
   expect(meta.error).toContain("Planner modified tracked workspace files");
+  expect(
+    JSON.parse(readFileSync(join(ctx.runDir, "iterations/1/planner.failure.json"), "utf8")),
+  ).toMatchObject({ classification: "workspace-guard-failed" });
   expect(existsSync(join(workspace, "dev/plans"))).toBe(false);
 });
 
@@ -736,7 +740,17 @@ test("factory planning maps blocked plan-review to needs-human", async () => {
       };
     },
     async planReviewRunner(reviewCtx) {
-      writeReview(reviewCtx, { ...NEEDS_CHANGES_REVIEW, verdict: "blocked" });
+      writeReview(reviewCtx, {
+        ...NEEDS_CHANGES_REVIEW,
+        verdict: "blocked",
+        summary: `Review mentioned ${draftPath}`,
+        findings: [
+          {
+            ...NEEDS_CHANGES_REVIEW.findings[0]!,
+            recommendation: `Avoid ${draftPath}`,
+          },
+        ],
+      });
       return {
         runId: reviewCtx.runId,
         runDir: reviewCtx.runDir,
@@ -751,10 +765,12 @@ test("factory planning maps blocked plan-review to needs-human", async () => {
 
   expect(meta.status).toBe("plan-needs-human");
   expect(meta.humanQuestions).toEqual([
-    "Plan review blocked: Plan needs one correction.",
-    "Add a test gate: Add a focused regression test step.",
+    `Plan review blocked: Review mentioned [planner-scratch]/draft.md`,
+    "Add a test gate: Avoid [planner-scratch]/draft.md",
   ]);
   expect(meta.iterations[0]?.review).toMatchObject({ verdict: "blocked" });
+  expect(JSON.stringify(meta)).not.toContain("factory-drafts");
+  expect(readFileSync(join(ctx.runDir, "summary.md"), "utf8")).not.toContain("factory-drafts");
 });
 
 test("factory planning fails before provider calls when triage handoff metadata is incompatible", async () => {
