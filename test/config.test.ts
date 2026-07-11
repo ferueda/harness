@@ -253,7 +253,7 @@ test("resolveFactoryRoleAgent resolves planning roles independently", () => {
   });
 });
 
-test("resolveFactoryPlanningSettings reads configured value and defaults to three", () => {
+test("resolveFactoryPlanningSettings reads configured value and defaults to two", () => {
   const configuredWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeHarnessJson(configuredWorkspace, {
     factory: { planning: { maxReviewIterations: 5 } },
@@ -266,7 +266,7 @@ test("resolveFactoryPlanningSettings reads configured value and defaults to thre
   const defaultWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   expect(resolveFactoryPlanningSettings({ workspace: defaultWorkspace }, "/")).toMatchObject({
     workspace: defaultWorkspace,
-    maxReviewIterations: 3,
+    maxReviewIterations: 2,
   });
 });
 

@@ -176,7 +176,7 @@ Factory station roles use `harness.json`:
       }
     },
     "planning": {
-      "maxReviewIterations": 3,
+      "maxReviewIterations": 2,
       "roles": {
         "planner": { "agent": "cursor", "model": "grok-4.5" },
         "reviewer": {
@@ -446,6 +446,13 @@ move to `Plan Needs Review`, and station/runtime failures move to
 Live planning appends lifecycle events for work-item import, station start, and
 terminal completion/failure. The lifecycle read model is what future stations
 should use for readiness; Linear comments remain human context and dedupe.
+
+Factory plans are minimum-sufficient: preserve the explicit task and project
+intent, choose the smallest coherent change, and include only implementation
+decisions and verification tied to a requirement, invariant, or demonstrated
+risk. The default of two completed reviews allows the initial review and one
+revision; `factory.planning.maxReviewIterations` may override it. All findings
+remain durable evidence, but only `must_fix` findings enter a revision.
 
 The planner writes only to the ignored workspace-local
 `.harness/factory-drafts/<run-id>/draft.md`. Harness validates and reads that

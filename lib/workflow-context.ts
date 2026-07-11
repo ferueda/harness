@@ -389,7 +389,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
         throw new Error(`${config.stage} reviewer failed: ${result.error}`);
       }
 
-      const review = parseReviewerOutput(config.stage, result.structuredOutput);
+      const review = parseReviewerOutput(name, config.stage, result.structuredOutput);
       writeJson(join(runDir, config.reviewFile), review);
       return review;
     },
@@ -492,7 +492,11 @@ function buildPromptValues({
   };
 }
 
-function parseReviewerOutput(stage: string, structuredOutput: unknown): ReviewOutput {
+function parseReviewerOutput(
+  agentName: ReviewAgentName,
+  stage: string,
+  structuredOutput: unknown,
+): ReviewOutput {
   const review = ReviewOutputSchema.safeParse(structuredOutput);
   if (!review.success) {
     throw new Error(
@@ -501,7 +505,26 @@ function parseReviewerOutput(stage: string, structuredOutput: unknown): ReviewOu
       )}`,
     );
   }
+  assertReviewerVerdictContract(agentName, stage, review.data);
   return review.data;
+}
+
+function assertReviewerVerdictContract(
+  agentName: ReviewAgentName,
+  stage: string,
+  review: ReviewOutput,
+): void {
+  if (agentName !== "review-spec" || review.verdict === "blocked") return;
+
+  const hasMustFix = review.findings.some((finding) => finding.must_fix);
+  if (review.verdict === "needs_changes" && !hasMustFix) {
+    throw new Error(
+      `${stage} reviewer failed: needs_changes requires at least one must_fix finding`,
+    );
+  }
+  if (review.verdict === "pass" && hasMustFix) {
+    throw new Error(`${stage} reviewer failed: pass cannot include must_fix findings`);
+  }
 }
 
 function rawAgentArtifact(result: AgentRunResult): unknown {

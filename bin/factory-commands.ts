@@ -983,7 +983,7 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
     .option("--output-plan <path>", "final plan path under dev/plans")
     .option(
       "--max-review-iterations <count>",
-      "maximum plan-review loops (default: factory.planning.maxReviewIterations or 3)",
+      "maximum completed plan reviews (default: factory.planning.maxReviewIterations or 2)",
       positiveInteger,
     )
     .option(

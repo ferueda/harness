@@ -124,7 +124,7 @@ Minimal shape:
       }
     },
     "planning": {
-      "maxReviewIterations": 3,
+      "maxReviewIterations": 2,
       "roles": {
         "planner": { "agent": "cursor", "model": "grok-4.5" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
@@ -273,6 +273,12 @@ station finishes. Approved plans stay in `Planning`; human questions move to
 `Needs Clarification`; unresolved reviews move to `Plan Needs Review`;
 station/runtime failures move to `Planning Failed`. Planning apply never moves
 the issue to `Ready to Implement`.
+
+Factory plans are minimum-sufficient: they preserve the explicit task and
+project intent, choose the smallest coherent change, and include only decisions
+and verification tied to a requirement, invariant, or demonstrated risk. The
+default two completed reviews allow one revision. Review artifacts retain every
+finding; only `must_fix` findings return to the planner.
 
 The planner writes only the mutable draft at
 `.harness/factory-drafts/<run-id>/draft.md` in the workspace. Harness validates
@@ -442,3 +448,4 @@ Stop before proceeding if the task requires:
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked source files
+

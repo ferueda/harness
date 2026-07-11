@@ -113,7 +113,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
 
   const iterations: PlanningIteration[] = [];
   let plannerSession: AgentSessionRef | undefined;
-  let latestFindings: EnrichedFinding[] | undefined;
+  let latestBlockingFindings: EnrichedFinding[] | undefined;
   let completedReviews = 0;
 
   for (let index = 1; ; index += 1) {
@@ -124,7 +124,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
           : renderFactoryPlanningRevisionPrompt({
               draftPath: ctx.draftPath,
               currentDate: ctx.startedAt.toISOString().slice(0, 10),
-              reviewFindingsJson: JSON.stringify(latestFindings ?? [], null, 2),
+              reviewFindingsJson: JSON.stringify(latestBlockingFindings ?? [], null, 2),
             });
 
       const plannerAttempt = await invokePlanner({
@@ -201,7 +201,7 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
       }
       if (index > 1 && output.outcome === "draft-ready") {
         try {
-          validateFindingDecisions(output, latestFindings ?? []);
+          validateFindingDecisions(output, latestBlockingFindings ?? []);
         } catch (error) {
           return failPlannerTurn({
             ctx,
@@ -287,8 +287,17 @@ async function runPlanningLoop(ctx: FactoryPlanningRunContext): Promise<FactoryP
       }
 
       const specReview = readSpecReview(review.ref.specReviewPath);
-      latestFindings = enrichFindings(specReview.findings);
-      ctx.writeReviewFindings(index, sanitizePublicReviewerValue(ctx, latestFindings));
+      const allFindings = enrichFindings(specReview.findings);
+      ctx.writeReviewFindings(index, sanitizePublicReviewerValue(ctx, allFindings));
+      latestBlockingFindings = allFindings.filter((finding) => finding.must_fix);
+      if (latestBlockingFindings.length === 0) {
+        return fail(
+          ctx,
+          iterations,
+          plannerSession,
+          "plan-review needs_changes without a must_fix finding",
+        );
+      }
       if (completedReviews >= ctx.maxReviewIterations) {
         return ctx.export({
           status: "plan-review-unresolved",

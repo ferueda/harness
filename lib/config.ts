@@ -180,7 +180,7 @@ export function resolveFactoryPlanningSettings(
   const config = readHarnessConfig(workspace);
   return {
     workspace,
-    maxReviewIterations: config.factory?.planning?.maxReviewIterations ?? 3,
+    maxReviewIterations: config.factory?.planning?.maxReviewIterations ?? 2,
   };
 }
 
