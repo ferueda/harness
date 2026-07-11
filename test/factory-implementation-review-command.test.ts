@@ -1,13 +1,80 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Command } from "commander";
 import { expect, test, vi } from "vitest";
-import { runFactoryImplementationReviewCommand } from "../bin/factory-implementation-review-command.ts";
+import {
+  addFactoryImplementationReviewCommand,
+  runFactoryImplementationReviewCommand,
+} from "../bin/factory-implementation-review-command.ts";
 import {
   appendFactoryLifecycleEvent,
   loadFactoryLifecycleState,
 } from "../lib/factory-lifecycle.ts";
 import { resolveFactoryStore } from "../lib/factory-store.ts";
+
+test("review CLI emits stable JSON for rejected input", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-review-command-rejected-"));
+  const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  const previousExitCode = process.exitCode;
+  process.exitCode = undefined;
+  try {
+    const program = new Command().exitOverride();
+    addFactoryImplementationReviewCommand(program, {
+      defaultMaxRuntimeMs: 1_000,
+      positiveNumber: Number,
+    });
+
+    await program.parseAsync([
+      "node",
+      "harness",
+      "review",
+      "--workspace",
+      workspace,
+      "--item-file",
+      join(workspace, "missing-work-item.json"),
+    ]);
+
+    expect(process.exitCode).toBe(1);
+    expect(output).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toMatchObject({
+      workflow: "factory-implementation-review",
+      status: "rejected",
+      error: expect.stringContaining("item file"),
+    });
+  } finally {
+    process.exitCode = previousExitCode;
+    output.mockRestore();
+  }
+});
+
+test("review CLI emits stable JSON for parser rejection", async () => {
+  const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  const previousExitCode = process.exitCode;
+  process.exitCode = undefined;
+  try {
+    const program = new Command().exitOverride();
+    addFactoryImplementationReviewCommand(program, {
+      defaultMaxRuntimeMs: 1_000,
+      positiveNumber: Number,
+    });
+
+    await expect(
+      program.parseAsync(["node", "harness", "review", "--max-review-iterations", "0"]),
+    ).rejects.toMatchObject({ code: "commander.invalidArgument" });
+
+    expect(process.exitCode).toBe(1);
+    expect(output).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toMatchObject({
+      workflow: "factory-implementation-review",
+      status: "rejected",
+      error: expect.stringContaining("positive"),
+    });
+  } finally {
+    process.exitCode = previousExitCode;
+    output.mockRestore();
+  }
+});
 
 test("legacy review input is durably terminalized without invoking a provider", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-review-command-workspace-"));

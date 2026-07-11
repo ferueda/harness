@@ -82,7 +82,12 @@ export function appendImplementationReviewStartedEvent(
     factoryStateRoot: input.factoryStateRoot,
     event,
     precondition: {
-      allowedStages: ["implementation-complete", "review-running", "review-failed"],
+      allowedStages: [
+        "implementation-complete",
+        "review-running",
+        "review-failed",
+        "ready-for-human",
+      ],
       expectedFactoryRunId: input.owningImplementationRunId,
       expectedImplementationRunId: input.owningImplementationRunId,
       expectedActiveReviewAttemptId: input.expectedActiveReviewAttemptId,

@@ -31,6 +31,31 @@ const NON_BLOCKING_REVIEW = {
   ],
 } satisfies ReviewOutput;
 
+const MIXED_REVIEW = {
+  verdict: "needs_changes",
+  summary: "One blocking and one advisory finding.",
+  findings: [
+    {
+      title: "Document the behavior",
+      severity: "Low",
+      location: "tracked.txt",
+      issue: "The behavior needs a small documentation note.",
+      recommendation: "Record the decision in the handoff.",
+      rationale: "The implementation is otherwise complete.",
+      must_fix: false,
+    },
+    {
+      title: "Fix the implementation",
+      severity: "High",
+      location: "tracked.txt",
+      issue: "The implementation still needs a correction.",
+      recommendation: "Apply the correction before completion.",
+      rationale: "The candidate is incomplete.",
+      must_fix: true,
+    },
+  ],
+} satisfies ReviewOutput;
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -146,6 +171,75 @@ test("provider failure after edits persists a partial tuple and resume restores 
   expect(
     inspectFactoryWorkspaceWriterLease({ workspace: fixture.workspace })?.owner,
   ).toBeUndefined();
+});
+
+test("resumed partial remediation reconstructs accepted debt from its source review", async () => {
+  const fixture = createReviewFixture();
+  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
+  const firstProvider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [MIXED_REVIEW],
+    remediation: {
+      edit: "partial mixed remediation\n",
+      output: {
+        summary: "Declined the advisory finding and blocking fix.",
+        findingDecisions: ["implementation", "quality", "simplify"].flatMap((role) => [
+          {
+            findingId: `${role}-001`,
+            decision: "decline" as const,
+            rationale: "Track the documentation note separately.",
+          },
+          {
+            findingId: `${role}-002`,
+            decision: "decline" as const,
+            rationale: "The blocking fix needs another attempt.",
+          },
+        ]),
+      },
+    },
+  });
+
+  const first = await runImplementationReview(createReviewContext(fixture, firstProvider));
+  expect(first.status).toBe("ready-for-human");
+
+  const failedState = loadFactoryLifecycleState({
+    factoryStateRoot: fixture.store.factoryStateRoot,
+    workItemKey: "linear:ENG-123",
+    workspace: fixture.workspace,
+  });
+  const resumedCheckpoint = failedState?.implementationReviewCheckpoint;
+  if (!resumedCheckpoint) throw new Error("Expected partial remediation checkpoint");
+
+  const resumedProvider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [PASS_REVIEW],
+    remediation: {
+      edit: "completed mixed remediation\n",
+      output: {
+        summary: "Applied the blocking fix and retained the advisory debt.",
+        findingDecisions: ["implementation", "quality", "simplify"].flatMap((role) => [
+          {
+            findingId: `${role}-001`,
+            decision: "decline" as const,
+            rationale: "Track the documentation note separately.",
+          },
+          {
+            findingId: `${role}-002`,
+            decision: "implement" as const,
+            rationale: "Applied the blocking correction.",
+          },
+        ]),
+      },
+    },
+  });
+  const second = await runImplementationReview(
+    createReviewContext({ ...fixture, checkpoint: resumedCheckpoint }, resumedProvider),
+  );
+
+  expect(second.status).toBe("review-complete");
+  expect(second.handoffPath && readFile(second.handoffPath)).toContain(
+    "implementation-001: Track the documentation note separately.",
+  );
 });
 
 test("mixed non-blocking declines remain accepted debt", async () => {

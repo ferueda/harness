@@ -66,7 +66,7 @@ export function addFactoryImplementationReviewCommand(
   parent: Command,
   config: FactoryImplementationReviewCommandConfig,
 ): void {
-  parent
+  const review = parent
     .command("review")
     .description("Review and remediate a completed Factory implementation")
     .option("--workspace <path>", "target repo")
@@ -109,6 +109,23 @@ export function addFactoryImplementationReviewCommand(
         process.exitCode = 1;
       }
     });
+  review.exitOverride((error) => {
+    if (error.exitCode !== 0) {
+      console.log(
+        JSON.stringify(
+          {
+            workflow: "factory-implementation-review",
+            status: "rejected",
+            error: errorMessage(error),
+          },
+          null,
+          2,
+        ),
+      );
+      process.exitCode = 1;
+    }
+    throw error;
+  });
 }
 
 export async function runFactoryImplementationReviewCommand(
@@ -177,8 +194,12 @@ export async function runFactoryImplementationReviewCommand(
     });
     return existingCompletedResult(resolved);
   }
+  const resumableReadyForHuman =
+    options.resume &&
+    resolved.state.factoryStage === "ready-for-human" &&
+    resolved.checkpoint.partialRecovery !== undefined;
   const allowed = options.resume
-    ? ["review-running", "review-failed"]
+    ? ["review-running", "review-failed", ...(resumableReadyForHuman ? ["ready-for-human"] : [])]
     : ["implementation-complete"];
   if (!allowed.includes(resolved.state.factoryStage ?? "")) {
     writeReviewRejection(

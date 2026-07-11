@@ -353,6 +353,7 @@ async function runReviewLoop(
               workspace: checkpoint.workspace,
               runRoots: checkpoint.runRoots,
               activeReviewIndex: reviewIndex,
+              ...(checkpoint.latestReview ? { review: checkpoint.latestReview } : {}),
               decision: pointer(ctx.runId, `iterations/${reviewIndex}/remediation.json`),
               partialRecovery: partial.recovery,
               effectiveReviewLimit: checkpoint.effectiveReviewLimit,
@@ -898,6 +899,8 @@ async function remediate(
   }
   let boundaryBefore: ReturnType<typeof captureFactoryWriterBoundary> | undefined;
   let before: FactoryWorkspacePatchCapture | undefined;
+  let boundaryBeforePath: string | undefined;
+  let boundaryAfterPath: string | undefined;
   try {
     validateFactoryCandidateTuple({
       workspace: ctx.workspace,
@@ -951,11 +954,13 @@ async function remediate(
       durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
       allowedPaths: [logPath],
     });
-    const boundaryBeforePath = `iterations/${reviewIndex}/writer-boundary-before.json`;
-    const boundaryAfterPath = `iterations/${reviewIndex}/writer-boundary-after.json`;
+    const boundaryBeforeArtifactPath = `iterations/${reviewIndex}/writer-boundary-before.json`;
+    const boundaryAfterArtifactPath = `iterations/${reviewIndex}/writer-boundary-after.json`;
     try {
-      ctx.writeArtifact(boundaryBeforePath, boundaryBefore);
-      ctx.writeArtifact(boundaryAfterPath, boundaryAfter);
+      ctx.writeArtifact(boundaryBeforeArtifactPath, boundaryBefore);
+      boundaryBeforePath = boundaryBeforeArtifactPath;
+      ctx.writeArtifact(boundaryAfterArtifactPath, boundaryAfter);
+      boundaryAfterPath = boundaryAfterArtifactPath;
     } catch (error) {
       return {
         kind: "failed",
@@ -964,6 +969,8 @@ async function remediate(
         after,
         lease,
         classification: "artifact",
+        ...(boundaryBeforePath ? { boundaryBeforePath } : {}),
+        ...(boundaryAfterPath ? { boundaryAfterPath } : {}),
       };
     }
     try {
@@ -978,8 +985,8 @@ async function remediate(
         after,
         lease,
         classification: "workspace",
-        boundaryBeforePath,
-        boundaryAfterPath,
+        ...(boundaryBeforePath ? { boundaryBeforePath } : {}),
+        ...(boundaryAfterPath ? { boundaryAfterPath } : {}),
       };
     }
     if (providerError) {
@@ -991,8 +998,8 @@ async function remediate(
         after,
         lease,
         classification: "provider",
-        boundaryBeforePath,
-        boundaryAfterPath,
+        ...(boundaryBeforePath ? { boundaryBeforePath } : {}),
+        ...(boundaryAfterPath ? { boundaryAfterPath } : {}),
         ...(isSessionCompatibilityError(providerErrorText)
           ? { unresolvedReason: "incompatible-session" as const }
           : {}),
@@ -1006,8 +1013,8 @@ async function remediate(
         after,
         lease,
         classification: "provider",
-        boundaryBeforePath,
-        boundaryAfterPath,
+        ...(boundaryBeforePath ? { boundaryBeforePath } : {}),
+        ...(boundaryAfterPath ? { boundaryAfterPath } : {}),
       };
     }
     ctx.writeArtifact(`iterations/${reviewIndex}/workspace-status.json`, { before, after });
@@ -1024,8 +1031,8 @@ async function remediate(
         after,
         lease,
         classification: "provider",
-        boundaryBeforePath,
-        boundaryAfterPath,
+        ...(boundaryBeforePath ? { boundaryBeforePath } : {}),
+        ...(boundaryAfterPath ? { boundaryAfterPath } : {}),
         ...(isSessionCompatibilityError(result.error)
           ? { unresolvedReason: "incompatible-session" as const }
           : {}),
@@ -1069,6 +1076,8 @@ async function remediate(
         after,
         lease,
         classification: "protocol",
+        ...(boundaryBeforePath ? { boundaryBeforePath } : {}),
+        ...(boundaryAfterPath ? { boundaryAfterPath } : {}),
       };
     }
   } catch (error) {
@@ -1081,6 +1090,8 @@ async function remediate(
       after,
       lease,
       classification: classifyRemediationError(error),
+      ...(boundaryBeforePath ? { boundaryBeforePath } : {}),
+      ...(boundaryAfterPath ? { boundaryAfterPath } : {}),
       ...(isSessionCompatibilityError(errorText)
         ? { unresolvedReason: "incompatible-session" as const }
         : {}),

@@ -1079,17 +1079,20 @@ async function recoverStaleImplementationOwner(input: {
         "Recovered stale implementation owner before provider terminalization; retry is allowed.",
       linearStartState: linearStage === "implementation-started" ? "implementing" : "not-started",
     });
+    // Keep the guarded recovery projection serialized with workspace writers.
+    // A new implementation must not start between stale-owner validation and
+    // the terminal Linear projection.
+    if (linearStage === "implementation-started" && input.linearAdapter && input.issueRef) {
+      await input.linearAdapter.applyImplementationFailed({
+        issueRef: input.issueRef,
+        runId,
+        runDir: started.data.owner.runDir,
+        error:
+          "Recovered stale implementation owner before provider terminalization; retry is allowed.",
+      });
+    }
   } finally {
     if (workspaceLease) releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
-  }
-  if (linearStage === "implementation-started" && input.linearAdapter && input.issueRef) {
-    await input.linearAdapter.applyImplementationFailed({
-      issueRef: input.issueRef,
-      runId,
-      runDir: started.data.owner.runDir,
-      error:
-        "Recovered stale implementation owner before provider terminalization; retry is allowed.",
-    });
   }
   return true;
 }
@@ -1194,6 +1197,33 @@ function execGit(workspace: string, args: string[]): string {
   }).trim();
 }
 
+type ImplementationWorkspaceState = {
+  head: string;
+  porcelain: string;
+};
+
+function captureImplementationWorkspaceState(
+  ctx: FactoryImplementationRunContext,
+): ImplementationWorkspaceState | undefined {
+  if (!isGitWorkspace(ctx.workspace)) return undefined;
+  return {
+    head: execGit(ctx.workspace, ["rev-parse", "HEAD"]),
+    porcelain: captureFactoryWorkspaceChanges({ workspace: ctx.workspace }).porcelain,
+  };
+}
+
+function assertImplementationWorkspaceStateUnchanged(
+  ctx: FactoryImplementationRunContext,
+  before: ImplementationWorkspaceState | undefined,
+): void {
+  if (!before) return;
+  const after = captureImplementationWorkspaceState(ctx);
+  if (!after) throw new Error("Implementation workspace stopped being a Git workspace.");
+  if (before.head !== after.head || before.porcelain !== after.porcelain) {
+    throw new Error("Workspace changed while Linear implementation status was being projected.");
+  }
+}
+
 async function runFactoryImplementationToLocalTerminal(input: {
   ctx: FactoryImplementationRunContext;
   factoryStateRoot?: string;
@@ -1285,6 +1315,8 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
   } catch (initializationError) {
     return terminalizeNotStartedImplementationFailure(input, initializationError);
   }
+  const workspaceBeforeStartProjection = captureImplementationWorkspaceState(input.ctx);
+  releaseImplementationWriterLease(input.ctx);
   let started: LinearImplementationUpdatePlan;
   try {
     started = await input.adapter.applyImplementationStarted({
@@ -1294,6 +1326,14 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
       attempt: factoryImplementationAttempt(input.ctx.implementationInput),
     });
   } catch (startApplyError) {
+    try {
+      ensureImplementationWriterLease(input.ctx);
+    } catch (leaseError) {
+      throw new AggregateError(
+        [startApplyError, leaseError],
+        `Linear implementation start failed and workspace lease reacquisition failed: ${errorMessage(startApplyError)}; lease failed: ${errorMessage(leaseError)}`,
+      );
+    }
     let meta: FactoryImplementationRunMeta;
     try {
       meta = input.ctx.export({
@@ -1396,6 +1436,7 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
   }
   try {
     ensureImplementationWriterLease(input.ctx);
+    assertImplementationWorkspaceStateUnchanged(input.ctx, workspaceBeforeStartProjection);
   } catch (leaseError) {
     return terminalizeStartedImplementationFailure(input, started, leaseError);
   }
@@ -1405,6 +1446,7 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
     factoryStateRoot: input.factoryStateRoot,
     runImplementation: input.runImplementation ?? runFactoryImplementation,
   });
+  releaseImplementationWriterLease(input.ctx);
   try {
     const terminal =
       meta.status === "implementation-complete"
