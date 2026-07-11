@@ -1,7 +1,7 @@
 # Plan 260710-automate-factory-implementation-review: Make Factory implementation review and remediation durable and resumable
 
-> **Executor instructions**: Invoke the verified `implement-plan` skill and follow
-> this plan in order. Run every verification command and confirm its expected
+> **Executor instructions**: Follow this plan in order. Run every verification
+> command and confirm its expected
 > result before moving on. Do not start implementation until the dependency gate
 > in Step 0 passes. If any STOP condition occurs, stop and report; do not invent a
 > parallel review engine, lifecycle recovery path, or tracker contract.
@@ -252,7 +252,6 @@ executed the entire suite during planning. Use `pnpm exec vitest run <files>`.
 
 | Skill | Verified location | Use in |
 | --- | --- | --- |
-| `implement-plan` | `skills/implement-plan/SKILL.md` | Coordinate all steps and run gates phase by phase. |
 | `typescript-refactor` | `.agents/skills/typescript-refactor/SKILL.md` | Steps 1-6: discriminated lifecycle/event unions, exhaustive narrowing, explicit exported types, and error classification. |
 | `zod` | `.agents/skills/zod/SKILL.md` | Steps 1-2 and 4: strict provider output, lifecycle checkpoint, event, and artifact parsing at trust boundaries. |
 | `node` | `.agents/skills/node/SKILL.md` | Steps 2-5: filesystem durability, async provider failure handling, ESM/type-only imports, and temporary Git-index cleanup. |

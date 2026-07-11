@@ -12,7 +12,7 @@ Routing rules, skip table, artifact paths, and scenario fixtures. Use when choos
 | Explicit `$architect` / "use architect" design request | `architect` |
 | Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing plans; otherwise `review-spec` or `create-plan` |
 | Created implementation plan needs review before execution | `harness run plan-review --plan <path>` (`review-spec` fallback) |
-| Approved plan ready to execute | `implement-plan` |
+| Approved plan ready to execute | implementation in the current or delegated session |
 
 **shape-requirements** when the question is what the user wants. **diagnose-issue** when the question is what is true in the repo. Too vague to investigate → **gate** only (not interview), then `diagnose-issue`.
 
@@ -60,9 +60,9 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 |---|-------------|----------------------|---------------|
 | 1 | "Interview me about a caching layer for session indexing" | `shape-requirements` **interview** | brief → `review-spec` → `create-plan` → `plan-review` |
 | 2 | "Add retry logic to the API client" (no scope) | `shape-requirements` **gate** | gate → implement or `create-plan` |
-| 3 | "JIRA-442: login 500 when email is empty" | `diagnose-issue` | diagnose → `create-plan` → `plan-review` → `implement-plan` |
+| 3 | "JIRA-442: login 500 when email is empty" | `diagnose-issue` | diagnose → `create-plan` → `plan-review` → implementation |
 | 4 | "Review dev/plans/foo.md against the codebase" | `harness run plan-review --plan dev/plans/foo.md` | `plan-review` when harness is available; direct `review-spec` fallback |
-| 5 | "Implement dev/plans/foo.md" | `implement-plan` | implement → `change-review-workflow` |
+| 5 | "Implement dev/plans/foo.md" | implementation | implement → `change-review-workflow` |
 | 6 | "Audit this repo for DX improvements" | `audit` | audit → `create-plan`(s) |
 | 7 | "Add logging" (nothing else) | `shape-requirements` **gate** | gate only — no implement/plan before approval |
 | 8 | Three diagnose directions; pick one | `shape-requirements` **gate** | gate → `create-plan` → `plan-review` |

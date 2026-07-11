@@ -169,7 +169,6 @@ reached; do not create a generic station framework.
 
 | Step | Skill/tool | Why |
 | --- | --- | --- |
-| All steps | `implement-plan` | Execute the approved plan phase by phase and honor STOP conditions. |
 | Policy and adapter steps | `typescript-refactor` | Keep assertion inputs and optional rerun plumbing narrow and type-safe. |
 | Test steps | `vitest` | Follow existing fixture, error, and CLI regression patterns. |
 | Docs step | `factory-operator` | Keep operator instructions aligned with the canonical lifecycle model and command behavior. |
