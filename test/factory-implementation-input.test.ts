@@ -157,6 +157,23 @@ test("stale recovery with Linear still Ready starts a first implementation attem
   expect(factoryImplementationAttempt(input)).toBe("first");
 });
 
+test("stale recovery with Linear already Implementation Failed retries even when start was unconfirmed", () => {
+  const { workspace } = createWorkspacePlan();
+  const input = resolveFactoryImplementationInput({
+    workspace,
+    resolvedInput: linearInput({
+      linearStatus: FAILED_STATUS,
+      factoryStage: "implementation-failed",
+      linearStartState: "not-started",
+      factoryRoute: "ready-to-implement",
+      factoryNextAction: "implement-directly",
+    }),
+    linearProjection: implementationProjection("apply"),
+  });
+
+  expect(factoryImplementationAttempt(input)).toBe("retry");
+});
+
 test.each(["Ready to Implement", "Implementing"])(
   "applied retry rejects cross-paired Linear status %s",
   (linearStatus) => {

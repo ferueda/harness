@@ -172,7 +172,7 @@ These requirements are the contract. Do not weaken them to simplify the code.
   workspace, rejects `.harness/` in the tree, and updates the ref only if it does
   not already exist.
 - Before an ordinary review/resume, require workspace `HEAD ==
-  originalReviewBase`, current materialized workspace tree == recorded approved
+originalReviewBase`, current materialized workspace tree == recorded approved
   candidate tree, approved candidate ref == recorded commit, candidate commit
   tree == recorded tree, workspace/store provenance match, and exact lifecycle
   owner/checkpoint match. A `review-failed` resume with partial recovery instead
@@ -187,10 +187,10 @@ These requirements are the contract. Do not weaken them to simplify the code.
 
 ### Two-plane ownership
 
-| Plane | Writer | Allowed contents |
-| --- | --- | --- |
-| Target workspace | Implementer/remediation agent | Repository source/test/doc edits required by the work item; no refs, lifecycle, decisions, checkpoints, or handoffs |
-| Durable Factory store | Harness only | Factory attempts, nested reviews, prompts, raw/parsed output, streams, findings, decisions, status/patches, refs/checkpoints, recovery manifests, summaries, lifecycle, and handoffs |
+| Plane                 | Writer                        | Allowed contents                                                                                                                                                                     |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Target workspace      | Implementer/remediation agent | Repository source/test/doc edits required by the work item; no refs, lifecycle, decisions, checkpoints, or handoffs                                                                  |
+| Durable Factory store | Harness only                  | Factory attempts, nested reviews, prompts, raw/parsed output, streams, findings, decisions, status/patches, refs/checkpoints, recovery manifests, summaries, lifecycle, and handoffs |
 
 - Inline findings in the remediation prompt. Do not expose any durable path as
   an agent output destination. Decisions are provider structured output; agents
@@ -291,7 +291,7 @@ These requirements are the contract. Do not weaken them to simplify the code.
 - Baseline verification: `pnpm typecheck` exits 0. The six-file focused command
   below passes 143 tests. A full `pnpm test` currently passes 882 tests and fails
   only `skills/sessions/test/cli.test.ts > installed sessions skill bootstraps
-  dependencies without harness checkout` because its child install exits 1 in
+dependencies without harness checkout` because its child install exits 1 in
   this restricted environment. Treat that as known baseline evidence, not as an
   authorization to ship a newly failing full gate.
 
@@ -316,32 +316,32 @@ These requirements are the contract. Do not weaken them to simplify the code.
 
 ## Commands you will need
 
-| Purpose | Command | Expected on success |
-| --- | --- | --- |
-| Install | `pnpm install --frozen-lockfile` | exit 0 using `pnpm@11.9.0` |
-| Focused baseline | `pnpm exec vitest run test/factory-lifecycle.test.ts test/factory-implementation-cli.test.ts test/factory-implementation.workflow.test.ts test/factory-review-head.test.ts test/workflow-context.test.ts test/config.test.ts` | 6 existing files and all tests pass |
-| New review suite | `pnpm exec vitest run test/factory-implementation-review-*.test.ts test/factory-lifecycle.test.ts test/factory-locks.test.ts test/factory-status.test.ts test/factory-run-allocation.test.ts test/factory-writer-boundary.test.ts test/factory-review-head.test.ts test/factory-implementation-cli.test.ts test/config.test.ts` | all named files pass |
-| Linear integration | `pnpm exec vitest run test/factory-linear-adapter.test.ts test/factory-linear-implementation-apply.test.ts test/factory-implementation-cli.test.ts test/factory-implementation-review-cli.test.ts` | all named files pass |
-| Typecheck | `pnpm typecheck` | exit 0, no diagnostics |
-| Format check | `pnpm format:check` | exit 0 |
-| Lint | `pnpm lint` | exit 0 |
-| Build | `pnpm build` | exit 0 and `dist/` generated |
-| CLI smoke | `pnpm smoke:dist` | exit 0; review command help checks pass |
-| Full gate | `make check` | exit 0; format, lint, typecheck, tests, build, smoke all pass |
-| Change review | Save the Step 6 CLI JSON output, derive `runDir`, `workspace`, `originalReviewBase`, `approvedCandidate.ref`, and optional `approvedPlanPath` from that output/run `meta.json`, then use the literal Step 7 command below. | completed run; all findings triaged |
+| Purpose            | Command                                                                                                                                                                                                                                                                                                                         | Expected on success                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Install            | `pnpm install --frozen-lockfile`                                                                                                                                                                                                                                                                                                | exit 0 using `pnpm@11.9.0`                                    |
+| Focused baseline   | `pnpm exec vitest run test/factory-lifecycle.test.ts test/factory-implementation-cli.test.ts test/factory-implementation.workflow.test.ts test/factory-review-head.test.ts test/workflow-context.test.ts test/config.test.ts`                                                                                                   | 6 existing files and all tests pass                           |
+| New review suite   | `pnpm exec vitest run test/factory-implementation-review-*.test.ts test/factory-lifecycle.test.ts test/factory-locks.test.ts test/factory-status.test.ts test/factory-run-allocation.test.ts test/factory-writer-boundary.test.ts test/factory-review-head.test.ts test/factory-implementation-cli.test.ts test/config.test.ts` | all named files pass                                          |
+| Linear integration | `pnpm exec vitest run test/factory-linear-adapter.test.ts test/factory-linear-implementation-apply.test.ts test/factory-implementation-cli.test.ts test/factory-implementation-review-command.test.ts`                                                                                                                          | all named files pass                                          |
+| Typecheck          | `pnpm typecheck`                                                                                                                                                                                                                                                                                                                | exit 0, no diagnostics                                        |
+| Format check       | `pnpm format:check`                                                                                                                                                                                                                                                                                                             | exit 0                                                        |
+| Lint               | `pnpm lint`                                                                                                                                                                                                                                                                                                                     | exit 0                                                        |
+| Build              | `pnpm build`                                                                                                                                                                                                                                                                                                                    | exit 0 and `dist/` generated                                  |
+| CLI smoke          | `pnpm smoke:dist`                                                                                                                                                                                                                                                                                                               | exit 0; review command help checks pass                       |
+| Full gate          | `make check`                                                                                                                                                                                                                                                                                                                    | exit 0; format, lint, typecheck, tests, build, smoke all pass |
+| Change review      | Save the Step 6 CLI JSON output, derive `runDir`, `workspace`, `originalReviewBase`, `approvedCandidate.ref`, and optional `approvedPlanPath` from that output/run `meta.json`, then use the literal Step 7 command below.                                                                                                      | completed run; all findings triaged                           |
 
 Do not use `pnpm test -- <files>` for a focused run: in this repository it still
 executed the entire suite during planning. Use `pnpm exec vitest run <files>`.
 
 ## Skills for the executor
 
-| Skill | Verified location | Use in |
-| --- | --- | --- |
-| `typescript-refactor` | `.agents/skills/typescript-refactor/SKILL.md` | Steps 1-6: discriminated lifecycle/event unions, exhaustive narrowing, explicit exported types, and error classification. |
-| `zod` | `.agents/skills/zod/SKILL.md` | Steps 1-2 and 4: strict provider output, lifecycle checkpoint, event, and artifact parsing at trust boundaries. |
-| `node` | `.agents/skills/node/SKILL.md` | Steps 2-5: filesystem durability, async provider failure handling, ESM/type-only imports, and temporary Git-index cleanup. |
-| `vitest` | `.agents/skills/vitest/SKILL.md` | Every step's regression tests; isolated temp repos, typed fakes, awaited failures, and no shared mutable state. |
-| `change-review-workflow` | `skills/change-review-workflow/SKILL.md` | Final gate: review the implementation against this plan, triage every finding, remediate, and re-review material fixes. |
+| Skill                    | Verified location                             | Use in                                                                                                                     |
+| ------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `typescript-refactor`    | `.agents/skills/typescript-refactor/SKILL.md` | Steps 1-6: discriminated lifecycle/event unions, exhaustive narrowing, explicit exported types, and error classification.  |
+| `zod`                    | `.agents/skills/zod/SKILL.md`                 | Steps 1-2 and 4: strict provider output, lifecycle checkpoint, event, and artifact parsing at trust boundaries.            |
+| `node`                   | `.agents/skills/node/SKILL.md`                | Steps 2-5: filesystem durability, async provider failure handling, ESM/type-only imports, and temporary Git-index cleanup. |
+| `vitest`                 | `.agents/skills/vitest/SKILL.md`              | Every step's regression tests; isolated temp repos, typed fakes, awaited failures, and no shared mutable state.            |
+| `change-review-workflow` | `skills/change-review-workflow/SKILL.md`      | Final gate: review the implementation against this plan, triage every finding, remediate, and re-review material fixes.    |
 
 ## Scope and ownership
 
@@ -396,14 +396,14 @@ it remains `blocked`.
 
 ### In-scope tests
 
-- `test/factory-implementation-review-output-schema-sync.test.ts` (new)
+- `test/factory-implementation-review-schema-sync.test.ts` (new)
 - `test/factory-implementation-review-input.test.ts` (new)
 - `test/factory-implementation-review-run-context.test.ts` (new)
 - `test/factory-run-allocation.test.ts` (new)
 - `test/factory-implementation-review-findings.test.ts` (new)
 - `test/factory-writer-boundary.test.ts` (new)
 - `test/factory-implementation-review.workflow.test.ts` (new)
-- `test/factory-implementation-review-cli.test.ts` (new)
+- `test/factory-implementation-review-command.test.ts` (new)
 - `test/factory-implementation-review-command.test.ts` (new)
 - `test/factory-implementation-review-test-helpers.ts` (new, only if shared setup avoids duplication)
 - `test/factory-lifecycle.test.ts`
@@ -531,6 +531,7 @@ re-run `plan-review` before editing.
 
    Keep cross-finding completeness/uniqueness validation in the coordinator,
    where the expected finding set is available.
+
 4. Add the Codex-strict JSON Schema twin and sync tests. Test valid output,
    missing arrays, empty strings, extra properties, and invalid decisions.
 5. Add `review-failed` to `FACTORY_STAGES`. Do not add a Linear status for it.
@@ -538,7 +539,7 @@ re-run `plan-review` before editing.
 **Verify**:
 
 ```bash
-pnpm exec vitest run test/factory-implementation-review-output-schema-sync.test.ts test/config.test.ts
+pnpm exec vitest run test/factory-implementation-review-schema-sync.test.ts test/config.test.ts
 pnpm typecheck
 ```
 
@@ -559,8 +560,8 @@ review limits are rejected consistently by config and CLI parsing.
    - expected implementation run ID;
    - expected active review-attempt ID (including expected absence);
    - expected last checkpoint/event ID.
-   Throw `FactoryLifecycleError` with expected/actual values on mismatch. Do not
-   accept an untyped callback from command code.
+     Throw `FactoryLifecycleError` with expected/actual values on mismatch. Do not
+     accept an untyped callback from command code.
 2. Change the reducer for `implementation.started` to set
    `factoryStage: "implementation-started"` and `factoryRunId: event.runId`.
    Guard implementation start and terminal event writers so a fresh run cannot
@@ -634,8 +635,8 @@ review limits are rejected consistently by config and CLI parsing.
      partial-evidence tuple of ref, commit, tree, attempt ID, and review index.
      The tuple is absent when no partial ref was created and never changes the
      approved candidate tuple.
-   Use these concrete strict schemas/types (exported from the review schema or
-   lifecycle module; names are contractual):
+     Use these concrete strict schemas/types (exported from the review schema or
+     lifecycle module; names are contractual):
 
    ```ts
    RunRootProvenance = { factoryRunsDir: string; reviewRunsDir: string }
@@ -705,27 +706,28 @@ review limits are rejected consistently by config and CLI parsing.
    `unresolved` requires its reason and latest checkpoint; `failed` requires
    classification, retryable, error, and latest checkpoint, plus the partial
    tuple only when one was created.
-4a. Implement and test this transition matrix before the workflow:
+   4a. Implement and test this transition matrix before the workflow:
 
-   | Transition | Allowed current state | New owner/run | Counter effect | Outcome |
-   | --- | --- | --- | --- | --- |
-   | first implementation | `ready-to-implement` | new implementation run | reset | `implementation-started` |
-   | implementation retry | `implementation-failed` + expected prior run | new implementation run | reset | `implementation-started` |
-   | stale implementation owner, unchanged tree | `implementation-started` + same-host dead owner + fresh Linear `Ready to Implement` | recovery run | reset | retryable `implementation-failed`, no failed projection |
-   | stale implementation owner, verified active status | `implementation-started` + same-host dead owner + fresh Linear `Implementing` | recovery run | reset | one `implementation-failed` projection, retryable |
-   | stale implementation owner, drift/unknown | `implementation-started` + dead/unknown owner or tree/status drift | none | preserve | `stale-owner` -> `ready-for-human` |
-   | initial review | `implementation-complete` | new review attempt | preserve | `review-running` |
-   | ordinary resume | `review-running`/`review-failed` + exact owner/checkpoint | new review attempt | preserve | `review-running` |
-   | no-partial failure resume | `review-failed` + no partial tuple | new review attempt | preserve | full review from approved candidate |
-   | partial failure recovery | `review-failed` + exact partial tuple | new recovery attempt | preserve | remediation, then full review |
-   | legacy implementation | `implementation-complete` + `legacyReviewBlock` | none | preserve | `legacy-incomplete` -> `ready-for-human` |
-   | idempotent complete | `review-complete` + matching owner | none | preserve | existing handoff |
-   | human terminal | `ready-for-human` | none | preserve | no resume without human state change |
+   | Transition                                         | Allowed current state                                                               | New owner/run          | Counter effect | Outcome                                                 |
+   | -------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------- | -------------- | ------------------------------------------------------- |
+   | first implementation                               | `ready-to-implement`                                                                | new implementation run | reset          | `implementation-started`                                |
+   | implementation retry                               | `implementation-failed` + expected prior run                                        | new implementation run | reset          | `implementation-started`                                |
+   | stale implementation owner, unchanged tree         | `implementation-started` + same-host dead owner + fresh Linear `Ready to Implement` | recovery run           | reset          | retryable `implementation-failed`, no failed projection |
+   | stale implementation owner, verified active status | `implementation-started` + same-host dead owner + fresh Linear `Implementing`       | recovery run           | reset          | one `implementation-failed` projection, retryable       |
+   | stale implementation owner, drift/unknown          | `implementation-started` + dead/unknown owner or tree/status drift                  | none                   | preserve       | `stale-owner` -> `ready-for-human`                      |
+   | initial review                                     | `implementation-complete`                                                           | new review attempt     | preserve       | `review-running`                                        |
+   | ordinary resume                                    | `review-running`/`review-failed` + exact owner/checkpoint                           | new review attempt     | preserve       | `review-running`                                        |
+   | no-partial failure resume                          | `review-failed` + no partial tuple                                                  | new review attempt     | preserve       | full review from approved candidate                     |
+   | partial failure recovery                           | `review-failed` + exact partial tuple                                               | new recovery attempt   | preserve       | remediation, then full review                           |
+   | legacy implementation                              | `implementation-complete` + `legacyReviewBlock`                                     | none                   | preserve       | `legacy-incomplete` -> `ready-for-human`                |
+   | idempotent complete                                | `review-complete` + matching owner                                                  | none                   | preserve       | existing handoff                                        |
+   | human terminal                                     | `ready-for-human`                                                                   | none                   | preserve       | no resume without human state change                    |
 
    Rejected/stale claims append no lifecycle transition, preserve their
    reservation evidence, and never invoke a provider. Event-ID retries are
    idempotent before precondition evaluation.
-5. Extend the optional lifecycle state checkpoint. On
+
+4. Extend the optional lifecycle state checkpoint. On
    `implementation.completed`, seed owner/base/candidate/session/workspace/store
    provenance and zero counters from the event. Historical events from before
    FER-62 may lack session, candidate tree, or workspace/store provenance. Replay
@@ -749,13 +751,13 @@ review limits are rejected consistently by config and CLI parsing.
    - unresolved -> `ready-for-human`;
    - failed -> `review-failed`;
    - implementation execution failure remains `implementation-failed`.
-6. Keep the internal checkpoint out of generic `FactoryWorkItemMetadata` merging;
+5. Keep the internal checkpoint out of generic `FactoryWorkItemMetadata` merging;
    only the public stage/run projection remains there.
-7. Put review-specific event constructors in the new
+6. Put review-specific event constructors in the new
    `lib/factory-implementation-review-lifecycle-writes.ts`; use
    `formatLifecycleArtifactPath` and exact conditional preconditions. Keep
    implementation start/terminal hardening in existing lifecycle writes.
-8. Add reducer/replay/backward-compatibility tests, event parsing failures,
+7. Add reducer/replay/backward-compatibility tests, event parsing failures,
    pointer-only assertions (no full finding bodies), idempotent retry tests,
    legacy `implementation.completed` replay with missing session/tree/provenance,
    and deterministic race tests where two distinct start attempts target the same
@@ -883,6 +885,7 @@ recorded-lineage mismatches fail closed.
    `approvedCandidate.tree`, and optional `approvedPlanPath`; the CLI output
    must expose `runDir` and `workspace` so the final review command can derive
    every input without chat-only context.
+
 4. Add `lib/factory-implementation-review-findings.ts` as a small adapter. Parse
    the three existing reviewer JSON files with `ReviewOutputSchema`, normalize in
    fixed role order, assign IDs, preserve `must_fix`/source/location, and reject a
@@ -982,7 +985,7 @@ than growing one monolith.
      and `approval-policy: never` (reject Cursor/default/write-capable input
      before invoking the nested workflow);
    - Factory event sink, signal, timeout, and provider factory.
-   Invoke `runChangeReview(reviewCtx)` without `steps`, guaranteeing all three roles.
+     Invoke `runChangeReview(reviewCtx)` without `steps`, guaranteeing all three roles.
 4. On nested review failure, persist its ref/successful coverage and emit
    review-failed without incrementing completed reviews. A failure without a
    partial tuple resumes from the approved candidate through a complete
@@ -1030,37 +1033,38 @@ than growing one monolith.
    decision. Write handoff before the conditional completed event; if lifecycle
    completion fails, do not report success.
 10. Workflow tests must cover:
-   - immediate pass/no findings;
-   - advisory findings all declined with accepted debt;
-   - implement/adapt edits -> cumulative ref -> full re-review -> pass;
-   - declined must-fix, including unchanged-tree and changed-tree cases where the
-     latter persists a non-promoted partial tuple before `ready-for-human`, plus
-     explicit rejection of resume from that human terminal;
-     blocked, missing/incompatible session, max limit;
-   - reviewer failure (not counted), invalid decisions, implement-without-change;
-   - provider failure before/after edits; recovery restores findings/index,
-     resumes remediation before review, materializes only a post-decision
-     candidate, then performs a full review; missing/malformed/tampered partial
-     tuple rejection and all-decline-with-partial-edits protocol failure;
-   - HEAD/tree/ref/workspace/store drift and stale/concurrent ownership;
-   - resume from review-running/review-failed, complete idempotency, human terminal;
-   - planned review receives plan, direct review does not;
-   - every nested review sees fixed original base and current immutable head;
-   - persisted limit on initial claim, rejected config/CLI limit drift on resume,
-     physical-workspace lease acquisition/revalidation/release, cross-work-item
-     contention including real-path/symlink aliases, and no lifecycle lock held
-     while fake reviewers/providers are awaiting;
-   - provider attempts that mutate refs, `HEAD`/index, `.harness`, lifecycle
-     state, or protected Factory-store paths are rejected by the writer boundary,
-     while allowed source edits and the Harness-owned stream path remain valid.
-   The writer boundary is intentionally a protected-surface policy, not a
-   work-item allowlist: it machine-checks refs, `HEAD`/index, `.harness`,
-   lifecycle files, and Factory-store paths, while permitting ordinary source,
-   test, and documentation edits for the provider turn. Work-item scope is
-   enforced separately by the review input/prompt, changed-tree capture, and
-   normalized finding review; an out-of-scope source edit is retained and
-   surfaced for review/human resolution, never silently discarded or treated as
-   a writer-boundary success claim.
+
+- immediate pass/no findings;
+- advisory findings all declined with accepted debt;
+- implement/adapt edits -> cumulative ref -> full re-review -> pass;
+- declined must-fix, including unchanged-tree and changed-tree cases where the
+  latter persists a non-promoted partial tuple before `ready-for-human`, plus
+  explicit rejection of resume from that human terminal;
+  blocked, missing/incompatible session, max limit;
+- reviewer failure (not counted), invalid decisions, implement-without-change;
+- provider failure before/after edits; recovery restores findings/index,
+  resumes remediation before review, materializes only a post-decision
+  candidate, then performs a full review; missing/malformed/tampered partial
+  tuple rejection and all-decline-with-partial-edits protocol failure;
+- HEAD/tree/ref/workspace/store drift and stale/concurrent ownership;
+- resume from review-running/review-failed, complete idempotency, human terminal;
+- planned review receives plan, direct review does not;
+- every nested review sees fixed original base and current immutable head;
+- persisted limit on initial claim, rejected config/CLI limit drift on resume,
+  physical-workspace lease acquisition/revalidation/release, cross-work-item
+  contention including real-path/symlink aliases, and no lifecycle lock held
+  while fake reviewers/providers are awaiting;
+- provider attempts that mutate refs, `HEAD`/index, `.harness`, lifecycle
+  state, or protected Factory-store paths are rejected by the writer boundary,
+  while allowed source edits and the Harness-owned stream path remain valid.
+  The writer boundary is intentionally a protected-surface policy, not a
+  work-item allowlist: it machine-checks refs, `HEAD`/index, `.harness`,
+  lifecycle files, and Factory-store paths, while permitting ordinary source,
+  test, and documentation edits for the provider turn. Work-item scope is
+  enforced separately by the review input/prompt, changed-tree capture, and
+  normalized finding review; an out-of-scope source edit is retained and
+  surfaced for review/human resolution, never silently discarded or treated as
+  a writer-boundary success claim.
 
 **Verify**:
 
@@ -1093,7 +1097,7 @@ promoted implicitly.
    - no Linear `--apply` flag: review-stage projection is deliberately a no-op;
      the canonical lifecycle remains authoritative and the issue stays in Linear
      `Implementing` while review is active, unresolved, or complete.
-   Do not add `--run-dir`, `--base`, `--head`, partial-review steps, or a fresh-session flag.
+     Do not add `--run-dir`, `--base`, `--head`, partial-review steps, or a fresh-session flag.
 2. Resolve both implementation roles: the validated Codex-only read-only reviewer
    for nested review, and the implementer for compatible session resume. Build
    the attempt context under Factory runs and point nested review context at
@@ -1111,38 +1115,38 @@ promoted implicitly.
      perform no Linear mutation and preserve the existing `Implementing` status;
    - only genuine `implementation-failed` uses the existing
      `Implementation Failed` projection.
-   Extend `lib/factory-linear-implementation-apply.ts` with a typed
-   `LinearImplementationStartApplyError` carrying a partial
-   `LinearImplementationUpdatePlan`. Track `statusMutationCompleted` only after
-   `updateIssue` reports success, and track `statusPostconditionVerified` only
-   after a fresh read proves `Implementing`. The implementation command must
-   project `Implementation Failed` after a start-apply error only when the typed
-   error says `statusPostconditionVerified: true`; `statusMutationCompleted:
-   true` alone is insufficient. Update-success/postcondition-failure therefore
-   preserves local `preProviderFailure` evidence but makes no failed projection;
-   update failure and fetch/validation failure make no failed projection either.
-   Preserve the typed update/error in the CLI result and add adapter/command
-   tests for all three cases, including a verified-Implementing failure that
-   permits exactly one failed projection.
-   The start-failure state table is explicit: (a) validation, fetch, or
-   `updateIssue` failure before mutation records `linearStartState:
-   "not-started"`; (b) a successful update followed by a failed postcondition
-   read invokes one fresh status probe, records `"implementing"` only when that
-   probe proves `Implementing`, and otherwise records `"unknown"`; (c) an
-   `"unknown"` or unexpected status routes to `ready-for-human` with preserved
-   evidence. Only `"implementing"` permits one failed projection. A
-   `"not-started"` local failure remains retryable: the next implementation
-   attempt probes Linear first, uses FER-52's `first` input if Linear is
-   `Ready to Implement`, and uses its `retry` input if Linear is
-   `Implementation Failed`; any other result routes to `ready-for-human`.
-   Thus no retry assumes that a failed update mutated Linear, and the
-   `statusPostconditionVerified: true` error is produced only by the explicit
-   fresh probe path, not by the currently successful return path.
-   Update the FER-52 completion comment and its test to point to
-   `harness factory implementation review --linear-issue <issue>` instead of
-   standalone `change-review`. Review lifecycle state, not comments, remains the
-   source of truth; no comment body may become an input to state, resume, or
-   decisions. This Step 6 extension does not add a new Linear review API.
+     Extend `lib/factory-linear-implementation-apply.ts` with a typed
+     `LinearImplementationStartApplyError` carrying a partial
+     `LinearImplementationUpdatePlan`. Track `statusMutationCompleted` only after
+     `updateIssue` reports success, and track `statusPostconditionVerified` only
+     after a fresh read proves `Implementing`. The implementation command must
+     project `Implementation Failed` after a start-apply error only when the typed
+     error says `statusPostconditionVerified: true`; `statusMutationCompleted:
+true` alone is insufficient. Update-success/postcondition-failure therefore
+     preserves local `preProviderFailure` evidence but makes no failed projection;
+     update failure and fetch/validation failure make no failed projection either.
+     Preserve the typed update/error in the CLI result and add adapter/command
+     tests for all three cases, including a verified-Implementing failure that
+     permits exactly one failed projection.
+     The start-failure state table is explicit: (a) validation, fetch, or
+     `updateIssue` failure before mutation records `linearStartState:
+"not-started"`; (b) a successful update followed by a failed postcondition
+     read invokes one fresh status probe, records `"implementing"` only when that
+     probe proves `Implementing`, and otherwise records `"unknown"`; (c) an
+     `"unknown"` or unexpected status routes to `ready-for-human` with preserved
+     evidence. Only `"implementing"` permits one failed projection. A
+     `"not-started"` local failure remains retryable: the next implementation
+     attempt probes Linear first, uses FER-52's `first` input if Linear is
+     `Ready to Implement`, and uses its `retry` input if Linear is
+     `Implementation Failed`; any other result routes to `ready-for-human`.
+     Thus no retry assumes that a failed update mutated Linear, and the
+     `statusPostconditionVerified: true` error is produced only by the explicit
+     fresh probe path, not by the currently successful return path.
+     Update the FER-52 completion comment and its test to point to
+     `harness factory implementation review --linear-issue <issue>` instead of
+     standalone `change-review`. Review lifecycle state, not comments, remains the
+     source of truth; no comment body may become an input to state, resume, or
+     decisions. This Step 6 extension does not add a new Linear review API.
 5. Add CLI tests for help/options, mutual exclusions, initial/resume stage gates,
    no-comment identity, run/store placement, output/exit codes, signal forwarding,
    terminal Linear apply failure preservation, rejected Cursor/default/write-capable
@@ -1194,7 +1198,7 @@ promoted implicitly.
 **Verify**:
 
 ```bash
-pnpm exec vitest run test/factory-implementation-review-cli.test.ts test/factory-implementation-cli.test.ts test/factory-implementation-apply-command.test.ts test/factory-linear-adapter.test.ts test/factory-linear-implementation-apply.test.ts test/config.test.ts
+pnpm exec vitest run test/factory-implementation-review-command.test.ts test/factory-implementation-cli.test.ts test/factory-implementation-apply-command.test.ts test/factory-linear-adapter.test.ts test/factory-linear-implementation-apply.test.ts test/config.test.ts
 pnpm build
 pnpm smoke:dist
 ```
@@ -1253,7 +1257,7 @@ projects as Implementation Failed.
 pnpm format:check
 pnpm lint
 pnpm typecheck
-pnpm exec vitest run test/factory-implementation-review-output-schema-sync.test.ts test/factory-implementation-review-input.test.ts test/factory-implementation-review-run-context.test.ts test/factory-implementation-review-findings.test.ts test/factory-implementation-review.workflow.test.ts test/factory-implementation-review-cli.test.ts test/factory-lifecycle.test.ts test/factory-locks.test.ts test/factory-status.test.ts test/factory-run-allocation.test.ts test/factory-review-head.test.ts test/factory-implementation-run-context.test.ts test/factory-implementation.workflow.test.ts test/factory-implementation-cli.test.ts test/factory-implementation-apply-command.test.ts test/factory-linear-implementation-apply.test.ts test/factory-linear-adapter.test.ts test/factory-writer-boundary.test.ts test/factory-planning-run-context.test.ts test/factory-planning-policy.test.ts test/factory-planning-smoke.test.ts test/factory-planning.workflow.test.ts test/factory-planning.workflow-failures.test.ts test/factory-planning-apply-command.test.ts test/config.test.ts test/docs-contracts.test.ts test/skills.test.ts
+pnpm exec vitest run test/factory-implementation-review-schema-sync.test.ts test/factory-implementation-review-input.test.ts test/factory-implementation-review-run-context.test.ts test/factory-implementation-review-findings.test.ts test/factory-implementation-review.workflow.test.ts test/factory-implementation-review-command.test.ts test/factory-lifecycle.test.ts test/factory-locks.test.ts test/factory-status.test.ts test/factory-run-allocation.test.ts test/factory-review-head.test.ts test/factory-implementation-run-context.test.ts test/factory-implementation.workflow.test.ts test/factory-implementation-cli.test.ts test/factory-implementation-apply-command.test.ts test/factory-linear-implementation-apply.test.ts test/factory-linear-adapter.test.ts test/factory-writer-boundary.test.ts test/factory-planning-run-context.test.ts test/factory-planning-policy.test.ts test/factory-planning-smoke.test.ts test/factory-planning.workflow.test.ts test/factory-planning.workflow-failures.test.ts test/factory-planning-apply-command.test.ts test/config.test.ts test/docs-contracts.test.ts test/skills.test.ts
 git diff --check
 git status --short
 make check
@@ -1297,35 +1301,35 @@ unchanged external baseline failure.
 All must hold:
 
 - [ ] FER-52 and FER-61 implementation PRs—not merely their plan PRs—are merged;
-  their exact commits, symbols, files, and tests were reconciled in this plan and
-  the reconciled revision passed `plan-review` before edits.
+      their exact commits, symbols, files, and tests were reconciled in this plan and
+      the reconciled revision passed `plan-review` before edits.
 - [ ] Initial and resumed review identity derives from canonical lifecycle plus recorded implementation metadata; no command accepts an arbitrary run directory.
 - [ ] Implementation start/terminal and every review transition use conditional state checks under the per-work-item lock.
 - [ ] Live implementation and remediation provider turns hold one durable
-  physical-workspace writer lease through ref/terminal persistence; a different
-  work item or lexical/symlink alias cannot write the same checkout concurrently,
-  while read-only review remains lease-free.
+      physical-workspace writer lease through ref/terminal persistence; a different
+      work item or lexical/symlink alias cannot write the same checkout concurrently,
+      while read-only review remains lease-free.
 - [ ] Every live implementation/review attempt reserves a collision-safe run ID
-  before lifecycle claim; rejected claims preserve their pre-claim reservation
-  evidence, allocation failures before the manifest clean only the empty
-  reservation, and lease contention creates neither an allocation nor lifecycle
-  ownership.
+      before lifecycle claim; rejected claims preserve their pre-claim reservation
+      evidence, allocation failures before the manifest clean only the empty
+      reservation, and lease contention creates neither an allocation nor lifecycle
+      ownership.
 - [ ] All three existing reviewers run via `change-review` against original base -> latest immutable candidate; no duplicate reviewer engine exists.
 - [ ] Every current finding receives exactly one validated decision; material remediation always creates a cumulative immutable ref and receives a full re-review.
 - [ ] Missing/incompatible sessions, blocked reviews, max iterations, and declined must-fix findings end in `ready-for-human`, not `implementation-failed`.
 - [ ] Reviewer/provider/Git/artifact/protocol/workspace failures preserve recovery evidence and end in `review-failed`; only completed review cycles count.
 - [ ] Partial recovery restores its recorded findings/index, resumes the original
-  session against the exact partial tree, creates an approved candidate only after
-  valid decisions, then starts a full review; it never reviews or promotes partial
-  evidence directly.
+      session against the exact partial tree, creates an approved candidate only after
+      valid decisions, then starts a full review; it never reviews or promotes partial
+      evidence directly.
 - [ ] Resume enforces owner/checkpoint/approved-or-partial tree/ref provenance,
-  preserves the immutable effective limit across config/CLI changes, and never
-  starts a fresh implementation/session.
+      preserves the immutable effective limit across config/CLI changes, and never
+      starts a fresh implementation/session.
 - [ ] PR-ready handoff deterministically includes work item, stable implementation owner, attempt lineage, original/final refs, cumulative diff, all nested review refs/decisions, accepted debt, verdict/provenance, and “no branch or PR created”.
 - [ ] Linear comments are never parsed/read as review workflow input; all active/review/human/failure stages project to Implementing; only genuine implementation execution failure projects to Implementation Failed.
 - [ ] The reviewer is enforced as Codex `read-only`/`never`; agents otherwise
-  write only intended workspace changes and structured output; Harness exclusively
-  writes durable artifacts, lifecycle, streams, refs, recovery, and handoffs.
+      write only intended workspace changes and structured output; Harness exclusively
+      writes durable artifacts, lifecycle, streams, refs, recovery, and handoffs.
 - [ ] No PR, branch, push, worktree, Inngest, new Linear status, or tracker completion behavior was added.
 - [ ] New/focused tests, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, `pnpm smoke:dist`, and `make check` exit 0.
 - [ ] Final `change-review-workflow` findings are each Implemented, Adapted, or Declined with rationale, and material fixes are re-reviewed.

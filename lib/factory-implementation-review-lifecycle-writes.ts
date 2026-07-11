@@ -258,6 +258,7 @@ export function appendImplementationReviewFailedEvent(
     summary: ArtifactPointer;
     recovery?: ArtifactPointer;
     partialRecovery?: PartialRecovery;
+    clearPartialRecovery?: boolean;
     writerBoundaryBefore?: ArtifactPointer;
     writerBoundaryAfter?: ArtifactPointer;
   },
@@ -281,6 +282,7 @@ export function appendImplementationReviewFailedEvent(
       summary: input.summary,
       ...(input.recovery ? { recovery: input.recovery } : {}),
       ...(input.partialRecovery ? { partialRecovery: input.partialRecovery } : {}),
+      ...(input.clearPartialRecovery ? { clearPartialRecovery: true } : {}),
       ...(input.writerBoundaryBefore ? { writerBoundaryBefore: input.writerBoundaryBefore } : {}),
       ...(input.writerBoundaryAfter ? { writerBoundaryAfter: input.writerBoundaryAfter } : {}),
     },

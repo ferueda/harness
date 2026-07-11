@@ -427,6 +427,7 @@ const ImplementationReviewFailedEventSchema = BaseEventSchema.extend({
       summary: ArtifactPointerSchema,
       recovery: ArtifactPointerSchema.optional(),
       partialRecovery: PartialRecoverySchema.optional(),
+      clearPartialRecovery: z.boolean().optional(),
       writerBoundaryBefore: ArtifactPointerSchema.optional(),
       writerBoundaryAfter: ArtifactPointerSchema.optional(),
     })
@@ -1103,6 +1104,13 @@ function reviewStartedState(
 ): FactoryLifecycleState {
   const data = event.data;
   const previous = state.implementationReviewCheckpoint;
+  if (previous) {
+    assertReviewCheckpointRestartInvariant(
+      previous,
+      data,
+      state.factoryStage === "implementation-complete",
+    );
+  }
   const checkpoint: ImplementationReviewCheckpoint = {
     version: 1,
     checkpointId: event.id,
@@ -1138,6 +1146,15 @@ function reviewCheckpointedState(
 ): FactoryLifecycleState {
   const data = event.data;
   const previous = state.implementationReviewCheckpoint;
+  if (!previous) {
+    throw new FactoryLifecycleError(
+      "Review checkpoint event requires an existing review checkpoint",
+    );
+  }
+  if (data.checkpointId !== event.id || data.activeReviewAttemptId !== event.runId) {
+    throw new FactoryLifecycleError("Review checkpoint identity does not match its event envelope");
+  }
+  assertReviewCheckpointProgression(previous, data);
   const checkpoint: ImplementationReviewCheckpoint = {
     version: 1,
     checkpointId: data.checkpointId,
@@ -1168,12 +1185,6 @@ function reviewCheckpointedState(
     ...(data.latestOutcome ? { latestOutcome: data.latestOutcome } : {}),
     ...(data.latestErrorClass ? { latestErrorClass: data.latestErrorClass } : {}),
   };
-  // A checkpoint must never silently move to another implementation owner.
-  if (previous && previous.owningImplementationRunId !== checkpoint.owningImplementationRunId) {
-    throw new FactoryLifecycleError(
-      `Review checkpoint owner changed from ${previous.owningImplementationRunId} to ${checkpoint.owningImplementationRunId}`,
-    );
-  }
   return {
     ...state,
     factoryStage: "review-running",
@@ -1187,6 +1198,16 @@ function reviewCompletedState(
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>,
 ): FactoryLifecycleState {
   const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
+  assertReviewTerminalIdentity(
+    checkpoint,
+    event.data.activeReviewAttemptId,
+    event.data.latestCheckpointId,
+  );
+  if (!sameLifecycleCandidate(event.data.finalCandidate, checkpoint.approvedCandidate)) {
+    throw new FactoryLifecycleError(
+      "Review completion candidate does not match the current checkpoint",
+    );
+  }
   return {
     ...state,
     factoryStage: "review-complete",
@@ -1225,6 +1246,11 @@ function reviewUnresolvedState(
       "A review unresolved event for a checkpoint requires its attempt and checkpoint IDs",
     );
   }
+  assertReviewTerminalIdentity(
+    checkpoint,
+    event.data.activeReviewAttemptId,
+    event.data.latestCheckpointId,
+  );
   return {
     ...state,
     factoryStage: "ready-for-human",
@@ -1244,7 +1270,14 @@ function reviewFailedState(
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.failed" }>,
 ): FactoryLifecycleState {
   const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
-  const partialRecovery = event.data.partialRecovery ?? checkpoint.partialRecovery;
+  assertReviewTerminalIdentity(
+    checkpoint,
+    event.data.activeReviewAttemptId,
+    event.data.latestCheckpointId,
+  );
+  const partialRecovery = event.data.clearPartialRecovery
+    ? undefined
+    : (event.data.partialRecovery ?? checkpoint.partialRecovery);
   return {
     ...state,
     factoryStage: event.data.retryable ? "review-failed" : "ready-for-human",
@@ -1260,6 +1293,84 @@ function reviewFailedState(
       priorReviewAttemptId: event.data.activeReviewAttemptId,
     },
   };
+}
+
+function assertReviewCheckpointRestartInvariant(
+  previous: ImplementationReviewCheckpoint,
+  next: Extract<FactoryLifecycleEvent, { type: "implementation.review.started" }>["data"],
+  allowEffectiveReviewLimitChange: boolean,
+): void {
+  if (
+    next.owningImplementationRunId !== previous.owningImplementationRunId ||
+    next.originalReviewBase !== previous.originalReviewBase ||
+    !sameLifecycleJson(next.approvedCandidate, previous.approvedCandidate) ||
+    !sameLifecycleJson(next.implementerSession, previous.implementerSession) ||
+    !sameLifecycleJson(next.workspace, previous.workspace) ||
+    !sameLifecycleJson(next.runRoots, previous.runRoots) ||
+    (!allowEffectiveReviewLimitChange &&
+      !sameLifecycleJson(next.effectiveReviewLimit, previous.effectiveReviewLimit)) ||
+    next.candidateVersion !== previous.candidateVersion ||
+    next.completedReviewCount !== previous.completedReviewCount
+  ) {
+    throw new FactoryLifecycleError("Review restart rewrites immutable checkpoint provenance");
+  }
+}
+
+function assertReviewCheckpointProgression(
+  previous: ImplementationReviewCheckpoint,
+  next: Extract<FactoryLifecycleEvent, { type: "implementation.review.checkpointed" }>["data"],
+): void {
+  if (
+    next.checkpointId === previous.latestCheckpointId ||
+    next.owningImplementationRunId !== previous.owningImplementationRunId ||
+    next.originalReviewBase !== previous.originalReviewBase ||
+    !sameLifecycleJson(next.implementerSession, previous.implementerSession) ||
+    !sameLifecycleJson(next.workspace, previous.workspace) ||
+    !sameLifecycleJson(next.runRoots, previous.runRoots) ||
+    !sameLifecycleJson(next.effectiveReviewLimit, previous.effectiveReviewLimit) ||
+    next.completedReviewCount < previous.completedReviewCount ||
+    next.candidateVersion < previous.candidateVersion ||
+    next.completedReviewCount > previous.completedReviewCount + 1 ||
+    next.candidateVersion > previous.candidateVersion + 1
+  ) {
+    throw new FactoryLifecycleError("Review checkpoint rewrites immutable or non-monotonic state");
+  }
+  if (next.candidateVersion === previous.candidateVersion) {
+    if (!sameLifecycleCandidate(next.approvedCandidate, previous.approvedCandidate)) {
+      throw new FactoryLifecycleError(
+        "Review checkpoint changed a candidate without advancing its version",
+      );
+    }
+  } else {
+    const expectedRef = `refs/harness/factory/${previous.owningImplementationRunId}/review/${next.candidateVersion}`;
+    if (next.phase !== "remediation" || next.approvedCandidate.ref !== expectedRef) {
+      throw new FactoryLifecycleError("Review checkpoint candidate lineage is invalid");
+    }
+  }
+}
+
+function sameLifecycleCandidate(
+  left: { ref: string; commit: string; tree: string },
+  right: { ref: string; commit: string; tree: string },
+): boolean {
+  return sameLifecycleJson(left, right);
+}
+
+function sameLifecycleJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function assertReviewTerminalIdentity(
+  checkpoint: ImplementationReviewCheckpoint,
+  activeReviewAttemptId: string,
+  latestCheckpointId: string,
+): void {
+  if (
+    checkpoint.activeReviewAttemptId !== activeReviewAttemptId ||
+    checkpoint.latestCheckpointId !== latestCheckpointId
+  ) {
+    throw new FactoryLifecycleError("Review terminal event must reference the current checkpoint");
+  }
 }
 
 function requireReviewCheckpoint(

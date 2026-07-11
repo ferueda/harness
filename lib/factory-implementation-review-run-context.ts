@@ -128,9 +128,22 @@ export function createFactoryImplementationReviewRunContextForTest(
   return createFactoryImplementationReviewRunContextInternal(options);
 }
 
+export function writeFactoryReviewRunFile(input: {
+  runDir: string;
+  relativePath: string;
+  value: string;
+  flag?: "w" | "wx";
+}): string {
+  const path = safeRunPath(resolve(input.runDir), input.relativePath);
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, input.value, input.flag ? { encoding: "utf8", flag: input.flag } : "utf8");
+  return path;
+}
+
 function createFactoryImplementationReviewRunContextInternal(
   options: FactoryImplementationReviewRunContextOptions,
 ): FactoryImplementationReviewRunContext {
+  assertReadOnlyReviewerRole(options.reviewerRole);
   const workspace = resolve(options.workspace);
   if (!existsSync(workspace)) throw new Error(`Workspace does not exist: ${workspace}`);
   const runDir = resolve(options.allocation.runDir);
@@ -234,7 +247,11 @@ function createFactoryImplementationReviewRunContextInternal(
       ...(input.error ? { error: input.error } : {}),
       artifacts: Object.fromEntries(artifacts),
     };
-    writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+    writeFactoryReviewRunFile({
+      runDir,
+      relativePath: "meta.json",
+      value: `${JSON.stringify(meta, null, 2)}\n`,
+    });
     return meta;
   };
 
@@ -277,6 +294,7 @@ function createFactoryImplementationReviewRunContextInternal(
       return provider;
     },
     reviewerProvider(): Agent {
+      assertReadOnlyReviewerRole(options.reviewerRole);
       reviewer ??= options.agentProviderFactory?.({
         provider: options.reviewerRole.agent,
         codexPathOverride: options.reviewerRole.codexPathOverride,
@@ -286,6 +304,18 @@ function createFactoryImplementationReviewRunContextInternal(
       return reviewer;
     },
   };
+}
+
+function assertReadOnlyReviewerRole(role: FactoryRoleAgent): void {
+  if (
+    role.agent !== "codex" ||
+    role.sandboxMode !== "read-only" ||
+    role.approvalPolicy !== "never"
+  ) {
+    throw new Error(
+      "Factory implementation review requires a Codex reviewer with read-only sandbox and never approval policy.",
+    );
+  }
 }
 
 function safeRunPath(runDir: string, relativePath: string): string {

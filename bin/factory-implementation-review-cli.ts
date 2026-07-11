@@ -2,10 +2,12 @@ import type {
   FactoryImplementationReviewLegacyRunMeta,
   FactoryImplementationReviewRunMeta,
 } from "../lib/factory-implementation-review-run-context.ts";
+import type { FactoryImplementationReviewRejectedRunMeta } from "./factory-implementation-review-command.ts";
 
 type FactoryImplementationReviewCommandMeta =
   | FactoryImplementationReviewRunMeta
-  | FactoryImplementationReviewLegacyRunMeta;
+  | FactoryImplementationReviewLegacyRunMeta
+  | FactoryImplementationReviewRejectedRunMeta;
 
 type FactoryImplementationReviewCliOutputBase = {
   workflow: string;
@@ -23,6 +25,14 @@ type FactoryImplementationReviewCliOutputBase = {
 };
 
 export type FactoryImplementationReviewCliOutput =
+  | (Omit<
+      FactoryImplementationReviewCliOutputBase,
+      "status" | "implementationRunId" | "workItem"
+    > & {
+      status: "rejected";
+      implementationRunId?: string;
+      workItem?: never;
+    })
   | (FactoryImplementationReviewCliOutputBase & {
       legacyIncomplete: true;
       missing: string[];
@@ -39,6 +49,20 @@ export type FactoryImplementationReviewCliOutput =
 export function factoryImplementationReviewCliOutput(
   meta: FactoryImplementationReviewCommandMeta,
 ): FactoryImplementationReviewCliOutput {
+  if (meta.status === "rejected") {
+    return {
+      workflow: meta.workflow,
+      status: meta.status,
+      runId: meta.runId,
+      ...(meta.implementationRunId ? { implementationRunId: meta.implementationRunId } : {}),
+      workspace: meta.workspace,
+      runDir: meta.runDir,
+      artifacts: meta.artifacts,
+      summaryPath: meta.summaryPath,
+      metaPath: meta.metaPath,
+      error: meta.error,
+    };
+  }
   if ("legacyIncomplete" in meta) {
     return {
       workflow: meta.workflow,

@@ -78,10 +78,17 @@ test("live provider receives workspaceGuard record and expected stream logPath",
 test("live tracked edit completes with artifacts, review refs, and matching diff", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const factoryStore = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: mkdtempSync(join(tmpdir(), "harness-factory-implementation-store-")),
+    factoryStoreProjectId: "test-project",
+    env: process.env,
+  });
   const events: WorkflowEvent[] = [];
   const ctx = createLiveCtx({
     workspace,
     runsDir,
+    factoryStore: factoryStoreMetadata(factoryStore),
     eventSink(event) {
       events.push(event);
     },
@@ -108,6 +115,8 @@ test("live tracked edit completes with artifacts, review refs, and matching diff
   expect(existsSync(join(ctx.runDir, "implementation/implementer.raw.json"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "implementation/workspace-status.json"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "implementation/diff.patch"))).toBe(true);
+  expect(existsSync(join(ctx.runDir, "implementation/writer-boundary-before.json"))).toBe(true);
+  expect(existsSync(join(ctx.runDir, "implementation/writer-boundary-after.json"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "implementation/change-review-handoff.md"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "summary.md"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "meta.json"))).toBe(true);

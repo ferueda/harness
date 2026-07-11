@@ -145,6 +145,8 @@ export type FactoryImplementationLiveArtifactsInput = {
   workspaceStatus: unknown;
   diff: string;
   changeReviewHandoff: string;
+  writerBoundaryBefore?: unknown;
+  writerBoundaryAfter?: unknown;
 };
 
 type FactoryImplementationExportInputBase = {
@@ -376,6 +378,18 @@ function createFactoryImplementationRunContextInternal(
       writeJson(join(runDir, "implementation/implementer.raw.json"), input.raw);
       writeJson(join(runDir, "implementation/workspace-status.json"), input.workspaceStatus);
       writeFileSync(join(runDir, "implementation/diff.patch"), input.diff, "utf8");
+      if (input.writerBoundaryBefore !== undefined) {
+        writeJson(
+          join(runDir, "implementation/writer-boundary-before.json"),
+          input.writerBoundaryBefore,
+        );
+      }
+      if (input.writerBoundaryAfter !== undefined) {
+        writeJson(
+          join(runDir, "implementation/writer-boundary-after.json"),
+          input.writerBoundaryAfter,
+        );
+      }
       writeFileSync(
         join(runDir, "implementation/change-review-handoff.md"),
         input.changeReviewHandoff,

@@ -50,6 +50,7 @@ import { errorMessage } from "../lib/agent-invoke.ts";
 import type { AgentRunResult } from "../lib/agents.ts";
 import {
   acquireFactoryWorkspaceWriterLease,
+  canonicalizeFactoryWorkspace,
   releaseFactoryWorkspaceWriterLease,
   type FactoryWorkspaceWriterLeaseHandle,
 } from "../lib/factory-locks.ts";
@@ -211,6 +212,7 @@ async function runReviewLoop(
         runDir: nested.runDir,
         baseRef: checkpoint.originalReviewBase,
         headRef: candidate.ref,
+        headSha: candidate.commit,
       });
       completedReviewCount += 1;
       const reviewCheckpointId = `implementation.review.checkpointed:${ctx.runId}:${reviewIndex}:review`;
@@ -380,6 +382,31 @@ async function runReviewLoop(
               normalized.roles,
             );
           }
+        } else {
+          const checkpointId = `implementation.review.checkpointed:${ctx.runId}:${reviewIndex}:declined`;
+          appendImplementationReviewCheckpointedEvent({
+            factoryStateRoot: ctx.factoryStore.factoryStateRoot,
+            workItem: ctx.workItem,
+            checkpointId,
+            expectedCheckpointId: checkpoint.latestCheckpointId,
+            owningImplementationRunId: ctx.implementationRunId,
+            activeReviewAttemptId: ctx.runId,
+            phase: "remediation",
+            completedReviewCount,
+            candidateVersion,
+            originalReviewBase: checkpoint.originalReviewBase,
+            approvedCandidate: candidate,
+            implementerSession: checkpoint.implementerSession,
+            workspace: checkpoint.workspace,
+            runRoots: checkpoint.runRoots,
+            activeReviewIndex: reviewIndex,
+            ...(checkpoint.latestReview ? { review: checkpoint.latestReview } : {}),
+            decision: pointer(ctx.runId, `iterations/${reviewIndex}/remediation.json`),
+            latestOutcome: "declined-must-fix",
+            effectiveReviewLimit: checkpoint.effectiveReviewLimit,
+            execution: reviewExecution(ctx),
+          });
+          checkpoint = { ...checkpoint, checkpointId, latestCheckpointId: checkpointId };
         }
         return unresolved(
           ctx,
@@ -443,6 +470,9 @@ async function runReviewLoop(
           execution: reviewExecution(ctx),
         });
         checkpoint = { ...checkpoint, checkpointId, latestCheckpointId: checkpointId };
+        if (result.lease) {
+          releaseFactoryWorkspaceWriterLease({ handle: result.lease });
+        }
         remediationLeaseReleased = true;
         return complete(
           ctx,
@@ -452,7 +482,6 @@ async function runReviewLoop(
           candidateVersion,
           attempts,
           acceptedDebt,
-          result.lease,
         );
       }
       if (changed) {
@@ -680,6 +709,18 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
         runRoots: event.data.runRoots,
       });
       const nestedRunDir = dirname(nestedMetaPath);
+      validateNestedReviewProvenance(
+        ctx,
+        nestedRunDir,
+        event.data.approvedCandidate,
+        event.data.review.runId,
+        event.data.candidate
+          ? resolveFactoryArtifactPointer({
+              pointer: event.data.candidate,
+              runRoots: event.data.runRoots,
+            })
+          : undefined,
+      );
       attempt.nestedReviewRefs = [...new Set([...attempt.nestedReviewRefs, nestedRunDir])];
       const normalized = normalizeFactoryImplementationReviewFindings({
         implementation: readNestedReview(nestedRunDir, "implementation-review.json"),
@@ -767,10 +808,24 @@ function restorePartialRecovery(
     pointer: partial.patch,
     runRoots: checkpoint.runRoots,
   });
+  let latestReviewDir: string | undefined;
   const recoveryPath = resolveFactoryArtifactPointer({
     pointer: partial.recovery,
     runRoots: checkpoint.runRoots,
   });
+  if (checkpoint.latestReview) {
+    const latestReviewMetaPath = resolveFactoryArtifactPointer({
+      pointer: checkpoint.latestReview,
+      runRoots: checkpoint.runRoots,
+    });
+    latestReviewDir = dirname(latestReviewMetaPath);
+    validateNestedReviewProvenance(
+      ctx,
+      latestReviewDir,
+      checkpoint.approvedCandidate,
+      checkpoint.latestReview.runId,
+    );
+  }
   const status = readJsonArtifact(statusPath, "Partial recovery workspace status");
   const patch = readFileSync(patchPath, "utf8");
   if (
@@ -795,6 +850,18 @@ function restorePartialRecovery(
     throw new Error("Partial recovery tuple does not match its immutable recovery manifest.");
   }
   const reviews = manifest.reviews;
+  if (latestReviewDir) {
+    const recordedReviews = {
+      implementation: readNestedReview(latestReviewDir, "implementation-review.json"),
+      quality: readNestedReview(latestReviewDir, "quality-review.json"),
+      simplify: readNestedReview(latestReviewDir, "simplify-review.json"),
+    };
+    if (JSON.stringify(recordedReviews) !== JSON.stringify(reviews)) {
+      throw new Error(
+        "Partial recovery reviewer outputs are not bound to the recorded review run.",
+      );
+    }
+  }
   const normalized = normalizeFactoryImplementationReviewFindings({
     implementation: reviews.implementation,
     quality: reviews.quality,
@@ -828,6 +895,15 @@ async function runNestedReview(
   | { status: "failed"; error: string; runId?: string; runDir?: string }
 > {
   try {
+    if (
+      ctx.reviewerRole.agent !== "codex" ||
+      ctx.reviewerRole.sandboxMode !== "read-only" ||
+      ctx.reviewerRole.approvalPolicy !== "never"
+    ) {
+      throw new Error(
+        "Nested implementation review requires a Codex reviewer with read-only sandbox and never approval policy.",
+      );
+    }
     const nested = createWorkflowContext({
       workspace: ctx.workspace,
       runsDir: ctx.factoryStore.reviewRunsDir,
@@ -854,6 +930,7 @@ async function runNestedReview(
         runDir: nested.runDir,
       };
     }
+    validateNestedReviewProvenance(ctx, nested.runDir, candidate, nested.runId);
     return {
       status: "completed",
       runId: nested.runId,
@@ -866,6 +943,49 @@ async function runNestedReview(
     };
   } catch (error) {
     return { status: "failed", error: errorMessage(error) };
+  }
+}
+
+function validateNestedReviewProvenance(
+  ctx: FactoryImplementationReviewRunContext,
+  nestedRunDir: string,
+  candidate: ReviewState["approvedCandidate"],
+  expectedRunId: string,
+  changeRefPath?: string,
+): void {
+  const meta = readJsonArtifact(join(nestedRunDir, "meta.json"), "Nested review metadata");
+  if (!isRecord(meta) || meta.runId !== expectedRunId || meta.status !== "completed") {
+    throw new Error("Nested review metadata is not a completed run for the recorded attempt.");
+  }
+  const scope = isRecord(meta.scope) ? meta.scope : undefined;
+  let nestedWorkspace: ReturnType<typeof canonicalizeFactoryWorkspace>;
+  try {
+    nestedWorkspace = canonicalizeFactoryWorkspace(String(meta.workspace ?? ""));
+  } catch (error) {
+    throw new Error(`Nested review workspace provenance is invalid: ${errorMessage(error)}`);
+  }
+  const currentWorkspace = canonicalizeFactoryWorkspace(ctx.workspace);
+  if (
+    nestedWorkspace.physicalGitRoot !== currentWorkspace.physicalGitRoot ||
+    nestedWorkspace.workspaceKey !== currentWorkspace.workspaceKey ||
+    !scope ||
+    scope.baseRef !== ctx.checkpoint.originalReviewBase ||
+    scope.headRef !== candidate.ref ||
+    scope.headSha !== candidate.commit
+  ) {
+    throw new Error("Nested review metadata is not bound to the reviewed candidate and workspace.");
+  }
+  if (changeRefPath) {
+    const changeRef = readJsonArtifact(changeRefPath, "Nested review candidate reference");
+    if (
+      !isRecord(changeRef) ||
+      changeRef.runId !== expectedRunId ||
+      changeRef.baseRef !== ctx.checkpoint.originalReviewBase ||
+      changeRef.headRef !== candidate.ref ||
+      changeRef.headSha !== candidate.commit
+    ) {
+      throw new Error("Nested review candidate reference is not bound to the reviewed candidate.");
+    }
   }
 }
 
@@ -1257,7 +1377,8 @@ function failedAfterRemediation(
   findings: readonly FactoryImplementationReviewFinding[],
   reviews: NormalizedFactoryImplementationReview["roles"],
 ): FactoryImplementationReviewRunMeta {
-  const partial = workspaceCaptureChanged(result.before, result.after)
+  const changed = workspaceCaptureChanged(result.before, result.after);
+  const partial = changed
     ? capturePartial(
         ctx,
         candidate,
@@ -1286,10 +1407,11 @@ function failedAfterRemediation(
     summary: pointer(ctx.runId, "summary.md"),
     ...(partial.recovery
       ? { partialRecovery: partial.recovery }
-      : checkpoint.partialRecovery
+      : !changed && checkpoint.partialRecovery
         ? { partialRecovery: checkpoint.partialRecovery }
         : {}),
     ...(partial.failurePointer ? { recovery: partial.failurePointer } : {}),
+    ...(changed && !partial.recovery ? { clearPartialRecovery: true } : {}),
     ...(result.boundaryBeforePath
       ? { writerBoundaryBefore: pointer(ctx.runId, result.boundaryBeforePath) }
       : {}),
@@ -1500,20 +1622,41 @@ function complete(
     decisions: ReadonlyArray<{ findingId: string; decision: string; rationale: string }>;
   }>,
   acceptedDebt: ReadonlyArray<AcceptedDebt>,
-  existingLease?: FactoryWorkspaceWriterLeaseHandle,
 ): FactoryImplementationReviewRunMeta {
-  const lease =
-    existingLease ??
-    acquireFactoryWorkspaceWriterLease({
-      workspace: ctx.workspace,
-      factoryProjectId: ctx.factoryStore.projectId,
-      storeRoot: ctx.factoryStore.storeRoot,
-      workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
-      runId: ctx.implementationRunId,
-      attemptId: ctx.runId,
-      operation: "remediation",
-      ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
-    });
+  validateFactoryCandidateTuple({
+    workspace: ctx.workspace,
+    candidate,
+    expectedOriginalBase: checkpoint.originalReviewBase,
+    expectedWorkspaceTree: true,
+    expectedImplementationRunId: ctx.implementationRunId,
+    expectedCandidateVersion: candidateVersion,
+  });
+  ctx.writeArtifact("accepted-debt.json", acceptedDebt);
+  const handoff = renderFactoryImplementationPrReadyHandoff({
+    workItem: ctx.workItem,
+    implementationRunId: ctx.implementationRunId,
+    attempts,
+    originalReviewBase: checkpoint.originalReviewBase,
+    finalCandidate: candidate,
+    cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
+    implementerSession: checkpoint.implementerSession,
+    workspace: checkpoint.workspace,
+    acceptedDebt,
+  });
+  const handoffPath = ctx.writeHandoff(handoff);
+  ctx.writeSummary(
+    `# Factory Implementation Review\n\n- Status: review-complete\n- Candidate: ${candidate.ref}\n`,
+  );
+  const lease = acquireFactoryWorkspaceWriterLease({
+    workspace: ctx.workspace,
+    factoryProjectId: ctx.factoryStore.projectId,
+    storeRoot: ctx.factoryStore.storeRoot,
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+    runId: ctx.implementationRunId,
+    attemptId: ctx.runId,
+    operation: "remediation",
+    ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
+  });
   try {
     validateFactoryCandidateTuple({
       workspace: ctx.workspace,
@@ -1523,22 +1666,6 @@ function complete(
       expectedImplementationRunId: ctx.implementationRunId,
       expectedCandidateVersion: candidateVersion,
     });
-    ctx.writeArtifact("accepted-debt.json", acceptedDebt);
-    const handoff = renderFactoryImplementationPrReadyHandoff({
-      workItem: ctx.workItem,
-      implementationRunId: ctx.implementationRunId,
-      attempts,
-      originalReviewBase: checkpoint.originalReviewBase,
-      finalCandidate: candidate,
-      cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
-      implementerSession: checkpoint.implementerSession,
-      workspace: checkpoint.workspace,
-      acceptedDebt,
-    });
-    const handoffPath = ctx.writeHandoff(handoff);
-    ctx.writeSummary(
-      `# Factory Implementation Review\n\n- Status: review-complete\n- Candidate: ${candidate.ref}\n`,
-    );
     appendImplementationReviewCompletedEvent({
       factoryStateRoot: ctx.factoryStore.factoryStateRoot,
       workItem: ctx.workItem,
@@ -1606,10 +1733,11 @@ function failUnexpectedReview(
     summary: pointer(ctx.runId, "summary.md"),
     ...(partial.recovery
       ? { partialRecovery: partial.recovery }
-      : checkpoint.partialRecovery
+      : !partial.failure && checkpoint.partialRecovery
         ? { partialRecovery: checkpoint.partialRecovery }
         : {}),
     ...(partial.failurePointer ? { recovery: partial.failurePointer } : {}),
+    ...(partial.failure ? { clearPartialRecovery: true } : {}),
     execution: reviewExecution(ctx),
   });
   return ctx.export({
@@ -1684,14 +1812,6 @@ function captureUnexpectedPartialRecovery(
   } finally {
     if (lease) releaseFactoryWorkspaceWriterLease({ handle: lease });
   }
-}
-
-function emptyReviewRoles(): NormalizedFactoryImplementationReview["roles"] {
-  return {
-    implementation: { verdict: "blocked", summary: "Unavailable", findings: [] },
-    quality: { verdict: "blocked", summary: "Unavailable", findings: [] },
-    simplify: { verdict: "blocked", summary: "Unavailable", findings: [] },
-  };
 }
 
 function classifyUnexpectedReviewError(error: unknown): ReviewFailureClassification {

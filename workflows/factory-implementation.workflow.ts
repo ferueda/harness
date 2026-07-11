@@ -290,6 +290,8 @@ async function runLive(
       workspaceStatus,
       diff: reviewHead.diffPatch,
       changeReviewHandoff,
+      ...(boundaryBefore ? { writerBoundaryBefore: boundaryBefore } : {}),
+      ...(boundaryAfter ? { writerBoundaryAfter: boundaryAfter } : {}),
     });
 
     const meta = ctx.export({

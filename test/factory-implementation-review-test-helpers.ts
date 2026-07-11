@@ -107,7 +107,9 @@ export type ReviewFixture = {
   leaseDataHome: string;
 };
 
-export function createReviewFixture(): ReviewFixture {
+export function createReviewFixture(
+  input: { implementerSession?: AgentSessionRef } = {},
+): ReviewFixture {
   const workspace = createGitWorkspace();
   const leaseDataHome = mkdtempSync(join(tmpdir(), "harness-factory-review-data-"));
   const store = resolveFactoryStore({
@@ -116,6 +118,7 @@ export function createReviewFixture(): ReviewFixture {
     env: { ...process.env, XDG_DATA_HOME: leaseDataHome },
   });
   const workItem = REVIEW_WORK_ITEM;
+  const implementerSession = input.implementerSession ?? IMPLEMENTER_SESSION;
   const workItemKey = deriveFactoryWorkItemKey(workItem);
   const implementationRunId = "implementation-run-1";
   const implementationRunDir = join(store.factoryRunsDir, implementationRunId);
@@ -213,7 +216,7 @@ export function createReviewFixture(): ReviewFixture {
       reviewHead: reviewHead.ref,
       reviewCommitSha: reviewHead.commit,
       reviewTree: reviewHead.tree,
-      implementerSession: IMPLEMENTER_SESSION,
+      implementerSession,
       factoryStore,
       artifacts: {
         summary: "implementation/summary.md",
@@ -249,7 +252,7 @@ export function createReviewFixture(): ReviewFixture {
         reviewHead: reviewHead.reviewHead,
         reviewCommitSha: reviewHead.reviewCommitSha,
         candidateTree: reviewHead.treeSha,
-        session: IMPLEMENTER_SESSION,
+        session: implementerSession,
         workspace: workspaceProvenance,
         runRoots,
       },

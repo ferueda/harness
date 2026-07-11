@@ -150,13 +150,13 @@ export function resolveFactoryImplementationReviewInput(
       "stage",
     );
   }
-  if (implementationMeta.runDir !== implementationRunDir) {
+  if (!samePhysicalPath(String(implementationMeta.runDir ?? ""), implementationRunDir)) {
     throw new FactoryImplementationReviewInputError(
       "Implementation metadata runDir does not match its recorded durable run.",
       "provenance",
     );
   }
-  if (resolve(String(implementationMeta.workspace ?? "")) !== workspace) {
+  if (!samePhysicalPath(String(implementationMeta.workspace ?? ""), workspace)) {
     throw new FactoryImplementationReviewInputError(
       "Implementation metadata workspace does not match the requested workspace.",
       "provenance",
@@ -165,8 +165,8 @@ export function resolveFactoryImplementationReviewInput(
   const storeMeta = implementationMeta.factoryStore;
   if (
     !isRecord(storeMeta) ||
-    storeMeta.factoryRunsDir !== checkpoint.runRoots.factoryRunsDir ||
-    storeMeta.reviewRunsDir !== checkpoint.runRoots.reviewRunsDir
+    !samePhysicalPath(String(storeMeta.factoryRunsDir ?? ""), checkpoint.runRoots.factoryRunsDir) ||
+    !samePhysicalPath(String(storeMeta.reviewRunsDir ?? ""), checkpoint.runRoots.reviewRunsDir)
   ) {
     throw new FactoryImplementationReviewInputError(
       "Implementation metadata store provenance does not match the lifecycle checkpoint.",
@@ -174,8 +174,8 @@ export function resolveFactoryImplementationReviewInput(
     );
   }
   if (
-    storeMeta.storeRoot !== storeResolution.storeRoot ||
-    storeMeta.factoryStateRoot !== storeResolution.factoryStateRoot ||
+    !samePhysicalPath(String(storeMeta.storeRoot ?? ""), storeResolution.storeRoot) ||
+    !samePhysicalPath(String(storeMeta.factoryStateRoot ?? ""), storeResolution.factoryStateRoot) ||
     storeMeta.projectId !== storeResolution.projectId
   ) {
     throw new FactoryImplementationReviewInputError(
@@ -422,8 +422,10 @@ function validateCheckpointProvenance(input: {
     ? implementationMeta.factoryStore
     : {};
   if (
-    resolve(checkpoint.runRoots.factoryRunsDir) !==
-    resolve(String(implementationStore.factoryRunsDir))
+    !samePhysicalPath(
+      checkpoint.runRoots.factoryRunsDir,
+      String(implementationStore.factoryRunsDir),
+    )
   ) {
     throw new FactoryImplementationReviewInputError(
       "Review checkpoint factory run root does not match implementation provenance.",
@@ -431,8 +433,7 @@ function validateCheckpointProvenance(input: {
     );
   }
   if (
-    resolve(checkpoint.runRoots.reviewRunsDir) !==
-    resolve(String(implementationStore.reviewRunsDir))
+    !samePhysicalPath(checkpoint.runRoots.reviewRunsDir, String(implementationStore.reviewRunsDir))
   ) {
     throw new FactoryImplementationReviewInputError(
       "Review checkpoint review run root does not match implementation provenance.",
@@ -493,6 +494,14 @@ function validateCheckpointProvenance(input: {
         "provenance",
       );
     }
+  }
+}
+
+function samePhysicalPath(left: string, right: string): boolean {
+  try {
+    return realpathSync(resolve(left)) === realpathSync(resolve(right));
+  } catch {
+    return resolve(left) === resolve(right);
   }
 }
 

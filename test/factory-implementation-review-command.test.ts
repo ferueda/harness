@@ -139,20 +139,30 @@ test("review CLI keeps a partial ready-for-human checkpoint terminal", async () 
   const first = await runImplementationReview(createReviewContext(fixture, firstProvider));
   expect(first.status).toBe("ready-for-human");
 
-  await expect(
-    runFactoryImplementationReviewCommand(
-      {
-        workspace: fixture.workspace,
-        linearIssue: "ENG-123",
-        resume: true,
-        factoryStoreRoot: fixture.store.storeRoot,
-        factoryStoreProjectId: fixture.store.projectId,
-        maxRuntimeMs: 1_000,
-        verbose: false,
-      },
-      { defaultMaxRuntimeMs: 1_000, positiveNumber: Number },
-    ),
-  ).rejects.toThrow("Factory review is terminal at ready-for-human");
+  const result = await runFactoryImplementationReviewCommand(
+    {
+      workspace: fixture.workspace,
+      linearIssue: "ENG-123",
+      resume: true,
+      factoryStoreRoot: fixture.store.storeRoot,
+      factoryStoreProjectId: fixture.store.projectId,
+      maxRuntimeMs: 1_000,
+      verbose: false,
+    },
+    { defaultMaxRuntimeMs: 1_000, positiveNumber: Number },
+  );
+
+  expect(result).toMatchObject({
+    workflow: "factory-implementation-review",
+    status: "rejected",
+    runDir: expect.stringContaining("implementation-review-"),
+    error: expect.stringContaining("Factory review is terminal at ready-for-human"),
+    artifacts: {
+      meta: "meta.json",
+      rejection: "attempt-rejected.json",
+      summary: "summary.md",
+    },
+  });
 });
 
 test("review command records an idempotent terminal attempt", async () => {

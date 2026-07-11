@@ -141,9 +141,11 @@ export function factoryImplementationAttempt(
 
 function implementationAttemptForMetadata(
   metadata: FactoryWorkItemMetadata,
+  implementationFailedStatus = "Implementation Failed",
 ): FactoryImplementationAttempt {
   return metadata.factoryStage === "implementation-failed" &&
-    metadata.linearStartState !== "not-started"
+    (metadata.linearStartState !== "not-started" ||
+      sameStatus(metadata.linearStatus, implementationFailedStatus))
     ? "retry"
     : "first";
 }
@@ -160,7 +162,7 @@ function assertLinearProjection(
         : "Linear implementation projection statuses are required for Linear implementation input.",
     );
   }
-  const attempt = implementationAttemptForMetadata(metadata);
+  const attempt = implementationAttemptForMetadata(metadata, projection.implementationFailed);
   if (attempt === "retry" && projection.mode !== "apply") {
     throw new FactoryImplementationInputError("Linear implementation retries require --apply.");
   }

@@ -370,7 +370,9 @@ test("mixed non-blocking declines remain accepted debt", async () => {
 });
 
 test("incompatible implementer sessions become ready-for-human without invocation", async () => {
-  const fixture = createReviewFixture();
+  const fixture = createReviewFixture({
+    implementerSession: { provider: "cursor", id: "cursor-session" },
+  });
   const provider = scriptedProvider({
     workspace: fixture.workspace,
     reviews: [NEEDS_CHANGES_REVIEW],
@@ -379,10 +381,6 @@ test("incompatible implementer sessions become ready-for-human without invocatio
     createReviewContext(
       {
         ...fixture,
-        checkpoint: {
-          ...fixture.checkpoint,
-          implementerSession: { provider: "cursor", id: "cursor-session" },
-        },
       },
       provider,
     ),

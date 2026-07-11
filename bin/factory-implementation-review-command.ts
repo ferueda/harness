@@ -3,12 +3,12 @@ import {
   factoryExecutionProvenance,
   factoryLifecycleExecutionProvenance,
   resolveFactoryStore,
+  factoryStoreMetadata,
   type FactoryStoreMeta,
   type FactoryStoreResolution,
 } from "../lib/factory-store.ts";
 import { canonicalizeFactoryWorkspace } from "../lib/factory-locks.ts";
 import { dirname, join } from "node:path";
-import { writeFileSync } from "node:fs";
 import { deriveFactoryWorkItemKey, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import {
   allocateFactoryRun,
@@ -33,6 +33,7 @@ import {
 import { appendImplementationReviewUnresolvedEvent } from "../lib/factory-lifecycle-writes.ts";
 import {
   createFactoryImplementationReviewRunContext,
+  writeFactoryReviewRunFile,
   type FactoryImplementationReviewLegacyRunMeta,
   type FactoryImplementationReviewRunContext,
   type FactoryImplementationReviewRunMeta,
@@ -63,6 +64,20 @@ export type FactoryImplementationReviewCommandConfig = {
   implementationReviewRunner?: (
     ctx: FactoryImplementationReviewRunContext,
   ) => Promise<FactoryImplementationReviewRunMeta>;
+};
+
+export type FactoryImplementationReviewRejectedRunMeta = {
+  runId: string;
+  workflow: "factory-implementation-review";
+  status: "rejected";
+  workspace: string;
+  runDir: string;
+  implementationRunId?: string;
+  factoryStore: FactoryStoreMeta;
+  summaryPath: string;
+  metaPath: string;
+  error: string;
+  artifacts: Record<string, string>;
 };
 
 function printRejectedReview(error: unknown): void {
@@ -128,7 +143,11 @@ export function addFactoryImplementationReviewCommand(
 export async function runFactoryImplementationReviewCommand(
   options: FactoryImplementationReviewOptions,
   config: FactoryImplementationReviewCommandConfig,
-): Promise<FactoryImplementationReviewRunMeta | FactoryImplementationReviewLegacyRunMeta> {
+): Promise<
+  | FactoryImplementationReviewRunMeta
+  | FactoryImplementationReviewLegacyRunMeta
+  | FactoryImplementationReviewRejectedRunMeta
+> {
   if (Boolean(options.itemFile) === Boolean(options.linearIssue)) {
     throw new Error("Exactly one of --item-file or --linear-issue is required.");
   }
@@ -165,7 +184,7 @@ export async function runFactoryImplementationReviewCommand(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    writeReviewRejection(allocation, store, options, store.workspace, message);
+    const rejected = writeReviewRejection(allocation, store, options, store.workspace, message);
     if (
       error &&
       typeof error === "object" &&
@@ -180,7 +199,7 @@ export async function runFactoryImplementationReviewCommand(
       });
       return terminalizeLegacyReview(allocation, legacy);
     }
-    throw error;
+    return rejected;
   }
   if (resolved.factoryStore.reviewRunsDir !== store.reviewRunsDir) {
     releaseEmptyFactoryRunReservation({
@@ -232,15 +251,13 @@ export async function runFactoryImplementationReviewCommand(
     ? ["review-running", "review-failed"]
     : ["implementation-complete"];
   if (!allowed.includes(resolved.state.factoryStage ?? "")) {
-    writeReviewRejection(
+    return writeReviewRejection(
       allocation,
       resolved.factoryStore,
       options,
       store.workspace,
       `${options.resume ? "--resume" : "Initial review"} is not allowed from ${resolved.state.factoryStage ?? "uninitialized"}.`,
-    );
-    throw new Error(
-      `${options.resume ? "--resume" : "Initial review"} is not allowed from ${resolved.state.factoryStage ?? "uninitialized"}.`,
+      resolved.implementationRunId,
     );
   }
   let settings: ReturnType<typeof resolveFactoryImplementationSettings>;
@@ -252,14 +269,14 @@ export async function runFactoryImplementationReviewCommand(
         : {}),
     });
   } catch (error) {
-    writeReviewRejection(
+    return writeReviewRejection(
       allocation,
       resolved.factoryStore,
       options,
       store.workspace,
       error instanceof Error ? error.message : String(error),
+      resolved.implementationRunId,
     );
-    throw error;
   }
   const effectiveReviewLimit = options.resume
     ? resolved.checkpoint.effectiveReviewLimit
@@ -269,15 +286,13 @@ export async function runFactoryImplementationReviewCommand(
     (settings.maxReviewIterations !== resolved.checkpoint.effectiveReviewLimit.value ||
       settings.source !== resolved.checkpoint.effectiveReviewLimit.source)
   ) {
-    writeReviewRejection(
+    return writeReviewRejection(
       allocation,
       resolved.factoryStore,
       options,
       store.workspace,
       `Review limit provenance changed on resume: persisted ${JSON.stringify(resolved.checkpoint.effectiveReviewLimit)}, current ${JSON.stringify({ value: settings.maxReviewIterations, source: settings.source })}.`,
-    );
-    throw new Error(
-      `Review limit provenance changed on resume: persisted ${JSON.stringify(resolved.checkpoint.effectiveReviewLimit)}, current ${JSON.stringify({ value: settings.maxReviewIterations, source: settings.source })}.`,
+      resolved.implementationRunId,
     );
   }
   let reviewerRole: ReturnType<typeof resolveFactoryImplementationReviewer>;
@@ -290,14 +305,14 @@ export async function runFactoryImplementationReviewCommand(
       role: "implementer",
     });
   } catch (error) {
-    writeReviewRejection(
+    return writeReviewRejection(
       allocation,
       resolved.factoryStore,
       options,
       store.workspace,
       error instanceof Error ? error.message : String(error),
+      resolved.implementationRunId,
     );
-    throw error;
   }
   const checkpoint = {
     ...resolved.checkpoint,
@@ -327,18 +342,30 @@ export async function runFactoryImplementationReviewCommand(
       : {}),
     agentProviderFactory: config.implementationAgentProviderFactory ?? createAgentProvider,
   });
-  ctx.writeReservation();
+  try {
+    ctx.writeReservation();
+  } catch (error) {
+    return writeReviewRejection(
+      allocation,
+      resolved.factoryStore,
+      options,
+      resolved.workspace,
+      errorMessage(error),
+      resolved.implementationRunId,
+    );
+  }
   try {
     const runner = config.implementationReviewRunner ?? runReview;
     return await runner(ctx);
   } catch (error) {
-    ctx.writeArtifact("attempt-rejected.json", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    ctx.writeSummary(
-      `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${error instanceof Error ? error.message : String(error)}\n`,
+    return writeReviewRejection(
+      allocation,
+      resolved.factoryStore,
+      options,
+      resolved.workspace,
+      errorMessage(error),
+      resolved.implementationRunId,
     );
-    throw error;
   } finally {
     process.off("SIGINT", onReviewAbort);
     process.off("SIGTERM", onReviewAbort);
@@ -351,32 +378,38 @@ function writeReviewRejection(
   options: FactoryImplementationReviewOptions,
   workspace: string,
   message: string,
-): void {
-  writeFileSync(
-    join(allocation.runDir, "summary.md"),
-    `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${message}\n`,
-    "utf8",
-  );
-  writeFileSync(
-    join(allocation.runDir, "attempt-rejected.json"),
-    `${JSON.stringify(
+  implementationRunId?: string,
+): FactoryImplementationReviewRejectedRunMeta {
+  const factoryStore = "workspace" in store ? factoryStoreMetadata(store) : store;
+  const summaryPath = join(allocation.runDir, "summary.md");
+  const metaPath = join(allocation.runDir, "meta.json");
+  writeFactoryReviewRunFile({
+    runDir: allocation.runDir,
+    relativePath: "summary.md",
+    value: `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${message}\n`,
+  });
+  writeFactoryReviewRunFile({
+    runDir: allocation.runDir,
+    relativePath: "attempt-rejected.json",
+    value: `${JSON.stringify(
       {
         status: "rejected",
         runId: allocation.runId,
         reservationToken: allocation.reservationToken,
         identity: options.linearIssue ?? options.itemFile,
         workspace,
-        factoryStore: store,
+        ...(implementationRunId ? { implementationRunId } : {}),
+        factoryStore,
         error: message,
       },
       null,
       2,
     )}\n`,
-    "utf8",
-  );
-  writeFileSync(
-    join(allocation.runDir, "meta.json"),
-    `${JSON.stringify(
+  });
+  writeFactoryReviewRunFile({
+    runDir: allocation.runDir,
+    relativePath: "meta.json",
+    value: `${JSON.stringify(
       {
         runId: allocation.runId,
         workflow: "factory-implementation-review",
@@ -384,13 +417,27 @@ function writeReviewRejection(
         workspace,
         runDir: allocation.runDir,
         identity: options.linearIssue ?? options.itemFile,
+        ...(implementationRunId ? { implementationRunId } : {}),
+        factoryStore,
         error: message,
       },
       null,
       2,
     )}\n`,
-    "utf8",
-  );
+  });
+  return {
+    runId: allocation.runId,
+    workflow: "factory-implementation-review",
+    status: "rejected",
+    workspace,
+    runDir: allocation.runDir,
+    ...(implementationRunId ? { implementationRunId } : {}),
+    factoryStore,
+    summaryPath,
+    metaPath,
+    error: message,
+    artifacts: { summary: "summary.md", rejection: "attempt-rejected.json", meta: "meta.json" },
+  };
 }
 
 function writeReviewIdempotentMarker(
@@ -400,9 +447,10 @@ function writeReviewIdempotentMarker(
   workspace: string,
   resolved: ReturnType<typeof resolveFactoryImplementationReviewInput>,
 ): void {
-  writeFileSync(
-    join(allocation.runDir, "attempt-idempotent.json"),
-    `${JSON.stringify(
+  writeFactoryReviewRunFile({
+    runDir: allocation.runDir,
+    relativePath: "attempt-idempotent.json",
+    value: `${JSON.stringify(
       {
         status: "already-complete",
         workflow: "factory-implementation-review",
@@ -419,8 +467,7 @@ function writeReviewIdempotentMarker(
       null,
       2,
     )}\n`,
-    "utf8",
-  );
+  });
 }
 
 function writeReviewReservationManifest(
@@ -449,11 +496,12 @@ function writeReviewReservationManifest(
     factoryRunsDir: store.factoryRunsDir,
     reviewRunsDir: store.reviewRunsDir,
   };
-  writeFileSync(
-    join(allocation.runDir, "implementation-review-reservation.json"),
-    `${JSON.stringify(reservation, null, 2)}\n`,
-    { encoding: "utf8", flag: "wx" },
-  );
+  writeFactoryReviewRunFile({
+    runDir: allocation.runDir,
+    relativePath: "implementation-review-reservation.json",
+    value: `${JSON.stringify(reservation, null, 2)}\n`,
+    flag: "wx",
+  });
 }
 
 function terminalizeLegacyReview(
@@ -462,14 +510,15 @@ function terminalizeLegacyReview(
 ): FactoryImplementationReviewLegacyRunMeta {
   const message = `Legacy implementation is incomplete; missing ${legacy.missing.join(", ")}.`;
   const summaryPath = join(allocation.runDir, "summary.md");
-  writeFileSync(
-    summaryPath,
-    `# Factory Implementation Review\n\n- Status: ready-for-human\n- Reason: legacy-incomplete\n- Implementation run: ${legacy.implementationRunId}\n- Missing: ${legacy.missing.join(", ")}\n- Provider invocation: not run.\n`,
-    "utf8",
-  );
-  writeFileSync(
-    join(allocation.runDir, "attempt-rejected.json"),
-    `${JSON.stringify(
+  writeFactoryReviewRunFile({
+    runDir: allocation.runDir,
+    relativePath: "summary.md",
+    value: `# Factory Implementation Review\n\n- Status: ready-for-human\n- Reason: legacy-incomplete\n- Implementation run: ${legacy.implementationRunId}\n- Missing: ${legacy.missing.join(", ")}\n- Provider invocation: not run.\n`,
+  });
+  writeFactoryReviewRunFile({
+    runDir: allocation.runDir,
+    relativePath: "attempt-rejected.json",
+    value: `${JSON.stringify(
       {
         status: "rejected",
         reason: "legacy-incomplete",
@@ -481,8 +530,7 @@ function terminalizeLegacyReview(
       null,
       2,
     )}\n`,
-    "utf8",
-  );
+  });
   const summary = { root: "review" as const, runId: allocation.runId, path: "summary.md" };
   appendImplementationReviewUnresolvedEvent({
     workspace: legacy.workspace,
@@ -518,7 +566,11 @@ function terminalizeLegacyReview(
     error: message,
     artifacts: { summary: "summary.md", rejection: "attempt-rejected.json" },
   };
-  writeFileSync(meta.metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  writeFactoryReviewRunFile({
+    runDir: allocation.runDir,
+    relativePath: "meta.json",
+    value: `${JSON.stringify(meta, null, 2)}\n`,
+  });
   return meta;
 }
 

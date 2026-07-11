@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -621,6 +622,8 @@ function removeUnpublishedWorkspaceLease(path: string): void {
 export function releaseFactoryWorkspaceWriterLease(input: {
   handle: FactoryWorkspaceWriterLeaseHandle;
 }): void {
+  if (!existsSync(input.handle.path)) return;
+  assertWorkspaceLeaseEntrySafe(input.handle.path);
   const ownerPath = join(input.handle.path, "owner.json");
   if (!existsSync(ownerPath)) return;
   const current = readWorkspaceLeaseOwner(ownerPath);
@@ -636,6 +639,7 @@ export function inspectFactoryWorkspaceWriterLease(input: {
 }): FactoryWorkspaceWriterLeaseInspection | undefined {
   const { canonical, path } = factoryWorkspaceLeasePath(input);
   if (!existsSync(path)) return undefined;
+  assertWorkspaceLeaseEntrySafe(path);
   const ownerPath = join(path, "owner.json");
   const now = input.now ?? Date.now;
   if (!existsSync(ownerPath)) {
@@ -658,6 +662,19 @@ export function inspectFactoryWorkspaceWriterLease(input: {
       classification: "owner-invalid",
       warning:
         "Workspace writer lease owner.json is malformed; it is never reclaimed automatically.",
+    };
+  }
+  if (
+    owner.physicalGitRoot !== canonical.physicalGitRoot ||
+    owner.workspaceKey !== canonical.workspaceKey
+  ) {
+    return {
+      path,
+      physicalGitRoot: canonical.physicalGitRoot,
+      workspaceKey: canonical.workspaceKey,
+      stale: false,
+      classification: "owner-invalid",
+      warning: "Workspace writer lease owner provenance does not match the requested workspace.",
     };
   }
   const sameHost = owner.hostname === (input.hostname ?? hostname());
@@ -724,6 +741,7 @@ function removeMatchingWorkspaceLease(
   path: string,
   owner: FactoryWorkspaceWriterLeaseOwner,
 ): boolean {
+  assertWorkspaceLeaseEntrySafe(path);
   const ownerPath = join(path, "owner.json");
   const current = readWorkspaceLeaseOwner(ownerPath);
   if (!current || current.token !== owner.token) return false;
@@ -753,6 +771,39 @@ function removeMatchingWorkspaceLease(
     return true;
   } catch {
     return false;
+  }
+}
+
+function assertWorkspaceLeaseEntrySafe(path: string): void {
+  let entry: ReturnType<typeof lstatSync>;
+  try {
+    entry = lstatSync(path);
+  } catch (error) {
+    throw new FactoryWorkspaceCanonicalizationError(
+      `Cannot inspect factory workspace lease entry: ${path}`,
+      { cause: error },
+    );
+  }
+  if (entry.isSymbolicLink() || !entry.isDirectory()) {
+    throw new FactoryWorkspaceCanonicalizationError(
+      `Factory workspace lease entry is symlinked or not a directory: ${path}`,
+    );
+  }
+  const ownerPath = join(path, "owner.json");
+  if (!existsSync(ownerPath)) return;
+  let owner: ReturnType<typeof lstatSync>;
+  try {
+    owner = lstatSync(ownerPath);
+  } catch (error) {
+    throw new FactoryWorkspaceCanonicalizationError(
+      `Cannot inspect factory workspace lease owner: ${ownerPath}`,
+      { cause: error },
+    );
+  }
+  if (owner.isSymbolicLink() || !owner.isFile()) {
+    throw new FactoryWorkspaceCanonicalizationError(
+      `Factory workspace lease owner is symlinked or not a regular file: ${ownerPath}`,
+    );
   }
 }
 

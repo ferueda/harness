@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  rmSync,
   readFileSync,
   symlinkSync,
   writeFileSync,
@@ -41,6 +42,7 @@ import {
 import {
   acquireFactoryWorkspaceWriterLease,
   inspectFactoryWorkspaceWriterLease,
+  releaseFactoryWorkspaceWriterLease,
 } from "../lib/factory-locks.ts";
 
 test("run reservation cleanup requires the persisted token", () => {
@@ -191,4 +193,28 @@ test("writer lease removes a newly created lock when owner publication fails", (
   fsMocks.writeFileSync.mockImplementation(fsMocks.realWriteFileSync!);
 
   expect(inspectFactoryWorkspaceWriterLease({ workspace, env })).toBeUndefined();
+});
+
+test("writer lease inspection and release reject symlinked lease entries", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-lease-symlink-workspace-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  const env = {
+    ...process.env,
+    XDG_DATA_HOME: mkdtempSync(join(tmpdir(), "harness-factory-lease-symlink-data-")),
+  };
+  const handle = acquireFactoryWorkspaceWriterLease({
+    workspace,
+    factoryProjectId: "test-project",
+    storeRoot: mkdtempSync(join(tmpdir(), "harness-factory-lease-symlink-store-")),
+    workItemKey: "linear:ENG-123",
+    runId: "implementation-test",
+    operation: "implementation",
+    env,
+  });
+  const external = mkdtempSync(join(tmpdir(), "harness-factory-lease-symlink-target-"));
+  rmSync(handle.path, { recursive: true, force: true });
+  symlinkSync(external, handle.path, "dir");
+
+  expect(() => inspectFactoryWorkspaceWriterLease({ workspace, env })).toThrow(/symlinked/);
+  expect(() => releaseFactoryWorkspaceWriterLease({ handle })).toThrow(/symlinked/);
 });
