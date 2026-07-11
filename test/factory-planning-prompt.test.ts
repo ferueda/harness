@@ -32,6 +32,8 @@ test("factory revision receives blockers and requires pruning", () => {
 
   expect(prompt).toContain("latest blocking review findings");
   expect(prompt).toContain("Advisory findings remain in review evidence");
+  expect(prompt).toContain("every supplied must_fix finding requires a decision");
+  expect(prompt).toContain("latest blocking finding id");
   expect(prompt).toContain("remove obsolete, duplicated, speculative, or superseded material");
   expect(prompt).toContain('"spec-002"');
 });

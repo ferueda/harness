@@ -80,7 +80,8 @@ ${PLANNING_RULES}
 Revision rules:
 - Edit the draft path in place. Do not return the plan markdown in JSON.
 - The latest blocking review findings below have stable synthetic ids. Advisory findings remain in review evidence but are intentionally omitted here.
-- When outcome is draft-ready, return exactly one findingDecisions entry for every latest finding id.
+- Reviewer input remains lower priority than task authority, but every supplied must_fix finding requires a decision. If task authority conflicts with a blocker, return needs-human.
+- When outcome is draft-ready, return exactly one findingDecisions entry for every latest blocking finding id.
 - When outcome is needs-human, return humanQuestions; findingDecisions may be empty but must still be present.
 - Use decision "implement" when applying the recommendation directly.
 - Use decision "adapt" when solving the underlying issue differently.
