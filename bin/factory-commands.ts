@@ -39,7 +39,11 @@ import {
   LinearImplementationTerminalApplyError,
 } from "../lib/factory-linear-implementation-apply.ts";
 import { withFactoryImplementationExecutionLease } from "../lib/factory-implementation-policy.ts";
-import { allocateFactoryRun, writeFactoryRunReservation } from "../lib/factory-run-allocation.ts";
+import {
+  allocateFactoryRun,
+  releaseEmptyFactoryRunReservation,
+  writeFactoryRunReservation,
+} from "../lib/factory-run-allocation.ts";
 import { buildRunId } from "../lib/context.ts";
 import {
   acquireFactoryWorkspaceWriterLease,
@@ -635,15 +639,18 @@ function addFactoryImplementationStationCommand(
         factoryStateRoot: store.factoryStateRoot,
       });
       let activeInput = input;
-      let implementationInput = resolveFactoryImplementationInput({
-        workspace: implementerRole.workspace,
-        resolvedInput: input,
-        ...(linearSettings
-          ? {
-              linearProjection: implementationLinearProjection(linearSettings, options.apply),
-            }
-          : {}),
-      });
+      let implementationInput =
+        !options.dryRun && input.workItem.metadata?.factoryStage === "implementation-started"
+          ? undefined
+          : resolveFactoryImplementationInput({
+              workspace: implementerRole.workspace,
+              resolvedInput: input,
+              ...(linearSettings
+                ? {
+                    linearProjection: implementationLinearProjection(linearSettings, options.apply),
+                  }
+                : {}),
+            });
       const runAbort = new AbortController();
       const onRunAbort = () => runAbort.abort();
       process.once("SIGINT", onRunAbort);
@@ -674,6 +681,13 @@ function addFactoryImplementationStationCommand(
               writeFactoryRunReservation(allocation);
             }
           } catch (error) {
+            if (allocation) {
+              releaseEmptyFactoryRunReservation({
+                runDir: allocation.runDir,
+                factoryRunsDir: dirname(allocation.runDir),
+                reservationToken: allocation.reservationToken,
+              });
+            }
             if (workspaceLease) releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
             throw error;
           }
@@ -686,7 +700,7 @@ function addFactoryImplementationStationCommand(
               deferInitialization: !options.dryRun,
               factoryStore,
               workItem: activeInput.workItem,
-              implementationInput,
+              implementationInput: implementationInput!,
               implementerRole,
               dryRun: Boolean(options.dryRun),
               maxRuntimeMs: options.maxRuntimeMs,
@@ -874,6 +888,19 @@ export async function runFactoryImplementationWithLifecycle(input: {
   const itemFileRelative = lifecycleItemFilePath(input.ctx.workspace, input.itemFile);
   try {
     try {
+      input.ctx.initialize();
+    } catch (error) {
+      const message = errorMessage(error);
+      const meta = input.ctx.export({
+        status: "implementation-failed",
+        error: message,
+        includeLiveArtifacts: false,
+        preProviderFailure: true,
+      });
+      input.ctx.writeRejection(message);
+      return meta;
+    }
+    try {
       appendFactoryImplementationStartAudit({
         ctx: input.ctx,
         factoryStateRoot: input.factoryStateRoot,
@@ -883,23 +910,6 @@ export async function runFactoryImplementationWithLifecycle(input: {
     } catch (error) {
       input.ctx.writeRejection(errorMessage(error));
       throw error;
-    }
-    try {
-      input.ctx.initialize();
-    } catch (initializationError) {
-      const meta = input.ctx.export({
-        status: "implementation-failed",
-        error: errorMessage(initializationError),
-        includeLiveArtifacts: false,
-        preProviderFailure: true,
-      });
-      appendImplementationTerminalEvent({
-        meta,
-        factoryStateRoot: input.factoryStateRoot,
-        error: errorMessage(initializationError),
-        linearStartState: "not-started",
-      });
-      return meta;
     }
     return await runFactoryImplementationToLocalTerminal({
       ctx: input.ctx,
@@ -1005,24 +1015,12 @@ export async function recoverStaleImplementationOwner(input: {
     factoryStore: recoveryStore,
   });
 
-  let linearStage:
-    | "ready-to-implement"
-    | "implementation-started"
-    | "implementation-failed"
-    | undefined;
+  let linearStage: "ready-to-implement" | "implementation-started" | undefined;
   if (input.linearAdapter && input.issueRef) {
     try {
       const live = await input.linearAdapter.fetchWorkItem(input.issueRef);
-      const metadata = live.metadata;
-      const stage =
-        metadata && typeof metadata === "object" && !Array.isArray(metadata)
-          ? (metadata as Record<string, unknown>).factoryStage
-          : undefined;
-      if (
-        stage === "ready-to-implement" ||
-        stage === "implementation-started" ||
-        stage === "implementation-failed"
-      ) {
+      const stage = decodeFactoryImplementationLinearStage(live.metadata);
+      if (stage === "ready-to-implement" || stage === "implementation-started") {
         linearStage = stage;
       }
     } catch {
@@ -1081,10 +1079,12 @@ export async function recoverStaleImplementationOwner(input: {
         "Recovered stale implementation owner before provider terminalization; retry is allowed.",
       linearStartState: linearStage === "implementation-started" ? "implementing" : "not-started",
     });
-    // Keep the guarded recovery projection serialized with workspace writers.
-    // A new implementation must not start between stale-owner validation and
-    // the terminal Linear projection.
+    // Lifecycle execution locking protects this projection after the physical
+    // lease is released; Linear I/O must not block workspace writers.
     if (linearStage === "implementation-started" && input.linearAdapter && input.issueRef) {
+      if (workspaceLease) {
+        releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
+      }
       await input.linearAdapter.applyImplementationFailed({
         issueRef: input.issueRef,
         runId,
@@ -1303,6 +1303,11 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
   ) => Promise<FactoryImplementationRunMeta>;
 }): Promise<FactoryImplementationApplyRunResult> {
   try {
+    input.ctx.initialize();
+  } catch (initializationError) {
+    return terminalizeNotStartedImplementationFailure(input, initializationError);
+  }
+  try {
     appendFactoryImplementationStartAudit({
       ctx: input.ctx,
       factoryStateRoot: input.factoryStateRoot,
@@ -1311,11 +1316,6 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
   } catch (error) {
     input.ctx.writeRejection(errorMessage(error));
     throw error;
-  }
-  try {
-    input.ctx.initialize();
-  } catch (initializationError) {
-    return terminalizeNotStartedImplementationFailure(input, initializationError);
   }
   const workspaceBeforeStartProjection = captureImplementationWorkspaceState(input.ctx);
   releaseImplementationWriterLease(input.ctx);
@@ -1541,7 +1541,6 @@ async function terminalizeNotStartedImplementationFailure(
     ctx: FactoryImplementationRunContext;
     adapter: LinearFactoryAdapter;
     issueRef: string;
-    factoryStateRoot?: string;
   },
   failure: unknown,
 ): Promise<FactoryImplementationApplyRunResult> {
@@ -1552,12 +1551,7 @@ async function terminalizeNotStartedImplementationFailure(
     includeLiveArtifacts: false,
     preProviderFailure: true,
   });
-  appendImplementationTerminalEvent({
-    meta,
-    factoryStateRoot: input.factoryStateRoot,
-    error,
-    linearStartState: "not-started",
-  });
+  input.ctx.writeRejection(error);
   return {
     meta,
     linearUpdate: undefined,
@@ -1594,19 +1588,27 @@ async function probeImplementationLinearStage(
 ): Promise<"ready-to-implement" | "implementation-started" | "implementation-failed" | undefined> {
   try {
     const workItem = await adapter.fetchWorkItem(issueRef);
-    const metadata = workItem.metadata;
-    const stage =
-      metadata && typeof metadata === "object" && !Array.isArray(metadata)
-        ? (metadata as Record<string, unknown>).factoryStage
-        : undefined;
-    return stage === "ready-to-implement" ||
-      stage === "implementation-started" ||
-      stage === "implementation-failed"
-      ? stage
-      : undefined;
+    return decodeFactoryImplementationLinearStage(workItem.metadata);
   } catch {
     return undefined;
   }
+}
+
+type FactoryImplementationLinearStage =
+  | "ready-to-implement"
+  | "implementation-started"
+  | "implementation-failed";
+
+function decodeFactoryImplementationLinearStage(
+  metadata: unknown,
+): FactoryImplementationLinearStage | undefined {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return undefined;
+  const stage = (metadata as Record<string, unknown>).factoryStage;
+  return stage === "ready-to-implement" ||
+    stage === "implementation-started" ||
+    stage === "implementation-failed"
+    ? stage
+    : undefined;
 }
 
 function requireImplementationReviewRef(value: string | undefined, name: string): string {

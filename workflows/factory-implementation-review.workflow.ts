@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -27,7 +28,6 @@ import {
   validateFactoryCandidateTuple,
   createFactoryPartialEvidenceCandidate,
   createFactoryRemediationCandidate,
-  deleteFactoryCandidateRefIfMatches,
   FactoryReviewHeadError,
 } from "../lib/factory-review-head.ts";
 import { resolveFactoryArtifactPointer } from "../lib/factory-implementation-review-input.ts";
@@ -733,10 +733,29 @@ function restorePartialRecovery(
       throw new Error("Partial recovery artifacts do not match its owning attempt/index.");
     }
   }
+  const statusPath = resolveFactoryArtifactPointer({
+    pointer: partial.status,
+    runRoots: checkpoint.runRoots,
+  });
+  const patchPath = resolveFactoryArtifactPointer({
+    pointer: partial.patch,
+    runRoots: checkpoint.runRoots,
+  });
   const recoveryPath = resolveFactoryArtifactPointer({
     pointer: partial.recovery,
     runRoots: checkpoint.runRoots,
   });
+  const status = readJsonArtifact(statusPath, "Partial recovery workspace status");
+  const patch = readFileSync(patchPath, "utf8");
+  if (
+    !isRecord(status) ||
+    !isWorkspacePatchCapture(status.before) ||
+    !isWorkspacePatchCapture(status.after) ||
+    status.after.patch !== patch ||
+    status.after.patchSha256 !== sha256(patch)
+  ) {
+    throw new Error("Partial recovery workspace status and patch artifacts do not match.");
+  }
   const manifest = JSON.parse(readFileSync(recoveryPath, "utf8")) as unknown;
   if (!isRecord(manifest) || !isRecord(manifest.reviews)) {
     throw new Error("Partial recovery manifest is missing immutable reviewer outputs.");
@@ -1149,28 +1168,13 @@ function capturePartial(
     };
   } catch (error) {
     const failure = errorMessage(error);
-    let cleanupError: unknown;
-    if (partial) {
-      try {
-        deleteFactoryCandidateRefIfMatches({
-          workspace: ctx.workspace,
-          ref: partial.ref,
-          commit: partial.commit,
-        });
-      } catch (error) {
-        cleanupError = error;
-      }
-    }
-    const failureText = cleanupError
-      ? `${failure}; partial ref cleanup failed: ${errorMessage(cleanupError)}`
-      : failure;
     let failurePointer: ReturnType<typeof pointer> | undefined;
     try {
       ctx.writeArtifact(`iterations/${reviewIndex}/partial-capture-failure.json`, {
-        error: failureText,
+        error: failure,
         reason,
         ...(partial ? { partialCandidate: candidateTuple(partial) } : {}),
-        ...(cleanupError ? { cleanupError: errorMessage(cleanupError) } : {}),
+        ...(partial ? { partialRefPreserved: true } : {}),
         findings,
         reviews,
       });
@@ -1178,7 +1182,7 @@ function capturePartial(
     } catch {
       // Preserve the original capture error when the store itself is unavailable.
     }
-    return { failure: failureText, ...(failurePointer ? { failurePointer } : {}) };
+    return { failure, ...(failurePointer ? { failurePointer } : {}) };
   }
 }
 
@@ -1283,6 +1287,30 @@ function candidateTuple(candidate: {
   tree: string;
 }): ReviewState["approvedCandidate"] {
   return { ref: candidate.ref, commit: candidate.commit, tree: candidate.tree };
+}
+
+function readJsonArtifact(path: string, label: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(`${label} is missing or invalid.`, { cause: error });
+  }
+}
+
+function isWorkspacePatchCapture(value: unknown): value is FactoryWorkspacePatchCapture {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.porcelain === "string" &&
+    typeof value.patch === "string" &&
+    typeof value.patchSha256 === "string" &&
+    Array.isArray(value.changedFiles) &&
+    value.changedFiles.every((file) => typeof file === "string") &&
+    typeof value.patchTruncated === "boolean"
+  );
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function readCandidateTuple(value: unknown): ReviewState["approvedCandidate"] {

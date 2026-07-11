@@ -1,14 +1,10 @@
-import { existsSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
 import type { FactoryWorkItem } from "./factory-schemas.ts";
 import type { WorkflowEventSink } from "./workflow-events.ts";
-import {
-  createCompositeEventSink,
-  createFileEventSink,
-  WORKFLOW_EVENTS_FILE,
-} from "./workflow-events.ts";
+import { createCompositeEventSink, createFileEventSink } from "./workflow-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import type { FactoryStoreMeta } from "./factory-store.ts";
 import type {
@@ -142,7 +138,6 @@ function createFactoryImplementationReviewRunContextInternal(
   let provider: Agent | undefined;
   let reviewer: Agent | undefined;
   if (!existsSync(runDir)) throw new Error(`Allocated Factory review run is missing: ${runDir}`);
-  writeFileSync(join(runDir, WORKFLOW_EVENTS_FILE), "", { flag: "a" });
 
   const writeText = (relativePath: string, value: string): string => {
     const path = safeRunPath(runDir, relativePath);
@@ -154,21 +149,35 @@ function createFactoryImplementationReviewRunContextInternal(
   const writeArtifact = (relativePath: string, value: unknown): string =>
     writeText(relativePath, `${JSON.stringify(value, null, 2)}\n`);
   const writeReservation = (): void => {
-    const reservation = {
+    const reservationPath = join(runDir, "implementation-review-reservation.json");
+    let reservation: unknown;
+    try {
+      reservation = JSON.parse(readFileSync(reservationPath, "utf8")) as unknown;
+    } catch (error) {
+      throw new Error("Factory review reservation evidence is missing or unreadable.", {
+        cause: error,
+      });
+    }
+    if (!isRecord(reservation)) {
+      throw new Error("Factory review reservation evidence is invalid.");
+    }
+    const expected = {
       station: "implementation-review",
       workItemKey: deriveFactoryWorkItemKey(options.workItem),
       runId: options.allocation.runId,
       reservationToken: options.allocation.reservationToken,
-      workspace: workspace,
+      workspace,
       physicalWorkspace: options.checkpoint.workspace.physicalGitRoot,
+      workspaceKey: options.checkpoint.workspace.workspaceKey,
       storeRoot: options.factoryStore.storeRoot,
       factoryProjectId: options.factoryStore.projectId,
       factoryStateRoot: options.factoryStore.factoryStateRoot,
       factoryRunsDir: options.factoryStore.factoryRunsDir,
       reviewRunsDir: options.factoryStore.reviewRunsDir,
-      attempt: "review",
     };
-    writeArtifact("implementation-review-reservation.json", reservation);
+    if (Object.entries(expected).some(([key, value]) => reservation[key] !== value)) {
+      throw new Error("Factory review reservation evidence does not match the claimed context.");
+    }
   };
   const writeIdentityContext = (): void => {
     writeArtifact("context/work-item.json", options.workItem);
@@ -295,4 +304,8 @@ function safeRunPath(runDir: string, relativePath: string): string {
     current = join(current, "..");
   }
   return join(runDir, normalized);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

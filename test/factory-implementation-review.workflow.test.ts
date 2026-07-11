@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { loadFactoryLifecycleState, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
@@ -55,6 +55,25 @@ const MIXED_REVIEW = {
     },
   ],
 } satisfies ReviewOutput;
+
+async function createPartialReview() {
+  const fixture = createReviewFixture();
+  const provider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [NEEDS_CHANGES_REVIEW],
+    remediation: { edit: "partial artifact validation\n", fail: true },
+  });
+  const first = await runImplementationReview(createReviewContext(fixture, provider));
+  const state = loadFactoryLifecycleState({
+    factoryStateRoot: fixture.store.factoryStateRoot,
+    workItemKey: "linear:ENG-123",
+    workspace: fixture.workspace,
+  });
+  if (!state?.implementationReviewCheckpoint?.partialRecovery) {
+    throw new Error("Expected partial review recovery evidence");
+  }
+  return { fixture, first, checkpoint: state.implementationReviewCheckpoint };
+}
 
 test("passes after one complete three-role review and writes a PR-ready handoff", async () => {
   const fixture = createReviewFixture();
@@ -164,6 +183,54 @@ test("provider failure after edits persists a partial tuple and resume restores 
   expect(
     inspectFactoryWorkspaceWriterLease({ workspace: fixture.workspace })?.owner,
   ).toBeUndefined();
+});
+
+test("invalid partial status evidence becomes non-resumable human recovery", async () => {
+  const { fixture, first, checkpoint } = await createPartialReview();
+  rmSync(join(first.runDir, "iterations/1/workspace-status.json"));
+
+  const resumed = await runImplementationReview(
+    createReviewContext(
+      { ...fixture, checkpoint },
+      scriptedProvider({
+        workspace: fixture.workspace,
+        reviews: [PASS_REVIEW],
+      }),
+    ),
+  );
+
+  expect(resumed.status).toBe("review-failed");
+  const state = loadFactoryLifecycleState({
+    factoryStateRoot: fixture.store.factoryStateRoot,
+    workItemKey: "linear:ENG-123",
+    workspace: fixture.workspace,
+  });
+  expect(state?.factoryStage).toBe("ready-for-human");
+  expect(state?.implementationReviewCheckpoint?.partialRecovery).toBeUndefined();
+});
+
+test("tampered partial patch evidence becomes non-resumable human recovery", async () => {
+  const { fixture, first, checkpoint } = await createPartialReview();
+  writeFileSync(join(first.runDir, "iterations/1/diff.patch"), "tampered\n", "utf8");
+
+  const resumed = await runImplementationReview(
+    createReviewContext(
+      { ...fixture, checkpoint },
+      scriptedProvider({
+        workspace: fixture.workspace,
+        reviews: [PASS_REVIEW],
+      }),
+    ),
+  );
+
+  expect(resumed.status).toBe("review-failed");
+  const state = loadFactoryLifecycleState({
+    factoryStateRoot: fixture.store.factoryStateRoot,
+    workItemKey: "linear:ENG-123",
+    workspace: fixture.workspace,
+  });
+  expect(state?.factoryStage).toBe("ready-for-human");
+  expect(state?.implementationReviewCheckpoint?.partialRecovery).toBeUndefined();
 });
 
 test("resumed partial remediation reconstructs accepted debt from its source review", async () => {

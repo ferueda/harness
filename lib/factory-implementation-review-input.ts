@@ -156,13 +156,6 @@ export function resolveFactoryImplementationReviewInput(
       "provenance",
     );
   }
-  const implementationArtifacts = implementationMeta.artifacts as Record<string, unknown>;
-  for (const [label, artifact] of [
-    ["implementation diff", implementationArtifacts.diff],
-    ["implementation handoff", implementationArtifacts.changeReviewHandoff],
-  ] as const) {
-    validateRunArtifactPath(implementationRunDir, String(artifact), label);
-  }
   if (resolve(String(implementationMeta.workspace ?? "")) !== workspace) {
     throw new FactoryImplementationReviewInputError(
       "Implementation metadata workspace does not match the requested workspace.",

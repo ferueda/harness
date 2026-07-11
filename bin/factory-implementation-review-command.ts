@@ -8,7 +8,7 @@ import {
 } from "../lib/factory-store.ts";
 import { dirname, join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
+import { deriveFactoryWorkItemKey, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import {
   allocateFactoryRun,
   releaseEmptyFactoryRunReservation,
@@ -20,6 +20,7 @@ import {
   resolveFactoryRoleAgent,
   parsePositiveIntegerOption,
 } from "../lib/config.ts";
+import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 import {
   resolveFactoryArtifactPointer,
@@ -147,7 +148,16 @@ export async function runFactoryImplementationReviewCommand(
     factoryRunsDir: store.reviewRunsDir,
     idPrefix: "implementation-review",
   });
-  writeReviewReservationManifest(allocation, store, options);
+  try {
+    writeFactoryRunReservation(allocation);
+  } catch (error) {
+    releaseEmptyFactoryRunReservation({
+      runDir: allocation.runDir,
+      factoryRunsDir: dirname(allocation.runDir),
+      reservationToken: allocation.reservationToken,
+    });
+    throw error;
+  }
   let resolved: ReturnType<typeof resolveFactoryImplementationReviewInput>;
   try {
     resolved = resolveFactoryImplementationReviewInput({
@@ -185,7 +195,31 @@ export async function runFactoryImplementationReviewCommand(
       factoryRunsDir: resolved.factoryStore.reviewRunsDir,
       idPrefix: "implementation-review",
     });
-    writeReviewReservationManifest(allocation, resolved.factoryStore, options);
+    try {
+      writeFactoryRunReservation(allocation);
+    } catch (error) {
+      releaseEmptyFactoryRunReservation({
+        runDir: allocation.runDir,
+        factoryRunsDir: dirname(allocation.runDir),
+        reservationToken: allocation.reservationToken,
+      });
+      throw error;
+    }
+  }
+  try {
+    writeReviewReservationManifest(allocation, resolved.factoryStore, options, {
+      workItem: resolved.workItem,
+      workspace: resolved.workspace,
+      physicalWorkspace: resolved.checkpoint.workspace.physicalGitRoot,
+      workspaceKey: resolved.checkpoint.workspace.workspaceKey,
+    });
+  } catch (error) {
+    releaseEmptyFactoryRunReservation({
+      runDir: allocation.runDir,
+      factoryRunsDir: dirname(allocation.runDir),
+      reservationToken: allocation.reservationToken,
+    });
+    throw error;
   }
   if (resolved.state.factoryStage === "review-complete") {
     releaseEmptyFactoryRunReservation({
@@ -364,15 +398,22 @@ function writeReviewReservationManifest(
   allocation: { runId: string; runDir: string; reservationToken: string },
   store: FactoryStoreResolution | FactoryStoreMeta,
   options: FactoryImplementationReviewOptions,
+  provenance: {
+    workItem: FactoryWorkItem;
+    workspace: string;
+    physicalWorkspace: string;
+    workspaceKey: string;
+  },
 ): void {
-  writeFactoryRunReservation(allocation);
-  const workspace = "workspace" in store ? store.workspace : store.projectRoot;
   const reservation = {
     station: "implementation-review",
+    workItemKey: deriveFactoryWorkItemKey(provenance.workItem),
     runId: allocation.runId,
     reservationToken: allocation.reservationToken,
     identity: options.linearIssue ?? options.itemFile,
-    workspace,
+    workspace: provenance.workspace,
+    physicalWorkspace: provenance.physicalWorkspace,
+    workspaceKey: provenance.workspaceKey,
     storeRoot: store.storeRoot,
     factoryProjectId: store.projectId,
     factoryStateRoot: store.factoryStateRoot,

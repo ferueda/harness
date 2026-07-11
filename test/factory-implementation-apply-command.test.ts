@@ -500,7 +500,7 @@ test("stale-owner recovery probes Linear without a lease and serializes terminal
 
   expect(recovered).toBe(true);
   expect(leaseDuringFetch).toBe(false);
-  expect(leaseDuringTerminal).toBe(true);
+  expect(leaseDuringTerminal).toBe(false);
   expect(
     readFactoryLifecycleEvents({
       factoryStateRoot: store.factoryStateRoot,
@@ -559,11 +559,13 @@ function commandFixture(
     behavior?: Partial<CommandLinearBehavior>;
     runner?: FactoryCommandOptions["implementationRunner"];
     lease?: FactoryCommandOptions["implementationExecutionLease"];
+    git?: boolean;
   } = {},
 ) {
   const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-command-workspace-"));
   const storeRoot = mkdtempSync(join(tmpdir(), "harness-implementation-command-store-"));
   const factoryStateRoot = join(storeRoot, "projects/test-project/factory");
+  if (overrides.git) initializeGitWorkspace(workspace);
   let linearState = "Ready to Implement";
   const comments: LinearCommentLike[] = [];
   const updates: Array<{ stateId: string }> = [];
@@ -629,6 +631,13 @@ function commandFixture(
     })}\n`,
     "utf8",
   );
+  if (overrides.git) {
+    execFileSync("git", ["add", "harness.json"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "factory config"], {
+      cwd: workspace,
+      stdio: "ignore",
+    });
+  }
   mkdirSync(factoryStateRoot, { recursive: true });
   seedReadyLifecycle(factoryStateRoot);
   process.env.LINEAR_API_KEY = "test-key";
@@ -727,6 +736,76 @@ function implementationEventTypes(fixture: ReturnType<typeof commandFixture>): s
     .map((event) => event.type)
     .filter((type) => type.startsWith("implementation."));
 }
+
+test("real command recovers a stale implementation owner before acquiring a new writer lease", async () => {
+  const fixture = commandFixture({ git: true });
+  const store = resolveFactoryStore({
+    workspace: fixture.workspace,
+    factoryStoreRoot: fixture.storeRoot,
+    factoryStoreProjectId: "test-project",
+  });
+  const runId = "implementation-stale-command";
+  const runDir = join(store.factoryRunsDir, runId);
+  mkdirSync(join(runDir, "context"), { recursive: true });
+  const reservation = {
+    station: "implementation",
+    workItemKey: "linear:ENG-123",
+    runId,
+    reservationToken: "stale-command-token",
+    workspace: fixture.workspace,
+    storeRoot: store.storeRoot,
+    factoryProjectId: store.projectId,
+    factoryStateRoot: store.factoryStateRoot,
+    factoryRunsDir: store.factoryRunsDir,
+    reviewRunsDir: store.reviewRunsDir,
+  };
+  writeFileSync(join(runDir, "attempt-reservation.json"), `${JSON.stringify(reservation)}\n`);
+  writeFileSync(
+    join(runDir, "implementation-reservation.json"),
+    `${JSON.stringify(reservation)}\n`,
+  );
+  writeFileSync(join(runDir, "context/run-reservation.json"), `${JSON.stringify(reservation)}\n`);
+  const execution = factoryLifecycleExecutionProvenance(
+    { workspace: fixture.workspace, runDir },
+    factoryStoreMetadata(store),
+  );
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: fixture.factoryStateRoot,
+    event: {
+      version: 1,
+      id: `implementation.started:${runId}`,
+      type: "implementation.started",
+      workItemKey: "linear:ENG-123",
+      occurredAt: "2026-07-10T00:02:00.000Z",
+      runId,
+      source: "harness",
+      execution,
+      data: {
+        owner: {
+          pid: process.pid,
+          hostname: hostname(),
+          runDir,
+          startedAt: "2026-07-10T00:02:00.000Z",
+        },
+      },
+    },
+  });
+  vi.spyOn(process, "kill").mockImplementation(() => {
+    const error = new Error("owner is dead") as NodeJS.ErrnoException;
+    error.code = "ESRCH";
+    throw error;
+  });
+  fixture.setLinearState("Implementing");
+
+  await expect(fixture.program.parseAsync(commandArgs(fixture))).rejects.toThrow(
+    /Recovered a stale implementation owner/,
+  );
+  expect(fixture.runner).not.toHaveBeenCalled();
+  expect(implementationEventTypes(fixture)).toEqual([
+    "implementation.started",
+    "implementation.failed",
+  ]);
+});
 
 test("real command records retryable local failure when start mutation is rejected", async () => {
   const fixture = commandFixture({

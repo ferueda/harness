@@ -100,6 +100,7 @@ async function runLive(
         workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
         runId: ctx.runId,
         operation: "implementation",
+        ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
       });
       ctx.writerLease = workspaceLease;
     }

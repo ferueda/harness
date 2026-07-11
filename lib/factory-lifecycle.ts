@@ -1196,6 +1196,7 @@ function reviewCompletedState(
       approvedCandidate: event.data.finalCandidate,
       latestOutcome: "review-complete",
       activeReviewAttemptId: undefined,
+      partialRecovery: undefined,
     },
   };
 }
@@ -1243,13 +1244,14 @@ function reviewFailedState(
   const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
   return {
     ...state,
-    factoryStage: "review-failed",
+    factoryStage: event.data.retryable ? "review-failed" : "ready-for-human",
     factoryRunId: checkpoint.owningImplementationRunId,
     implementationReviewCheckpoint: {
       ...checkpoint,
       checkpointId: event.data.latestCheckpointId,
       latestCheckpointId: event.data.latestCheckpointId,
       ...(event.data.partialRecovery ? { partialRecovery: event.data.partialRecovery } : {}),
+      ...(!event.data.partialRecovery ? { partialRecovery: undefined } : {}),
       latestOutcome: "review-failed",
       latestErrorClass: event.data.classification,
       activeReviewAttemptId: undefined,
