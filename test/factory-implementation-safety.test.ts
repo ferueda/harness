@@ -79,6 +79,19 @@ test("artifact pointers reject traversal and symlink targets", () => {
   ).toThrow(/symlinked/);
 });
 
+test("artifact pointers reject nested run IDs", () => {
+  const root = mkdtempSync(join(tmpdir(), "harness-factory-pointer-nested-"));
+  const reviewRunsDir = join(root, "reviews");
+  mkdirSync(join(reviewRunsDir, "nested", "run-1"), { recursive: true });
+
+  expect(() =>
+    resolveFactoryArtifactPointer({
+      pointer: { root: "review", runId: "nested/run-1", path: "meta.json" },
+      runRoots: { factoryRunsDir: join(root, "factory"), reviewRunsDir },
+    }),
+  ).toThrow(FactoryImplementationReviewInputError);
+});
+
 test("writer boundary fingerprints the canonical Git workspace and symlink targets", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-factory-boundary-"));
   const external = mkdtempSync(join(tmpdir(), "harness-factory-boundary-target-"));

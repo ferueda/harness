@@ -1,6 +1,12 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { resolveFactoryStore } from "../lib/factory-store.ts";
-import { dirname, join } from "node:path";
+import {
+  factoryExecutionProvenance,
+  factoryLifecycleExecutionProvenance,
+  resolveFactoryStore,
+  type FactoryStoreMeta,
+  type FactoryStoreResolution,
+} from "../lib/factory-store.ts";
+import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import { readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import {
@@ -16,8 +22,12 @@ import {
 import { createAgentProvider } from "../providers/registry.ts";
 import {
   resolveFactoryArtifactPointer,
+  resolveFactoryImplementationReviewLegacyInput,
   resolveFactoryImplementationReviewInput,
+  type FactoryImplementationReviewInputError,
+  type FactoryImplementationReviewLegacyInput,
 } from "../lib/factory-implementation-review-input.ts";
+import { appendImplementationReviewUnresolvedEvent } from "../lib/factory-lifecycle-writes.ts";
 import {
   createFactoryImplementationReviewRunContext,
   type FactoryImplementationReviewRunContext,
@@ -97,7 +107,7 @@ export async function runFactoryImplementationReviewCommand(
     factoryStoreProjectId: options.factoryStoreProjectId,
     env: process.env,
   });
-  const allocation = allocateFactoryRun({
+  let allocation = allocateFactoryRun({
     factoryRunsDir: store.reviewRunsDir,
     idPrefix: "implementation-review",
   });
@@ -111,44 +121,33 @@ export async function runFactoryImplementationReviewCommand(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    writeFileSync(
-      join(allocation.runDir, "summary.md"),
-      `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${message}\n`,
-    );
-    writeFileSync(
-      join(allocation.runDir, "attempt-rejected.json"),
-      `${JSON.stringify(
-        {
-          status: "rejected",
-          runId: allocation.runId,
-          identity: options.linearIssue ?? options.itemFile,
-          workspace: store.workspace,
-          factoryStore: store,
-          error: message,
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
-    );
-    writeFileSync(
-      join(allocation.runDir, "meta.json"),
-      `${JSON.stringify(
-        {
-          runId: allocation.runId,
-          workflow: "factory-implementation-review",
-          status: "rejected",
-          workspace: store.workspace,
-          runDir: allocation.runDir,
-          identity: options.linearIssue ?? options.itemFile,
-          error: message,
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
-    );
+    writeReviewRejection(allocation, store, options, message);
+    if (
+      error &&
+      typeof error === "object" &&
+      "classification" in error &&
+      (error as FactoryImplementationReviewInputError).classification === "legacy-incomplete"
+    ) {
+      const legacy = resolveFactoryImplementationReviewLegacyInput({
+        workspace: store.workspace,
+        ...(options.itemFile ? { itemFile: options.itemFile } : {}),
+        ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
+        factoryStore: store,
+      });
+      return terminalizeLegacyReview(allocation, legacy);
+    }
     throw error;
+  }
+  if (resolved.factoryStore.reviewRunsDir !== store.reviewRunsDir) {
+    releaseEmptyFactoryRunReservation({
+      runDir: allocation.runDir,
+      factoryRunsDir: store.reviewRunsDir,
+      reservationToken: allocation.reservationToken,
+    });
+    allocation = allocateFactoryRun({
+      factoryRunsDir: resolved.factoryStore.reviewRunsDir,
+      idPrefix: "implementation-review",
+    });
   }
   if (resolved.state.factoryStage === "review-complete") {
     releaseEmptyFactoryRunReservation({
@@ -162,6 +161,12 @@ export async function runFactoryImplementationReviewCommand(
     ? ["review-running", "review-failed"]
     : ["implementation-complete"];
   if (!allowed.includes(resolved.state.factoryStage ?? "")) {
+    writeReviewRejection(
+      allocation,
+      resolved.factoryStore,
+      options,
+      `${options.resume ? "--resume" : "Initial review"} is not allowed from ${resolved.state.factoryStage ?? "uninitialized"}.`,
+    );
     throw new Error(
       `${options.resume ? "--resume" : "Initial review"} is not allowed from ${resolved.state.factoryStage ?? "uninitialized"}.`,
     );
@@ -220,8 +225,123 @@ export async function runFactoryImplementationReviewCommand(
     ctx.writeArtifact("attempt-rejected.json", {
       error: error instanceof Error ? error.message : String(error),
     });
+    ctx.writeSummary(
+      `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     throw error;
   }
+}
+
+function writeReviewRejection(
+  allocation: { runId: string; runDir: string; reservationToken: string },
+  store: FactoryStoreResolution | FactoryStoreMeta,
+  options: FactoryImplementationReviewOptions,
+  message: string,
+): void {
+  const workspace = "workspace" in store ? store.workspace : store.projectRoot;
+  writeFileSync(
+    join(allocation.runDir, "summary.md"),
+    `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${message}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(allocation.runDir, "attempt-rejected.json"),
+    `${JSON.stringify(
+      {
+        status: "rejected",
+        runId: allocation.runId,
+        reservationToken: allocation.reservationToken,
+        identity: options.linearIssue ?? options.itemFile,
+        workspace,
+        factoryStore: store,
+        error: message,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(allocation.runDir, "meta.json"),
+    `${JSON.stringify(
+      {
+        runId: allocation.runId,
+        workflow: "factory-implementation-review",
+        status: "rejected",
+        workspace,
+        runDir: allocation.runDir,
+        identity: options.linearIssue ?? options.itemFile,
+        error: message,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
+function terminalizeLegacyReview(
+  allocation: { runId: string; runDir: string; reservationToken: string },
+  legacy: FactoryImplementationReviewLegacyInput,
+): FactoryImplementationReviewRunMeta {
+  const message = `Legacy implementation is incomplete; missing ${legacy.missing.join(", ")}.`;
+  const summaryPath = join(allocation.runDir, "summary.md");
+  writeFileSync(
+    summaryPath,
+    `# Factory Implementation Review\n\n- Status: ready-for-human\n- Reason: legacy-incomplete\n- Implementation run: ${legacy.implementationRunId}\n- Missing: ${legacy.missing.join(", ")}\n- Provider invocation: not run.\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(allocation.runDir, "attempt-rejected.json"),
+    `${JSON.stringify(
+      {
+        status: "rejected",
+        reason: "legacy-incomplete",
+        runId: allocation.runId,
+        reservationToken: allocation.reservationToken,
+        implementationRunId: legacy.implementationRunId,
+        missing: legacy.missing,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  const summary = { root: "review" as const, runId: allocation.runId, path: "summary.md" };
+  appendImplementationReviewUnresolvedEvent({
+    workspace: legacy.workspace,
+    workItem: legacy.workItem,
+    runId: allocation.runId,
+    owningImplementationRunId: legacy.implementationRunId,
+    factoryStateRoot: legacy.factoryStore.factoryStateRoot,
+    execution: factoryLifecycleExecutionProvenance(
+      factoryExecutionProvenance(legacy.workspace, allocation.runDir),
+      legacy.factoryStore,
+    ),
+    summary,
+    reason: "legacy-incomplete",
+  });
+  const meta = {
+    runId: allocation.runId,
+    workflow: "factory-implementation-review",
+    status: "ready-for-human",
+    workspace: legacy.workspace,
+    runDir: allocation.runDir,
+    workItem: {
+      id: legacy.workItem.id,
+      source: legacy.workItem.source,
+      title: legacy.workItem.title,
+    },
+    implementationRunId: legacy.implementationRunId,
+    reviewerAgent: { agent: "codex", sandboxMode: "read-only", approvalPolicy: "never" },
+    factoryStore: legacy.factoryStore,
+    summaryPath,
+    metaPath: join(allocation.runDir, "meta.json"),
+    error: message,
+    artifacts: { summary: "summary.md", rejection: "attempt-rejected.json" },
+  };
+  writeFileSync(meta.metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  return meta as unknown as FactoryImplementationReviewRunMeta;
 }
 
 function parseReviewLimit(value: string): number {
@@ -275,7 +395,12 @@ function findCompletedHandoff(
     pointer: completed.data.handoff,
     runRoots: input.checkpoint.runRoots,
   });
-  const runDir = dirname(path);
+  const runDir = join(
+    input.checkpoint.runRoots[
+      completed.data.handoff.root === "factory" ? "factoryRunsDir" : "reviewRunsDir"
+    ],
+    completed.data.handoff.runId,
+  );
   return {
     runId: completed.data.handoff.runId,
     runDir,

@@ -27,6 +27,7 @@ import {
 } from "../lib/factory-writer-boundary.ts";
 import {
   acquireFactoryWorkspaceWriterLease,
+  releaseFactoryWorkspaceWriterLease,
   type FactoryWorkspaceWriterLeaseHandle,
 } from "../lib/factory-locks.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
@@ -75,6 +76,7 @@ async function runLive(
   let before: FactoryWorkspacePatchCapture | undefined;
   let providerInvoked = false;
   let workspaceLease: FactoryWorkspaceWriterLeaseHandle | undefined = ctx.writerLease;
+  const ownsWorkspaceLease = !workspaceLease;
 
   try {
     const prompt = renderFactoryImplementationPrompt({
@@ -295,6 +297,10 @@ async function runLive(
       error: errorMessage(error),
     });
     throw error;
+  } finally {
+    if (ownsWorkspaceLease && workspaceLease) {
+      releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
+    }
   }
 }
 

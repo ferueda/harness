@@ -6,6 +6,7 @@ import type { FactoryWorkspaceWriterLeaseHandle } from "./factory-locks.ts";
 import type { FactoryRunAllocation } from "./factory-run-allocation.ts";
 import { buildRunId } from "./context.ts";
 import { factoryRoleAgentMeta, type FactoryStationAgentMeta } from "./factory-agent-meta.ts";
+import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
 import type { FactoryWorkItem, FactoryWorkItemMetadata } from "./factory-schemas.ts";
 import {
@@ -227,8 +228,36 @@ function createFactoryImplementationRunContextInternal(
     writeJson(join(runDir, "context/implementation-input.json"), options.implementationInput);
     if (options.allocation) {
       writeJson(join(runDir, "context/run-reservation.json"), {
+        station: "implementation",
+        workItemKey: deriveFactoryWorkItemKey(options.workItem),
         runId: options.allocation.runId,
         reservationToken: options.allocation.reservationToken,
+        workspace,
+        ...(options.factoryStore
+          ? {
+              storeRoot: options.factoryStore.storeRoot,
+              factoryProjectId: options.factoryStore.projectId,
+              factoryStateRoot: options.factoryStore.factoryStateRoot,
+              factoryRunsDir: options.factoryStore.factoryRunsDir,
+              reviewRunsDir: options.factoryStore.reviewRunsDir,
+            }
+          : {}),
+      });
+      writeJson(join(runDir, "implementation-reservation.json"), {
+        station: "implementation",
+        workItemKey: deriveFactoryWorkItemKey(options.workItem),
+        runId: options.allocation.runId,
+        reservationToken: options.allocation.reservationToken,
+        workspace,
+        ...(options.factoryStore
+          ? {
+              storeRoot: options.factoryStore.storeRoot,
+              factoryProjectId: options.factoryStore.projectId,
+              factoryStateRoot: options.factoryStore.factoryStateRoot,
+              factoryRunsDir: options.factoryStore.factoryRunsDir,
+              reviewRunsDir: options.factoryStore.reviewRunsDir,
+            }
+          : {}),
       });
     }
     if (options.implementationInput.mode === "planned") {

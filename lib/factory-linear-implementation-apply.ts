@@ -57,12 +57,19 @@ export class LinearImplementationTerminalApplyError extends Error {
 
 export class LinearImplementationStartApplyError extends Error {
   readonly phase: LinearImplementationStartFailurePhase;
-  readonly implementingStatusVerified = false;
+  readonly implementingStatusVerified: boolean;
+  readonly update?: LinearImplementationUpdatePlan;
 
-  constructor(cause: unknown, phase: LinearImplementationStartFailurePhase) {
+  constructor(
+    cause: unknown,
+    phase: LinearImplementationStartFailurePhase,
+    input: { implementingStatusVerified?: boolean; update?: LinearImplementationUpdatePlan } = {},
+  ) {
     super(errorMessage(cause), { cause });
     this.name = "LinearImplementationStartApplyError";
     this.phase = phase;
+    this.implementingStatusVerified = Boolean(input.implementingStatusVerified);
+    if (input.update) this.update = input.update;
   }
 }
 
@@ -108,34 +115,52 @@ export async function applyLinearImplementationStarted(
 ): Promise<LinearImplementationUpdatePlan> {
   const statuses = requiredStatuses(settings);
   let phase: LinearImplementationStartFailurePhase = "validation";
+  let issue: LinearIssueLike | undefined;
+  let target: LinearWorkflowStateLike | undefined;
+  let progress: LinearImplementationUpdatePlan | undefined;
   try {
     await deps.validateStatusMap(client, settings);
     phase = "fetch";
-    const issue = await deps.fetchIssue(client, settings, input.issueRef);
+    issue = await deps.fetchIssue(client, settings, input.issueRef);
     const state = await deps.resolveOptional(issue.state);
     await deps.assertIssueInConfiguredScope(issue, settings);
     const required =
       input.attempt === "first" ? statuses.readyToImplement : statuses.implementationFailed;
     assertState(state?.name, required, "implementation start");
-    const target = await deps.fetchWorkflowState(client, settings, statuses.implementing);
+    target = await deps.fetchWorkflowState(client, settings, statuses.implementing);
     const current = await assertFreshState(deps, client, settings, issue, required);
+    progress = {
+      ...update(input, issue, "started", state?.name, target.name),
+      statusMutationCompleted: false,
+      statusPostconditionVerified: false,
+    };
     phase = "mutation";
     deps.assertMutationSuccess(
       await client.updateIssue(current.id, { stateId: target.id }),
       "implementation start",
     );
+    progress = { ...progress, statusMutationCompleted: true };
     phase = "postcondition";
     await assertFreshState(deps, client, settings, issue, target.name);
-    return {
-      ...update(input, issue, "started", state?.name, target.name),
-      statusMutationCompleted: true,
-      statusPostconditionVerified: true,
-    };
+    return { ...progress, statusPostconditionVerified: true };
   } catch (error) {
     if (error instanceof LinearImplementationStartApplyError) throw error;
     // Preserve falsy adapter rejections for callers while classifying ordinary errors.
     if (error === undefined || error === null) throw error;
-    throw new LinearImplementationStartApplyError(error, phase);
+    let implementingStatusVerified = false;
+    if (issue && target && (phase === "mutation" || phase === "postcondition")) {
+      try {
+        await assertFreshState(deps, client, settings, issue, target.name);
+        implementingStatusVerified = true;
+        if (progress) progress = { ...progress, statusPostconditionVerified: true };
+      } catch {
+        // Unknown post-mutation state is handled conservatively by the command layer.
+      }
+    }
+    throw new LinearImplementationStartApplyError(error, phase, {
+      implementingStatusVerified,
+      ...(progress ? { update: progress } : {}),
+    });
   }
 }
 

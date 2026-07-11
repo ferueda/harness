@@ -393,12 +393,16 @@ const ImplementationReviewUnresolvedEventSchema = BaseEventSchema.extend({
   data: z
     .object({
       owningImplementationRunId: z.string().min(1),
-      activeReviewAttemptId: z.string().min(1),
-      latestCheckpointId: z.string().min(1),
+      activeReviewAttemptId: z.string().min(1).optional(),
+      latestCheckpointId: z.string().min(1).optional(),
       reason: ReviewReasonSchema,
       summary: ArtifactPointerSchema,
     })
-    .strict(),
+    .strict()
+    .refine(
+      (data) => Boolean(data.activeReviewAttemptId) === Boolean(data.latestCheckpointId),
+      "activeReviewAttemptId and latestCheckpointId must be supplied together",
+    ),
 });
 
 const ImplementationReviewFailedEventSchema = BaseEventSchema.extend({
@@ -577,7 +581,14 @@ export function appendFactoryLifecycleEvent(
         workItemKey: event.workItemKey,
       });
       const existing = existingEvents.find((candidate) => candidate.id === event.id);
-      if (existing) return existing;
+      if (existing) {
+        if (canonicalLifecycleEvent(existing) !== canonicalLifecycleEvent(event)) {
+          throw new FactoryLifecycleError(
+            `Lifecycle event ID ${event.id} already exists with different semantic content.`,
+          );
+        }
+        return existing;
+      }
 
       const current = reduceFactoryLifecycleEvents(existingEvents);
       assertFactoryLifecyclePrecondition(current, input.precondition);
@@ -610,8 +621,7 @@ function assertFactoryLifecyclePrecondition(
   }
   if (
     precondition.expectedFactoryRunId !== undefined &&
-    state !== undefined &&
-    state?.factoryRunId !== precondition.expectedFactoryRunId
+    (state === undefined || state.factoryRunId !== precondition.expectedFactoryRunId)
   ) {
     throw new FactoryLifecycleError(
       `Lifecycle precondition failed: expected factoryRunId ${precondition.expectedFactoryRunId}, actual ${state?.factoryRunId ?? "absent"}`,
@@ -642,6 +652,29 @@ function assertFactoryLifecyclePrecondition(
       );
     }
   }
+}
+
+function canonicalLifecycleEvent(event: FactoryLifecycleEvent): string {
+  return JSON.stringify(sortLifecycleValue(stripLifecycleRetryFields(event)));
+}
+
+function stripLifecycleRetryFields(event: FactoryLifecycleEvent): unknown {
+  if (event.type === "work_item.imported") {
+    const { occurredAt: _occurredAt, execution: _execution, data, ...withoutExecution } = event;
+    return { ...withoutExecution, data: { source: data.source, title: data.title } };
+  }
+  const { occurredAt: _occurredAt, ...semantic } = event;
+  return semantic;
+}
+
+function sortLifecycleValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortLifecycleValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, sortLifecycleValue(child)]),
+  );
 }
 
 export function inspectFactoryLifecycleLock(input: {
@@ -1142,7 +1175,24 @@ function reviewUnresolvedState(
   state: FactoryLifecycleState,
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.unresolved" }>,
 ): FactoryLifecycleState {
-  const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
+  const checkpoint = state.implementationReviewCheckpoint;
+  if (!checkpoint) {
+    return {
+      ...state,
+      factoryStage: "ready-for-human",
+      factoryRunId: event.data.owningImplementationRunId,
+    };
+  }
+  if (checkpoint.owningImplementationRunId !== event.data.owningImplementationRunId) {
+    throw new FactoryLifecycleError(
+      `Review event references implementation owner ${event.data.owningImplementationRunId} without a matching checkpoint`,
+    );
+  }
+  if (!event.data.activeReviewAttemptId || !event.data.latestCheckpointId) {
+    throw new FactoryLifecycleError(
+      "A review unresolved event for a checkpoint requires its attempt and checkpoint IDs",
+    );
+  }
   return {
     ...state,
     factoryStage: "ready-for-human",

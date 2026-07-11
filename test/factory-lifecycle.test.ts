@@ -103,6 +103,24 @@ test("append writes JSONL and rebuildable state cache idempotently", () => {
   expect(readdirSync(join(root, "state")).some((entry) => entry.includes(".tmp-"))).toBe(false);
 });
 
+test("event ID retries reject conflicting semantic payloads", () => {
+  const root = tempRoot();
+  const event = importedEvent("linear:FER-34");
+
+  appendFactoryLifecycleEvent({ factoryStateRoot: root, event });
+
+  expect(() =>
+    appendFactoryLifecycleEvent({
+      factoryStateRoot: root,
+      event: {
+        ...event,
+        type: "work_item.imported",
+        data: { source: "linear", title: "Different issue" },
+      },
+    }),
+  ).toThrow(/different semantic content/);
+});
+
 test("lifecycle locks serialize same work item and keep different work items independent", () => {
   const root = tempRoot();
   const first = acquireFactoryWorkItemLock({

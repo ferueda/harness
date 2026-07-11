@@ -371,6 +371,8 @@ it remains `blocked`.
 - `lib/factory-schemas.ts`
 - `lib/factory-review-head.ts`
 - `lib/factory-implementation-run-context.ts`
+- `lib/factory-implementation-input.ts` (implementation attempt/provenance reconciliation)
+- `lib/factory-implementation-policy.ts` (claim/recovery lease heartbeat boundary)
 - `lib/config.ts`
 - `lib/schemas.ts`
 - `lib/prompts/factory-implementation-review.ts` (new)
@@ -414,6 +416,7 @@ it remains `blocked`.
 - `test/factory-linear-implementation-apply.test.ts` (FER-52 completion-comment assertion plus start-apply failure cases)
 - `test/config.test.ts`
 - `test/factory-linear-adapter.test.ts`
+- `test/factory-implementation-safety.test.ts`
 - `test/skills.test.ts` (manual-stop/review-command contract only)
 - `test/docs-contracts.test.ts` (only if a durable command/ownership assertion belongs there)
 

@@ -408,7 +408,7 @@ function implementationEventTypes(fixture: ReturnType<typeof commandFixture>): s
     .filter((type) => type.startsWith("implementation."));
 }
 
-test("real command prints truthful output before resolved-false start mutation error", async () => {
+test("real command records retryable local failure when start mutation is rejected", async () => {
   const fixture = commandFixture({
     behavior: { update: async () => ({ success: false }) },
   });
@@ -421,7 +421,7 @@ test("real command prints truthful output before resolved-false start mutation e
   expect(fixture.commentInputs).toEqual([]);
   expect(implementationEventTypes(fixture)).toEqual([
     "implementation.started",
-    "implementation.start-unresolved",
+    "implementation.failed",
   ]);
   expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({
     status: "implementation-failed",

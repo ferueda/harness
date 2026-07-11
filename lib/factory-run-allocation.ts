@@ -32,6 +32,9 @@ export function allocateFactoryRun(input: {
   now?: () => Date;
   random?: () => string;
 }): FactoryRunAllocation {
+  if (input.runId !== undefined && !isSafeRunId(input.runId)) {
+    throw new FactoryRunAllocationError(`Invalid Factory run ID: ${input.runId}`);
+  }
   const root = resolve(input.factoryRunsDir);
   try {
     mkdirSync(root, { recursive: true });
@@ -109,4 +112,8 @@ function formatRunTimestamp(date: Date): string {
 
 function isAlreadyExistsError(error: unknown): error is NodeJS.ErrnoException {
   return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
+}
+
+function isSafeRunId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) && value !== "." && value !== "..";
 }

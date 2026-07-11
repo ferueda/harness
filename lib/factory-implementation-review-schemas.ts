@@ -36,6 +36,12 @@ const RelativeArtifactPathSchema = z
   .refine((value) => value === value.replaceAll("\\", "/"), "must use POSIX separators")
   .refine((value) => !value.split("/").includes(""), "must not contain empty path segments");
 
+const RunIdSchema = z
+  .string()
+  .min(1)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must be one safe path component")
+  .refine((value) => value !== "." && value !== "..", "must not be a dot path");
+
 export const AgentSessionRefSchema = z
   .object({
     provider: z.enum(AGENT_PROVIDERS),
@@ -53,7 +59,7 @@ export const RunRootProvenanceSchema = z
 
 export const ArtifactPointerSchema = z
   .object({
-    runId: z.string().min(1),
+    runId: RunIdSchema,
     root: z.enum(["factory", "review"]),
     path: RelativeArtifactPathSchema,
   })

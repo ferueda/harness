@@ -393,6 +393,53 @@ export function appendImplementationStartUnresolvedEvent(input: {
   });
 }
 
+export function appendImplementationReviewUnresolvedEvent(input: {
+  workspace: string;
+  workItem: FactoryWorkItem;
+  runId: string;
+  owningImplementationRunId: string;
+  factoryStateRoot: string;
+  execution: FactoryLifecycleExecution;
+  summary: { runId: string; root: "factory" | "review"; path: string };
+  reason:
+    | "blocked"
+    | "missing-session"
+    | "incompatible-session"
+    | "legacy-incomplete"
+    | "declined-must-fix"
+    | "max-iterations"
+    | "stale-owner";
+  activeReviewAttemptId?: string;
+  latestCheckpointId?: string;
+}): FactoryLifecycleEvent {
+  return appendFactoryLifecycleEvent({
+    factoryStateRoot: input.factoryStateRoot,
+    event: {
+      version: 1,
+      id: `implementation.review.unresolved:${input.runId}`,
+      type: "implementation.review.unresolved",
+      workItemKey: deriveFactoryWorkItemKey(input.workItem),
+      occurredAt: new Date().toISOString(),
+      runId: input.runId,
+      source: "harness",
+      execution: input.execution,
+      data: {
+        owningImplementationRunId: input.owningImplementationRunId,
+        ...(input.activeReviewAttemptId
+          ? { activeReviewAttemptId: input.activeReviewAttemptId }
+          : {}),
+        ...(input.latestCheckpointId ? { latestCheckpointId: input.latestCheckpointId } : {}),
+        reason: input.reason,
+        summary: input.summary,
+      },
+    },
+    precondition: {
+      allowedStages: ["implementation-complete", "review-running", "review-failed"],
+      expectedFactoryRunId: input.owningImplementationRunId,
+    },
+  });
+}
+
 export function appendImplementationTerminalEvent(input: {
   meta: FactoryImplementationRunMeta;
   factoryStateRoot?: string;

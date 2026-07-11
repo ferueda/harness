@@ -40,6 +40,16 @@ export type FactoryImplementationReviewInput = {
   factoryStore: FactoryStoreMeta;
 };
 
+export type FactoryImplementationReviewLegacyInput = {
+  workspace: string;
+  workItemKey: string;
+  workItem: FactoryWorkItem;
+  state: FactoryLifecycleState;
+  factoryStore: FactoryStoreMeta;
+  missing: NonNullable<FactoryLifecycleState["legacyReviewBlock"]>["missing"];
+  implementationRunId: string;
+};
+
 export class FactoryImplementationReviewInputError extends Error {
   readonly classification:
     | "identity"
@@ -113,13 +123,11 @@ export function resolveFactoryImplementationReviewInput(
     checkpoint.runRoots.factoryRunsDir,
     checkpoint.owningImplementationRunId,
   );
-  const implementationMeta = readRecord(
-    join(implementationRunDir, "meta.json"),
-    "implementation meta",
-  );
+  const implementationMeta = readImplementationMeta(implementationRunDir);
   const workItem = parseFactoryWorkItem(
-    readUnknown(
+    readRegularFileJson(
       join(implementationRunDir, "context", "work-item.json"),
+      implementationRunDir,
       "implementation work item",
     ),
   );
@@ -134,6 +142,25 @@ export function resolveFactoryImplementationReviewInput(
       "Implementation metadata runId does not match canonical lifecycle owner.",
       "provenance",
     );
+  }
+  if (implementationMeta.status !== "implementation-complete") {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation metadata is not an implementation-complete run.",
+      "stage",
+    );
+  }
+  if (implementationMeta.runDir !== implementationRunDir) {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation metadata runDir does not match its recorded durable run.",
+      "provenance",
+    );
+  }
+  const implementationArtifacts = implementationMeta.artifacts as Record<string, unknown>;
+  for (const [label, artifact] of [
+    ["implementation diff", implementationArtifacts.diff],
+    ["implementation handoff", implementationArtifacts.changeReviewHandoff],
+  ] as const) {
+    validateRunArtifactPath(implementationRunDir, String(artifact), label);
   }
   if (resolve(String(implementationMeta.workspace ?? "")) !== workspace) {
     throw new FactoryImplementationReviewInputError(
@@ -214,6 +241,55 @@ export function resolveFactoryImplementationReviewInput(
   };
 }
 
+/** Resolve only the durable identity needed to terminalize a legacy run. */
+export function resolveFactoryImplementationReviewLegacyInput(
+  input: FactoryImplementationReviewIdentityInput,
+): FactoryImplementationReviewLegacyInput {
+  const workspace = resolve(input.workspace);
+  const workItemKey = resolveIdentity(input, workspace);
+  const storeResolution = resolveStore(input.factoryStore, workspace);
+  const state = loadFactoryLifecycleState({
+    factoryStateRoot: storeResolution.factoryStateRoot,
+    workItemKey,
+    workspace,
+  });
+  if (!state?.legacyReviewBlock) {
+    throw new FactoryImplementationReviewInputError(
+      "Canonical lifecycle state is not a legacy implementation.",
+      "artifact",
+    );
+  }
+  const workItem = input.itemFile
+    ? parseFactoryWorkItem(readUnknown(resolve(workspace, input.itemFile), "item file"))
+    : {
+        id: workItemKey.slice("linear:".length),
+        source: "linear" as const,
+        title: state.title ?? workItemKey,
+        body: "",
+        labels: [],
+        metadata: {
+          tracker: { source: "linear" as const, id: workItemKey.slice("linear:".length) },
+        },
+      };
+  if (deriveFactoryWorkItemKey(workItem) !== workItemKey) {
+    throw new FactoryImplementationReviewInputError(
+      "Legacy implementation work item does not match lifecycle identity.",
+      "provenance",
+    );
+  }
+  return {
+    workspace,
+    workItemKey,
+    workItem,
+    state,
+    factoryStore: normalizeStoreMeta(storeResolution, {
+      factoryRunsDir: storeResolution.factoryRunsDir,
+    }),
+    missing: state.legacyReviewBlock.missing,
+    implementationRunId: state.legacyReviewBlock.owningImplementationRunId,
+  };
+}
+
 function readCandidateTree(workspace: string, commit: string): string {
   try {
     return execFileSync("git", ["rev-parse", `${commit}^{tree}`], {
@@ -235,9 +311,20 @@ export function resolveFactoryArtifactPointer(input: {
   pointer: ArtifactPointer;
   runRoots: { factoryRunsDir: string; reviewRunsDir: string };
 }): string {
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(input.pointer.runId) ||
+    input.pointer.runId === "." ||
+    input.pointer.runId === ".."
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      "Artifact pointer run ID is not a safe direct-child name.",
+      "provenance",
+    );
+  }
   const root = resolve(
     input.pointer.root === "factory" ? input.runRoots.factoryRunsDir : input.runRoots.reviewRunsDir,
   );
+  const realRoot = realpathSync(root);
   const runDir = resolve(root, input.pointer.runId);
   const runRelative = relative(root, runDir);
   if (
@@ -279,6 +366,13 @@ export function resolveFactoryArtifactPointer(input: {
     );
   }
   const realRun = realpathSync(runDir);
+  const realRunRelative = relative(realRoot, realRun);
+  if (realRunRelative !== input.pointer.runId) {
+    throw new FactoryImplementationReviewInputError(
+      "Artifact pointer run is not a direct child of its recorded root.",
+      "provenance",
+    );
+  }
   {
     const realCandidate = realpathSync(candidate);
     const realRelative = relative(realRun, realCandidate);
@@ -304,12 +398,24 @@ function validateCheckpointProvenance(input: {
   storeResolution: FactoryStoreResolution;
 }): void {
   const { checkpoint, implementationMeta, storeResolution } = input;
+  const implementationStore = isRecord(implementationMeta.factoryStore)
+    ? implementationMeta.factoryStore
+    : {};
   if (
-    checkpoint.runRoots.factoryRunsDir !== storeResolution.factoryRunsDir ||
-    checkpoint.runRoots.reviewRunsDir !== storeResolution.reviewRunsDir
+    resolve(checkpoint.runRoots.factoryRunsDir) !==
+    resolve(String(implementationStore.factoryRunsDir))
   ) {
     throw new FactoryImplementationReviewInputError(
-      "Review checkpoint run roots do not match the resolved durable store.",
+      "Review checkpoint factory run root does not match implementation provenance.",
+      "provenance",
+    );
+  }
+  if (
+    resolve(checkpoint.runRoots.reviewRunsDir) !==
+    resolve(String(implementationStore.reviewRunsDir))
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      "Review checkpoint review run root does not match implementation provenance.",
       "provenance",
     );
   }
@@ -463,6 +569,12 @@ function normalizeStoreMeta(
 
 function directChildPath(root: string, runId: string): string {
   const canonicalRoot = resolve(root);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId) || runId === "." || runId === "..") {
+    throw new FactoryImplementationReviewInputError(
+      "Recorded implementation run ID is not a safe direct-child name.",
+      "provenance",
+    );
+  }
   const path = resolve(canonicalRoot, runId);
   const pathRelative = relative(canonicalRoot, path);
   if (
@@ -482,6 +594,14 @@ function directChildPath(root: string, runId: string): string {
       "artifact",
     );
   }
+  const realRoot = realpathSync(canonicalRoot);
+  const realRun = realpathSync(path);
+  if (relative(realRoot, realRun) !== runId) {
+    throw new FactoryImplementationReviewInputError(
+      "Recorded implementation run is not a direct child of its physical store root.",
+      "provenance",
+    );
+  }
   return path;
 }
 
@@ -494,6 +614,81 @@ function readRecord(path: string, label: string): Record<string, unknown> {
     );
   }
   return value;
+}
+
+function readImplementationMeta(runDir: string): Record<string, unknown> {
+  const metaPath = validateRunArtifactPath(runDir, "meta.json", "implementation meta");
+  const meta = readRecord(metaPath, "implementation meta");
+  const artifacts = meta.artifacts;
+  if (
+    !isRecord(artifacts) ||
+    typeof artifacts.diff !== "string" ||
+    typeof artifacts.changeReviewHandoff !== "string"
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation metadata is missing required candidate artifacts.",
+      "artifact",
+    );
+  }
+  for (const [label, artifact] of [
+    ["implementation summary", artifacts.summary],
+    ["implementation input", artifacts.implementationInput],
+    ["implementation diff", artifacts.diff],
+    ["implementation handoff", artifacts.changeReviewHandoff],
+  ] as const) {
+    if (typeof artifact !== "string") {
+      throw new FactoryImplementationReviewInputError(
+        `Implementation metadata is missing ${label}.`,
+        "artifact",
+      );
+    }
+    validateRunArtifactPath(runDir, artifact, label);
+  }
+  return meta;
+}
+
+function readRegularFileJson(path: string, root: string, label: string): unknown {
+  const safePath = validateRunArtifactPath(root, relative(root, path), label);
+  return readUnknown(safePath, label);
+}
+
+function validateRunArtifactPath(root: string, path: string, label: string): string {
+  if (typeof path !== "string" || path.length === 0 || isAbsolute(path)) {
+    throw new FactoryImplementationReviewInputError(
+      `${label} must be a relative artifact path.`,
+      "provenance",
+    );
+  }
+  const candidate = resolve(root, path);
+  const lexical = relative(root, candidate);
+  if (!lexical || lexical === ".." || lexical.startsWith("../") || isAbsolute(lexical)) {
+    throw new FactoryImplementationReviewInputError(
+      `${label} escapes its durable run root.`,
+      "provenance",
+    );
+  }
+  const stat = existsSync(candidate) ? lstatSync(candidate) : undefined;
+  if (!stat || stat.isSymbolicLink() || !stat.isFile()) {
+    throw new FactoryImplementationReviewInputError(
+      `${label} is missing, symlinked, or not a regular file: ${candidate}`,
+      "artifact",
+    );
+  }
+  const realRoot = realpathSync(root);
+  const realCandidate = realpathSync(candidate);
+  const realRelative = relative(realRoot, realCandidate);
+  if (
+    !realRelative ||
+    realRelative === ".." ||
+    realRelative.startsWith("../") ||
+    isAbsolute(realRelative)
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      `${label} escapes the physical durable run root.`,
+      "provenance",
+    );
+  }
+  return candidate;
 }
 
 function readUnknown(path: string, label: string): unknown {

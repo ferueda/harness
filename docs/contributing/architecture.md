@@ -185,10 +185,11 @@ entry/postcondition checks, status projection, and terminal marker comments;
 `lib/factory-linear-adapter.ts` exposes that behavior to station commands.
 `harness factory implementation run` supports dry-run or one live provider pass
 plus harness-owned review-ref materialization. Live runs hold a per-item
-execution lease through local and requested Linear terminalization. With
-`--apply`, the command owns fail-closed Linear status/comment projection;
-without it, implementation does not mutate Linear, create human branches, or
-open PRs.
+execution lease only for claim/recovery coordination and a physical workspace
+writer lease through provider execution and local artifact terminalization;
+the workspace lease is released before every Linear call. With `--apply`, the
+command owns fail-closed Linear status/comment projection; without it,
+implementation does not mutate Linear, create human branches, or open PRs.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `lib/factory-status.ts`
 composes that inbox data with durable-store, lock, and legacy-state inspection

@@ -129,11 +129,13 @@ shim, inbox, and committed `dev/plans/*.md`. Legacy workspace-local
 `.harness/factory` state is detected by `factory status` and ignored; it is not
 silently imported into the durable store.
 
-`triage.started`, `planning.started`, and `implementation.started` events are
-audit history only; they do not move durable `factoryStage`. Terminal events
-such as `triage.completed`, `planning.completed`, `planning.failed`,
-`implementation.completed`, `implementation.failed`, `plan_pr.opened`, and
-`plan_pr.merged` own durable transitions.
+`triage.started` and `planning.started` remain audit history;
+`implementation.started` claims the durable implementation owner and guards
+terminalization. Terminal events such as `triage.completed`,
+`planning.completed`, `planning.failed`, `implementation.completed`,
+`implementation.failed`, `plan_pr.opened`, and `plan_pr.merged` own durable
+transitions. Implementation review adds started, checkpointed, completed,
+unresolved, and failed events to the same append-only log and projection.
 
 ## Station Config
 
@@ -660,6 +662,8 @@ ${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<
     diff.patch
     change-review-handoff.md
   events.jsonl
+  attempt-reservation.json
+  implementation-reservation.json
   summary.md
   meta.json
 ```
@@ -709,30 +713,38 @@ declines, and exhausted review limits become `ready-for-human`. Review
 artifacts and lifecycle JSONL are Harness-owned; the implementer writes only
 target-repository source, test, and documentation changes.
 
-Lifecycle: `implementation.started` is audit-only;
+Lifecycle: `implementation.started` claims the implementation owner;
 `implementation.completed` / `implementation.failed` move durable stage while
 preserving plan/direct retry metadata. With `--apply`, eligible Ready or
 Implementation Failed work moves through Implementing; without it, Linear is
-not mutated.
+not mutated. Review lifecycle events (`implementation.review.started`,
+`.checkpointed`, `.completed`, `.unresolved`, `.failed`) keep review attempts,
+candidate lineage, and recovery state in the same durable event log.
 
 Failure recovery:
 
-- Start projection failure: the provider is not invoked. `meta.json` records
-  `implementation-failed` and omits prompt/handoff/events paths; local lifecycle
-  has only imported/started audit evidence. Correct the Linear state or mutation
-  failure, then rerun.
+- Start projection failure: the provider is not invoked. Validation, fetch, or
+  mutation failures with a verified not-started Linear state record retryable
+  `implementation.failed` evidence without projecting Linear to
+  `Implementation Failed`. If Implementing is freshly verified, Harness records
+  one local failure and one guarded `Implementation Failed` projection. An
+  unknown post-mutation state records `implementation.start-unresolved` and
+  `ready-for-human`. Correct the state or mutation failure, then rerun only
+  from the resulting durable stage.
 - Provider or local implementation failure after start: local lifecycle moves
   to `implementation-failed`; successful terminal apply moves Linear to
   `Implementation Failed`. Inspect the run, correct the cause, and rerun the
   same Linear issue with `--apply`.
 - Terminal Linear projection failure: local terminal lifecycle and run
   artifacts remain authoritative; stdout reports `linearApplied: false` and
-  the command exits non-zero. Do not rerun the provider merely to repair the
-  tracker. Inspect `meta.json` and `linearUpdate`; partial terminal progress
-  records `statusMutationCompleted`, `statusPostconditionVerified`,
-  `commentPresent`, and the intended marker/body. Manually finish only the
-  missing status/comment projection from that evidence. This initial slice
-  intentionally has no comment-only replay command.
+  the command exits non-zero. The physical workspace writer lease is released
+  before every Linear call, so blocked tracker I/O cannot strand workspace
+  ownership. Do not rerun the provider merely to repair the tracker. Inspect
+  `meta.json` and `linearUpdate`; partial terminal progress records
+  `statusMutationCompleted`, `statusPostconditionVerified`, `commentPresent`,
+  and the intended marker/body. Manually finish only the missing
+  status/comment projection from that evidence. This initial slice intentionally
+  has no comment-only replay command.
 
 Non-goals: PR creation; Linear mutation without `--apply`; terminal-projection
 replay; human branch/worktree orchestration; and Git checkout or commit

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
@@ -133,17 +133,22 @@ function createFactoryImplementationReviewRunContextInternal(
   const writeArtifact = (relativePath: string, value: unknown): string =>
     writeText(relativePath, `${JSON.stringify(value, null, 2)}\n`);
   const writeReservation = (): void => {
-    writeArtifact("attempt-reservation.json", {
+    const reservation = {
       station: "implementation-review",
       workItemKey: deriveFactoryWorkItemKey(options.workItem),
       runId: options.allocation.runId,
       reservationToken: options.allocation.reservationToken,
-      workspace: options.factoryStore.repo.id,
+      workspace: workspace,
       physicalWorkspace: options.checkpoint.workspace.physicalGitRoot,
       storeRoot: options.factoryStore.storeRoot,
       factoryProjectId: options.factoryStore.projectId,
+      factoryStateRoot: options.factoryStore.factoryStateRoot,
+      factoryRunsDir: options.factoryStore.factoryRunsDir,
+      reviewRunsDir: options.factoryStore.reviewRunsDir,
       attempt: "review",
-    });
+    };
+    writeArtifact("attempt-reservation.json", reservation);
+    writeArtifact("implementation-review-reservation.json", reservation);
   };
   const writeIdentityContext = (): void => {
     writeArtifact("context/work-item.json", options.workItem);
@@ -253,6 +258,16 @@ function safeRunPath(runDir: string, relativePath: string): string {
   const normalized = relativePath.replaceAll("\\", "/");
   if (!normalized || normalized.startsWith("/") || normalized.split("/").includes("..")) {
     throw new Error(`Factory review artifact path escapes run directory: ${relativePath}`);
+  }
+  if (lstatSync(runDir).isSymbolicLink()) {
+    throw new Error(`Factory review run directory is symlinked: ${runDir}`);
+  }
+  let current = join(runDir, normalized);
+  while (current !== runDir) {
+    if (existsSync(current) && lstatSync(current).isSymbolicLink()) {
+      throw new Error(`Factory review artifact ancestor is symlinked: ${current}`);
+    }
+    current = join(current, "..");
   }
   return join(runDir, normalized);
 }
