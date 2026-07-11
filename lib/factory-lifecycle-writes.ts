@@ -385,6 +385,34 @@ export function appendImplementationTerminalEvent(input: {
   });
 }
 
+export function appendImplementationReviewCompletedEvent(input: {
+  workItem: FactoryWorkItem;
+  reviewRunId: string;
+  execution: FactoryLifecycleExecution;
+  data: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>["data"];
+  factoryStateRoot?: string;
+  allowWorkspaceLocalStateRoot?: boolean;
+}): FactoryLifecycleEvent {
+  return appendFactoryLifecycleEvent({
+    factoryStateRoot: requireFactoryStateRoot({
+      workspace: input.execution.workspace,
+      factoryStateRoot: input.factoryStateRoot,
+      allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
+    }),
+    event: {
+      version: 1,
+      id: `implementation.review.completed:${input.reviewRunId}`,
+      type: "implementation.review.completed",
+      workItemKey: deriveFactoryWorkItemKey(input.workItem),
+      occurredAt: new Date().toISOString(),
+      runId: input.reviewRunId,
+      source: "harness",
+      execution: input.execution,
+      data: input.data,
+    },
+  });
+}
+
 export function appendPlanPrOpenedEvent(input: {
   meta: FactoryPlanningRunMeta;
   factoryStateRoot?: string;

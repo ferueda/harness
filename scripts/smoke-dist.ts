@@ -199,6 +199,29 @@ if (!factoryImplementationRunHelp.includes("--max-runtime-ms")) {
 if (!factoryImplementationRunHelp.includes("--verbose")) {
   throw new Error("Expected factory implementation run help to include --verbose");
 }
+const factoryImplementationReviewHelp = runHarness([
+  "factory",
+  "implementation",
+  "review",
+  "--help",
+]);
+if (!factoryImplementationReviewHelp.includes("harness factory implementation review")) {
+  throw new Error("Expected factory implementation review help to include command usage");
+}
+for (const option of [
+  "--workspace <path>",
+  "--item-file <path>",
+  "--linear-issue <issue>",
+  "--max-runtime-ms",
+  "--verbose",
+]) {
+  if (!factoryImplementationReviewHelp.includes(option)) {
+    throw new Error(`Expected factory implementation review help to include ${option}`);
+  }
+}
+if (factoryImplementationReviewHelp.includes("--runs-dir")) {
+  throw new Error("Expected factory implementation review help not to include --runs-dir");
+}
 for (const [name, help] of [
   ["factory status", factoryStatusHelp],
   ["factory linear fetch", factoryLinearFetchHelp],
@@ -207,6 +230,7 @@ for (const [name, help] of [
   ["factory planning publish", factoryPlanningPublishHelp],
   ["factory planning mark-plan-merged", factoryPlanningMergedHelp],
   ["factory implementation run", factoryImplementationRunHelp],
+  ["factory implementation review", factoryImplementationReviewHelp],
 ] as const) {
   if (!help.includes("--factory-store-root")) {
     throw new Error(`Expected ${name} help to include --factory-store-root`);

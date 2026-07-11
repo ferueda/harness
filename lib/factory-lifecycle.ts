@@ -230,6 +230,44 @@ const ImplementationFailedEventSchema = BaseEventSchema.extend({
     .strict(),
 });
 
+const ImplementationReviewCompletedDataSchema = z.union([
+  z
+    .object({
+      implementationRunId: z.string().min(1),
+      reviewStatus: z.literal("completed"),
+      outcome: z.literal("review-complete"),
+      verdict: z.literal("pass"),
+      summaryPath: z.string().min(1),
+      metaPath: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      implementationRunId: z.string().min(1),
+      reviewStatus: z.literal("completed"),
+      outcome: z.literal("ready-for-human"),
+      verdict: z.enum(["needs_changes", "blocked"]),
+      summaryPath: z.string().min(1),
+      metaPath: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      implementationRunId: z.string().min(1),
+      reviewStatus: z.literal("failed"),
+      outcome: z.literal("ready-for-human"),
+      summaryPath: z.string().min(1),
+      metaPath: z.string().min(1),
+    })
+    .strict(),
+]);
+
+const ImplementationReviewCompletedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.review.completed"),
+  runId: z.string().min(1),
+  data: ImplementationReviewCompletedDataSchema,
+});
+
 const PlanPrOpenedEventSchema = BaseEventSchema.extend({
   type: z.literal("plan_pr.opened"),
   runId: z.string().min(1),
@@ -264,6 +302,7 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   ImplementationStartedEventSchema,
   ImplementationCompletedEventSchema,
   ImplementationFailedEventSchema,
+  ImplementationReviewCompletedEventSchema,
   PlanPrOpenedEventSchema,
   PlanPrMergedEventSchema,
 ]);
@@ -668,6 +707,12 @@ function reduceFactoryLifecycleEvent(
       return {
         ...base,
         factoryStage: "implementation-failed",
+        factoryRunId: event.runId,
+      };
+    case "implementation.review.completed":
+      return {
+        ...base,
+        factoryStage: event.data.outcome,
         factoryRunId: event.runId,
       };
     case "plan_pr.opened":

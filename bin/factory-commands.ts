@@ -4,6 +4,8 @@ import { join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
 import { factoryImplementationCliOutput } from "./factory-implementation-cli.ts";
+import { addFactoryImplementationReviewCommand } from "./factory-implementation-review-command.ts";
+import type { FactoryImplementationReviewDependencies } from "../lib/factory-implementation-review.ts";
 import {
   factoryPlanningCliOutput,
   type FactoryPlanningLinearUpdate,
@@ -210,6 +212,7 @@ export type FactoryCommandOptions = {
     ctx: FactoryImplementationRunContext,
   ) => Promise<FactoryImplementationRunMeta>;
   implementationExecutionLease?: typeof withFactoryImplementationExecutionLease;
+  implementationReviewDependencies?: FactoryImplementationReviewDependencies;
 };
 
 function factoryStoreForRun(
@@ -754,6 +757,13 @@ function addFactoryImplementationStationCommand(
         process.off("SIGTERM", onRunAbort);
       }
     });
+  addFactoryImplementationReviewCommand(implementation, {
+    positiveNumber: config.positiveNumber,
+    defaultMaxRuntimeMs: config.defaultMaxRuntimeMs,
+    writeVerboseWorkflowEvent: config.writeVerboseWorkflowEvent,
+    linearAdapterFactory: config.implementationLinearAdapterFactory,
+    dependencies: config.implementationReviewDependencies,
+  });
 }
 
 function implementationLinearProjection(settings: FactoryLinearSettings, apply: boolean) {
