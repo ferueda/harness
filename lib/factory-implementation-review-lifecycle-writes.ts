@@ -258,6 +258,8 @@ export function appendImplementationReviewFailedEvent(
     summary: ArtifactPointer;
     recovery?: ArtifactPointer;
     partialRecovery?: PartialRecovery;
+    writerBoundaryBefore?: ArtifactPointer;
+    writerBoundaryAfter?: ArtifactPointer;
   },
 ): FactoryLifecycleEvent {
   const event: ReviewFailedEvent = {
@@ -279,6 +281,8 @@ export function appendImplementationReviewFailedEvent(
       summary: input.summary,
       ...(input.recovery ? { recovery: input.recovery } : {}),
       ...(input.partialRecovery ? { partialRecovery: input.partialRecovery } : {}),
+      ...(input.writerBoundaryBefore ? { writerBoundaryBefore: input.writerBoundaryBefore } : {}),
+      ...(input.writerBoundaryAfter ? { writerBoundaryAfter: input.writerBoundaryAfter } : {}),
     },
   };
   return appendReviewTerminalEvent({ input, event });

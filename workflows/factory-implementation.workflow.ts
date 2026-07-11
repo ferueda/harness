@@ -10,6 +10,7 @@ import {
 import {
   createFactoryReviewHead,
   createFactoryPartialEvidenceCandidate,
+  deleteFactoryCandidateRefIfMatches,
   FactoryReviewHeadError,
   readFactoryCandidateTree,
   readFactoryReviewBase,
@@ -461,45 +462,64 @@ function persistInitialFailureEvidence(input: {
     }
     return undefined;
   }
-  const partial = createFactoryPartialEvidenceCandidate({
-    workspace: input.ctx.workspace,
-    runDir: input.ctx.runDir,
-    implementationRunId: input.ctx.runId,
-    attemptId: input.ctx.runId,
-    reviewIndex: 0,
-    parentCandidate: {
-      ref: input.reviewBase,
-      commit: input.reviewBase,
-      tree: readFactoryCandidateTree(input.ctx.workspace, input.reviewBase),
-    },
-    originalReviewBase: input.reviewBase,
-  });
-  writeFileSync(
-    join(input.ctx.runDir, "implementation/partial-candidate-ref.json"),
-    `${JSON.stringify(partial, null, 2)}\n`,
-    "utf8",
-  );
-  writeFileSync(
-    join(input.ctx.runDir, "implementation/recovery.json"),
-    `${JSON.stringify({ before: input.before, after: input.after, partialCandidate: partial }, null, 2)}\n`,
-    "utf8",
-  );
-  if (input.boundaryBefore && input.boundaryAfter) {
+  let partial: ReturnType<typeof createFactoryPartialEvidenceCandidate> | undefined;
+  try {
+    partial = createFactoryPartialEvidenceCandidate({
+      workspace: input.ctx.workspace,
+      runDir: input.ctx.runDir,
+      implementationRunId: input.ctx.runId,
+      attemptId: input.ctx.runId,
+      reviewIndex: 0,
+      parentCandidate: {
+        ref: input.reviewBase,
+        commit: input.reviewBase,
+        tree: readFactoryCandidateTree(input.ctx.workspace, input.reviewBase),
+      },
+      originalReviewBase: input.reviewBase,
+    });
     writeFileSync(
-      join(input.ctx.runDir, "implementation/writer-boundary-before.json"),
-      `${JSON.stringify(input.boundaryBefore, null, 2)}\n`,
+      join(input.ctx.runDir, "implementation/partial-candidate-ref.json"),
+      `${JSON.stringify(partial, null, 2)}\n`,
       "utf8",
     );
     writeFileSync(
-      join(input.ctx.runDir, "implementation/writer-boundary-after.json"),
-      `${JSON.stringify(input.boundaryAfter, null, 2)}\n`,
+      join(input.ctx.runDir, "implementation/recovery.json"),
+      `${JSON.stringify({ before: input.before, after: input.after, partialCandidate: partial }, null, 2)}\n`,
       "utf8",
     );
+    if (input.boundaryBefore && input.boundaryAfter) {
+      writeFileSync(
+        join(input.ctx.runDir, "implementation/writer-boundary-before.json"),
+        `${JSON.stringify(input.boundaryBefore, null, 2)}\n`,
+        "utf8",
+      );
+      writeFileSync(
+        join(input.ctx.runDir, "implementation/writer-boundary-after.json"),
+        `${JSON.stringify(input.boundaryAfter, null, 2)}\n`,
+        "utf8",
+      );
+    }
+    return {
+      partialCandidate: { ref: partial.ref, commit: partial.commit, tree: partial.tree },
+      ...(input.boundaryBefore && input.boundaryAfter ? { boundary: true } : {}),
+    };
+  } catch (error) {
+    if (partial) {
+      try {
+        deleteFactoryCandidateRefIfMatches({
+          workspace: input.ctx.workspace,
+          ref: partial.ref,
+          commit: partial.commit,
+        });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Failed to persist implementation failure evidence and clean up ${partial.ref}: ${errorMessage(error)}; cleanup failed: ${errorMessage(cleanupError)}`,
+        );
+      }
+    }
+    throw error;
   }
-  return {
-    partialCandidate: { ref: partial.ref, commit: partial.commit, tree: partial.tree },
-    ...(input.boundaryBefore && input.boundaryAfter ? { boundary: true } : {}),
-  };
 }
 
 function tryPersistInitialFailureEvidence(

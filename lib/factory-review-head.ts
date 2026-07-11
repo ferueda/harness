@@ -204,6 +204,25 @@ export function readFactoryReviewBase(workspace: string): string {
   }
 }
 
+export function deleteFactoryCandidateRefIfMatches(input: {
+  workspace: string;
+  ref: string;
+  commit: string;
+}): void {
+  try {
+    execFileSync("git", ["update-ref", "-d", input.ref, input.commit], {
+      cwd: input.workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    throw new FactoryReviewHeadError(
+      `Failed to compare-and-delete factory candidate ref ${input.ref}: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+}
+
 function materializeCandidate(input: {
   workspace: string;
   runDir: string;
@@ -216,18 +235,21 @@ function materializeCandidate(input: {
   const indexPath = join(indexDir, `review-index-${process.pid}-${Date.now()}`);
   mkdirSync(indexDir, { recursive: true });
   const env = { ...process.env, GIT_INDEX_FILE: indexPath, ...HARNESS_GIT_IDENTITY };
+  let refCreated = false;
+  let commit: string | undefined;
   try {
     git(input.workspace, ["read-tree", input.parent], env);
     git(input.workspace, ["add", "-A", "--", "."], env);
     const treeSha = git(input.workspace, ["write-tree"], env).trim();
     assertReviewTreeOmitsHarness(input.workspace, treeSha, env);
-    const commit = git(
+    commit = git(
       input.workspace,
       ["commit-tree", treeSha, "-p", input.parent, "-m", input.message],
       env,
     ).trim();
     // Compare-and-swap against the all-zero old value: existing immutable refs fail closed.
     git(input.workspace, ["update-ref", input.ref, commit, EMPTY_TREE], env);
+    refCreated = true;
     const diffPatch = git(
       input.workspace,
       ["diff", "--binary", `${input.originalReviewBase}..${commit}`],
@@ -246,6 +268,20 @@ function materializeCandidate(input: {
       diffPatch,
     };
   } catch (error) {
+    if (refCreated && commit) {
+      try {
+        deleteFactoryCandidateRefIfMatches({
+          workspace: input.workspace,
+          ref: input.ref,
+          commit,
+        });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Failed to materialize factory review head and clean up ${input.ref}: ${errorMessage(error)}; cleanup failed: ${errorMessage(cleanupError)}`,
+        );
+      }
+    }
     if (error instanceof FactoryReviewHeadError) throw error;
     throw new FactoryReviewHeadError(
       `Failed to materialize factory review head: ${errorMessage(error)}`,

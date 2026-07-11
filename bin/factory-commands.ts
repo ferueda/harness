@@ -867,45 +867,47 @@ export async function runFactoryImplementationWithLifecycle(input: {
     return runImplementation(input.ctx);
   }
 
+  const callerOwnedLease = Boolean(input.ctx.writerLease);
   ensureImplementationWriterLease(input.ctx);
 
   // Item-file is an input reference, not a run artifact; keep its workspace path.
   const itemFileRelative = lifecycleItemFilePath(input.ctx.workspace, input.itemFile);
   try {
-    appendFactoryImplementationStartAudit({
-      ctx: input.ctx,
-      factoryStateRoot: input.factoryStateRoot,
-      issueRef: input.issueRef,
-      itemFile: itemFileRelative,
-    });
-  } catch (error) {
-    input.ctx.writeRejection(errorMessage(error));
-    throw error;
-  }
-  try {
-    input.ctx.initialize();
-  } catch (initializationError) {
-    const meta = input.ctx.export({
-      status: "implementation-failed",
-      error: errorMessage(initializationError),
-      includeLiveArtifacts: false,
-      preProviderFailure: true,
-    });
-    appendImplementationTerminalEvent({
-      meta,
-      factoryStateRoot: input.factoryStateRoot,
-      error: errorMessage(initializationError),
-    });
-    return meta;
-  }
-  try {
+    try {
+      appendFactoryImplementationStartAudit({
+        ctx: input.ctx,
+        factoryStateRoot: input.factoryStateRoot,
+        issueRef: input.issueRef,
+        itemFile: itemFileRelative,
+      });
+    } catch (error) {
+      input.ctx.writeRejection(errorMessage(error));
+      throw error;
+    }
+    try {
+      input.ctx.initialize();
+    } catch (initializationError) {
+      const meta = input.ctx.export({
+        status: "implementation-failed",
+        error: errorMessage(initializationError),
+        includeLiveArtifacts: false,
+        preProviderFailure: true,
+      });
+      appendImplementationTerminalEvent({
+        meta,
+        factoryStateRoot: input.factoryStateRoot,
+        error: errorMessage(initializationError),
+        linearStartState: "not-started",
+      });
+      return meta;
+    }
     return await runFactoryImplementationToLocalTerminal({
       ctx: input.ctx,
       factoryStateRoot: input.factoryStateRoot,
       runImplementation,
     });
   } finally {
-    releaseImplementationWriterLease(input.ctx);
+    if (!callerOwnedLease) releaseImplementationWriterLease(input.ctx);
   }
 }
 
@@ -1281,9 +1283,8 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
   try {
     input.ctx.initialize();
   } catch (initializationError) {
-    return terminalizeStartedImplementationFailure(input, undefined, initializationError);
+    return terminalizeNotStartedImplementationFailure(input, initializationError);
   }
-  releaseImplementationWriterLease(input.ctx);
   let started: LinearImplementationUpdatePlan;
   try {
     started = await input.adapter.applyImplementationStarted({
@@ -1399,15 +1400,11 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
     return terminalizeStartedImplementationFailure(input, started, leaseError);
   }
   let meta: FactoryImplementationRunMeta;
-  try {
-    meta = await runFactoryImplementationToLocalTerminal({
-      ctx: input.ctx,
-      factoryStateRoot: input.factoryStateRoot,
-      runImplementation: input.runImplementation ?? runFactoryImplementation,
-    });
-  } finally {
-    releaseImplementationWriterLease(input.ctx);
-  }
+  meta = await runFactoryImplementationToLocalTerminal({
+    ctx: input.ctx,
+    factoryStateRoot: input.factoryStateRoot,
+    runImplementation: input.runImplementation ?? runFactoryImplementation,
+  });
   try {
     const terminal =
       meta.status === "implementation-complete"
@@ -1461,7 +1458,6 @@ async function terminalizeStartedImplementationFailure(
   failure: unknown,
 ): Promise<FactoryImplementationApplyRunResult> {
   const error = errorMessage(failure);
-  releaseImplementationWriterLease(input.ctx);
   const meta = input.ctx.export({
     status: "implementation-failed",
     error,
@@ -1501,6 +1497,37 @@ async function terminalizeStartedImplementationFailure(
       terminalApplyError,
     };
   }
+}
+
+async function terminalizeNotStartedImplementationFailure(
+  input: {
+    ctx: FactoryImplementationRunContext;
+    adapter: LinearFactoryAdapter;
+    issueRef: string;
+    factoryStateRoot?: string;
+  },
+  failure: unknown,
+): Promise<FactoryImplementationApplyRunResult> {
+  const error = errorMessage(failure);
+  const meta = input.ctx.export({
+    status: "implementation-failed",
+    error,
+    includeLiveArtifacts: false,
+    preProviderFailure: true,
+  });
+  appendImplementationTerminalEvent({
+    meta,
+    factoryStateRoot: input.factoryStateRoot,
+    error,
+    linearStartState: "not-started",
+  });
+  return {
+    meta,
+    linearUpdate: undefined,
+    startApplyFailed: true,
+    terminalApplyFailed: false,
+    startApplyError: failure,
+  };
 }
 
 function releaseImplementationWriterLease(ctx: FactoryImplementationRunContext): void {

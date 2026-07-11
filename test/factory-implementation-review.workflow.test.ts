@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { loadFactoryLifecycleState } from "../lib/factory-lifecycle.ts";
+import { loadFactoryLifecycleState, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import { inspectFactoryWorkspaceWriterLease } from "../lib/factory-locks.ts";
 import { run as runImplementationReview } from "../workflows/factory-implementation-review.workflow.ts";
 import {
@@ -102,6 +103,27 @@ test("provider failure after edits persists a partial tuple and resume restores 
   });
   const partial = failedState?.implementationReviewCheckpoint?.partialRecovery;
   expect(partial).toMatchObject({ reviewIndex: 1, attemptId: first.runId });
+  expect(
+    readFileSync(join(first.runDir, "iterations/1/writer-boundary-before.json"), "utf8"),
+  ).toContain('"refs"');
+  expect(
+    readFactoryLifecycleEvents({
+      factoryStateRoot: fixture.store.factoryStateRoot,
+      workItemKey: "linear:ENG-123",
+    }).at(-1),
+  ).toMatchObject({
+    type: "implementation.review.failed",
+    data: {
+      writerBoundaryBefore: {
+        runId: first.runId,
+        path: "iterations/1/writer-boundary-before.json",
+      },
+      writerBoundaryAfter: {
+        runId: first.runId,
+        path: "iterations/1/writer-boundary-after.json",
+      },
+    },
+  });
 
   const resumedProvider = scriptedProvider({
     workspace: fixture.workspace,

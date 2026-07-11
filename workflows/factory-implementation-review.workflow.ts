@@ -27,6 +27,7 @@ import {
   validateFactoryCandidateTuple,
   createFactoryPartialEvidenceCandidate,
   createFactoryRemediationCandidate,
+  deleteFactoryCandidateRefIfMatches,
   FactoryReviewHeadError,
 } from "../lib/factory-review-head.ts";
 import { resolveFactoryArtifactPointer } from "../lib/factory-implementation-review-input.ts";
@@ -271,6 +272,7 @@ async function runReviewLoop(
         candidateVersion,
         attempts,
         acceptedDebt,
+        undefined,
       );
     }
     if (!partialRecovery && completedReviewCount >= checkpoint.effectiveReviewLimit.value) {
@@ -425,6 +427,7 @@ async function runReviewLoop(
           candidateVersion,
           attempts,
           acceptedDebt,
+          result.lease,
         );
       }
       if (changed) {
@@ -834,6 +837,8 @@ async function remediate(
       before: FactoryWorkspacePatchCapture;
       after: FactoryWorkspacePatchCapture;
       lease: FactoryWorkspaceWriterLeaseHandle;
+      boundaryBeforePath?: string;
+      boundaryAfterPath?: string;
     }
   | {
       kind: "failed";
@@ -843,6 +848,8 @@ async function remediate(
       lease?: FactoryWorkspaceWriterLeaseHandle;
       classification: ReviewFailureClassification;
       unresolvedReason?: "missing-session" | "incompatible-session";
+      boundaryBeforePath?: string;
+      boundaryAfterPath?: string;
     }
 > {
   const session = checkpoint.implementerSession;
@@ -944,6 +951,21 @@ async function remediate(
       durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
       allowedPaths: [logPath],
     });
+    const boundaryBeforePath = `iterations/${reviewIndex}/writer-boundary-before.json`;
+    const boundaryAfterPath = `iterations/${reviewIndex}/writer-boundary-after.json`;
+    try {
+      ctx.writeArtifact(boundaryBeforePath, boundaryBefore);
+      ctx.writeArtifact(boundaryAfterPath, boundaryAfter);
+    } catch (error) {
+      return {
+        kind: "failed",
+        error: errorMessage(error),
+        before,
+        after,
+        lease,
+        classification: "artifact",
+      };
+    }
     try {
       assertFactoryWriterBoundary(boundaryBefore, boundaryAfter);
     } catch (error) {
@@ -956,6 +978,8 @@ async function remediate(
         after,
         lease,
         classification: "workspace",
+        boundaryBeforePath,
+        boundaryAfterPath,
       };
     }
     if (providerError) {
@@ -967,6 +991,8 @@ async function remediate(
         after,
         lease,
         classification: "provider",
+        boundaryBeforePath,
+        boundaryAfterPath,
         ...(isSessionCompatibilityError(providerErrorText)
           ? { unresolvedReason: "incompatible-session" as const }
           : {}),
@@ -980,6 +1006,8 @@ async function remediate(
         after,
         lease,
         classification: "provider",
+        boundaryBeforePath,
+        boundaryAfterPath,
       };
     }
     ctx.writeArtifact(`iterations/${reviewIndex}/workspace-status.json`, { before, after });
@@ -996,6 +1024,8 @@ async function remediate(
         after,
         lease,
         classification: "provider",
+        boundaryBeforePath,
+        boundaryAfterPath,
         ...(isSessionCompatibilityError(result.error)
           ? { unresolvedReason: "incompatible-session" as const }
           : {}),
@@ -1107,12 +1137,28 @@ function capturePartial(
     };
   } catch (error) {
     const failure = errorMessage(error);
+    let cleanupError: unknown;
+    if (partial) {
+      try {
+        deleteFactoryCandidateRefIfMatches({
+          workspace: ctx.workspace,
+          ref: partial.ref,
+          commit: partial.commit,
+        });
+      } catch (error) {
+        cleanupError = error;
+      }
+    }
+    const failureText = cleanupError
+      ? `${failure}; partial ref cleanup failed: ${errorMessage(cleanupError)}`
+      : failure;
     let failurePointer: ReturnType<typeof pointer> | undefined;
     try {
       ctx.writeArtifact(`iterations/${reviewIndex}/partial-capture-failure.json`, {
-        error: failure,
+        error: failureText,
         reason,
         ...(partial ? { partialCandidate: candidateTuple(partial) } : {}),
+        ...(cleanupError ? { cleanupError: errorMessage(cleanupError) } : {}),
         findings,
         reviews,
       });
@@ -1120,7 +1166,7 @@ function capturePartial(
     } catch {
       // Preserve the original capture error when the store itself is unavailable.
     }
-    return { failure, ...(failurePointer ? { failurePointer } : {}) };
+    return { failure: failureText, ...(failurePointer ? { failurePointer } : {}) };
   }
 }
 
@@ -1139,6 +1185,8 @@ function failedAfterRemediation(
     lease?: FactoryWorkspaceWriterLeaseHandle;
     classification: ReviewFailureClassification;
     unresolvedReason?: "missing-session" | "incompatible-session";
+    boundaryBeforePath?: string;
+    boundaryAfterPath?: string;
   },
   findings: readonly FactoryImplementationReviewFinding[],
   reviews: NormalizedFactoryImplementationReview["roles"],
@@ -1172,6 +1220,12 @@ function failedAfterRemediation(
     summary: pointer(ctx.runId, "summary.md"),
     ...(partial.recovery ? { partialRecovery: partial.recovery } : {}),
     ...(partial.failurePointer ? { recovery: partial.failurePointer } : {}),
+    ...(result.boundaryBeforePath
+      ? { writerBoundaryBefore: pointer(ctx.runId, result.boundaryBeforePath) }
+      : {}),
+    ...(result.boundaryAfterPath
+      ? { writerBoundaryAfter: pointer(ctx.runId, result.boundaryAfterPath) }
+      : {}),
     execution: reviewExecution(ctx),
   });
   return ctx.export({
@@ -1350,43 +1404,68 @@ function complete(
     decisions: ReadonlyArray<{ findingId: string; decision: string; rationale: string }>;
   }>,
   acceptedDebt: ReadonlyArray<AcceptedDebt>,
+  existingLease?: FactoryWorkspaceWriterLeaseHandle,
 ): FactoryImplementationReviewRunMeta {
-  ctx.writeArtifact("accepted-debt.json", acceptedDebt);
-  const handoff = renderFactoryImplementationPrReadyHandoff({
-    workItem: ctx.workItem,
-    implementationRunId: ctx.implementationRunId,
-    attempts,
-    originalReviewBase: checkpoint.originalReviewBase,
-    finalCandidate: candidate,
-    cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
-    implementerSession: checkpoint.implementerSession,
-    workspace: checkpoint.workspace,
-    acceptedDebt,
-  });
-  const handoffPath = ctx.writeHandoff(handoff);
-  ctx.writeSummary(
-    `# Factory Implementation Review\n\n- Status: review-complete\n- Candidate: ${candidate.ref}\n`,
-  );
-  appendImplementationReviewCompletedEvent({
-    factoryStateRoot: ctx.factoryStore.factoryStateRoot,
-    workItem: ctx.workItem,
-    runId: ctx.runId,
-    owningImplementationRunId: ctx.implementationRunId,
-    activeReviewAttemptId: ctx.runId,
-    latestCheckpointId: checkpoint.latestCheckpointId,
-    finalCandidate: candidate,
-    handoff: pointer(ctx.runId, "implementation-review/pr-ready-handoff.md"),
-    acceptedDebt: pointer(ctx.runId, "accepted-debt.json"),
-    acceptedDebtCount: acceptedDebt.length,
-    execution: reviewExecution(ctx),
-  });
-  return ctx.export({
-    status: "review-complete",
-    completedReviewCount,
-    candidateVersion,
-    approvedCandidate: candidate,
-    handoffPath,
-  });
+  const ownsLease = !existingLease;
+  const lease =
+    existingLease ??
+    acquireFactoryWorkspaceWriterLease({
+      workspace: ctx.workspace,
+      factoryProjectId: ctx.factoryStore.projectId,
+      storeRoot: ctx.factoryStore.storeRoot,
+      workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+      runId: ctx.implementationRunId,
+      attemptId: ctx.runId,
+      operation: "remediation",
+    });
+  try {
+    validateFactoryCandidateTuple({
+      workspace: ctx.workspace,
+      candidate,
+      expectedOriginalBase: checkpoint.originalReviewBase,
+      expectedWorkspaceTree: true,
+      expectedImplementationRunId: ctx.implementationRunId,
+      expectedCandidateVersion: candidateVersion,
+    });
+    ctx.writeArtifact("accepted-debt.json", acceptedDebt);
+    const handoff = renderFactoryImplementationPrReadyHandoff({
+      workItem: ctx.workItem,
+      implementationRunId: ctx.implementationRunId,
+      attempts,
+      originalReviewBase: checkpoint.originalReviewBase,
+      finalCandidate: candidate,
+      cumulativeDiff: gitDiff(ctx.workspace, checkpoint.originalReviewBase, candidate.commit),
+      implementerSession: checkpoint.implementerSession,
+      workspace: checkpoint.workspace,
+      acceptedDebt,
+    });
+    const handoffPath = ctx.writeHandoff(handoff);
+    ctx.writeSummary(
+      `# Factory Implementation Review\n\n- Status: review-complete\n- Candidate: ${candidate.ref}\n`,
+    );
+    appendImplementationReviewCompletedEvent({
+      factoryStateRoot: ctx.factoryStore.factoryStateRoot,
+      workItem: ctx.workItem,
+      runId: ctx.runId,
+      owningImplementationRunId: ctx.implementationRunId,
+      activeReviewAttemptId: ctx.runId,
+      latestCheckpointId: checkpoint.latestCheckpointId,
+      finalCandidate: candidate,
+      handoff: pointer(ctx.runId, "implementation-review/pr-ready-handoff.md"),
+      acceptedDebt: pointer(ctx.runId, "accepted-debt.json"),
+      acceptedDebtCount: acceptedDebt.length,
+      execution: reviewExecution(ctx),
+    });
+    return ctx.export({
+      status: "review-complete",
+      completedReviewCount,
+      candidateVersion,
+      approvedCandidate: candidate,
+      handoffPath,
+    });
+  } finally {
+    if (ownsLease) releaseFactoryWorkspaceWriterLease({ handle: lease });
+  }
 }
 
 function pointer(runId: string, path: string, root: "factory" | "review" = "review") {

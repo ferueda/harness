@@ -427,6 +427,8 @@ const ImplementationReviewFailedEventSchema = BaseEventSchema.extend({
       summary: ArtifactPointerSchema,
       recovery: ArtifactPointerSchema.optional(),
       partialRecovery: PartialRecoverySchema.optional(),
+      writerBoundaryBefore: ArtifactPointerSchema.optional(),
+      writerBoundaryAfter: ArtifactPointerSchema.optional(),
     })
     .strict(),
 });

@@ -3,7 +3,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { createFactoryReviewHead } from "../lib/factory-review-head.ts";
+import {
+  createFactoryRemediationCandidate,
+  createFactoryReviewHead,
+} from "../lib/factory-review-head.ts";
 
 test("createFactoryReviewHead succeeds with populated ignored .harness and omits it from the review tree", () => {
   const workspace = createGitWorkspace({ ignoreHarness: true });
@@ -50,6 +53,31 @@ test("createFactoryReviewHead fails closed when .harness is not ignored", () => 
 
   const refs = git(workspace, ["for-each-ref", "--format=%(refname)", "refs/harness"]).trim();
   expect(refs).toBe("");
+});
+
+test("candidate materialization removes a ref when post-ref evidence generation fails", () => {
+  const workspace = createGitWorkspace({ ignoreHarness: true });
+  const runDir = join(workspace, ".harness", "runs", "factory", "run-fer-56");
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(workspace, "tracked.txt"), "edited for review head\n", "utf8");
+  const parent = git(workspace, ["rev-parse", "HEAD"]).trim();
+
+  expect(() =>
+    createFactoryRemediationCandidate({
+      workspace,
+      runDir,
+      implementationRunId: "run-fer-56",
+      candidateVersion: 1,
+      priorCandidate: {
+        ref: "HEAD",
+        commit: parent,
+        tree: git(workspace, ["rev-parse", "HEAD^{tree}"]).trim(),
+      },
+      originalReviewBase: "missing-review-base",
+    }),
+  ).toThrow();
+
+  expect(git(workspace, ["for-each-ref", "--format=%(refname)", "refs/harness"]).trim()).toBe("");
 });
 
 function createGitWorkspace(options: { ignoreHarness: boolean }): string {
