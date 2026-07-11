@@ -74,7 +74,12 @@ export function renderFactoryImplementationPrReadyHandoff(input: {
   cumulativeDiff: string;
   implementerSession: AgentSessionRef;
   workspace: WorkspaceProvenance;
-  acceptedDebt: ReadonlyArray<{ findingId: string; rationale: string }>;
+  acceptedDebt: ReadonlyArray<{
+    findingId: string;
+    rationale: string;
+    attemptId: string;
+    reviewIndex: number;
+  }>;
 }): string {
   const attempts = [...input.attempts]
     .sort((a, b) => a.reviewIndex - b.reviewIndex || a.attemptId.localeCompare(b.attemptId))

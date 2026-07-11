@@ -10,6 +10,15 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = resolveSmokeBin();
 const EXPECTED_RECOMMENDED_COMMAND = ".harness/bin/harness run change-review";
 
+const builtReviewWorkflow = await import(
+  resolve(ROOT, "dist/workflows/factory-implementation-review.workflow.js")
+);
+if (!existsSync(builtReviewWorkflow.REMEDIATION_SCHEMA_PATH)) {
+  throw new Error(
+    `Built implementation review workflow resolved a missing schema: ${builtReviewWorkflow.REMEDIATION_SCHEMA_PATH}`,
+  );
+}
+
 function resolveSmokeBin(): string {
   const override = process.env.HARNESS_SMOKE_BIN;
   if (!override) return resolve(ROOT, "dist/bin/harness.js");

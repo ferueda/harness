@@ -38,6 +38,7 @@ import {
 import { run as runReview } from "../workflows/factory-implementation-review.workflow.ts";
 import { factoryImplementationReviewCliOutput } from "./factory-implementation-review-cli.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
+import { errorMessage } from "../lib/agent-invoke.ts";
 
 export type FactoryImplementationReviewOptions = {
   workspace?: string;
@@ -87,9 +88,24 @@ export function addFactoryImplementationReviewCommand(
     )
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryImplementationReviewOptions) => {
-      const output = await runFactoryImplementationReviewCommand(options, config);
-      console.log(JSON.stringify(factoryImplementationReviewCliOutput(output), null, 2));
-      if (output.status !== "review-complete" && output.status !== "already-complete") {
+      try {
+        const output = await runFactoryImplementationReviewCommand(options, config);
+        console.log(JSON.stringify(factoryImplementationReviewCliOutput(output), null, 2));
+        if (output.status !== "review-complete" && output.status !== "already-complete") {
+          process.exitCode = 1;
+        }
+      } catch (error) {
+        console.log(
+          JSON.stringify(
+            {
+              workflow: "factory-implementation-review",
+              status: "rejected",
+              error: errorMessage(error),
+            },
+            null,
+            2,
+          ),
+        );
         process.exitCode = 1;
       }
     });

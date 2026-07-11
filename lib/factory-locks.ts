@@ -15,7 +15,7 @@ import {
   chmodSync,
 } from "node:fs";
 import { hostname } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { defaultFactoryStoreRoot } from "./factory-store.ts";
 
 export const FACTORY_LOCK_STALE_MS = 30 * 60 * 1000;
@@ -724,9 +724,4 @@ function removeMatchingWorkspaceLease(
 function formatWorkspaceLeaseOwner(owner: FactoryWorkspaceWriterLeaseOwner | undefined): string {
   if (!owner) return "owner diagnostics unavailable";
   return `${owner.hostname}:${owner.pid} run=${owner.runId} work-item=${owner.workItemKey}`;
-}
-
-function dirname(path: string): string {
-  const index = path.lastIndexOf("/");
-  return index > 0 ? path.slice(0, index) : ".";
 }

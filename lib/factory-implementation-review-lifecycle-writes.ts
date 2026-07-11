@@ -30,6 +30,7 @@ export type FactoryImplementationReviewStartedInput = ReviewLifecycleBase & {
   owningImplementationRunId: string;
   activeReviewAttemptId: string;
   attemptIndex: number;
+  activeReviewIndex?: number;
   priorReviewAttemptId?: string;
   resume: boolean;
   expectedCheckpointId: string | null;
@@ -61,6 +62,9 @@ export function appendImplementationReviewStartedEvent(
       owningImplementationRunId: input.owningImplementationRunId,
       activeReviewAttemptId: input.activeReviewAttemptId,
       attemptIndex: input.attemptIndex,
+      ...(input.activeReviewIndex !== undefined
+        ? { activeReviewIndex: input.activeReviewIndex }
+        : {}),
       ...(input.priorReviewAttemptId ? { priorReviewAttemptId: input.priorReviewAttemptId } : {}),
       resume: input.resume,
       expectedCheckpointId: input.expectedCheckpointId,

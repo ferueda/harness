@@ -966,7 +966,12 @@ async function recoverStaleImplementationOwner(input: {
   const started = [...events]
     .reverse()
     .find((event) => event.type === "implementation.started" && event.runId === runId);
-  if (!started || started.type !== "implementation.started" || !started.data.owner) {
+  if (
+    !started ||
+    started.type !== "implementation.started" ||
+    !started.runId ||
+    !started.data.owner
+  ) {
     throw new Error(
       `Implementation owner evidence is missing for stale run ${runId}; human recovery required.`,
     );

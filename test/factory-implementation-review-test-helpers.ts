@@ -150,7 +150,15 @@ export function createReviewFixture(): ReviewFixture {
       occurredAt: "2026-07-10T00:00:02.000Z",
       runId: implementationRunId,
       source: "harness",
-      data: { linearIssue: "ENG-123" },
+      data: {
+        linearIssue: "ENG-123",
+        owner: {
+          pid: process.pid,
+          hostname: "test-host",
+          runDir: implementationRunDir,
+          startedAt: "2026-07-10T00:00:02.000Z",
+        },
+      },
     },
   });
 

@@ -46,6 +46,7 @@ import {
   renderFactoryImplementationRemediationPrompt,
 } from "../lib/prompts/factory-implementation-review.ts";
 import { errorMessage } from "../lib/agent-invoke.ts";
+import type { AgentRunResult } from "../lib/agents.ts";
 import {
   acquireFactoryWorkspaceWriterLease,
   releaseFactoryWorkspaceWriterLease,
@@ -64,10 +65,18 @@ import {
 
 export const meta = { name: "factory-implementation-review" };
 
-const REMEDIATION_SCHEMA_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../schemas/factory-implementation-remediation-output.schema.json",
-);
+export const REMEDIATION_SCHEMA_PATH = resolveRemediationSchemaPath();
+
+function resolveRemediationSchemaPath(): string {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(moduleDir, "../schemas/factory-implementation-remediation-output.schema.json"),
+    join(moduleDir, "../../schemas/factory-implementation-remediation-output.schema.json"),
+  ];
+  const path = candidates.find((candidate) => existsSync(candidate));
+  if (!path) throw new Error("Factory remediation output schema is not installed.");
+  return path;
+}
 
 type ReviewState = FactoryImplementationReviewRunContext["checkpoint"];
 type ReviewFailureClassification = "provider" | "git" | "artifact" | "protocol" | "workspace";
@@ -112,9 +121,7 @@ async function runReviewLoop(
     decisions: Array<{ findingId: string; decision: string; rationale: string }>;
   }> = [];
   attempts.push(...restoredHistory.attempts);
-  const acceptedDebt: Array<{ findingId: string; rationale: string }> = [
-    ...restoredHistory.acceptedDebt,
-  ];
+  const acceptedDebt: AcceptedDebt[] = [...restoredHistory.acceptedDebt];
 
   while (true) {
     let normalized: NormalizedFactoryImplementationReview;
@@ -280,7 +287,8 @@ async function runReviewLoop(
     const result = await remediate(ctx, checkpoint, candidate, normalized.findings, reviewIndex);
     try {
       if (result.kind === "failed") {
-        return result.unresolvedReason
+        const changed = workspaceCaptureChanged(result.before, result.after);
+        return result.unresolvedReason && !changed
           ? unresolved(
               ctx,
               checkpoint,
@@ -302,7 +310,13 @@ async function runReviewLoop(
             );
       }
       attemptRecord.decisions.push(...result.output.findingDecisions);
-      addAcceptedDebt(acceptedDebt, normalized.findings, result.output.findingDecisions);
+      addAcceptedDebt(
+        acceptedDebt,
+        normalized.findings,
+        result.output.findingDecisions,
+        ctx.runId,
+        reviewIndex,
+      );
       const declinedMustFix = normalized.findings.filter(
         (finding) => finding.must_fix && result.decisions.get(finding.id)?.decision === "decline",
       );
@@ -384,6 +398,19 @@ async function runReviewLoop(
           completedReviewCount,
           candidateVersion,
           "Implement/adapt decision returned without workspace changes.",
+        );
+      }
+      if (
+        partialRecovery &&
+        result.output.findingDecisions.every((decision) => decision.decision === "decline")
+      ) {
+        return failedProtocol(
+          ctx,
+          checkpoint,
+          candidate,
+          completedReviewCount,
+          candidateVersion,
+          "Partial recovery requires an implement/adapt decision; declined recovery cannot complete with an unapproved workspace.",
         );
       }
       if (
@@ -483,12 +510,23 @@ async function runReviewLoop(
 function startAttempt(ctx: FactoryImplementationReviewRunContext): ReviewState {
   const priorAttempt = ctx.checkpoint.activeReviewAttemptId ?? ctx.checkpoint.priorReviewAttemptId;
   const expectedActiveAttempt = ctx.checkpoint.activeReviewAttemptId ?? null;
+  const priorAttemptCount = readFactoryLifecycleEvents({
+    factoryStateRoot: ctx.factoryStore.factoryStateRoot,
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+  }).filter(
+    (event) =>
+      event.type === "implementation.review.started" &&
+      event.data.owningImplementationRunId === ctx.implementationRunId,
+  ).length;
+  const activeReviewIndex =
+    ctx.checkpoint.activeReviewIndex ?? ctx.checkpoint.completedReviewCount + 1;
   const event = appendImplementationReviewStartedEvent({
     factoryStateRoot: ctx.factoryStore.factoryStateRoot,
     workItem: ctx.workItem,
     owningImplementationRunId: ctx.implementationRunId,
     activeReviewAttemptId: ctx.runId,
-    attemptIndex: (ctx.checkpoint.activeReviewIndex ?? 0) + 1,
+    attemptIndex: priorAttemptCount + 1,
+    activeReviewIndex,
     ...(priorAttempt ? { priorReviewAttemptId: priorAttempt } : {}),
     resume: priorAttempt !== undefined,
     expectedCheckpointId: ctx.checkpoint.latestCheckpointId,
@@ -509,6 +547,7 @@ function startAttempt(ctx: FactoryImplementationReviewRunContext): ReviewState {
     latestCheckpointId: event.id,
     activeReviewAttemptId: ctx.runId,
     priorReviewAttemptId: priorAttempt,
+    activeReviewIndex,
   };
 }
 
@@ -548,31 +587,52 @@ function upsertAttempt(
 }
 
 function addAcceptedDebt(
-  acceptedDebt: Array<{ findingId: string; rationale: string }>,
+  acceptedDebt: Array<AcceptedDebt>,
   findings: readonly FactoryImplementationReviewFinding[],
   decisions: readonly FactoryImplementationRemediationOutput["findingDecisions"][number][],
+  attemptId: string,
+  reviewIndex: number,
 ): void {
   const nonBlockingIds = new Set(
     findings.filter((finding) => !finding.must_fix).map((finding) => finding.id),
   );
   for (const decision of decisions) {
     if (decision.decision !== "decline" || !nonBlockingIds.has(decision.findingId)) continue;
-    if (!acceptedDebt.some((item) => item.findingId === decision.findingId)) {
-      acceptedDebt.push({ findingId: decision.findingId, rationale: decision.rationale });
+    if (
+      !acceptedDebt.some(
+        (item) =>
+          item.attemptId === attemptId &&
+          item.reviewIndex === reviewIndex &&
+          item.findingId === decision.findingId,
+      )
+    ) {
+      acceptedDebt.push({
+        findingId: decision.findingId,
+        rationale: decision.rationale,
+        attemptId,
+        reviewIndex,
+      });
     }
   }
 }
 
+type AcceptedDebt = {
+  findingId: string;
+  rationale: string;
+  attemptId: string;
+  reviewIndex: number;
+};
+
 function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
   attempts: ReviewAttemptRecord[];
-  acceptedDebt: Array<{ findingId: string; rationale: string }>;
+  acceptedDebt: AcceptedDebt[];
 } {
   const events = readFactoryLifecycleEvents({
     factoryStateRoot: ctx.factoryStore.factoryStateRoot,
     workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
   });
   const attempts: ReviewAttemptRecord[] = [];
-  const acceptedDebt: Array<{ findingId: string; rationale: string }> = [];
+  const acceptedDebt: AcceptedDebt[] = [];
   const findingsByAttempt = new Map<string, FactoryImplementationReviewFinding[]>();
   for (const event of events) {
     if (event.type !== "implementation.review.checkpointed") continue;
@@ -610,7 +670,13 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
           JSON.parse(readFileSync(decisionPath, "utf8")) as unknown,
         );
         attempt.decisions.push(...output.findingDecisions);
-        addAcceptedDebt(acceptedDebt, normalized.findings, output.findingDecisions);
+        addAcceptedDebt(
+          acceptedDebt,
+          normalized.findings,
+          output.findingDecisions,
+          event.data.activeReviewAttemptId,
+          index,
+        );
       }
     } else if (event.data.decision) {
       const decisionPath = resolveFactoryArtifactPointer({
@@ -624,7 +690,15 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
       const findings = findingsByAttempt.get(
         reviewHistoryKey(event.data.activeReviewAttemptId, index),
       );
-      if (findings) addAcceptedDebt(acceptedDebt, findings, output.findingDecisions);
+      if (findings) {
+        addAcceptedDebt(
+          acceptedDebt,
+          findings,
+          output.findingDecisions,
+          event.data.activeReviewAttemptId,
+          index,
+        );
+      }
     }
   }
   return { attempts, acceptedDebt };
@@ -842,20 +916,26 @@ async function remediate(
       durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
       allowedPaths: [logPath],
     });
-    const result = await ctx.implementerProvider().run({
-      workspace: ctx.workspace,
-      prompt,
-      schemaPath: REMEDIATION_SCHEMA_PATH,
-      model: ctx.implementerRole.model,
-      sandboxMode: ctx.implementerRole.sandboxMode,
-      approvalPolicy: ctx.implementerRole.approvalPolicy,
-      modelReasoningEffort: ctx.implementerRole.modelReasoningEffort,
-      session,
-      workspaceGuard: "record",
-      maxRuntimeMs: ctx.maxRuntimeMs,
-      logPath,
-      signal: ctx.signal,
-    });
+    let result: AgentRunResult | undefined;
+    let providerError: unknown;
+    try {
+      result = await ctx.implementerProvider().run({
+        workspace: ctx.workspace,
+        prompt,
+        schemaPath: REMEDIATION_SCHEMA_PATH,
+        model: ctx.implementerRole.model,
+        sandboxMode: ctx.implementerRole.sandboxMode,
+        approvalPolicy: ctx.implementerRole.approvalPolicy,
+        modelReasoningEffort: ctx.implementerRole.modelReasoningEffort,
+        session,
+        workspaceGuard: "record",
+        maxRuntimeMs: ctx.maxRuntimeMs,
+        logPath,
+        signal: ctx.signal,
+      });
+    } catch (error) {
+      providerError = error;
+    }
     const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
     const boundaryAfter = captureFactoryWriterBoundary({
       workspace: ctx.workspace,
@@ -869,11 +949,37 @@ async function remediate(
     } catch (error) {
       return {
         kind: "failed",
-        error: errorMessage(error),
+        error: providerError
+          ? `Provider failed and violated the writer boundary: ${errorMessage(error)}`
+          : errorMessage(error),
         before,
         after,
         lease,
         classification: "workspace",
+      };
+    }
+    if (providerError) {
+      const providerErrorText = errorMessage(providerError);
+      return {
+        kind: "failed",
+        error: providerErrorText,
+        before,
+        after,
+        lease,
+        classification: "provider",
+        ...(isSessionCompatibilityError(providerErrorText)
+          ? { unresolvedReason: "incompatible-session" as const }
+          : {}),
+      };
+    }
+    if (!result) {
+      return {
+        kind: "failed",
+        error: "Factory provider returned no result.",
+        before,
+        after,
+        lease,
+        classification: "provider",
       };
     }
     ctx.writeArtifact(`iterations/${reviewIndex}/workspace-status.json`, { before, after });
@@ -1243,7 +1349,7 @@ function complete(
     nestedReviewRefs: readonly string[];
     decisions: ReadonlyArray<{ findingId: string; decision: string; rationale: string }>;
   }>,
-  acceptedDebt: ReadonlyArray<{ findingId: string; rationale: string }>,
+  acceptedDebt: ReadonlyArray<AcceptedDebt>,
 ): FactoryImplementationReviewRunMeta {
   ctx.writeArtifact("accepted-debt.json", acceptedDebt);
   const handoff = renderFactoryImplementationPrReadyHandoff({
@@ -1353,7 +1459,7 @@ function captureUnexpectedPartialRecovery(
       operation: "remediation",
     });
     const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
-    if (!after.porcelain && !after.patchSha256) return {};
+    if (!after.porcelain && !after.patch && after.changedFiles.length === 0) return {};
     const review = checkpoint.latestReview
       ? resolveFactoryArtifactPointer({
           pointer: checkpoint.latestReview,

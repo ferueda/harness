@@ -193,7 +193,8 @@ const PlanningFailedEventSchema = BaseEventSchema.extend({
 
 const ImplementationStartedEventSchema = BaseEventSchema.extend({
   type: z.literal("implementation.started"),
-  runId: z.string().min(1),
+  // Legacy JSONL may contain audit-only started records without an owner/run.
+  runId: z.string().min(1).optional(),
   data: z
     .object({
       linearIssue: z.string().min(1).optional(),
@@ -332,6 +333,7 @@ const ImplementationReviewStartedEventSchema = BaseEventSchema.extend({
       owningImplementationRunId: z.string().min(1),
       activeReviewAttemptId: z.string().min(1),
       attemptIndex: z.number().int().positive(),
+      activeReviewIndex: z.number().int().positive().optional(),
       priorReviewAttemptId: z.string().min(1).optional(),
       resume: z.boolean(),
       expectedCheckpointId: z.string().min(1).nullable(),
@@ -938,6 +940,8 @@ function reduceFactoryLifecycleEvent(
     case "planning.started":
       return base;
     case "implementation.started":
+      // Pre-owner records are historical audit evidence, not live ownership.
+      if (!event.runId || !event.data.owner) return base;
       return {
         ...base,
         factoryStage: "implementation-started",
@@ -1110,7 +1114,7 @@ function reviewStartedState(
     effectiveReviewLimit: data.effectiveReviewLimit,
     activeReviewAttemptId: data.activeReviewAttemptId,
     ...(data.priorReviewAttemptId ? { priorReviewAttemptId: data.priorReviewAttemptId } : {}),
-    ...(data.attemptIndex > 0 ? { activeReviewIndex: data.attemptIndex } : {}),
+    ...(data.activeReviewIndex !== undefined ? { activeReviewIndex: data.activeReviewIndex } : {}),
     ...(previous?.partialRecovery ? { partialRecovery: previous.partialRecovery } : {}),
     ...(previous?.latestReview ? { latestReview: previous.latestReview } : {}),
     ...(previous?.latestDecision ? { latestDecision: previous.latestDecision } : {}),

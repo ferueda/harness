@@ -176,15 +176,15 @@ async function runLive(
     }
 
     const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
-    const failureEvidence = tryPersistInitialFailureEvidence({
-      ctx,
-      before,
-      after,
-      reviewBase,
-      boundaryBefore,
-      boundaryAfter,
-    });
     if (!result.ok) {
+      const failureEvidence = tryPersistInitialFailureEvidence({
+        ctx,
+        before,
+        after,
+        reviewBase,
+        boundaryBefore,
+        boundaryAfter,
+      });
       const meta = exportFailedLive({
         ctx,
         error: result.aborted

@@ -347,7 +347,15 @@ test("implementation started claims durable implementation ownership", () => {
       ...baseEvent("implementation.started:run-3", "linear:FER-34", "run-3"),
       runId: "run-3",
       type: "implementation.started",
-      data: { linearIssue: "FER-34" },
+      data: {
+        linearIssue: "FER-34",
+        owner: {
+          pid: 123,
+          hostname: "test-host",
+          runDir: "/tmp/run-3",
+          startedAt: "2026-07-10T00:00:02.000Z",
+        },
+      },
     },
   ]);
 
@@ -786,6 +794,20 @@ test("appendImplementationStartedEvent writes audit-only started event", () => {
   });
 });
 
+test("legacy started records without run ownership replay as audit-only", () => {
+  const state = reduceFactoryLifecycleEvents([
+    importedEvent("linear:FER-34"),
+    {
+      ...baseEvent("implementation.started:legacy", "linear:FER-34"),
+      type: "implementation.started",
+      data: { linearIssue: "FER-34" },
+    },
+  ]);
+
+  expect(state?.factoryStage).not.toBe("implementation-started");
+  expect(state?.factoryRunId).toBeUndefined();
+});
+
 test("appendImplementationTerminalEvent dry-run skips writes", () => {
   const root = tempRoot();
   const meta = implementationMeta({ status: "dry_run" });
@@ -812,6 +834,12 @@ test("appendImplementationTerminalEvent completed emits review fields", () => {
     runId: "impl-1",
     factoryStateRoot: root,
     execution: { workspace: "workspace" },
+    owner: {
+      pid: 123,
+      hostname: "test-host",
+      runDir: "/tmp/impl-1",
+      startedAt: OCCURRED_AT,
+    },
     occurredAt: OCCURRED_AT,
   });
   const meta = implementationMeta({
@@ -852,6 +880,12 @@ test("appendImplementationTerminalEvent failed emits error", () => {
     runId: "impl-1",
     factoryStateRoot: root,
     execution: { workspace: "workspace" },
+    owner: {
+      pid: 123,
+      hostname: "test-host",
+      runDir: "/tmp/impl-1",
+      startedAt: OCCURRED_AT,
+    },
     occurredAt: OCCURRED_AT,
   });
   const meta = implementationMeta({
