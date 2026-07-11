@@ -127,27 +127,49 @@ async function runLive(
         })
       : undefined;
     providerInvoked = true;
-    const result = await ctx.implementerProvider().run({
-      workspace: ctx.workspace,
-      prompt,
-      model: role.model,
-      ...implementerPolicyOptions(role.agent, role),
-      maxRuntimeMs: ctx.maxRuntimeMs,
-      logPath,
-      workspaceGuard: "record",
-      signal: ctx.signal,
-    });
+    let result: AgentRunResult | undefined;
+    let providerError: unknown;
+    try {
+      result = await ctx.implementerProvider().run({
+        workspace: ctx.workspace,
+        prompt,
+        model: role.model,
+        ...implementerPolicyOptions(role.agent, role),
+        maxRuntimeMs: ctx.maxRuntimeMs,
+        logPath,
+        workspaceGuard: "record",
+        signal: ctx.signal,
+      });
+    } catch (error) {
+      providerError = error;
+    }
     if (writerBoundary && ctx.factoryStore) {
-      assertFactoryWriterBoundary(
-        writerBoundary,
-        captureFactoryWriterBoundary({
-          workspace: ctx.workspace,
-          lifecycleRoot: ctx.factoryStore.factoryStateRoot,
-          factoryStoreRoot: ctx.factoryStore.storeRoot,
-          durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
-          allowedPaths: [logPath],
-        }),
-      );
+      try {
+        assertFactoryWriterBoundary(
+          writerBoundary,
+          captureFactoryWriterBoundary({
+            workspace: ctx.workspace,
+            lifecycleRoot: ctx.factoryStore.factoryStateRoot,
+            factoryStoreRoot: ctx.factoryStore.storeRoot,
+            durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
+            allowedPaths: [logPath],
+          }),
+        );
+      } catch (boundaryError) {
+        if (providerError) {
+          throw new AggregateError(
+            [providerError, boundaryError],
+            `Factory provider failed and violated the writer boundary: ${errorMessage(boundaryError)}`,
+          );
+        }
+        throw boundaryError;
+      }
+    }
+    if (providerError) {
+      throw providerError;
+    }
+    if (!result) {
+      throw new Error("Factory provider returned no result.");
     }
 
     const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });

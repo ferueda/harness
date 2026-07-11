@@ -122,16 +122,25 @@ function fingerprintPath(path: string | undefined, allowedPaths: readonly string
   if (!path || !existsSync(path)) return "missing";
   const root = canonicalPath(path);
   const entries: string[] = [];
+  const visitedRealpaths = new Set<string>();
+  const maxEntries = 10_000;
   const visit = (current: string): void => {
     if (allowedPaths.some((allowed) => current === allowed || current.startsWith(`${allowed}/`))) {
       return;
     }
     const stat = lstatSync(current);
+    const realCurrent = realpathSync(current);
+    if (visitedRealpaths.has(realCurrent)) return;
+    visitedRealpaths.add(realCurrent);
+    if (visitedRealpaths.size > maxEntries) {
+      throw new Error(`Factory writer boundary fingerprint exceeded ${maxEntries} paths.`);
+    }
     const rel = relative(root, current) || ".";
     entries.push(`${rel}:${stat.mode}:${stat.size}:${stat.mtimeMs}:${stat.isSymbolicLink()}`);
     if (stat.isSymbolicLink()) {
       const target = realpathSync(current);
-      entries.push(`target:${relative(root, target)}:${fingerprintPath(target, allowedPaths)}`);
+      entries.push(`target:${target}`);
+      if (isContainedPath(root, target)) visit(target);
       return;
     }
     if (!stat.isDirectory()) {
@@ -142,6 +151,11 @@ function fingerprintPath(path: string | undefined, allowedPaths: readonly string
   };
   visit(root);
   return entries.sort().join("|");
+}
+
+function isContainedPath(root: string, candidate: string): boolean {
+  const path = relative(root, candidate);
+  return path === "" || (path !== ".." && !path.startsWith("../"));
 }
 
 function hashFile(path: string): string {

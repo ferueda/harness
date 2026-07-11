@@ -47,6 +47,19 @@ export type FactoryImplementationReviewRunMeta = {
   artifacts: Record<string, string>;
 };
 
+export type FactoryImplementationReviewLegacyRunMeta = Omit<
+  FactoryImplementationReviewRunMeta,
+  | "originalReviewBase"
+  | "approvedCandidate"
+  | "effectiveReviewLimit"
+  | "completedReviewCount"
+  | "candidateVersion"
+> & {
+  status: "ready-for-human";
+  legacyIncomplete: true;
+  missing: string[];
+};
+
 export type FactoryImplementationReviewRunContextOptions = {
   allocation: FactoryRunAllocation;
   workspace: string;

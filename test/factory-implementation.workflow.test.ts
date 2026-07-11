@@ -24,6 +24,11 @@ import {
 } from "../lib/factory-workspace-changes.ts";
 import { renderFactoryImplementationChangeReviewHandoff } from "../lib/prompts/factory-implementation.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
+import {
+  factoryStoreMetadata,
+  resolveFactoryStore,
+  type FactoryStoreMeta,
+} from "../lib/factory-store.ts";
 import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
 
 const WORK_ITEM = {
@@ -561,6 +566,39 @@ test("provider ok:false maps to implementation-failed with artifacts", async () 
   expect(handoff).toContain("**Status:** blocked");
 });
 
+test("failed provider results still enforce the protected writer boundary", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
+  const factoryStore = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: mkdtempSync(join(tmpdir(), "harness-factory-implementation-store-")),
+    factoryStoreProjectId: "test-project",
+    env: process.env,
+  });
+  const ctx = createLiveCtx({
+    workspace,
+    runsDir,
+    factoryStore: factoryStoreMetadata(factoryStore),
+    agentProviderFactory() {
+      return {
+        name: "cursor",
+        async run() {
+          execFileSync("git", ["update-ref", "refs/harness/test-protected", "HEAD"], {
+            cwd: workspace,
+            stdio: "ignore",
+          });
+          return { ok: false, error: "provider failed", exitCode: 1, raw: {} };
+        },
+      };
+    },
+  });
+
+  const meta = await runFactoryImplementation(ctx);
+
+  expect(meta.status).toBe("implementation-failed");
+  expect(meta.error).toContain("writer boundary");
+});
+
 test("provider run rejection maps to implementation-failed with artifacts", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-implementation-runs-"));
@@ -747,6 +785,7 @@ test("handoff warning text covers truncation and empty patch warnings", () => {
 function createLiveCtx(input: {
   workspace: string;
   runsDir: string;
+  factoryStore?: FactoryStoreMeta;
   eventSink?: (event: WorkflowEvent) => void;
   implementerRole?: Parameters<
     typeof createFactoryImplementationRunContextForTest
@@ -764,6 +803,7 @@ function createLiveCtx(input: {
     dryRun: false,
     maxRuntimeMs: 5_000,
     ...(input.eventSink ? { eventSink: input.eventSink } : {}),
+    ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
     agentProviderFactory: input.agentProviderFactory,
   });
 }

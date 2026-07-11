@@ -6,7 +6,7 @@ import {
   type FactoryStoreMeta,
   type FactoryStoreResolution,
 } from "../lib/factory-store.ts";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { writeFileSync } from "node:fs";
 import { readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import {
@@ -30,6 +30,7 @@ import {
 import { appendImplementationReviewUnresolvedEvent } from "../lib/factory-lifecycle-writes.ts";
 import {
   createFactoryImplementationReviewRunContext,
+  type FactoryImplementationReviewLegacyRunMeta,
   type FactoryImplementationReviewRunContext,
   type FactoryImplementationReviewRunMeta,
 } from "../lib/factory-implementation-review-run-context.ts";
@@ -96,7 +97,7 @@ export function addFactoryImplementationReviewCommand(
 export async function runFactoryImplementationReviewCommand(
   options: FactoryImplementationReviewOptions,
   config: FactoryImplementationReviewCommandConfig,
-): Promise<FactoryImplementationReviewRunMeta> {
+): Promise<FactoryImplementationReviewRunMeta | FactoryImplementationReviewLegacyRunMeta> {
   if (Boolean(options.itemFile) === Boolean(options.linearIssue)) {
     throw new Error("Exactly one of --item-file or --linear-issue is required.");
   }
@@ -111,6 +112,7 @@ export async function runFactoryImplementationReviewCommand(
     factoryRunsDir: store.reviewRunsDir,
     idPrefix: "implementation-review",
   });
+  writeReviewReservationManifest(allocation, store, options);
   let resolved: ReturnType<typeof resolveFactoryImplementationReviewInput>;
   try {
     resolved = resolveFactoryImplementationReviewInput({
@@ -141,7 +143,7 @@ export async function runFactoryImplementationReviewCommand(
   if (resolved.factoryStore.reviewRunsDir !== store.reviewRunsDir) {
     releaseEmptyFactoryRunReservation({
       runDir: allocation.runDir,
-      factoryRunsDir: store.reviewRunsDir,
+      factoryRunsDir: dirname(allocation.runDir),
       reservationToken: allocation.reservationToken,
     });
     allocation = allocateFactoryRun({
@@ -152,7 +154,7 @@ export async function runFactoryImplementationReviewCommand(
   if (resolved.state.factoryStage === "review-complete") {
     releaseEmptyFactoryRunReservation({
       runDir: allocation.runDir,
-      factoryRunsDir: store.reviewRunsDir,
+      factoryRunsDir: dirname(allocation.runDir),
       reservationToken: allocation.reservationToken,
     });
     return existingCompletedResult(resolved);
@@ -171,12 +173,23 @@ export async function runFactoryImplementationReviewCommand(
       `${options.resume ? "--resume" : "Initial review"} is not allowed from ${resolved.state.factoryStage ?? "uninitialized"}.`,
     );
   }
-  const settings = resolveFactoryImplementationSettings({
-    workspace: store.workspace,
-    ...(options.maxReviewIterations !== undefined
-      ? { maxReviewIterations: options.maxReviewIterations }
-      : {}),
-  });
+  let settings: ReturnType<typeof resolveFactoryImplementationSettings>;
+  try {
+    settings = resolveFactoryImplementationSettings({
+      workspace: store.workspace,
+      ...(options.maxReviewIterations !== undefined
+        ? { maxReviewIterations: options.maxReviewIterations }
+        : {}),
+    });
+  } catch (error) {
+    writeReviewRejection(
+      allocation,
+      resolved.factoryStore,
+      options,
+      error instanceof Error ? error.message : String(error),
+    );
+    throw error;
+  }
   const effectiveReviewLimit = options.resume
     ? resolved.checkpoint.effectiveReviewLimit
     : { value: settings.maxReviewIterations, source: settings.source };
@@ -185,16 +198,34 @@ export async function runFactoryImplementationReviewCommand(
     (options.maxReviewIterations !== undefined || settings.source === "config") &&
     settings.maxReviewIterations !== resolved.checkpoint.effectiveReviewLimit.value
   ) {
+    writeReviewRejection(
+      allocation,
+      resolved.factoryStore,
+      options,
+      `Review limit changed on resume: persisted ${resolved.checkpoint.effectiveReviewLimit.value}, requested ${settings.maxReviewIterations}.`,
+    );
     throw new Error(
       `Review limit changed on resume: persisted ${resolved.checkpoint.effectiveReviewLimit.value}, requested ${settings.maxReviewIterations}.`,
     );
   }
-  const reviewerRole = resolveFactoryImplementationReviewer({ workspace: store.workspace });
-  const implementerRole = resolveFactoryRoleAgent({
-    workspace: store.workspace,
-    station: "implementation",
-    role: "implementer",
-  });
+  let reviewerRole: ReturnType<typeof resolveFactoryImplementationReviewer>;
+  let implementerRole: ReturnType<typeof resolveFactoryRoleAgent>;
+  try {
+    reviewerRole = resolveFactoryImplementationReviewer({ workspace: store.workspace });
+    implementerRole = resolveFactoryRoleAgent({
+      workspace: store.workspace,
+      station: "implementation",
+      role: "implementer",
+    });
+  } catch (error) {
+    writeReviewRejection(
+      allocation,
+      resolved.factoryStore,
+      options,
+      error instanceof Error ? error.message : String(error),
+    );
+    throw error;
+  }
   const checkpoint = {
     ...resolved.checkpoint,
     effectiveReviewLimit,
@@ -280,10 +311,36 @@ function writeReviewRejection(
   );
 }
 
+function writeReviewReservationManifest(
+  allocation: { runId: string; runDir: string; reservationToken: string },
+  store: FactoryStoreResolution,
+  options: FactoryImplementationReviewOptions,
+): void {
+  const reservation = {
+    station: "implementation-review",
+    runId: allocation.runId,
+    reservationToken: allocation.reservationToken,
+    identity: options.linearIssue ?? options.itemFile,
+    workspace: store.workspace,
+    storeRoot: store.storeRoot,
+    factoryProjectId: store.projectId,
+    factoryStateRoot: store.factoryStateRoot,
+    factoryRunsDir: store.factoryRunsDir,
+    reviewRunsDir: store.reviewRunsDir,
+  };
+  for (const name of ["attempt-reservation.json", "implementation-review-reservation.json"]) {
+    writeFileSync(
+      join(allocation.runDir, name),
+      `${JSON.stringify(reservation, null, 2)}\n`,
+      "utf8",
+    );
+  }
+}
+
 function terminalizeLegacyReview(
   allocation: { runId: string; runDir: string; reservationToken: string },
   legacy: FactoryImplementationReviewLegacyInput,
-): FactoryImplementationReviewRunMeta {
+): FactoryImplementationReviewLegacyRunMeta {
   const message = `Legacy implementation is incomplete; missing ${legacy.missing.join(", ")}.`;
   const summaryPath = join(allocation.runDir, "summary.md");
   writeFileSync(
@@ -321,10 +378,12 @@ function terminalizeLegacyReview(
     summary,
     reason: "legacy-incomplete",
   });
-  const meta = {
+  const meta: FactoryImplementationReviewLegacyRunMeta = {
     runId: allocation.runId,
     workflow: "factory-implementation-review",
     status: "ready-for-human",
+    legacyIncomplete: true,
+    missing: legacy.missing,
     workspace: legacy.workspace,
     runDir: allocation.runDir,
     workItem: {
@@ -341,7 +400,7 @@ function terminalizeLegacyReview(
     artifacts: { summary: "summary.md", rejection: "attempt-rejected.json" },
   };
   writeFileSync(meta.metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
-  return meta as unknown as FactoryImplementationReviewRunMeta;
+  return meta;
 }
 
 function parseReviewLimit(value: string): number {

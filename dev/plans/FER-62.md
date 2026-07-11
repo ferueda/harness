@@ -404,6 +404,7 @@ it remains `blocked`.
 - `test/factory-writer-boundary.test.ts` (new)
 - `test/factory-implementation-review.workflow.test.ts` (new)
 - `test/factory-implementation-review-cli.test.ts` (new)
+- `test/factory-implementation-review-command.test.ts` (new)
 - `test/factory-implementation-review-test-helpers.ts` (new, only if shared setup avoids duplication)
 - `test/factory-lifecycle.test.ts`
 - `test/factory-locks.test.ts` (new)

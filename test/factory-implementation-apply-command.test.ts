@@ -443,7 +443,7 @@ test("real command treats a falsy start rejection as an apply failure", async ()
   });
 });
 
-test("real command rejects success-true start when fresh state did not change", async () => {
+test("real command records retryable failure when start postcondition remains not-started", async () => {
   const fixture = commandFixture({
     behavior: { update: async () => ({ success: true }) },
   });
@@ -456,7 +456,7 @@ test("real command rejects success-true start when fresh state did not change", 
   expect(fixture.commentInputs).toEqual([]);
   expect(implementationEventTypes(fixture)).toEqual([
     "implementation.started",
-    "implementation.start-unresolved",
+    "implementation.failed",
   ]);
   expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({ linearApplied: false });
 });

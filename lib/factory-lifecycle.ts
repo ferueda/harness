@@ -249,6 +249,7 @@ const ImplementationFailedEventSchema = BaseEventSchema.extend({
       streamLogPath: z.string().min(1).optional(),
       workspaceStatusPath: z.string().min(1).optional(),
       reviewBase: z.string().min(1).optional(),
+      linearStartState: z.enum(["not-started", "implementing", "unknown"]).optional(),
     })
     .strict(),
 });
@@ -273,6 +274,7 @@ const ImplementationStartUnresolvedEventSchema = BaseEventSchema.extend({
       error: z.string().min(1),
       runDir: z.string().min(1),
       phase: z.enum(["validation", "fetch", "mutation", "postcondition"]),
+      linearStartState: z.enum(["not-started", "implementing", "unknown"]).optional(),
     })
     .strict(),
 });

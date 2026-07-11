@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -91,8 +92,14 @@ export function releaseEmptyFactoryRunReservation(input: {
     if (manifest.runId !== relativeRun || manifest.reservationToken !== input.reservationToken)
       return false;
     const entries = readdirSync(runDir);
-    if (entries.some((entry) => entry !== "attempt-reservation.json")) return false;
+    const reservationFiles = new Set([
+      "attempt-reservation.json",
+      "implementation-review-reservation.json",
+    ]);
+    if (entries.some((entry) => !reservationFiles.has(entry))) return false;
     unlinkSync(manifestPath);
+    const reviewManifestPath = join(runDir, "implementation-review-reservation.json");
+    if (existsSync(reviewManifestPath)) unlinkSync(reviewManifestPath);
     rmdirSync(runDir);
     return true;
   } catch {

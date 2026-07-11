@@ -337,6 +337,7 @@ export function appendImplementationRecoveredFailureEvent(input: {
   execution: FactoryLifecycleExecution;
   error: string;
   summaryPath?: string;
+  linearStartState?: "not-started" | "implementing" | "unknown";
 }): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
   return appendFactoryLifecycleEvent({
@@ -352,6 +353,7 @@ export function appendImplementationRecoveredFailureEvent(input: {
       execution: input.execution,
       data: {
         error: input.error,
+        ...(input.linearStartState ? { linearStartState: input.linearStartState } : {}),
         ...(input.summaryPath ? { summaryPath: input.summaryPath } : {}),
       },
     },
@@ -371,6 +373,7 @@ export function appendImplementationStartUnresolvedEvent(input: {
   execution: FactoryLifecycleExecution;
   error: string;
   phase: "validation" | "fetch" | "mutation" | "postcondition";
+  linearStartState?: "not-started" | "implementing" | "unknown";
 }): FactoryLifecycleEvent {
   const workItemKey = deriveFactoryWorkItemKey(input.workItem);
   return appendFactoryLifecycleEvent({
@@ -384,7 +387,12 @@ export function appendImplementationStartUnresolvedEvent(input: {
       runId: input.runId,
       source: "harness",
       execution: input.execution,
-      data: { error: input.error, runDir: input.runDir, phase: input.phase },
+      data: {
+        error: input.error,
+        runDir: input.runDir,
+        phase: input.phase,
+        ...(input.linearStartState ? { linearStartState: input.linearStartState } : {}),
+      },
     },
     precondition: {
       allowedStages: ["implementation-started"],
@@ -445,6 +453,7 @@ export function appendImplementationTerminalEvent(input: {
   factoryStateRoot?: string;
   allowWorkspaceLocalStateRoot?: boolean;
   error?: string;
+  linearStartState?: "not-started" | "implementing" | "unknown";
 }): FactoryLifecycleEvent | undefined {
   if (input.meta.status === "dry_run") return undefined;
   const workItem = implementationMetaWorkItem(input.meta);
@@ -469,6 +478,7 @@ export function appendImplementationTerminalEvent(input: {
         execution,
         data: {
           error: input.error ?? input.meta.error ?? "Factory implementation failed.",
+          ...(input.linearStartState ? { linearStartState: input.linearStartState } : {}),
           summaryPath: formatMetaArtifactPath(input.meta, input.meta.summaryPath),
           ...(input.meta.artifacts.rawOutput
             ? {

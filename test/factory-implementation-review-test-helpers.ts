@@ -27,17 +27,17 @@ import type { FactoryRoleAgent } from "../lib/config.ts";
 import type { ImplementationReviewCheckpoint } from "../lib/factory-implementation-review-schemas.ts";
 
 export const REVIEW_WORK_ITEM = {
-  id: "linear:FER-62",
+  id: "linear:ENG-123",
   source: "linear",
   title: "Automate factory implementation review and remediation",
   body: "Run the implementation review and remediation loop.",
-  url: "https://linear.app/ferueda/issue/FER-62",
+  url: "https://linear.app/example/issue/ENG-123",
   labels: ["factory"],
   metadata: {
     tracker: {
       source: "linear",
-      id: "FER-62",
-      url: "https://linear.app/ferueda/issue/FER-62",
+      id: "ENG-123",
+      url: "https://linear.app/example/issue/ENG-123",
     },
     factoryStage: "ready-to-implement",
     factoryRoute: "ready-to-implement",
@@ -150,7 +150,7 @@ export function createReviewFixture(): ReviewFixture {
       occurredAt: "2026-07-10T00:00:02.000Z",
       runId: implementationRunId,
       source: "harness",
-      data: { linearIssue: "FER-62" },
+      data: { linearIssue: "ENG-123" },
     },
   });
 

@@ -7,6 +7,7 @@ import {
   type FactoryLifecycleState,
 } from "./factory-lifecycle.ts";
 import {
+  AgentSessionRefSchema,
   ImplementationReviewCheckpointSchema,
   type ImplementationReviewCheckpoint,
   type ArtifactPointer,
@@ -176,6 +177,32 @@ export function resolveFactoryImplementationReviewInput(
   ) {
     throw new FactoryImplementationReviewInputError(
       "Implementation metadata store provenance does not match the lifecycle checkpoint.",
+      "provenance",
+    );
+  }
+  if (
+    storeMeta.storeRoot !== storeResolution.storeRoot ||
+    storeMeta.factoryStateRoot !== storeResolution.factoryStateRoot ||
+    storeMeta.projectId !== storeResolution.projectId
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation metadata store identity does not match the lifecycle store.",
+      "provenance",
+    );
+  }
+  const implementationSession = AgentSessionRefSchema.safeParse(
+    implementationMeta.implementerSession,
+  );
+  if (!implementationSession.success) {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation metadata is missing a structured implementer session.",
+      "provenance",
+      { cause: implementationSession.error },
+    );
+  }
+  if (stableJson(implementationSession.data) !== stableJson(checkpoint.implementerSession)) {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation session does not match the lifecycle checkpoint owner.",
       "provenance",
     );
   }
@@ -703,4 +730,13 @@ function readUnknown(path: string, label: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (!value || typeof value !== "object") return JSON.stringify(value);
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
+    .join(",")}}`;
 }

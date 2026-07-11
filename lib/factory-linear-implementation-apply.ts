@@ -158,7 +158,8 @@ export async function applyLinearImplementationStarted(
       }
     }
     throw new LinearImplementationStartApplyError(error, phase, {
-      implementingStatusVerified,
+      implementingStatusVerified:
+        implementingStatusVerified && progress?.statusMutationCompleted === true,
       ...(progress ? { update: progress } : {}),
     });
   }

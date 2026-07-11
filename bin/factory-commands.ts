@@ -1,7 +1,7 @@
 import { InvalidArgumentError, type Command } from "commander";
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
 import { hostname } from "node:os";
 import type { Readable } from "node:stream";
@@ -988,13 +988,18 @@ async function recoverStaleImplementationOwner(input: {
     return true;
   }
 
+  const recordedFactoryRunsDir = dirname(resolve(started.data.owner.runDir));
+  const recoveryStore = {
+    ...input.factoryStore,
+    factoryRunsDir: recordedFactoryRunsDir,
+  };
   assertImplementationRunReservation({
     runDir: started.data.owner.runDir,
     runId,
-    factoryRunsDir: input.factoryStore.factoryRunsDir,
+    factoryRunsDir: recoveryStore.factoryRunsDir,
     workspace: input.workspace,
     workItem: input.workItem,
-    factoryStore: input.factoryStore,
+    factoryStore: recoveryStore,
   });
 
   let linearStage:
@@ -1066,6 +1071,7 @@ async function recoverStaleImplementationOwner(input: {
       execution,
       error:
         "Recovered stale implementation owner before provider terminalization; retry is allowed.",
+      linearStartState: linearStage === "implementation-started" ? "implementing" : "not-started",
     });
   } finally {
     if (workspaceLease) releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
@@ -1298,16 +1304,22 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
     ) {
       linearStage = await probeImplementationLinearStage(input.adapter, input.issueRef);
     }
+    const startMutationConfirmed = typedStartError?.update?.statusMutationCompleted === true;
     const execution = factoryLifecycleExecutionProvenance(
       factoryExecutionProvenance(input.ctx.workspace, input.ctx.runDir),
       input.ctx.factoryStore,
     );
     let terminal: LinearImplementationUpdatePlan | undefined;
-    if (linearStage === "implementation-started" && input.adapter.applyImplementationFailed) {
+    if (
+      linearStage === "implementation-started" &&
+      startMutationConfirmed &&
+      input.adapter.applyImplementationFailed
+    ) {
       appendImplementationTerminalEvent({
         meta,
         factoryStateRoot: input.factoryStateRoot,
         error: errorMessage(startApplyError),
+        linearStartState: "implementing",
       });
       try {
         terminal = await input.adapter.applyImplementationFailed({
@@ -1341,6 +1353,7 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
         meta,
         factoryStateRoot: input.factoryStateRoot,
         error: errorMessage(startApplyError),
+        linearStartState: "not-started",
       });
     } else {
       appendImplementationStartUnresolvedEvent({
@@ -1352,6 +1365,7 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
         execution,
         error: errorMessage(startApplyError),
         phase: typedStartError?.phase ?? "fetch",
+        linearStartState: "unknown",
       });
     }
     return {

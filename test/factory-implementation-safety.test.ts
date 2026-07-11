@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -106,11 +107,12 @@ test("writer boundary fingerprints the canonical Git workspace and symlink targe
   execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
   execFileSync("git", ["commit", "-m", "init"], { cwd: workspace, stdio: "ignore" });
   mkdirSync(join(workspace, ".harness"), { recursive: true });
-  writeFileSync(join(external, "state.txt"), "before\n", "utf8");
   symlinkSync(external, join(workspace, ".harness", "external"));
 
   const before = captureFactoryWriterBoundary({ workspace });
-  writeFileSync(join(external, "state.txt"), "after\n", "utf8");
+  const replacement = mkdtempSync(join(tmpdir(), "harness-factory-boundary-replacement-"));
+  unlinkSync(join(workspace, ".harness", "external"));
+  symlinkSync(replacement, join(workspace, ".harness", "external"));
   const after = captureFactoryWriterBoundary({ workspace });
 
   expect(() => assertFactoryWriterBoundary(before, after)).toThrow(FactoryWriterBoundaryError);

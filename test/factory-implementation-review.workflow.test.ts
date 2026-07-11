@@ -48,7 +48,7 @@ test("passes after one complete three-role review and writes a PR-ready handoff"
   expect(result.handoffPath!).toContain("pr-ready-handoff.md");
   const state = loadFactoryLifecycleState({
     factoryStateRoot: fixture.store.factoryStateRoot,
-    workItemKey: "linear:FER-62",
+    workItemKey: "linear:ENG-123",
     workspace: fixture.workspace,
   });
   expect(state?.factoryStage).toBe("review-complete");
@@ -97,7 +97,7 @@ test("provider failure after edits persists a partial tuple and resume restores 
   expect(failedProvider.calls).toHaveLength(4);
   const failedState = loadFactoryLifecycleState({
     factoryStateRoot: fixture.store.factoryStateRoot,
-    workItemKey: "linear:FER-62",
+    workItemKey: "linear:ENG-123",
     workspace: fixture.workspace,
   });
   const partial = failedState?.implementationReviewCheckpoint?.partialRecovery;
