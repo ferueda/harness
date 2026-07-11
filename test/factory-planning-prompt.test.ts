@@ -19,6 +19,8 @@ test("factory planner prioritizes explicit intent and minimum-sufficient scope",
   expect(prompt).toContain("Write the minimum sufficient plan");
   expect(prompt).toContain("Conditional content:");
   expect(prompt).toContain("smallest coherent change");
+  expect(prompt).toContain("smallest focused checks plus the repository's canonical validation");
+  expect(prompt).toContain("routine diff inspection");
   expect(prompt).toContain("must trace to an acceptance criterion");
   expect(prompt).not.toContain('Include a "Skills for the executor" table');
 });

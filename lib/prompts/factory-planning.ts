@@ -37,6 +37,7 @@ Conditional content:
 - Include code excerpts only when an exact target shape is load-bearing.
 - Include skills, command tables, separate test matrices, maintenance notes, failure matrices, or repeated done criteria only when a named constraint or risk makes them necessary.
 - Do not turn preserved behavior into new implementation work, add speculative hardening or future-proofing, or repeat the same command or criterion across sections.
+- Keep verification to the smallest focused checks plus the repository's canonical validation command. Do not separately list checks already covered by that command or routine diff inspection unless a specific risk requires them.
 - Every proposed file, abstraction, test family, documentation change, and future-compatibility item must trace to an acceptance criterion, hard invariant, or verified regression risk.
 
 Verify current state before prescribing edits. Prefer concise references to repository sources over reproducing their contents. Plan length is not a target; proportionality to the required decisions and changed surface is.`;
