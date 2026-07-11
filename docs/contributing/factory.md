@@ -447,9 +447,14 @@ Live planning appends lifecycle events for work-item import, station start, and
 terminal completion/failure. The lifecycle read model is what future stations
 should use for readiness; Linear comments remain human context and dedupe.
 
-The planner writes a draft file, the harness snapshots it, `plan-review`
-reviews the snapshot, and the same planner session handles review findings
-until the station finishes.
+The planner writes only to the ignored workspace-local
+`.harness/factory-drafts/<run-id>/draft.md`. Harness validates and reads that
+draft once, publishes identical bytes to canonical
+`<runDir>/planning/draft.md` and immutable
+`<runDir>/iterations/<n>/plan.md`, then `plan-review` reviews the immutable
+snapshot. Revisions edit the same scratch path and add a new immutable
+snapshot. Scratch is retained as non-authoritative agent state; it is never
+used for recovery or copied directly to `dev/plans/`.
 
 Planning statuses:
 
@@ -461,16 +466,28 @@ Planning statuses:
 Planning artifacts under the durable factory `runs/factory/<run-id>/` include:
 
 - `context/work-item.json`
-- `planning/draft.md`
+- `planning/draft.md` (canonical latest successful draft)
 - `iterations/<n>/planner.prompt.md`
 - `iterations/<n>/planner.raw.json`
-- `iterations/<n>/planner.json`
+- `iterations/<n>/planner.json` when structured planner output parses
+- `iterations/<n>/planner.failure.json` for failed or non-publishable turns
+- `iterations/<n>/planner.stream.jsonl` when the provider streams output
 - `iterations/<n>/plan.md`
 - `iterations/<n>/plan-review-ref.json`
 - `iterations/<n>/review-findings.json`
 - `summary.md`
 - `meta.json`
 - `events.jsonl` for live runs
+
+`planner.failure.json` records the classified failure. If structured output
+parsed before a later validation or publication failure, `planner.json` may
+also remain alongside it.
+
+Planning scratch is intentionally retained under the workspace and ignored by
+Git. Manual cleanup is an operator action: first verify that the path still
+resolves inside the workspace and does not overlap the durable run. Live
+planning rejects a workspace-local `--runs-dir`; local run roots remain a
+dry-run-only compatibility mode.
 
 Nested factory plan-review artifacts live under durable `runs/reviews/<run-id>/` and are
 referenced from `iterations/<n>/plan-review-ref.json`. The final approved plan

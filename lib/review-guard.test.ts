@@ -165,9 +165,44 @@ test("withWorkspaceGuard fails when workspace porcelain changes", () => {
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.error).toMatch(/modified the workspace/);
+  expect(result.failureKind).toBe("workspace-guard");
   expect(result.raw).toMatchObject({
     workspaceStatus: {
       before: before.value,
+    },
+  });
+  expect(result.raw).not.toHaveProperty("underlyingFailure");
+});
+
+test("withWorkspaceGuard preserves provider timeout while recording tracked changes", () => {
+  const workspace = createGitWorkspace();
+  const before = readWorkspaceStatus(workspace);
+  expect(before.ok).toBe(true);
+  if (!before.ok) return;
+
+  writeFileSync(join(workspace, "dirty.txt"), "changed\n", "utf8");
+
+  const result = withWorkspaceGuard(
+    {
+      ok: false,
+      error: "Agent timed out",
+      exitCode: 124,
+      raw: { timeout: true },
+    },
+    workspace,
+    before.value,
+  );
+
+  expect(result).toMatchObject({
+    ok: false,
+    error: "Agent timed out",
+    exitCode: 124,
+  });
+  expect(result.raw).toMatchObject({
+    timeout: true,
+    workspaceStatus: {
+      before: before.value,
+      after: expect.stringContaining("dirty.txt"),
     },
   });
   expect(result.raw).not.toHaveProperty("underlyingFailure");

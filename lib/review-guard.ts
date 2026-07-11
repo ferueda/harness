@@ -70,13 +70,14 @@ export function applyWorkspaceGuard(
   if (afterStatus.value === beforeStatus) return guardedResult;
   // Record mode captures mutations but leaves validation to the caller.
   if (workspaceGuard === "record") return guardedResult;
-  if (!result.ok && result.aborted) return guardedResult;
+  if (!result.ok && (result.aborted || result.exitCode === 124)) return guardedResult;
 
   return {
     ok: false,
     error: "Agent runtime modified the workspace during a review run",
     raw: addUnderlyingFailure(guardedResult.raw, result),
     exitCode: result.ok ? 1 : result.exitCode,
+    failureKind: "workspace-guard",
   };
 }
 

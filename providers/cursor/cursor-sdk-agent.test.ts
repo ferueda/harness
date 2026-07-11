@@ -1315,12 +1315,8 @@ test("createCursorSdkAgent detects workspace mutations on timeout", async () => 
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.exitCode).toBe(124);
-  expect(result.error).toBe("Agent runtime modified the workspace during a review run");
+  expect(result.error).toContain("timed out");
   expect(result.raw).toMatchObject({
-    underlyingFailure: {
-      exitCode: 124,
-      error: expect.stringContaining("timed out"),
-    },
     workspaceStatus: {
       before: "",
       after: expect.stringContaining("changed-on-timeout.txt"),
