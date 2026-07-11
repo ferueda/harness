@@ -80,12 +80,27 @@ export type FactoryImplementationReviewRejectedRunMeta = {
   artifacts: Record<string, string>;
 };
 
+class FactoryImplementationReviewCommandFailure extends Error {
+  readonly output: FactoryImplementationReviewRejectedRunMeta;
+
+  constructor(message: string, output: FactoryImplementationReviewRejectedRunMeta) {
+    super(message);
+    this.name = "FactoryImplementationReviewCommandFailure";
+    this.output = output;
+  }
+}
+
 function printRejectedReview(error: unknown): void {
+  if (error instanceof FactoryImplementationReviewCommandFailure) {
+    console.log(JSON.stringify(error.output, null, 2));
+    return;
+  }
   console.log(
     JSON.stringify(
       {
         workflow: "factory-implementation-review",
         status: "rejected",
+        rejectedBeforeAllocation: true,
         error: errorMessage(error),
       },
       null,
@@ -160,57 +175,14 @@ export async function runFactoryImplementationReviewCommand(
   });
   // Reject unsupported workspaces before creating durable review-run evidence.
   canonicalizeFactoryWorkspace(store.workspace);
+  let rejectionStore: FactoryStoreResolution | FactoryStoreMeta = store;
+  let rejectionWorkspace = store.workspace;
+  let rejectionImplementationRunId: string | undefined;
   let allocation = allocateFactoryRun({
     factoryRunsDir: store.reviewRunsDir,
     idPrefix: "implementation-review",
   });
   try {
-    writeFactoryRunReservation(allocation);
-  } catch (error) {
-    releaseEmptyFactoryRunReservation({
-      runDir: allocation.runDir,
-      factoryRunsDir: dirname(allocation.runDir),
-      reservationToken: allocation.reservationToken,
-    });
-    throw error;
-  }
-  let resolved: ReturnType<typeof resolveFactoryImplementationReviewInput>;
-  try {
-    resolved = resolveFactoryImplementationReviewInput({
-      workspace: store.workspace,
-      ...(options.itemFile ? { itemFile: options.itemFile } : {}),
-      ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
-      factoryStore: store,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const rejected = writeReviewRejection(allocation, store, options, store.workspace, message);
-    if (
-      error &&
-      typeof error === "object" &&
-      "classification" in error &&
-      (error as FactoryImplementationReviewInputError).classification === "legacy-incomplete"
-    ) {
-      const legacy = resolveFactoryImplementationReviewLegacyInput({
-        workspace: store.workspace,
-        ...(options.itemFile ? { itemFile: options.itemFile } : {}),
-        ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
-        factoryStore: store,
-      });
-      return terminalizeLegacyReview(allocation, legacy);
-    }
-    return rejected;
-  }
-  if (resolved.factoryStore.reviewRunsDir !== store.reviewRunsDir) {
-    releaseEmptyFactoryRunReservation({
-      runDir: allocation.runDir,
-      factoryRunsDir: dirname(allocation.runDir),
-      reservationToken: allocation.reservationToken,
-    });
-    allocation = allocateFactoryRun({
-      factoryRunsDir: resolved.factoryStore.reviewRunsDir,
-      idPrefix: "implementation-review",
-    });
     try {
       writeFactoryRunReservation(allocation);
     } catch (error) {
@@ -221,154 +193,229 @@ export async function runFactoryImplementationReviewCommand(
       });
       throw error;
     }
-  }
-  try {
-    writeReviewReservationManifest(allocation, resolved.factoryStore, options, {
+    let resolved: ReturnType<typeof resolveFactoryImplementationReviewInput>;
+    try {
+      resolved = resolveFactoryImplementationReviewInput({
+        workspace: store.workspace,
+        ...(options.itemFile ? { itemFile: options.itemFile } : {}),
+        ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
+        factoryStore: store,
+      });
+      rejectionStore = resolved.factoryStore;
+      rejectionWorkspace = resolved.workspace;
+      rejectionImplementationRunId = resolved.implementationRunId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const rejected = writeReviewRejection(allocation, store, options, store.workspace, message);
+      if (
+        error &&
+        typeof error === "object" &&
+        "classification" in error &&
+        (error as FactoryImplementationReviewInputError).classification === "legacy-incomplete"
+      ) {
+        const legacy = resolveFactoryImplementationReviewLegacyInput({
+          workspace: store.workspace,
+          ...(options.itemFile ? { itemFile: options.itemFile } : {}),
+          ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
+          factoryStore: store,
+        });
+        return terminalizeLegacyReview(allocation, legacy);
+      }
+      return rejected;
+    }
+    if (resolved.factoryStore.reviewRunsDir !== store.reviewRunsDir) {
+      releaseEmptyFactoryRunReservation({
+        runDir: allocation.runDir,
+        factoryRunsDir: dirname(allocation.runDir),
+        reservationToken: allocation.reservationToken,
+      });
+      allocation = allocateFactoryRun({
+        factoryRunsDir: resolved.factoryStore.reviewRunsDir,
+        idPrefix: "implementation-review",
+      });
+      rejectionStore = resolved.factoryStore;
+      try {
+        writeFactoryRunReservation(allocation);
+      } catch (error) {
+        releaseEmptyFactoryRunReservation({
+          runDir: allocation.runDir,
+          factoryRunsDir: dirname(allocation.runDir),
+          reservationToken: allocation.reservationToken,
+        });
+        throw error;
+      }
+    }
+    try {
+      writeReviewReservationManifest(allocation, resolved.factoryStore, options, {
+        workItem: resolved.workItem,
+        workspace: resolved.workspace,
+        physicalWorkspace: resolved.checkpoint.workspace.physicalGitRoot,
+        workspaceKey: resolved.checkpoint.workspace.workspaceKey,
+      });
+    } catch (error) {
+      releaseEmptyFactoryRunReservation({
+        runDir: allocation.runDir,
+        factoryRunsDir: dirname(allocation.runDir),
+        reservationToken: allocation.reservationToken,
+      });
+      throw error;
+    }
+    if (resolved.state.factoryStage === "review-complete") {
+      writeReviewIdempotentMarker(
+        allocation,
+        resolved.factoryStore,
+        options,
+        store.workspace,
+        resolved,
+      );
+      return existingCompletedResult(resolved);
+    }
+    const allowed = options.resume
+      ? ["review-running", "review-failed"]
+      : ["implementation-complete"];
+    if (!allowed.includes(resolved.state.factoryStage ?? "")) {
+      return writeReviewRejection(
+        allocation,
+        resolved.factoryStore,
+        options,
+        store.workspace,
+        `${options.resume ? "--resume" : "Initial review"} is not allowed from ${resolved.state.factoryStage ?? "uninitialized"}.`,
+        resolved.implementationRunId,
+      );
+    }
+    let settings: ReturnType<typeof resolveFactoryImplementationSettings>;
+    try {
+      settings = resolveFactoryImplementationSettings({
+        workspace: store.workspace,
+        ...(options.maxReviewIterations !== undefined
+          ? { maxReviewIterations: options.maxReviewIterations }
+          : {}),
+      });
+    } catch (error) {
+      return writeReviewRejection(
+        allocation,
+        resolved.factoryStore,
+        options,
+        store.workspace,
+        error instanceof Error ? error.message : String(error),
+        resolved.implementationRunId,
+      );
+    }
+    const effectiveReviewLimit = options.resume
+      ? resolved.checkpoint.effectiveReviewLimit
+      : { value: settings.maxReviewIterations, source: settings.source };
+    if (
+      options.resume &&
+      (settings.maxReviewIterations !== resolved.checkpoint.effectiveReviewLimit.value ||
+        settings.source !== resolved.checkpoint.effectiveReviewLimit.source)
+    ) {
+      return writeReviewRejection(
+        allocation,
+        resolved.factoryStore,
+        options,
+        store.workspace,
+        `Review limit provenance changed on resume: persisted ${JSON.stringify(resolved.checkpoint.effectiveReviewLimit)}, current ${JSON.stringify({ value: settings.maxReviewIterations, source: settings.source })}.`,
+        resolved.implementationRunId,
+      );
+    }
+    let reviewerRole: ReturnType<typeof resolveFactoryImplementationReviewer>;
+    let implementerRole: ReturnType<typeof resolveFactoryRoleAgent>;
+    try {
+      reviewerRole = resolveFactoryImplementationReviewer({ workspace: store.workspace });
+      implementerRole = resolveFactoryRoleAgent({
+        workspace: store.workspace,
+        station: "implementation",
+        role: "implementer",
+      });
+    } catch (error) {
+      return writeReviewRejection(
+        allocation,
+        resolved.factoryStore,
+        options,
+        store.workspace,
+        error instanceof Error ? error.message : String(error),
+        resolved.implementationRunId,
+      );
+    }
+    const checkpoint = {
+      ...resolved.checkpoint,
+      effectiveReviewLimit,
+    };
+    const reviewAbort = new AbortController();
+    const onReviewAbort = () => reviewAbort.abort();
+    process.once("SIGINT", onReviewAbort);
+    process.once("SIGTERM", onReviewAbort);
+    const ctx = createFactoryImplementationReviewRunContext({
+      allocation,
+      workspace: store.workspace,
       workItem: resolved.workItem,
-      workspace: resolved.workspace,
-      physicalWorkspace: resolved.checkpoint.workspace.physicalGitRoot,
-      workspaceKey: resolved.checkpoint.workspace.workspaceKey,
-    });
-  } catch (error) {
-    releaseEmptyFactoryRunReservation({
-      runDir: allocation.runDir,
-      factoryRunsDir: dirname(allocation.runDir),
-      reservationToken: allocation.reservationToken,
-    });
-    throw error;
-  }
-  if (resolved.state.factoryStage === "review-complete") {
-    writeReviewIdempotentMarker(
-      allocation,
-      resolved.factoryStore,
-      options,
-      store.workspace,
-      resolved,
-    );
-    return existingCompletedResult(resolved);
-  }
-  const allowed = options.resume
-    ? ["review-running", "review-failed"]
-    : ["implementation-complete"];
-  if (!allowed.includes(resolved.state.factoryStage ?? "")) {
-    return writeReviewRejection(
-      allocation,
-      resolved.factoryStore,
-      options,
-      store.workspace,
-      `${options.resume ? "--resume" : "Initial review"} is not allowed from ${resolved.state.factoryStage ?? "uninitialized"}.`,
-      resolved.implementationRunId,
-    );
-  }
-  let settings: ReturnType<typeof resolveFactoryImplementationSettings>;
-  try {
-    settings = resolveFactoryImplementationSettings({
-      workspace: store.workspace,
-      ...(options.maxReviewIterations !== undefined
-        ? { maxReviewIterations: options.maxReviewIterations }
+      implementationRunId: resolved.implementationRunId,
+      originalReviewBase: checkpoint.originalReviewBase,
+      approvedCandidate: checkpoint.approvedCandidate,
+      checkpoint,
+      factoryStore: resolved.factoryStore,
+      reviewerRole,
+      implementerRole,
+      ...(resolved.approvedPlanPath ? { approvedPlanPath: resolved.approvedPlanPath } : {}),
+      maxRuntimeMs: options.maxRuntimeMs,
+      ...(config.workspaceLeaseEnv ? { workspaceLeaseEnv: config.workspaceLeaseEnv } : {}),
+      signal: reviewAbort.signal,
+      ...(options.verbose && config.writeVerboseWorkflowEvent
+        ? { eventSink: config.writeVerboseWorkflowEvent }
         : {}),
+      agentProviderFactory: config.implementationAgentProviderFactory ?? createAgentProvider,
     });
+    try {
+      ctx.writeReservation();
+    } catch (error) {
+      return writeReviewRejection(
+        allocation,
+        resolved.factoryStore,
+        options,
+        resolved.workspace,
+        errorMessage(error),
+        resolved.implementationRunId,
+      );
+    }
+    try {
+      const runner = config.implementationReviewRunner ?? runReview;
+      return await runner(ctx);
+    } catch (error) {
+      return writeReviewRejection(
+        allocation,
+        resolved.factoryStore,
+        options,
+        resolved.workspace,
+        errorMessage(error),
+        resolved.implementationRunId,
+      );
+    } finally {
+      process.off("SIGINT", onReviewAbort);
+      process.off("SIGTERM", onReviewAbort);
+    }
   } catch (error) {
-    return writeReviewRejection(
-      allocation,
-      resolved.factoryStore,
-      options,
-      store.workspace,
-      error instanceof Error ? error.message : String(error),
-      resolved.implementationRunId,
-    );
-  }
-  const effectiveReviewLimit = options.resume
-    ? resolved.checkpoint.effectiveReviewLimit
-    : { value: settings.maxReviewIterations, source: settings.source };
-  if (
-    options.resume &&
-    (settings.maxReviewIterations !== resolved.checkpoint.effectiveReviewLimit.value ||
-      settings.source !== resolved.checkpoint.effectiveReviewLimit.source)
-  ) {
-    return writeReviewRejection(
-      allocation,
-      resolved.factoryStore,
-      options,
-      store.workspace,
-      `Review limit provenance changed on resume: persisted ${JSON.stringify(resolved.checkpoint.effectiveReviewLimit)}, current ${JSON.stringify({ value: settings.maxReviewIterations, source: settings.source })}.`,
-      resolved.implementationRunId,
-    );
-  }
-  let reviewerRole: ReturnType<typeof resolveFactoryImplementationReviewer>;
-  let implementerRole: ReturnType<typeof resolveFactoryRoleAgent>;
-  try {
-    reviewerRole = resolveFactoryImplementationReviewer({ workspace: store.workspace });
-    implementerRole = resolveFactoryRoleAgent({
-      workspace: store.workspace,
-      station: "implementation",
-      role: "implementer",
-    });
-  } catch (error) {
-    return writeReviewRejection(
-      allocation,
-      resolved.factoryStore,
-      options,
-      store.workspace,
-      error instanceof Error ? error.message : String(error),
-      resolved.implementationRunId,
-    );
-  }
-  const checkpoint = {
-    ...resolved.checkpoint,
-    effectiveReviewLimit,
-  };
-  const reviewAbort = new AbortController();
-  const onReviewAbort = () => reviewAbort.abort();
-  process.once("SIGINT", onReviewAbort);
-  process.once("SIGTERM", onReviewAbort);
-  const ctx = createFactoryImplementationReviewRunContext({
-    allocation,
-    workspace: store.workspace,
-    workItem: resolved.workItem,
-    implementationRunId: resolved.implementationRunId,
-    originalReviewBase: checkpoint.originalReviewBase,
-    approvedCandidate: checkpoint.approvedCandidate,
-    checkpoint,
-    factoryStore: resolved.factoryStore,
-    reviewerRole,
-    implementerRole,
-    ...(resolved.approvedPlanPath ? { approvedPlanPath: resolved.approvedPlanPath } : {}),
-    maxRuntimeMs: options.maxRuntimeMs,
-    ...(config.workspaceLeaseEnv ? { workspaceLeaseEnv: config.workspaceLeaseEnv } : {}),
-    signal: reviewAbort.signal,
-    ...(options.verbose && config.writeVerboseWorkflowEvent
-      ? { eventSink: config.writeVerboseWorkflowEvent }
-      : {}),
-    agentProviderFactory: config.implementationAgentProviderFactory ?? createAgentProvider,
-  });
-  try {
-    ctx.writeReservation();
-  } catch (error) {
-    return writeReviewRejection(
-      allocation,
-      resolved.factoryStore,
-      options,
-      resolved.workspace,
-      errorMessage(error),
-      resolved.implementationRunId,
-    );
-  }
-  try {
-    const runner = config.implementationReviewRunner ?? runReview;
-    return await runner(ctx);
-  } catch (error) {
-    return writeReviewRejection(
-      allocation,
-      resolved.factoryStore,
-      options,
-      resolved.workspace,
-      errorMessage(error),
-      resolved.implementationRunId,
-    );
-  } finally {
-    process.off("SIGINT", onReviewAbort);
-    process.off("SIGTERM", onReviewAbort);
+    try {
+      return writeReviewRejection(
+        allocation,
+        rejectionStore,
+        options,
+        rejectionWorkspace,
+        errorMessage(error),
+        rejectionImplementationRunId,
+      );
+    } catch (rejectionError) {
+      throw new FactoryImplementationReviewCommandFailure(
+        `${errorMessage(error)}; durable rejection projection failed: ${errorMessage(rejectionError)}`,
+        buildRejectedRunMeta(
+          allocation,
+          rejectionStore,
+          rejectionWorkspace,
+          options,
+          rejectionImplementationRunId,
+          errorMessage(error),
+        ),
+      );
+    }
   }
 }
 
@@ -380,9 +427,15 @@ function writeReviewRejection(
   message: string,
   implementationRunId?: string,
 ): FactoryImplementationReviewRejectedRunMeta {
+  const rejected = buildRejectedRunMeta(
+    allocation,
+    store,
+    workspace,
+    options,
+    implementationRunId,
+    message,
+  );
   const factoryStore = "workspace" in store ? factoryStoreMetadata(store) : store;
-  const summaryPath = join(allocation.runDir, "summary.md");
-  const metaPath = join(allocation.runDir, "meta.json");
   writeFactoryReviewRunFile({
     runDir: allocation.runDir,
     relativePath: "summary.md",
@@ -425,6 +478,18 @@ function writeReviewRejection(
       2,
     )}\n`,
   });
+  return rejected;
+}
+
+function buildRejectedRunMeta(
+  allocation: { runId: string; runDir: string },
+  store: FactoryStoreResolution | FactoryStoreMeta,
+  workspace: string,
+  _options: FactoryImplementationReviewOptions,
+  implementationRunId: string | undefined,
+  message: string,
+): FactoryImplementationReviewRejectedRunMeta {
+  const factoryStore = "workspace" in store ? factoryStoreMetadata(store) : store;
   return {
     runId: allocation.runId,
     workflow: "factory-implementation-review",
@@ -433,8 +498,8 @@ function writeReviewRejection(
     runDir: allocation.runDir,
     ...(implementationRunId ? { implementationRunId } : {}),
     factoryStore,
-    summaryPath,
-    metaPath,
+    summaryPath: join(allocation.runDir, "summary.md"),
+    metaPath: join(allocation.runDir, "meta.json"),
     error: message,
     artifacts: { summary: "summary.md", rejection: "attempt-rejected.json", meta: "meta.json" },
   };

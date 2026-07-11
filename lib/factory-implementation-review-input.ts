@@ -501,7 +501,7 @@ function samePhysicalPath(left: string, right: string): boolean {
   try {
     return realpathSync(resolve(left)) === realpathSync(resolve(right));
   } catch {
-    return resolve(left) === resolve(right);
+    return false;
   }
 }
 

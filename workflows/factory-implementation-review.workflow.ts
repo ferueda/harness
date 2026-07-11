@@ -434,13 +434,26 @@ async function runReviewLoop(
         partialRecovery &&
         result.output.findingDecisions.every((decision) => decision.decision === "decline")
       ) {
+        const partial = capturePartial(
+          ctx,
+          candidate,
+          reviewIndex,
+          result.before,
+          result.after,
+          "declined-partial-recovery",
+          normalized.findings,
+          normalized.roles,
+        );
         return failedProtocol(
           ctx,
           checkpoint,
           candidate,
           completedReviewCount,
           candidateVersion,
-          "Partial recovery requires an implement/adapt decision; declined recovery cannot complete with an unapproved workspace.",
+          `Partial recovery requires an implement/adapt decision; declined recovery cannot complete with an unapproved workspace.${partial.failure ? ` Partial capture failed: ${partial.failure}` : ""}`,
+          partial.recovery,
+          partial.failurePointer,
+          !partial.recovery,
         );
       }
       if (
@@ -518,6 +531,7 @@ async function runReviewLoop(
             candidateVersion: nextCandidateVersion,
             originalReviewBase: checkpoint.originalReviewBase,
             approvedCandidate: nextCandidate,
+            priorCandidate: checkpoint.approvedCandidate,
             implementerSession: checkpoint.implementerSession,
             workspace: checkpoint.workspace,
             runRoots: checkpoint.runRoots,
@@ -694,7 +708,12 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
   const acceptedDebt: AcceptedDebt[] = [];
   const findingsByAttempt = new Map<string, FactoryImplementationReviewFinding[]>();
   for (const event of events) {
-    if (event.type !== "implementation.review.checkpointed") continue;
+    if (
+      event.type !== "implementation.review.checkpointed" ||
+      event.data.owningImplementationRunId !== ctx.implementationRunId
+    ) {
+      continue;
+    }
     const index = event.data.activeReviewIndex;
     if (index === undefined) continue;
     const attempt = upsertAttempt(attempts, {
@@ -1545,6 +1564,9 @@ function failedProtocol(
   completedReviewCount: number,
   candidateVersion: number,
   error: string,
+  partialRecovery?: NonNullable<ReviewState["partialRecovery"]>,
+  recovery?: ReturnType<typeof pointer>,
+  clearPartialRecovery = false,
 ): FactoryImplementationReviewRunMeta {
   ctx.writeSummary(
     `# Factory Implementation Review\n\n- Status: review-failed\n- Classification: protocol\n- Error: ${error}\n`,
@@ -1560,7 +1582,9 @@ function failedProtocol(
     retryable: true,
     error,
     summary: pointer(ctx.runId, "summary.md"),
-    ...(checkpoint.partialRecovery ? { partialRecovery: checkpoint.partialRecovery } : {}),
+    ...(partialRecovery ? { partialRecovery } : {}),
+    ...(recovery ? { recovery } : {}),
+    ...(clearPartialRecovery ? { clearPartialRecovery: true } : {}),
     execution: reviewExecution(ctx),
   });
   return ctx.export({

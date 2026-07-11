@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
@@ -13,6 +13,7 @@ import type {
   ImplementationReviewCheckpoint,
 } from "./factory-implementation-review-schemas.ts";
 import type { FactoryRunAllocation } from "./factory-run-allocation.ts";
+import { assertFactoryRunDirectory, writeFactoryRunFile } from "./factory-run-files.ts";
 
 export const FACTORY_IMPLEMENTATION_REVIEW_WORKFLOW = "factory-implementation-review" as const;
 
@@ -134,10 +135,7 @@ export function writeFactoryReviewRunFile(input: {
   value: string;
   flag?: "w" | "wx";
 }): string {
-  const path = safeRunPath(resolve(input.runDir), input.relativePath);
-  mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, input.value, input.flag ? { encoding: "utf8", flag: input.flag } : "utf8");
-  return path;
+  return writeFactoryRunFile(input);
 }
 
 function createFactoryImplementationReviewRunContextInternal(
@@ -150,12 +148,16 @@ function createFactoryImplementationReviewRunContextInternal(
   const artifacts = new Map<string, string>();
   let provider: Agent | undefined;
   let reviewer: Agent | undefined;
-  if (!existsSync(runDir)) throw new Error(`Allocated Factory review run is missing: ${runDir}`);
+  try {
+    assertFactoryRunDirectory(runDir);
+  } catch (error) {
+    throw new Error(`Allocated Factory review run is missing or unsafe: ${runDir}`, {
+      cause: error,
+    });
+  }
 
   const writeText = (relativePath: string, value: string): string => {
-    const path = safeRunPath(runDir, relativePath);
-    mkdirSync(join(path, ".."), { recursive: true });
-    writeFileSync(path, value, "utf8");
+    const path = writeFactoryRunFile({ runDir, relativePath, value });
     artifacts.set(relativePath, relativePath);
     return path;
   };
@@ -316,24 +318,6 @@ function assertReadOnlyReviewerRole(role: FactoryRoleAgent): void {
       "Factory implementation review requires a Codex reviewer with read-only sandbox and never approval policy.",
     );
   }
-}
-
-function safeRunPath(runDir: string, relativePath: string): string {
-  const normalized = relativePath.replaceAll("\\", "/");
-  if (!normalized || normalized.startsWith("/") || normalized.split("/").includes("..")) {
-    throw new Error(`Factory review artifact path escapes run directory: ${relativePath}`);
-  }
-  if (lstatSync(runDir).isSymbolicLink()) {
-    throw new Error(`Factory review run directory is symlinked: ${runDir}`);
-  }
-  let current = join(runDir, normalized);
-  while (current !== runDir) {
-    if (existsSync(current) && lstatSync(current).isSymbolicLink()) {
-      throw new Error(`Factory review artifact ancestor is symlinked: ${current}`);
-    }
-    current = join(current, "..");
-  }
-  return join(runDir, normalized);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

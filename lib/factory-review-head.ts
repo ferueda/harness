@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ensureFactoryRunDirectory } from "./factory-run-files.ts";
 
 export class FactoryReviewHeadError extends Error {
   constructor(message: string, options: { cause?: unknown } = {}) {
@@ -234,7 +235,7 @@ function materializeCandidate(input: {
 }): FactoryReviewHead {
   const indexDir = join(input.runDir, "tmp");
   const indexPath = join(indexDir, `review-index-${process.pid}-${Date.now()}`);
-  mkdirSync(indexDir, { recursive: true });
+  ensureFactoryRunDirectory(indexDir);
   const env = { ...process.env, GIT_INDEX_FILE: indexPath, ...HARNESS_GIT_IDENTITY };
   let refCreated = false;
   let commit: string | undefined;

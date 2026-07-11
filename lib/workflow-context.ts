@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -46,6 +46,11 @@ import {
 } from "./prompts/index.ts";
 import type { ContextArtifact } from "./context.ts";
 import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schemas.ts";
+import {
+  ensureFactoryRunDirectory,
+  factoryRunFilePath,
+  writeFactoryRunFile,
+} from "./factory-run-files.ts";
 
 type WorkflowRunOptions = {
   workspace: string;
@@ -186,7 +191,8 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
   let scopeMeta: ScopeMeta | undefined;
   let diffRef: string | undefined;
   try {
-    mkdirSync(runDir, { recursive: true });
+    ensureFactoryRunDirectory(resolve(options.runsDir ?? join(workspace, ".harness/runs/reviews")));
+    ensureFactoryRunDirectory(runDir);
 
     const agentProviderFactory = options.agentProviderFactory;
     if (!agentProviderFactory) {
@@ -248,7 +254,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       ...steps,
       prompts: promptPaths,
     };
-    writeJson(join(runDir, "meta.json"), meta);
+    writeJson(runDir, "meta.json", meta);
     return meta;
   };
   const finalizeRun = (
@@ -295,7 +301,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
             durationMs,
             steps: input.steps,
           });
-    writeFileSync(join(runDir, "summary.md"), summary, "utf8");
+    writeFactoryRunFile({ runDir, relativePath: "summary.md", value: summary });
 
     const reviewSummaries = buildReviewSummaries(input.reviews);
     const baseMeta = {
@@ -315,7 +321,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       input.status === "completed"
         ? { ...baseMeta, status: "completed", verdict: input.verdict }
         : { ...baseMeta, status: "failed", failedReviews: input.failedReviews };
-    writeJson(join(runDir, "meta.json"), meta);
+    writeJson(runDir, "meta.json", meta);
     return meta;
   };
 
@@ -335,8 +341,8 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
     async agent(name: ReviewAgentName): Promise<ReviewOutput> {
       const config = REVIEWER_CONFIGS[name];
 
-      const promptPath = join(runDir, config.promptFile);
-      const streamPath = join(runDir, `${config.stage}-review.stream.jsonl`);
+      const promptPath = factoryRunFilePath(runDir, config.promptFile);
+      const streamPath = factoryRunFilePath(runDir, `${config.stage}-review.stream.jsonl`);
       const prompt = fillTemplate(
         config.promptTemplate,
         buildPromptValues({
@@ -347,11 +353,11 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
           agentName: name,
         }),
       );
-      writeFileSync(promptPath, prompt, "utf8");
+      writeFactoryRunFile({ runDir, relativePath: config.promptFile, value: prompt });
       promptPaths[config.stage] = promptPath;
 
       if (options.dryRun) {
-        writeJson(join(runDir, config.reviewFile), config.dryRunReview);
+        writeJson(runDir, config.reviewFile, config.dryRunReview);
         return config.dryRunReview;
       }
 
@@ -380,7 +386,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
         throw new Error(`${config.stage} reviewer failed without a result`);
       }
 
-      writeJson(join(runDir, config.rawFile), rawAgentArtifact(result));
+      writeJson(runDir, config.rawFile, rawAgentArtifact(result));
 
       if (!result.ok) {
         if (result.aborted) {
@@ -390,7 +396,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
       }
 
       const review = parseReviewerOutput(config.stage, result.structuredOutput);
-      writeJson(join(runDir, config.reviewFile), review);
+      writeJson(runDir, config.reviewFile, review);
       return review;
     },
     export({
@@ -612,8 +618,12 @@ function buildStreamArtifactsMeta(artifacts: StreamArtifacts): {
   return Object.keys(artifacts).length > 0 ? { streamArtifacts: artifacts } : {};
 }
 
-function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, JSON.stringify(value, null, 2), "utf8");
+function writeJson(runDir: string, relativePath: string, value: unknown): void {
+  writeFactoryRunFile({
+    runDir,
+    relativePath,
+    value: JSON.stringify(value, null, 2),
+  });
 }
 
 export function cleanupOrphanedRunDir(runDir: string): boolean {

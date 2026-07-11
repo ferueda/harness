@@ -1,5 +1,4 @@
-import { appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFactoryRunFile } from "./factory-run-files.ts";
 
 export const WORKFLOW_EVENTS_FILE = "events.jsonl";
 export const DEFAULT_WORKFLOW_HEARTBEAT_MS = 30_000;
@@ -42,9 +41,12 @@ export const STEP_ID_BY_AGENT = {
 } satisfies Record<WorkflowReviewAgentName, string>;
 
 export function createFileEventSink(runDir: string): WorkflowEventSink {
-  const eventsPath = join(runDir, WORKFLOW_EVENTS_FILE);
   return (event) => {
-    appendFileSync(eventsPath, `${JSON.stringify(event)}\n`, "utf8");
+    appendFactoryRunFile({
+      runDir,
+      relativePath: WORKFLOW_EVENTS_FILE,
+      value: `${JSON.stringify(event)}\n`,
+    });
   };
 }
 

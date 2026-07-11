@@ -100,6 +100,7 @@ export type FactoryImplementationReviewCheckpointInput = ReviewLifecycleBase & {
   candidateVersion: number;
   originalReviewBase: string;
   approvedCandidate: CandidateTuple;
+  priorCandidate?: CandidateTuple;
   implementerSession: AgentSessionRef;
   workspace: WorkspaceProvenance;
   runRoots: RunRootProvenance;
@@ -138,6 +139,9 @@ export function appendImplementationReviewCheckpointedEvent(
       candidateVersion: input.candidateVersion,
       originalReviewBase: input.originalReviewBase,
       approvedCandidate: CandidateTupleSchema.parse(input.approvedCandidate),
+      ...(input.priorCandidate
+        ? { priorCandidate: CandidateTupleSchema.parse(input.priorCandidate) }
+        : {}),
       implementerSession: input.implementerSession,
       workspace: input.workspace,
       runRoots: input.runRoots,

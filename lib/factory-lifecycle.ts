@@ -347,6 +347,9 @@ const ImplementationReviewStartedEventSchema = BaseEventSchema.extend({
       completedReviewCount: z.number().int().nonnegative(),
     })
     .strict(),
+}).refine((event) => event.runId === event.data.activeReviewAttemptId, {
+  path: ["runId"],
+  message: "Review event runId must match activeReviewAttemptId",
 });
 
 const ImplementationReviewCheckpointedEventSchema = BaseEventSchema.extend({
@@ -362,6 +365,7 @@ const ImplementationReviewCheckpointedEventSchema = BaseEventSchema.extend({
       candidateVersion: z.number().int().nonnegative(),
       originalReviewBase: z.string().min(1),
       approvedCandidate: CandidateTupleSchema,
+      priorCandidate: CandidateTupleSchema.optional(),
       implementerSession: AgentSessionRefSchema,
       workspace: WorkspaceProvenanceSchema,
       runRoots: RunRootProvenanceSchema,
@@ -377,6 +381,9 @@ const ImplementationReviewCheckpointedEventSchema = BaseEventSchema.extend({
       latestErrorClass: z.string().min(1).optional(),
     })
     .strict(),
+}).refine((event) => event.runId === event.data.activeReviewAttemptId, {
+  path: ["runId"],
+  message: "Review event runId must match activeReviewAttemptId",
 });
 
 const ImplementationReviewCompletedEventSchema = BaseEventSchema.extend({
@@ -393,6 +400,9 @@ const ImplementationReviewCompletedEventSchema = BaseEventSchema.extend({
       acceptedDebtCount: z.number().int().nonnegative(),
     })
     .strict(),
+}).refine((event) => event.runId === event.data.activeReviewAttemptId, {
+  path: ["runId"],
+  message: "Review event runId must match activeReviewAttemptId",
 });
 
 const ImplementationReviewUnresolvedEventSchema = BaseEventSchema.extend({
@@ -411,7 +421,13 @@ const ImplementationReviewUnresolvedEventSchema = BaseEventSchema.extend({
       (data) => Boolean(data.activeReviewAttemptId) === Boolean(data.latestCheckpointId),
       "activeReviewAttemptId and latestCheckpointId must be supplied together",
     ),
-});
+}).refine(
+  (event) => !event.data.activeReviewAttemptId || event.runId === event.data.activeReviewAttemptId,
+  {
+    path: ["runId"],
+    message: "Review event runId must match activeReviewAttemptId",
+  },
+);
 
 const ImplementationReviewFailedEventSchema = BaseEventSchema.extend({
   type: z.literal("implementation.review.failed"),
@@ -432,6 +448,9 @@ const ImplementationReviewFailedEventSchema = BaseEventSchema.extend({
       writerBoundaryAfter: ArtifactPointerSchema.optional(),
     })
     .strict(),
+}).refine((event) => event.runId === event.data.activeReviewAttemptId, {
+  path: ["runId"],
+  message: "Review event runId must match activeReviewAttemptId",
 });
 
 export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
@@ -1062,6 +1081,7 @@ function implementationCompletedState(
   if (missing.length > 0) {
     return {
       ...state,
+      implementationReviewCheckpoint: undefined,
       legacyReviewBlock: {
         owningImplementationRunId: event.runId,
         missing,
@@ -1103,6 +1123,7 @@ function reviewStartedState(
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.started" }>,
 ): FactoryLifecycleState {
   const data = event.data;
+  assertReviewAttemptEnvelope(event.runId, data.activeReviewAttemptId);
   const previous = state.implementationReviewCheckpoint;
   if (previous) {
     assertReviewCheckpointRestartInvariant(
@@ -1145,6 +1166,7 @@ function reviewCheckpointedState(
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.checkpointed" }>,
 ): FactoryLifecycleState {
   const data = event.data;
+  assertReviewAttemptEnvelope(event.runId, data.activeReviewAttemptId);
   const previous = state.implementationReviewCheckpoint;
   if (!previous) {
     throw new FactoryLifecycleError(
@@ -1197,6 +1219,7 @@ function reviewCompletedState(
   state: FactoryLifecycleState,
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>,
 ): FactoryLifecycleState {
+  assertReviewAttemptEnvelope(event.runId, event.data.activeReviewAttemptId);
   const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
   assertReviewTerminalIdentity(
     checkpoint,
@@ -1228,6 +1251,9 @@ function reviewUnresolvedState(
   state: FactoryLifecycleState,
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.unresolved" }>,
 ): FactoryLifecycleState {
+  if (event.data.activeReviewAttemptId) {
+    assertReviewAttemptEnvelope(event.runId, event.data.activeReviewAttemptId);
+  }
   const checkpoint = state.implementationReviewCheckpoint;
   if (!checkpoint) {
     return {
@@ -1269,6 +1295,7 @@ function reviewFailedState(
   state: FactoryLifecycleState,
   event: Extract<FactoryLifecycleEvent, { type: "implementation.review.failed" }>,
 ): FactoryLifecycleState {
+  assertReviewAttemptEnvelope(event.runId, event.data.activeReviewAttemptId);
   const checkpoint = requireReviewCheckpoint(state, event.data.owningImplementationRunId);
   assertReviewTerminalIdentity(
     checkpoint,
@@ -1341,9 +1368,22 @@ function assertReviewCheckpointProgression(
         "Review checkpoint changed a candidate without advancing its version",
       );
     }
+    const expectedCompletedReviewCount =
+      next.phase === "review" ? previous.completedReviewCount + 1 : previous.completedReviewCount;
+    if (next.completedReviewCount !== expectedCompletedReviewCount) {
+      throw new FactoryLifecycleError(
+        "Review checkpoint counter does not match its phase transition",
+      );
+    }
   } else {
     const expectedRef = `refs/harness/factory/${previous.owningImplementationRunId}/review/${next.candidateVersion}`;
-    if (next.phase !== "remediation" || next.approvedCandidate.ref !== expectedRef) {
+    if (
+      next.phase !== "remediation" ||
+      next.approvedCandidate.ref !== expectedRef ||
+      next.completedReviewCount !== previous.completedReviewCount ||
+      !next.priorCandidate ||
+      !sameLifecycleCandidate(next.priorCandidate, previous.approvedCandidate)
+    ) {
       throw new FactoryLifecycleError("Review checkpoint candidate lineage is invalid");
     }
   }
@@ -1370,6 +1410,15 @@ function assertReviewTerminalIdentity(
     checkpoint.latestCheckpointId !== latestCheckpointId
   ) {
     throw new FactoryLifecycleError("Review terminal event must reference the current checkpoint");
+  }
+}
+
+function assertReviewAttemptEnvelope(
+  eventRunId: string | undefined,
+  activeAttemptId: string,
+): void {
+  if (eventRunId !== activeAttemptId) {
+    throw new FactoryLifecycleError("Review event runId must match activeReviewAttemptId");
   }
 }
 

@@ -397,22 +397,23 @@ it remains `blocked`.
 ### In-scope tests
 
 - `test/factory-implementation-review-schema-sync.test.ts` (new)
-- `test/factory-implementation-review-input.test.ts` (new)
-- `test/factory-implementation-review-run-context.test.ts` (new)
-- `test/factory-run-allocation.test.ts` (new)
-- `test/factory-implementation-review-findings.test.ts` (new)
-- `test/factory-writer-boundary.test.ts` (new)
 - `test/factory-implementation-review.workflow.test.ts` (new)
-- `test/factory-implementation-review-command.test.ts` (new)
 - `test/factory-implementation-review-command.test.ts` (new)
 - `test/factory-implementation-review-test-helpers.ts` (new, only if shared setup avoids duplication)
 - `test/factory-lifecycle.test.ts`
-- `test/factory-locks.test.ts` (new)
-- `test/factory-status.test.ts` (new)
+- `test/factory-implementation-safety.test.ts`
 - `test/factory-review-head.test.ts`
 - `test/factory-implementation-run-context.test.ts`
 - `test/factory-implementation.workflow.test.ts`
 - `test/factory-implementation-cli.test.ts`
+- `test/workflow-context.test.ts`
+
+The repository consolidates several planned suites: review input, run-context,
+findings, allocation, status, lease, and writer-boundary coverage live in the
+existing review command, lifecycle, implementation-safety, and workflow-context
+suites. The plan names above reflect the actual files; no duplicate command test
+entry remains.
+
 - `test/factory-implementation-apply-command.test.ts` (existing command/lease migration)
 - `test/factory-linear-implementation-apply.test.ts` (FER-52 completion-comment assertion plus start-apply failure cases)
 - `test/config.test.ts`

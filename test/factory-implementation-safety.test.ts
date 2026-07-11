@@ -218,3 +218,34 @@ test("writer lease inspection and release reject symlinked lease entries", () =>
   expect(() => inspectFactoryWorkspaceWriterLease({ workspace, env })).toThrow(/symlinked/);
   expect(() => releaseFactoryWorkspaceWriterLease({ handle })).toThrow(/symlinked/);
 });
+
+test("writer lease release requires full owner identity and rejects dangling owners", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-factory-lease-owner-workspace-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  const env = {
+    ...process.env,
+    XDG_DATA_HOME: mkdtempSync(join(tmpdir(), "harness-factory-lease-owner-data-")),
+  };
+  const handle = acquireFactoryWorkspaceWriterLease({
+    workspace,
+    factoryProjectId: "test-project",
+    storeRoot: mkdtempSync(join(tmpdir(), "harness-factory-lease-owner-store-")),
+    workItemKey: "linear:ENG-123",
+    runId: "implementation-test",
+    operation: "implementation",
+    env,
+  });
+
+  writeFileSync(
+    join(handle.path, "owner.json"),
+    `${JSON.stringify({ ...handle.owner, workItemKey: "linear:ENG-124" })}\n`,
+    "utf8",
+  );
+  releaseFactoryWorkspaceWriterLease({ handle });
+  expect(existsSync(handle.path)).toBe(true);
+
+  rmSync(join(handle.path, "owner.json"), { force: true });
+  symlinkSync(join(handle.path, "missing-owner.json"), join(handle.path, "owner.json"));
+  expect(() => inspectFactoryWorkspaceWriterLease({ workspace, env })).toThrow(/symlinked/);
+  expect(() => releaseFactoryWorkspaceWriterLease({ handle })).toThrow(/symlinked/);
+});

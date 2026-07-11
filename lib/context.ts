@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, relative } from "node:path";
 import { assertNonEmptyHandoffText, HANDOFF_CONFLICT_ERROR } from "./handoff.ts";
+import { ensureFactoryRunDirectory, writeFactoryRunFile } from "./factory-run-files.ts";
 
 export type GitScope = {
   mergeBase: string;
@@ -19,7 +20,8 @@ export type ContextArtifact = {
 type RequestedContextFile = {
   requested?: string;
   workspace: string;
-  destination: string;
+  runDir: string;
+  relativePath: string;
 };
 
 type ArtifactSectionOptions = {
@@ -87,9 +89,12 @@ export function buildInlinedHandoffSection(handoffArtifact: ContextArtifact): st
 
 export function buildDiffRef(diff: string, runDir: string, workspace: string): string {
   const contextDir = join(runDir, "context");
-  mkdirSync(contextDir, { recursive: true });
-  const patchPath = join(contextDir, "diff.patch");
-  writeFileSync(patchPath, diff, "utf8");
+  ensureFactoryRunDirectory(contextDir);
+  const patchPath = writeFactoryRunFile({
+    runDir,
+    relativePath: "context/diff.patch",
+    value: diff,
+  });
 
   return `Diff file: \`${formatArtifactPath(patchPath, workspace)}\``;
 }
@@ -103,19 +108,21 @@ export function writeRunContext(input: {
   handoffText?: string;
 }): { plan: ContextArtifact; handoff: ContextArtifact } {
   const contextDir = join(input.runDir, "context");
-  mkdirSync(contextDir, { recursive: true });
+  ensureFactoryRunDirectory(contextDir);
 
   return {
     plan: copyContextFile({
       requested: input.planPath,
       workspace: input.workspace,
-      destination: join(contextDir, "plan.md"),
+      runDir: input.runDir,
+      relativePath: "context/plan.md",
     }),
     handoff: writeHandoffArtifact({
       path: input.handoffPath,
       text: input.handoffText,
       workspace: input.workspace,
-      destination: join(contextDir, "handoff.md"),
+      runDir: input.runDir,
+      relativePath: "context/handoff.md",
     }),
   };
 }
@@ -123,7 +130,8 @@ export function writeRunContext(input: {
 function copyContextFile({
   requested,
   workspace,
-  destination,
+  runDir,
+  relativePath,
 }: RequestedContextFile): ContextArtifact {
   if (!requested) {
     return { requested: null, path: null };
@@ -134,28 +142,38 @@ function copyContextFile({
     return { requested, path: null };
   }
 
-  copyFileSync(resolved, destination);
-  return { requested, path: destination };
+  const path = writeFactoryRunFile({
+    runDir,
+    relativePath,
+    value: readFileSync(resolved, "utf8"),
+  });
+  return { requested, path };
 }
 
 function writeHandoffArtifact(input: {
   path?: string;
   text?: string;
   workspace: string;
-  destination: string;
+  runDir: string;
+  relativePath: string;
 }): ContextArtifact {
   if (input.path && input.text !== undefined) {
     throw new Error(HANDOFF_CONFLICT_ERROR);
   }
   if (input.text !== undefined) {
     assertNonEmptyHandoffText(input.text);
-    writeFileSync(input.destination, input.text, "utf8");
-    return { requested: "inline handoff text", path: input.destination };
+    const path = writeFactoryRunFile({
+      runDir: input.runDir,
+      relativePath: input.relativePath,
+      value: input.text,
+    });
+    return { requested: "inline handoff text", path };
   }
   return copyContextFile({
     requested: input.path,
     workspace: input.workspace,
-    destination: input.destination,
+    runDir: input.runDir,
+    relativePath: input.relativePath,
   });
 }
 
