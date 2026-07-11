@@ -1,10 +1,12 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, expect, test, vi } from "vitest";
 import {
   addFactoryCommands,
+  recoverStaleImplementationOwner,
   runFactoryImplementationWithLinearApply,
   type FactoryCommandOptions,
 } from "../bin/factory-commands.ts";
@@ -18,10 +20,19 @@ import {
   deriveFactoryWorkItemKey,
   readFactoryLifecycleEvents,
 } from "../lib/factory-lifecycle.ts";
+import { inspectFactoryWorkspaceWriterLease } from "../lib/factory-locks.ts";
 import { createLinearFactoryAdapterForClient } from "../lib/factory-linear-adapter.ts";
-import type { LinearImplementationUpdatePlan } from "../lib/factory-linear-implementation-apply.ts";
+import {
+  LinearImplementationStartApplyError,
+  type LinearImplementationUpdatePlan,
+} from "../lib/factory-linear-implementation-apply.ts";
 import type { LinearClientLike, LinearCommentLike } from "../lib/factory-linear-types.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
+import {
+  factoryLifecycleExecutionProvenance,
+  factoryStoreMetadata,
+  resolveFactoryStore,
+} from "../lib/factory-store.ts";
 import { fakeLinearAdapter, LINEAR_SETTINGS } from "./factory-linear-test-helpers.ts";
 
 const ORIGINAL_LINEAR_API_KEY = process.env.LINEAR_API_KEY;
@@ -56,13 +67,29 @@ const STARTED = {
   targetStatus: "Implementing",
 } satisfies LinearImplementationUpdatePlan;
 
-function context(): {
+function context(input: { git?: boolean } = {}): {
   ctx: FactoryImplementationRunContext;
   factoryStateRoot: string;
 } {
   const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-apply-workspace-"));
   const runsDir = mkdtempSync(join(tmpdir(), "harness-implementation-apply-runs-"));
-  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-implementation-apply-state-"));
+  if (input.git) initializeGitWorkspace(workspace);
+  const workspaceLeaseEnv = input.git
+    ? {
+        ...process.env,
+        XDG_DATA_HOME: mkdtempSync(join(tmpdir(), "harness-implementation-apply-data-")),
+      }
+    : undefined;
+  const store = input.git
+    ? resolveFactoryStore({
+        workspace,
+        factoryStoreRoot: mkdtempSync(join(tmpdir(), "harness-implementation-apply-store-")),
+        factoryStoreProjectId: "test-project",
+        env: workspaceLeaseEnv,
+      })
+    : undefined;
+  const factoryStateRoot =
+    store?.factoryStateRoot ?? mkdtempSync(join(tmpdir(), "harness-implementation-apply-state-"));
   const implementationInput: FactoryImplementationInput = {
     mode: "direct",
     source: "linear",
@@ -85,12 +112,29 @@ function context(): {
       dryRun: false,
       maxRuntimeMs: 5_000,
       linearApplyRequested: true,
+      ...(store ? { factoryStore: factoryStoreMetadata(store) } : {}),
+      ...(workspaceLeaseEnv ? { workspaceLeaseEnv } : {}),
       agentProviderFactory: () => {
         throw new Error("provider should be controlled by the test seam");
       },
     }),
     factoryStateRoot,
   };
+}
+
+function initializeGitWorkspace(workspace: string): void {
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@example.com"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  execFileSync("git", ["config", "user.name", "Harness Test"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  writeFileSync(join(workspace, "tracked.txt"), "initial\n", "utf8");
+  execFileSync("git", ["add", "tracked.txt"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
 }
 
 test("start apply failure exports a truthful result with terminal lifecycle", async () => {
@@ -195,6 +239,282 @@ test("terminal Linear failure preserves the local terminal result for operator r
   expect(result.meta.status).toBe("implementation-complete");
   expect(result.terminalApplyError).toBe(terminalError);
   expect(result.linearUpdate).toEqual({ started: expect.objectContaining({ stage: "started" }) });
+});
+
+test("ordinary Linear adapter calls observe no physical writer lease", async () => {
+  const { ctx, factoryStateRoot } = context({ git: true });
+  const leaseStates: Array<boolean> = [];
+  const providerSawLease = vi.fn(async (implementationContext: FactoryImplementationRunContext) => {
+    leaseStates.push(
+      Boolean(
+        inspectFactoryWorkspaceWriterLease({
+          workspace: ctx.workspace,
+          env: ctx.workspaceLeaseEnv,
+        })?.owner,
+      ),
+    );
+    expect(
+      inspectFactoryWorkspaceWriterLease({
+        workspace: ctx.workspace,
+        env: ctx.workspaceLeaseEnv,
+      })?.owner,
+    ).toBeDefined();
+    return completeImplementation(implementationContext);
+  });
+
+  const result = await runFactoryImplementationWithLinearApply({
+    ctx,
+    factoryStateRoot,
+    issueRef: "ENG-123",
+    adapter: fakeLinearAdapter({
+      applyImplementationStarted: async () => {
+        leaseStates.push(
+          Boolean(
+            inspectFactoryWorkspaceWriterLease({
+              workspace: ctx.workspace,
+              env: ctx.workspaceLeaseEnv,
+            })?.owner,
+          ),
+        );
+        return { ...STARTED, runId: ctx.runId, runDir: ctx.runDir };
+      },
+      applyImplementationCompleted: async () => {
+        leaseStates.push(
+          Boolean(
+            inspectFactoryWorkspaceWriterLease({
+              workspace: ctx.workspace,
+              env: ctx.workspaceLeaseEnv,
+            })?.owner,
+          ),
+        );
+        return {
+          ...STARTED,
+          runId: ctx.runId,
+          runDir: ctx.runDir,
+          stage: "completed",
+          fromStatus: "Implementing",
+          targetStatus: "Implementing",
+        };
+      },
+    }),
+    runImplementation: providerSawLease,
+  });
+
+  expect(result.meta.status).toBe("implementation-complete");
+  expect(leaseStates).toEqual([false, true, false]);
+  expect(
+    inspectFactoryWorkspaceWriterLease({
+      workspace: ctx.workspace,
+      env: ctx.workspaceLeaseEnv,
+    })?.owner,
+  ).toBeUndefined();
+});
+
+test("start-apply recovery projects failure without a physical writer lease", async () => {
+  const { ctx, factoryStateRoot } = context({ git: true });
+  let leaseDuringTerminal = true;
+  const startError = new Error("start mutation failed");
+  const result = await runFactoryImplementationWithLinearApply({
+    ctx,
+    factoryStateRoot,
+    issueRef: "ENG-123",
+    adapter: fakeLinearAdapter({
+      applyImplementationStarted: async () => {
+        throw new LinearImplementationStartApplyError(startError, "mutation", {
+          implementingStatusVerified: true,
+          update: {
+            ...STARTED,
+            runId: ctx.runId,
+            runDir: ctx.runDir,
+            statusMutationCompleted: true,
+          },
+        });
+      },
+      applyImplementationFailed: async () => {
+        leaseDuringTerminal = Boolean(
+          inspectFactoryWorkspaceWriterLease({
+            workspace: ctx.workspace,
+            env: ctx.workspaceLeaseEnv,
+          })?.owner,
+        );
+        return {
+          ...STARTED,
+          runId: ctx.runId,
+          runDir: ctx.runDir,
+          stage: "failed" as const,
+          fromStatus: "Implementing",
+          targetStatus: "Implementation Failed",
+        };
+      },
+    }),
+  });
+
+  expect(result.startApplyFailed).toBe(true);
+  expect(leaseDuringTerminal).toBe(false);
+  expect(
+    inspectFactoryWorkspaceWriterLease({
+      workspace: ctx.workspace,
+      env: ctx.workspaceLeaseEnv,
+    })?.owner,
+  ).toBeUndefined();
+});
+
+test("stale-owner recovery probes Linear without a lease and serializes terminal projection", async () => {
+  vi.spyOn(process, "kill").mockImplementation(() => {
+    const error = new Error("owner is dead") as NodeJS.ErrnoException;
+    error.code = "ESRCH";
+    throw error;
+  });
+  const workspace = mkdtempSync(join(tmpdir(), "harness-stale-owner-workspace-"));
+  initializeGitWorkspace(workspace);
+  const workspaceLeaseEnv = {
+    ...process.env,
+    XDG_DATA_HOME: mkdtempSync(join(tmpdir(), "harness-stale-owner-data-")),
+  };
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: mkdtempSync(join(tmpdir(), "harness-stale-owner-store-")),
+    factoryStoreProjectId: "test-project",
+    env: workspaceLeaseEnv,
+  });
+  const runId = "implementation-stale-owner";
+  const runDir = join(store.factoryRunsDir, runId);
+  mkdirSync(join(runDir, "context"), { recursive: true });
+  const reservation = {
+    station: "implementation",
+    workItemKey: "linear:ENG-123",
+    runId,
+    reservationToken: "reservation-token",
+    workspace,
+    storeRoot: store.storeRoot,
+    factoryProjectId: store.projectId,
+    factoryStateRoot: store.factoryStateRoot,
+    factoryRunsDir: store.factoryRunsDir,
+    reviewRunsDir: store.reviewRunsDir,
+  };
+  writeFileSync(join(runDir, "attempt-reservation.json"), `${JSON.stringify(reservation)}\n`);
+  writeFileSync(
+    join(runDir, "implementation-reservation.json"),
+    `${JSON.stringify(reservation)}\n`,
+  );
+  writeFileSync(join(runDir, "context/run-reservation.json"), `${JSON.stringify(reservation)}\n`);
+  const workItem = {
+    ...WORK_ITEM,
+    metadata: {
+      ...WORK_ITEM.metadata,
+      factoryStage: "implementation-started" as const,
+      factoryRunId: runId,
+    },
+  };
+  const execution = factoryLifecycleExecutionProvenance(
+    { workspace, runDir },
+    factoryStoreMetadata(store),
+  );
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    event: {
+      version: 1,
+      id: "work_item.imported:linear:ENG-123",
+      type: "work_item.imported",
+      workItemKey: "linear:ENG-123",
+      occurredAt: "2026-07-11T00:00:00.000Z",
+      source: "harness",
+      data: { source: "linear", title: WORK_ITEM.title },
+      execution,
+    },
+  });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    event: {
+      version: 1,
+      id: "triage.completed:stale-owner-test",
+      type: "triage.completed",
+      workItemKey: "linear:ENG-123",
+      occurredAt: "2026-07-11T00:00:01.000Z",
+      runId: "triage-stale-owner-test",
+      source: "harness",
+      data: {
+        route: "ready-to-implement",
+        nextAction: "implement-directly",
+        rationale: "Test fixture is ready.",
+        routeArtifactPath: "route.md",
+        triageArtifactPath: "triage.json",
+      },
+    },
+  });
+  appendFactoryLifecycleEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    event: {
+      version: 1,
+      id: `implementation.started:${runId}`,
+      type: "implementation.started",
+      workItemKey: "linear:ENG-123",
+      occurredAt: "2026-07-11T00:00:02.000Z",
+      runId,
+      source: "harness",
+      execution,
+      data: {
+        owner: {
+          pid: process.pid,
+          hostname: hostname(),
+          runDir,
+          startedAt: "2026-07-11T00:00:02.000Z",
+        },
+      },
+    },
+  });
+
+  let leaseDuringFetch = false;
+  let leaseDuringTerminal = false;
+  const adapter = fakeLinearAdapter({
+    fetchWorkItem: async () => {
+      leaseDuringFetch = Boolean(
+        inspectFactoryWorkspaceWriterLease({ workspace, env: workspaceLeaseEnv })?.owner,
+      );
+      return workItem;
+    },
+    applyImplementationFailed: async () => {
+      leaseDuringTerminal = Boolean(
+        inspectFactoryWorkspaceWriterLease({ workspace, env: workspaceLeaseEnv })?.owner,
+      );
+      return {
+        issueIdentifier: "ENG-123",
+        runId,
+        runDir,
+        stage: "failed" as const,
+        fromStatus: "Implementing",
+        targetStatus: "Implementation Failed",
+      };
+    },
+  });
+
+  const recovered = await recoverStaleImplementationOwner({
+    workspace,
+    workItem,
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStore: store,
+    issueRef: "ENG-123",
+    linearAdapter: adapter,
+    workspaceLeaseEnv,
+  });
+
+  expect(recovered).toBe(true);
+  expect(leaseDuringFetch).toBe(false);
+  expect(leaseDuringTerminal).toBe(true);
+  expect(
+    readFactoryLifecycleEvents({
+      factoryStateRoot: store.factoryStateRoot,
+      workItemKey: "linear:ENG-123",
+    }).map((event) => event.type),
+  ).toEqual([
+    "work_item.imported",
+    "triage.completed",
+    "implementation.started",
+    "implementation.failed",
+  ]);
+  expect(
+    inspectFactoryWorkspaceWriterLease({ workspace, env: workspaceLeaseEnv })?.owner,
+  ).toBeUndefined();
 });
 
 async function completeImplementation(ctx: FactoryImplementationRunContext) {

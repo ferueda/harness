@@ -81,6 +81,7 @@ export type FactoryImplementationReviewRunContextOptions = {
   maxRuntimeMs: number;
   eventSink?: WorkflowEventSink;
   signal?: AbortSignal;
+  workspaceLeaseEnv?: NodeJS.ProcessEnv;
 };
 
 export type FactoryImplementationReviewRunContext = {
@@ -99,6 +100,7 @@ export type FactoryImplementationReviewRunContext = {
   maxRuntimeMs: number;
   eventSink?: WorkflowEventSink;
   signal?: AbortSignal;
+  workspaceLeaseEnv?: NodeJS.ProcessEnv;
   writeReservation(): void;
   writeIdentityContext(): void;
   writeArtifact(relativePath: string, value: unknown): string;
@@ -247,6 +249,7 @@ function createFactoryImplementationReviewRunContextInternal(
     maxRuntimeMs: options.maxRuntimeMs,
     eventSink,
     signal: options.signal,
+    ...(options.workspaceLeaseEnv ? { workspaceLeaseEnv: options.workspaceLeaseEnv } : {}),
     writeReservation,
     writeIdentityContext,
     writeArtifact,

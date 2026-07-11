@@ -12,6 +12,14 @@ import {
   loadFactoryLifecycleState,
 } from "../lib/factory-lifecycle.ts";
 import { resolveFactoryStore } from "../lib/factory-store.ts";
+import { run as runImplementationReview } from "../workflows/factory-implementation-review.workflow.ts";
+import {
+  createReviewContext,
+  createReviewFixture,
+  MIXED_REVIEW,
+  PASS_REVIEW,
+  scriptedProvider,
+} from "./factory-implementation-review-test-helpers.ts";
 
 test("review CLI emits stable JSON for rejected input", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-review-command-rejected-"));
@@ -74,6 +82,83 @@ test("review CLI emits stable JSON for parser rejection", async () => {
     process.exitCode = previousExitCode;
     output.mockRestore();
   }
+});
+
+test("review CLI resumes a partial ready-for-human checkpoint", async () => {
+  const fixture = createReviewFixture();
+  const firstProvider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [MIXED_REVIEW],
+    remediation: {
+      edit: "partial command remediation\n",
+      output: {
+        summary: "Leave the blocking finding for recovery.",
+        findingDecisions: ["implementation", "quality", "simplify"].flatMap((role) => [
+          {
+            findingId: `${role}-001`,
+            decision: "decline" as const,
+            rationale: "Track the advisory note separately.",
+          },
+          {
+            findingId: `${role}-002`,
+            decision: "decline" as const,
+            rationale: "Retry the blocking correction.",
+          },
+        ]),
+      },
+    },
+  });
+  const first = await runImplementationReview(createReviewContext(fixture, firstProvider));
+  expect(first.status).toBe("ready-for-human");
+
+  const resumedProvider = scriptedProvider({
+    workspace: fixture.workspace,
+    reviews: [PASS_REVIEW],
+    remediation: {
+      edit: "completed command remediation\n",
+      output: {
+        summary: "Apply the blocking correction and retain accepted debt.",
+        findingDecisions: ["implementation", "quality", "simplify"].flatMap((role) => [
+          {
+            findingId: `${role}-001`,
+            decision: "decline" as const,
+            rationale: "Track the advisory note separately.",
+          },
+          {
+            findingId: `${role}-002`,
+            decision: "implement" as const,
+            rationale: "Applied the blocking correction.",
+          },
+        ]),
+      },
+    },
+  });
+  const result = await runFactoryImplementationReviewCommand(
+    {
+      workspace: fixture.workspace,
+      linearIssue: "ENG-123",
+      resume: true,
+      factoryStoreRoot: fixture.store.storeRoot,
+      factoryStoreProjectId: fixture.store.projectId,
+      maxRuntimeMs: 1_000,
+      verbose: false,
+    },
+    {
+      defaultMaxRuntimeMs: 1_000,
+      positiveNumber: Number,
+      workspaceLeaseEnv: {
+        ...process.env,
+        XDG_DATA_HOME: fixture.leaseDataHome,
+      },
+      implementationAgentProviderFactory: () => resumedProvider,
+      implementationReviewRunner: runImplementationReview,
+    },
+  );
+
+  expect(result.status).toBe("review-complete");
+  expect(result.handoffPath && readFileSync(result.handoffPath, "utf8")).toContain(
+    "implementation-001: Track the advisory note separately.",
+  );
 });
 
 test("legacy review input is durably terminalized without invoking a provider", async () => {

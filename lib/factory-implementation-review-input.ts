@@ -99,12 +99,6 @@ export function resolveFactoryImplementationReviewInput(
       "identity",
     );
   }
-  if (state.factoryStage === "ready-for-human") {
-    throw new FactoryImplementationReviewInputError(
-      "Factory review is terminal at ready-for-human; human lifecycle recovery is required.",
-      "stage",
-    );
-  }
   if (!state.implementationReviewCheckpoint) {
     if (state.legacyReviewBlock) {
       throw new FactoryImplementationReviewInputError(
@@ -120,6 +114,12 @@ export function resolveFactoryImplementationReviewInput(
   const checkpoint = ImplementationReviewCheckpointSchema.parse(
     state.implementationReviewCheckpoint,
   );
+  if (state.factoryStage === "ready-for-human" && !checkpoint.partialRecovery) {
+    throw new FactoryImplementationReviewInputError(
+      "Factory review is terminal at ready-for-human; human lifecycle recovery is required.",
+      "stage",
+    );
+  }
   const implementationRunDir = directChildPath(
     checkpoint.runRoots.factoryRunsDir,
     checkpoint.owningImplementationRunId,

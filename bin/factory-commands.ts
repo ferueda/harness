@@ -945,13 +945,14 @@ function appendFactoryImplementationStartAudit(input: {
   });
 }
 
-async function recoverStaleImplementationOwner(input: {
+export async function recoverStaleImplementationOwner(input: {
   workspace: string;
   workItem: FactoryWorkItem;
   factoryStateRoot: string;
   factoryStore: FactoryStoreResolution;
   issueRef?: string;
   linearAdapter?: LinearFactoryAdapter;
+  workspaceLeaseEnv?: NodeJS.ProcessEnv;
 }): Promise<boolean> {
   const metadata = input.workItem.metadata;
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
@@ -1004,16 +1005,6 @@ async function recoverStaleImplementationOwner(input: {
     factoryStore: recoveryStore,
   });
 
-  const workspaceLease = isGitWorkspace(input.workspace)
-    ? acquireFactoryWorkspaceWriterLease({
-        workspace: input.workspace,
-        factoryProjectId: input.factoryStore.projectId,
-        storeRoot: input.factoryStore.storeRoot,
-        workItemKey: deriveFactoryWorkItemKey(input.workItem),
-        runId,
-        operation: "implementation",
-      })
-    : undefined;
   let linearStage:
     | "ready-to-implement"
     | "implementation-started"
@@ -1039,6 +1030,17 @@ async function recoverStaleImplementationOwner(input: {
     }
   }
 
+  const workspaceLease = isGitWorkspace(input.workspace)
+    ? acquireFactoryWorkspaceWriterLease({
+        workspace: input.workspace,
+        factoryProjectId: input.factoryStore.projectId,
+        storeRoot: input.factoryStore.storeRoot,
+        workItemKey: deriveFactoryWorkItemKey(input.workItem),
+        runId,
+        operation: "implementation",
+        ...(input.workspaceLeaseEnv ? { env: input.workspaceLeaseEnv } : {}),
+      })
+    : undefined;
   try {
     let treeDrift = false;
     try {
@@ -1326,14 +1328,6 @@ async function runFactoryImplementationWithLinearApplyInternal(input: {
       attempt: factoryImplementationAttempt(input.ctx.implementationInput),
     });
   } catch (startApplyError) {
-    try {
-      ensureImplementationWriterLease(input.ctx);
-    } catch (leaseError) {
-      throw new AggregateError(
-        [startApplyError, leaseError],
-        `Linear implementation start failed and workspace lease reacquisition failed: ${errorMessage(startApplyError)}; lease failed: ${errorMessage(leaseError)}`,
-      );
-    }
     let meta: FactoryImplementationRunMeta;
     try {
       meta = input.ctx.export({
@@ -1512,6 +1506,7 @@ async function terminalizeStartedImplementationFailure(
     error,
     linearStartState: "implementing",
   });
+  releaseImplementationWriterLease(input.ctx);
   try {
     const terminal = await input.adapter.applyImplementationFailed({
       issueRef: input.issueRef,
@@ -1589,6 +1584,7 @@ function ensureImplementationWriterLease(ctx: FactoryImplementationRunContext): 
     workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
     runId: ctx.runId,
     operation: "implementation",
+    ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
   });
 }
 

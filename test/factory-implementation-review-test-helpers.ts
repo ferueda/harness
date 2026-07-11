@@ -72,6 +72,31 @@ export const NEEDS_CHANGES_REVIEW = {
   ],
 } satisfies ReviewOutput;
 
+export const MIXED_REVIEW = {
+  verdict: "needs_changes",
+  summary: "One blocking and one advisory finding.",
+  findings: [
+    {
+      title: "Document the behavior",
+      severity: "Low",
+      location: "tracked.txt",
+      issue: "The behavior needs a small documentation note.",
+      recommendation: "Record the decision in the handoff.",
+      rationale: "The implementation is otherwise complete.",
+      must_fix: false,
+    },
+    {
+      title: "Fix the implementation",
+      severity: "High",
+      location: "tracked.txt",
+      issue: "The implementation still needs a correction.",
+      recommendation: "Apply the correction before completion.",
+      rationale: "The candidate is incomplete.",
+      must_fix: true,
+    },
+  ],
+} satisfies ReviewOutput;
+
 export type ReviewFixture = {
   workspace: string;
   store: FactoryStoreResolution;
@@ -170,6 +195,35 @@ export function createReviewFixture(): ReviewFixture {
     reviewBase: git(workspace, ["rev-parse", "HEAD"]).trim(),
   });
   const factoryStore = factoryStoreMetadata(store);
+  writeFileSync(join(implementationRunDir, "implementation/summary.md"), "# Complete\n", "utf8");
+  writeFileSync(join(implementationRunDir, "implementation/diff.patch"), "diff\n", "utf8");
+  writeFileSync(
+    join(implementationRunDir, "context/implementation-input.json"),
+    `${JSON.stringify({ mode: "direct", workItem })}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(implementationRunDir, "meta.json"),
+    `${JSON.stringify({
+      runId: implementationRunId,
+      runDir: implementationRunDir,
+      workspace,
+      status: "implementation-complete",
+      reviewBase: reviewHead.reviewBase,
+      reviewHead: reviewHead.ref,
+      reviewCommitSha: reviewHead.commit,
+      reviewTree: reviewHead.tree,
+      implementerSession: IMPLEMENTER_SESSION,
+      factoryStore,
+      artifacts: {
+        summary: "implementation/summary.md",
+        implementationInput: "context/implementation-input.json",
+        diff: "implementation/diff.patch",
+        changeReviewHandoff: "implementation/change-review-handoff.md",
+      },
+    })}\n`,
+    "utf8",
+  );
   const workspaceProvenance = {
     ...canonicalizeFactoryWorkspace(workspace),
     factoryProjectId: store.projectId,
@@ -248,6 +302,10 @@ export function createReviewContext(
     approvalPolicy: "never",
     modelReasoningEffort: "high",
   };
+  const workspaceLeaseEnv = {
+    ...process.env,
+    XDG_DATA_HOME: fixture.leaseDataHome,
+  };
   return createFactoryImplementationReviewRunContextForTest({
     allocation: runAllocation,
     workspace: fixture.workspace,
@@ -260,6 +318,7 @@ export function createReviewContext(
     reviewerRole,
     implementerRole,
     maxRuntimeMs: 10_000,
+    workspaceLeaseEnv,
     agentProviderFactory: () => provider,
   });
 }
@@ -328,6 +387,19 @@ function createGitWorkspace(): string {
     stdio: "ignore",
   });
   writeFileSync(join(workspace, ".gitignore"), ".harness/\n");
+  writeFileSync(
+    join(workspace, "harness.json"),
+    `${JSON.stringify({
+      defaultAgent: "codex",
+      agents: { codex: { model: "gpt-review" } },
+      factory: {
+        implementation: {
+          roles: { implementer: { agent: "codex", model: "gpt-implementation" } },
+        },
+      },
+    })}\n`,
+    "utf8",
+  );
   writeFileSync(join(workspace, "tracked.txt"), "initial\n");
   execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
   execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });

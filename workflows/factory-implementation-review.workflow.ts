@@ -886,6 +886,7 @@ async function remediate(
       runId: ctx.implementationRunId,
       attemptId: ctx.runId,
       operation: "remediation",
+      ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
     });
   } catch (error) {
     const before = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
@@ -1428,6 +1429,7 @@ function complete(
       runId: ctx.implementationRunId,
       attemptId: ctx.runId,
       operation: "remediation",
+      ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
     });
   try {
     validateFactoryCandidateTuple({
@@ -1547,6 +1549,7 @@ function captureUnexpectedPartialRecovery(
       runId: ctx.implementationRunId,
       attemptId: ctx.runId,
       operation: "remediation",
+      ...(ctx.workspaceLeaseEnv ? { env: ctx.workspaceLeaseEnv } : {}),
     });
     const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
     if (!after.porcelain && !after.patch && after.changedFiles.length === 0) return {};

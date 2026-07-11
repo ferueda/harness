@@ -41,7 +41,11 @@ export function withTempFactoryStore<T>(
   inputEnv: NodeJS.ProcessEnv | undefined,
   run: (input: { env: NodeJS.ProcessEnv; storeRoot: string }) => T,
 ): T {
-  const env = { ...process.env, ...inputEnv };
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...inputEnv,
+    XDG_DATA_HOME: inputEnv?.XDG_DATA_HOME ?? mkdtempSync(join(tmpdir(), "harness-factory-data-")),
+  };
   const storeRoot = env.HARNESS_FACTORY_STORE_ROOT ?? createFactoryStoreRoot();
   const defaultStoreRoot = defaultFactoryStoreRoot(env);
   const before = directoryFingerprint(defaultStoreRoot);

@@ -57,6 +57,7 @@ export type FactoryImplementationReviewCommandConfig = {
   positiveNumber: (value: string) => number;
   writeVerboseWorkflowEvent?: (event: WorkflowEvent) => void;
   implementationAgentProviderFactory?: typeof createAgentProvider;
+  workspaceLeaseEnv?: NodeJS.ProcessEnv;
   implementationReviewRunner?: (
     ctx: FactoryImplementationReviewRunContext,
   ) => Promise<FactoryImplementationReviewRunMeta>;
@@ -286,6 +287,7 @@ export async function runFactoryImplementationReviewCommand(
     implementerRole,
     ...(resolved.approvedPlanPath ? { approvedPlanPath: resolved.approvedPlanPath } : {}),
     maxRuntimeMs: options.maxRuntimeMs,
+    ...(config.workspaceLeaseEnv ? { workspaceLeaseEnv: config.workspaceLeaseEnv } : {}),
     signal: reviewAbort.signal,
     ...(options.verbose && config.writeVerboseWorkflowEvent
       ? { eventSink: config.writeVerboseWorkflowEvent }

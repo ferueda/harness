@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { loadFactoryLifecycleState, readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
 import { inspectFactoryWorkspaceWriterLease } from "../lib/factory-locks.ts";
 import { run as runImplementationReview } from "../workflows/factory-implementation-review.workflow.ts";
@@ -56,13 +56,8 @@ const MIXED_REVIEW = {
   ],
 } satisfies ReviewOutput;
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
 test("passes after one complete three-role review and writes a PR-ready handoff", async () => {
   const fixture = createReviewFixture();
-  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
   const provider = scriptedProvider({ workspace: fixture.workspace, reviews: [PASS_REVIEW] });
 
   const result = await runImplementationReview(createReviewContext(fixture, provider));
@@ -85,7 +80,6 @@ test("passes after one complete three-role review and writes a PR-ready handoff"
 
 test("remediation creates cumulative candidate lineage and forces a full re-review", async () => {
   const fixture = createReviewFixture();
-  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
   const provider = scriptedProvider({
     workspace: fixture.workspace,
     reviews: [NEEDS_CHANGES_REVIEW, NEEDS_CHANGES_REVIEW, NEEDS_CHANGES_REVIEW, PASS_REVIEW],
@@ -110,7 +104,6 @@ test("remediation creates cumulative candidate lineage and forces a full re-revi
 
 test("provider failure after edits persists a partial tuple and resume restores findings for remediation", async () => {
   const fixture = createReviewFixture();
-  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
   const failedProvider = scriptedProvider({
     workspace: fixture.workspace,
     reviews: [NEEDS_CHANGES_REVIEW],
@@ -175,7 +168,6 @@ test("provider failure after edits persists a partial tuple and resume restores 
 
 test("resumed partial remediation reconstructs accepted debt from its source review", async () => {
   const fixture = createReviewFixture();
-  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
   const firstProvider = scriptedProvider({
     workspace: fixture.workspace,
     reviews: [MIXED_REVIEW],
@@ -244,7 +236,6 @@ test("resumed partial remediation reconstructs accepted debt from its source rev
 
 test("mixed non-blocking declines remain accepted debt", async () => {
   const fixture = createReviewFixture();
-  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
   const provider = scriptedProvider({
     workspace: fixture.workspace,
     reviews: [NON_BLOCKING_REVIEW],
@@ -272,7 +263,6 @@ test("mixed non-blocking declines remain accepted debt", async () => {
 
 test("incompatible implementer sessions become ready-for-human without invocation", async () => {
   const fixture = createReviewFixture();
-  vi.stubEnv("XDG_DATA_HOME", fixture.leaseDataHome);
   const provider = scriptedProvider({
     workspace: fixture.workspace,
     reviews: [NEEDS_CHANGES_REVIEW],

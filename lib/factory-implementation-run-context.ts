@@ -135,6 +135,7 @@ export type FactoryImplementationRunContextOptions = {
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
   allocation?: FactoryRunAllocation;
   writerLease?: FactoryWorkspaceWriterLeaseHandle;
+  workspaceLeaseEnv?: NodeJS.ProcessEnv;
   deferInitialization?: boolean;
 };
 
@@ -184,6 +185,7 @@ export type FactoryImplementationRunContext = {
   signal?: AbortSignal;
   eventSink: WorkflowEventSink;
   writerLease?: FactoryWorkspaceWriterLeaseHandle;
+  workspaceLeaseEnv?: NodeJS.ProcessEnv;
   initialize(): void;
   writeRejection(error: string): void;
   writeDryRunArtifacts(input: { prompt: string; changeReviewHandoff: string }): void;
@@ -327,6 +329,7 @@ function createFactoryImplementationRunContextInternal(
     signal: options.signal,
     eventSink,
     ...(options.writerLease ? { writerLease: options.writerLease } : {}),
+    ...(options.workspaceLeaseEnv ? { workspaceLeaseEnv: options.workspaceLeaseEnv } : {}),
     initialize(): void {
       try {
         initializeRunArtifacts();
