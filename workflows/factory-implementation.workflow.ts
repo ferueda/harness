@@ -21,16 +21,6 @@ import {
   renderFactoryImplementationChangeReviewHandoff,
   renderFactoryImplementationPrompt,
 } from "../lib/prompts/index.ts";
-import {
-  assertFactoryWriterBoundary,
-  captureFactoryWriterBoundary,
-} from "../lib/factory-writer-boundary.ts";
-import {
-  acquireFactoryWorkspaceWriterLease,
-  releaseFactoryWorkspaceWriterLease,
-  type FactoryWorkspaceWriterLeaseHandle,
-} from "../lib/factory-locks.ts";
-import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 
 export const meta = { name: "factory-implementation" };
 
@@ -75,7 +65,6 @@ async function runLive(
   let reviewBase: string | undefined;
   let before: FactoryWorkspacePatchCapture | undefined;
   let providerInvoked = false;
-  let workspaceLease: FactoryWorkspaceWriterLeaseHandle | undefined;
 
   try {
     const prompt = renderFactoryImplementationPrompt({
@@ -85,18 +74,6 @@ async function runLive(
     });
     ctx.writePromptArtifact({ prompt });
 
-    if (ctx.factoryStore) {
-      workspaceLease = acquireFactoryWorkspaceWriterLease({
-        workspace: ctx.workspace,
-        factoryProjectId: ctx.factoryStore.projectId,
-        storeRoot: ctx.factoryStore.storeRoot,
-        workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
-        runId: ctx.runId,
-        operation: "implementation",
-      });
-    }
-    // Acquire the physical-workspace lease before the final clean/tree probe.
-    // This closes the check-to-provider race with another Factory station.
     before = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
     if (!isEmptyPorcelainStatus(before.porcelain)) {
       const meta = exportFailedLive({
@@ -115,15 +92,6 @@ async function runLive(
     reviewBase = readFactoryReviewBase(ctx.workspace);
     const logPath = join(ctx.runDir, "implementation/implementer.stream.jsonl");
     const role = ctx.implementerRole;
-    const writerBoundary = ctx.factoryStore
-      ? captureFactoryWriterBoundary({
-          workspace: ctx.workspace,
-          lifecycleRoot: ctx.factoryStore.factoryStateRoot,
-          factoryStoreRoot: ctx.factoryStore.storeRoot,
-          durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
-          allowedPaths: [logPath],
-        })
-      : undefined;
     providerInvoked = true;
     const result = await ctx.implementerProvider().run({
       workspace: ctx.workspace,
@@ -135,18 +103,6 @@ async function runLive(
       workspaceGuard: "record",
       signal: ctx.signal,
     });
-    if (writerBoundary && ctx.factoryStore) {
-      assertFactoryWriterBoundary(
-        writerBoundary,
-        captureFactoryWriterBoundary({
-          workspace: ctx.workspace,
-          lifecycleRoot: ctx.factoryStore.factoryStateRoot,
-          factoryStoreRoot: ctx.factoryStore.storeRoot,
-          durablePaths: [ctx.factoryStore.factoryRunsDir, ctx.factoryStore.reviewRunsDir],
-          allowedPaths: [logPath],
-        }),
-      );
-    }
 
     const after = captureFactoryWorkspaceChanges({ workspace: ctx.workspace });
     if (!result.ok) {
@@ -257,7 +213,6 @@ async function runLive(
       reviewBase: reviewHead.reviewBase,
       reviewHead: reviewHead.reviewHead,
       reviewCommitSha: reviewHead.reviewCommitSha,
-      reviewTree: reviewHead.treeSha,
       includeLiveArtifacts: true,
     });
     emitRunEnd(ctx, startedAt, meta);
@@ -295,8 +250,6 @@ async function runLive(
       error: errorMessage(error),
     });
     throw error;
-  } finally {
-    if (workspaceLease) releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
   }
 }
 

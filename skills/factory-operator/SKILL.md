@@ -76,8 +76,6 @@ harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<rep
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory implementation review --workspace /path/to/repo --item-file work-item.json
-harness factory implementation review --workspace /path/to/repo --linear-issue TEAM-123 --resume
 ```
 
 Low-level workflow escape hatches:
@@ -320,10 +318,9 @@ Live mode resolves direct or planned implementation input, validates readiness,
 resolves `factory.implementation.roles.implementer`, invokes one implementer,
 writes candidate change artifacts, creates
 `refs/harness/factory/<run-id>/implementation`, and appends lifecycle events.
-It does not create human branches/worktrees or open PRs. After
-`implementation-complete`, `harness factory implementation review` owns the
-durable three-role review/remediation loop; use `--resume` for a failed or
-interrupted review attempt.
+It does not run change-review, and without `--apply` does not mutate Linear, create human branches/worktrees,
+or open PRs. After `implementation-complete`, run
+`harness run change-review --base <reviewBase> --head <reviewHead>` separately.
 Optional `--dry-run` prepares prompt and handoff artifacts without invoking a
 provider or writing lifecycle state.
 

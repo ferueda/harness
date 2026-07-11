@@ -87,16 +87,6 @@ export type FactoryPlanningSettings = {
   maxReviewIterations: number;
 };
 
-export type FactoryImplementationSettings = {
-  maxReviewIterations: number;
-};
-
-export type FactoryImplementationReviewerRole = FactoryRoleAgent & {
-  agent: "codex";
-  sandboxMode: "read-only";
-  approvalPolicy: "never";
-};
-
 export type FactoryLinearSettings = FactoryLinearConfig;
 export type FactoryStoreSettings = FactoryStoreConfig;
 
@@ -192,64 +182,6 @@ export function resolveFactoryPlanningSettings(
     workspace,
     maxReviewIterations: config.factory?.planning?.maxReviewIterations ?? 3,
   };
-}
-
-/** Resolve the independent implementation remediation limit. */
-export function resolveFactoryImplementationSettings(
-  options: { workspace?: string; maxReviewIterations?: string | number },
-  cwd = process.cwd(),
-): FactoryImplementationSettings & { workspace: string; source: "default" | "config" | "cli" } {
-  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
-  const config = readHarnessConfig(workspace);
-  if (options.maxReviewIterations !== undefined) {
-    return {
-      workspace,
-      maxReviewIterations: parsePositiveIntegerOption(options.maxReviewIterations),
-      source: "cli",
-    };
-  }
-  if (config.factory?.implementation?.maxReviewIterations !== undefined) {
-    return {
-      workspace,
-      maxReviewIterations: parsePositiveIntegerOption(
-        config.factory.implementation.maxReviewIterations,
-      ),
-      source: "config",
-    };
-  }
-  return { workspace, maxReviewIterations: 3, source: "default" };
-}
-
-/** Positive integer parser shared by config-derived and CLI-derived limits. */
-export function parsePositiveIntegerOption(value: string | number): number {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error("must be a positive integer");
-  }
-  return parsed;
-}
-
-/** Factory review always uses the secure Codex reviewer contract. */
-export function resolveFactoryImplementationReviewer(
-  options: { workspace?: string },
-  cwd = process.cwd(),
-): FactoryImplementationReviewerRole & { workspace: string } {
-  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
-  const config = readHarnessConfig(workspace);
-  const configured = config.factory?.implementation?.roles?.reviewer;
-  const codexConfig = config.agents?.codex;
-  const role: FactoryImplementationReviewerRole = {
-    agent: "codex",
-    model: configured?.model ?? codexConfig?.model ?? DEFAULT_AGENT_MODELS.codex,
-    codexPathOverride: configured?.executable ?? codexConfig?.executable,
-    sandboxMode: "read-only",
-    approvalPolicy: "never",
-    modelReasoningEffort:
-      configured?.modelReasoningEffort ??
-      codexConfig?.modelReasoningEffort ??
-      DEFAULT_CODEX_REASONING_EFFORT,
-  };
-  return { workspace, ...role };
 }
 
 export function resolveFactoryLinearSettings(

@@ -26,18 +26,6 @@ const FactoryRoleSchema = z
   })
   .strict();
 
-/** Factory's nested implementation reviewer is intentionally non-configurable. */
-const FactoryImplementationReviewerRoleSchema = z
-  .object({
-    agent: z.literal("codex"),
-    model: z.string().optional(),
-    executable: z.string().optional(),
-    sandboxMode: z.literal("read-only"),
-    approvalPolicy: z.literal("never"),
-    modelReasoningEffort: z.enum(AGENT_REASONING_EFFORTS).optional(),
-  })
-  .strict();
-
 const FactoryLinearStatusesSchema = z
   .object({
     intake: z.string().min(1),
@@ -111,11 +99,9 @@ const FactoryConfigSchema = z
       .optional(),
     implementation: z
       .object({
-        maxReviewIterations: z.number().int().positive().optional(),
         roles: z
           .object({
             implementer: FactoryRoleSchema.optional(),
-            reviewer: FactoryImplementationReviewerRoleSchema.optional(),
           })
           .strict()
           .optional(),
@@ -194,9 +180,6 @@ export const HarnessConfigSchema = z
 
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
 export type FactoryRoleConfig = z.infer<typeof FactoryRoleSchema>;
-export type FactoryImplementationReviewerRoleConfig = z.infer<
-  typeof FactoryImplementationReviewerRoleSchema
->;
 export type FactoryLinearConfig = z.infer<typeof FactoryLinearConfigSchema>;
 export type FactoryLinearStatusesConfig = z.infer<typeof FactoryLinearStatusesSchema>;
 export type FactoryStoreConfig = z.infer<typeof FactoryStoreConfigSchema>;

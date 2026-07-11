@@ -312,7 +312,7 @@ test.each([
   expect(state).toMatchObject({ factoryRoute: route, factoryNextAction: nextAction });
 });
 
-test("implementation started claims durable implementation ownership", () => {
+test("started-only events do not change durable stage or factory run id", () => {
   const state = reduceFactoryLifecycleEvents([
     importedEvent("linear:FER-34"),
     {
@@ -326,8 +326,7 @@ test("implementation started claims durable implementation ownership", () => {
       data: { linearIssue: "FER-34" },
     },
     {
-      ...baseEvent("implementation.started:run-3", "linear:FER-34", "run-3"),
-      runId: "run-3",
+      ...baseEvent("implementation.started:run-3", "linear:FER-34"),
       type: "implementation.started",
       data: { linearIssue: "FER-34" },
     },
@@ -337,8 +336,8 @@ test("implementation started claims durable implementation ownership", () => {
     workItemKey: "linear:FER-34",
     lastEventId: "implementation.started:run-3",
   });
-  expect(state?.factoryStage).toBe("implementation-started");
-  expect(state?.factoryRunId).toBe("run-3");
+  expect(state?.factoryStage).toBeUndefined();
+  expect(state?.factoryRunId).toBeUndefined();
 });
 
 test("implementation completed moves to implementation-complete and preserves plan retry fields", () => {
