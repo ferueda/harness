@@ -6,11 +6,8 @@
 | ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
-| [FER-37.md](./FER-37.md)                                               | `approved`    | Lifecycle-authoritative triage rerun policy                |
 | [FER-61.md](./FER-61.md)                                               | `approved`    | Workspace-local planning scratch; Harness durable evidence |
-| [FER-62.md](./FER-62.md)                                               | `blocked`     | Durable implementation review and remediation; waits for FER-52/61 implementation |
-
-**Next factory issue (Linear, no plan file yet):** [FER-52](https://linear.app/ferueda/issue/FER-52/add-linear-apply-projection-for-implementation-station).
+| [FER-62.md](./FER-62.md)                                               | `blocked`     | Durable implementation review and remediation; waits for FER-61 implementation |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
 
@@ -61,6 +58,8 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Native Linear PR linking docs                 | [#102](https://github.com/ferueda/harness/pull/102) |
 | —     | Trim factory dry-run from operator docs       | [#103](https://github.com/ferueda/harness/pull/103) |
 | —     | Durable factory store                         | [#108](https://github.com/ferueda/harness/pull/108) |
+| —     | Lifecycle-authoritative triage rerun policy   | [#111](https://github.com/ferueda/harness/pull/111) |
+| —     | Fail-closed Linear implementation projection  | [#116](https://github.com/ferueda/harness/pull/116) |
 
 ---
 
