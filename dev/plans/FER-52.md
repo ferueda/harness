@@ -454,7 +454,6 @@ Omit both properties for no-apply and dry-run so current output shape is exact.
 
 | Step | Verified skill/tool | Use |
 | --- | --- | --- |
-| All implementation steps | `implement-plan` | Execute phase-by-phase; honor scope, gates, and STOP conditions. |
 | Schema/config | `zod` | Preserve strict parsing and actionable boundary errors. |
 | Types, leases, adapter, orchestration | `typescript-refactor` | Keep discriminated attempt types, checked unknown boundaries, and awaited cleanup exhaustive. |
 | All tests | `vitest` | Use isolated async fakes and explicit resolved-failure assertions. |

@@ -175,7 +175,6 @@ Test conventions:
 
 | Step                  | Skill / resource                                                                             | Why                                                                        |
 | --------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| All implementation    | `implement-plan`                                                                             | Execute this plan phase by phase and update checkboxes.                    |
 | Type/schema design    | `typescript-refactor`                                                                        | Keep discriminated unions, exported types, and route typing precise.       |
 | Node CLI/runtime code | `node`                                                                                       | Match native TypeScript, ESM, signal/error-handling, and file IO patterns. |
 | Zod schemas           | `zod`                                                                                        | Define structured factory triage output and parse untrusted JSON safely.   |

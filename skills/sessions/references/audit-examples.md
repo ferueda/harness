@@ -80,7 +80,7 @@ See also coordinator fixtures: `planning-workflow/references/routing.md`.
 ```bash
 # Per-skill counts
 for term in planning-workflow shape-requirements diagnose-issue architect \
-  create-plan review-spec implement-plan handoff-work audit; do
+  create-plan review-spec handoff-work audit; do
   echo -n "$term: "
   sessions analyze --provider codex --include-turns --extract-only \
     --workspace /path/to/repo --days 14 \
@@ -100,7 +100,6 @@ sessions analyze --provider codex --include-turns --extract-only \
   --turn-query "diagnose-issue" \
   --turn-query "create-plan" \
   --turn-query "review-spec" \
-  --turn-query "implement-plan" \
   --format json
 ```
 
@@ -108,12 +107,12 @@ Inspect: `isFirstUserTurn`, `artifacts` plan-file / `dev/briefs/`.
 
 ### Signals
 
-| Healthy                                                         | Investigate                            |
-| --------------------------------------------------------------- | -------------------------------------- |
-| `shape-requirements` or `planning-workflow` first on vague work | `create-plan` / `implement-plan` first |
-| `review-spec` on plan path before build                         | Plan in artifacts, no spec review      |
-| `diagnose-issue` early on tickets                               | Interview on clear repro               |
-| `handoff-work` across agents                                    | Next session replays chat              |
+| Healthy                                                         | Investigate                       |
+| --------------------------------------------------------------- | --------------------------------- |
+| `shape-requirements` or `planning-workflow` first on vague work | `create-plan` first               |
+| `review-spec` on plan path before build                         | Plan in artifacts, no spec review |
+| `diagnose-issue` early on tickets                               | Interview on clear repro          |
+| `handoff-work` across agents                                    | Next session replays chat         |
 
 ### Scorecard
 
