@@ -665,8 +665,49 @@ ${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<
 ```
 
 `implementation/change-review-handoff.md` uses the same handoff section model as
-`change-review-workflow`. After `implementation-complete`, run
-`harness run change-review --base <reviewBase> --head <reviewHead>` separately.
+`change-review-workflow`. `implementation-complete` is the input to the durable
+implementation review station:
+
+```bash
+harness factory implementation review --workspace /path/to/repo --item-file work-item.json
+harness factory implementation review --workspace /path/to/repo --linear-issue ENG-123 --resume
+```
+
+The review command resolves the owning implementation from lifecycle state. It
+runs all three existing reviewers against the original base and latest
+immutable candidate, then resumes the original implementer session for every
+finding. A changed workspace creates a cumulative remediation ref under
+`refs/harness/factory/<implementation-run-id>/review/<candidate-version>` and
+forces another full review. The default maximum is three completed full review
+cycles; set `factory.implementation.maxReviewIterations` or use
+`--max-review-iterations` on the initial review claim. The effective value is
+persisted and cannot change on resume.
+
+Review artifacts live under the durable review store:
+
+```text
+<store>/projects/<repo-id>/runs/reviews/<review-run-id>/
+  context/
+  iterations/<n>/
+    review-findings.json
+    remediation.prompt.md
+    remediation.json
+    workspace-status.json
+    diff.patch
+    candidate-ref.json
+  implementation-review/pr-ready-handoff.md
+  summary.md
+  meta.json
+```
+
+Provider failures after workspace edits also retain a partial evidence ref and
+recovery manifest. `--resume` restores that exact tuple and immutable findings;
+without partial evidence it starts a fresh full review from the approved
+candidate. Reviewer/provider/Git/artifact/protocol failures remain
+`review-failed`; blocked review, missing/incompatible sessions, must-fix
+declines, and exhausted review limits become `ready-for-human`. Review
+artifacts and lifecycle JSONL are Harness-owned; the implementer writes only
+target-repository source, test, and documentation changes.
 
 Lifecycle: `implementation.started` is audit-only;
 `implementation.completed` / `implementation.failed` move durable stage while
@@ -693,10 +734,10 @@ Failure recovery:
   missing status/comment projection from that evidence. This initial slice
   intentionally has no comment-only replay command.
 
-Non-goals: nested change-review execution; PR creation; Linear mutation without
-`--apply`; terminal-projection replay; human branch/worktree orchestration; and
-Git checkout or commit verification of `approvedPlanCommit`. The implementer
-agent must not mutate refs; the harness command owns the internal review ref.
+Non-goals: PR creation; Linear mutation without `--apply`; terminal-projection
+replay; human branch/worktree orchestration; and Git checkout or commit
+verification of `approvedPlanCommit`. The implementer agent must not mutate
+refs; the harness command owns the internal review refs and durable lifecycle.
 
 ## Local Inbox
 

@@ -268,14 +268,14 @@ function renderLinearImplementationCompletedComment(
   return [
     linearImplementationCompletedMarker(input.runId),
     "",
-    "Factory implementation ready for review.",
+    "Factory implementation complete; durable Factory review is ready.",
     "",
     "Status: implementation-complete",
     `Run: \`${input.runDir}\``,
     `Review base: \`${input.reviewBase}\``,
     `Review head: \`${input.reviewHead}\``,
     `Review commit: \`${input.reviewCommitSha}\``,
-    `Next: \`harness run change-review --base ${input.reviewBase} --head ${input.reviewHead}\``,
+    "Next: run `harness factory implementation review` with the same work-item identity; use `--resume` for an existing failed attempt.",
     "",
   ].join("\n");
 }

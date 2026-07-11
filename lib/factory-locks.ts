@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -9,9 +10,12 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
+  realpathSync,
+  chmodSync,
 } from "node:fs";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
+import { defaultFactoryStoreRoot } from "./factory-store.ts";
 
 export const FACTORY_LOCK_STALE_MS = 30 * 60 * 1000;
 export const FACTORY_LOCK_WRITE_TIMEOUT_MS = 5_000;
@@ -385,4 +389,339 @@ function isAlreadyExistsError(error: unknown): boolean {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return typeof error === "object" && error !== null && "code" in error;
+}
+
+export type FactoryWorkspaceCanonicalization = {
+  physicalGitRoot: string;
+  workspaceKey: string;
+};
+
+export type FactoryWorkspaceWriterLeaseOwner = {
+  pid: number;
+  hostname: string;
+  token: string;
+  physicalGitRoot: string;
+  workspaceKey: string;
+  factoryProjectId: string;
+  storeRoot: string;
+  workItemKey: string;
+  runId: string;
+  attemptId?: string;
+  operation: "implementation" | "remediation";
+  startedAt: string;
+  processTitle?: string;
+};
+
+export type FactoryWorkspaceWriterLeaseHandle = {
+  path: string;
+  owner: FactoryWorkspaceWriterLeaseOwner;
+  canonical: FactoryWorkspaceCanonicalization;
+};
+
+export type FactoryWorkspaceWriterLeaseInspection = {
+  path: string;
+  physicalGitRoot: string;
+  workspaceKey: string;
+  owner?: FactoryWorkspaceWriterLeaseOwner;
+  ageMs?: number;
+  stale: boolean;
+  classification?: "owner-missing" | "owner-invalid" | "remote-owner" | "unknown-liveness";
+  warning?: string;
+};
+
+export class FactoryWorkspaceCanonicalizationError extends Error {
+  constructor(message: string, options: { cause?: unknown } = {}) {
+    super(message, options);
+    this.name = "FactoryWorkspaceCanonicalizationError";
+  }
+}
+
+export class FactoryWorkspaceWriterLeaseContentionError extends Error {
+  readonly diagnostic: FactoryWorkspaceWriterLeaseInspection;
+
+  constructor(diagnostic: FactoryWorkspaceWriterLeaseInspection) {
+    super(
+      `Factory workspace writer lease is held for ${diagnostic.physicalGitRoot}: ${formatWorkspaceLeaseOwner(diagnostic.owner)}`,
+    );
+    this.name = "FactoryWorkspaceWriterLeaseContentionError";
+    this.diagnostic = diagnostic;
+  }
+}
+
+export function canonicalizeFactoryWorkspace(workspace: string): FactoryWorkspaceCanonicalization {
+  let gitRoot: string;
+  try {
+    gitRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (error) {
+    throw new FactoryWorkspaceCanonicalizationError(
+      `Cannot resolve Git top-level for workspace: ${workspace}`,
+      { cause: error },
+    );
+  }
+  if (!gitRoot) {
+    throw new FactoryWorkspaceCanonicalizationError(
+      `Git top-level is empty for workspace: ${workspace}`,
+    );
+  }
+  try {
+    const physicalGitRoot = realpathSync(resolve(gitRoot));
+    const workspaceKey = createHash("sha256").update(physicalGitRoot).digest("hex");
+    return { physicalGitRoot, workspaceKey };
+  } catch (error) {
+    throw new FactoryWorkspaceCanonicalizationError(
+      `Cannot resolve physical Git top-level: ${gitRoot}`,
+      { cause: error },
+    );
+  }
+}
+
+export function resolveFactoryWorkspaceLeaseRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return join(defaultFactoryStoreRoot(env), "workspace-leases");
+}
+
+export function factoryWorkspaceLeasePath(input: { workspace: string; env?: NodeJS.ProcessEnv }): {
+  canonical: FactoryWorkspaceCanonicalization;
+  path: string;
+} {
+  const canonical = canonicalizeFactoryWorkspace(input.workspace);
+  return {
+    canonical,
+    path: join(resolveFactoryWorkspaceLeaseRoot(input.env), `${canonical.workspaceKey}.lock`),
+  };
+}
+
+export type AcquireFactoryWorkspaceWriterLeaseInput = {
+  workspace: string;
+  factoryProjectId: string;
+  storeRoot: string;
+  workItemKey: string;
+  runId: string;
+  attemptId?: string;
+  operation: "implementation" | "remediation";
+  env?: NodeJS.ProcessEnv;
+  hostname?: string;
+  pid?: number;
+  token?: string;
+  now?: () => number;
+};
+
+export function acquireFactoryWorkspaceWriterLease(
+  input: AcquireFactoryWorkspaceWriterLeaseInput,
+): FactoryWorkspaceWriterLeaseHandle {
+  const { canonical, path } = factoryWorkspaceLeasePath({
+    workspace: input.workspace,
+    env: input.env,
+  });
+  const root = dirname(path);
+  try {
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    chmodSync(root, 0o700);
+  } catch (error) {
+    throw new FactoryWorkspaceCanonicalizationError(
+      `Cannot create or inspect factory workspace lease namespace: ${root}`,
+      { cause: error },
+    );
+  }
+  const now = input.now ?? Date.now;
+  const owner: FactoryWorkspaceWriterLeaseOwner = {
+    pid: input.pid ?? process.pid,
+    hostname: input.hostname ?? hostname(),
+    token: input.token ?? randomBytes(16).toString("hex"),
+    physicalGitRoot: canonical.physicalGitRoot,
+    workspaceKey: canonical.workspaceKey,
+    factoryProjectId: input.factoryProjectId,
+    storeRoot: resolve(input.storeRoot),
+    workItemKey: input.workItemKey,
+    runId: input.runId,
+    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
+    operation: input.operation,
+    startedAt: new Date(now()).toISOString(),
+    processTitle: process.title,
+  };
+  try {
+    mkdirSync(path);
+    writeFileSync(join(path, "owner.json"), `${JSON.stringify(owner)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    return { path, owner, canonical };
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) {
+      throw new FactoryWorkspaceCanonicalizationError(
+        `Cannot acquire factory workspace writer lease: ${path}`,
+        { cause: error },
+      );
+    }
+  }
+
+  const inspection = inspectFactoryWorkspaceWriterLease({
+    workspace: input.workspace,
+    env: input.env,
+    now,
+    hostname: input.hostname,
+  });
+  if (
+    inspection?.stale &&
+    inspection.owner &&
+    inspection.owner.hostname === (input.hostname ?? hostname())
+  ) {
+    const liveness = pidLiveness(inspection.owner.pid);
+    if (liveness === "dead" && removeMatchingWorkspaceLease(path, inspection.owner)) {
+      try {
+        mkdirSync(path);
+        writeFileSync(join(path, "owner.json"), `${JSON.stringify(owner)}\n`, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+        return { path, owner, canonical };
+      } catch (error) {
+        if (!isAlreadyExistsError(error)) {
+          throw new FactoryWorkspaceCanonicalizationError(
+            `Cannot acquire reclaimed factory workspace writer lease: ${path}`,
+            { cause: error },
+          );
+        }
+      }
+    }
+  }
+  throw new FactoryWorkspaceWriterLeaseContentionError(
+    inspection ?? {
+      path,
+      physicalGitRoot: canonical.physicalGitRoot,
+      workspaceKey: canonical.workspaceKey,
+      stale: false,
+      warning: "Lease exists but owner diagnostics could not be inspected.",
+    },
+  );
+}
+
+export function releaseFactoryWorkspaceWriterLease(input: {
+  handle: FactoryWorkspaceWriterLeaseHandle;
+}): void {
+  const ownerPath = join(input.handle.path, "owner.json");
+  if (!existsSync(ownerPath)) return;
+  const current = readWorkspaceLeaseOwner(ownerPath);
+  if (!current || current.token !== input.handle.owner.token) return;
+  removeMatchingWorkspaceLease(input.handle.path, input.handle.owner);
+}
+
+export function inspectFactoryWorkspaceWriterLease(input: {
+  workspace: string;
+  env?: NodeJS.ProcessEnv;
+  now?: () => number;
+  hostname?: string;
+}): FactoryWorkspaceWriterLeaseInspection | undefined {
+  const { canonical, path } = factoryWorkspaceLeasePath(input);
+  if (!existsSync(path)) return undefined;
+  const ownerPath = join(path, "owner.json");
+  const now = input.now ?? Date.now;
+  if (!existsSync(ownerPath)) {
+    return {
+      path,
+      physicalGitRoot: canonical.physicalGitRoot,
+      workspaceKey: canonical.workspaceKey,
+      stale: false,
+      classification: "owner-missing",
+      warning: "Workspace writer lease owner.json is missing; operator cleanup required.",
+    };
+  }
+  const owner = readWorkspaceLeaseOwner(ownerPath);
+  if (!owner) {
+    return {
+      path,
+      physicalGitRoot: canonical.physicalGitRoot,
+      workspaceKey: canonical.workspaceKey,
+      stale: false,
+      classification: "owner-invalid",
+      warning:
+        "Workspace writer lease owner.json is malformed; it is never reclaimed automatically.",
+    };
+  }
+  const sameHost = owner.hostname === (input.hostname ?? hostname());
+  const liveness = sameHost ? pidLiveness(owner.pid) : "unknown";
+  return {
+    path,
+    physicalGitRoot: canonical.physicalGitRoot,
+    workspaceKey: canonical.workspaceKey,
+    owner,
+    ageMs: Math.max(0, now() - Date.parse(owner.startedAt)),
+    stale: sameHost && liveness === "dead",
+    ...(sameHost
+      ? liveness === "unknown"
+        ? { classification: "unknown-liveness" as const }
+        : {}
+      : { classification: "remote-owner" as const }),
+    ...(sameHost && liveness === "unknown"
+      ? { warning: "Workspace writer lease owner liveness is unknown; operator cleanup required." }
+      : {}),
+  };
+}
+
+function readWorkspaceLeaseOwner(path: string): FactoryWorkspaceWriterLeaseOwner | undefined {
+  try {
+    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!isWorkspaceLeaseOwner(value)) return undefined;
+    return value;
+  } catch {
+    return undefined;
+  }
+}
+
+function isWorkspaceLeaseOwner(value: unknown): value is FactoryWorkspaceWriterLeaseOwner {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.pid === "number" &&
+    Number.isInteger(candidate.pid) &&
+    candidate.pid > 0 &&
+    typeof candidate.hostname === "string" &&
+    candidate.hostname.length > 0 &&
+    typeof candidate.token === "string" &&
+    candidate.token.length > 0 &&
+    typeof candidate.physicalGitRoot === "string" &&
+    candidate.physicalGitRoot.length > 0 &&
+    typeof candidate.workspaceKey === "string" &&
+    candidate.workspaceKey.length > 0 &&
+    typeof candidate.factoryProjectId === "string" &&
+    candidate.factoryProjectId.length > 0 &&
+    typeof candidate.storeRoot === "string" &&
+    candidate.storeRoot.length > 0 &&
+    typeof candidate.workItemKey === "string" &&
+    candidate.workItemKey.length > 0 &&
+    typeof candidate.runId === "string" &&
+    candidate.runId.length > 0 &&
+    (candidate.attemptId === undefined || typeof candidate.attemptId === "string") &&
+    (candidate.operation === "implementation" || candidate.operation === "remediation") &&
+    typeof candidate.startedAt === "string" &&
+    Number.isFinite(Date.parse(candidate.startedAt))
+  );
+}
+
+function removeMatchingWorkspaceLease(
+  path: string,
+  owner: FactoryWorkspaceWriterLeaseOwner,
+): boolean {
+  const ownerPath = join(path, "owner.json");
+  const current = readWorkspaceLeaseOwner(ownerPath);
+  if (!current || current.token !== owner.token) return false;
+  try {
+    rmSync(path, { recursive: true, force: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatWorkspaceLeaseOwner(owner: FactoryWorkspaceWriterLeaseOwner | undefined): string {
+  if (!owner) return "owner diagnostics unavailable";
+  return `${owner.hostname}:${owner.pid} run=${owner.runId} work-item=${owner.workItemKey}`;
+}
+
+function dirname(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index > 0 ? path.slice(0, index) : ".";
 }

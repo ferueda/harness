@@ -1,7 +1,9 @@
 import { InvalidArgumentError, type Command } from "commander";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
+import { hostname } from "node:os";
 import type { Readable } from "node:stream";
 import { factoryImplementationCliOutput } from "./factory-implementation-cli.ts";
 import {
@@ -39,9 +41,15 @@ import {
   type FactoryImplementationRunContext,
   type FactoryImplementationRunMeta,
 } from "../lib/factory-implementation-run-context.ts";
+import type {
+  FactoryImplementationReviewRunContext,
+  FactoryImplementationReviewRunMeta,
+} from "../lib/factory-implementation-review-run-context.ts";
 import { factoryStatus } from "../lib/factory-status.ts";
 import {
   appendImplementationStartedEvent,
+  appendImplementationRecoveredFailureEvent,
+  appendImplementationStaleOwnerEvent,
   appendImplementationTerminalEvent,
   appendPlanPrMergedEvent,
   appendPlanPrOpenedEvent,
@@ -54,6 +62,7 @@ import {
 } from "../lib/factory-lifecycle-writes.ts";
 import {
   deriveFactoryWorkItemKey,
+  readFactoryLifecycleEvents,
   type FactoryLifecycleWarning,
 } from "../lib/factory-lifecycle.ts";
 import {
@@ -107,7 +116,9 @@ import {
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
+import { captureFactoryWorkspaceChanges } from "../lib/factory-workspace-changes.ts";
 import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
+import { addFactoryImplementationReviewCommand } from "./factory-implementation-review-command.ts";
 import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
 
 type FactoryStatusOptions = {
@@ -209,16 +220,21 @@ export type FactoryCommandOptions = {
   implementationRunner?: (
     ctx: FactoryImplementationRunContext,
   ) => Promise<FactoryImplementationRunMeta>;
+  implementationReviewRunner?: (
+    ctx: FactoryImplementationReviewRunContext,
+  ) => Promise<FactoryImplementationReviewRunMeta>;
   implementationExecutionLease?: typeof withFactoryImplementationExecutionLease;
 };
 
 function factoryStoreForRun(
   resolution: FactoryStoreResolution,
   runsDir: string | undefined,
+  persistRunsDir = false,
 ): FactoryStoreMeta {
   const meta = factoryStoreMetadata(resolution);
   return {
     ...meta,
+    ...(persistRunsDir && runsDir ? { factoryRunsDir: resolve(runsDir) } : {}),
     overrides: {
       ...meta.overrides,
       ...(runsDir ? { runsDir: resolve(runsDir) } : {}),
@@ -587,7 +603,7 @@ function addFactoryImplementationStationCommand(
         factoryStoreProjectId: options.factoryStoreProjectId,
         env: process.env,
       });
-      const factoryStore = factoryStoreForRun(store, options.runsDir);
+      const factoryStore = factoryStoreForRun(store, options.runsDir, true);
       const implementationAdapter = options.apply
         ? (config.implementationLinearAdapterFactory ?? createLinearFactoryAdapter)({
             apiKey:
@@ -730,6 +746,18 @@ function addFactoryImplementationStationCommand(
                   refreshedInput = activeInput;
                   return;
                 }
+                if (
+                  recoverStaleImplementationOwner({
+                    workspace: implementerRole.workspace,
+                    workItem: activeInput.workItem,
+                    factoryStateRoot: store.factoryStateRoot,
+                    factoryStore: store,
+                  })
+                ) {
+                  throw new Error(
+                    "Recovered a stale implementation owner; inspect durable evidence and retry the implementation command.",
+                  );
+                }
                 implementationInput = resolveFactoryImplementationInput({
                   workspace: implementerRole.workspace,
                   resolvedInput: activeInput,
@@ -754,6 +782,13 @@ function addFactoryImplementationStationCommand(
         process.off("SIGTERM", onRunAbort);
       }
     });
+  addFactoryImplementationReviewCommand(implementation, {
+    defaultMaxRuntimeMs: config.defaultMaxRuntimeMs,
+    positiveNumber: config.positiveNumber,
+    writeVerboseWorkflowEvent: config.writeVerboseWorkflowEvent,
+    implementationAgentProviderFactory: config.implementationAgentProviderFactory,
+    implementationReviewRunner: config.implementationReviewRunner,
+  });
 }
 
 function implementationLinearProjection(settings: FactoryLinearSettings, apply: boolean) {
@@ -816,9 +851,106 @@ function appendFactoryImplementationStartAudit(input: {
     runId: input.ctx.runId,
     factoryStateRoot: input.factoryStateRoot,
     execution,
+    owner: {
+      pid: process.pid,
+      hostname: hostname(),
+      runDir: input.ctx.runDir,
+      startedAt: input.ctx.startedAt.toISOString(),
+    },
     ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
     ...(input.itemFile ? { itemFile: input.itemFile } : {}),
   });
+}
+
+function recoverStaleImplementationOwner(input: {
+  workspace: string;
+  workItem: FactoryWorkItem;
+  factoryStateRoot: string;
+  factoryStore: FactoryStoreResolution;
+}): boolean {
+  const metadata = input.workItem.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const factoryStage = (metadata as Record<string, unknown>).factoryStage;
+  if (factoryStage !== "implementation-started") return false;
+  const runId = (metadata as Record<string, unknown>).factoryRunId;
+  if (typeof runId !== "string" || !runId) {
+    throw new Error("Implementation-started lifecycle state is missing its owning run ID.");
+  }
+  const events = readFactoryLifecycleEvents({
+    factoryStateRoot: input.factoryStateRoot,
+    workItemKey: deriveFactoryWorkItemKey(input.workItem),
+  });
+  const started = [...events]
+    .reverse()
+    .find((event) => event.type === "implementation.started" && event.runId === runId);
+  if (!started || started.type !== "implementation.started" || !started.data.owner) {
+    throw new Error(
+      `Implementation owner evidence is missing for stale run ${runId}; human recovery required.`,
+    );
+  }
+  if (started.data.owner.hostname === hostname() && pidIsAlive(started.data.owner.pid)) {
+    throw new Error(`Implementation run ${runId} is still owned by PID ${started.data.owner.pid}.`);
+  }
+  if (started.data.owner.hostname !== hostname()) {
+    throw new Error(`Implementation run ${runId} has a remote owner; human recovery required.`);
+  }
+
+  let treeDrift = false;
+  try {
+    const workspaceStatus = captureFactoryWorkspaceChanges({ workspace: input.workspace });
+    const head = execGit(input.workspace, ["rev-parse", "HEAD"]);
+    treeDrift =
+      Boolean(workspaceStatus.porcelain.trim()) ||
+      (started.execution?.head !== undefined && head !== started.execution.head);
+  } catch {
+    treeDrift = true;
+  }
+  const execution = lifecycleExecutionForRun(
+    input.workspace,
+    started.data.owner.runDir,
+    factoryStoreMetadata(input.factoryStore),
+  );
+  if (treeDrift) {
+    appendImplementationStaleOwnerEvent({
+      workspace: input.workspace,
+      workItem: input.workItem,
+      runId,
+      factoryStateRoot: input.factoryStateRoot,
+      execution,
+      runDir: started.data.owner.runDir,
+      error:
+        "Stale implementation owner left workspace edits or changed HEAD; human recovery required.",
+      treeDrift: true,
+    });
+    return true;
+  }
+  appendImplementationRecoveredFailureEvent({
+    workspace: input.workspace,
+    workItem: input.workItem,
+    runId,
+    factoryStateRoot: input.factoryStateRoot,
+    execution,
+    error:
+      "Recovered stale implementation owner before provider terminalization; retry is allowed.",
+  });
+  return true;
+}
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !(error && typeof error === "object" && "code" in error && error.code === "ESRCH");
+  }
+}
+
+function execGit(workspace: string, args: string[]): string {
+  return execFileSync("git", args, {
+    cwd: workspace,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
 }
 
 async function runFactoryImplementationToLocalTerminal(input: {
@@ -906,6 +1038,18 @@ export async function runFactoryImplementationWithLinearApply(input: {
       throw new AggregateError(
         [startApplyError, exportError],
         `Failed to export implementation start-apply failure: ${errorMessage(startApplyError)}; export failed: ${errorMessage(exportError)}`,
+      );
+    }
+    try {
+      appendImplementationTerminalEvent({
+        meta,
+        factoryStateRoot: input.factoryStateRoot,
+        error: errorMessage(startApplyError),
+      });
+    } catch (terminalizationError) {
+      throw new AggregateError(
+        [startApplyError, terminalizationError],
+        `Failed to persist implementation start failure: ${errorMessage(startApplyError)}; terminalization failed: ${errorMessage(terminalizationError)}`,
       );
     }
     return {

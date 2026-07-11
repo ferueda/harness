@@ -1,6 +1,11 @@
 import { join } from "node:path";
 import { factoryInboxStatus, type FactoryInboxStatus } from "./factory-inbox.ts";
-import { inspectFactoryLocks, type FactoryLockInspection } from "./factory-locks.ts";
+import {
+  inspectFactoryLocks,
+  inspectFactoryWorkspaceWriterLease,
+  type FactoryLockInspection,
+  type FactoryWorkspaceWriterLeaseInspection,
+} from "./factory-locks.ts";
 import { isFactoryImplementationExecutionLeaseFilename } from "./factory-implementation-policy.ts";
 import {
   countFactoryStateFiles,
@@ -11,6 +16,7 @@ import {
 export type FactoryStatus = FactoryInboxStatus & {
   store: Omit<FactoryStoreResolution, "workspace" | "overrides">;
   locks: FactoryLockInspection[];
+  workspaceWriterLease?: FactoryWorkspaceWriterLeaseInspection;
   legacyFactoryState: ReturnType<typeof detectLegacyFactoryState>;
   warnings: string[];
 };
@@ -35,6 +41,14 @@ export function factoryStatus(input: {
         ]
       : []),
   ];
+  let workspaceWriterLease: FactoryWorkspaceWriterLeaseInspection | undefined;
+  try {
+    workspaceWriterLease = inspectFactoryWorkspaceWriterLease({ workspace: input.workspace });
+  } catch (error) {
+    warnings.push(
+      `Workspace writer lease inspection failed closed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   return {
     ...inbox,
     store: {
@@ -51,6 +65,7 @@ export function factoryStatus(input: {
       staleAfterMsForFilename: (filename) =>
         isFactoryImplementationExecutionLeaseFilename(filename) ? Infinity : undefined,
     }),
+    ...(workspaceWriterLease ? { workspaceWriterLease } : {}),
     legacyFactoryState,
     warnings,
   };

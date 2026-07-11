@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FactoryImplementationRemediationOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "findingDecisions"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "findingDecisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["findingId", "decision", "rationale"],
+        "properties": {
+          "findingId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "decision": {
+            "type": "string",
+            "enum": ["implement", "adapt", "decline"]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
