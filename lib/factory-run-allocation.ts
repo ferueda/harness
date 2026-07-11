@@ -1,6 +1,14 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import {
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 
 const MAX_ALLOCATION_ATTEMPTS = 8;
 
@@ -20,6 +28,7 @@ export class FactoryRunAllocationError extends Error {
 export function allocateFactoryRun(input: {
   factoryRunsDir: string;
   idPrefix?: string;
+  runId?: string;
   now?: () => Date;
   random?: () => string;
 }): FactoryRunAllocation {
@@ -35,11 +44,17 @@ export function allocateFactoryRun(input: {
   const random = input.random ?? (() => randomBytes(6).toString("hex"));
   const prefix = input.idPrefix ?? "run";
   for (let attempt = 0; attempt < MAX_ALLOCATION_ATTEMPTS; attempt += 1) {
-    const runId = `${prefix}-${formatRunTimestamp(now())}-${random()}`;
+    const runId = input.runId ?? `${prefix}-${formatRunTimestamp(now())}-${random()}`;
     const runDir = join(root, runId);
     try {
       mkdirSync(runDir);
-      return { runId, runDir, reservationToken: randomBytes(16).toString("hex") };
+      const reservationToken = randomBytes(16).toString("hex");
+      writeFileSync(
+        join(runDir, "attempt-reservation.json"),
+        `${JSON.stringify({ runId, reservationToken }, null, 2)}\n`,
+        { flag: "wx" },
+      );
+      return { runId, runDir, reservationToken };
     } catch (error) {
       if (isAlreadyExistsError(error)) continue;
       throw new FactoryRunAllocationError(`Cannot reserve Factory run directory: ${runDir}`, {
@@ -56,13 +71,26 @@ export function allocateFactoryRun(input: {
 export function releaseEmptyFactoryRunReservation(input: {
   runDir: string;
   reservationToken: string;
+  factoryRunsDir?: string;
 }): boolean {
-  // The token is supplied by the owning caller; no token is persisted before the
-  // identity manifest, so an untouched directory is the only safe pre-manifest state.
-  void input.reservationToken;
   try {
-    if (readdirSync(input.runDir).length !== 0) return false;
-    rmSync(input.runDir, { recursive: false, force: false });
+    const runDir = resolve(input.runDir);
+    const root = resolve(input.factoryRunsDir ?? dirname(runDir));
+    const relativeRun = relative(root, runDir);
+    if (!relativeRun || relativeRun.includes("/") || relativeRun === "..") return false;
+    const runStat = lstatSync(runDir);
+    if (runStat.isSymbolicLink() || !runStat.isDirectory()) return false;
+    const manifestPath = join(runDir, "attempt-reservation.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      runId?: unknown;
+      reservationToken?: unknown;
+    };
+    if (manifest.runId !== relativeRun || manifest.reservationToken !== input.reservationToken)
+      return false;
+    const entries = readdirSync(runDir);
+    if (entries.some((entry) => entry !== "attempt-reservation.json")) return false;
+    unlinkSync(manifestPath);
+    rmdirSync(runDir);
     return true;
   } catch {
     return false;

@@ -265,6 +265,18 @@ const ImplementationStaleOwnerEventSchema = BaseEventSchema.extend({
     .strict(),
 });
 
+const ImplementationStartUnresolvedEventSchema = BaseEventSchema.extend({
+  type: z.literal("implementation.start-unresolved"),
+  runId: z.string().min(1),
+  data: z
+    .object({
+      error: z.string().min(1),
+      runDir: z.string().min(1),
+      phase: z.enum(["validation", "fetch", "mutation", "postcondition"]),
+    })
+    .strict(),
+});
+
 const PlanPrOpenedEventSchema = BaseEventSchema.extend({
   type: z.literal("plan_pr.opened"),
   runId: z.string().min(1),
@@ -419,6 +431,7 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   ImplementationCompletedEventSchema,
   ImplementationFailedEventSchema,
   ImplementationStaleOwnerEventSchema,
+  ImplementationStartUnresolvedEventSchema,
   ImplementationReviewStartedEventSchema,
   ImplementationReviewCheckpointedEventSchema,
   ImplementationReviewCompletedEventSchema,
@@ -911,6 +924,12 @@ function reduceFactoryLifecycleEvent(
         factoryRunId: event.runId,
       };
     case "implementation.stale-owner":
+      return {
+        ...base,
+        factoryStage: "ready-for-human",
+        factoryRunId: event.runId,
+      };
+    case "implementation.start-unresolved":
       return {
         ...base,
         factoryStage: "ready-for-human",

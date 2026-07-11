@@ -143,27 +143,3 @@ export class FactoryImplementationReviewSchemaError extends Error {
     this.name = "FactoryImplementationReviewSchemaError";
   }
 }
-
-export const FACTORY_IMPLEMENTATION_REMEDIATION_SCHEMA = {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  title: "FactoryImplementationRemediationOutput",
-  type: "object",
-  additionalProperties: false,
-  required: ["summary", "findingDecisions"],
-  properties: {
-    summary: { type: "string", minLength: 1 },
-    findingDecisions: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["findingId", "decision", "rationale"],
-        properties: {
-          findingId: { type: "string", minLength: 1 },
-          decision: { type: "string", enum: [...FACTORY_REMEDIATION_DECISIONS] },
-          rationale: { type: "string", minLength: 1 },
-        },
-      },
-    },
-  },
-} as const;

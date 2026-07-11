@@ -1,8 +1,12 @@
 import { InvalidArgumentError, type Command } from "commander";
 import { resolveFactoryStore } from "../lib/factory-store.ts";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { writeFileSync } from "node:fs";
 import { readFactoryLifecycleEvents } from "../lib/factory-lifecycle.ts";
-import { allocateFactoryRun } from "../lib/factory-run-allocation.ts";
+import {
+  allocateFactoryRun,
+  releaseEmptyFactoryRunReservation,
+} from "../lib/factory-run-allocation.ts";
 import {
   resolveFactoryImplementationReviewer,
   resolveFactoryImplementationSettings,
@@ -93,13 +97,65 @@ export async function runFactoryImplementationReviewCommand(
     factoryStoreProjectId: options.factoryStoreProjectId,
     env: process.env,
   });
-  const resolved = resolveFactoryImplementationReviewInput({
-    workspace: store.workspace,
-    ...(options.itemFile ? { itemFile: options.itemFile } : {}),
-    ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
-    factoryStore: store,
+  const allocation = allocateFactoryRun({
+    factoryRunsDir: store.reviewRunsDir,
+    idPrefix: "implementation-review",
   });
+  let resolved: ReturnType<typeof resolveFactoryImplementationReviewInput>;
+  try {
+    resolved = resolveFactoryImplementationReviewInput({
+      workspace: store.workspace,
+      ...(options.itemFile ? { itemFile: options.itemFile } : {}),
+      ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
+      factoryStore: store,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    writeFileSync(
+      join(allocation.runDir, "summary.md"),
+      `# Factory Implementation Review\n\n- Status: rejected\n- Error: ${message}\n`,
+    );
+    writeFileSync(
+      join(allocation.runDir, "attempt-rejected.json"),
+      `${JSON.stringify(
+        {
+          status: "rejected",
+          runId: allocation.runId,
+          identity: options.linearIssue ?? options.itemFile,
+          workspace: store.workspace,
+          factoryStore: store,
+          error: message,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      join(allocation.runDir, "meta.json"),
+      `${JSON.stringify(
+        {
+          runId: allocation.runId,
+          workflow: "factory-implementation-review",
+          status: "rejected",
+          workspace: store.workspace,
+          runDir: allocation.runDir,
+          identity: options.linearIssue ?? options.itemFile,
+          error: message,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    throw error;
+  }
   if (resolved.state.factoryStage === "review-complete") {
+    releaseEmptyFactoryRunReservation({
+      runDir: allocation.runDir,
+      factoryRunsDir: store.reviewRunsDir,
+      reservationToken: allocation.reservationToken,
+    });
     return existingCompletedResult(resolved);
   }
   const allowed = options.resume
@@ -133,10 +189,6 @@ export async function runFactoryImplementationReviewCommand(
     workspace: store.workspace,
     station: "implementation",
     role: "implementer",
-  });
-  const allocation = allocateFactoryRun({
-    factoryRunsDir: resolved.factoryStore.reviewRunsDir,
-    idPrefix: "implementation-review",
   });
   const checkpoint = {
     ...resolved.checkpoint,
@@ -219,15 +271,11 @@ function findCompletedHandoff(
     .reverse()
     .find((event) => event.type === "implementation.review.completed");
   if (!completed || completed.type !== "implementation.review.completed") return undefined;
-  const root =
-    completed.data.handoff.root === "factory"
-      ? input.checkpoint.runRoots.factoryRunsDir
-      : input.checkpoint.runRoots.reviewRunsDir;
   const path = resolveFactoryArtifactPointer({
     pointer: completed.data.handoff,
     runRoots: input.checkpoint.runRoots,
   });
-  const runDir = join(root, completed.data.handoff.runId);
+  const runDir = dirname(path);
   return {
     runId: completed.data.handoff.runId,
     runDir,

@@ -93,7 +93,24 @@ export function validateFactoryCandidateTuple(input: {
   candidate: FactoryCandidateTuple;
   expectedOriginalBase?: string;
   expectedWorkspaceTree?: boolean;
+  expectedImplementationRunId?: string;
+  expectedCandidateVersion?: number;
+  expectedParentCommit?: string;
 }): void {
+  if (
+    input.expectedImplementationRunId !== undefined &&
+    input.expectedCandidateVersion !== undefined
+  ) {
+    const expectedRef =
+      input.expectedCandidateVersion === 0
+        ? `refs/harness/factory/${input.expectedImplementationRunId}/implementation`
+        : `refs/harness/factory/${input.expectedImplementationRunId}/review/${input.expectedCandidateVersion}`;
+    if (input.candidate.ref !== expectedRef) {
+      throw new FactoryReviewHeadError(
+        `Candidate ref ${input.candidate.ref} is not the expected immutable ref ${expectedRef}`,
+      );
+    }
+  }
   if (input.expectedOriginalBase) {
     const head = git(input.workspace, ["rev-parse", "HEAD"]).trim();
     if (head !== input.expectedOriginalBase) {
@@ -124,9 +141,20 @@ export function validateFactoryCandidateTuple(input: {
   }
   if (input.expectedOriginalBase) {
     const parent = git(input.workspace, ["rev-parse", `${commit}^`]).trim();
-    if (parent !== input.expectedOriginalBase && input.candidate.ref.endsWith("/implementation")) {
+    const expectedParent =
+      input.expectedParentCommit ??
+      (input.candidate.ref.endsWith("/implementation") ? input.expectedOriginalBase : undefined);
+    if (expectedParent && parent !== expectedParent) {
       throw new FactoryReviewHeadError(
-        `Initial review candidate parent ${parent} does not match review base ${input.expectedOriginalBase}`,
+        `Candidate parent ${parent} does not match expected parent ${expectedParent}`,
+      );
+    }
+  }
+  if (input.expectedParentCommit && !input.expectedOriginalBase) {
+    const parent = git(input.workspace, ["rev-parse", `${commit}^`]).trim();
+    if (parent !== input.expectedParentCommit) {
+      throw new FactoryReviewHeadError(
+        `Candidate parent ${parent} does not match expected parent ${input.expectedParentCommit}`,
       );
     }
   }

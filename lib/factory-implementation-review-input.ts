@@ -17,6 +17,7 @@ import {
   type FactoryStoreMeta,
   type FactoryStoreResolution,
 } from "./factory-store.ts";
+import { canonicalizeFactoryWorkspace } from "./factory-locks.ts";
 
 export type FactoryImplementationReviewIdentityInput = {
   workspace: string;
@@ -134,14 +135,18 @@ export function resolveFactoryImplementationReviewInput(
       "provenance",
     );
   }
-  if (implementationMeta.workspace !== workspace) {
+  if (resolve(String(implementationMeta.workspace ?? "")) !== workspace) {
     throw new FactoryImplementationReviewInputError(
       "Implementation metadata workspace does not match the requested workspace.",
       "provenance",
     );
   }
   const storeMeta = implementationMeta.factoryStore;
-  if (!isRecord(storeMeta) || storeMeta.factoryRunsDir !== checkpoint.runRoots.factoryRunsDir) {
+  if (
+    !isRecord(storeMeta) ||
+    storeMeta.factoryRunsDir !== checkpoint.runRoots.factoryRunsDir ||
+    storeMeta.reviewRunsDir !== checkpoint.runRoots.reviewRunsDir
+  ) {
     throw new FactoryImplementationReviewInputError(
       "Implementation metadata store provenance does not match the lifecycle checkpoint.",
       "provenance",
@@ -167,15 +172,25 @@ export function resolveFactoryImplementationReviewInput(
       "provenance",
     );
   }
-  if (typeof implementationMeta.reviewTree === "string") {
-    const initialTree = readCandidateTree(workspace, reviewCommitSha);
-    if (initialTree !== implementationMeta.reviewTree) {
-      throw new FactoryImplementationReviewInputError(
-        "Implementation metadata initial candidate tree does not match its commit.",
-        "provenance",
-      );
-    }
+  if (typeof implementationMeta.reviewTree !== "string") {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation metadata is missing immutable initial candidate tree provenance.",
+      "provenance",
+    );
   }
+  const initialTree = readCandidateTree(workspace, reviewCommitSha);
+  if (initialTree !== implementationMeta.reviewTree) {
+    throw new FactoryImplementationReviewInputError(
+      "Implementation metadata initial candidate tree does not match its commit.",
+      "provenance",
+    );
+  }
+  validateCheckpointProvenance({
+    workspace,
+    checkpoint,
+    implementationMeta,
+    storeResolution,
+  });
   return {
     workspace,
     workItemKey,
@@ -187,7 +202,13 @@ export function resolveFactoryImplementationReviewInput(
     implementationMeta,
     ...(isRecord(implementationMeta.factoryMetadata) &&
     typeof implementationMeta.factoryMetadata.approvedPlanPath === "string"
-      ? { approvedPlanPath: implementationMeta.factoryMetadata.approvedPlanPath }
+      ? {
+          approvedPlanPath: validateWorkspaceArtifactPath(
+            workspace,
+            implementationMeta.factoryMetadata.approvedPlanPath,
+            "approved plan",
+          ),
+        }
       : {}),
     factoryStore: normalizeStoreMeta(storeResolution, storeMeta),
   };
@@ -230,11 +251,8 @@ export function resolveFactoryArtifactPointer(input: {
       "provenance",
     );
   }
-  if (
-    !existsSync(runDir) ||
-    !lstatSync(runDir).isDirectory() ||
-    lstatSync(runDir).isSymbolicLink()
-  ) {
+  const runStat = existsSync(runDir) ? lstatSync(runDir) : undefined;
+  if (!runStat || !runStat.isDirectory() || runStat.isSymbolicLink()) {
     throw new FactoryImplementationReviewInputError(
       "Artifact pointer run directory is missing or symlinked.",
       "artifact",
@@ -253,8 +271,15 @@ export function resolveFactoryArtifactPointer(input: {
       "provenance",
     );
   }
+  const candidateStat = existsSync(candidate) ? lstatSync(candidate) : undefined;
+  if (!candidateStat || !candidateStat.isFile() || candidateStat.isSymbolicLink()) {
+    throw new FactoryImplementationReviewInputError(
+      "Artifact pointer target is missing, symlinked, or not a regular file.",
+      "artifact",
+    );
+  }
   const realRun = realpathSync(runDir);
-  if (existsSync(candidate)) {
+  {
     const realCandidate = realpathSync(candidate);
     const realRelative = relative(realRun, realCandidate);
     if (
@@ -268,6 +293,121 @@ export function resolveFactoryArtifactPointer(input: {
         "provenance",
       );
     }
+  }
+  return candidate;
+}
+
+function validateCheckpointProvenance(input: {
+  workspace: string;
+  checkpoint: ImplementationReviewCheckpoint;
+  implementationMeta: Record<string, unknown>;
+  storeResolution: FactoryStoreResolution;
+}): void {
+  const { checkpoint, implementationMeta, storeResolution } = input;
+  if (
+    checkpoint.runRoots.factoryRunsDir !== storeResolution.factoryRunsDir ||
+    checkpoint.runRoots.reviewRunsDir !== storeResolution.reviewRunsDir
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      "Review checkpoint run roots do not match the resolved durable store.",
+      "provenance",
+    );
+  }
+  const canonicalWorkspace = canonicalizeFactoryWorkspace(input.workspace);
+  if (
+    checkpoint.workspace.physicalGitRoot !== canonicalWorkspace.physicalGitRoot ||
+    checkpoint.workspace.workspaceKey !== canonicalWorkspace.workspaceKey ||
+    checkpoint.workspace.factoryProjectId !== storeResolution.projectId
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      "Review checkpoint workspace provenance does not match the durable implementation input.",
+      "provenance",
+    );
+  }
+  const initialRef = `refs/harness/factory/${checkpoint.owningImplementationRunId}/implementation`;
+  if (
+    implementationMeta.reviewHead !== initialRef ||
+    checkpoint.approvedCandidate.ref !==
+      (checkpoint.candidateVersion === 0
+        ? initialRef
+        : `refs/harness/factory/${checkpoint.owningImplementationRunId}/review/${checkpoint.candidateVersion}`)
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      "Approved candidate ref is not bound to the implementation provenance namespace.",
+      "provenance",
+    );
+  }
+  const initialCommit = String(implementationMeta.reviewCommitSha ?? "");
+  if (checkpoint.candidateVersion === 0 && checkpoint.approvedCandidate.commit !== initialCommit) {
+    throw new FactoryImplementationReviewInputError(
+      "Approved candidate is not the immutable implementation candidate.",
+      "provenance",
+    );
+  }
+  const candidateCommit = readGit(input.workspace, ["rev-parse", checkpoint.approvedCandidate.ref]);
+  const candidateTree = readGit(input.workspace, ["rev-parse", `${candidateCommit}^{tree}`]);
+  if (
+    candidateCommit !== checkpoint.approvedCandidate.commit ||
+    candidateTree !== checkpoint.approvedCandidate.tree
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      "Approved candidate tuple does not match its immutable Git ref.",
+      "provenance",
+    );
+  }
+  if (checkpoint.candidateVersion > 0) {
+    const parentRef =
+      checkpoint.candidateVersion === 1
+        ? initialRef
+        : `refs/harness/factory/${checkpoint.owningImplementationRunId}/review/${checkpoint.candidateVersion - 1}`;
+    const parent = readGit(input.workspace, ["rev-parse", parentRef]);
+    if (readGit(input.workspace, ["rev-parse", `${candidateCommit}^`]) !== parent) {
+      throw new FactoryImplementationReviewInputError(
+        "Approved remediation candidate does not descend from the prior candidate.",
+        "provenance",
+      );
+    }
+  }
+}
+
+function readGit(workspace: string, args: string[]): string {
+  try {
+    return execFileSync("git", args, {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (error) {
+    throw new FactoryImplementationReviewInputError(
+      `Cannot resolve Git provenance: ${args.join(" ")}`,
+      "provenance",
+      { cause: error },
+    );
+  }
+}
+
+function validateWorkspaceArtifactPath(workspace: string, path: string, label: string): string {
+  const candidate = resolve(workspace, path);
+  const stat = existsSync(candidate) ? lstatSync(candidate) : undefined;
+  if (!stat || !stat.isFile() || stat.isSymbolicLink()) {
+    throw new FactoryImplementationReviewInputError(
+      `${label} is missing, symlinked, or not a regular file: ${candidate}`,
+      "artifact",
+    );
+  }
+  const root = realpathSync(workspace);
+  const realCandidate = realpathSync(candidate);
+  const pathRelative = relative(root, realCandidate);
+  if (
+    !pathRelative ||
+    pathRelative === ".." ||
+    pathRelative.startsWith("../") ||
+    isAbsolute(pathRelative)
+  ) {
+    throw new FactoryImplementationReviewInputError(
+      `${label} escapes the physical workspace: ${candidate}`,
+      "provenance",
+    );
   }
   return candidate;
 }

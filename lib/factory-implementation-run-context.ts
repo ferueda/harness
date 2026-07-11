@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import type { FactoryRoleAgent } from "./config.ts";
+import type { FactoryWorkspaceWriterLeaseHandle } from "./factory-locks.ts";
+import type { FactoryRunAllocation } from "./factory-run-allocation.ts";
 import { buildRunId } from "./context.ts";
 import { factoryRoleAgentMeta, type FactoryStationAgentMeta } from "./factory-agent-meta.ts";
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
@@ -115,6 +117,8 @@ export type FactoryImplementationRunContextOptions = {
   eventSink?: WorkflowEventSink;
   linearApplyRequested?: boolean;
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
+  allocation?: FactoryRunAllocation;
+  writerLease?: FactoryWorkspaceWriterLeaseHandle;
 };
 
 export type FactoryImplementationLiveArtifactsInput = {
@@ -161,6 +165,7 @@ export type FactoryImplementationRunContext = {
   linearApplyRequested: boolean;
   signal?: AbortSignal;
   eventSink: WorkflowEventSink;
+  writerLease?: FactoryWorkspaceWriterLeaseHandle;
   writeDryRunArtifacts(input: { prompt: string; changeReviewHandoff: string }): void;
   writePromptArtifact(input: { prompt: string }): void;
   writeLiveArtifacts(input: FactoryImplementationLiveArtifactsInput): void;
@@ -207,8 +212,10 @@ function createFactoryImplementationRunContextInternal(
   }
 
   const startedAt = new Date();
-  const runId = buildRunId(startedAt);
-  const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/factory")), runId);
+  const runId = options.allocation?.runId ?? buildRunId(startedAt);
+  const runDir =
+    options.allocation?.runDir ??
+    join(resolve(options.runsDir ?? join(workspace, ".harness/runs/factory")), runId);
   const implementerAgent = factoryRoleAgentMeta(options.implementerRole);
   let implementerProvider: Agent | undefined;
   let liveArtifactsWritten = false;
@@ -218,6 +225,12 @@ function createFactoryImplementationRunContextInternal(
     mkdirSync(join(runDir, "implementation"), { recursive: true });
     writeJson(join(runDir, "context/work-item.json"), options.workItem);
     writeJson(join(runDir, "context/implementation-input.json"), options.implementationInput);
+    if (options.allocation) {
+      writeJson(join(runDir, "context/run-reservation.json"), {
+        runId: options.allocation.runId,
+        reservationToken: options.allocation.reservationToken,
+      });
+    }
     if (options.implementationInput.mode === "planned") {
       writeJson(join(runDir, "context/plan-ref.json"), {
         approvedPlanPath: options.implementationInput.approvedPlanPath,
@@ -259,6 +272,7 @@ function createFactoryImplementationRunContextInternal(
     linearApplyRequested: Boolean(options.linearApplyRequested),
     signal: options.signal,
     eventSink,
+    ...(options.writerLease ? { writerLease: options.writerLease } : {}),
     writeDryRunArtifacts(input): void {
       writeFileSync(join(runDir, "implementation/prompt.md"), input.prompt, "utf8");
       writeFileSync(

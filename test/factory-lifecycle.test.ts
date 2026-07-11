@@ -788,6 +788,14 @@ test("appendImplementationTerminalEvent dry-run skips writes", () => {
 
 test("appendImplementationTerminalEvent completed emits review fields", () => {
   const root = tempRoot();
+  appendImplementationStartedEvent({
+    workspace: "workspace",
+    workItem: implementationWorkItem(),
+    runId: "impl-1",
+    factoryStateRoot: root,
+    execution: { workspace: "workspace" },
+    occurredAt: OCCURRED_AT,
+  });
   const meta = implementationMeta({
     status: "implementation-complete",
     reviewBase: "aaa111",
@@ -815,11 +823,19 @@ test("appendImplementationTerminalEvent completed emits review fields", () => {
       factoryStateRoot: root,
       workItemKey: "linear:FER-34",
     }),
-  ).toHaveLength(1);
+  ).toHaveLength(2);
 });
 
 test("appendImplementationTerminalEvent failed emits error", () => {
   const root = tempRoot();
+  appendImplementationStartedEvent({
+    workspace: "workspace",
+    workItem: implementationWorkItem(),
+    runId: "impl-1",
+    factoryStateRoot: root,
+    execution: { workspace: "workspace" },
+    occurredAt: OCCURRED_AT,
+  });
   const meta = implementationMeta({
     status: "implementation-failed",
     error: "Implementer crashed",
@@ -839,7 +855,7 @@ test("appendImplementationTerminalEvent failed emits error", () => {
       factoryStateRoot: root,
       workItemKey: "linear:FER-34",
     }),
-  ).toHaveLength(1);
+  ).toHaveLength(2);
 });
 
 function implementationWorkItem(): FactoryWorkItem {

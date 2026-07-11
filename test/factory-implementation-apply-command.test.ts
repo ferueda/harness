@@ -122,7 +122,7 @@ test("start apply failure exports a truthful result with terminal lifecycle", as
       factoryStateRoot,
       workItemKey: deriveFactoryWorkItemKey(WORK_ITEM),
     }).map((event) => event.type),
-  ).toEqual(["work_item.imported", "implementation.started", "implementation.failed"]);
+  ).toEqual(["work_item.imported", "implementation.started", "implementation.start-unresolved"]);
 });
 
 test("successful implementation records lifecycle before terminal Linear projection", async () => {
@@ -421,7 +421,7 @@ test("real command prints truthful output before resolved-false start mutation e
   expect(fixture.commentInputs).toEqual([]);
   expect(implementationEventTypes(fixture)).toEqual([
     "implementation.started",
-    "implementation.failed",
+    "implementation.start-unresolved",
   ]);
   expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({
     status: "implementation-failed",
@@ -456,7 +456,7 @@ test("real command rejects success-true start when fresh state did not change", 
   expect(fixture.commentInputs).toEqual([]);
   expect(implementationEventTypes(fixture)).toEqual([
     "implementation.started",
-    "implementation.failed",
+    "implementation.start-unresolved",
   ]);
   expect(JSON.parse(fixture.output.at(-1)!)).toMatchObject({ linearApplied: false });
 });

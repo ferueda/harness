@@ -27,7 +27,6 @@ import {
 } from "../lib/factory-writer-boundary.ts";
 import {
   acquireFactoryWorkspaceWriterLease,
-  releaseFactoryWorkspaceWriterLease,
   type FactoryWorkspaceWriterLeaseHandle,
 } from "../lib/factory-locks.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
@@ -75,7 +74,7 @@ async function runLive(
   let reviewBase: string | undefined;
   let before: FactoryWorkspacePatchCapture | undefined;
   let providerInvoked = false;
-  let workspaceLease: FactoryWorkspaceWriterLeaseHandle | undefined;
+  let workspaceLease: FactoryWorkspaceWriterLeaseHandle | undefined = ctx.writerLease;
 
   try {
     const prompt = renderFactoryImplementationPrompt({
@@ -85,7 +84,7 @@ async function runLive(
     });
     ctx.writePromptArtifact({ prompt });
 
-    if (ctx.factoryStore) {
+    if (ctx.factoryStore && !workspaceLease) {
       workspaceLease = acquireFactoryWorkspaceWriterLease({
         workspace: ctx.workspace,
         factoryProjectId: ctx.factoryStore.projectId,
@@ -94,6 +93,7 @@ async function runLive(
         runId: ctx.runId,
         operation: "implementation",
       });
+      ctx.writerLease = workspaceLease;
     }
     // Acquire the physical-workspace lease before the final clean/tree probe.
     // This closes the check-to-provider race with another Factory station.
@@ -295,8 +295,6 @@ async function runLive(
       error: errorMessage(error),
     });
     throw error;
-  } finally {
-    if (workspaceLease) releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
   }
 }
 

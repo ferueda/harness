@@ -1,6 +1,6 @@
 import { InvalidArgumentError, type Command } from "commander";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
 import { hostname } from "node:os";
@@ -34,8 +34,17 @@ import type {
   LinearImplementationUpdatePlan,
   LinearImplementationUpdateSummary,
 } from "../lib/factory-linear-implementation-apply.ts";
-import { LinearImplementationTerminalApplyError } from "../lib/factory-linear-implementation-apply.ts";
+import {
+  LinearImplementationStartApplyError,
+  LinearImplementationTerminalApplyError,
+} from "../lib/factory-linear-implementation-apply.ts";
 import { withFactoryImplementationExecutionLease } from "../lib/factory-implementation-policy.ts";
+import { allocateFactoryRun } from "../lib/factory-run-allocation.ts";
+import { buildRunId } from "../lib/context.ts";
+import {
+  acquireFactoryWorkspaceWriterLease,
+  releaseFactoryWorkspaceWriterLease,
+} from "../lib/factory-locks.ts";
 import {
   createFactoryImplementationRunContext,
   type FactoryImplementationRunContext,
@@ -48,6 +57,7 @@ import type {
 import { factoryStatus } from "../lib/factory-status.ts";
 import {
   appendImplementationStartedEvent,
+  appendImplementationStartUnresolvedEvent,
   appendImplementationRecoveredFailureEvent,
   appendImplementationStaleOwnerEvent,
   appendImplementationTerminalEvent,
@@ -641,71 +651,103 @@ function addFactoryImplementationStationCommand(
       let meta: FactoryImplementationRunMeta | undefined;
       try {
         const run = async () => {
-          const ctx = createFactoryImplementationRunContext({
-            workspace: implementerRole.workspace,
-            runsDir: options.runsDir ?? store.factoryRunsDir,
-            factoryStore,
-            workItem: activeInput.workItem,
-            implementationInput,
-            implementerRole,
-            dryRun: Boolean(options.dryRun),
-            maxRuntimeMs: options.maxRuntimeMs,
-            signal: runAbort.signal,
-            eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
-            linearApplyRequested: options.apply,
-            agentProviderFactory: config.implementationAgentProviderFactory ?? createAgentProvider,
-          });
-          announceFactoryRunStarted({
-            station: "implementation",
-            runId: ctx.runId,
-            runDir: ctx.runDir,
-            workspace: ctx.workspace,
-          });
-          const result = options.apply
-            ? await runFactoryImplementationWithLinearApply({
-                ctx,
-                adapter: implementationAdapter!,
-                issueRef: options.linearIssue!,
-                factoryStateRoot: store.factoryStateRoot,
-                ...(config.implementationRunner
-                  ? { runImplementation: config.implementationRunner }
-                  : {}),
-              })
-            : {
-                meta: await runFactoryImplementationWithLifecycle({
+          const runId = options.dryRun ? undefined : `implementation-${buildRunId()}`;
+          let workspaceLease: ReturnType<typeof acquireFactoryWorkspaceWriterLease> | undefined;
+          let allocation: ReturnType<typeof allocateFactoryRun> | undefined;
+          try {
+            if (runId && isGitWorkspace(implementerRole.workspace)) {
+              workspaceLease = acquireFactoryWorkspaceWriterLease({
+                workspace: implementerRole.workspace,
+                factoryProjectId: store.projectId,
+                storeRoot: store.storeRoot,
+                workItemKey: deriveFactoryWorkItemKey(activeInput.workItem),
+                runId,
+                operation: "implementation",
+              });
+            }
+            if (runId) {
+              allocation = allocateFactoryRun({
+                factoryRunsDir: options.runsDir ?? store.factoryRunsDir,
+                idPrefix: "implementation",
+                runId,
+              });
+            }
+          } catch (error) {
+            if (workspaceLease) releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
+            throw error;
+          }
+          try {
+            const ctx = createFactoryImplementationRunContext({
+              workspace: implementerRole.workspace,
+              runsDir: options.runsDir ?? store.factoryRunsDir,
+              ...(allocation ? { allocation } : {}),
+              ...(workspaceLease ? { writerLease: workspaceLease } : {}),
+              factoryStore,
+              workItem: activeInput.workItem,
+              implementationInput,
+              implementerRole,
+              dryRun: Boolean(options.dryRun),
+              maxRuntimeMs: options.maxRuntimeMs,
+              signal: runAbort.signal,
+              eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
+              linearApplyRequested: options.apply,
+              agentProviderFactory:
+                config.implementationAgentProviderFactory ?? createAgentProvider,
+            });
+            announceFactoryRunStarted({
+              station: "implementation",
+              runId: ctx.runId,
+              runDir: ctx.runDir,
+              workspace: ctx.workspace,
+            });
+            const result = options.apply
+              ? await runFactoryImplementationWithLinearApply({
                   ctx,
-                  issueRef: options.linearIssue,
-                  itemFile: options.itemFile,
+                  adapter: implementationAdapter!,
+                  issueRef: options.linearIssue!,
                   factoryStateRoot: store.factoryStateRoot,
                   ...(config.implementationRunner
                     ? { runImplementation: config.implementationRunner }
                     : {}),
+                })
+              : {
+                  meta: await runFactoryImplementationWithLifecycle({
+                    ctx,
+                    issueRef: options.linearIssue,
+                    itemFile: options.itemFile,
+                    factoryStateRoot: store.factoryStateRoot,
+                    ...(config.implementationRunner
+                      ? { runImplementation: config.implementationRunner }
+                      : {}),
+                  }),
+                  linearUpdate: undefined,
+                  startApplyFailed: false,
+                  terminalApplyFailed: false,
+                  startApplyError: undefined,
+                  terminalApplyError: undefined,
+                };
+            meta = result.meta;
+            console.log(
+              JSON.stringify(
+                factoryImplementationCliOutput(meta, {
+                  warnings: activeInput.warnings,
+                  ...(options.apply
+                    ? {
+                        linearApplied: !result.startApplyFailed && !result.terminalApplyFailed,
+                        linearUpdate: result.linearUpdate,
+                      }
+                    : {}),
                 }),
-                linearUpdate: undefined,
-                startApplyFailed: false,
-                terminalApplyFailed: false,
-                startApplyError: undefined,
-                terminalApplyError: undefined,
-              };
-          meta = result.meta;
-          console.log(
-            JSON.stringify(
-              factoryImplementationCliOutput(meta, {
-                warnings: activeInput.warnings,
-                ...(options.apply
-                  ? {
-                      linearApplied: !result.startApplyFailed && !result.terminalApplyFailed,
-                      linearUpdate: result.linearUpdate,
-                    }
-                  : {}),
-              }),
-              null,
-              2,
-            ),
-          );
-          if (meta.status === "implementation-failed") process.exitCode = 1;
-          if (result.startApplyFailed) throw result.startApplyError;
-          if (result.terminalApplyFailed) throw result.terminalApplyError;
+                null,
+                2,
+              ),
+            );
+            if (meta.status === "implementation-failed") process.exitCode = 1;
+            if (result.startApplyFailed) throw result.startApplyError;
+            if (result.terminalApplyFailed) throw result.terminalApplyError;
+          } finally {
+            if (workspaceLease) releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
+          }
         };
         if (options.dryRun) await run();
         else {
@@ -747,11 +789,14 @@ function addFactoryImplementationStationCommand(
                   return;
                 }
                 if (
-                  recoverStaleImplementationOwner({
+                  await recoverStaleImplementationOwner({
                     workspace: implementerRole.workspace,
                     workItem: activeInput.workItem,
                     factoryStateRoot: store.factoryStateRoot,
                     factoryStore: store,
+                    ...(options.linearIssue && implementationAdapter
+                      ? { issueRef: options.linearIssue, linearAdapter: implementationAdapter }
+                      : {}),
                   })
                 ) {
                   throw new Error(
@@ -813,6 +858,8 @@ export async function runFactoryImplementationWithLifecycle(input: {
     return runImplementation(input.ctx);
   }
 
+  ensureImplementationWriterLease(input.ctx);
+
   // Item-file is an input reference, not a run artifact; keep its workspace path.
   const itemFileRelative = lifecycleItemFilePath(input.ctx.workspace, input.itemFile);
   appendFactoryImplementationStartAudit({
@@ -821,11 +868,15 @@ export async function runFactoryImplementationWithLifecycle(input: {
     issueRef: input.issueRef,
     itemFile: itemFileRelative,
   });
-  return runFactoryImplementationToLocalTerminal({
-    ctx: input.ctx,
-    factoryStateRoot: input.factoryStateRoot,
-    runImplementation,
-  });
+  try {
+    return await runFactoryImplementationToLocalTerminal({
+      ctx: input.ctx,
+      factoryStateRoot: input.factoryStateRoot,
+      runImplementation,
+    });
+  } finally {
+    releaseImplementationWriterLease(input.ctx);
+  }
 }
 
 function appendFactoryImplementationStartAudit(input: {
@@ -862,12 +913,14 @@ function appendFactoryImplementationStartAudit(input: {
   });
 }
 
-function recoverStaleImplementationOwner(input: {
+async function recoverStaleImplementationOwner(input: {
   workspace: string;
   workItem: FactoryWorkItem;
   factoryStateRoot: string;
   factoryStore: FactoryStoreResolution;
-}): boolean {
+  issueRef?: string;
+  linearAdapter?: LinearFactoryAdapter;
+}): Promise<boolean> {
   const metadata = input.workItem.metadata;
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
   const factoryStage = (metadata as Record<string, unknown>).factoryStage;
@@ -895,45 +948,119 @@ function recoverStaleImplementationOwner(input: {
     throw new Error(`Implementation run ${runId} has a remote owner; human recovery required.`);
   }
 
-  let treeDrift = false;
+  assertImplementationRunReservation({
+    runDir: started.data.owner.runDir,
+    runId,
+    factoryRunsDir: input.factoryStore.factoryRunsDir,
+  });
+
+  const workspaceLease = isGitWorkspace(input.workspace)
+    ? acquireFactoryWorkspaceWriterLease({
+        workspace: input.workspace,
+        factoryProjectId: input.factoryStore.projectId,
+        storeRoot: input.factoryStore.storeRoot,
+        workItemKey: deriveFactoryWorkItemKey(input.workItem),
+        runId,
+        operation: "implementation",
+      })
+    : undefined;
   try {
-    const workspaceStatus = captureFactoryWorkspaceChanges({ workspace: input.workspace });
-    const head = execGit(input.workspace, ["rev-parse", "HEAD"]);
-    treeDrift =
-      Boolean(workspaceStatus.porcelain.trim()) ||
-      (started.execution?.head !== undefined && head !== started.execution.head);
-  } catch {
-    treeDrift = true;
-  }
-  const execution = lifecycleExecutionForRun(
-    input.workspace,
-    started.data.owner.runDir,
-    factoryStoreMetadata(input.factoryStore),
-  );
-  if (treeDrift) {
-    appendImplementationStaleOwnerEvent({
+    let linearStage: string | undefined;
+    if (input.linearAdapter && input.issueRef) {
+      try {
+        const live = await input.linearAdapter.fetchWorkItem(input.issueRef);
+        const metadata = live.metadata;
+        const stage =
+          metadata && typeof metadata === "object" && !Array.isArray(metadata)
+            ? (metadata as Record<string, unknown>).factoryStage
+            : undefined;
+        linearStage = typeof stage === "string" ? stage : undefined;
+      } catch (error) {
+        linearStage = `probe-failed:${errorMessage(error)}`;
+      }
+    }
+
+    let treeDrift = false;
+    try {
+      const workspaceStatus = captureFactoryWorkspaceChanges({ workspace: input.workspace });
+      const head = execGit(input.workspace, ["rev-parse", "HEAD"]);
+      treeDrift =
+        Boolean(workspaceStatus.porcelain.trim()) ||
+        (started.execution?.head !== undefined && head !== started.execution.head);
+    } catch {
+      treeDrift = true;
+    }
+    const execution = lifecycleExecutionForRun(
+      input.workspace,
+      started.data.owner.runDir,
+      factoryStoreMetadata(input.factoryStore),
+    );
+    if (treeDrift || (input.linearAdapter && linearStage !== "implementation-failed")) {
+      appendImplementationStaleOwnerEvent({
+        workspace: input.workspace,
+        workItem: input.workItem,
+        runId,
+        factoryStateRoot: input.factoryStateRoot,
+        execution,
+        runDir: started.data.owner.runDir,
+        error: treeDrift
+          ? "Stale implementation owner left workspace edits or changed HEAD; human recovery required."
+          : `Stale implementation owner could not be safely terminalized; Linear stage: ${linearStage ?? "unknown"}.`,
+        treeDrift,
+      });
+      return true;
+    }
+    appendImplementationRecoveredFailureEvent({
       workspace: input.workspace,
       workItem: input.workItem,
       runId,
       factoryStateRoot: input.factoryStateRoot,
       execution,
-      runDir: started.data.owner.runDir,
       error:
-        "Stale implementation owner left workspace edits or changed HEAD; human recovery required.",
-      treeDrift: true,
+        "Recovered stale implementation owner before provider terminalization; retry is allowed.",
     });
     return true;
+  } finally {
+    if (workspaceLease) releaseFactoryWorkspaceWriterLease({ handle: workspaceLease });
   }
-  appendImplementationRecoveredFailureEvent({
-    workspace: input.workspace,
-    workItem: input.workItem,
-    runId,
-    factoryStateRoot: input.factoryStateRoot,
-    execution,
-    error:
-      "Recovered stale implementation owner before provider terminalization; retry is allowed.",
-  });
-  return true;
+}
+
+function assertImplementationRunReservation(input: {
+  runDir: string;
+  runId: string;
+  factoryRunsDir: string;
+}): void {
+  const root = resolve(input.factoryRunsDir);
+  const runDir = resolve(input.runDir);
+  const relativeRun = relative(root, runDir);
+  if (!relativeRun || relativeRun.includes("/") || relativeRun !== input.runId) {
+    throw new Error("Stale implementation owner run directory is not a direct durable run child.");
+  }
+  const runStat = lstatSync(runDir);
+  if (runStat.isSymbolicLink() || !runStat.isDirectory()) {
+    throw new Error("Stale implementation owner run directory is missing or symlinked.");
+  }
+  const realRoot = realpathSync(root);
+  const realRun = realpathSync(runDir);
+  const realRelative = relative(realRoot, realRun);
+  if (!realRelative || realRelative !== input.runId) {
+    throw new Error("Stale implementation owner run directory escapes the durable run root.");
+  }
+  const manifestPath = join(runDir, "attempt-reservation.json");
+  const contextPath = join(runDir, "context", "run-reservation.json");
+  if (!existsSync(manifestPath) || !existsSync(contextPath)) {
+    throw new Error("Stale implementation owner reservation evidence is incomplete.");
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+  const context = JSON.parse(readFileSync(contextPath, "utf8")) as Record<string, unknown>;
+  if (
+    manifest.runId !== input.runId ||
+    context.runId !== input.runId ||
+    typeof manifest.reservationToken !== "string" ||
+    manifest.reservationToken !== context.reservationToken
+  ) {
+    throw new Error("Stale implementation owner reservation evidence does not match its run.");
+  }
 }
 
 function pidIsAlive(pid: number): boolean {
@@ -942,6 +1069,18 @@ function pidIsAlive(pid: number): boolean {
     return true;
   } catch (error) {
     return !(error && typeof error === "object" && "code" in error && error.code === "ESRCH");
+  }
+}
+
+function isGitWorkspace(workspace: string): boolean {
+  try {
+    execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: workspace,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -1012,6 +1151,23 @@ export async function runFactoryImplementationWithLinearApply(input: {
     ctx: FactoryImplementationRunContext,
   ) => Promise<FactoryImplementationRunMeta>;
 }): Promise<FactoryImplementationApplyRunResult> {
+  ensureImplementationWriterLease(input.ctx);
+  try {
+    return await runFactoryImplementationWithLinearApplyInternal(input);
+  } finally {
+    releaseImplementationWriterLease(input.ctx);
+  }
+}
+
+async function runFactoryImplementationWithLinearApplyInternal(input: {
+  ctx: FactoryImplementationRunContext;
+  adapter: LinearFactoryAdapter;
+  issueRef: string;
+  factoryStateRoot?: string;
+  runImplementation?: (
+    ctx: FactoryImplementationRunContext,
+  ) => Promise<FactoryImplementationRunMeta>;
+}): Promise<FactoryImplementationApplyRunResult> {
   appendFactoryImplementationStartAudit({
     ctx: input.ctx,
     factoryStateRoot: input.factoryStateRoot,
@@ -1041,10 +1197,21 @@ export async function runFactoryImplementationWithLinearApply(input: {
       );
     }
     try {
-      appendImplementationTerminalEvent({
-        meta,
+      appendImplementationStartUnresolvedEvent({
+        workspace: input.ctx.workspace,
+        workItem: input.ctx.workItem,
+        runId: input.ctx.runId,
+        runDir: input.ctx.runDir,
         factoryStateRoot: input.factoryStateRoot,
+        execution: factoryLifecycleExecutionProvenance(
+          factoryExecutionProvenance(input.ctx.workspace, input.ctx.runDir),
+          input.ctx.factoryStore,
+        ),
         error: errorMessage(startApplyError),
+        phase:
+          startApplyError instanceof LinearImplementationStartApplyError
+            ? startApplyError.phase
+            : "fetch",
       });
     } catch (terminalizationError) {
       throw new AggregateError(
@@ -1104,6 +1271,22 @@ export async function runFactoryImplementationWithLinearApply(input: {
       terminalApplyError,
     };
   }
+}
+
+function releaseImplementationWriterLease(ctx: FactoryImplementationRunContext): void {
+  if (ctx.writerLease) releaseFactoryWorkspaceWriterLease({ handle: ctx.writerLease });
+}
+
+function ensureImplementationWriterLease(ctx: FactoryImplementationRunContext): void {
+  if (ctx.writerLease || !ctx.factoryStore || !isGitWorkspace(ctx.workspace)) return;
+  ctx.writerLease = acquireFactoryWorkspaceWriterLease({
+    workspace: ctx.workspace,
+    factoryProjectId: ctx.factoryStore.projectId,
+    storeRoot: ctx.factoryStore.storeRoot,
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+    runId: ctx.runId,
+    operation: "implementation",
+  });
 }
 
 function requireImplementationReviewRef(value: string | undefined, name: string): string {

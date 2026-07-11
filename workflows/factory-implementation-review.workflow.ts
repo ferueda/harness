@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -130,6 +130,8 @@ async function runReviewLoop(
         candidate: checkpoint.approvedCandidate,
         expectedOriginalBase: checkpoint.originalReviewBase,
         expectedWorkspaceTree: false,
+        expectedImplementationRunId: ctx.implementationRunId,
+        expectedCandidateVersion: checkpoint.candidateVersion,
       });
       validateFactoryCandidateTuple({
         workspace: ctx.workspace,
@@ -143,9 +145,11 @@ async function runReviewLoop(
         candidate,
         expectedOriginalBase: checkpoint.originalReviewBase,
         expectedWorkspaceTree: true,
+        expectedImplementationRunId: ctx.implementationRunId,
+        expectedCandidateVersion: candidateVersion,
       });
       reviewIndex = completedReviewCount + 1;
-      const nested = await runNestedReview(ctx, candidate, reviewIndex);
+      const nested = await runNestedReview(ctx, candidate);
       if (nested.status === "failed") {
         const recovery = nested.runId
           ? ctx.writeArtifact(`iterations/${reviewIndex}/nested-review-failure.json`, {
@@ -414,6 +418,14 @@ async function runReviewLoop(
           });
           const nextCandidate = candidateTuple(nextCandidateHead);
           const nextCandidateVersion = candidateVersion + 1;
+          validateFactoryCandidateTuple({
+            workspace: ctx.workspace,
+            candidate: nextCandidate,
+            expectedOriginalBase: checkpoint.originalReviewBase,
+            expectedParentCommit: checkpoint.approvedCandidate.commit,
+            expectedImplementationRunId: ctx.implementationRunId,
+            expectedCandidateVersion: nextCandidateVersion,
+          });
           const checkpointId = `implementation.review.checkpointed:${ctx.runId}:${reviewIndex}:candidate`;
           ctx.writeArtifact(`iterations/${reviewIndex}/candidate-ref.json`, nextCandidateHead);
           appendImplementationReviewCheckpointedEvent({
@@ -579,7 +591,11 @@ function restoreReviewHistory(ctx: FactoryImplementationReviewRunContext): {
       decisions: [],
     });
     if (event.data.review) {
-      const nestedRunDir = join(ctx.factoryStore.reviewRunsDir, event.data.review.runId);
+      const nestedMetaPath = resolveFactoryArtifactPointer({
+        pointer: event.data.review,
+        runRoots: event.data.runRoots,
+      });
+      const nestedRunDir = dirname(nestedMetaPath);
       attempt.nestedReviewRefs = [...new Set([...attempt.nestedReviewRefs, nestedRunDir])];
       const normalized = normalizeFactoryImplementationReviewFindings({
         implementation: readNestedReview(nestedRunDir, "implementation-review.json"),
@@ -676,7 +692,6 @@ function restorePartialRecovery(
 async function runNestedReview(
   ctx: FactoryImplementationReviewRunContext,
   candidate: ReviewState["approvedCandidate"],
-  _reviewIndex: number,
 ): Promise<
   | {
       status: "completed";
@@ -1211,6 +1226,7 @@ function complete(
   }>,
   acceptedDebt: ReadonlyArray<{ findingId: string; rationale: string }>,
 ): FactoryImplementationReviewRunMeta {
+  ctx.writeArtifact("accepted-debt.json", acceptedDebt);
   const handoff = renderFactoryImplementationPrReadyHandoff({
     workItem: ctx.workItem,
     implementationRunId: ctx.implementationRunId,
@@ -1235,6 +1251,7 @@ function complete(
     latestCheckpointId: checkpoint.latestCheckpointId,
     finalCandidate: candidate,
     handoff: pointer(ctx.runId, "implementation-review/pr-ready-handoff.md"),
+    acceptedDebt: pointer(ctx.runId, "accepted-debt.json"),
     acceptedDebtCount: acceptedDebt.length,
     execution: reviewExecution(ctx),
   });
@@ -1313,7 +1330,9 @@ function reviewExecution(ctx: FactoryImplementationReviewRunContext) {
 
 function readNestedReview(runDir: string, name: string): unknown {
   const path = join(runDir, name);
-  if (!existsSync(path)) throw new Error(`Nested review did not write ${name}`);
+  const stat = existsSync(path) ? lstatSync(path) : undefined;
+  if (!stat || !stat.isFile() || stat.isSymbolicLink())
+    throw new Error(`Nested review did not write a regular ${name}`);
   return JSON.parse(readFileSync(path, "utf8")) as unknown;
 }
 
@@ -1334,13 +1353,11 @@ function classifyRemediationError(error: unknown): ReviewFailureClassification {
 }
 
 function readImplementationHandoff(ctx: FactoryImplementationReviewRunContext): string | undefined {
-  const path = join(
-    ctx.factoryStore.factoryRunsDir,
-    ctx.implementationRunId,
-    "implementation",
-    "change-review-handoff.md",
-  );
-  return existsSync(path) ? readFileSync(path, "utf8") : undefined;
+  const path = resolveFactoryArtifactPointer({
+    pointer: pointer(ctx.implementationRunId, "implementation/change-review-handoff.md", "factory"),
+    runRoots: ctx.checkpoint.runRoots,
+  });
+  return readFileSync(path, "utf8");
 }
 
 function gitDiff(workspace: string, base: string, head: string): string {

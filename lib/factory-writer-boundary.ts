@@ -52,13 +52,13 @@ export function captureFactoryWriterBoundary(
     .map(canonicalPath)
     .filter((path, index, paths) => paths.indexOf(path) === index)
     .sort();
-  const gitRoot = workspace;
+  const gitRoot = canonicalPath(gitValue(workspace, ["rev-parse", "--show-toplevel"]));
   return {
     workspace,
     refs: readRefs(gitRoot),
     head: gitValue(gitRoot, ["rev-parse", "HEAD"]),
     index: hashGitIndex(gitRoot),
-    harness: fingerprintPath(join(workspace, ".harness"), allowedPaths),
+    harness: fingerprintPath(join(gitRoot, ".harness"), allowedPaths),
     lifecycle: fingerprintPath(input.lifecycleRoot, allowedPaths),
     factoryStore: durablePaths
       .map((path) => `${path}:${fingerprintPath(path, allowedPaths)}`)
@@ -129,6 +129,11 @@ function fingerprintPath(path: string | undefined, allowedPaths: readonly string
     const stat = lstatSync(current);
     const rel = relative(root, current) || ".";
     entries.push(`${rel}:${stat.mode}:${stat.size}:${stat.mtimeMs}:${stat.isSymbolicLink()}`);
+    if (stat.isSymbolicLink()) {
+      const target = realpathSync(current);
+      entries.push(`target:${relative(root, target)}:${fingerprintPath(target, allowedPaths)}`);
+      return;
+    }
     if (!stat.isDirectory()) {
       if (stat.isFile()) entries.push(hashFile(current));
       return;

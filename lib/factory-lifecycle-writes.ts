@@ -362,6 +362,37 @@ export function appendImplementationRecoveredFailureEvent(input: {
   });
 }
 
+export function appendImplementationStartUnresolvedEvent(input: {
+  workspace: string;
+  workItem: FactoryWorkItem;
+  runId: string;
+  runDir: string;
+  factoryStateRoot?: string;
+  execution: FactoryLifecycleExecution;
+  error: string;
+  phase: "validation" | "fetch" | "mutation" | "postcondition";
+}): FactoryLifecycleEvent {
+  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
+  return appendFactoryLifecycleEvent({
+    factoryStateRoot: requireFactoryStateRoot(input),
+    event: {
+      version: 1,
+      id: `implementation.start-unresolved:${input.runId}`,
+      type: "implementation.start-unresolved",
+      workItemKey,
+      occurredAt: new Date().toISOString(),
+      runId: input.runId,
+      source: "harness",
+      execution: input.execution,
+      data: { error: input.error, runDir: input.runDir, phase: input.phase },
+    },
+    precondition: {
+      allowedStages: ["implementation-started"],
+      expectedFactoryRunId: input.runId,
+    },
+  });
+}
+
 export function appendImplementationTerminalEvent(input: {
   meta: FactoryImplementationRunMeta;
   factoryStateRoot?: string;
@@ -414,7 +445,7 @@ export function appendImplementationTerminalEvent(input: {
         },
       },
       precondition: {
-        allowedStages: [undefined, "implementation-started"],
+        allowedStages: ["implementation-started"],
         expectedFactoryRunId: input.meta.runId,
       },
     });
@@ -484,7 +515,7 @@ export function appendImplementationTerminalEvent(input: {
       },
     },
     precondition: {
-      allowedStages: [undefined, "implementation-started"],
+      allowedStages: ["implementation-started"],
       expectedFactoryRunId: input.meta.runId,
     },
   });
