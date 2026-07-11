@@ -13,7 +13,7 @@ Design the solution before planning or building. Product: an inline architecture
 - Stay read-only. Do not edit files, write artifacts, stage, commit, or create plan files.
 - Ground claims in current repo reality: guidance, docs, code, tests, callers, contracts, and existing patterns.
 - Ask the user when ambiguity materially changes architecture. Include a recommended answer, alternatives, and tradeoffs.
-- Proactively ask Cursor for advice, second opinions, and critique on non-trivial designs. When available, use the `cursor-cli` skill; read that skill before invoking it.
+- Proactively spawn one read-only advisor subagent for advice, second opinions, and critique on non-trivial designs. Set an explicit model override different from the coordinator: use `gpt-5.6-terra` unless it matches the coordinator, then use `gpt-5.6-luna`.
 - Triage advisor input as **Adopt**, **Adapt**, or **Decline**. Do not dump raw advisor output.
 - Stop before implementation planning: no phases, file-edit checklist, command gates, executor skills table, or task breakdown.
 - If the user gives a bug, symptom, or "what is true?" question, route to `diagnose-issue` first. If product intent is too vague to choose among designs, use `shape-requirements` gate.
@@ -63,7 +63,9 @@ For each option, capture fit, tradeoffs, risks, compatibility, testability, and 
 
 ### 4. Consult
 
-Call Cursor when the design is non-trivial, cross-module, public API/data-contract affecting, migration-heavy, security-sensitive, or still uncertain after repo grounding.
+Spawn a read-only `explorer` advisor subagent when the design is non-trivial, cross-module, public API/data-contract affecting, migration-heavy, security-sensitive, or still uncertain after repo grounding. Give it the grounded repo anchors and a focused question; ask it to identify missed risks, simpler alternatives, pattern fit, or critique of the draft recommendation.
+
+Use one explicit alternate model override. Prefer `gpt-5.6-terra`; if that is the coordinator model, use `gpt-5.6-luna`. Name the task `architect-advisor`, use `fork_turns: "all"`, and instruct the advisor to remain read-only and return an evidence-backed recommendation.
 
 Use focused prompts:
 
@@ -72,7 +74,7 @@ Use focused prompts:
 - ask for pattern fit against specific files
 - ask for critique of a draft recommendation
 
-Call again only when the next prompt has a distinct uncertainty. If Cursor is unavailable, say so briefly and continue with the best grounded judgment.
+Spawn another advisor only for a distinct remaining uncertainty. If subagents or an alternate model are unavailable, say so briefly and continue with the best grounded judgment.
 
 **Done when:** advisor feedback is triaged as Adopt, Adapt, or Decline with short rationale.
 

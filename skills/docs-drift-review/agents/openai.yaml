@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docs Drift Review"
+  short_description: "Review PRs for harness documentation drift"
+  default_prompt: "Use $docs-drift-review to review this pull request for harness documentation drift."
