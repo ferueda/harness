@@ -181,3 +181,27 @@ test("architect prefers the smallest intent-aligned design", () => {
   expect(architect).not.toContain("## Current-State Anchors");
   expect(architect).not.toContain("## Locked For Planning");
 });
+
+test("change review converges within the original task scope", () => {
+  const skill = readFileSync(join(REPO_ROOT, "skills/change-review-workflow/SKILL.md"), "utf8");
+  const handoff = readFileSync(
+    join(REPO_ROOT, "skills/change-review-workflow/references/review-handoff.md"),
+    "utf8",
+  );
+  const prose = normalizedProse(skill);
+
+  expect(prose).toContain("Use at most three total runs");
+  expect(prose).toContain("After any code edit, always rerun `implementation`");
+  expect(prose).toContain("A partial run passes only its requested roles");
+  expect(prose).toContain("Advisories remain evidence by default");
+  expect(prose).toContain("material scope expansion or a new product decision");
+  expect(prose).toContain("made it newly observable");
+
+  expect(handoff).toContain("## Goal");
+  expect(handoff).toContain("## Decisions and boundaries");
+  expect(handoff).toContain("## Verification");
+  expect(handoff).toContain("## Scrutiny");
+  expect(handoff).toContain("## Follow-up focus");
+  expect(handoff).not.toContain("### Files changed");
+  expect(handoff).not.toContain("Provider session");
+});

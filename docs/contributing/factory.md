@@ -678,7 +678,9 @@ ${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<
 ```
 
 `implementation/change-review-handoff.md` uses the same handoff section model as
-`change-review-workflow`. After `implementation-complete`, run
+`change-review-workflow`: goal, decisions and boundaries, verification, and
+material scrutiny. It omits changed-file inventories and provider telemetry
+already available in the run artifacts. After `implementation-complete`, run
 `harness run change-review --base <reviewBase> --head <reviewHead>` separately.
 
 Lifecycle: `implementation.started` is audit-only;

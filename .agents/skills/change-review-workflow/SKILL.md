@@ -5,57 +5,88 @@ description: Run and close the harness `change-review` workflow for current code
 
 # Change Review Workflow
 
-Coordinate harness review runs and close the loop on reviewer findings.
+Decide whether the current implementation safely completes the original task.
+Review converges on accepted scope; it does not turn the PR into a general
+cleanup effort.
 
-## Workflow Choice
+## Review contract
 
-- Default to `change-review`, which runs all review roles:
-  - `implementation`: correctness, plan/spec fit, behavioral regressions, missing tests.
-  - `quality`: clarity, conventions, maintainability, behavior-preserving refinements.
-  - `simplify`: unnecessary complexity and smaller equivalent shapes.
-- Use `--steps <ids>` only when the caller intentionally selected roles, or on a follow-up run where you intentionally skip a role that already passed. Record the skip reason.
+- Initial coverage runs all roles:
+  - `implementation`: correctness, task and plan fidelity, contracts,
+    regressions, and required behavioral tests.
+  - `quality`: behavior-preserving clarity, conventions, and maintainability.
+  - `simplify`: smaller equivalent shapes for complexity introduced by the
+    diff.
+- Approval requires completed initial coverage, a passing implementation review
+  of the current head, and no `must_fix` findings.
+- `needs_changes` requires at least one `must_fix`. Advisory findings may
+  accompany `pass`.
+- `blocked` or a failed reviewer means incomplete coverage, not approval.
+- Use at most three total runs: the initial run and two follow-ups. Remaining
+  blockers after that are unresolved and require user direction.
 
-## Before Running
+## Before the initial run
 
-1. Compose a self-contained review handoff using [references/review-handoff.md](references/review-handoff.md). Completion criterion: a reviewer can understand the goal, scope, changed files, verification, and scrutiny points without chat history.
-2. Pipe that handoff through stdin with `--handoff-stdin`. Do not write a handoff file into the target repo; harness writes the reviewer-facing file under the ignored run artifact directory.
-3. Confirm Git review scope. Harness reviews `merge-base(base, head)..head`; unstaged, staged-but-uncommitted, and untracked files are excluded unless `head` points at a commit/tree containing them. If reviewing current worktree changes, create a temporary review ref or commit object and pass it with `--head`.
-4. Include `--plan` when a plan/spec exists. Include `--workspace` when reviewing a repo other than the current one.
-
-## Running
-
-Use the available harness executable: `harness`, `.harness/bin/harness`, or `node bin/harness.ts` when working from this source repo.
+1. Write the compact handoff from
+   [references/review-handoff.md](references/review-handoff.md). Include only
+   task context the diff and plan cannot provide.
+2. Confirm scope. Harness reviews `merge-base(base, head)..head`; unstaged,
+   staged-but-uncommitted, and untracked files are excluded. Use a temporary
+   review ref or commit object when the current worktree must be included.
+3. Include `--plan` when a plan exists and `--workspace` for another repo.
+4. Run all roles through the available `harness`, `.harness/bin/harness`, or
+   source checkout executable:
 
 ```bash
 printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --handoff-stdin --verbose
 ```
 
-Use `--verbose` for day-to-day and automation runs so callers receive live
-workflow events while reviewers are still running.
+## Triage
 
-For a deliberate partial run:
+Read `meta.json`, `summary.md`, and every completed reviewer JSON. Read raw
+or stream artifacts only for failed or ambiguous reviewers; use `events.jsonl`
+when diagnosing the timeline.
 
-```bash
-printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --steps implementation,quality --handoff-stdin --verbose
-```
+Group duplicate findings by underlying issue while retaining reviewer
+provenance. Resolve each blocker as `Implement`, `Adapt`, or `Decline` with
+code-backed reasoning. Advisories remain evidence by default; adopt one only
+when it directly improves the original goal with low scope risk.
 
-## After Results
+Before accepting any recommendation, confirm:
 
-1. Read the run `summary.md`, `meta.json`, `events.jsonl` when `meta.eventsFile` is present, each reviewer JSON, and any `streamArtifacts` JSONL files under `.harness/runs/reviews/<run-id>/`.
-2. Compile every finding from every completed reviewer. Preserve failed-reviewer details separately. Completion criterion: every reviewer finding and failure is accounted for exactly once.
-3. Triage each finding as `Implement`, `Adapt`, or `Decline`. Back each decision with code-backed reasoning.
-4. Apply accepted fixes yourself after triage. Keep reviewer agents read-only.
-5. Run focused verification for the accepted fixes. Add regression tests for bugs when they fit.
-6. Re-run `change-review` after material fixes. For follow-up cycles, decide whether to run all roles or use `--steps` to omit prior passing roles. Make that decision explicitly from the prior results and current change scope.
+1. It serves the original goal or an accepted decision.
+2. The diff introduced or worsened the problem, or the problem prevents an
+   acceptance criterion or hard invariant.
+3. It is required for safe acceptance.
+4. The smallest correction stays inside accepted scope.
 
-## Result Rules
+If a safe correction requires material scope expansion or a new product
+decision, stop and ask the user. Do not let reviewer advice silently redefine
+the task.
 
-- Treat `needs_changes` plus any `must_fix: true` finding as requiring action or a documented decline.
-- Treat `blocked` or failed reviewers as incomplete review coverage; inspect preserved successful results, then decide whether to fix the blocker or re-run.
-- Advisory findings may be declined, but only with a reason tied to scope, behavior, risk, or repo convention.
-- On reviewer failure, read `meta.json` first. If `streamArtifacts.<stage>.status` is `written`, inspect the referenced `*.stream.jsonl`.
-- For live caller feedback, run with `--verbose`; stdout remains final meta JSON, while stderr emits workflow events as JSONL.
-- Callers that consume `--verbose` stderr should parse JSON object lines only. Durable truth remains `<runDir>/events.jsonl`.
-- Use `events.jsonl` for the step timeline, including starts, heartbeats, ends, elapsed time, and output artifact paths.
-- Use stream logs for forensics: tool activity, partial assistant output, timeout location, and SDK event order.
-- Do not use stream logs as verdict sources. Verdicts come from `*-review.json` or the final raw provider artifact.
+Apply only accepted in-scope fixes, then run focused verification. Add a
+regression test when a bug fix needs one.
+
+## Follow-up runs
+
+After any code edit, always rerun `implementation`; add `quality` or
+`simplify` only when the fix affects that role's domain. If no code changed
+and a reviewer failed, retry only that role. Record why omitted roles remain
+covered.
+
+Use `--steps <ids>` for targeted follow-ups. A partial run passes only its
+requested roles; it does not establish approval by itself.
+
+The follow-up handoff names resolved blockers and settled decisions. Reviewers
+may add a new blocker only when remediation introduced it or made it newly
+observable. Do not reopen declined advisories or unchanged pre-existing debt.
+
+## Completion
+
+- **Approve**: required coverage complete for the current head; no blockers.
+- **Needs changes**: in-scope blockers remain and another run is available.
+- **Unresolved**: three runs exhausted, required scope expansion, human decision,
+  blocked review, or reviewer failure that cannot be recovered.
+
+Preserve all run artifacts. Structured reviewer JSON is verdict authority;
+stream logs are diagnostics only.

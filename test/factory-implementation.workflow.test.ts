@@ -131,10 +131,11 @@ test("live tracked edit completes with artifacts, review refs, and matching diff
 
   const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
   expectHandoffModel(handoff);
-  expect(handoff).toContain("**Status:** complete");
+  expect(handoff).not.toContain("**Status:**");
   expect(handoff).toContain(`--base ${meta.reviewBase}`);
   expect(handoff).toContain(`--head ${meta.reviewHead}`);
-  expect(handoff).toContain("Reviewer invocation: not run");
+  expect(handoff).not.toContain("Reviewer invocation");
+  expect(handoff).not.toContain("Raw provider output");
 
   expect(git(workspace, ["show-ref", "--verify", meta.reviewHead!])).toContain(
     meta.reviewCommitSha!,
@@ -338,7 +339,7 @@ test("pre-existing dirty tracked edit fails before provider and creates no revie
   expect(reviewRefs(workspace)).toHaveLength(0);
   expect(readFileSync(join(ctx.runDir, "implementation/diff.patch"), "utf8")).toBe("");
   const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
-  expect(handoff).toContain("_No changed files recorded._");
+  expect(handoff).not.toContain("### Files changed");
   expect(handoff).toContain("Pre-run porcelain status was non-empty");
 });
 
@@ -739,7 +740,6 @@ test("handoff warning text covers truncation and empty patch warnings", () => {
     },
   });
 
-  expect(handoff).toContain("Warnings:");
   expect(handoff).toContain("`implementation/diff.patch` is empty while porcelain status changed");
   expect(handoff).toContain("Best-effort workspace patch capture truncated");
 });
@@ -826,14 +826,12 @@ function okImplementer() {
 
 function expectHandoffModel(handoff: string): void {
   expect(handoff).toContain("## Review Handoff");
-  expect(handoff).toMatch(/\*\*Status:\*\*/);
   expect(handoff).toContain("### Goal");
-  expect(handoff).toContain("### Scope");
-  expect(handoff).toContain("### Files changed");
-  expect(handoff).toContain("### Implementation notes");
+  expect(handoff).toContain("### Decisions and boundaries");
   expect(handoff).toContain("### Verification");
-  expect(handoff).toContain("### Risks to scrutinize");
-  expect(handoff).toContain("### Open items");
+  expect(handoff).toContain("### Scrutiny");
+  expect(handoff).not.toContain("### Files changed");
+  expect(handoff).not.toContain("### Implementation notes");
 }
 
 function git(workspace: string, args: string[]): string {
