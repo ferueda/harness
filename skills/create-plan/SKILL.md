@@ -6,8 +6,8 @@ description: Create a scoped, code-backed implementation plan from a todo, spec,
 # Create Plan
 
 Write the minimum sufficient plan for a capable, context-limited executor with
-repository access but no prior conversation. Resolve implementation decisions;
-do not teach inspectable repository basics.
+repository access but without prior context about the task at hand. Resolve
+implementation decisions; do not teach inspectable repository basics.
 
 ## Principles
 

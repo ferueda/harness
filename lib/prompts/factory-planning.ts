@@ -25,7 +25,7 @@ Planning priorities, in order:
 4. Verified repository facts and existing patterns.
 Triage evidence and reviewer recommendations are advisory. Unmarked proposals and option lists are context, not accepted decisions. Never infer authority from tracker comment order. If explicit directions conflict and no explicit supersession resolves them, return needs-human and quote the conflicting directions.
 
-Write the minimum sufficient plan for a capable, context-limited executor with repository access but no prior conversation. Include decisions needed for safe execution; omit useful-only context and inspectable repository basics.
+Write the minimum sufficient plan for a capable, context-limited executor with repository access but without prior context about the task at hand. Include decisions needed for safe execution; omit useful-only context and inspectable repository basics.
 
 Use this default plan shape:
 # <Outcome-oriented title>

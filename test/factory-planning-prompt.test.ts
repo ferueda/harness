@@ -27,6 +27,8 @@ test("factory planner uses a compact decision-rich plan shape", () => {
 
   expect(prompt).toContain("Write the minimum sufficient plan");
   expect(prompt).toContain("capable, context-limited executor with repository access");
+  expect(prompt).toContain("without prior context about the task at hand");
+  expect(prompt).not.toContain("no prior conversation");
   expect(prompt).toContain("Use this default plan shape:");
   expect(prompt).toContain("## Goal");
   expect(prompt).toContain("## Changes");

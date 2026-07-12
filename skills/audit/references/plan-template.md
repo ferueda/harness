@@ -1,8 +1,8 @@
 # Audit Plan Template
 
-Write for a capable, context-limited executor with repository access but no
-prior conversation. Record decisions, audit provenance, and durable source
-references; the executor inspects the named code.
+Write for a capable, context-limited executor with repository access but without
+prior context about the task at hand. Record decisions, audit provenance, and
+durable source references; the executor inspects the named code.
 
 File naming: `dev/plans/YYMMDD-short-slug.md` (`YYMMDD` is the plan date).
 

@@ -94,4 +94,5 @@ Modifier on any planning invocation (`/audit --issues`, `/audit security --issue
 5. Record each issue URL beside plan provenance and in the index.
 
 The plan file remains the source of truth; the issue is distribution. Its goal,
-decisions, verification, and boundaries must stand without prior conversation.
+decisions, verification, and boundaries must stand without prior context about
+the task at hand.
