@@ -4,18 +4,23 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   FactoryArtifactRefSchema,
+  isFactoryRelativePathContained,
   createFactoryArtifactRef,
   verifyFactoryArtifactRef,
 } from "../lib/factory-artifact-ref.ts";
 import { readFactoryActionResult, writeFactoryActionResult } from "../lib/factory-action-result.ts";
-import { FactoryPhaseRunIdSchema } from "../lib/factory-action-contract.ts";
+import { factoryActionKey, FactoryPhaseRunIdSchema } from "../lib/factory-action-contract.ts";
 import {
   FactoryLifecycleConflictError,
   appendFactoryActionEvent,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
-import { FactoryPhaseRunIdentitySchema } from "../lib/factory-phase-run.ts";
+import {
+  FactoryPhaseRunIdentitySchema,
+  resolveFactoryTriageExecutionProfileForRun,
+  writeFactoryPhaseRunIdentity,
+} from "../lib/factory-phase-run.ts";
 import { ensureFactoryStoreFormat, FactoryStoreFormatError } from "../lib/factory-store-format.ts";
 import {
   decideNextFactoryAction,
@@ -209,7 +214,6 @@ describe("Factory action lifecycle kernel", () => {
 
   test("recovers a terminal action result without repeating work", () => {
     const store = root();
-    const actionDir = join(store, "actions", "triage");
     appendFactoryActionEvent({
       factoryStateRoot: store,
       event: imported(),
@@ -235,7 +239,7 @@ describe("Factory action lifecycle kernel", () => {
     });
     const terminal: Extract<FactoryLifecycleEvent, { type: "triage.work_item.completed" }> = {
       version: 1,
-      id: "triage:complete:item-1",
+      id: "placeholder",
       type: "triage.work_item.completed",
       workItemKey: "item-1",
       occurredAt: "2026-07-11T02:00:00.000Z",
@@ -255,6 +259,21 @@ describe("Factory action lifecycle kernel", () => {
         rationale: "Needs planning",
       },
     };
+    const actionKey = factoryActionKey({
+      phaseRunId: terminal.phaseRunId,
+      handler: terminal.data.handler,
+      attempt: terminal.data.attempt,
+      causationEventId: terminal.data.causationEventId,
+    });
+    terminal.id = `${terminal.type}:${actionKey}`;
+    const actionDir = join(store, "actions", actionKey);
+    expect(() =>
+      reduceFactoryLifecycleEvents([
+        imported(),
+        request,
+        { ...terminal, data: { ...terminal.data, attempt: 2 } },
+      ]),
+    ).toThrow(/Invalid Factory transition/);
     writeFactoryActionResult(actionDir, terminal);
     expect(writeFactoryActionResult(actionDir, terminal)).toBe(
       join(actionDir, "action-result.json"),
@@ -272,6 +291,21 @@ describe("Factory action lifecycle kernel", () => {
         data: { ...terminal.data, rationale: "Divergent" },
       }),
     ).toThrow(/Divergent Factory action result/);
+    expect(() =>
+      writeFactoryActionResult(join(store, "actions", "0".repeat(64)), terminal),
+    ).toThrow(/identity mismatch/);
+    expect(() =>
+      writeFactoryActionResult(join(store, "actions", actionKey), {
+        ...terminal,
+        id: `triage.work_item.completed:${"0".repeat(64)}`,
+      }),
+    ).toThrow(/identity mismatch/);
+    expect(() =>
+      writeFactoryActionResult(join(store, "actions", actionKey), {
+        ...terminal,
+        data: { ...terminal.data, attempt: 2 },
+      }),
+    ).toThrow(/identity mismatch/);
     const recovered = appendFactoryActionEvent({
       factoryStateRoot: store,
       event: readFactoryActionResult(actionDir),
@@ -476,5 +510,71 @@ describe("Factory store and artifact boundaries", () => {
         }),
       ).toThrow(/phase-run identifier/);
     }
+  });
+
+  test("recognizes portable containment with either native separator", () => {
+    expect(isFactoryRelativePathContained("context/result.json")).toBe(true);
+    expect(isFactoryRelativePathContained("context\\result.json")).toBe(true);
+    expect(isFactoryRelativePathContained("..\\outside.json")).toBe(false);
+    expect(isFactoryRelativePathContained("C:\\outside.json")).toBe(false);
+  });
+
+  test("reuses the immutable triage action profile for an active phase", () => {
+    const runDir = mkdtempSync(join(tmpdir(), "factory-profile-"));
+    mkdirSync(join(runDir, "context"));
+    const frozen = {
+      provider: "codex" as const,
+      model: "frozen-model",
+      executable: "/opt/frozen-codex",
+      sandbox: "read-only" as const,
+      approvalPolicy: "never" as const,
+      reasoningEffort: "high" as const,
+    };
+    writeFactoryPhaseRunIdentity(runDir, {
+      version: 1,
+      phaseRunId: "triage-run",
+      phase: "triage",
+      workItemKey: "item-1",
+      workspace: "/repo",
+      projectId: "project",
+      factoryStateRoot: "/store",
+      actions: { triageWorkItem: frozen },
+    });
+
+    expect(
+      resolveFactoryTriageExecutionProfileForRun({
+        existingRunDir: runDir,
+        newPhaseProfile: { provider: "cursor", model: "changed-model" },
+      }),
+    ).toEqual(frozen);
+    expect(
+      resolveFactoryTriageExecutionProfileForRun({
+        newPhaseProfile: { provider: "cursor", model: "changed-model" },
+      }),
+    ).toEqual({ provider: "cursor", model: "changed-model" });
+  });
+
+  test("rejects malformed persisted action profiles", () => {
+    const runDir = mkdtempSync(join(tmpdir(), "factory-profile-"));
+    mkdirSync(join(runDir, "context"));
+    writeFileSync(
+      join(runDir, "context/phase-run.json"),
+      JSON.stringify({
+        version: 1,
+        phaseRunId: "triage-run",
+        phase: "triage",
+        workItemKey: "item-1",
+        workspace: "/repo",
+        projectId: "project",
+        factoryStateRoot: "/store",
+        actions: { triageWorkItem: { provider: "cursor", model: "", approvalPolicy: "never" } },
+      }),
+    );
+    expect(() =>
+      resolveFactoryTriageExecutionProfileForRun({
+        existingRunDir: runDir,
+        newPhaseProfile: { provider: "cursor", model: "changed-model" },
+      }),
+    ).toThrow();
   });
 });

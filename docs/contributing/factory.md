@@ -10,10 +10,9 @@ logs are not parsed or migrated and data is never deleted automatically.
 
 Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
-prints the next reaction, then exits. It prints an exact next command only when
-the terminal evidence contains one and never invokes the next handler. An
-already-waiting state invokes no handler and may have no executable downstream
-command.
+prints the next reaction, then exits. PR 1 has no executable downstream Factory
+command, and terminal route evidence may omit one. The CLI never invokes the
+next handler. An already-waiting state invokes no handler.
 
 Triage is the first action slice: `triage.requested` invokes
 `triageWorkItem`; the terminal `triage.work_item.completed` event records the
@@ -32,7 +31,6 @@ or event backends should call the same station code instead of replacing it.
 
 ```bash
 harness run factory-triage --item-file work-item.json
-harness run plan-review --plan path/to/implementation-plan.md
 ```
 
 `harness factory` commands are operator-facing station commands:
@@ -55,16 +53,29 @@ action identity is selected and before provider work:
 ```json
 {
   "harnessFactory": "action-started",
-  "runId": "...",
+  "phase": "triage",
+  "phaseRunId": "...",
   "runDir": "...",
   "handler": "triageWorkItem",
   "attempt": 1
 }
 ```
 
-The line is CLI progress only; it is not
-a `WorkflowEvent` and is not appended to `events.jsonl`. Final stdout JSON
-stays the station contract.
+The line is CLI progress only; it is not a `WorkflowEvent` and is not appended
+to `events.jsonl`. Dry-run has no durable action and instead emits the existing
+context-only record:
+
+```json
+{
+  "harnessFactory": "run-started",
+  "station": "triage",
+  "runId": "...",
+  "runDir": "...",
+  "workspace": "..."
+}
+```
+
+Final stdout JSON stays the station contract.
 
 ## Work Items
 
@@ -160,14 +171,9 @@ Factory station roles use `harness.json`:
         "parked": "Parked",
         "needsInfo": "Needs Clarification",
         "needsPlan": "Needs Plan",
-        "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
-        "implementing": "Implementing",
-        "implementationFailed": "Implementation Failed",
         "triaging": "Triaging",
-        "planning": "Planning",
-        "triageFailed": "Triage Failed",
-        "planningFailed": "Planning Failed"
+        "triageFailed": "Triage Failed"
       }
     }
   }
@@ -200,9 +206,7 @@ Codex roles may use optional provider policy fields such as `executable`,
 `sandboxMode`, `approvalPolicy`, and `modelReasoningEffort`.
 
 Linear status config is a coordinated board/config contract. Commands fail
-fast if a configured status does not exist on the Linear team. Downstream
-planning and implementation mappings are reserved for later PRs and have no
-executable Factory command in PR 1.
+fast if a configured status does not exist on the Linear team.
 
 ## Linear Adapter
 
@@ -343,8 +347,7 @@ Planning and implementation commands, including plan publication and merge
 recording, are intentionally unavailable in PR 1. They do not fall back to the
 old lifecycle. Their dedicated follow-up PRs will consume the action kernel.
 Until then, triage can return a wait reaction without an executable downstream
-command. The CLI prints a command only when the durable terminal evidence
-contains that exact command.
+Factory command. Terminal route evidence may omit a command.
 
 ## Local Inbox
 
@@ -396,4 +399,3 @@ Stop and re-check scope if the work requires:
   `harness factory triage --linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
-- letting planner agents write directly to tracked files

@@ -327,6 +327,32 @@ acquire it inside `produceImplementationCandidate`. It is only a
 single-machine safety guard. Future scheduled implementation uses dedicated
 checkouts/worktrees.
 
+### Configuration decision: roles resolve to immutable action profiles
+
+User configuration remains role-based. Runtime handlers map to roles exactly:
+`triageWorkItem` -> `factory.triage.roles.triager`, `producePlanCandidate` ->
+`factory.planning.roles.planner`, `reviewPlanCandidate` ->
+`factory.planning.roles.reviewer`, `produceImplementationCandidate` ->
+`factory.implementation.roles.implementer`, and `reviewImplementationCandidate`
+-> `factory.implementation.roles.reviewer` (introduced in PR 3). Do not add a
+`factory.actions` tree, handler registry, compatibility layer, or Factory
+per-review-step model hierarchy.
+
+Creating a phase reads and validates configuration once, resolves the
+invocation-effective action profiles including action defaults, and snapshots
+them by handler in `context/phase-run.json`. A profile contains provider,
+model, executable override when present, sandbox, approval policy, and
+reasoning effort. It excludes credentials, environment authentication,
+signals, telemetry, `--apply` authorization, and invocation timeout.
+Continuations and retries use the snapshot and never silently re-resolve from
+current configuration; an explicit new phase run uses current configuration.
+
+`plan-review` uses one planning-reviewer profile for its fixed steps.
+`change-review` uses one implementation-reviewer profile for all its fixed
+steps. PR 1 establishes and uses the snapshot contract for triage. PR 2
+consumes the existing planning planner/reviewer roles. PR 3 adds the
+implementation reviewer role.
+
 ## PR 1 — New action kernel and manually run triage
 
 Create the new-only domain foundation and prove it vertically with triage.

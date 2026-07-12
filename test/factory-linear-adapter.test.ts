@@ -1769,6 +1769,37 @@ test("Linear adapter rejects triage apply from terminal statuses before mutation
   expect(updates).toEqual([]);
 });
 
+test("Linear adapter guards an active triage continuation without mutating status", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Triaging", name: "Triaging" }),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.applyTriageStarted({
+    issueRef: "ENG-123",
+    runId: "run-active",
+    runDir: ".harness/runs/factory/run-active",
+    continuation: true,
+  });
+
+  expect(result).toMatchObject({ fromStatus: "Triaging", targetStatus: "Triaging" });
+  expect(updates).toEqual([]);
+});
+
 test("Linear adapter rerun accepts any present in-scope status", async () => {
   for (const statusName of ["Needs Plan", "Ready to Implement", "Parked", "Planning", "Done"]) {
     const updates: Array<{ id: string; input: { stateId: string } }> = [];
@@ -2266,7 +2297,7 @@ test("Linear adapter skips duplicate failed planning apply comments", async () =
   expect(comments).toEqual([]);
 });
 
-test("Linear adapter applies completed triage status and comment", async () => {
+test("Linear adapter applies completed triage with case-insensitive current status", async () => {
   const updates: Array<{ id: string; input: { stateId: string } }> = [];
   const comments: Array<{ issueId: string; body: string }> = [];
   const adapter = createLinearFactoryAdapterForClient({
@@ -2275,7 +2306,7 @@ test("Linear adapter applies completed triage status and comment", async () => {
         nodes: [
           {
             ...ISSUE,
-            state: Promise.resolve({ id: "state-Triaging", name: "Triaging", type: "started" }),
+            state: Promise.resolve({ id: "state-Triaging", name: "triaging", type: "started" }),
           },
         ],
       }),
@@ -2327,7 +2358,7 @@ test("Linear adapter applies completed triage status and comment", async () => {
   expect(commentBody.indexOf("Evidence:")).toBeLessThan(commentBody.indexOf("Questions:"));
   expect(result).toMatchObject({
     stage: "complete",
-    fromStatus: "Triaging",
+    fromStatus: "triaging",
     targetStatus: "Needs Plan",
     commentMarker: "<!-- harness-factory:triage:run-1 -->",
   });

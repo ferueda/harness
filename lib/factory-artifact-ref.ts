@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, win32 } from "node:path";
 import { z } from "zod";
 
 const RelativePathSchema = z
@@ -47,7 +47,7 @@ export function createFactoryArtifactRef(input: {
     path: portableFactoryArtifactPath(input.path),
   });
   const absolute = resolve(input.root, candidate.path);
-  assertContained(input.root, absolute);
+  assertFactoryPathContained(input.root, absolute);
   return FactoryArtifactRefSchema.parse({
     ...candidate,
     sha256: createHash("sha256").update(readFileSync(absolute)).digest("hex"),
@@ -64,15 +64,25 @@ export function verifyFactoryArtifactRef(
 ): string {
   const parsed = FactoryArtifactRefSchema.parse(ref);
   const path = resolve(roots[parsed.base], parsed.path);
-  assertContained(roots[parsed.base], path);
+  assertFactoryPathContained(roots[parsed.base], path);
   const digest = createHash("sha256").update(readFileSync(path)).digest("hex");
   if (digest !== parsed.sha256) throw new Error(`Factory artifact hash mismatch: ${parsed.path}`);
   return path;
 }
 
-function assertContained(root: string, path: string): void {
+export function assertFactoryPathContained(root: string, path: string): void {
   const value = relative(realpathSync(resolve(root)), realpathSync(path));
-  if (value === ".." || value.startsWith("../") || value.startsWith("..\\")) {
+  if (!isFactoryRelativePathContained(value)) {
     throw new Error("Factory artifact path escapes its declared root");
   }
+}
+
+export function isFactoryRelativePathContained(path: string): boolean {
+  return (
+    path !== ".." &&
+    !path.startsWith("../") &&
+    !path.startsWith("..\\") &&
+    !isAbsolute(path) &&
+    !win32.isAbsolute(path)
+  );
 }

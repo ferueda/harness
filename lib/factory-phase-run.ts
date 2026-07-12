@@ -2,7 +2,38 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import {
+  AGENT_APPROVAL_POLICIES,
+  AGENT_PROVIDERS,
+  AGENT_REASONING_EFFORTS,
+  AGENT_SANDBOX_MODES,
+} from "./agents.ts";
 import { FactoryPhaseRunIdSchema } from "./factory-action-contract.ts";
+
+export const FactoryActionExecutionProfileSchema = z
+  .object({
+    provider: z.enum(AGENT_PROVIDERS),
+    model: z.string().min(1),
+    executable: z.string().min(1).optional(),
+    sandbox: z.enum(AGENT_SANDBOX_MODES).optional(),
+    approvalPolicy: z.enum(AGENT_APPROVAL_POLICIES).optional(),
+    reasoningEffort: z.enum(AGENT_REASONING_EFFORTS).optional(),
+  })
+  .strict()
+  .superRefine((profile, ctx) => {
+    if (profile.provider === "cursor") {
+      for (const key of ["executable", "sandbox", "approvalPolicy", "reasoningEffort"] as const) {
+        if (profile[key] !== undefined) {
+          ctx.addIssue({
+            code: "custom",
+            path: [key],
+            message: `${key} is only valid for the codex provider`,
+          });
+        }
+      }
+    }
+  });
+export type FactoryActionExecutionProfile = z.infer<typeof FactoryActionExecutionProfileSchema>;
 
 export const FactoryPhaseRunIdentitySchema = z
   .object({
@@ -13,6 +44,11 @@ export const FactoryPhaseRunIdentitySchema = z
     workspace: z.string().min(1),
     projectId: z.string().min(1),
     factoryStateRoot: z.string().min(1),
+    actions: z
+      .object({
+        triageWorkItem: FactoryActionExecutionProfileSchema,
+      })
+      .strict(),
   })
   .strict();
 export type FactoryPhaseRunIdentity = z.infer<typeof FactoryPhaseRunIdentitySchema>;
@@ -44,4 +80,13 @@ export function readFactoryPhaseRunIdentity(runDir: string): FactoryPhaseRunIden
   return FactoryPhaseRunIdentitySchema.parse(
     JSON.parse(readFileSync(join(runDir, "context/phase-run.json"), "utf8")),
   );
+}
+
+export function resolveFactoryTriageExecutionProfileForRun(input: {
+  existingRunDir?: string;
+  newPhaseProfile: FactoryActionExecutionProfile;
+}): FactoryActionExecutionProfile {
+  return input.existingRunDir
+    ? readFactoryPhaseRunIdentity(input.existingRunDir).actions.triageWorkItem
+    : FactoryActionExecutionProfileSchema.parse(input.newPhaseProfile);
 }

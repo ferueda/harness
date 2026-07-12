@@ -16,9 +16,9 @@ it.
 Wait for process exit; do not poll or start a second action. The command
 persists progress heartbeats in the action run (`--verbose` also emits them to
 stderr), writes a terminal event/state, and prints durable evidence plus the
-next reaction and exact command. Run that command manually. The invocation
-never executes a second handler. If `next.kind` is `wait`, stop and follow its
-reason.
+next reaction. PR 1 has no executable downstream command; routed triage can
+therefore return a wait reaction without a command. The invocation never
+executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
 
 Operate the current local harness factory one work item at a time.
 
@@ -35,8 +35,23 @@ stay synchronous. Prefer one Shell invocation with a long enough
 `block_until_ms`, then wait for process exit. Do **not** poll with repeated
 AwaitShell or status checks while the command is running.
 
-After run context creation, those station commands emit exactly one always-on
-stderr JSON progress line so operators can learn `runDir` before exit:
+After action identity selection, live triage emits exactly one always-on stderr
+JSON progress line:
+
+```json
+{
+  "harnessFactory": "action-started",
+  "phase": "triage",
+  "phaseRunId": "...",
+  "runDir": "...",
+  "handler": "triageWorkItem",
+  "attempt": 1
+}
+```
+
+It is CLI progress only — not a lifecycle event. Final stdout adds `outcome`,
+`phase`, `phaseRunId`, the completed `action`, and `next`. Dry-run has no
+durable action and emits a separate context-only record:
 
 ```json
 {
@@ -48,12 +63,8 @@ stderr JSON progress line so operators can learn `runDir` before exit:
 }
 ```
 
-PR-1 live triage emits one action-aware progress record containing phase,
-phase-run id, run directory, handler, and attempt. It is CLI progress only —
-not a lifecycle event. Final stdout adds `outcome`, `phase`, `phaseRunId`, the
-completed `action`, and `next`; dry-run omits the durable action.
-Low-level `harness run factory-triage` / `harness run plan-review` escape
-hatches do not emit this progress line.
+Low-level `harness run factory-triage` does not emit either station progress
+record.
 
 Optional: background the command only when needed, parse that one progress
 line, then wait once for completion. After exit, trust stdout JSON and read
@@ -62,8 +73,8 @@ contents as terminal success.
 
 ## Durable Store
 
-Factory lifecycle JSONL, rebuildable state, station evidence, and nested
-factory plan-review evidence default to
+Factory lifecycle JSONL, rebuildable state, and triage action evidence default
+to
 `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/`. The
 workspace remains the sandbox for source, tests, `harness.json`, inbox, and
 committed plans/code. Use the reported `runDir`, not an assumed workspace path.
@@ -89,15 +100,14 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --rerun --apply
 ```
 
-Low-level workflow escape hatches:
+Low-level triage workflow escape hatch:
 
 ```bash
 harness run factory-triage --item-file work-item.json
-harness run plan-review --plan path/to/implementation-plan.md
 ```
 
 Live is the default. Use `--dry-run` only to verify command wiring and artifact
-layout — not for classification or planning. Dry-run skips the triager/planner
+layout — not for classification. Dry-run skips the triager
 and writes placeholders; for `--linear-issue` it still does the live Linear
 read needed to build the work item, without mutating Linear.
 
@@ -124,26 +134,9 @@ Minimal shape:
         "parked": "Parked",
         "needsInfo": "Needs Clarification",
         "needsPlan": "Needs Plan",
-        "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
-        "implementing": "Implementing",
-        "implementationFailed": "Implementation Failed",
         "triaging": "Triaging",
-        "planning": "Planning",
-        "triageFailed": "Triage Failed",
-        "planningFailed": "Planning Failed"
-      }
-    },
-    "planning": {
-      "maxReviewIterations": 3,
-      "roles": {
-        "planner": { "agent": "cursor", "model": "grok-4.5" },
-        "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
-      }
-    },
-    "implementation": {
-      "roles": {
-        "implementer": { "agent": "cursor", "model": "grok-4.5" }
+        "triageFailed": "Triage Failed"
       }
     }
   }
@@ -154,14 +147,8 @@ Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
 `factory.linear.statuses` when operator list/move tools need those board
 states; stations do not require them.
 
-`needsPlanReview`, `implementing`, and `implementationFailed` are a required
-upgrade migration for the whole `factory.linear` config, including read-only
-and no-apply use. Add the corresponding Linear team statuses and config
-mappings together.
-
-- `station`: lifecycle step such as `triage`, `planning`, or `implementation`.
-- `role`: job inside a station such as `triager`, `planner`, `reviewer`, or
-  `implementer`.
+- `station`: the current lifecycle step, `triage`.
+- `role`: the current station job, `triager`.
 - `agent`: backend identity such as `cursor` or `codex`.
 
 ## Linear List, Fetch, And Create
@@ -234,15 +221,16 @@ Durable lifecycle event history is canonical. A prior
 lifecycle writes,
 provider calls, or Linear mutation. Use `--rerun` only for intentional
 re-triage. Normal apply accepts Backlog, Needs Clarification, or Triage Failed;
-`--rerun --apply` accepts any present status after the same issue and configured
-team/project scope checks. A new completion clears prior approved-plan path,
-PR URL, and commit metadata. A first dry-run writes no completion and its next
-live command needs no override; an overridden dry-run over completed history
-still requires `--rerun` for the later live command.
+terminal projection recovery also accepts the already-idempotent matching
+terminal status. Apply never overwrites an intervening human or external
+status. A first dry-run writes no completion and its next live command needs no
+override; an overridden dry-run over completed history still requires
+`--rerun` for the later live command.
 
-If an apply run leaves Linear in `Triaging`, inspect `summary.md` and
-`meta.json`, then manually move the issue to `Triage Failed`, `Backlog`, or
-another intentional status before rerunning.
+If terminal projection fails after the local terminal event, inspect
+`summary.md` and `meta.json`, then invoke triage again with explicit `--apply`.
+Harness validates durable terminal evidence and retries only the idempotent
+projection; it does not rerun the provider.
 
 Routes:
 
@@ -252,7 +240,8 @@ Routes:
 - `wait-to-implement`
 
 Read the run `summary.md`, `factory-triage.json`, and `factory-route.md` before
-deciding the next station.
+acting on the reaction. No route has an executable downstream Factory command
+in PR 1.
 
 Live triage appends `work_item.imported`, `triage.requested`, and one terminal
 action event in the durable factory store. Dry-run does not mutate lifecycle
@@ -261,7 +250,9 @@ progress; Linear status/comments remain human board projections.
 
 ## Unshipped phases
 
-Planning and implementation commands are intentionally unavailable in PR 1. Wait for their dedicated action-coordinator PRs; do not invoke legacy station flows or infer progress from tracker state.
+Planning and implementation commands are intentionally unavailable in PR 1.
+Wait for their dedicated action-coordinator PRs; do not invoke legacy station
+flows or infer progress from tracker state.
 
 ## Artifacts
 
@@ -276,31 +267,6 @@ Read `summary.md` and `meta.json` first. Lifecycle truth lives under durable
 Durable store contents are user data; do not commit workspace `.harness/runs/*`
 or legacy `.harness/factory/*`.
 
-### Linear PR linking
-
-Linear links GitHub PRs to issues via branch name, PR title, or magic-word +
-issue id ([Linear GitHub docs](https://linear.app/docs/github)). Operators own
-linking at PR creation time; harness stations do not mutate GitHub.
-
-Put the issue id in **both** branch and title:
-
-- Plan PR: branch `plan/<ISSUE>-<short-slug>`; title includes `<ISSUE>`; prefer
-  **no** closing magic words (`Fixes`, `Closes`, …).
-- Implementation PR: branch `feat/<ISSUE>-...` or `fix/<ISSUE>-...`; title
-  includes `<ISSUE>`; use closing words only when merge should complete the
-  issue.
-
-```bash
-git checkout -b plan/TEAM-123-short-slug
-git push -u origin plan/TEAM-123-short-slug
-gh pr create --title "plan: TEAM-123 short description" --body "..."
-```
-
-Repair an unlinked open PR with `gh pr edit <number> --title "..."` (or a
-branch rename). Prerequisite: Linear↔GitHub integration enabled for the repo.
-See [docs/contributing/factory.md](../../docs/contributing/factory.md) (Linear
-PR linking).
-
 ## Stop Conditions
 
 Stop before proceeding if the task requires:
@@ -311,5 +277,3 @@ Stop before proceeding if the task requires:
 - mutating Linear outside documented `harness factory linear create` or explicit
   `harness factory triage --linear-issue ... --apply`
 - committing `.harness/runs/*`
-- overwriting an existing final plan
-- letting planner agents write directly to tracked source files

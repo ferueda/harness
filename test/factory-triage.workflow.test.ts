@@ -71,16 +71,14 @@ test("factory triage dry-run writes placeholder artifacts without calling provid
   expect(existsSync(join(ctx.runDir, "context/work-item.json"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "context/diff.patch"))).toBe(false);
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("# Factory Route");
-  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain(
-    "live factory triage without --rerun",
-  );
+  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("ask-human");
   expect(JSON.parse(readFileSync(join(ctx.runDir, "factory-route.json"), "utf8"))).toMatchObject({
     route: "needs-info",
     nextAction: "ask-human",
   });
 });
 
-test("factory triage renders rerun guidance only when requested", async () => {
+test("factory triage does not invent an executable rerun command", async () => {
   for (const nextLiveRunRequiresRerun of [false, true]) {
     const workspace = createWorkspace();
     const ctx = createFactoryRunContextForTest({
@@ -100,12 +98,7 @@ test("factory triage renders rerun guidance only when requested", async () => {
     });
     await runFactoryTriage(ctx, { nextLiveRunRequiresRerun });
     const route = readFileSync(join(ctx.runDir, "factory-route.md"), "utf8");
-    if (nextLiveRunRequiresRerun) {
-      expect(route).toContain("Use --rerun");
-      expect(route).not.toContain("without --rerun");
-    } else {
-      expect(route).toContain("live factory triage without --rerun");
-    }
+    expect(route).not.toContain("--rerun");
   }
 });
 
@@ -158,9 +151,7 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   expect(prompt).toContain("Include blocking questions only for needs-info");
   expect(prompt).toContain("ready-to-implement must use questions: []");
   expect(prompt).toContain("ready-to-plan may include non-blocking planning questions");
-  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain(
-    "Use the planning-workflow coordinator",
-  );
+  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("create-plan");
   expect(JSON.parse(readFileSync(join(ctx.runDir, "meta.json"), "utf8"))).toMatchObject({
     status: "completed",
     workflow: "factory-triage",

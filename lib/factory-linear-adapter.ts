@@ -402,6 +402,16 @@ async function applyTriageStarted(
   await assertIssueInConfiguredScope(issue, settings);
   assertLinearTriageApplyAllowed(settings, state?.name, input.rerun, input.continuation);
 
+  if (input.continuation) {
+    return {
+      issueIdentifier: issue.identifier,
+      runId: input.runId,
+      runDir: input.runDir,
+      stage: "start",
+      fromStatus: state?.name,
+      targetStatus: settings.statuses.triaging,
+    };
+  }
   const target = await fetchWorkflowState(client, settings, settings.statuses.triaging);
   assertLinearMutationSuccess(
     await client.updateIssue(issue.id, { stateId: target.id }),
@@ -525,7 +535,11 @@ function assertLinearTriageTerminalApplyAllowed(
   currentStatus: string | undefined,
   targetStatus: string,
 ): void {
-  if (currentStatus === settings.statuses.triaging || currentStatus === targetStatus) return;
+  if (
+    normalizeName(currentStatus ?? "") === normalizeName(settings.statuses.triaging) ||
+    normalizeName(currentStatus ?? "") === normalizeName(targetStatus)
+  )
+    return;
   throw new Error(
     `Linear triage terminal apply requires ${settings.statuses.triaging} or ${targetStatus}; issue is in ${currentStatus ?? "unknown"}.`,
   );

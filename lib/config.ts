@@ -18,6 +18,7 @@ import {
   type FactoryStoreConfig,
   type HarnessConfig,
 } from "./schemas.ts";
+import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
 
 const CONFIG_FILE = "harness.json";
 const FACTORY_PLANNING_CODEX_PLANNER_SANDBOX = "workspace-write" satisfies AgentSandboxMode;
@@ -169,6 +170,26 @@ export function resolveFactoryRoleAgent(
           codexConfig?.modelReasoningEffort ??
           DEFAULT_CODEX_REASONING_EFFORT)
         : undefined,
+  };
+}
+
+/** Freeze the invocation-effective PR 1 triage policy under its handler key. */
+export function factoryTriageExecutionProfile(
+  role: FactoryRoleAgent,
+): FactoryActionExecutionProfile {
+  if (role.agent === "cursor") {
+    return {
+      provider: "cursor",
+      model: role.model ?? DEFAULT_AGENT_MODELS.cursor,
+    };
+  }
+  return {
+    provider: "codex",
+    model: role.model ?? DEFAULT_AGENT_MODELS.codex,
+    ...(role.codexPathOverride ? { executable: role.codexPathOverride } : {}),
+    sandbox: role.sandboxMode ?? "read-only",
+    approvalPolicy: role.approvalPolicy ?? "never",
+    reasoningEffort: role.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
   };
 }
 

@@ -170,8 +170,7 @@ agent and model selection.
 
 Planning, publication, and implementation commands are unavailable until their
 follow-up PRs. A terminal triage can therefore yield a wait reaction with no
-executable downstream command. The CLI prints an exact next command only when
-the terminal action evidence contains it.
+executable downstream Factory command; its route command may be absent.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these
@@ -247,8 +246,8 @@ Factory triage artifacts include:
 
 Artifact refs in action events use store-relative `/` paths plus SHA-256
 content hashes. The CLI validates terminal evidence before recovery or Linear
-projection. A reaction contains a next command only when the canonical terminal
-event recorded that exact command; wait reactions may have none.
+projection. PR 1 has no executable downstream Factory command; route evidence
+and wait reactions may omit a command.
 
 `--dry-run` writes placeholder triage and route artifacts but does not invoke a
 provider, does not write run `events.jsonl`, and does not write lifecycle

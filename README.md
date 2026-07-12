@@ -103,10 +103,10 @@ by default. Factory lifecycle JSONL and rebuildable state live under that
 project's `factory/` directory. This default is intentionally outside the
 documented harness checkout at `~/.harness`. Triage routes are
 `ready-to-implement`, `ready-to-plan`, `needs-info`, or `wait-to-implement`.
-Planning and implementation actions are not shipped yet. A terminal triage may
-therefore return a wait reaction with no executable downstream command. The CLI
-prints an exact next command only when the durable terminal evidence contains
-one; it never synthesizes or automatically executes a follow-up action.
+Planning and implementation actions are not shipped yet. A terminal triage
+therefore returns a reaction without an executable downstream Factory command;
+its route command may be absent. The CLI never synthesizes or automatically
+executes a follow-up action.
 
 Use low-level workflow primitives when you need direct workflow execution:
 
@@ -168,25 +168,6 @@ ownership and mutability, read
     "triage": {
       "roles": {
         "triager": {
-          "agent": "cursor",
-          "model": "grok-4.5"
-        }
-      }
-    },
-    "planning": {
-      "maxReviewIterations": 3,
-      "roles": {
-        "planner": { "agent": "cursor", "model": "grok-4.5" },
-        "reviewer": {
-          "agent": "codex",
-          "model": "gpt-5.6-sol",
-          "modelReasoningEffort": "high"
-        }
-      }
-    },
-    "implementation": {
-      "roles": {
-        "implementer": {
           "agent": "cursor",
           "model": "grok-4.5"
         }

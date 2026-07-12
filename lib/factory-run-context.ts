@@ -39,6 +39,7 @@ import {
   type FactoryExecutionProvenance,
   type FactoryStoreMeta,
 } from "./factory-store.ts";
+import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
 
 type FactoryRunStatus = "completed" | "dry_run" | "failed";
 
@@ -84,6 +85,7 @@ export type FactoryRunContext = {
   workItem: FactoryWorkItem;
   factoryStore?: FactoryStoreMeta;
   dryRun?: boolean;
+  executionProfile: FactoryActionExecutionProfile;
   eventSink: WorkflowEventSink;
   invokeTriageAgent(): Promise<FactoryTriageOutput>;
   export(input: { triage: FactoryTriageOutput; routePlan: FactoryRoutePlan }): FactoryRunMeta;
@@ -94,6 +96,7 @@ export type FactoryRunContextFactoryOptions = {
   workspace: string;
   runsDir?: string;
   workItem: FactoryWorkItem;
+  executionProfile?: FactoryActionExecutionProfile;
   agentProvider?: AgentProviderName;
   codexPathOverride?: string;
   model?: string;
@@ -169,6 +172,7 @@ function createFactoryRunContextInternal(
   }
 
   const startedAt = new Date();
+  const executionProfile = options.executionProfile ?? legacyExecutionProfile(options);
   const runId = options.existingRunId ?? buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/factory")), runId);
   const workItem = options.existingRunId
@@ -196,8 +200,8 @@ function createFactoryRunContextInternal(
       throw new FactoryTriageError("agentProviderFactory is required");
     }
     triageProvider = agentProviderFactory({
-      provider: options.agentProvider ?? "cursor",
-      codexPathOverride: options.codexPathOverride,
+      provider: executionProfile.provider,
+      codexPathOverride: executionProfile.executable,
     });
   } catch (error) {
     if (!options.existingRunId) cleanupOrphanedFactoryRunDir(runDir);
@@ -209,10 +213,15 @@ function createFactoryRunContextInternal(
     : options.eventSink
       ? createCompositeEventSink(createFileEventSink(runDir), options.eventSink)
       : createFileEventSink(runDir);
-  const agentPolicyMeta = factoryPolicyOptions(triageProvider.name, options);
+  if (triageProvider.name !== executionProfile.provider) {
+    throw new FactoryTriageError(
+      `Factory triage provider conflicts with execution profile: expected ${executionProfile.provider}, got ${triageProvider.name}`,
+    );
+  }
+  const agentPolicyMeta = factoryPolicyOptions(executionProfile);
   const agentMeta = {
     name: triageProvider.name,
-    model: resolvedAgentModel(triageProvider.name, options),
+    model: executionProfile.model,
     ...agentPolicyMeta,
   };
 
@@ -223,6 +232,7 @@ function createFactoryRunContextInternal(
     workItem,
     factoryStore: options.factoryStore,
     dryRun: options.dryRun,
+    executionProfile,
     eventSink,
     async invokeTriageAgent(): Promise<FactoryTriageOutput> {
       if (options.dryRun) {
@@ -237,7 +247,7 @@ function createFactoryRunContextInternal(
           workspace,
           prompt,
           schemaPath: FACTORY_TRIAGE_SCHEMA_PATH,
-          model: resolvedAgentModel(triageProvider.name, options),
+          model: executionProfile.model,
           ...agentPolicyMeta,
           maxRuntimeMs: options.maxRuntimeMs,
           logPath: join(runDir, "factory-triage.stream.jsonl"),
@@ -386,22 +396,31 @@ function buildMeta(input: {
 }
 
 function factoryPolicyOptions(
-  providerName: AgentProviderName,
-  options: FactoryRunContextFactoryOptions,
+  profile: FactoryActionExecutionProfile,
 ): Pick<AgentRunInput, "sandboxMode" | "approvalPolicy" | "modelReasoningEffort"> {
-  if (providerName !== "codex") return {};
+  if (profile.provider !== "codex") return {};
   return {
-    sandboxMode: options.sandboxMode ?? FACTORY_SANDBOX_MODE,
-    approvalPolicy: options.approvalPolicy ?? FACTORY_APPROVAL_POLICY,
-    modelReasoningEffort: options.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
+    sandboxMode: profile.sandbox,
+    approvalPolicy: profile.approvalPolicy,
+    modelReasoningEffort: profile.reasoningEffort,
   };
 }
 
-function resolvedAgentModel(
-  providerName: AgentProviderName,
+function legacyExecutionProfile(
   options: FactoryRunContextFactoryOptions,
-): string {
-  return options.model ?? DEFAULT_AGENT_MODELS[providerName];
+): FactoryActionExecutionProfile {
+  const provider = options.agentProvider ?? "cursor";
+  if (provider === "cursor") {
+    return { provider, model: options.model ?? DEFAULT_AGENT_MODELS.cursor };
+  }
+  return {
+    provider,
+    model: options.model ?? DEFAULT_AGENT_MODELS.codex,
+    ...(options.codexPathOverride ? { executable: options.codexPathOverride } : {}),
+    sandbox: options.sandboxMode ?? FACTORY_SANDBOX_MODE,
+    approvalPolicy: options.approvalPolicy ?? FACTORY_APPROVAL_POLICY,
+    reasoningEffort: options.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
+  };
 }
 
 function rawAgentArtifact(result: AgentRunResult): unknown {

@@ -23,7 +23,6 @@ const ROUTE_PLANS = {
     statusLabel: "ready-to-implement",
     artifactRelPath: "factory-route.md",
     humanSummary: "Ready for direct implementation after human check.",
-    command: "Run implementation directly after human confirmation; no harness command in PR 1.",
   },
   "ready-to-plan": {
     route: "ready-to-plan",
@@ -31,8 +30,6 @@ const ROUTE_PLANS = {
     statusLabel: "ready-to-plan",
     artifactRelPath: "factory-route.md",
     humanSummary: "Needs an implementation plan before coding.",
-    command:
-      "Use the planning-workflow coordinator to invoke create-plan, then run: harness run plan-review --plan <plan-path>",
   },
   "needs-info": {
     route: "needs-info",
@@ -40,7 +37,6 @@ const ROUTE_PLANS = {
     statusLabel: "needs-info",
     artifactRelPath: "factory-route.md",
     humanSummary: "Needs human clarification before routing further.",
-    command: "Ask the emitted questions[]; rerun factory triage after answers arrive.",
   },
   "wait-to-implement": {
     route: "wait-to-implement",
@@ -48,8 +44,6 @@ const ROUTE_PLANS = {
     statusLabel: "wait-to-implement",
     artifactRelPath: "factory-route.md",
     humanSummary: "Parked until the reconsideration condition changes.",
-    command:
-      "Park until reconsiderWhen is true; rerun factory triage after that condition changes.",
   },
 } satisfies Record<FactoryRoute, FactoryRoutePlan>;
 
@@ -68,7 +62,7 @@ export function buildFactoryRoutePlan(
     guidanceSuffix = "Run live factory triage without --rerun for the first recorded triage.";
   }
   return FactoryRoutePlanSchema.parse(
-    repeatableRoute && guidanceSuffix
+    repeatableRoute && guidanceSuffix && "command" in routePlan && routePlan.command
       ? { ...routePlan, command: `${routePlan.command} ${guidanceSuffix}` }
       : routePlan,
   );

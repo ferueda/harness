@@ -305,7 +305,8 @@ function validateFactoryTransition(
         return (
           current.phase === "triage" &&
           current.status === "awaiting-result" &&
-          event.data.handler === "triageWorkItem"
+          event.data.handler === "triageWorkItem" &&
+          event.data.attempt === 1
         );
       case "planning.requested":
         return (
