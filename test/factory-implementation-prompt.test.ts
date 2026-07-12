@@ -1,6 +1,25 @@
 import { expect, test } from "vitest";
 import type { FactoryImplementationInput } from "../lib/factory-implementation-input.ts";
-import { renderFactoryImplementationChangeReviewHandoff } from "../lib/prompts/factory-implementation.ts";
+import {
+  renderFactoryImplementationChangeReviewHandoff,
+  renderFactoryImplementationPrompt,
+} from "../lib/prompts/factory-implementation.ts";
+
+const plannedInput = {
+  mode: "planned",
+  source: "item-file",
+  workItem: {
+    id: "github:example/repo#47",
+    source: "github",
+    title: "Replace legacy routing",
+    body: "Follow the accepted cutover.",
+    labels: ["factory"],
+  },
+  metadata: {},
+  approvedPlanPath: "dev/plans/replace-legacy-routing.md",
+  planPath: "/workspace/dev/plans/replace-legacy-routing.md",
+  approvedPlanCommit: "abc1234",
+} satisfies FactoryImplementationInput;
 
 const directInput = {
   mode: "direct",
@@ -21,6 +40,38 @@ const directInput = {
     tracker: { source: "linear", id: "FER-47" },
   },
 } satisfies FactoryImplementationInput;
+
+test("planned implementation reconciles the approved plan before editing", () => {
+  const prompt = renderFactoryImplementationPrompt({
+    implementationInput: plannedInput,
+    implementerAgent: { name: "codex", model: "gpt-5.6-sol" },
+  });
+
+  expect(prompt).toContain("Repository invariants and documented project intent");
+  expect(prompt).toContain("The approved plan at the absolute plan path");
+  expect(prompt).not.toContain("The resolved source request under Direct Implementation");
+  expect(prompt).toContain("Verified current repository facts as the implementation baseline");
+  expect(prompt).toContain("Before editing, reconcile");
+  expect(prompt).toContain("post-change ownership, removals, cutover order");
+  expect(prompt).toContain("required compatibility");
+  expect(prompt).toContain("report it rather than improvise");
+  expect(prompt).toContain("Before handoff, reconcile the diff");
+});
+
+test("direct implementation keeps source context as task authority", () => {
+  const prompt = renderFactoryImplementationPrompt({
+    implementationInput: directInput,
+    implementerAgent: { name: "codex", model: "gpt-5.6-sol" },
+  });
+
+  expect(prompt).toContain("The resolved source request under Direct Implementation");
+  expect(prompt).not.toContain("The approved plan at the absolute plan path");
+  expect(prompt).toContain("### Body");
+  expect(prompt).toContain("Keep   the review\ncontext.");
+  expect(prompt).toContain("Historical branches and superseded implementations are context only");
+  expect(prompt).toContain("report it rather than improvise");
+  expect(prompt).toContain("This station does not own tracker mutation");
+});
 
 test("implementation review handoff preserves direct context without duplicating run evidence", () => {
   const handoff = renderFactoryImplementationChangeReviewHandoff({

@@ -47,6 +47,21 @@ test("factory planner uses a compact decision-rich plan shape", () => {
   expect(prompt).not.toContain("maintenance notes");
 });
 
+test("factory planner names behavior lifecycle only when work changes an existing path", () => {
+  const prompt = renderFactoryPlanningInitialPrompt({
+    workItemJson: '{"title":"Replace legacy routing"}',
+    draftPath: "/tmp/draft.md",
+    currentDate: "2026-07-12",
+  });
+
+  expect(prompt).toContain(
+    "replaces, redirects, splits, deprecates, or removes an existing behavior",
+  );
+  expect(prompt).toContain("post-change owner, exact removals and cutover order");
+  expect(prompt).toContain("required compatibility beside the change");
+  expect(prompt).toContain("Omit this lifecycle detail for ordinary additive work");
+});
+
 test("factory revision receives blockers and requires pruning", () => {
   const prompt = renderFactoryPlanningRevisionPrompt({
     draftPath: "/tmp/draft.md",

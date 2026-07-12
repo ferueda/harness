@@ -40,6 +40,7 @@ Concrete non-goals or STOP conditions that prevent a likely scope mistake. Omit 
 
 Planning rules:
 - Choose the smallest coherent change satisfying the goal and invariants.
+- When work replaces, redirects, splits, deprecates, or removes an existing behavior, name its post-change owner, exact removals and cutover order, and required compatibility beside the change. Omit this lifecycle detail for ordinary additive work.
 - Prefer the highest existing stable test seam proving acceptance; use a lower seam only for a distinct invariant or failure mode unobservable there.
 - Include excerpts only when the exact target shape is load-bearing.
 - Add material only when it changes an executor decision or proves a distinct criterion, invariant, or verified regression risk.
