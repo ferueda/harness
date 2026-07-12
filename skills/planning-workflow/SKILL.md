@@ -81,6 +81,17 @@ Use `handoff-work` when a different agent or session continues:
 | Approved `dev/plans/*.md` | Implement in the current or delegated session |
 | Gate-cleared small change | implement in session |
 
+Before edits, reconcile three sources: repository guidance constrains the work;
+the original request or approved plan defines the intended outcome; verified
+current code is the implementation baseline. Historical branches and
+superseded implementations are context only. Carry forward named ownership,
+removal, cutover, and compatibility decisions. If a material conflict
+invalidates the approach, return to planning or the user.
+
+Before review or handoff, reconcile the resulting diff with that outcome and
+those decisions. Perform both checks in session; create no new alignment
+artifact, checklist, or plan rewrite.
+
 **Done when:** plan phases complete or scoped change landed.
 
 ## 5. Close

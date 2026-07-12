@@ -41,6 +41,10 @@ Omit this section when none exist.
 - Include excerpts only when the exact target shape is load-bearing.
 - Mention a verified executor skill beside a change only when it adds
   non-obvious guidance. Do not add a skills table by default.
+- When work replaces, redirects, splits, deprecates, or removes an existing
+  behavior, name its post-change owner, exact removals and cutover order, and
+  required compatibility beside the change. Omit this lifecycle detail for
+  ordinary additive work.
 - Add another section only when a migration, rollout, public contract, or named
   risk cannot be understood safely in the default shape.
 - Do not duplicate acceptance criteria as done criteria or repeat checks covered

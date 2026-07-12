@@ -48,9 +48,12 @@ or stream artifacts only for failed or ambiguous reviewers; use `events.jsonl`
 when diagnosing the timeline.
 
 Group duplicate findings by underlying issue while retaining reviewer
-provenance. Resolve each blocker as `Implement`, `Adapt`, or `Decline` with
-code-backed reasoning. Advisories remain evidence by default; adopt one only
-when it directly improves the original goal with low scope risk.
+provenance. Reconcile conflicts among findings, the original task or accepted
+plan, handoff context, and the diff using the authority and scope checks below.
+Give each underlying issue an evidence-backed `Implement`, `Adapt`, or `Decline`
+disposition. Decisions are issue-local; never apply one disposition to an
+entire reviewer, run, or finding set. Advisories remain evidence by default;
+adopt one only when it directly improves the original goal with low scope risk.
 
 Before accepting any recommendation, confirm:
 

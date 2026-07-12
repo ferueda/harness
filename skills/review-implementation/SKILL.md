@@ -33,6 +33,10 @@ If a plan document or spec is available, read it.
 
 - Trace the happy path end to end, plus failure paths and edge cases affected by the change.
 - Validate done criteria and plan adherence. Check scope against the spec.
+- When the authoritative task or plan names a post-change owner, removal,
+  cutover, or compatibility commitment, verify it against the diff and directly
+  affected paths. Handoffs provide context, not authority; invent no migration
+  work absent such a commitment.
 - Look for bugs, antipatterns, logic flaws, schema drift, incorrect assumptions, and unaccounted edge cases.
 - **Challenge complexity.** For every non-trivial addition, ask:
   1. Could this be done with fewer files?

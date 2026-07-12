@@ -9,9 +9,13 @@ description: >
 
 # Handoff Work
 
-Produce a handoff document so another agent can continue where you left off or review what was done — whether the work is finished or still in progress.
+Produce navigational context so another agent can continue or review work.
 
-The handoff must stand alone: the next agent should not need to replay this session or re-read the entire diff to understand the goal, constraints, and current state.
+A handoff is subordinate to repository guidance and the original task or
+accepted plan; it never becomes another source of authority. Point to
+inspectable sources. Repeat only session-only or otherwise load-bearing
+constraints and decisions. The next agent inspects those sources and changed
+code.
 
 ## When to Use
 
@@ -22,24 +26,26 @@ The handoff must stand alone: the next agent should not need to replay this sess
 
 ## Handoff Focus
 
-Give the next agent enough context to continue or review without re-discovering background from scratch.
+Give enough context to continue or review without rediscovering session-only
+background. Preserve important file entry points and material adaptations; do
+not reproduce the plan, diff, or an exhaustive inspectable file inventory.
 
 ### Context (required)
 
 Set the scene so the next agent understands the work in its broader setting:
 
-- **Goal** — what problem is being solved or what outcome is expected
-- **Source artifacts** — plan/spec/issue links or paths, acceptance criteria, relevant user requests
+- **Goal** — concise intended outcome and its authoritative request or accepted plan
+- **Source artifacts** — inspectable repository guidance, plan/spec/issue paths, acceptance criteria, or user-request references
 - **Starting point** — relevant baseline behavior or state before this work began
-- **Constraints** — technical limits, conventions, deadlines, or non-negotiables that shaped decisions
-- **Scope boundaries** — what is in scope, explicitly out of scope, and what was intentionally deferred
+- **Constraints** — only session-only or load-bearing limits and non-negotiables not clear from the sources
+- **Scope boundaries** — material adaptations, deferrals, or deviations needed for continuation
 
 ### Work done (required)
 
 - **What was worked on** — progress made so far, decisions taken, behavior added or changed; call out what is done vs still pending
-- **How it was done** — approach, patterns followed, key implementation choices
-- **Why it was done** — intent, constraints, tradeoffs, deviations from the original plan
-- **Files referenced** — paths touched, created, or deleted; call out the most important ones first and how they relate to each other
+- **How it was done** — approach, key implementation choices, and material adaptations
+- **Why it was done** — rationale for tradeoffs or deviations from the accepted plan
+- **Important files** — only entry points needed for continuation, why they matter, and how they relate
 
 ### Continuation (required when work is not complete)
 
@@ -75,8 +81,8 @@ for the next agent to understand why this work exists and what "done" looks like
 ### Why it was done
 [Intent, constraints, tradeoffs, deviations from plan]
 
-### Files referenced
-- `path/to/file` — [brief note on what changed, why it matters, and how it connects to other touched files]
+### Important files
+- `path/to/file` — [brief note on why this is an important continuation entry point]
 
 ### Verification
 [Commands run and results, or "not run" with reason]
@@ -88,4 +94,6 @@ for the next agent to understand why this work exists and what "done" looks like
 [Blockers, unanswered questions, risks to review, or follow-ups]
 ```
 
-Keep it factual and specific. Prefer file paths, concrete behavior, and decision rationale over vague summaries. If the next agent would need to ask "what was the goal?" or "why was it done this way?", the handoff is missing context.
+Keep it factual and specific. Point to inspectable sources; capture only the
+session context and decisions needed to explain the current state and material
+adaptations.

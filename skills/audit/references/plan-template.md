@@ -46,6 +46,10 @@ Omit this section when none exist.
 - Include excerpts only when the exact target shape is load-bearing.
 - Mention a verified executor skill beside a change only when it adds
   non-obvious guidance. Do not add a skills table by default.
+- When work replaces, redirects, splits, deprecates, or removes an existing
+  behavior, name its post-change owner, exact removals and cutover order, and
+  required compatibility beside the change. Omit this lifecycle detail for
+  ordinary additive work.
 - Keep priority, effort, category, status, and cross-plan ordering in the index;
   do not repeat them in every plan.
 - Add another section only when migration, rollout, public-contract, security,

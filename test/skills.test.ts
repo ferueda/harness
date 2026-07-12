@@ -158,6 +158,52 @@ test("planning skills use the compact capable-executor contract", () => {
   expect(auditTemplate).toContain("Planned at");
   expect(auditTemplate).toContain("## Index file: `dev/plans/README.md`");
   expect(auditTemplate).not.toContain("## Commands you will need");
+
+  for (const content of [template, auditTemplate]) {
+    const prose = normalizedProse(content);
+    expect(prose).toContain(
+      "replaces, redirects, splits, deprecates, or removes an existing behavior",
+    );
+    expect(prose).toContain("post-change owner, exact removals and cutover order");
+    expect(prose).toContain("required compatibility beside the change");
+    expect(prose).toContain("Omit this lifecycle detail for ordinary additive work");
+  }
+
+  const coordinatorProse = normalizedProse(coordinator);
+  expect(coordinatorProse).toContain("repository guidance constrains the work");
+  expect(coordinatorProse).toContain(
+    "the original request or approved plan defines the intended outcome",
+  );
+  expect(coordinatorProse).toContain("verified current code is the implementation baseline");
+  expect(coordinatorProse).toContain(
+    "Historical branches and superseded implementations are context only",
+  );
+  expect(coordinatorProse).toContain(
+    "Carry forward named ownership, removal, cutover, and compatibility decisions",
+  );
+  expect(coordinatorProse).toContain("material conflict invalidates the approach");
+  expect(coordinatorProse).toContain("Before review or handoff, reconcile the resulting diff");
+  expect(coordinatorProse).toContain("Perform both checks in session");
+});
+
+test("handoffs preserve accepted authority without duplicating inspectable sources", () => {
+  const handoff = readFileSync(join(REPO_ROOT, "skills/handoff-work/SKILL.md"), "utf8");
+  const prose = normalizedProse(handoff);
+
+  expect(prose).toContain(
+    "subordinate to repository guidance and the original task or accepted plan",
+  );
+  expect(prose).toContain("never becomes another source of authority");
+  expect(prose).toContain("Point to inspectable sources");
+  expect(prose).toContain(
+    "Repeat only session-only or otherwise load-bearing constraints and decisions",
+  );
+  expect(prose).toContain("important file entry points and material adaptations");
+  expect(prose).toContain(
+    "do not reproduce the plan, diff, or an exhaustive inspectable file inventory",
+  );
+  expect(handoff).toContain("### Important files");
+  expect(handoff).not.toContain("### Files referenced");
 });
 
 test("architect prefers the smallest intent-aligned design", () => {
@@ -184,6 +230,10 @@ test("architect prefers the smallest intent-aligned design", () => {
 
 test("change review converges within the original task scope", () => {
   const skill = readFileSync(join(REPO_ROOT, "skills/change-review-workflow/SKILL.md"), "utf8");
+  const implementation = readFileSync(
+    join(REPO_ROOT, "skills/review-implementation/SKILL.md"),
+    "utf8",
+  );
   const quality = readFileSync(join(REPO_ROOT, "skills/code-quality-review/SKILL.md"), "utf8");
   const handoff = readFileSync(
     join(REPO_ROOT, "skills/change-review-workflow/references/review-handoff.md"),
@@ -198,7 +248,23 @@ test("change review converges within the original task scope", () => {
   expect(prose).toContain("material scope expansion or a new product decision");
   expect(prose).toContain("made it newly observable");
   expect(prose).toContain("clarity, simplicity, conventions");
+  expect(prose).toContain("retaining reviewer provenance");
+  expect(prose).toContain(
+    "Reconcile conflicts among findings, the original task or accepted plan, handoff context, and the diff",
+  );
+  expect(prose).toContain(
+    "each underlying issue an evidence-backed `Implement`, `Adapt`, or `Decline`",
+  );
+  expect(prose).toContain("Decisions are issue-local");
+  expect(prose).toContain("entire reviewer, run, or finding set");
   expect(prose).not.toContain("`simplify`");
+  const implementationProse = normalizedProse(implementation);
+  expect(implementationProse).toContain(
+    "authoritative task or plan names a post-change owner, removal, cutover, or compatibility commitment",
+  );
+  expect(implementationProse).toContain("verify it against the diff and directly affected paths");
+  expect(implementationProse).toContain("Handoffs provide context, not authority");
+  expect(implementationProse).toContain("invent no migration work absent such a commitment");
   expect(quality).toContain("materially smaller equivalent shape");
   expect(quality).toContain("verified correctness, contract, or");
   expect(existsSync(join(REPO_ROOT, "skills/simplify-review/SKILL.md"))).toBe(false);
