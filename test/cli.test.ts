@@ -656,7 +656,7 @@ test("harness skills install copies a packaged skill into the workspace", () => 
   });
   expect(readFileSync(skillPath, "utf8")).toContain("name: change-review-workflow");
   expect(readFileSync(metadataPath, "utf8")).toContain("Change Review Workflow");
-  expect(readFileSync(handoffPath, "utf8")).toContain("## Template");
+  expect(readFileSync(handoffPath, "utf8")).toContain("## Default shape");
 });
 test("harness skills install skips existing local skills unless forced", () => {
   const workspace = createGitWorkspace();
@@ -2131,7 +2131,7 @@ test("harness run change-review dry-run reads Codex provider from harness.json",
     modelReasoningEffort: "high",
   });
 });
-test("harness run change-review dry-run uses self-contained simplify prompt", () => {
+test("harness run change-review dry-run uses scoped simplify guidance", () => {
   const workspace = createGitWorkspace();
   const result = runHarness([
     "run",
@@ -2153,8 +2153,9 @@ test("harness run change-review dry-run uses self-contained simplify prompt", ()
 
   const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
-  expect(simplifyPrompt).toContain("Prefer explicit, boring code");
-  expect(simplifyPrompt).not.toContain("SKILL.md");
+  expect(simplifyPrompt).toContain("Prefer explicit, boring, repo-native code");
+  expect(simplifyPrompt).toContain("Read only the `SKILL.md` files relevant");
+  expect(simplifyPrompt).not.toContain("{{SKILL_PATH}}");
   expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
 });
 

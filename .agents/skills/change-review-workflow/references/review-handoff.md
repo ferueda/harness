@@ -1,42 +1,46 @@
 # Review Handoff
 
-Write this handoff before running `harness run change-review`.
+Write only context the plan and diff cannot provide.
 
-The handoff is reviewer input, not a work log. Include only facts and decisions needed to review the current change. Completion criterion: a reviewer can verify scope, changed behavior, risks, and test coverage without chat history.
-
-## Template
+## Default shape
 
 ```markdown
-## Review Handoff
+## Goal
 
-**Status:** complete | in_progress | blocked
+The original requested outcome and plan/spec reference when available.
 
-### Goal
-[What problem this change is meant to solve. Include the original request, issue, plan, or spec path when available.]
+## Decisions and boundaries
 
-### Scope
-[What is in scope, what is explicitly out of scope, and any intentional deferrals.]
+Accepted decisions, intentional deviations, and concrete non-goals. Omit when
+none exist.
 
-### Files changed
-- `path/to/file` - [What changed and why it matters]
+## Verification
 
-### Implementation notes
-[Key decisions, patterns followed, compatibility choices, migrations, or behavior changes reviewers should understand.]
+Commands run and results. Name skipped verification and why.
 
-### Verification
-[Commands run and result. If not run, say why.]
+## Scrutiny
 
-### Risks to scrutinize
-- [Correctness, edge case, test, migration, compatibility, or maintainability concern]
-
-### Open items
-- [Blockers, unanswered questions, or follow-ups. Use "none" when empty.]
+Known risks, unresolved concerns, or non-inspectable warnings. Omit when none
+exist.
 ```
 
-## Rules
+For a follow-up, add:
 
-- Cite file paths and commands; avoid vague summaries.
-- Separate verified facts from assumptions.
-- Call out skipped verification and why it was skipped.
-- Do not paste full diffs or long logs. Point reviewers to files and artifacts.
-- Keep risks reviewable: name the behavior, boundary, or invariant that needs scrutiny.
+```markdown
+## Follow-up focus
+
+Resolved blockers:
+
+- <finding and decision>
+
+Settled decisions:
+
+- <accepted or declined review decision>
+
+Keep the original task scope. Add a new blocker only for a regression introduced
+by remediation or a problem made newly observable by it.
+```
+
+Use status only when the implementation is incomplete or blocked. Cite paths and
+commands where useful, but do not repeat the changed-file inventory, diff,
+provider telemetry, or long logs.

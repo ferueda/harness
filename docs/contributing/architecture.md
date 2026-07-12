@@ -174,7 +174,13 @@ executable downstream Factory command; its route command may be absent.
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these
 reviewers in parallel, then results are aggregated in workflow order. Callers
-may request a subset of reviewers.
+may request a subset of reviewers. Reviewer blockers stay tied to the original
+task: acceptance gaps, hard-invariant violations, regressions introduced or
+worsened by the diff, or required behavioral proof. Pre-existing debt and
+nearby cleanup do not block acceptance. Every reviewer must pair
+`needs_changes` with a `must_fix` finding and `pass` with no `must_fix`
+findings. The coordinator owns targeted follow-ups and the three-run limit; a
+partial run covers only its requested roles.
 
 `workflows/factory-triage.workflow.ts` runs one factory triage step. The agent
 returns structured triage JSON; deterministic harness code maps that output to

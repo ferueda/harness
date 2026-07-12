@@ -81,76 +81,55 @@ export function renderFactoryImplementationChangeReviewHandoff(
     input.mode === "dry-run"
       ? "**Status:** in_progress"
       : input.status === "implementation-complete"
-        ? "**Status:** complete"
+        ? undefined
         : "**Status:** blocked";
 
   const implementationInput = input.implementationInput;
   const modeNotes =
     implementationInput.mode === "planned"
       ? [
-          `- Mode: planned`,
-          `- Approved plan path: \`${implementationInput.approvedPlanPath}\``,
-          `- Absolute plan path: \`${implementationInput.planPath}\``,
+          "- Mode: planned",
+          `- Approved plan: \`${implementationInput.planPath}\``,
           `- Approved plan commit: \`${implementationInput.approvedPlanCommit}\``,
         ]
       : [
-          `- Mode: direct`,
+          "- Mode: direct",
           `- Source title: ${implementationInput.sourceMaterial.title}`,
           ...(implementationInput.sourceMaterial.url
             ? [`- Source URL: ${implementationInput.sourceMaterial.url}`]
             : []),
-          `- Labels: ${renderLabels(implementationInput.sourceMaterial.labels)}`,
-          ...(implementationInput.sourceMaterial.tracker
-            ? [`- Tracker: ${JSON.stringify(implementationInput.sourceMaterial.tracker)}`]
-            : []),
           ...(implementationInput.sourceMaterial.body
-            ? [`- Body excerpt: ${excerpt(implementationInput.sourceMaterial.body)}`]
+            ? [`- Task context: ${excerpt(implementationInput.sourceMaterial.body)}`]
             : []),
         ];
+
+  const statusLines = statusLine ? [statusLine, ""] : [];
 
   if (input.mode === "dry-run") {
     return [
       "## Review Handoff",
       "",
-      statusLine,
-      "",
+      ...statusLines,
       "### Goal",
       "",
       `Implement ${implementationInput.workItem.id}: ${implementationInput.workItem.title}.`,
       "",
-      "### Scope",
+      "### Decisions and boundaries",
       "",
       ...modeNotes,
       "- Stay within the factory implementation input boundaries.",
       "",
-      "### Files changed",
-      "",
-      "_To be filled after implementation._",
-      "",
-      "### Implementation notes",
-      "",
-      "_To be filled after implementation._",
-      "",
       "### Verification",
       "",
-      "_Not run yet._",
+      "Not run yet.",
       "",
-      "### Risks to scrutinize",
+      "### Scrutiny",
       "",
       "- Verify the implementation follows the resolved factory implementation input.",
       "- Verify no unrelated tracker, lifecycle, branch, worktree, or PR automation was added.",
       "",
-      "### Open items",
-      "",
-      "_To be filled after implementation._",
-      "",
     ].join("\n");
   }
-
-  const filesChanged =
-    input.changedFiles.length > 0
-      ? input.changedFiles.map((path) => `- \`${path}\``)
-      : ["_No changed files recorded._"];
 
   const warnings: string[] = [];
   if (input.warnings.dirtyBefore) {
@@ -178,54 +157,38 @@ export function renderFactoryImplementationChangeReviewHandoff(
       ]
     : ["- Review ref: not created."];
 
+  const providerFailure = input.provider.error ? [`- Provider error: ${input.provider.error}`] : [];
+
   return [
     "## Review Handoff",
     "",
-    statusLine,
-    "",
+    ...statusLines,
     "### Goal",
     "",
     `Implement ${implementationInput.workItem.id}: ${implementationInput.workItem.title}.`,
     "",
-    "### Scope",
+    "### Decisions and boundaries",
     "",
     ...modeNotes,
     "- Stay within the factory implementation input boundaries.",
     "",
-    "### Files changed",
-    "",
-    ...filesChanged,
-    "",
-    "### Implementation notes",
-    "",
-    `- Diff artifact: \`${input.artifacts.diff}\``,
-    `- Raw provider output: \`${input.artifacts.rawOutput}\``,
-    `- Workspace status: \`${input.artifacts.workspaceStatus}\``,
-    ...(input.artifacts.streamLog ? [`- Stream log: \`${input.artifacts.streamLog}\``] : []),
-    ...(input.provider.session
-      ? [`- Provider session: ${input.provider.session.provider} ${input.provider.session.id}`]
-      : []),
-    ...(input.provider.error ? [`- Provider error: ${input.provider.error}`] : []),
     ...reviewNotes,
-    "- Reviewer invocation: not run.",
     "- This handoff does not claim approval, PR readiness, or merge readiness.",
-    ...(warnings.length > 0 ? ["", "Warnings:", ...warnings] : []),
     "",
     "### Verification",
     "",
     "Not run by factory implementation station.",
     "",
-    "### Risks to scrutinize",
+    "### Scrutiny",
     "",
     "- Verify the implementation follows the resolved factory implementation input.",
     "- Verify no unrelated tracker, lifecycle, branch, worktree, or PR automation was added.",
     "- Verify the internal review ref matches the candidate changes before running change-review.",
-    "",
-    "### Open items",
-    "",
-    input.status === "implementation-complete"
-      ? "- Run change-review separately using the recorded review base/head."
-      : "- Resolve the implementation failure, then retry from preserved plan/direct context.",
+    ...providerFailure,
+    ...warnings,
+    ...(input.status === "implementation-complete"
+      ? []
+      : ["- Resolve the implementation failure, then retry from preserved plan/direct context."]),
     "",
   ].join("\n");
 }
