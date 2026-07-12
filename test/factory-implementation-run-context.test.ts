@@ -69,8 +69,8 @@ test("planned dry-run writes implementation artifacts without events", async () 
   const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
   expectHandoffModel(handoff);
   expect(handoff).toContain("**Status:** in_progress");
-  expect(handoff).toContain("_To be filled after implementation._");
-  expect(handoff).toContain("_Not run yet._");
+  expect(handoff).toContain("Not run yet.");
+  expect(handoff).not.toContain("To be filled");
 });
 
 test("direct dry-run writes source material artifacts", async () => {
@@ -105,9 +105,10 @@ test("direct dry-run writes source material artifacts", async () => {
   expect(prompt).toContain("linear");
   const handoff = readFileSync(join(ctx.runDir, "implementation/change-review-handoff.md"), "utf8");
   expectHandoffModel(handoff);
-  expect(handoff).toContain("- Labels: factory");
-  expect(handoff).toContain("- Body excerpt: Build the dry-run shell.");
-  expect(handoff).toContain("- Tracker:");
+  expect(handoff).toContain("- Source title: Add factory implementation station shell");
+  expect(handoff).toContain("- Source URL: https://linear.app/acme/issue/FER-47");
+  expect(handoff).not.toContain("- Body excerpt:");
+  expect(handoff).not.toContain("- Tracker:");
   const summary = readFileSync(join(ctx.runDir, "summary.md"), "utf8");
   expect(summary).toContain("Source title: Add factory implementation station shell");
   expect(summary).toContain("Tracker:");
@@ -318,14 +319,12 @@ function directInput(): FactoryImplementationInput {
 
 function expectHandoffModel(handoff: string): void {
   expect(handoff).toContain("## Review Handoff");
-  expect(handoff).toMatch(/\*\*Status:\*\*/);
   expect(handoff).toContain("### Goal");
-  expect(handoff).toContain("### Scope");
-  expect(handoff).toContain("### Files changed");
-  expect(handoff).toContain("### Implementation notes");
+  expect(handoff).toContain("### Decisions and boundaries");
   expect(handoff).toContain("### Verification");
-  expect(handoff).toContain("### Risks to scrutinize");
-  expect(handoff).toContain("### Open items");
+  expect(handoff).toContain("### Scrutiny");
+  expect(handoff).not.toContain("### Files changed");
+  expect(handoff).not.toContain("### Implementation notes");
 }
 
 function readJson(path: string): unknown {

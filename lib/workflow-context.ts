@@ -389,7 +389,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
         throw new Error(`${config.stage} reviewer failed: ${result.error}`);
       }
 
-      const review = parseReviewerOutput(name, config.stage, result.structuredOutput);
+      const review = parseReviewerOutput(config.stage, result.structuredOutput);
       writeJson(join(runDir, config.reviewFile), review);
       return review;
     },
@@ -492,11 +492,7 @@ function buildPromptValues({
   };
 }
 
-function parseReviewerOutput(
-  agentName: ReviewAgentName,
-  stage: string,
-  structuredOutput: unknown,
-): ReviewOutput {
+function parseReviewerOutput(stage: string, structuredOutput: unknown): ReviewOutput {
   const review = ReviewOutputSchema.safeParse(structuredOutput);
   if (!review.success) {
     throw new Error(
@@ -505,16 +501,12 @@ function parseReviewerOutput(
       )}`,
     );
   }
-  assertReviewerVerdictContract(agentName, stage, review.data);
+  assertReviewerVerdictContract(stage, review.data);
   return review.data;
 }
 
-function assertReviewerVerdictContract(
-  agentName: ReviewAgentName,
-  stage: string,
-  review: ReviewOutput,
-): void {
-  if (agentName !== "review-spec" || review.verdict === "blocked") return;
+function assertReviewerVerdictContract(stage: string, review: ReviewOutput): void {
+  if (review.verdict === "blocked") return;
 
   const hasMustFix = review.findings.some((finding) => finding.must_fix);
   if (review.verdict === "needs_changes" && !hasMustFix) {

@@ -18,6 +18,8 @@ test("review prompts include scope placeholders and JSON output contract", () =>
     expect(prompt).toContain("{{DIFF_REF}}");
     expect(prompt).toContain("{{HANDOFF_SECTION}}");
     expect(prompt).toContain("Return JSON matching the provided schema");
+    expect(prompt).toContain("Read only the `SKILL.md` files relevant");
+    expect(prompt).toContain("not a new checklist");
     expect(prompt).not.toContain("{{MERGE_BASE}}");
     expect(prompt).not.toContain("{{HEAD_SHA}}");
     expect(prompt).not.toContain("{{SKILL_PATH}}");
@@ -25,10 +27,12 @@ test("review prompts include scope placeholders and JSON output contract", () =>
   }
 });
 
-test("implementation review prompt includes plan context and adversarial guidance", () => {
+test("implementation review prompt keeps blockers tied to the original task", () => {
   expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("{{PLAN_REF}}");
-  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("adversarial code review");
-  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("Subtract before you add");
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("safely completes the original task");
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("introduced or worsened by the diff");
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("material scope expansion");
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("made it newly observable");
   expect(QUALITY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
   expect(SIMPLIFY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
 });
@@ -57,8 +61,24 @@ test("spec review prompt includes plan context without diff scope placeholders",
 });
 
 test("quality and simplify prompts keep reviewer-specific guidance", () => {
-  expect(QUALITY_REVIEW_PROMPT).toContain("Audit focus");
-  expect(QUALITY_REVIEW_PROMPT).toContain("preserving exact functionality");
-  expect(SIMPLIFY_REVIEW_PROMPT).toContain("preserve exact behavior");
-  expect(SIMPLIFY_REVIEW_PROMPT).toContain("Prefer explicit, boring code");
+  expect(QUALITY_REVIEW_PROMPT).toContain("behavior-preserving clarity");
+  expect(QUALITY_REVIEW_PROMPT).toContain("changed or directly affected code");
+  expect(QUALITY_REVIEW_PROMPT).toContain("Do not perform another general correctness");
+  expect(SIMPLIFY_REVIEW_PROMPT).toContain("strictly smaller, clearer shapes");
+  expect(SIMPLIFY_REVIEW_PROMPT).toContain("materially smaller equivalent shape");
+  expect(SIMPLIFY_REVIEW_PROMPT).toContain("architecture changes outside the accepted task");
+});
+
+test("change reviewers use a consistent blocker and verdict contract", () => {
+  for (const prompt of [
+    IMPLEMENTATION_REVIEW_PROMPT,
+    QUALITY_REVIEW_PROMPT,
+    SIMPLIFY_REVIEW_PROMPT,
+  ]) {
+    expect(prompt).toContain('Use `verdict: "pass"` when no finding has `must_fix: true`');
+    expect(prompt).toContain(
+      'Use `verdict: "needs_changes"` only when at least one finding has `must_fix: true`',
+    );
+    expect(prompt).toContain("A clean review with no findings is valid");
+  }
 });

@@ -135,7 +135,7 @@ test("workflow context supports spec review dry-runs without git scope", async (
   expect(prompt).not.toContain("{{DIFF_REF}}");
 });
 
-test("workflow context rejects contradictory spec verdicts after preserving raw evidence", async () => {
+test("workflow context rejects contradictory reviewer verdicts after preserving raw evidence", async () => {
   const invalidReviews = [
     {
       verdict: "needs_changes",
@@ -181,7 +181,7 @@ test("workflow context rejects contradictory spec verdicts after preserving raw 
   }
 });
 
-test("spec verdict checks exempt blocked reviews and non-spec reviewers", async () => {
+test("verdict checks exempt blocked reviews", async () => {
   const blockedWorkspace = createPlainWorkspace();
   const blockedCtx = createWorkflowContextForTest({
     workspace: blockedWorkspace,
@@ -203,7 +203,9 @@ test("spec verdict checks exempt blocked reviews and non-spec reviewers", async 
     maxRuntimeMs: 1_000,
   });
   await expect(blockedCtx.agent("review-spec")).resolves.toMatchObject({ verdict: "blocked" });
+});
 
+test("change reviewers enforce the verdict contract", async () => {
   const implementationWorkspace = createGitWorkspace();
   const implementationCtx = createWorkflowContextForTest({
     workspace: implementationWorkspace,
@@ -218,7 +220,7 @@ test("spec verdict checks exempt blocked reviews and non-spec reviewers", async 
             ok: true,
             structuredOutput: {
               verdict: "needs_changes",
-              summary: "Legacy non-spec contract.",
+              summary: "Only advice remains.",
               findings: [reviewFinding(false)],
             },
             raw: { ok: true },
@@ -228,9 +230,11 @@ test("spec verdict checks exempt blocked reviews and non-spec reviewers", async 
     },
     maxRuntimeMs: 1_000,
   });
-  await expect(implementationCtx.agent("review-implementation")).resolves.toMatchObject({
-    verdict: "needs_changes",
-  });
+  await expect(implementationCtx.agent("review-implementation")).rejects.toThrow(
+    "needs_changes requires at least one must_fix finding",
+  );
+  expect(existsSync(join(implementationCtx.runDir, "implementation-review.raw.json"))).toBe(true);
+  expect(existsSync(join(implementationCtx.runDir, "implementation-review.json"))).toBe(false);
 });
 
 test("workflow context exports spec review summaries without git scope", () => {
