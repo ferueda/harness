@@ -33,6 +33,7 @@ test("factory planner uses a compact decision-rich plan shape", () => {
   expect(prompt).toContain("## Verify");
   expect(prompt).toContain("## Boundaries");
   expect(prompt).toContain("Omit when none exist");
+  expect(prompt).not.toContain("unresolved decisions");
   expect(prompt).toContain("smallest coherent change");
   expect(prompt).toContain("highest existing stable test seam proving acceptance");
   expect(prompt).toContain("distinct invariant or failure mode unobservable there");

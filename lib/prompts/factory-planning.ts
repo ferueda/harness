@@ -36,7 +36,7 @@ Ordered items: file or symbol, decision, intended behavior, and relevant test se
 ## Verify
 Focused behavioral check and canonical repository validation. Do not repeat covered checks or routine diff inspection without a named risk.
 ## Boundaries
-Concrete non-goals, unresolved decisions, or STOP conditions that prevent a likely scope mistake. Omit when none exist.
+Concrete non-goals or STOP conditions that prevent a likely scope mistake. Omit when none exist.
 
 Planning rules:
 - Choose the smallest coherent change satisfying the goal and invariants.
