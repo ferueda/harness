@@ -73,6 +73,8 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(SPEC_REVIEW_PROMPT).toContain("first step to create a minimal intent source");
   expect(SPEC_REVIEW_PROMPT).toContain("minimum sufficient executable plan");
   expect(SPEC_REVIEW_PROMPT).toContain("Unsupported work is a scope defect");
+  expect(SPEC_REVIEW_PROMPT).toContain("Review content, not template completeness");
+  expect(SPEC_REVIEW_PROMPT).toContain("highest existing stable seam proving acceptance");
   expect(SPEC_REVIEW_PROMPT).toContain("Do not recommend optional hardening");
   expect(SPEC_REVIEW_PROMPT).toContain('verdict: "needs_changes"` only when at least one finding');
   expect(SPEC_REVIEW_PROMPT).toContain("Blocked is exempt");
@@ -85,6 +87,9 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(reviewSpecSkill).toContain("confirmed intent");
   expect(reviewSpecSkill).toContain("first step to create a minimal intent source");
   expect(reviewSpecSkill).toContain("Unsupported work is a scope defect");
+  expect(reviewSpecSkill).toContain("Plan Contract");
+  expect(reviewSpecSkill).toContain("Review decisions, not ceremony");
+  expect(reviewSpecSkill).toContain("highest existing stable seam proving acceptance");
   expect(reviewSpecSkill).toContain("needs_changes` requires at least one");
   expect(reviewSpecSkill).toContain("Do not invent work");
 });

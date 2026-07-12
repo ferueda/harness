@@ -1,4 +1,4 @@
 interface:
   display_name: "Create Plan"
-  short_description: "Turn instructions into advisory or executor handoff plans"
-  default_prompt: "Use $create-plan to turn these requirements into a scoped, code-backed implementation plan. If this should be executed by another agent with no context, use the executor handoff format."
+  short_description: "Create compact, code-backed implementation plans"
+  default_prompt: "Use $create-plan to turn these requirements into a minimum-sufficient, code-backed plan for a capable executor."

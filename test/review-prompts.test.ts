@@ -45,10 +45,15 @@ test("spec review prompt includes plan context without diff scope placeholders",
   expect(SPEC_REVIEW_PROMPT).toContain("prefer smaller plans");
   expect(SPEC_REVIEW_PROMPT).toContain("YAGNI");
   expect(SPEC_REVIEW_PROMPT).toContain("one-call-site abstractions");
+  expect(SPEC_REVIEW_PROMPT).toContain("Plans are decision records for capable executors");
+  expect(SPEC_REVIEW_PROMPT).toContain("Review content, not template completeness");
+  expect(SPEC_REVIEW_PROMPT).toContain("highest existing stable seam proving acceptance");
+  expect(SPEC_REVIEW_PROMPT).toContain("canonical repository gate without repetition");
   expect(SPEC_REVIEW_PROMPT).not.toContain("{{DIFF_RANGE}}");
   expect(SPEC_REVIEW_PROMPT).not.toContain("{{BASE_REF}}");
   expect(SPEC_REVIEW_PROMPT).not.toContain("{{HEAD_REF}}");
   expect(SPEC_REVIEW_PROMPT).not.toContain("{{DIFF_REF}}");
+  expect(SPEC_REVIEW_PROMPT).not.toContain("Are STOP conditions clear");
 });
 
 test("quality and simplify prompts keep reviewer-specific guidance", () => {

@@ -118,3 +118,35 @@ test("sessions CLI lives under skills/sessions only", () => {
   expect(statSync(join(REPO_ROOT, "skills/sessions/scripts/sessions.ts")).isFile()).toBe(true);
   expect(statSync(join(REPO_ROOT, "skills/sessions/scripts/install.sh")).isFile()).toBe(true);
 });
+
+test("planning skills use the compact capable-executor contract", () => {
+  const createPlan = readFileSync(join(REPO_ROOT, "skills/create-plan/SKILL.md"), "utf8");
+  const template = readFileSync(
+    join(REPO_ROOT, "skills/create-plan/references/plan-template.md"),
+    "utf8",
+  );
+  const coordinator = readFileSync(join(REPO_ROOT, "skills/planning-workflow/SKILL.md"), "utf8");
+  const audit = readFileSync(join(REPO_ROOT, "skills/audit/SKILL.md"), "utf8");
+  const auditTemplate = readFileSync(
+    join(REPO_ROOT, "skills/audit/references/plan-template.md"),
+    "utf8",
+  );
+
+  for (const content of [createPlan, template, coordinator, audit, auditTemplate]) {
+    expect(content).toMatch(/capable, context-limited\s+executors?/);
+    expect(content).toMatch(/highest existing\s+stable test seam/);
+    expect(content).not.toContain("weakest plausible executor");
+  }
+
+  expect(template).toContain("## Goal");
+  expect(template).toContain("## Changes");
+  expect(template).toContain("## Verify");
+  expect(template).toContain("## Boundaries");
+  expect(template).toContain("Do not add a skills table by default");
+  expect(template).not.toContain("## Status");
+  expect(template).not.toContain("## Maintenance notes");
+  expect(createPlan).not.toContain("less capable model with zero context");
+  expect(auditTemplate).toContain("Planned at");
+  expect(auditTemplate).toContain("## Index file: `dev/plans/README.md`");
+  expect(auditTemplate).not.toContain("## Commands you will need");
+});

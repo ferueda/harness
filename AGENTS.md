@@ -65,7 +65,7 @@ Use `architect` only when explicitly invoked for ideation/research/solution desi
 
 `audit` is read-only on source; only `dev/plans/` files may be created or updated. Reconcile with `dev/plans/README.md` before adding plans.
 
-**Plan skill discovery (required for `audit` and `create-plan`):** Before writing a plan, check the host available-skills list (if injected), repo skill dirs (`skills/`, `.agents/skills/`, `.cursor/skills/`, `.claude/skills/`), and `AGENTS.md` / `README` for named tools. Read each candidate `SKILL.md`; embed only verified skills in the plan's **Skills for the executor** table, each tied to a specific step. Never invent skill names.
+**Plan skill discovery (`audit` and `create-plan`):** Check injected and repo-local skill descriptions, then read only candidates that match a concrete change. Mention a verified skill beside that change only when it adds non-obvious executor guidance; no skills table by default. Never invent skill names.
 
 ## Review workflow
 
@@ -81,7 +81,7 @@ Coordinator: **`change-review-workflow`**. Triage (Implement / Adapt / Decline) 
 
 `review-implementation`, `code-quality-review`, and `simplify-review` are read-only. Use `review-implementation` for correctness; `code-quality-review` for conventions; `simplify-review` for simplification suggestions.
 
-**Skill discovery (for implementation, `review-implementation`, `code-quality-review`, `simplify-review`):** Discover available skills in the host and target repo. Read relevant `SKILL.md` files for languages, frameworks, or patterns touched by the work. Use them as guidelines — no fixed checklist. For plan-driven work, start with the plan's **Skills for the executor** section when present.
+**Skill discovery (for implementation, `review-implementation`, `code-quality-review`, `simplify-review`):** Discover available skills in the host and target repo. Read relevant `SKILL.md` files for languages, frameworks, or patterns touched by the work. Use them as guidelines — no fixed checklist. For plan-driven work, use any executor aids named beside the relevant changes.
 
 ## Handoff workflow
 
