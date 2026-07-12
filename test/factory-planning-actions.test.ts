@@ -20,84 +20,8 @@ import type { FactoryStoreMeta } from "../lib/factory-store.ts";
 import { decideNextFactoryAction } from "../lib/factory-state-machine.ts";
 
 test("candidate and review actions step separately and revisions resume the planner session", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-workspace-"));
-  const projectRoot = mkdtempSync(join(tmpdir(), "factory-planning-store-"));
-  const factoryStateRoot = join(projectRoot, "factory");
-  ensureFactoryStoreFormat(factoryStateRoot);
-  const store: FactoryStoreMeta = {
-    storeRoot: projectRoot,
-    projectId: "repo",
-    projectRoot,
-    factoryStateRoot,
-    factoryRunsDir: join(projectRoot, "runs/factory"),
-    reviewRunsDir: join(projectRoot, "runs/reviews"),
-    repo: { name: "repo", id: "repo", idSource: "config" },
-    overrides: {},
-    warnings: [],
-  };
-  const workItem: FactoryWorkItem = {
-    id: "item-1",
-    source: "file",
-    title: "Plan item",
-    body: "Ship it",
-    labels: [],
-  };
-  const key = deriveFactoryWorkItemKey(workItem);
-  const created = createFactoryPlanningRunContext({
-    workspace,
-    runsDir: store.factoryRunsDir,
-    workItem,
-    plannerRole: { agent: "cursor", model: "planner" },
-    reviewerRole: { agent: "cursor", model: "reviewer" },
-    outputPlan: "dev/plans/item-1.md",
-    maxReviewIterations: 2,
-    maxRuntimeMs: 1_000,
-    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
-    factoryStore: store,
-  });
-  const ctx = openFactoryPlanningRunContext({
-    workspace,
-    runsDir: store.factoryRunsDir,
-    phaseRunId: created.runId,
-    workItem,
-    factoryStore: store,
-  });
-  const imported: FactoryLifecycleEvent = {
-    version: 1,
-    id: "import:item-1",
-    type: "work_item.imported",
-    workItemKey: key,
-    occurredAt: new Date().toISOString(),
-    data: { source: "file" },
-  };
-  appendFactoryActionEvent({ factoryStateRoot, event: imported, expectedLastEventId: null });
-  const requested: FactoryLifecycleEvent = {
-    version: 1,
-    id: `planning.requested:${created.runId}`,
-    type: "planning.requested",
-    workItemKey: key,
-    occurredAt: new Date().toISOString(),
-    phaseRunId: created.runId,
-    data: {
-      expectedPredecessor: imported.id,
-      inputRefs: [
-        {
-          base: "factory-store",
-          path: `runs/factory/${created.runId}/context/work-item.json`,
-          sha256: "0".repeat(64),
-        },
-      ],
-      intent: "start",
-      reviewCeiling: 2,
-      publicationMode: "local",
-      outputPlan: "dev/plans/item-1.md",
-    },
-  };
-  const start = appendFactoryActionEvent({
-    factoryStateRoot,
-    event: requested,
-    expectedLastEventId: imported.id,
-  });
+  const { ctx, factoryStateRoot, start } = planningActionFixture();
+  const { workspace } = ctx;
   const providerCalls: AgentRunInput[] = [];
   const providerFactory = () => ({
     name: "cursor" as const,
@@ -437,59 +361,52 @@ test.each([
 });
 
 test.each([
-  { name: "workspace mutation", error: "Agent runtime modified the workspace during a review run" },
-  { name: "caller abort", error: "review aborted", aborted: true },
-])("review records $name as human-required", async ({ error, aborted }) => {
+  {
+    name: "workspace guard",
+    result: {
+      ok: false as const,
+      error: "review failed",
+      exitCode: 1,
+      failureKind: "workspace-guard" as const,
+      raw: unchangedWorkspace(),
+    },
+  },
+  {
+    name: "provider abort",
+    result: {
+      ok: false as const,
+      error: "review failed",
+      exitCode: 1,
+      aborted: true,
+      raw: unchangedWorkspace(),
+    },
+  },
+  {
+    name: "workspace mutation",
+    result: {
+      ok: false as const,
+      error: "review failed",
+      exitCode: 1,
+      raw: { workspaceStatus: { before: "clean", after: "changed" } },
+    },
+  },
+  {
+    name: "unknown workspace state",
+    result: {
+      ok: false as const,
+      error: "review failed",
+      exitCode: 1,
+    },
+  },
+])("review records $name as human-required", async ({ result }) => {
   const fixture = planningActionFixture();
-  const candidate = await producePlanCandidate({
-    ctx: fixture.ctx,
-    factoryStateRoot: fixture.factoryStateRoot,
-    reaction: invoke(fixture.start),
-    maxRuntimeMs: 1_000,
-    agentProviderFactory: () => ({
-      name: "cursor",
-      async run(input) {
-        const draft = /Draft path:\s+```text\s+([^\n]+)/.exec(input.prompt)?.[1];
-        if (!draft) throw new Error("missing draft path");
-        writeFileSync(draft, "# Candidate\n");
-        return {
-          ok: true,
-          structuredOutput: {
-            outcome: "draft-ready",
-            summary: "ready",
-            humanQuestions: [],
-            findingDecisions: [],
-          },
-          raw: unchangedWorkspace(),
-          session: { provider: "cursor", id: "session" },
-        };
-      },
-    }),
-  });
-  const controller = new AbortController();
-  if (aborted) controller.abort();
+  const candidate = await produceTestCandidate(fixture);
   const reviewed = await reviewPlanCandidate({
     ctx: fixture.ctx,
     factoryStateRoot: fixture.factoryStateRoot,
     reaction: invoke(candidate),
     maxRuntimeMs: 1_000,
-    signal: controller.signal,
-    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
-    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
-      mkdirSync(reviewCtx.runDir!, { recursive: true });
-      writeFileSync(
-        join(reviewCtx.runDir!, "spec-review.raw.json"),
-        JSON.stringify({
-          workspaceStatus: aborted
-            ? { before: "clean", after: "clean" }
-            : { before: "clean", after: "changed" },
-        }),
-      );
-      return {
-        status: "failed",
-        failedReviews: [{ key: "spec", stage: "review-spec", error }],
-      };
-    }) as never,
+    agentProviderFactory: () => ({ name: "cursor", run: async () => result }),
   });
   expect(reviewed.event).toMatchObject({
     type: "factory.action.failed",
@@ -500,68 +417,51 @@ test.each([
 test("review failure text cannot override validated unchanged workspace evidence", async () => {
   const fixture = planningActionFixture();
   const candidate = await produceTestCandidate(fixture);
+  const reviewerRun = vi.fn<Agent["run"]>(async () => ({
+    ok: false,
+    error: "aborted after workspace-guard modified the workspace",
+    exitCode: 1,
+    raw: unchangedWorkspace(),
+  }));
   const reviewed = await reviewPlanCandidate({
     ctx: fixture.ctx,
     factoryStateRoot: fixture.factoryStateRoot,
     reaction: invoke(candidate),
     maxRuntimeMs: 1_000,
-    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
-    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
-      mkdirSync(reviewCtx.runDir!, { recursive: true });
-      writeFileSync(
-        join(reviewCtx.runDir!, "spec-review.raw.json"),
-        JSON.stringify(unchangedWorkspace()),
-      );
-      return {
-        status: "failed",
-        failedReviews: [
-          {
-            key: "spec",
-            stage: "review-spec",
-            error: "aborted after workspace-guard modified the workspace",
-          },
-        ],
-      };
-    }) as never,
+    agentProviderFactory: () => ({ name: "cursor", run: reviewerRun }),
   });
 
+  expect(reviewerRun).toHaveBeenCalledTimes(1);
   expect(reviewed.event).toMatchObject({
     type: "factory.action.failed",
     data: { failureKind: "retryable" },
   });
 });
 
-test("invalid completed review recovers its staged result without rerunning the reviewer", async () => {
+test("invalid production review output recovers terminally without rerunning the reviewer", async () => {
   const fixture = planningActionFixture();
   const candidate = await produceTestCandidate(fixture);
   const reaction = invoke(candidate);
   const actionDir = planningActionDir(fixture.ctx, reaction);
   mkdirSync(join(actionDir, "failure.json"), { recursive: true });
-  const reviewRunner = vi.fn<
-    (reviewCtx: { runDir?: string }) => Promise<{ status: "completed"; verdict: "pass" }>
-  >(async (reviewCtx) => {
-    mkdirSync(reviewCtx.runDir!, { recursive: true });
-    writeFileSync(
-      join(reviewCtx.runDir!, "spec-review.raw.json"),
-      JSON.stringify(unchangedWorkspace()),
-    );
-    writeFileSync(join(reviewCtx.runDir!, "spec-review.json"), JSON.stringify({ verdict: "pass" }));
-    return { status: "completed", verdict: "pass" };
-  });
+  const reviewerRun = vi.fn<Agent["run"]>(async () => ({
+    ok: true,
+    structuredOutput: { verdict: "pass" },
+    raw: unchangedWorkspace(),
+  }));
   const actionInput = {
     ctx: fixture.ctx,
     factoryStateRoot: fixture.factoryStateRoot,
     reaction,
     maxRuntimeMs: 1_000,
-    agentProviderFactory: () => ({ name: "cursor" as const, run: vi.fn<Agent["run"]>() }),
-    reviewRunner: reviewRunner as never,
+    agentProviderFactory: () => ({ name: "cursor" as const, run: reviewerRun }),
   };
 
   await expect(reviewPlanCandidate(actionInput)).rejects.toThrow(/EISDIR|directory/i);
   rmSync(join(actionDir, "failure.json"), { recursive: true });
   const recovered = await reviewPlanCandidate(actionInput);
 
-  expect(reviewRunner).toHaveBeenCalledTimes(1);
+  expect(reviewerRun).toHaveBeenCalledTimes(1);
   expect(recovered.event).toMatchObject({
     type: "factory.action.failed",
     data: { failureKind: "terminal" },
@@ -593,42 +493,50 @@ test("malformed staged review result fails terminally without invoking the revie
   });
 });
 
-test("conflicting staged review identity fails closed", async () => {
+test("each conflicting staged review identity field fails closed", async () => {
   const fixture = planningActionFixture();
   const candidate = await produceTestCandidate(fixture);
   const reaction = invoke(candidate);
   const actionDir = planningActionDir(fixture.ctx, reaction);
   mkdirSync(actionDir, { recursive: true });
-  writeFileSync(
-    join(actionDir, "review-result.json"),
-    `${JSON.stringify({
-      version: 1,
-      action: {
-        phaseRunId: "different-run",
-        handler: "reviewPlanCandidate",
-        attempt: reaction.attempt,
-        causationEventId: reaction.causationEventId,
-      },
-      completion: {
-        status: "invalid",
-        message: "invalid review",
-        callerAborted: false,
-        review: { kind: "missing", message: "missing review" },
-      },
-    })}\n`,
-  );
   const reviewRunner = vi.fn<() => never>();
-
-  await expect(
-    reviewPlanCandidate({
-      ctx: fixture.ctx,
-      factoryStateRoot: fixture.factoryStateRoot,
-      reaction,
-      maxRuntimeMs: 1_000,
-      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
-      reviewRunner: reviewRunner as never,
-    }),
-  ).rejects.toThrow("Staged review outcome conflicts with action identity");
+  const action = {
+    phaseRunId: fixture.ctx.runId,
+    handler: "reviewPlanCandidate",
+    attempt: reaction.attempt,
+    causationEventId: reaction.causationEventId,
+  };
+  const conflicts = [
+    { phaseRunId: "different-run" },
+    { handler: "producePlanCandidate" },
+    { attempt: reaction.attempt + 1 },
+    { causationEventId: "different-cause" },
+  ];
+  for (const conflict of conflicts) {
+    writeFileSync(
+      join(actionDir, "review-result.json"),
+      `${JSON.stringify({
+        version: 1,
+        action: { ...action, ...conflict },
+        completion: {
+          status: "invalid",
+          message: "invalid review",
+          callerAborted: false,
+          review: { kind: "missing", message: "missing review" },
+        },
+      })}\n`,
+    );
+    await expect(
+      reviewPlanCandidate({
+        ctx: fixture.ctx,
+        factoryStateRoot: fixture.factoryStateRoot,
+        reaction,
+        maxRuntimeMs: 1_000,
+        agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+        reviewRunner: reviewRunner as never,
+      }),
+    ).rejects.toThrow("Staged review outcome conflicts with action identity");
+  }
   expect(reviewRunner).not.toHaveBeenCalled();
 });
 

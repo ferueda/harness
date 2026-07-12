@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import type { Agent, AgentProviderOptions } from "./agents.ts";
+import type { Agent, AgentProviderOptions, AgentRunResult } from "./agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
 import {
@@ -73,14 +73,21 @@ export async function reviewPlanCandidate(input: {
     const resultPath = join(actionDir, "review-result.json");
     let staged: StagedReviewOutcome;
     if (existsSync(resultPath)) {
+      let raw: unknown;
       try {
-        staged = StagedReviewOutcomeSchema.parse(JSON.parse(readFileSync(resultPath, "utf8")));
+        raw = JSON.parse(readFileSync(resultPath, "utf8"));
       } catch (error) {
         return failAction(input, actionDir, errorMessage(error), "terminal");
       }
+      if (hasConflictingStagedIdentity(raw, ctx, reaction))
+        throw new Error("Staged review outcome conflicts with action identity");
+      const parsed = StagedReviewOutcomeSchema.safeParse(raw);
+      if (!parsed.success) return failAction(input, actionDir, parsed.error.message, "terminal");
+      staged = parsed.data;
       assertStagedIdentity(ctx, reaction, staged);
     } else {
       const profile = ctx.identity.actions.reviewPlanCandidate;
+      let providerCompletion: ReviewProviderCompletion | undefined;
       const reviewCtx = createWorkflowContext({
         workspace: ctx.workspace,
         planPath: candidatePath,
@@ -100,7 +107,17 @@ export async function reviewPlanCandidate(input: {
           : {}),
         maxRuntimeMs: input.maxRuntimeMs,
         signal: input.signal,
-        agentProviderFactory: input.agentProviderFactory,
+        agentProviderFactory: (options) => {
+          const provider = input.agentProviderFactory(options);
+          return {
+            name: provider.name,
+            async run(runInput) {
+              const result = await provider.run(runInput);
+              providerCompletion = captureProviderCompletion(result);
+              return result;
+            },
+          };
+        },
       });
       const finishTelemetry = startFactoryActionTelemetry({
         eventSink: ctx.eventSink,
@@ -122,6 +139,7 @@ export async function reviewPlanCandidate(input: {
         meta,
         reviewRunDir: reviewCtx.runDir,
         callerAborted: input.signal?.aborted === true,
+        providerCompletion,
       });
       finishTelemetry(staged.completion.status === "completed" ? "completed" : "failed");
       writeDurableFactoryFile(resultPath, `${JSON.stringify(staged, null, 2)}\n`, true);
@@ -257,6 +275,8 @@ const ReviewCompletionSchema = z.discriminatedUnion("status", [
       status: z.literal("failed"),
       message: z.string().min(1),
       callerAborted: z.boolean(),
+      providerAborted: z.boolean(),
+      providerFailureKind: z.literal("workspace-guard").optional(),
       workspaceStatus: WorkspaceStatusSchema.optional(),
       review: ReviewArtifactSchema,
     })
@@ -295,6 +315,17 @@ const ReviewRunMetaSchema = z.discriminatedUnion("status", [
     })
     .passthrough(),
 ]);
+type ReviewProviderCompletion =
+  | {
+      ok: true;
+      workspaceStatus?: z.infer<typeof WorkspaceStatusSchema>;
+    }
+  | {
+      ok: false;
+      aborted: boolean;
+      failureKind?: "workspace-guard";
+      workspaceStatus?: z.infer<typeof WorkspaceStatusSchema>;
+    };
 
 function buildStagedReviewOutcome(input: {
   ctx: PlanningContext;
@@ -302,12 +333,13 @@ function buildStagedReviewOutcome(input: {
   meta: unknown;
   reviewRunDir: string;
   callerAborted: boolean;
+  providerCompletion: ReviewProviderCompletion | undefined;
 }): StagedReviewOutcome {
   const meta = ReviewRunMetaSchema.safeParse(input.meta);
   const review = readReviewArtifact(join(input.reviewRunDir, "spec-review.json"));
-  const workspaceStatus = readReviewWorkspaceStatus(
-    join(input.reviewRunDir, "spec-review.raw.json"),
-  );
+  const workspaceStatus =
+    input.providerCompletion?.workspaceStatus ??
+    readReviewWorkspaceStatus(join(input.reviewRunDir, "spec-review.raw.json"));
   const common = {
     callerAborted: input.callerAborted,
     ...(workspaceStatus ? { workspaceStatus } : {}),
@@ -315,9 +347,24 @@ function buildStagedReviewOutcome(input: {
   };
   const completion: StagedReviewOutcome["completion"] = !meta.success
     ? { status: "invalid", message: "Plan reviewer returned invalid run metadata", ...common }
-    : meta.data.status === "failed"
-      ? { status: "failed", message: reviewFailureMessage(meta.data), ...common }
-      : { status: "completed", ...common };
+    : meta.data.status === "failed" && input.providerCompletion?.ok === true
+      ? {
+          status: "invalid",
+          message: review.kind === "present" ? reviewFailureMessage(meta.data) : review.message,
+          ...common,
+        }
+      : meta.data.status === "failed"
+        ? {
+            status: "failed",
+            message: reviewFailureMessage(meta.data),
+            providerAborted:
+              input.providerCompletion?.ok === false && input.providerCompletion.aborted,
+            ...(input.providerCompletion?.ok === false && input.providerCompletion.failureKind
+              ? { providerFailureKind: input.providerCompletion.failureKind }
+              : {}),
+            ...common,
+          }
+        : { status: "completed", ...common };
   return StagedReviewOutcomeSchema.parse({
     version: 1,
     action: {
@@ -344,14 +391,29 @@ function readReviewWorkspaceStatus(
   path: string,
 ): z.infer<typeof WorkspaceStatusSchema> | undefined {
   try {
-    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("workspaceStatus" in raw))
-      return undefined;
-    const parsed = WorkspaceStatusSchema.safeParse(raw.workspaceStatus);
-    return parsed.success ? parsed.data : undefined;
+    return parseReviewWorkspaceStatus(JSON.parse(readFileSync(path, "utf8")));
   } catch {
     return undefined;
   }
+}
+
+function captureProviderCompletion(result: AgentRunResult): ReviewProviderCompletion {
+  const workspaceStatus = parseReviewWorkspaceStatus(result.raw);
+  if (result.ok) return { ok: true, ...(workspaceStatus ? { workspaceStatus } : {}) };
+  return {
+    ok: false,
+    aborted: result.aborted === true,
+    ...(result.failureKind ? { failureKind: result.failureKind } : {}),
+    ...(workspaceStatus ? { workspaceStatus } : {}),
+  };
+}
+
+function parseReviewWorkspaceStatus(
+  raw: unknown,
+): z.infer<typeof WorkspaceStatusSchema> | undefined {
+  if (!isRecord(raw) || !("workspaceStatus" in raw)) return undefined;
+  const parsed = WorkspaceStatusSchema.safeParse(raw.workspaceStatus);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function assertStagedIdentity(
@@ -368,10 +430,34 @@ function assertStagedIdentity(
     throw new Error("Staged review outcome conflicts with action identity");
 }
 
+function hasConflictingStagedIdentity(
+  value: unknown,
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+): boolean {
+  if (!isRecord(value) || !isRecord(value.action)) return false;
+  const action = value.action;
+  return (
+    ("phaseRunId" in action && action.phaseRunId !== ctx.runId) ||
+    ("handler" in action && action.handler !== reaction.handler) ||
+    ("attempt" in action && action.attempt !== reaction.attempt) ||
+    ("causationEventId" in action && action.causationEventId !== reaction.causationEventId)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function classifyReviewFailure(
   completion: Extract<StagedReviewOutcome["completion"], { status: "failed" }>,
 ): "retryable" | "human-required" {
-  if (completion.callerAborted) return "human-required";
+  if (
+    completion.callerAborted ||
+    completion.providerAborted ||
+    completion.providerFailureKind === "workspace-guard"
+  )
+    return "human-required";
   const status = completion.workspaceStatus;
   return status && status.before === status.after ? "retryable" : "human-required";
 }
