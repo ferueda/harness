@@ -126,7 +126,10 @@ describe("Factory action lifecycle kernel", () => {
           data: {
             expectedPredecessor: "triage-complete",
             inputRefs: [inputRef],
+            intent: "start",
             reviewCeiling: 1,
+            publicationMode: "local",
+            outputPlan: "dev/plans/item-1.md",
           },
         },
       ]),
@@ -195,7 +198,14 @@ describe("Factory action lifecycle kernel", () => {
       workItemKey: "item-1",
       occurredAt: "2026-07-11T02:00:00.000Z",
       phaseRunId: "planning-run",
-      data: { expectedPredecessor: "triage-complete", inputRefs: [inputRef], reviewCeiling: 2 },
+      data: {
+        expectedPredecessor: "triage-complete",
+        inputRefs: [inputRef],
+        intent: "start",
+        reviewCeiling: 2,
+        publicationMode: "local",
+        outputPlan: "dev/plans/item-1.md",
+      },
     };
     const events: FactoryLifecycleEvent[] = [
       imported(),
@@ -520,7 +530,14 @@ describe("Factory action lifecycle kernel", () => {
         workItemKey: "item-1",
         occurredAt: "2026-07-11T03:00:00.000Z",
         phaseRunId: "planning-run",
-        data: { expectedPredecessor: "triage-complete", inputRefs: [inputRef], reviewCeiling: 2 },
+        data: {
+          expectedPredecessor: "triage-complete",
+          inputRefs: [inputRef],
+          intent: "start",
+          reviewCeiling: 2,
+          publicationMode: "pull-request",
+          outputPlan: "dev/plans/item-1.md",
+        },
       },
       {
         version: 1,
@@ -715,11 +732,10 @@ describe("Factory store and artifact boundaries", () => {
       actions: { triageWorkItem: frozen },
     });
 
-    expect(
-      FactoryPhaseRunIdentitySchema.parse(
-        JSON.parse(readFileSync(join(runDir, "context/phase-run.json"), "utf8")),
-      ).actions.triageWorkItem,
-    ).toEqual(frozen);
+    const parsed = FactoryPhaseRunIdentitySchema.parse(
+      JSON.parse(readFileSync(join(runDir, "context/phase-run.json"), "utf8")),
+    );
+    expect(parsed.phase === "triage" ? parsed.actions.triageWorkItem : undefined).toEqual(frozen);
   });
 
   test("rejects malformed persisted action profiles", () => {

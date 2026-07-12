@@ -1,0 +1,291 @@
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
+import { createFactoryArtifactRef } from "./factory-artifact-ref.ts";
+import { factoryActionKey } from "./factory-action-contract.ts";
+import {
+  factoryActionResultPath,
+  readFactoryActionResult,
+  writeFactoryActionResult,
+} from "./factory-action-result.ts";
+import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
+import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
+import type { openFactoryPlanningRunContext } from "./factory-planning-run-context.ts";
+import { FACTORY_PLANNING_SCHEMA_PATH } from "./factory-planning-run-context.ts";
+import { parseFactoryPlanningOutput } from "./factory-planning-schemas.ts";
+import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
+import {
+  renderFactoryPlanningInitialPrompt,
+  renderFactoryPlanningRevisionPrompt,
+} from "./prompts/index.ts";
+import {
+  decideNextFactoryAction,
+  reduceFactoryLifecycleEvents,
+  type FactoryLifecycleState,
+  type FactoryReaction,
+} from "./factory-state-machine.ts";
+
+type PlanningContext = ReturnType<typeof openFactoryPlanningRunContext>;
+
+export async function producePlanCandidate(input: {
+  ctx: PlanningContext;
+  factoryStateRoot: string;
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>;
+  maxRuntimeMs: number;
+  signal?: AbortSignal;
+  agentProviderFactory: (options: AgentProviderOptions) => Agent;
+}): Promise<{ event: FactoryLifecycleEvent; state: FactoryLifecycleState }> {
+  const { ctx, reaction } = input;
+  assertReaction(ctx, input.factoryStateRoot, reaction);
+  const actionDir = join(
+    ctx.runDir,
+    "actions",
+    String(reaction.attempt),
+    reaction.handler,
+    factoryActionKey({ ...reaction, phaseRunId: ctx.runId }),
+  );
+  const resultPath = factoryActionResultPath(actionDir);
+  if (!existsSync(resultPath)) {
+    mkdirSync(actionDir, { recursive: true });
+    const scratchDir = join(ctx.workspace, ".harness/factory-drafts", ctx.runId);
+    const draftPath = join(scratchDir, "draft.md");
+    mkdirSync(scratchDir, { recursive: true });
+    const previous = previousCandidate(ctx, input.factoryStateRoot, reaction);
+    if (previous) copyFileSync(previous.path, draftPath);
+    const blocking = previous ? latestBlocking(ctx, input.factoryStateRoot) : [];
+    const prompt = previous
+      ? renderFactoryPlanningRevisionPrompt({
+          draftPath,
+          currentDate: new Date().toISOString().slice(0, 10),
+          reviewFindingsJson: JSON.stringify(blocking, null, 2),
+        })
+      : renderFactoryPlanningInitialPrompt({
+          workItemJson: JSON.stringify(ctx.workItem, null, 2),
+          draftPath,
+          currentDate: new Date().toISOString().slice(0, 10),
+        });
+    writeFileSync(join(actionDir, "planner.prompt.md"), prompt);
+    const profile = ctx.identity.actions.producePlanCandidate;
+    const provider = input.agentProviderFactory({
+      provider: profile.provider,
+      ...(profile.provider === "codex" && profile.executable
+        ? { codexPathOverride: profile.executable }
+        : {}),
+    });
+    const result = await provider.run({
+      workspace: ctx.workspace,
+      prompt,
+      schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
+      model: profile.model,
+      ...(profile.provider === "codex"
+        ? {
+            sandboxMode: profile.sandbox,
+            approvalPolicy: profile.approvalPolicy,
+            modelReasoningEffort: profile.reasoningEffort,
+          }
+        : {}),
+      workspaceGuard: "record",
+      maxRuntimeMs: input.maxRuntimeMs,
+      logPath: join(actionDir, "planner.stream.jsonl"),
+      ...(previous?.session ? { session: previous.session } : {}),
+      signal: input.signal,
+    });
+    writeFileSync(
+      join(actionDir, "planner.raw.json"),
+      `${JSON.stringify(result.raw ?? result, null, 2)}\n`,
+    );
+    const output = result.ok ? parseFactoryPlanningOutput(result.structuredOutput) : undefined;
+    if (output && previous && output.outcome === "draft-ready")
+      validateDecisions(output.findingDecisions, blocking);
+    const terminal: FactoryActionEvent = result.ok
+      ? buildSuccess(
+          ctx,
+          reaction,
+          actionDir,
+          draftPath,
+          output!,
+          result.session ?? previous?.session,
+        )
+      : buildFailure(
+          ctx,
+          reaction,
+          actionDir,
+          result.error,
+          result.aborted ? "human-required" : "retryable",
+        );
+    writeFactoryActionResult(actionDir, terminal);
+  }
+  return appendFactoryActionEvent({
+    factoryStateRoot: input.factoryStateRoot,
+    event: readFactoryActionResult(actionDir),
+    expectedLastEventId: reaction.causationEventId,
+  });
+}
+
+function validateDecisions(decisions: Array<{ findingId: string }>, blocking: unknown[]): void {
+  const expected = new Set(
+    blocking.flatMap((value) =>
+      typeof value === "object" && value && "id" in value && typeof value.id === "string"
+        ? [value.id]
+        : [],
+    ),
+  );
+  const seen = new Set(decisions.map((decision) => decision.findingId));
+  if (
+    seen.size !== decisions.length ||
+    seen.size !== expected.size ||
+    [...expected].some((id) => !seen.has(id))
+  )
+    throw new Error("Planner finding decisions do not match the latest must_fix findings");
+}
+
+function buildSuccess(
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  actionDir: string,
+  draftPath: string,
+  output: ReturnType<typeof parseFactoryPlanningOutput>,
+  session: AgentSessionRef | undefined,
+): FactoryActionEvent {
+  const common = eventCommon(ctx, reaction, actionDir);
+  writeFileSync(join(actionDir, "planner.json"), `${JSON.stringify(output, null, 2)}\n`);
+  if (output.outcome === "needs-human") {
+    writeFileSync(
+      join(actionDir, "questions.json"),
+      `${JSON.stringify(output.humanQuestions, null, 2)}\n`,
+    );
+    const questions = ref(ctx, join(actionDir, "questions.json"));
+    return {
+      ...common,
+      id: `planning.input.required:${factoryActionKey({ ...reaction, phaseRunId: ctx.runId })}`,
+      type: "planning.input.required",
+      data: { ...common.data, evidence: [questions], questions },
+    };
+  }
+  if (!session)
+    return buildFailure(
+      ctx,
+      reaction,
+      actionDir,
+      "Planner session was not captured",
+      "human-required",
+    );
+  if (!existsSync(draftPath) || readFileSync(draftPath).length === 0)
+    return buildFailure(ctx, reaction, actionDir, "Planner draft is missing or empty", "terminal");
+  const candidatePath = join(actionDir, "candidate.md");
+  copyFileSync(draftPath, candidatePath);
+  const candidate = ref(ctx, candidatePath);
+  return {
+    ...common,
+    id: `planning.candidate.produced:${factoryActionKey({ ...reaction, phaseRunId: ctx.runId })}`,
+    type: "planning.candidate.produced",
+    data: { ...common.data, evidence: [candidate], candidate, effectiveSession: session },
+  };
+}
+
+function buildFailure(
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  actionDir: string,
+  message: string,
+  failureKind: "retryable" | "human-required" | "terminal",
+): FactoryActionEvent {
+  const common = eventCommon(ctx, reaction, actionDir);
+  const failurePath = join(actionDir, "failure.json");
+  writeFileSync(failurePath, `${JSON.stringify({ message, failureKind }, null, 2)}\n`);
+  const failure = ref(ctx, failurePath);
+  return {
+    ...common,
+    id: `factory.action.failed:${factoryActionKey({ ...reaction, phaseRunId: ctx.runId })}`,
+    type: "factory.action.failed",
+    data: {
+      ...common.data,
+      evidence: [failure],
+      execution: { ...common.data.execution, runRef: failure },
+      phase: "planning",
+      failureKind,
+      message,
+    },
+  };
+}
+
+function eventCommon(
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  actionDir: string,
+) {
+  const placeholder = join(actionDir, "planner.raw.json");
+  if (!existsSync(placeholder)) writeFileSync(placeholder, "{}\n");
+  return {
+    version: 1 as const,
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+    occurredAt: new Date().toISOString(),
+    phaseRunId: ctx.runId,
+    data: {
+      handler: "producePlanCandidate" as const,
+      handlerVersion: 1 as const,
+      attempt: reaction.attempt,
+      causationEventId: reaction.causationEventId,
+      execution: { workspaceRef: ctx.factoryStore.repo.id, runRef: ref(ctx, placeholder) },
+      evidence: [ref(ctx, placeholder)],
+    },
+  };
+}
+
+function ref(ctx: PlanningContext, path: string) {
+  return createFactoryArtifactRef({
+    base: "factory-store",
+    root: ctx.factoryStore.projectRoot,
+    path: relative(ctx.factoryStore.projectRoot, path),
+  });
+}
+
+function assertReaction(
+  ctx: PlanningContext,
+  root: string,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+) {
+  const events = readFactoryActionEvents(root, deriveFactoryWorkItemKey(ctx.workItem));
+  const state = reduceFactoryLifecycleEvents(events);
+  const latest = events.at(-1);
+  if (
+    !state ||
+    !latest ||
+    reaction.handler !== "producePlanCandidate" ||
+    JSON.stringify(decideNextFactoryAction(state, latest)) !== JSON.stringify(reaction)
+  )
+    throw new Error("producePlanCandidate reaction conflicts with durable Factory state");
+}
+
+function previousCandidate(
+  ctx: PlanningContext,
+  root: string,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+): { path: string; session: AgentSessionRef } | undefined {
+  if (reaction.attempt === 1) return undefined;
+  const event = readFactoryActionEvents(root, deriveFactoryWorkItemKey(ctx.workItem)).findLast(
+    (candidate) =>
+      candidate.type === "planning.candidate.produced" && candidate.phaseRunId === ctx.runId,
+  );
+  if (!event || event.type !== "planning.candidate.produced")
+    throw new Error("Planning revision has no prior candidate");
+  const session = event.data.effectiveSession;
+  if (session.provider !== "cursor" && session.provider !== "codex")
+    throw new Error("Planning candidate has an invalid provider session");
+  return {
+    path: join(ctx.factoryStore.projectRoot, event.data.candidate.path),
+    session: { provider: session.provider, id: session.id },
+  };
+}
+
+function latestBlocking(ctx: PlanningContext, root: string): unknown[] {
+  const event = readFactoryActionEvents(root, deriveFactoryWorkItemKey(ctx.workItem)).findLast(
+    (candidate) =>
+      candidate.type === "planning.review.completed" && candidate.phaseRunId === ctx.runId,
+  );
+  if (!event || event.type !== "planning.review.completed" || !event.data.blockingFindings)
+    throw new Error("Planning revision has no blocking findings");
+  return JSON.parse(
+    readFileSync(join(ctx.factoryStore.projectRoot, event.data.blockingFindings.path), "utf8"),
+  );
+}

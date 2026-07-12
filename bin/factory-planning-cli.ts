@@ -1,6 +1,17 @@
 import type { LinearPlanningUpdatePlan } from "../lib/factory-linear-planning-apply.ts";
 import type { FactoryLifecycleWarning } from "../lib/factory-lifecycle.ts";
 import type { FactoryPlanningRunMeta } from "../lib/factory-planning-run-context.ts";
+import { formatFactoryActionOutput } from "./factory-action-output.ts";
+import type { FactoryReaction } from "../lib/factory-state-machine.ts";
+
+export function factoryPlanningActionOutput(input: {
+  phaseRunId?: string;
+  action?: { handler: string; attempt: number; eventId: string };
+  next: FactoryReaction;
+  linearApplied: boolean;
+}) {
+  return formatFactoryActionOutput({ phase: "planning", ...input });
+}
 
 export type FactoryPlanningLinearUpdate = {
   started?: LinearPlanningUpdatePlan;

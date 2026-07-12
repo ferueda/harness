@@ -5,6 +5,7 @@ import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
 import { formatFactoryActionOutput, withManualCommand } from "./factory-action-output.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
+import { factoryPlanningActionOutput } from "./factory-planning-cli.ts";
 import {
   assertFactoryPathContained,
   createFactoryArtifactRef,
@@ -31,11 +32,13 @@ import {
   loadFactoryConfigSnapshot,
   resolveFactoryLinearSettings,
   resolveFactoryLinearSettingsFromSnapshot,
+  resolveFactoryPlanningSettingsFromSnapshot,
   resolveFactoryRoleAgent,
   resolveFactoryRoleAgentFromSnapshot,
   resolveHarnessOptions,
   resolveHarnessWorkspace,
   type FactoryLinearSettings,
+  type FactoryRoleAgent,
 } from "../lib/config.ts";
 import {
   factoryStoreMetadata,
@@ -76,6 +79,12 @@ import {
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 import { run as runFactoryTriage, triageWorkItem } from "../workflows/factory-triage.workflow.ts";
+import { producePlanCandidate } from "../lib/factory-plan-candidate-action.ts";
+import { reviewPlanCandidate } from "../lib/factory-plan-review-action.ts";
+import {
+  createFactoryPlanningRunContext,
+  openFactoryPlanningRunContext,
+} from "../lib/factory-planning-run-context.ts";
 
 type FactoryStatusOptions = {
   workspace?: string;
@@ -94,6 +103,18 @@ type FactoryTriageStationOptions = {
   dryRun: boolean;
   verbose: boolean;
   rerun: boolean;
+  factoryStoreRoot?: string;
+  factoryStoreProjectId?: string;
+};
+type FactoryPlanningStationOptions = {
+  workspace?: string;
+  itemFile?: string;
+  linearIssue?: string;
+  outputPlan?: string;
+  maxRuntimeMs: number;
+  apply: boolean;
+  rerun: boolean;
+  verbose: boolean;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
 };
@@ -396,9 +417,141 @@ async function readStreamToString(stream: Readable): Promise<string> {
 
 function addFactoryPlanningStationCommand(parent: Command): void {
   const planning = parent.command("planning").description("Manage factory planning station");
-  addUnavailableFactoryPhaseCommand(planning, "run", "planning", true);
-  addUnavailableFactoryPhaseCommand(planning, "publish", "planning publication");
-  addUnavailableFactoryPhaseCommand(planning, "mark-plan-merged", "planning publication");
+  planning
+    .command("run", { isDefault: true })
+    .description("Run exactly one pending planning action")
+    .option("--workspace <path>", "target repo")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier")
+    .option("--output-plan <path>", "plan path under dev/plans")
+    .option("--max-runtime-ms <ms>", "action timeout", (value) => Number(value), 900_000)
+    .option("--factory-store-root <path>", "durable factory store root")
+    .option("--factory-store-project-id <id>", "durable factory store project id")
+    .option("--apply", "apply Linear boundary projections", false)
+    .option("--rerun", "restart planning after human/failed state", false)
+    .option("--verbose", "emit workflow events as JSONL to stderr", false)
+    .action(async (options: FactoryPlanningStationOptions) => {
+      validateFactoryWorkItemInput({
+        itemFile: options.itemFile,
+        linearIssue: options.linearIssue,
+      });
+      if (options.apply && !options.linearIssue) throw new Error("--apply requires --linear-issue");
+      const workspace = resolveHarnessWorkspace(options.workspace, process.cwd());
+      const snapshot = loadFactoryConfigSnapshot(workspace);
+      const linearSettings = options.linearIssue
+        ? resolveFactoryLinearSettingsFromSnapshot(snapshot)
+        : undefined;
+      const store = resolveFactoryStore({
+        workspace,
+        factoryStoreRoot: options.factoryStoreRoot,
+        factoryStoreProjectId: options.factoryStoreProjectId,
+        env: process.env,
+        configSnapshot: snapshot,
+      });
+      const factoryStore = factoryStoreMetadata(store);
+      const input = await resolveFactoryWorkItemInput({
+        workspace,
+        itemFile: options.itemFile,
+        linearIssue: options.linearIssue,
+        linearSettings,
+        env: process.env,
+        linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
+        lifecycleReadMode: "none",
+        factoryStateRoot: store.factoryStateRoot,
+      });
+      const planningSettings = resolveFactoryPlanningSettingsFromSnapshot(snapshot);
+      if (options.linearIssue) {
+        const liveEvents = readFactoryActionEvents(
+          store.factoryStateRoot,
+          deriveFactoryWorkItemKey(input.workItem),
+        );
+        const liveState = reduceFactoryLifecycleEvents(liveEvents);
+        assertLivePlanningStatus(
+          input.workItem,
+          linearSettings!,
+          options.rerun,
+          liveState?.phase === "planning" && !options.rerun,
+        );
+      }
+      const planner = resolveFactoryRoleAgentFromSnapshot(snapshot, {
+        station: "planning",
+        role: "planner",
+      });
+      const reviewer = resolveFactoryRoleAgentFromSnapshot(snapshot, {
+        station: "planning",
+        role: "reviewer",
+      });
+      const result = await runOneFactoryPlanningAction({
+        factoryStateRoot: store.factoryStateRoot,
+        factoryStore,
+        workspace,
+        workItem: input.workItem,
+        itemFile: options.itemFile,
+        linearIssue: options.linearIssue,
+        outputPlan: options.outputPlan,
+        rerun: options.rerun,
+        reviewCeiling: planningSettings.maxReviewIterations,
+        plannerRole: planner,
+        reviewerRole: reviewer,
+        maxRuntimeMs: options.maxRuntimeMs,
+        issueRef: options.linearIssue,
+        applyAdapter: options.apply
+          ? createLinearFactoryAdapter({
+              apiKey: process.env.LINEAR_API_KEY ?? "",
+              settings: linearSettings!,
+            })
+          : undefined,
+      });
+      console.log(JSON.stringify(factoryPlanningActionOutput(result), null, 2));
+    });
+  planning
+    .command("publish")
+    .description("Record the reviewed plan pull request")
+    .requiredOption("--linear-issue <issue>")
+    .requiredOption("--url <url>")
+    .requiredOption("--plan <path>")
+    .option("--apply", "apply Linear publication projection", false)
+    .option("--workspace <path>", "target repo")
+    .action(async (options) => recordPlanningPublication(options, "opened"));
+  planning
+    .command("mark-plan-merged")
+    .description("Record the reviewed plan merge")
+    .requiredOption("--linear-issue <issue>")
+    .requiredOption("--url <url>")
+    .requiredOption("--commit <sha>")
+    .option("--apply", "apply Linear merge projection", false)
+    .option("--workspace <path>", "target repo")
+    .action(async (options) => recordPlanningPublication(options, "merged"));
+}
+
+function assertLivePlanningStatus(
+  workItem: FactoryWorkItem,
+  settings: FactoryLinearSettings,
+  restarting: boolean,
+  continuing: boolean,
+): void {
+  const status = workItem.metadata?.linearStatus;
+  const allowed = continuing
+    ? [settings.statuses.planning]
+    : restarting
+      ? [
+          settings.statuses.needsInfo,
+          settings.statuses.needsPlanReview,
+          settings.statuses.planningFailed,
+        ]
+      : [
+          settings.statuses.needsPlan,
+          settings.statuses.needsInfo,
+          settings.statuses.needsPlanReview,
+          settings.statuses.planningFailed,
+        ];
+  if (
+    typeof status !== "string" ||
+    !allowed.some((value) => value.toLowerCase() === status.toLowerCase())
+  )
+    throw new Error(
+      `Linear issue status ${String(status ?? "unknown")} is not valid for Factory planning`,
+    );
 }
 
 function addFactoryImplementationStationCommand(parent: Command): void {
@@ -406,6 +559,308 @@ function addFactoryImplementationStationCommand(parent: Command): void {
     .command("implementation")
     .description("Manage factory implementation station");
   addUnavailableFactoryPhaseCommand(implementation, "run", "implementation", true);
+}
+
+export async function runOneFactoryPlanningAction(input: {
+  factoryStateRoot: string;
+  factoryStore: FactoryStoreMeta;
+  workspace: string;
+  workItem: FactoryWorkItem;
+  itemFile?: string;
+  linearIssue?: string;
+  outputPlan?: string;
+  rerun: boolean;
+  reviewCeiling: number;
+  plannerRole: FactoryRoleAgent;
+  reviewerRole: FactoryRoleAgent;
+  maxRuntimeMs: number;
+  issueRef?: string;
+  applyAdapter?: LinearFactoryAdapter;
+}) {
+  const key = deriveFactoryWorkItemKey(input.workItem);
+  let events = readFactoryActionEvents(input.factoryStateRoot, key);
+  let latest = events.at(-1);
+  let state = reduceFactoryLifecycleEvents(events);
+  let reaction = latest && state ? decideNextFactoryAction(state, latest) : undefined;
+  let createdPhase = false;
+  const active = reaction?.kind === "invoke" && reaction.phase === "planning";
+  if (!active) {
+    if (state?.phase === "planning" && !input.rerun) {
+      return { phaseRunId: state.phaseRunId, next: reaction!, linearApplied: false };
+    }
+    if (
+      input.rerun &&
+      !(
+        state?.phase === "planning" &&
+        (state.status === "needs-human" || state.status === "failed")
+      )
+    )
+      throw new Error("planning --rerun is allowed only from needs-human or failed");
+    const created = createFactoryPlanningRunContext({
+      workspace: input.workspace,
+      runsDir: join(input.factoryStore.projectRoot, "runs/factory"),
+      workItem: input.workItem,
+      plannerRole: input.plannerRole,
+      reviewerRole: input.reviewerRole,
+      outputPlan: input.outputPlan,
+      maxReviewIterations: input.reviewCeiling,
+      maxRuntimeMs: input.maxRuntimeMs,
+      agentProviderFactory: createAgentProvider,
+      factoryStore: input.factoryStore,
+    });
+    const imported: FactoryActionLifecycleEvent = {
+      version: 1,
+      id: `work_item.imported:${key}`,
+      type: "work_item.imported",
+      workItemKey: key,
+      occurredAt: new Date().toISOString(),
+      data: { source: input.workItem.source },
+    };
+    if (!state) {
+      const appended = appendFactoryEventOrRejectConcurrent({
+        factoryStateRoot: input.factoryStateRoot,
+        event: imported,
+        expectedLastEventId: null,
+      });
+      state = appended.state;
+      latest = appended.event;
+    }
+    const identity = readFactoryPhaseRunIdentity(created.runDir);
+    if (identity.phase !== "planning") throw new Error("Created Factory phase is not planning");
+    const request: FactoryActionLifecycleEvent = {
+      version: 1,
+      id: `planning.requested:${created.runId}`,
+      type: "planning.requested",
+      workItemKey: key,
+      occurredAt: new Date().toISOString(),
+      phaseRunId: created.runId,
+      data: {
+        expectedPredecessor: state!.lastEventId,
+        inputRefs: [
+          createFactoryArtifactRef({
+            base: "factory-store",
+            root: input.factoryStore.projectRoot,
+            path: relative(
+              input.factoryStore.projectRoot,
+              join(created.runDir, "context/work-item.json"),
+            ),
+          }),
+        ],
+        intent: input.rerun ? "restart" : "start",
+        reviewCeiling: identity.reviewCeiling,
+        publicationMode: identity.publicationMode,
+        outputPlan: identity.outputPlan,
+      },
+    };
+    const requested = appendFactoryEventOrRejectConcurrent({
+      factoryStateRoot: input.factoryStateRoot,
+      event: request,
+      expectedLastEventId: state!.lastEventId,
+    });
+    state = requested.state;
+    latest = requested.event;
+    reaction = decideNextFactoryAction(state, latest);
+    createdPhase = true;
+  }
+  if (!reaction || reaction.kind !== "invoke" || reaction.phase !== "planning")
+    return {
+      phaseRunId: state && "phaseRunId" in state ? state.phaseRunId : undefined,
+      next: reaction ?? { kind: "wait" as const, reason: "phase-command" as const },
+      linearApplied: false,
+    };
+  const phaseRunId = latest!.phaseRunId!;
+  const ctx = openFactoryPlanningRunContext({
+    workspace: input.workspace,
+    runsDir: join(input.factoryStore.projectRoot, "runs/factory"),
+    phaseRunId,
+    workItem: input.workItem,
+    factoryStore: input.factoryStore,
+  });
+  if (createdPhase && input.applyAdapter) {
+    await input.applyAdapter.applyPlanningStarted({
+      issueRef: input.issueRef!,
+      runId: phaseRunId,
+      runDir: ctx.runDir,
+    });
+  }
+  console.error(
+    JSON.stringify({
+      harnessFactory: "action-started",
+      phase: "planning",
+      phaseRunId,
+      runDir: ctx.runDir,
+      handler: reaction.handler,
+      attempt: reaction.attempt,
+    }),
+  );
+  const handled =
+    reaction.handler === "producePlanCandidate"
+      ? await producePlanCandidate({
+          ctx,
+          factoryStateRoot: input.factoryStateRoot,
+          reaction,
+          maxRuntimeMs: input.maxRuntimeMs,
+          agentProviderFactory: createAgentProvider,
+        })
+      : await reviewPlanCandidate({
+          ctx,
+          factoryStateRoot: input.factoryStateRoot,
+          reaction,
+          maxRuntimeMs: input.maxRuntimeMs,
+          agentProviderFactory: createAgentProvider,
+        });
+  if (
+    input.applyAdapter &&
+    handled.state.phase === "planning" &&
+    (handled.state.status === "needs-human" || handled.state.status === "failed")
+  ) {
+    if (handled.state.status === "failed")
+      await input.applyAdapter.applyPlanningFailed({
+        issueRef: input.issueRef!,
+        runId: phaseRunId,
+        runDir: ctx.runDir,
+        error:
+          handled.event.type === "factory.action.failed"
+            ? handled.event.data.message
+            : "Factory planning failed",
+      });
+    else
+      await input.applyAdapter.applyPlanningCompleted({
+        issueRef: input.issueRef!,
+        runId: phaseRunId,
+        runDir: ctx.runDir,
+        status:
+          handled.event.type === "planning.review.completed"
+            ? "plan-review-unresolved"
+            : "plan-needs-human",
+      });
+  }
+  return {
+    phaseRunId,
+    action: { handler: reaction.handler, attempt: reaction.attempt, eventId: handled.event.id },
+    next: withManualCommand(
+      decideNextFactoryAction(handled.state, handled.event),
+      planningCommand(input),
+    ),
+    linearApplied: Boolean(input.applyAdapter),
+  };
+}
+
+function planningCommand(input: {
+  workspace: string;
+  itemFile?: string;
+  linearIssue?: string;
+}): string {
+  const args = ["harness", "factory", "planning", "run", "--workspace", input.workspace];
+  if (input.itemFile) args.push("--item-file", input.itemFile);
+  if (input.linearIssue) args.push("--linear-issue", input.linearIssue);
+  return args.map(shellArg).join(" ");
+}
+
+async function recordPlanningPublication(
+  options: {
+    workspace?: string;
+    linearIssue: string;
+    url: string;
+    plan?: string;
+    commit?: string;
+    apply?: boolean;
+  },
+  kind: "opened" | "merged",
+): Promise<void> {
+  const workspace = resolveHarnessWorkspace(options.workspace, process.cwd());
+  const snapshot = loadFactoryConfigSnapshot(workspace);
+  const linearSettings = resolveFactoryLinearSettingsFromSnapshot(snapshot);
+  const store = resolveFactoryStore({ workspace, env: process.env, configSnapshot: snapshot });
+  const factoryStore = factoryStoreMetadata(store);
+  const work = await resolveFactoryWorkItemInput({
+    workspace,
+    linearIssue: options.linearIssue,
+    linearSettings,
+    env: process.env,
+    linearAdapterFactory: createLinearFactoryAdapter,
+    lifecycleReadMode: "none",
+    factoryStateRoot: store.factoryStateRoot,
+  });
+  const key = deriveFactoryWorkItemKey(work.workItem);
+  const events = readFactoryActionEvents(store.factoryStateRoot, key);
+  const latest = events.at(-1);
+  const state = reduceFactoryLifecycleEvents(events);
+  if (!latest || !state || state.phase !== "planning" || state.status !== "awaiting-plan-merge")
+    throw new Error("Planning publication requires an approved pull-request planning candidate");
+  const candidate = events.findLast(
+    (event) =>
+      event.type === "planning.candidate.produced" && event.phaseRunId === state.phaseRunId,
+  );
+  if (!candidate || candidate.type !== "planning.candidate.produced")
+    throw new Error("Planning publication has no reviewed candidate");
+  if (kind === "opened") {
+    const suppliedPlan = resolve(workspace, options.plan!);
+    const candidatePath = resolve(factoryStore.projectRoot, candidate.data.candidate.path);
+    if (
+      !existsSync(suppliedPlan) ||
+      !readFileSync(suppliedPlan).equals(readFileSync(candidatePath))
+    )
+      throw new Error("Published plan does not match the reviewed immutable candidate");
+  }
+  const event: FactoryActionLifecycleEvent =
+    kind === "opened"
+      ? {
+          version: 1,
+          id: `plan_pr.opened:${state.phaseRunId}`,
+          type: "plan_pr.opened",
+          workItemKey: key,
+          occurredAt: new Date().toISOString(),
+          phaseRunId: state.phaseRunId,
+          data: { url: options.url, plan: candidate.data.candidate },
+        }
+      : {
+          version: 1,
+          id: `plan_pr.merged:${state.phaseRunId}`,
+          type: "plan_pr.merged",
+          workItemKey: key,
+          occurredAt: new Date().toISOString(),
+          phaseRunId: state.phaseRunId,
+          data: { url: options.url, commit: options.commit! },
+        };
+  const appended = appendFactoryEventOrRejectConcurrent({
+    factoryStateRoot: store.factoryStateRoot,
+    event,
+    expectedLastEventId: latest.id,
+  });
+  let linearApplied = false;
+  if (options.apply) {
+    const adapter = createLinearFactoryAdapter({
+      apiKey: process.env.LINEAR_API_KEY ?? "",
+      settings: linearSettings,
+    });
+    const projection = {
+      issueRef: options.linearIssue,
+      runId: state.phaseRunId,
+      runDir: join(factoryStore.projectRoot, "runs/factory", state.phaseRunId),
+      approvedPlanPath: options.plan ?? state.outputPlan,
+      approvedPlanPrUrl: options.url,
+    };
+    if (kind === "opened") await adapter.applyPlanningPublished(projection);
+    else
+      await adapter.applyPlanningMerged({
+        ...projection,
+        approvedPlanCommit: options.commit!,
+      });
+    linearApplied = true;
+  }
+  console.log(
+    JSON.stringify(
+      formatFactoryActionOutput({
+        phase: "planning",
+        phaseRunId: state.phaseRunId,
+        next: decideNextFactoryAction(appended.state, appended.event),
+        linearApplied,
+      }),
+      null,
+      2,
+    ),
+  );
 }
 
 function addUnavailableFactoryPhaseCommand(

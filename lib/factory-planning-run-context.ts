@@ -40,6 +40,7 @@ import { FactoryPlanningError, type FactoryPlanningOutput } from "./factory-plan
 import {
   FactoryWorkItemMetadataSchema,
   deriveFactoryWorkItemPlanSlug,
+  parseFactoryWorkItem,
   type FactoryStage,
   type FactoryWorkItem,
   type FactoryWorkItemMetadata,
@@ -56,6 +57,9 @@ import {
   type FactoryExecutionProvenance,
   type FactoryStoreMeta,
 } from "./factory-store.ts";
+import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
+import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
+import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 
 export type DraftValidationReason =
   | "missing"
@@ -376,6 +380,32 @@ function createFactoryPlanningRunContextInternal(
     mkdirSync(join(runDir, "context"));
     mkdirSync(join(runDir, "planning"));
     writeJson(join(runDir, "context/work-item.json"), options.workItem);
+    if (options.factoryStore) {
+      writeFactoryPhaseRunIdentity(runDir, {
+        version: 1,
+        phaseRunId: runId,
+        phase: "planning",
+        workItemKey: deriveFactoryWorkItemKey(options.workItem),
+        workspace,
+        projectId: options.factoryStore.projectId,
+        factoryStateRoot: resolve(options.factoryStore.factoryStateRoot),
+        reviewCeiling: options.maxReviewIterations,
+        outputPlan: relative(
+          workspace,
+          resolveOutputPlan({
+            workspace,
+            outputPlan: options.outputPlan,
+            startedAt,
+            workItem: options.workItem,
+          }),
+        ),
+        publicationMode: options.workItem.source === "linear" ? "pull-request" : "local",
+        actions: {
+          producePlanCandidate: planningExecutionProfile(options.plannerRole),
+          reviewPlanCandidate: planningExecutionProfile(options.reviewerRole),
+        },
+      });
+    }
   } catch (error) {
     cleanupOrphanedFactoryPlanningRunDir(runDir);
     throw asFactoryPlanningError(error);
@@ -551,6 +581,57 @@ function createFactoryPlanningRunContextInternal(
       hooks,
     });
   }
+}
+
+function planningExecutionProfile(role: FactoryPlanningAgentRole): FactoryActionExecutionProfile {
+  if (role.agent === "cursor")
+    return { provider: "cursor", model: role.model ?? DEFAULT_AGENT_MODELS.cursor };
+  return {
+    provider: "codex",
+    model: role.model ?? DEFAULT_AGENT_MODELS.codex,
+    ...(role.codexPathOverride ? { executable: role.codexPathOverride } : {}),
+    sandbox: role.sandboxMode ?? "read-only",
+    approvalPolicy: role.approvalPolicy ?? "never",
+    reasoningEffort: role.modelReasoningEffort ?? "medium",
+  };
+}
+
+export type OpenFactoryPlanningRunContextOptions = {
+  workspace: string;
+  runsDir: string;
+  phaseRunId: string;
+  workItem: FactoryWorkItem;
+  factoryStore: FactoryStoreMeta;
+};
+
+/** Reopen immutable planning policy without allocating or consulting config. */
+export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunContextOptions) {
+  const runDir = join(resolve(options.runsDir), options.phaseRunId);
+  const identity = readFactoryPhaseRunIdentity(runDir);
+  if (
+    identity.phase !== "planning" ||
+    identity.phaseRunId !== options.phaseRunId ||
+    identity.workItemKey !== deriveFactoryWorkItemKey(options.workItem) ||
+    identity.workspace !== resolve(options.workspace) ||
+    identity.projectId !== options.factoryStore.projectId ||
+    identity.factoryStateRoot !== resolve(options.factoryStore.factoryStateRoot)
+  )
+    throw new FactoryPlanningError(
+      `Factory planning phase-run identity conflicts with ${options.phaseRunId}`,
+    );
+  const persisted = parseFactoryWorkItem(
+    JSON.parse(readFileSync(join(runDir, "context/work-item.json"), "utf8")),
+  );
+  if (deriveFactoryWorkItemKey(persisted) !== identity.workItemKey)
+    throw new FactoryPlanningError(`Factory planning input conflicts with ${options.phaseRunId}`);
+  return {
+    runId: identity.phaseRunId,
+    runDir,
+    workspace: identity.workspace,
+    workItem: persisted,
+    factoryStore: options.factoryStore,
+    identity,
+  };
 }
 
 function buildMeta(input: {
