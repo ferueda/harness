@@ -1,8 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import type { Agent, AgentRunInput } from "../lib/agents.ts";
+import { verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import { producePlanCandidate } from "../lib/factory-plan-candidate-action.ts";
 import { reviewPlanCandidate } from "../lib/factory-plan-review-action.ts";
 import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
@@ -207,6 +209,198 @@ test("candidate and review actions step separately and revisions resume the plan
   ).toHaveLength(2);
 });
 
+test("first candidate recovery publishes staged draft bytes without rerunning the provider", async () => {
+  const fixture = planningActionFixture();
+  const reaction = invoke(fixture.start);
+  const actionDir = planningActionDir(fixture.ctx, reaction);
+  mkdirSync(join(actionDir, "planner.json"), { recursive: true });
+  const providerRun = vi.fn<Agent["run"]>(async (input: AgentRunInput) => {
+    const draft = plannerDraftPath(input);
+    writeFileSync(draft, "# Produced first\n");
+    return successfulPlannerResult();
+  });
+  const actionInput = {
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor" as const, run: providerRun }),
+  };
+
+  await expect(producePlanCandidate(actionInput)).rejects.toThrow(/EISDIR|directory/i);
+  rmSync(join(actionDir, "planner.json"), { recursive: true });
+  writeFileSync(fixture.ctx.preparePlannerScratch().draftPath, "# Changed scratch\n");
+
+  const recovered = await producePlanCandidate(actionInput);
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(candidateBytes(fixture.ctx, recovered.event)).toBe("# Produced first\n");
+});
+
+test("revision recovery publishes its staged draft instead of restoring the predecessor", async () => {
+  const fixture = planningActionFixture();
+  const first = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(fixture.start),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      async run(input) {
+        writeFileSync(plannerDraftPath(input), "# Predecessor\n");
+        return successfulPlannerResult();
+      },
+    }),
+  });
+  const reviewed = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(first),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
+      mkdirSync(reviewCtx.runDir!, { recursive: true });
+      writeFileSync(
+        join(reviewCtx.runDir!, "spec-review.json"),
+        JSON.stringify({
+          verdict: "needs_changes",
+          summary: "revise",
+          findings: [
+            {
+              title: "Blocker",
+              severity: "High",
+              location: "plan",
+              issue: "missing",
+              recommendation: "add",
+              rationale: "required",
+              must_fix: true,
+            },
+          ],
+        }),
+      );
+      return { status: "completed", verdict: "needs_changes" };
+    }) as never,
+  });
+  const reaction = invoke(reviewed);
+  const actionDir = planningActionDir(fixture.ctx, reaction);
+  mkdirSync(join(actionDir, "planner.json"), { recursive: true });
+  const providerRun = vi.fn<Agent["run"]>(async (input: AgentRunInput) => {
+    expect(input.session).toEqual({ provider: "cursor", id: "planner-session" });
+    writeFileSync(plannerDraftPath(input), "# Produced revision\n");
+    return successfulPlannerResult([
+      { findingId: "spec-001", decision: "implement", rationale: "fixed" },
+    ]);
+  });
+  const actionInput = {
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor" as const, run: providerRun }),
+  };
+
+  await expect(producePlanCandidate(actionInput)).rejects.toThrow(/EISDIR|directory/i);
+  rmSync(join(actionDir, "planner.json"), { recursive: true });
+  writeFileSync(fixture.ctx.preparePlannerScratch().draftPath, "# Predecessor\n");
+
+  const recovered = await producePlanCandidate(actionInput);
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(candidateBytes(fixture.ctx, recovered.event)).toBe("# Produced revision\n");
+});
+
+test("candidate recovery records a terminal failure for a corrupt staged artifact", async () => {
+  const fixture = planningActionFixture();
+  const reaction = invoke(fixture.start);
+  const actionDir = planningActionDir(fixture.ctx, reaction);
+  mkdirSync(join(actionDir, "planner.json"), { recursive: true });
+  const providerRun = vi.fn<Agent["run"]>(async (input: AgentRunInput) => {
+    writeFileSync(plannerDraftPath(input), "# Produced first\n");
+    return successfulPlannerResult();
+  });
+  const actionInput = {
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor" as const, run: providerRun }),
+  };
+
+  await expect(producePlanCandidate(actionInput)).rejects.toThrow(/EISDIR|directory/i);
+  rmSync(join(actionDir, "planner.json"), { recursive: true });
+  writeFileSync(join(actionDir, "candidate.md"), "# Corrupt\n");
+
+  const recovered = await producePlanCandidate(actionInput);
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(recovered.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+});
+
+test("malformed staged candidate result fails terminally without invoking the provider", async () => {
+  const fixture = planningActionFixture();
+  const reaction = invoke(fixture.start);
+  const actionDir = planningActionDir(fixture.ctx, reaction);
+  mkdirSync(actionDir, { recursive: true });
+  writeFileSync(join(actionDir, "provider-result.json"), "{}\n");
+  const providerRun = vi.fn<Agent["run"]>();
+
+  const completed = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+
+  expect(providerRun).not.toHaveBeenCalled();
+  expect(completed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+});
+
+test("invalid candidate draft becomes a terminal result", async () => {
+  const fixture = planningActionFixture();
+  const providerRun = vi.fn<Agent["run"]>(async () => successfulPlannerResult());
+
+  const completed = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(fixture.start),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(completed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+});
+
+test("candidate failure classification ignores misleading error text", async () => {
+  const fixture = planningActionFixture();
+  const completed = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(fixture.start),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => ({
+        ok: false,
+        error: "aborted workspace changed timeout",
+        exitCode: 1,
+        raw: unchangedWorkspace(),
+      }),
+    }),
+  });
+  expect(completed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "retryable" },
+  });
+});
+
 test.each([
   {
     name: "workspace mutation",
@@ -284,8 +478,12 @@ test.each([
     reviewRunner: (async (reviewCtx: { runDir?: string }) => {
       mkdirSync(reviewCtx.runDir!, { recursive: true });
       writeFileSync(
-        join(reviewCtx.runDir!, "spec-review.json"),
-        JSON.stringify({ verdict: "blocked", summary: error, findings: [] }),
+        join(reviewCtx.runDir!, "spec-review.raw.json"),
+        JSON.stringify({
+          workspaceStatus: aborted
+            ? { before: "clean", after: "clean" }
+            : { before: "clean", after: "changed" },
+        }),
       );
       return {
         status: "failed",
@@ -296,6 +494,177 @@ test.each([
   expect(reviewed.event).toMatchObject({
     type: "factory.action.failed",
     data: { failureKind: "human-required" },
+  });
+});
+
+test("review failure text cannot override validated unchanged workspace evidence", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  const reviewed = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
+      mkdirSync(reviewCtx.runDir!, { recursive: true });
+      writeFileSync(
+        join(reviewCtx.runDir!, "spec-review.raw.json"),
+        JSON.stringify(unchangedWorkspace()),
+      );
+      return {
+        status: "failed",
+        failedReviews: [
+          {
+            key: "spec",
+            stage: "review-spec",
+            error: "aborted after workspace-guard modified the workspace",
+          },
+        ],
+      };
+    }) as never,
+  });
+
+  expect(reviewed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "retryable" },
+  });
+});
+
+test("invalid completed review recovers its staged result without rerunning the reviewer", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  const reaction = invoke(candidate);
+  const actionDir = planningActionDir(fixture.ctx, reaction);
+  mkdirSync(join(actionDir, "failure.json"), { recursive: true });
+  const reviewRunner = vi.fn<
+    (reviewCtx: { runDir?: string }) => Promise<{ status: "completed"; verdict: "pass" }>
+  >(async (reviewCtx) => {
+    mkdirSync(reviewCtx.runDir!, { recursive: true });
+    writeFileSync(
+      join(reviewCtx.runDir!, "spec-review.raw.json"),
+      JSON.stringify(unchangedWorkspace()),
+    );
+    writeFileSync(join(reviewCtx.runDir!, "spec-review.json"), JSON.stringify({ verdict: "pass" }));
+    return { status: "completed", verdict: "pass" };
+  });
+  const actionInput = {
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor" as const, run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  };
+
+  await expect(reviewPlanCandidate(actionInput)).rejects.toThrow(/EISDIR|directory/i);
+  rmSync(join(actionDir, "failure.json"), { recursive: true });
+  const recovered = await reviewPlanCandidate(actionInput);
+
+  expect(reviewRunner).toHaveBeenCalledTimes(1);
+  expect(recovered.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+});
+
+test("malformed staged review result fails terminally without invoking the reviewer", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  const reaction = invoke(candidate);
+  const actionDir = planningActionDir(fixture.ctx, reaction);
+  mkdirSync(actionDir, { recursive: true });
+  writeFileSync(join(actionDir, "review-result.json"), "{}\n");
+  const reviewRunner = vi.fn<() => never>();
+
+  const reviewed = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+
+  expect(reviewRunner).not.toHaveBeenCalled();
+  expect(reviewed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+});
+
+test("conflicting staged review identity fails closed", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  const reaction = invoke(candidate);
+  const actionDir = planningActionDir(fixture.ctx, reaction);
+  mkdirSync(actionDir, { recursive: true });
+  writeFileSync(
+    join(actionDir, "review-result.json"),
+    `${JSON.stringify({
+      version: 1,
+      action: {
+        phaseRunId: "different-run",
+        handler: "reviewPlanCandidate",
+        attempt: reaction.attempt,
+        causationEventId: reaction.causationEventId,
+      },
+      completion: {
+        status: "invalid",
+        message: "invalid review",
+        callerAborted: false,
+        review: { kind: "missing", message: "missing review" },
+      },
+    })}\n`,
+  );
+  const reviewRunner = vi.fn<() => never>();
+
+  await expect(
+    reviewPlanCandidate({
+      ctx: fixture.ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction,
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: reviewRunner as never,
+    }),
+  ).rejects.toThrow("Staged review outcome conflicts with action identity");
+  expect(reviewRunner).not.toHaveBeenCalled();
+});
+
+test("conflicting local materialization becomes a terminal review result", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  mkdirSync(join(fixture.ctx.workspace, "dev/plans"), { recursive: true });
+  writeFileSync(join(fixture.ctx.workspace, "dev/plans/item-1.md"), "# Existing\n");
+  const reviewRunner = vi.fn<
+    (reviewCtx: { runDir?: string }) => Promise<{ status: "completed"; verdict: "pass" }>
+  >(async (reviewCtx) => {
+    mkdirSync(reviewCtx.runDir!, { recursive: true });
+    writeFileSync(
+      join(reviewCtx.runDir!, "spec-review.raw.json"),
+      JSON.stringify(unchangedWorkspace()),
+    );
+    writeFileSync(
+      join(reviewCtx.runDir!, "spec-review.json"),
+      JSON.stringify({ verdict: "pass", summary: "approved", findings: [] }),
+    );
+    return { status: "completed", verdict: "pass" };
+  });
+
+  const reviewed = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+
+  expect(reviewRunner).toHaveBeenCalledTimes(1);
+  expect(reviewed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
   });
 });
 
@@ -378,6 +747,75 @@ function planningActionFixture() {
     expectedLastEventId: imported.id,
   });
   return { ctx, factoryStateRoot, start };
+}
+
+function planningActionDir(
+  ctx: ReturnType<typeof openFactoryPlanningRunContext>,
+  reaction: Extract<ReturnType<typeof decideNextFactoryAction>, { kind: "invoke" }>,
+): string {
+  return join(
+    ctx.runDir,
+    "actions",
+    String(reaction.attempt),
+    reaction.handler,
+    factoryActionKey({ ...reaction, phaseRunId: ctx.runId }),
+  );
+}
+
+async function produceTestCandidate(fixture: ReturnType<typeof planningActionFixture>) {
+  return producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(fixture.start),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      async run(input) {
+        writeFileSync(plannerDraftPath(input), "# Candidate\n");
+        return successfulPlannerResult();
+      },
+    }),
+  });
+}
+
+function candidateBytes(
+  ctx: ReturnType<typeof openFactoryPlanningRunContext>,
+  event: FactoryLifecycleEvent,
+): string {
+  if (event.type !== "planning.candidate.produced") throw new Error("expected candidate");
+  return readFileSync(
+    verifyFactoryArtifactRef(event.data.candidate, {
+      "factory-store": ctx.factoryStore.projectRoot,
+      repository: ctx.workspace,
+    }),
+    "utf8",
+  );
+}
+
+function plannerDraftPath(input: AgentRunInput): string {
+  const draft = /Draft path:\s+```text\s+([^\n]+)/.exec(input.prompt)?.[1];
+  if (!draft) throw new Error("missing draft path");
+  return draft;
+}
+
+function successfulPlannerResult(
+  findingDecisions: Array<{
+    findingId: string;
+    decision: "implement" | "adapt" | "decline";
+    rationale: string;
+  }> = [],
+) {
+  return {
+    ok: true as const,
+    structuredOutput: {
+      outcome: "draft-ready",
+      summary: "ready",
+      humanQuestions: [],
+      findingDecisions,
+    },
+    raw: unchangedWorkspace(),
+    session: { provider: "cursor" as const, id: "planner-session" },
+  };
 }
 
 function unchangedWorkspace() {

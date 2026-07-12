@@ -1,7 +1,12 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
-import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
+import {
+  createFactoryArtifactRef,
+  FactoryArtifactRefSchema,
+  type FactoryArtifactRef,
+  verifyFactoryArtifactRef,
+} from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
 import {
   factoryActionResultPath,
@@ -12,7 +17,11 @@ import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lif
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import type { openFactoryPlanningRunContext } from "./factory-planning-run-context.ts";
 import { FACTORY_PLANNING_SCHEMA_PATH } from "./factory-planning-run-context.ts";
-import { parseFactoryPlanningOutput } from "./factory-planning-schemas.ts";
+import {
+  FactoryPlanningOutputSchema,
+  parseFactoryPlanningOutput,
+  type FactoryPlanningOutput,
+} from "./factory-planning-schemas.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import { z } from "zod";
@@ -50,40 +59,45 @@ export async function producePlanCandidate(input: {
   const resultPath = factoryActionResultPath(actionDir);
   if (!existsSync(resultPath)) {
     mkdirSync(actionDir, { recursive: true });
-    const { draftPath } = ctx.preparePlannerScratch();
-    const previous = previousCandidate(ctx, input.factoryStateRoot, reaction);
-    if (previous) copyFileSync(previous.path, draftPath);
-    const blocking = previous ? latestBlocking(ctx, input.factoryStateRoot) : [];
-    const prompt = previous
-      ? renderFactoryPlanningRevisionPrompt({
-          draftPath,
-          currentDate: new Date().toISOString().slice(0, 10),
-          reviewFindingsJson: JSON.stringify(blocking, null, 2),
-        })
-      : renderFactoryPlanningInitialPrompt({
-          workItemJson: JSON.stringify(ctx.workItem, null, 2),
-          draftPath,
-          currentDate: new Date().toISOString().slice(0, 10),
-        });
-    writeFileSync(join(actionDir, "planner.prompt.md"), prompt);
-    const profile = ctx.identity.actions.producePlanCandidate;
     const providerResultPath = join(actionDir, "provider-result.json");
-    let result: PlannerOutcome;
-    if (existsSync(providerResultPath)) {
-      const staged = StagedProviderOutcomeSchema.parse(
-        JSON.parse(readFileSync(providerResultPath, "utf8")),
-      );
-      if (
-        staged.version !== 1 ||
-        staged.action?.phaseRunId !== ctx.runId ||
-        staged.action?.handler !== reaction.handler ||
-        staged.action?.attempt !== reaction.attempt ||
-        staged.action?.causationEventId !== reaction.causationEventId ||
-        !staged.outcome
-      )
-        throw new Error("Staged planner outcome conflicts with action identity");
+    const staged = readStagedProviderOutcome(providerResultPath, ctx, reaction);
+    if (staged?.kind === "invalid") {
+      const terminal = buildFailure(ctx, reaction, actionDir, staged.message, "terminal");
+      writeFactoryActionResult(actionDir, terminal);
+      return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+    }
+    let previous: ReturnType<typeof previousCandidate>;
+    let blocking: unknown[];
+    try {
+      previous = previousCandidate(ctx, input.factoryStateRoot, reaction);
+      blocking = previous ? latestBlocking(ctx, input.factoryStateRoot) : [];
+    } catch (error) {
+      if (error instanceof CandidateInputValidationError) {
+        const terminal = buildFailure(ctx, reaction, actionDir, error.message, "terminal");
+        writeFactoryActionResult(actionDir, terminal);
+        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+      }
+      throw error;
+    }
+    let result: PlannerOutcome | undefined;
+    if (staged) {
       result = staged.outcome;
     } else {
+      const { draftPath } = ctx.preparePlannerScratch();
+      if (previous) copyFileSync(previous.path, draftPath);
+      const prompt = previous
+        ? renderFactoryPlanningRevisionPrompt({
+            draftPath,
+            currentDate: new Date().toISOString().slice(0, 10),
+            reviewFindingsJson: JSON.stringify(blocking, null, 2),
+          })
+        : renderFactoryPlanningInitialPrompt({
+            workItemJson: JSON.stringify(ctx.workItem, null, 2),
+            draftPath,
+            currentDate: new Date().toISOString().slice(0, 10),
+          });
+      writeFileSync(join(actionDir, "planner.prompt.md"), prompt);
+      const profile = ctx.identity.actions.producePlanCandidate;
       const provider = input.agentProviderFactory({
         provider: profile.provider,
         ...(profile.provider === "codex" && profile.executable
@@ -97,8 +111,9 @@ export async function producePlanCandidate(input: {
         workspace: ctx.workspace,
         stepId: reaction.handler,
       });
+      let providerResult: Awaited<ReturnType<Agent["run"]>> | undefined;
       try {
-        const providerResult = await provider.run({
+        providerResult = await provider.run({
           workspace: ctx.workspace,
           prompt,
           schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
@@ -116,77 +131,92 @@ export async function producePlanCandidate(input: {
           ...(previous?.session ? { session: previous.session } : {}),
           signal: input.signal,
         });
-        result = providerResult.ok
-          ? {
-              ok: true,
-              structuredOutput: providerResult.structuredOutput,
-              session: normalizeSession(providerResult.session),
-              workspaceUnchanged: workspaceUnchanged(providerResult.raw),
-            }
-          : {
-              ok: false,
-              error: providerResult.error,
-              ...(providerResult.aborted ? { aborted: true } : {}),
-              ...(providerResult.failureKind ? { failureKind: providerResult.failureKind } : {}),
-              workspaceUnchanged: workspaceUnchanged(providerResult.raw),
-            };
+      } catch (error) {
+        finishTelemetry("failed", errorMessage(error));
+        result = {
+          kind: "provider-failure",
+          error: errorMessage(error),
+          ...(input.signal?.aborted ? { aborted: true } : {}),
+          workspaceUnchanged: false,
+        };
+      }
+      if (providerResult) {
+        if (!providerResult.ok) {
+          result = {
+            kind: "provider-failure",
+            error: providerResult.error,
+            ...(providerResult.aborted ? { aborted: true } : {}),
+            ...(providerResult.failureKind ? { failureKind: providerResult.failureKind } : {}),
+            workspaceUnchanged: workspaceUnchanged(providerResult.raw),
+          };
+        } else if (!workspaceUnchanged(providerResult.raw)) {
+          result = {
+            kind: "provider-failure",
+            error: "Agent runtime modified the workspace during planning",
+            failureKind: "workspace-guard",
+            workspaceUnchanged: false,
+          };
+        } else {
+          result = captureProviderSuccess(
+            ctx,
+            actionDir,
+            providerResult.structuredOutput,
+            providerResult.session,
+          );
+        }
         writeFileSync(
           join(actionDir, "planner.raw.json"),
           `${JSON.stringify(providerResult.raw ?? providerResult, null, 2)}\n`,
         );
-        finishTelemetry(result.ok ? "completed" : "failed", result.ok ? undefined : result.error);
-      } catch (error) {
-        finishTelemetry("failed", errorMessage(error));
-        const terminal = buildFailure(
-          ctx,
-          reaction,
-          actionDir,
-          errorMessage(error),
-          isAbortError(error) ? "human-required" : "terminal",
+        finishTelemetry(
+          result.kind === "completed" ? "completed" : "failed",
+          result.kind === "completed" ? undefined : result.error,
         );
-        writeFactoryActionResult(actionDir, terminal);
-        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
       }
+      if (!result) throw new Error("Planner action produced no staged outcome");
       writeDurableFactoryFile(
         providerResultPath,
         `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, outcome: result }, null, 2)}\n`,
         true,
       );
     }
+    if (!result) throw new Error("Planner action produced no staged outcome");
     if (!existsSync(join(actionDir, "planner.raw.json")))
       writeFileSync(join(actionDir, "planner.raw.json"), "{}\n");
-    if (result.ok && !result.workspaceUnchanged) {
-      const terminal = buildFailure(
-        ctx,
-        reaction,
-        actionDir,
-        "Agent runtime modified the workspace during planning",
-        "human-required",
-      );
-      writeFactoryActionResult(actionDir, terminal);
-      return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
-    }
-    let output: ReturnType<typeof parseFactoryPlanningOutput> | undefined;
-    if (result.ok) {
+    if (result.kind === "completed") {
       try {
-        output = parseFactoryPlanningOutput(result.structuredOutput);
-        if (previous && output.outcome === "draft-ready")
-          validateDecisions(output.findingDecisions, blocking);
+        if (previous && result.output.outcome === "draft-ready")
+          validateDecisions(result.output.findingDecisions, blocking);
+        if (result.output.outcome === "draft-ready") {
+          if (!result.candidate) throw new Error("Staged planner candidate is missing");
+          verifyFactoryArtifactRef(result.candidate, {
+            "factory-store": ctx.factoryStore.projectRoot,
+            repository: ctx.workspace,
+          });
+        }
       } catch (error) {
         const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
         writeFactoryActionResult(actionDir, terminal);
         return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
       }
     }
-    const terminal: FactoryActionEvent = result.ok
-      ? buildSuccess(
-          ctx,
-          reaction,
-          actionDir,
-          output!,
-          normalizeSession(result.session ?? previous?.session),
-        )
-      : buildFailure(ctx, reaction, actionDir, result.error, classifyProviderFailure(result));
+    const terminal: FactoryActionEvent =
+      result.kind === "completed"
+        ? buildSuccess(
+            ctx,
+            reaction,
+            actionDir,
+            result.output,
+            normalizeSession(result.session ?? previous?.session),
+            result.candidate,
+          )
+        : buildFailure(
+            ctx,
+            reaction,
+            actionDir,
+            result.error,
+            result.kind === "validation-failure" ? "terminal" : classifyProviderFailure(result),
+          );
     writeFactoryActionResult(actionDir, terminal);
   }
   const recovered = readFactoryActionResult(actionDir);
@@ -202,19 +232,41 @@ const AgentSessionSchema = z.object({
   provider: z.enum(["cursor", "codex"]),
   id: z.string().trim().min(1),
 });
-const PlannerOutcomeSchema = z.discriminatedUnion("ok", [
+type PlannerOutcome =
+  | {
+      kind: "completed";
+      output: FactoryPlanningOutput;
+      session?: AgentSessionRef;
+      workspaceUnchanged: true;
+      candidate?: FactoryArtifactRef;
+    }
+  | {
+      kind: "provider-failure";
+      error: string;
+      aborted?: boolean;
+      failureKind?: "workspace-guard";
+      workspaceUnchanged: boolean;
+    }
+  | { kind: "validation-failure"; error: string };
+
+const PlannerOutcomeSchema: z.ZodType<PlannerOutcome> = z.discriminatedUnion("kind", [
   z.object({
-    ok: z.literal(true),
-    structuredOutput: z.unknown().optional(),
+    kind: z.literal("completed"),
+    output: FactoryPlanningOutputSchema,
     session: AgentSessionSchema.optional(),
-    workspaceUnchanged: z.boolean(),
+    workspaceUnchanged: z.literal(true),
+    candidate: FactoryArtifactRefSchema.optional(),
   }),
   z.object({
-    ok: z.literal(false),
+    kind: z.literal("provider-failure"),
     error: z.string(),
     aborted: z.boolean().optional(),
     failureKind: z.literal("workspace-guard").optional(),
     workspaceUnchanged: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal("validation-failure"),
+    error: z.string(),
   }),
 ]);
 const StagedProviderOutcomeSchema = z.object({
@@ -227,10 +279,95 @@ const StagedProviderOutcomeSchema = z.object({
   }),
   outcome: PlannerOutcomeSchema,
 });
-type PlannerOutcome = z.infer<typeof PlannerOutcomeSchema>;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function readStagedProviderOutcome(
+  path: string,
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+): { kind: "valid"; outcome: PlannerOutcome } | { kind: "invalid"; message: string } | undefined {
+  if (!existsSync(path)) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return { kind: "invalid", message: `Invalid staged planner outcome: ${error.message}` };
+  }
+  if (hasConflictingActionIdentity(value, ctx, reaction))
+    throw new Error("Staged planner outcome conflicts with action identity");
+  const parsed = StagedProviderOutcomeSchema.safeParse(value);
+  if (!parsed.success)
+    return { kind: "invalid", message: `Invalid staged planner outcome: ${parsed.error.message}` };
+  return { kind: "valid", outcome: parsed.data.outcome };
+}
+
+function hasConflictingActionIdentity(
+  value: unknown,
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+): boolean {
+  if (!isRecord(value) || !isRecord(value.action)) return false;
+  const action = value.action;
+  return (
+    ("phaseRunId" in action && action.phaseRunId !== ctx.runId) ||
+    ("handler" in action && action.handler !== reaction.handler) ||
+    ("attempt" in action && action.attempt !== reaction.attempt) ||
+    ("causationEventId" in action && action.causationEventId !== reaction.causationEventId)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+class CandidateInputValidationError extends Error {}
+
+function captureProviderSuccess(
+  ctx: PlanningContext,
+  actionDir: string,
+  structuredOutput: unknown,
+  session: AgentSessionRef | undefined,
+): PlannerOutcome {
+  let output: FactoryPlanningOutput;
+  try {
+    output = parseFactoryPlanningOutput(structuredOutput);
+  } catch (error) {
+    return { kind: "validation-failure", error: errorMessage(error) };
+  }
+  if (output.outcome === "needs-human") {
+    return {
+      kind: "completed",
+      output,
+      session: normalizeSession(session),
+      workspaceUnchanged: true,
+    };
+  }
+  let bytes: Buffer;
+  try {
+    bytes = ctx.readPlannerDraft();
+  } catch (error) {
+    return { kind: "validation-failure", error: errorMessage(error) };
+  }
+  const candidatePath = join(actionDir, "candidate.md");
+  // Immutable candidate publication must precede the outcome that references it.
+  writeDurableFactoryFile(candidatePath, bytes.toString("utf8"), true);
+  let candidate: FactoryArtifactRef;
+  try {
+    candidate = ref(ctx, candidatePath);
+  } catch (error) {
+    return { kind: "validation-failure", error: errorMessage(error) };
+  }
+  return {
+    kind: "completed",
+    output,
+    session: normalizeSession(session),
+    workspaceUnchanged: true,
+    candidate,
+  };
 }
 
 function appendRecovered(
@@ -288,8 +425,9 @@ function buildSuccess(
   ctx: PlanningContext,
   reaction: Extract<FactoryReaction, { kind: "invoke" }>,
   actionDir: string,
-  output: ReturnType<typeof parseFactoryPlanningOutput>,
+  output: FactoryPlanningOutput,
   session: AgentSessionRef | undefined,
+  candidate: FactoryArtifactRef | undefined,
 ): FactoryActionEvent {
   const common = eventCommon(ctx, reaction, actionDir);
   writeFileSync(join(actionDir, "planner.json"), `${JSON.stringify(output, null, 2)}\n`);
@@ -314,15 +452,14 @@ function buildSuccess(
       "Planner session was not captured",
       "human-required",
     );
-  const candidatePath = join(actionDir, "candidate.md");
-  let bytes: Buffer;
-  try {
-    bytes = ctx.readPlannerDraft();
-  } catch (error) {
-    return buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
-  }
-  writeDurableFactoryFile(candidatePath, bytes.toString("utf8"), true);
-  const candidate = ref(ctx, candidatePath);
+  if (!candidate)
+    return buildFailure(
+      ctx,
+      reaction,
+      actionDir,
+      "Staged planner candidate is missing",
+      "terminal",
+    );
   return {
     ...common,
     id: `planning.candidate.produced:${factoryActionKey({ ...reaction, phaseRunId: ctx.runId })}`,
@@ -336,7 +473,7 @@ function normalizeSession(session: AgentSessionRef | undefined): AgentSessionRef
 }
 
 function classifyProviderFailure(
-  result: Extract<PlannerOutcome, { ok: false }>,
+  result: Extract<PlannerOutcome, { kind: "provider-failure" }>,
 ): "retryable" | "human-required" | "terminal" {
   if (result.aborted || result.failureKind === "workspace-guard") return "human-required";
   return result.workspaceUnchanged ? "retryable" : "human-required";
@@ -348,11 +485,11 @@ function workspaceUnchanged(raw: unknown): boolean {
   const status = raw.workspaceStatus;
   if (!status || typeof status !== "object" || !("before" in status) || !("after" in status))
     return false;
-  return status.before === status.after;
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && (error.name === "AbortError" || /aborted/i.test(error.message));
+  return (
+    typeof status.before === "string" &&
+    typeof status.after === "string" &&
+    status.before === status.after
+  );
 }
 
 function buildFailure(
@@ -448,13 +585,17 @@ function previousCandidate(
   const session = event.data.effectiveSession;
   if (session.provider !== "cursor" && session.provider !== "codex")
     throw new Error("Planning candidate has an invalid provider session");
-  return {
-    path: verifyFactoryArtifactRef(event.data.candidate, {
-      "factory-store": ctx.factoryStore.projectRoot,
-      repository: ctx.workspace,
-    }),
-    session: { provider: session.provider, id: session.id },
-  };
+  try {
+    return {
+      path: verifyFactoryArtifactRef(event.data.candidate, {
+        "factory-store": ctx.factoryStore.projectRoot,
+        repository: ctx.workspace,
+      }),
+      session: { provider: session.provider, id: session.id },
+    };
+  } catch (error) {
+    throw new CandidateInputValidationError(errorMessage(error));
+  }
 }
 
 function latestBlocking(ctx: PlanningContext, root: string): unknown[] {
@@ -464,13 +605,17 @@ function latestBlocking(ctx: PlanningContext, root: string): unknown[] {
   );
   if (!event || event.type !== "planning.review.completed" || !event.data.blockingFindings)
     throw new Error("Planning revision has no blocking findings");
-  return JSON.parse(
-    readFileSync(
-      verifyFactoryArtifactRef(event.data.blockingFindings, {
-        "factory-store": ctx.factoryStore.projectRoot,
-        repository: ctx.workspace,
-      }),
-      "utf8",
-    ),
-  );
+  try {
+    return JSON.parse(
+      readFileSync(
+        verifyFactoryArtifactRef(event.data.blockingFindings, {
+          "factory-store": ctx.factoryStore.projectRoot,
+          repository: ctx.workspace,
+        }),
+        "utf8",
+      ),
+    );
+  } catch (error) {
+    throw new CandidateInputValidationError(errorMessage(error));
+  }
 }

@@ -60,26 +60,25 @@ export async function reviewPlanCandidate(input: {
   );
   if (!existsSync(factoryActionResultPath(actionDir))) {
     mkdirSync(actionDir, { recursive: true });
-    const candidatePath = verifyFactoryArtifactRef(latest.data.candidate, {
-      "factory-store": ctx.factoryStore.projectRoot,
-      repository: ctx.workspace,
-    });
+    let candidatePath: string;
+    try {
+      candidatePath = verifyFactoryArtifactRef(latest.data.candidate, {
+        "factory-store": ctx.factoryStore.projectRoot,
+        repository: ctx.workspace,
+      });
+    } catch (error) {
+      return failAction(input, actionDir, errorMessage(error), "terminal");
+    }
     const reviewPath = join(actionDir, "spec-review.json");
     const resultPath = join(actionDir, "review-result.json");
-    let meta: { status?: unknown };
+    let staged: StagedReviewOutcome;
     if (existsSync(resultPath)) {
-      const staged = StagedReviewOutcomeSchema.parse(JSON.parse(readFileSync(resultPath, "utf8")));
-      if (
-        staged.version !== 1 ||
-        staged.action?.phaseRunId !== ctx.runId ||
-        staged.action?.handler !== reaction.handler ||
-        staged.action?.attempt !== reaction.attempt ||
-        staged.action?.causationEventId !== reaction.causationEventId ||
-        !staged.meta
-      )
-        throw new Error("Staged review outcome conflicts with action identity");
-      meta = staged.meta;
-      writeDurableFactoryFile(reviewPath, `${JSON.stringify(staged.review, null, 2)}\n`, true);
+      try {
+        staged = StagedReviewOutcomeSchema.parse(JSON.parse(readFileSync(resultPath, "utf8")));
+      } catch (error) {
+        return failAction(input, actionDir, errorMessage(error), "terminal");
+      }
+      assertStagedIdentity(ctx, reaction, staged);
     } else {
       const profile = ctx.identity.actions.reviewPlanCandidate;
       const reviewCtx = createWorkflowContext({
@@ -110,42 +109,40 @@ export async function reviewPlanCandidate(input: {
         workspace: ctx.workspace,
         stepId: reaction.handler,
       });
+      let meta: unknown;
       try {
         meta = await (input.reviewRunner ?? runPlanReview)(reviewCtx);
-        if (!existsSync(join(reviewCtx.runDir, "spec-review.json")))
-          throw new Error("Plan reviewer did not produce spec-review.json");
-        finishTelemetry(meta.status === "completed" ? "completed" : "failed");
       } catch (error) {
         finishTelemetry("failed", errorMessage(error));
-        const terminal = buildFailure(
-          ctx,
-          reaction,
-          actionDir,
-          errorMessage(error),
-          input.signal?.aborted || isAbortError(error) ? "human-required" : "retryable",
-        );
-        writeFactoryActionResult(actionDir, terminal);
-        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+        return failAction(input, actionDir, errorMessage(error), "human-required");
       }
-      const review = JSON.parse(readFileSync(join(reviewCtx.runDir, "spec-review.json"), "utf8"));
-      writeDurableFactoryFile(
-        resultPath,
-        `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, meta, review }, null, 2)}\n`,
-        true,
-      );
-      writeDurableFactoryFile(reviewPath, `${JSON.stringify(review, null, 2)}\n`, true);
-    }
-    if (meta.status !== "completed") {
-      const message = reviewFailureMessage(meta);
-      const terminal = buildFailure(
+      staged = buildStagedReviewOutcome({
         ctx,
         reaction,
+        meta,
+        reviewRunDir: reviewCtx.runDir,
+        callerAborted: input.signal?.aborted === true,
+      });
+      finishTelemetry(staged.completion.status === "completed" ? "completed" : "failed");
+      writeDurableFactoryFile(resultPath, `${JSON.stringify(staged, null, 2)}\n`, true);
+    }
+
+    if (staged.completion.review.kind === "present") {
+      writeDurableFactoryFile(reviewPath, staged.completion.review.bytes, true);
+    }
+    if (staged.completion.status === "invalid") {
+      return failAction(input, actionDir, staged.completion.message, "terminal");
+    }
+    if (staged.completion.status === "failed") {
+      return failAction(
+        input,
         actionDir,
-        message,
-        input.signal?.aborted || isReviewGuardFailure(meta) ? "human-required" : "retryable",
+        staged.completion.message,
+        classifyReviewFailure(staged.completion),
       );
-      writeFactoryActionResult(actionDir, terminal);
-      return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+    }
+    if (staged.completion.review.kind !== "present") {
+      return failAction(input, actionDir, staged.completion.review.message, "terminal");
     }
     let review: z.infer<typeof ReviewOutputSchema>;
     try {
@@ -155,8 +152,13 @@ export async function reviewPlanCandidate(input: {
       writeFactoryActionResult(actionDir, terminal);
       return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
     }
-    const reviewRef = ref(ctx, reviewPath);
-    const verdict = meta.status === "completed" ? review.verdict : "blocked";
+    let reviewRef: ReturnType<typeof ref>;
+    try {
+      reviewRef = ref(ctx, reviewPath);
+    } catch (error) {
+      return failAction(input, actionDir, errorMessage(error), "terminal");
+    }
+    const verdict = review.verdict;
     let blockingRef;
     if (verdict === "needs_changes") {
       const findings = review.findings
@@ -178,15 +180,19 @@ export async function reviewPlanCandidate(input: {
       }
       const path = join(actionDir, "blocking-findings.json");
       writeFileSync(path, `${JSON.stringify(findings, null, 2)}\n`);
-      blockingRef = ref(ctx, path);
+      try {
+        blockingRef = ref(ctx, path);
+      } catch (error) {
+        return failAction(input, actionDir, errorMessage(error), "terminal");
+      }
     }
     if (verdict === "pass" && ctx.identity.publicationMode === "local") {
       try {
         materialize(candidatePath, resolve(ctx.workspace, ctx.identity.outputPlan));
       } catch (error) {
-        const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
-        writeFactoryActionResult(actionDir, terminal);
-        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+        if (error instanceof MaterializationConflictError)
+          return failAction(input, actionDir, error.message, "terminal");
+        throw error;
       }
     }
     const event: FactoryLifecycleEvent = {
@@ -231,17 +237,159 @@ export async function reviewPlanCandidate(input: {
   });
 }
 
-const StagedReviewOutcomeSchema = z.object({
-  version: z.literal(1),
-  action: z.object({
-    phaseRunId: z.string(),
-    handler: z.literal("reviewPlanCandidate"),
-    attempt: z.number().int().positive(),
-    causationEventId: z.string(),
-  }),
-  meta: z.object({ status: z.unknown().optional() }).passthrough(),
-  review: ReviewOutputSchema,
-});
+const WorkspaceStatusSchema = z.object({ before: z.string(), after: z.string() }).strict();
+const ReviewArtifactSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("present"), bytes: z.string() }).strict(),
+  z.object({ kind: z.literal("missing"), message: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("unreadable"), message: z.string().min(1) }).strict(),
+]);
+const ReviewCompletionSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("completed"),
+      callerAborted: z.boolean(),
+      workspaceStatus: WorkspaceStatusSchema.optional(),
+      review: ReviewArtifactSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("failed"),
+      message: z.string().min(1),
+      callerAborted: z.boolean(),
+      workspaceStatus: WorkspaceStatusSchema.optional(),
+      review: ReviewArtifactSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("invalid"),
+      message: z.string().min(1),
+      callerAborted: z.boolean(),
+      workspaceStatus: WorkspaceStatusSchema.optional(),
+      review: ReviewArtifactSchema,
+    })
+    .strict(),
+]);
+const StagedReviewOutcomeSchema = z
+  .object({
+    version: z.literal(1),
+    action: z
+      .object({
+        phaseRunId: z.string(),
+        handler: z.literal("reviewPlanCandidate"),
+        attempt: z.number().int().positive(),
+        causationEventId: z.string(),
+      })
+      .strict(),
+    completion: ReviewCompletionSchema,
+  })
+  .strict();
+type StagedReviewOutcome = z.infer<typeof StagedReviewOutcomeSchema>;
+const ReviewRunMetaSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("completed") }).passthrough(),
+  z
+    .object({
+      status: z.literal("failed"),
+      failedReviews: z.array(z.object({ error: z.string() }).passthrough()).optional(),
+    })
+    .passthrough(),
+]);
+
+function buildStagedReviewOutcome(input: {
+  ctx: PlanningContext;
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>;
+  meta: unknown;
+  reviewRunDir: string;
+  callerAborted: boolean;
+}): StagedReviewOutcome {
+  const meta = ReviewRunMetaSchema.safeParse(input.meta);
+  const review = readReviewArtifact(join(input.reviewRunDir, "spec-review.json"));
+  const workspaceStatus = readReviewWorkspaceStatus(
+    join(input.reviewRunDir, "spec-review.raw.json"),
+  );
+  const common = {
+    callerAborted: input.callerAborted,
+    ...(workspaceStatus ? { workspaceStatus } : {}),
+    review,
+  };
+  const completion: StagedReviewOutcome["completion"] = !meta.success
+    ? { status: "invalid", message: "Plan reviewer returned invalid run metadata", ...common }
+    : meta.data.status === "failed"
+      ? { status: "failed", message: reviewFailureMessage(meta.data), ...common }
+      : { status: "completed", ...common };
+  return StagedReviewOutcomeSchema.parse({
+    version: 1,
+    action: {
+      phaseRunId: input.ctx.runId,
+      handler: "reviewPlanCandidate",
+      attempt: input.reaction.attempt,
+      causationEventId: input.reaction.causationEventId,
+    },
+    completion,
+  });
+}
+
+function readReviewArtifact(path: string): z.infer<typeof ReviewArtifactSchema> {
+  if (!existsSync(path))
+    return { kind: "missing", message: "Plan reviewer did not produce spec-review.json" };
+  try {
+    return { kind: "present", bytes: readFileSync(path, "utf8") };
+  } catch (error) {
+    return { kind: "unreadable", message: errorMessage(error) };
+  }
+}
+
+function readReviewWorkspaceStatus(
+  path: string,
+): z.infer<typeof WorkspaceStatusSchema> | undefined {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("workspaceStatus" in raw))
+      return undefined;
+    const parsed = WorkspaceStatusSchema.safeParse(raw.workspaceStatus);
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function assertStagedIdentity(
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  staged: StagedReviewOutcome,
+): void {
+  if (
+    staged.action.phaseRunId !== ctx.runId ||
+    staged.action.handler !== reaction.handler ||
+    staged.action.attempt !== reaction.attempt ||
+    staged.action.causationEventId !== reaction.causationEventId
+  )
+    throw new Error("Staged review outcome conflicts with action identity");
+}
+
+function classifyReviewFailure(
+  completion: Extract<StagedReviewOutcome["completion"], { status: "failed" }>,
+): "retryable" | "human-required" {
+  if (completion.callerAborted) return "human-required";
+  const status = completion.workspaceStatus;
+  return status && status.before === status.after ? "retryable" : "human-required";
+}
+
+function failAction(
+  input: {
+    ctx: PlanningContext;
+    factoryStateRoot: string;
+    reaction: Extract<FactoryReaction, { kind: "invoke" }>;
+  },
+  actionDir: string,
+  message: string,
+  failureKind: "retryable" | "human-required" | "terminal",
+): { event: FactoryLifecycleEvent; state: FactoryLifecycleState } {
+  const terminal = buildFailure(input.ctx, input.reaction, actionDir, message, failureKind);
+  writeFactoryActionResult(actionDir, terminal);
+  return appendRecovered(input.factoryStateRoot, input.ctx, input.reaction, actionDir);
+}
 
 function buildFailure(
   ctx: PlanningContext,
@@ -297,29 +445,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && (error.name === "AbortError" || /aborted/i.test(error.message));
-}
-
-function isReviewGuardFailure(meta: unknown): boolean {
-  return /modified the workspace|workspace[- ]guard/i.test(JSON.stringify(meta));
-}
-
-function reviewFailureMessage(meta: unknown): string {
-  if (meta && typeof meta === "object" && "failedReviews" in meta) {
-    const failures = meta.failedReviews;
-    if (Array.isArray(failures)) {
-      const message = failures
-        .flatMap((failure) =>
-          failure && typeof failure === "object" && "error" in failure
-            ? [String(failure.error)]
-            : [],
-        )
-        .join("; ");
-      if (message) return message;
-    }
-  }
-  return "Plan reviewer failed";
+function reviewFailureMessage(
+  meta: Extract<z.infer<typeof ReviewRunMetaSchema>, { status: "failed" }>,
+): string {
+  return meta.failedReviews?.map((failure) => failure.error).join("; ") || "Plan reviewer failed";
 }
 
 function assertRecoveredResult(
@@ -350,12 +479,16 @@ function ref(ctx: PlanningContext, path: string) {
   });
 }
 
+class MaterializationConflictError extends Error {}
+
 function materialize(source: string, target: string) {
   mkdirSync(dirname(target), { recursive: true });
   const bytes = readFileSync(source);
   if (existsSync(target)) {
     if (!readFileSync(target).equals(bytes))
-      throw new Error(`Output plan conflicts with reviewed candidate: ${target}`);
+      throw new MaterializationConflictError(
+        `Output plan conflicts with reviewed candidate: ${target}`,
+      );
     return;
   }
   const temp = `${target}.${process.pid}.tmp`;
