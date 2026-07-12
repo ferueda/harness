@@ -274,6 +274,12 @@ station finishes. Approved plans stay in `Planning`; human questions move to
 station/runtime failures move to `Planning Failed`. Planning apply never moves
 the issue to `Ready to Implement`.
 
+Factory plans are minimum-sufficient: they preserve the explicit task and
+project intent, choose the smallest coherent change, and include only decisions
+and verification tied to a requirement, invariant, or demonstrated risk. The
+default three completed reviews allow two revisions. Review artifacts retain every
+finding; only `must_fix` findings return to the planner.
+
 The planner writes only the mutable draft at
 `.harness/factory-drafts/<run-id>/draft.md` in the workspace. Harness validates
 that ignored scratch, publishes canonical and immutable snapshots in the

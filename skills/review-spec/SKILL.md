@@ -22,11 +22,12 @@ chat review is enough.
 1. **Read the spec** — goals, phases, proposed changes
 2. **Explore the codebase** — files and code the spec references
 3. **Analyze patterns** — existing conventions and architecture
-4. **Validate the plan** — proposals align with codebase reality
-5. **Check proportionality** — scope, phases, and abstractions match the problem size
-6. **Identify issues** — gaps, risks, and improvement opportunities
+4. **Trace scope** — every proposed change serves an acceptance criterion, hard invariant, or verified regression risk
+5. **Validate the plan** — proposals align with codebase reality
+6. **Check proportionality** — scope, phases, and abstractions match the problem size
+7. **Identify issues** — gaps, risks, and simplification opportunities
 
-**Done when:** every phase and major design choice has been checked against code and proportionality.
+**Done when:** every proposed change and major design choice has been checked against intent, code, and proportionality.
 
 ## Review Dimensions
 
@@ -34,7 +35,7 @@ Evaluate across these areas (focus on what's relevant):
 
 - **Architecture**: Component boundaries, data flow, API contracts, separation of concerns
 - **Feasibility**: Implementation complexity, technology trade-offs, effort estimation
-- **Simplicity**: Overengineering, unnecessary phases, speculative abstractions, simpler equivalent shapes. Ask: does phase count and abstraction count match the problem? Any YAGNI (registry, plugin layer, future-proof hook without a current caller)? Could existing code do this with less surface? Phases that only defer thinking without a deliverable? Flag when: one-call-site abstractions, workflow/registry for a single use case, mergeable phases, patterns oversized for this repo, nice-to-haves without a named constraint.
+- **Simplicity**: Overengineering, unnecessary phases, speculative abstractions, simpler equivalent shapes. Trace every proposed file, behavior, test family, documentation change, and future-compatibility item to an acceptance criterion, hard invariant, or verified regression risk. Unsupported work is a scope defect. Ask: does phase count and abstraction count match the problem? Any YAGNI (registry, plugin layer, future-proof hook without a current caller)? Could existing code do this with less surface? Phases that only defer thinking without a deliverable? Flag when: one-call-site abstractions, workflow/registry for a single use case, mergeable phases, patterns oversized for this repo, nice-to-haves without a named constraint.
 - **Project Alignment**: Fit with the target repo's documented intent source, audience, non-goals, hard invariants, source-of-truth boundaries, and current-vs-planned behavior. Look first for `docs/project-intent.md`, then root `VISION.md`, then explicit intent docs named from `AGENTS.md`, `README.md`, or contributor docs. If no intent source exists, narrow bug fixes and local refactors may proceed with a note; plans that make product, architecture, docs-architecture, data/tenancy, provider, public API, or workflow-wide decisions should include confirmed intent or a first step to create a minimal intent source.
 - **Reliability**: Error handling, retries, idempotency, graceful degradation
 - **Performance**: Bottlenecks, caching, query patterns, scaling approach
@@ -55,6 +56,12 @@ Evaluate across these areas (focus on what's relevant):
 `schemas/review-output.schema.json`: `verdict`, `summary`, and `findings[]`
 with `must_fix`. The markdown format below applies only to direct chat
 `review-spec` use.
+
+For structured review output:
+
+- `pass` requires no `must_fix: true` findings; advisory findings are allowed.
+- `needs_changes` requires at least one `must_fix: true` finding.
+- `blocked` means evidence or a human decision is unavailable and is exempt from the `must_fix` relationship.
 
 For each finding:
 
@@ -78,3 +85,5 @@ For each finding:
 - **Prioritize** — Order findings by severity and impact
 - **Challenge assumptions** — Question decisions that lack justification
 - **Prefer smaller plans** — When two approaches work, recommend the one with fewer moving parts unless constraints require more
+- **Do not invent work** — Optional hardening, extra tests, docs, abstractions, and future-proofing need a named requirement, invariant, or demonstrated regression risk
+- **Keep advice advisory** — `must_fix: false` findings may record observations but should not ask for plan edits

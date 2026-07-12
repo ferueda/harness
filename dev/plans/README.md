@@ -6,6 +6,7 @@
 | ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
+| [260711-factory-plan-simplicity.md](./260711-factory-plan-simplicity.md) | `in_progress` | Minimum-sufficient Factory plans and scope-first review |
 | [FER-61.md](./FER-61.md)                                               | `approved`    | Workspace-local planning scratch; Harness durable evidence |
 | [FER-62.md](./FER-62.md)                                               | `blocked`     | Durable implementation review and remediation; waits for FER-61 implementation |
 

@@ -115,8 +115,9 @@ documented harness checkout at `~/.harness`. Triage routes are
 Planning keeps mutable planner scratch under ignored workspace
 `.harness/factory-drafts/<run-id>/` and writes reviewed plans into the target
 repo only after approval. Harness alone publishes canonical and immutable
-planning evidence to the durable store. For tracker-backed work, publish the
-plan file through a plan PR, then register the
+planning evidence to the durable store. Factory plans are minimum-sufficient:
+three reviews by default, with only blocking findings revised. For tracker-backed
+work, publish the plan file through a plan PR, then register the
 PR URL and merge commit with the planning publication commands before treating
 the tracker item as ready to implement.
 

@@ -32,6 +32,18 @@ function createPlainWorkspace() {
   return workspace;
 }
 
+function reviewFinding(must_fix: boolean) {
+  return {
+    title: "Review finding",
+    severity: "Medium" as const,
+    location: "Plan",
+    issue: "The review found an issue.",
+    recommendation: "Update the plan.",
+    rationale: "The test needs a complete finding shape.",
+    must_fix,
+  };
+}
+
 test("spec review prompt stays aligned with review-spec dimensions and schema verdicts", () => {
   for (const keyword of [
     "Architecture",
@@ -59,6 +71,11 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(SPEC_REVIEW_PROMPT).toContain("docs-architecture");
   expect(SPEC_REVIEW_PROMPT).toContain("confirmed intent");
   expect(SPEC_REVIEW_PROMPT).toContain("first step to create a minimal intent source");
+  expect(SPEC_REVIEW_PROMPT).toContain("minimum sufficient executable plan");
+  expect(SPEC_REVIEW_PROMPT).toContain("Unsupported work is a scope defect");
+  expect(SPEC_REVIEW_PROMPT).toContain("Do not recommend optional hardening");
+  expect(SPEC_REVIEW_PROMPT).toContain('verdict: "needs_changes"` only when at least one finding');
+  expect(SPEC_REVIEW_PROMPT).toContain("Blocked is exempt");
 
   const reviewSpecSkill = readFileSync(join(REPO_ROOT, "skills/review-spec/SKILL.md"), "utf8");
   expect(reviewSpecSkill).toContain("Project Alignment");
@@ -67,6 +84,9 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(reviewSpecSkill).toContain("docs-architecture");
   expect(reviewSpecSkill).toContain("confirmed intent");
   expect(reviewSpecSkill).toContain("first step to create a minimal intent source");
+  expect(reviewSpecSkill).toContain("Unsupported work is a scope defect");
+  expect(reviewSpecSkill).toContain("needs_changes` requires at least one");
+  expect(reviewSpecSkill).toContain("Do not invent work");
 });
 
 test("cleanupOrphanedRunDir removes incomplete run directories", () => {
@@ -108,6 +128,104 @@ test("workflow context supports spec review dry-runs without git scope", async (
   expect(prompt).toContain("context/plan.md");
   expect(prompt).not.toContain("Diff file:");
   expect(prompt).not.toContain("{{DIFF_REF}}");
+});
+
+test("workflow context rejects contradictory spec verdicts after preserving raw evidence", async () => {
+  const invalidReviews = [
+    {
+      verdict: "needs_changes",
+      summary: "Only advice remains.",
+      findings: [reviewFinding(false)],
+      expectedError: "needs_changes requires at least one must_fix finding",
+    },
+    {
+      verdict: "pass",
+      summary: "A blocker remains.",
+      findings: [reviewFinding(true)],
+      expectedError: "pass cannot include must_fix findings",
+    },
+  ] as const;
+
+  for (const invalidReview of invalidReviews) {
+    const { expectedError, ...structuredOutput } = invalidReview;
+    const workspace = createPlainWorkspace();
+    const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+    const ctx = createWorkflowContextForTest({
+      workspace,
+      planPath: "plan.md",
+      runsDir,
+      includeGitScope: false,
+      agentProviderFactory(options) {
+        return {
+          name: options.provider,
+          async run() {
+            return {
+              ok: true,
+              structuredOutput,
+              raw: { structuredOutput },
+            };
+          },
+        };
+      },
+      maxRuntimeMs: 1_000,
+    });
+
+    await expect(ctx.agent("review-spec")).rejects.toThrow(expectedError);
+    expect(existsSync(join(ctx.runDir, "spec-review.raw.json"))).toBe(true);
+    expect(existsSync(join(ctx.runDir, "spec-review.json"))).toBe(false);
+  }
+});
+
+test("spec verdict checks exempt blocked reviews and non-spec reviewers", async () => {
+  const blockedWorkspace = createPlainWorkspace();
+  const blockedCtx = createWorkflowContextForTest({
+    workspace: blockedWorkspace,
+    planPath: "plan.md",
+    runsDir: mkdtempSync(join(tmpdir(), "harness-runs-")),
+    includeGitScope: false,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return {
+            ok: true,
+            structuredOutput: { verdict: "blocked", summary: "Need a decision.", findings: [] },
+            raw: { ok: true },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+  await expect(blockedCtx.agent("review-spec")).resolves.toMatchObject({ verdict: "blocked" });
+
+  const implementationWorkspace = createGitWorkspace();
+  const implementationCtx = createWorkflowContextForTest({
+    workspace: implementationWorkspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir: mkdtempSync(join(tmpdir(), "harness-runs-")),
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          return {
+            ok: true,
+            structuredOutput: {
+              verdict: "needs_changes",
+              summary: "Legacy non-spec contract.",
+              findings: [reviewFinding(false)],
+            },
+            raw: { ok: true },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+  await expect(implementationCtx.agent("review-implementation")).resolves.toMatchObject({
+    verdict: "needs_changes",
+  });
 });
 
 test("workflow context exports spec review summaries without git scope", () => {

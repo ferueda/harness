@@ -23,7 +23,7 @@
       }
     },
     "planning": {
-      "maxReviewIterations": 5,
+      "maxReviewIterations": 3,
       "roles": {
         "planner": {
           "agent": "codex",

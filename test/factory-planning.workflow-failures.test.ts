@@ -106,6 +106,51 @@ test("factory planning maps failed plan-review to planning-failed", async () => 
   expect(existsSync(join(workspace, "dev/plans/260705-failed-review.md"))).toBe(false);
 });
 
+test("factory planning rejects needs_changes reviews without blocking findings", async () => {
+  const workspace = createWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));
+  let draftPath = "";
+  const ctx = createFactoryPlanningRunContextForTest({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    plannerRole: { agent: "cursor" },
+    reviewerRole: { agent: "cursor" },
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          writeDraftPlan(draftPath, "# Advisory-only Plan\n");
+          return okPlanner(draft(), { provider: "cursor", id: "planner-session-1" });
+        },
+      };
+    },
+    async planReviewRunner(reviewCtx) {
+      writeReview(reviewCtx, {
+        ...NEEDS_CHANGES_REVIEW,
+        findings: [{ ...NEEDS_CHANGES_REVIEW.findings[0]!, must_fix: false }],
+      });
+      return {
+        runId: reviewCtx.runId,
+        runDir: reviewCtx.runDir,
+        status: "completed",
+        verdict: "needs_changes",
+      };
+    },
+  });
+  draftPath = ctx.draftPath;
+
+  const meta = await runFactoryPlanning(ctx);
+
+  expect(meta.status).toBe("planning-failed");
+  expect(meta.error).toContain("needs_changes without a must_fix finding");
+  expect(readFileSync(join(ctx.runDir, "iterations/1/review-findings.json"), "utf8")).toContain(
+    "spec-001",
+  );
+});
+
 test("factory planning fails when planner does not write draft file", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-planning-runs-"));

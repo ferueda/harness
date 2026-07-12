@@ -9,6 +9,7 @@ import {
   type FactoryPlanningReviewContext,
 } from "../lib/factory-planning-run-context.ts";
 import type { FactoryPlanningOutput } from "../lib/factory-planning-schemas.ts";
+import type { ReviewOutput } from "../lib/schemas.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
 import {
@@ -207,13 +208,31 @@ test("factory planning loops on needs_changes and resumes the same planner sessi
     "# Loop Plan\n\nInitial draft.\n",
     "# Loop Plan\n\nRevised draft with tests.\n",
   ];
+  const mixedReview = {
+    ...NEEDS_CHANGES_REVIEW,
+    findings: [
+      {
+        ...NEEDS_CHANGES_REVIEW.findings[0]!,
+        title: "Advisory before blocker",
+        recommendation: "Consider a naming refinement.",
+        must_fix: false,
+      },
+      NEEDS_CHANGES_REVIEW.findings[0]!,
+      {
+        ...NEEDS_CHANGES_REVIEW.findings[0]!,
+        title: "Advisory after blocker",
+        recommendation: "Consider a comment refinement.",
+        must_fix: false,
+      },
+    ],
+  } satisfies ReviewOutput;
   const outputs = [
     draft(),
     {
       ...draft(),
       findingDecisions: [
         {
-          findingId: "spec-001",
+          findingId: "spec-002",
           decision: "implement",
           rationale: "The revised plan adds the missing regression test.",
         },
@@ -243,7 +262,7 @@ test("factory planning loops on needs_changes and resumes the same planner sessi
     },
     async planReviewRunner(reviewCtx) {
       reviewCount += 1;
-      writeReview(reviewCtx, reviewCount === 1 ? NEEDS_CHANGES_REVIEW : PASS_REVIEW);
+      writeReview(reviewCtx, reviewCount === 1 ? mixedReview : PASS_REVIEW);
       return {
         runId: reviewCtx.runId,
         runDir: reviewCtx.runDir,
@@ -261,12 +280,21 @@ test("factory planning loops on needs_changes and resumes the same planner sessi
   expect(calls).toHaveLength(2);
   expect(calls[0]?.session).toBeUndefined();
   expect(calls[1]?.session).toEqual(session);
-  expect(readFileSync(join(ctx.runDir, "iterations/1/review-findings.json"), "utf8")).toContain(
-    "spec-001",
+  const reviewEvidence = readFileSync(
+    join(ctx.runDir, "iterations/1/review-findings.json"),
+    "utf8",
   );
+  expect(reviewEvidence).toContain("spec-001");
+  expect(reviewEvidence).toContain("spec-002");
+  expect(reviewEvidence).toContain("spec-003");
   expect(readFileSync(join(ctx.runDir, "iterations/2/planner.json"), "utf8")).toContain(
     "findingDecisions",
   );
+  expect(calls[1]?.prompt).toContain("spec-002");
+  expect(calls[1]?.prompt).not.toContain("spec-001");
+  expect(calls[1]?.prompt).not.toContain("spec-003");
+  expect(calls[1]?.prompt).not.toContain("Advisory before blocker");
+  expect(calls[1]?.prompt).not.toContain("Advisory after blocker");
   expect(calls[1]?.prompt).not.toContain("Initial draft.");
 });
 
