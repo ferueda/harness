@@ -302,7 +302,7 @@ const dryRun = JSON.parse(dryRunOutput) as {
   workflow?: unknown;
   executedSteps?: unknown;
   partial?: unknown;
-  prompts?: { implementation?: unknown; quality?: unknown; simplify?: unknown };
+  prompts?: { implementation?: unknown; quality?: unknown };
 };
 
 if (dryRun.status !== "dry_run") {
@@ -319,7 +319,7 @@ if (dryRun.workflow !== "change-review") {
 
 if (
   !Array.isArray(dryRun.executedSteps) ||
-  dryRun.executedSteps.join(",") !== "implementation,quality,simplify" ||
+  dryRun.executedSteps.join(",") !== "implementation,quality" ||
   dryRun.partial !== false
 ) {
   throw new Error("Expected default dry-run output to include full step metadata");
@@ -327,8 +327,7 @@ if (
 
 if (
   typeof dryRun.prompts?.implementation !== "string" ||
-  typeof dryRun.prompts?.quality !== "string" ||
-  typeof dryRun.prompts?.simplify !== "string"
+  typeof dryRun.prompts?.quality !== "string"
 ) {
   throw new Error("Expected dry-run output to include all prompt paths");
 }
@@ -352,7 +351,7 @@ const selectedDryRun = JSON.parse(selectedDryRunOutput) as {
   executedSteps?: unknown;
   omittedSteps?: unknown;
   partial?: unknown;
-  prompts?: { implementation?: unknown; quality?: unknown; simplify?: unknown };
+  prompts?: { implementation?: unknown; quality?: unknown };
 };
 
 if (selectedDryRun.status !== "dry_run") {
@@ -363,11 +362,10 @@ if (
   !Array.isArray(selectedDryRun.executedSteps) ||
   selectedDryRun.executedSteps.join(",") !== "implementation" ||
   !Array.isArray(selectedDryRun.omittedSteps) ||
-  selectedDryRun.omittedSteps.join(",") !== "quality,simplify" ||
+  selectedDryRun.omittedSteps.join(",") !== "quality" ||
   selectedDryRun.partial !== true ||
   typeof selectedDryRun.prompts?.implementation !== "string" ||
-  selectedDryRun.prompts?.quality !== undefined ||
-  selectedDryRun.prompts?.simplify !== undefined
+  selectedDryRun.prompts?.quality !== undefined
 ) {
   throw new Error("Expected selected-step dry-run output to include only implementation prompt");
 }

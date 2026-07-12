@@ -60,7 +60,6 @@ type SummaryHeaderInput = {
 const FAILED_REVIEW_TITLES: Record<string, string> = {
   implementation: "Implementation review",
   codeQuality: "Code quality review",
-  simplify: "Simplify review",
   spec: "Spec review",
 };
 

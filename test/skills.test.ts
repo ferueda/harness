@@ -184,6 +184,7 @@ test("architect prefers the smallest intent-aligned design", () => {
 
 test("change review converges within the original task scope", () => {
   const skill = readFileSync(join(REPO_ROOT, "skills/change-review-workflow/SKILL.md"), "utf8");
+  const quality = readFileSync(join(REPO_ROOT, "skills/code-quality-review/SKILL.md"), "utf8");
   const handoff = readFileSync(
     join(REPO_ROOT, "skills/change-review-workflow/references/review-handoff.md"),
     "utf8",
@@ -196,6 +197,11 @@ test("change review converges within the original task scope", () => {
   expect(prose).toContain("Advisories remain evidence by default");
   expect(prose).toContain("material scope expansion or a new product decision");
   expect(prose).toContain("made it newly observable");
+  expect(prose).toContain("clarity, simplicity, conventions");
+  expect(prose).not.toContain("`simplify`");
+  expect(quality).toContain("materially smaller equivalent shape");
+  expect(quality).toContain("verified correctness, contract, or");
+  expect(existsSync(join(REPO_ROOT, "skills/simplify-review/SKILL.md"))).toBe(false);
 
   expect(handoff).toContain("## Goal");
   expect(handoff).toContain("## Decisions and boundaries");

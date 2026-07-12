@@ -6,7 +6,6 @@ export const DEFAULT_WORKFLOW_HEARTBEAT_MS = 30_000;
 export type WorkflowReviewAgentName =
   | "review-implementation"
   | "code-quality-review"
-  | "simplify"
   | "review-spec";
 
 export type WorkflowStepStatus =
@@ -37,7 +36,6 @@ export type WorkflowEventSink = (event: WorkflowEvent) => void;
 export const STEP_ID_BY_AGENT = {
   "review-implementation": "review-implementation",
   "code-quality-review": "code-quality-review",
-  simplify: "simplify-review",
   "review-spec": "review-spec",
 } satisfies Record<WorkflowReviewAgentName, string>;
 

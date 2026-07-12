@@ -2,16 +2,11 @@ import { expect, test } from "vitest";
 import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
-  SIMPLIFY_REVIEW_PROMPT,
   SPEC_REVIEW_PROMPT,
 } from "../lib/prompts/index.ts";
 
 test("review prompts include scope placeholders and JSON output contract", () => {
-  for (const prompt of [
-    IMPLEMENTATION_REVIEW_PROMPT,
-    QUALITY_REVIEW_PROMPT,
-    SIMPLIFY_REVIEW_PROMPT,
-  ]) {
+  for (const prompt of [IMPLEMENTATION_REVIEW_PROMPT, QUALITY_REVIEW_PROMPT]) {
     expect(prompt).toContain("{{DIFF_RANGE}}");
     expect(prompt).toContain("{{BASE_REF}}");
     expect(prompt).toContain("{{HEAD_REF}}");
@@ -34,7 +29,6 @@ test("implementation review prompt keeps blockers tied to the original task", ()
   expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("material scope expansion");
   expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("made it newly observable");
   expect(QUALITY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
-  expect(SIMPLIFY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
 });
 
 test("spec review prompt includes plan context without diff scope placeholders", () => {
@@ -60,21 +54,19 @@ test("spec review prompt includes plan context without diff scope placeholders",
   expect(SPEC_REVIEW_PROMPT).not.toContain("Are STOP conditions clear");
 });
 
-test("quality and simplify prompts keep reviewer-specific guidance", () => {
-  expect(QUALITY_REVIEW_PROMPT).toContain("behavior-preserving clarity");
+test("quality prompt covers scoped quality and simplification guidance", () => {
+  expect(QUALITY_REVIEW_PROMPT).toContain("behavior-preserving clarity, simplicity");
   expect(QUALITY_REVIEW_PROMPT).toContain("changed or directly affected code");
   expect(QUALITY_REVIEW_PROMPT).toContain("Do not perform another general correctness");
-  expect(SIMPLIFY_REVIEW_PROMPT).toContain("strictly smaller, clearer shapes");
-  expect(SIMPLIFY_REVIEW_PROMPT).toContain("materially smaller equivalent shape");
-  expect(SIMPLIFY_REVIEW_PROMPT).toContain("architecture changes outside the accepted task");
+  expect(QUALITY_REVIEW_PROMPT).toContain("materially smaller equivalent shape");
+  expect(QUALITY_REVIEW_PROMPT).toContain("architecture changes outside the accepted task");
+  expect(QUALITY_REVIEW_PROMPT).toContain(
+    "verified correctness, contract, or test-reliability risk",
+  );
 });
 
 test("change reviewers use a consistent blocker and verdict contract", () => {
-  for (const prompt of [
-    IMPLEMENTATION_REVIEW_PROMPT,
-    QUALITY_REVIEW_PROMPT,
-    SIMPLIFY_REVIEW_PROMPT,
-  ]) {
+  for (const prompt of [IMPLEMENTATION_REVIEW_PROMPT, QUALITY_REVIEW_PROMPT]) {
     expect(prompt).toContain('Use `verdict: "pass"` when no finding has `must_fix: true`');
     expect(prompt).toContain(
       'Use `verdict: "needs_changes"` only when at least one finding has `must_fix: true`',

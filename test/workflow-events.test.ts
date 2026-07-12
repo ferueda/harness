@@ -74,7 +74,6 @@ function reviewInfo(name: ReviewAgentName) {
       title: "Code quality review",
       stage: "quality",
     },
-    simplify: { key: "simplify", title: "Simplify review", stage: "simplify" },
     "review-spec": { key: "spec", title: "Spec review", stage: "spec" },
   } satisfies Record<ReviewAgentName, { key: string; title: string; stage: string }>;
   return info[name];
@@ -85,11 +84,10 @@ function flushAsyncWork(): Promise<void> {
 }
 
 test("STEP_ID_BY_AGENT covers change-review step order", () => {
-  expect(CHANGE_REVIEW_STEPS).toEqual(["implementation", "quality", "simplify"]);
+  expect(CHANGE_REVIEW_STEPS).toEqual(["implementation", "quality"]);
   expect(STEP_ID_BY_AGENT).toEqual({
     "review-implementation": "review-implementation",
     "code-quality-review": "code-quality-review",
-    simplify: "simplify-review",
     "review-spec": "review-spec",
   });
 });
@@ -346,7 +344,6 @@ test("selected change-review steps emit events only for executed reviewers", asy
   ]);
   expect(stepEvents.map((event) => event.cliStep)).toEqual(["implementation", "implementation"]);
   expect(stepEvents.some((event) => event.stepId === "code-quality-review")).toBe(false);
-  expect(stepEvents.some((event) => event.stepId === "simplify-review")).toBe(false);
 });
 
 test("parallel review steps emit start and end events for mixed outcomes", async () => {

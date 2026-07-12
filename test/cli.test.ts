@@ -913,9 +913,25 @@ test("harness run change-review rejects invalid steps", () => {
     "--dry-run",
   ]);
   expect(result.status).toBe(2);
-  expect(result.stderr).toMatch(
-    /unknown step: missing\. Valid steps: implementation, quality, simplify/,
-  );
+  expect(result.stderr).toMatch(/unknown step: missing\. Valid steps: implementation, quality/);
+  expect(readdirSync(runsDir)).toEqual([]);
+});
+test("harness run change-review rejects removed simplify step", () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const result = runHarness([
+    "run",
+    "change-review",
+    "--workspace",
+    workspace,
+    "--runs-dir",
+    runsDir,
+    "--steps",
+    "simplify",
+    "--dry-run",
+  ]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown step: simplify\. Valid steps: implementation, quality/);
   expect(readdirSync(runsDir)).toEqual([]);
 });
 test("harness run change-review rejects empty steps", () => {
@@ -1114,19 +1130,18 @@ test("harness run change-review dry-run works through the CLI", () => {
   expect(output.status).toBe("dry_run");
   expect(output.agent).toMatchObject({ name: "cursor", model: "grok-4.5" });
   expect(output.workflow).toBe("change-review");
-  expect(output.requestedSteps).toEqual(["implementation", "quality", "simplify"]);
+  expect(output.requestedSteps).toEqual(["implementation", "quality"]);
   expect(output.partial).toBe(false);
   expect(output.workspace).toBe(workspace);
   expect(output.scope).toMatchObject({ baseRef: "HEAD", headRef: "HEAD" });
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
-  expect(output.prompts.simplify).toMatch(/simplify-review\.prompt\.md$/);
+  expect(output.prompts.simplify).toBeUndefined();
   expect(existsSync(join(output.runDir, "context/diff.patch"))).toBe(true);
 
   const implementationPrompt = readFileSync(output.prompts.implementation, "utf8");
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
-  const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
-  expectIndependentReviewPrompts(implementationPrompt, qualityPrompt, simplifyPrompt);
+  expectIndependentReviewPrompts(implementationPrompt, qualityPrompt);
 });
 
 test("harness run plan-review help exposes plan-only options", () => {
@@ -2067,11 +2082,10 @@ test("harness run change-review selected-step dry-run omits unrequested prompts"
   const output = JSON.parse(result.stdout);
   expect(output.status).toBe("dry_run");
   expect(output.executedSteps).toEqual(["implementation"]);
-  expect(output.omittedSteps).toEqual(["quality", "simplify"]);
+  expect(output.omittedSteps).toEqual(["quality"]);
   expect(output.partial).toBe(true);
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toBeUndefined();
-  expect(output.prompts.simplify).toBeUndefined();
 });
 test("harness run change-review dry-run accepts Codex provider options", () => {
   const workspace = createGitWorkspace();
@@ -2131,7 +2145,7 @@ test("harness run change-review dry-run reads Codex provider from harness.json",
     modelReasoningEffort: "high",
   });
 });
-test("harness run change-review dry-run uses scoped simplify guidance", () => {
+test("harness run change-review dry-run includes scoped simplification guidance in quality", () => {
   const workspace = createGitWorkspace();
   const result = runHarness([
     "run",
@@ -2149,14 +2163,12 @@ test("harness run change-review dry-run uses scoped simplify guidance", () => {
   expect(output.status).toBe("dry_run");
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
-  expect(output.prompts.simplify).toMatch(/simplify-review\.prompt\.md$/);
 
-  const simplifyPrompt = readFileSync(output.prompts.simplify, "utf8");
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
-  expect(simplifyPrompt).toContain("Prefer explicit, boring, repo-native code");
-  expect(simplifyPrompt).toContain("Read only the `SKILL.md` files relevant");
-  expect(simplifyPrompt).not.toContain("{{SKILL_PATH}}");
-  expectIndependentReviewPrompts(qualityPrompt, simplifyPrompt);
+  expect(qualityPrompt).toContain("Prefer explicit, boring, repo-native code");
+  expect(qualityPrompt).toContain("materially smaller equivalent shape");
+  expect(qualityPrompt).toContain("Read only the `SKILL.md` files relevant");
+  expect(qualityPrompt).not.toContain("{{SKILL_PATH}}");
 });
 
 test("harness factory implementation apply requires a Linear issue", () => {

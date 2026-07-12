@@ -52,7 +52,7 @@ ignored, and writes an ignored target-repo shim at `.harness/bin/harness`. When
 .harness/bin/harness run change-review
 ```
 
-Run the default implementation/quality/simplify review:
+Run the default implementation/quality review:
 
 ```bash
 harness run change-review --verbose
