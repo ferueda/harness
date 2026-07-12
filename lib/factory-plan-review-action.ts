@@ -1,11 +1,4 @@
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { Agent, AgentProviderOptions } from "./agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
@@ -16,7 +9,7 @@ import {
   writeFactoryActionResult,
 } from "./factory-action-result.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
-import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
+import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import type { openFactoryPlanningRunContext } from "./factory-planning-run-context.ts";
 import { ReviewOutputSchema } from "./schemas.ts";
@@ -29,6 +22,8 @@ import {
 } from "./factory-state-machine.ts";
 import { run as runPlanReview } from "../workflows/plan-review.workflow.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
+import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
+import { z } from "zod";
 
 type PlanningContext = ReturnType<typeof openFactoryPlanningRunContext>;
 
@@ -72,12 +67,8 @@ export async function reviewPlanCandidate(input: {
     const reviewPath = join(actionDir, "spec-review.json");
     const resultPath = join(actionDir, "review-result.json");
     let meta: { status?: unknown };
-    if (existsSync(resultPath) && existsSync(reviewPath)) {
-      const staged = JSON.parse(readFileSync(resultPath, "utf8")) as {
-        version?: unknown;
-        action?: Record<string, unknown>;
-        meta?: { status?: unknown };
-      };
+    if (existsSync(resultPath)) {
+      const staged = StagedReviewOutcomeSchema.parse(JSON.parse(readFileSync(resultPath, "utf8")));
       if (
         staged.version !== 1 ||
         staged.action?.phaseRunId !== ctx.runId ||
@@ -88,6 +79,7 @@ export async function reviewPlanCandidate(input: {
       )
         throw new Error("Staged review outcome conflicts with action identity");
       meta = staged.meta;
+      writeDurableFactoryFile(reviewPath, `${JSON.stringify(staged.review, null, 2)}\n`, true);
     } else {
       const profile = ctx.identity.actions.reviewPlanCandidate;
       const reviewCtx = createWorkflowContext({
@@ -111,15 +103,40 @@ export async function reviewPlanCandidate(input: {
         signal: input.signal,
         agentProviderFactory: input.agentProviderFactory,
       });
-      meta = await (input.reviewRunner ?? runPlanReview)(reviewCtx);
-      copyFileSync(join(reviewCtx.runDir, "spec-review.json"), reviewPath);
+      const finishTelemetry = startFactoryActionTelemetry({
+        eventSink: ctx.eventSink,
+        runId: ctx.runId,
+        runDir: actionDir,
+        workspace: ctx.workspace,
+        stepId: reaction.handler,
+      });
+      try {
+        meta = await (input.reviewRunner ?? runPlanReview)(reviewCtx);
+        if (!existsSync(join(reviewCtx.runDir, "spec-review.json")))
+          throw new Error("Plan reviewer did not produce spec-review.json");
+        finishTelemetry(meta.status === "completed" ? "completed" : "failed");
+      } catch (error) {
+        finishTelemetry("failed", errorMessage(error));
+        const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "retryable");
+        writeFactoryActionResult(actionDir, terminal);
+        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+      }
+      const review = JSON.parse(readFileSync(join(reviewCtx.runDir, "spec-review.json"), "utf8"));
       writeDurableFactoryFile(
         resultPath,
-        `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, meta }, null, 2)}\n`,
+        `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, meta, review }, null, 2)}\n`,
         true,
       );
+      writeDurableFactoryFile(reviewPath, `${JSON.stringify(review, null, 2)}\n`, true);
     }
-    const review = ReviewOutputSchema.parse(JSON.parse(readFileSync(reviewPath, "utf8")));
+    let review: z.infer<typeof ReviewOutputSchema>;
+    try {
+      review = ReviewOutputSchema.parse(JSON.parse(readFileSync(reviewPath, "utf8")));
+    } catch (error) {
+      const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
+      writeFactoryActionResult(actionDir, terminal);
+      return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+    }
     const reviewRef = ref(ctx, reviewPath);
     const verdict = meta.status === "completed" ? review.verdict : "blocked";
     let blockingRef;
@@ -130,14 +147,30 @@ export async function reviewPlanCandidate(input: {
           id: `spec-${String(index + 1).padStart(3, "0")}`,
           ...finding,
         }));
-      if (findings.length === 0)
-        throw new Error("plan-review needs_changes without a must_fix finding");
+      if (findings.length === 0) {
+        const terminal = buildFailure(
+          ctx,
+          reaction,
+          actionDir,
+          "plan-review needs_changes without a must_fix finding",
+          "terminal",
+        );
+        writeFactoryActionResult(actionDir, terminal);
+        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+      }
       const path = join(actionDir, "blocking-findings.json");
       writeFileSync(path, `${JSON.stringify(findings, null, 2)}\n`);
       blockingRef = ref(ctx, path);
     }
-    if (verdict === "pass" && ctx.identity.publicationMode === "local")
-      materialize(candidatePath, resolve(ctx.workspace, ctx.identity.outputPlan));
+    if (verdict === "pass" && ctx.identity.publicationMode === "local") {
+      try {
+        materialize(candidatePath, resolve(ctx.workspace, ctx.identity.outputPlan));
+      } catch (error) {
+        const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
+        writeFactoryActionResult(actionDir, terminal);
+        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+      }
+    }
     const event: FactoryLifecycleEvent = {
       version: 1,
       id: `planning.review.completed:${factoryActionKey({ ...reaction, phaseRunId: ctx.runId })}`,
@@ -178,6 +211,72 @@ export async function reviewPlanCandidate(input: {
     event: recovered,
     expectedLastEventId: reaction.causationEventId,
   });
+}
+
+const StagedReviewOutcomeSchema = z.object({
+  version: z.literal(1),
+  action: z.object({
+    phaseRunId: z.string(),
+    handler: z.literal("reviewPlanCandidate"),
+    attempt: z.number().int().positive(),
+    causationEventId: z.string(),
+  }),
+  meta: z.object({ status: z.unknown().optional() }).passthrough(),
+  review: ReviewOutputSchema,
+});
+
+function buildFailure(
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  actionDir: string,
+  message: string,
+  failureKind: "retryable" | "human-required" | "terminal",
+): FactoryActionEvent {
+  const failurePath = join(actionDir, "failure.json");
+  writeDurableFactoryFile(
+    failurePath,
+    `${JSON.stringify({ message, failureKind }, null, 2)}\n`,
+    true,
+  );
+  const failure = ref(ctx, failurePath);
+  return {
+    version: 1,
+    id: `factory.action.failed:${factoryActionKey({ ...reaction, phaseRunId: ctx.runId })}`,
+    type: "factory.action.failed",
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+    occurredAt: new Date().toISOString(),
+    phaseRunId: ctx.runId,
+    data: {
+      handler: "reviewPlanCandidate",
+      handlerVersion: 1,
+      attempt: reaction.attempt,
+      causationEventId: reaction.causationEventId,
+      execution: { workspaceRef: ctx.factoryStore.repo.id, runRef: failure },
+      evidence: [failure],
+      phase: "planning",
+      failureKind,
+      message,
+    },
+  };
+}
+
+function appendRecovered(
+  factoryStateRoot: string,
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  actionDir: string,
+) {
+  const recovered = readFactoryActionResult(actionDir);
+  assertRecoveredResult(ctx, reaction, recovered);
+  return appendFactoryActionEvent({
+    factoryStateRoot,
+    event: recovered,
+    expectedLastEventId: reaction.causationEventId,
+  });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function assertRecoveredResult(

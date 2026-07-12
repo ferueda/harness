@@ -187,6 +187,18 @@ test("candidate and review actions step separately and revisions resume the plan
   expect(reviewCount).toBe(2);
   expect(approved.state).toMatchObject({ phase: "planning", status: "approved" });
   expect(readFileSync(join(workspace, "dev/plans/item-1.md"), "utf8")).toBe("# Revised\n");
+  const telemetry = readFileSync(join(ctx.runDir, "events.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { type: string; stepId?: string });
+  expect(
+    telemetry.filter(
+      (event) => event.type === "run:end" && event.stepId === "producePlanCandidate",
+    ),
+  ).toHaveLength(2);
+  expect(
+    telemetry.filter((event) => event.type === "run:end" && event.stepId === "reviewPlanCandidate"),
+  ).toHaveLength(2);
 });
 
 function invoke(result: {

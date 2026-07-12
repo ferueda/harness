@@ -603,6 +603,7 @@ export type OpenFactoryPlanningRunContextOptions = {
   phaseRunId: string;
   workItem: FactoryWorkItem;
   factoryStore: FactoryStoreMeta;
+  eventSink?: WorkflowEventSink;
 };
 
 /** Reopen immutable planning policy without allocating or consulting config. */
@@ -625,6 +626,9 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
   );
   if (deriveFactoryWorkItemKey(persisted) !== identity.workItemKey)
     throw new FactoryPlanningError(`Factory planning input conflicts with ${options.phaseRunId}`);
+  const eventSink = options.eventSink
+    ? createCompositeEventSink(createFileEventSink(runDir), options.eventSink)
+    : createFileEventSink(runDir);
   return {
     runId: identity.phaseRunId,
     runDir,
@@ -632,6 +636,38 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
     workItem: persisted,
     factoryStore: options.factoryStore,
     identity,
+    eventSink,
+    preparePlannerScratch(): { scratchRunDir: string; draftPath: string } {
+      const scratchRunDir = join(
+        identity.workspace,
+        ".harness/factory-drafts",
+        identity.phaseRunId,
+      );
+      ensureScratchDirectory(
+        join(identity.workspace, ".harness"),
+        identity.workspace,
+        runDir,
+        scratchRunDir,
+      );
+      ensureScratchDirectory(
+        join(identity.workspace, ".harness", "factory-drafts"),
+        identity.workspace,
+        runDir,
+        scratchRunDir,
+      );
+      if (!existsSync(scratchRunDir))
+        createExclusiveScratchRunDir(scratchRunDir, identity.workspace, runDir);
+      validatePreparedScratch({ workspace: identity.workspace, scratchRunDir, runDir });
+      const draftPath = join(scratchRunDir, "draft.md");
+      try {
+        const draft = lstatSync(draftPath);
+        if (draft.isSymbolicLink()) throw new DraftValidationError("symlinked");
+        if (!draft.isFile()) throw new DraftValidationError("non-regular");
+      } catch (error) {
+        if (!isNodeError(error, "ENOENT")) throw error;
+      }
+      return { scratchRunDir, draftPath };
+    },
   };
 }
 

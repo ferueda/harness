@@ -15,6 +15,8 @@ import { FACTORY_PLANNING_SCHEMA_PATH } from "./factory-planning-run-context.ts"
 import { parseFactoryPlanningOutput } from "./factory-planning-schemas.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
+import { z } from "zod";
+import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import {
   renderFactoryPlanningInitialPrompt,
   renderFactoryPlanningRevisionPrompt,
@@ -48,9 +50,7 @@ export async function producePlanCandidate(input: {
   const resultPath = factoryActionResultPath(actionDir);
   if (!existsSync(resultPath)) {
     mkdirSync(actionDir, { recursive: true });
-    const scratchDir = join(ctx.workspace, ".harness/factory-drafts", ctx.runId);
-    const draftPath = join(scratchDir, "draft.md");
-    mkdirSync(scratchDir, { recursive: true });
+    const { draftPath } = ctx.preparePlannerScratch();
     const previous = previousCandidate(ctx, input.factoryStateRoot, reaction);
     if (previous) copyFileSync(previous.path, draftPath);
     const blocking = previous ? latestBlocking(ctx, input.factoryStateRoot) : [];
@@ -70,11 +70,9 @@ export async function producePlanCandidate(input: {
     const providerResultPath = join(actionDir, "provider-result.json");
     let result: AgentRunResult;
     if (existsSync(providerResultPath)) {
-      const staged = JSON.parse(readFileSync(providerResultPath, "utf8")) as {
-        version?: unknown;
-        action?: Record<string, unknown>;
-        result?: AgentRunResult;
-      };
+      const staged = StagedProviderOutcomeSchema.parse(
+        JSON.parse(readFileSync(providerResultPath, "utf8")),
+      );
       if (
         staged.version !== 1 ||
         staged.action?.phaseRunId !== ctx.runId ||
@@ -92,24 +90,39 @@ export async function producePlanCandidate(input: {
           ? { codexPathOverride: profile.executable }
           : {}),
       });
-      result = await provider.run({
+      const finishTelemetry = startFactoryActionTelemetry({
+        eventSink: ctx.eventSink,
+        runId: ctx.runId,
+        runDir: actionDir,
         workspace: ctx.workspace,
-        prompt,
-        schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
-        model: profile.model,
-        ...(profile.provider === "codex"
-          ? {
-              sandboxMode: profile.sandbox,
-              approvalPolicy: profile.approvalPolicy,
-              modelReasoningEffort: profile.reasoningEffort,
-            }
-          : {}),
-        workspaceGuard: "record",
-        maxRuntimeMs: input.maxRuntimeMs,
-        logPath: join(actionDir, "planner.stream.jsonl"),
-        ...(previous?.session ? { session: previous.session } : {}),
-        signal: input.signal,
+        stepId: reaction.handler,
       });
+      try {
+        result = await provider.run({
+          workspace: ctx.workspace,
+          prompt,
+          schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
+          model: profile.model,
+          ...(profile.provider === "codex"
+            ? {
+                sandboxMode: profile.sandbox,
+                approvalPolicy: profile.approvalPolicy,
+                modelReasoningEffort: profile.reasoningEffort,
+              }
+            : {}),
+          workspaceGuard: "record",
+          maxRuntimeMs: input.maxRuntimeMs,
+          logPath: join(actionDir, "planner.stream.jsonl"),
+          ...(previous?.session ? { session: previous.session } : {}),
+          signal: input.signal,
+        });
+        finishTelemetry(result.ok ? "completed" : "failed", result.ok ? undefined : result.error);
+      } catch (error) {
+        finishTelemetry("failed", errorMessage(error));
+        const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "retryable");
+        writeFactoryActionResult(actionDir, terminal);
+        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+      }
       writeDurableFactoryFile(
         providerResultPath,
         `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, result }, null, 2)}\n`,
@@ -120,9 +133,18 @@ export async function producePlanCandidate(input: {
       join(actionDir, "planner.raw.json"),
       `${JSON.stringify(result.raw ?? result, null, 2)}\n`,
     );
-    const output = result.ok ? parseFactoryPlanningOutput(result.structuredOutput) : undefined;
-    if (output && previous && output.outcome === "draft-ready")
-      validateDecisions(output.findingDecisions, blocking);
+    let output: ReturnType<typeof parseFactoryPlanningOutput> | undefined;
+    if (result.ok) {
+      try {
+        output = parseFactoryPlanningOutput(result.structuredOutput);
+        if (previous && output.outcome === "draft-ready")
+          validateDecisions(output.findingDecisions, blocking);
+      } catch (error) {
+        const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
+        writeFactoryActionResult(actionDir, terminal);
+        return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+      }
+    }
     const terminal: FactoryActionEvent = result.ok
       ? buildSuccess(
           ctx,
@@ -145,6 +167,59 @@ export async function producePlanCandidate(input: {
   assertRecoveredResult(ctx, reaction, recovered);
   return appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
+    event: recovered,
+    expectedLastEventId: reaction.causationEventId,
+  });
+}
+
+const AgentSessionSchema = z.object({
+  provider: z.enum(["cursor", "codex"]),
+  id: z.string().trim().min(1),
+  raw: z.unknown().optional(),
+});
+const AgentRunResultSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    structuredOutput: z.unknown().optional(),
+    raw: z.unknown(),
+    session: AgentSessionSchema.optional(),
+    usage: z.unknown().optional(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: z.string(),
+    raw: z.unknown().optional(),
+    exitCode: z.number().int(),
+    stderr: z.string().optional(),
+    aborted: z.boolean().optional(),
+    failureKind: z.literal("workspace-guard").optional(),
+  }),
+]);
+const StagedProviderOutcomeSchema = z.object({
+  version: z.literal(1),
+  action: z.object({
+    phaseRunId: z.string(),
+    handler: z.literal("producePlanCandidate"),
+    attempt: z.number().int().positive(),
+    causationEventId: z.string(),
+  }),
+  result: AgentRunResultSchema,
+});
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function appendRecovered(
+  factoryStateRoot: string,
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  actionDir: string,
+) {
+  const recovered = readFactoryActionResult(actionDir);
+  assertRecoveredResult(ctx, reaction, recovered);
+  return appendFactoryActionEvent({
+    factoryStateRoot,
     event: recovered,
     expectedLastEventId: reaction.causationEventId,
   });
@@ -239,7 +314,11 @@ function buildFailure(
 ): FactoryActionEvent {
   const common = eventCommon(ctx, reaction, actionDir);
   const failurePath = join(actionDir, "failure.json");
-  writeFileSync(failurePath, `${JSON.stringify({ message, failureKind }, null, 2)}\n`);
+  writeDurableFactoryFile(
+    failurePath,
+    `${JSON.stringify({ message, failureKind }, null, 2)}\n`,
+    true,
+  );
   const failure = ref(ctx, failurePath);
   return {
     ...common,

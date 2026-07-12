@@ -261,6 +261,24 @@ test("harness factory help exits cleanly", () => {
   expect(result.stdout).toMatch(/planning/);
   expect(result.stdout).not.toMatch(/dispatch/);
 });
+test("harness factory planning help exposes only manual actions", () => {
+  const result = runHarness(["factory", "planning", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory planning/);
+  expect(result.stdout).toMatch(/run/);
+  expect(result.stdout).toMatch(/publish/);
+  expect(result.stdout).toMatch(/mark-plan-merged/);
+  expect(result.stdout).not.toMatch(/loop|dry-run|implement/);
+});
+test("harness factory planning run help documents one-action controls", () => {
+  const result = runHarness(["factory", "planning", "run", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/exactly one pending planning action/);
+  expect(result.stdout).toMatch(/--rerun/);
+  expect(result.stdout).toMatch(/--apply/);
+  expect(result.stdout).toMatch(/--output-plan/);
+  expect(result.stdout).not.toMatch(/--dry-run/);
+});
 test("harness factory linear help exits cleanly", () => {
   const result = runHarness(["factory", "linear", "--help"]);
   expect(result.status).toBe(0);
