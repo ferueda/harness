@@ -22,7 +22,6 @@ import {
   applyLinearPlanningCompleted,
   applyLinearPlanningFailed,
   applyLinearPlanningStarted,
-  linearPlanningAttentionStageFromComments,
   type LinearPlanningApplyInput,
   type LinearPlanningCompletedInput,
   type LinearPlanningFailedInput,
@@ -40,8 +39,6 @@ import {
 import type {
   LinearClientLike,
   LinearCommentLike,
-  LinearConnectionLike,
-  LinearIssueLabelLike,
   LinearIssueLike,
   LinearMutationPayload,
   LinearProjectLike,
@@ -52,7 +49,6 @@ import type {
 import {
   FactoryWorkItemSchema,
   type FactoryRoute,
-  type FactoryStage,
   type FactoryTriageOutput,
   type FactoryWorkItem,
   type JsonValue,
@@ -117,6 +113,8 @@ export type LinearTriageApplyInput = {
   runId: string;
   runDir: string;
   rerun?: boolean;
+  continuation?: boolean;
+  resume?: boolean;
 };
 
 export type LinearTriageCompletedInput = LinearTriageApplyInput & {
@@ -256,8 +254,6 @@ const LINEAR_LIST_DEPS = {
   resolveOptional,
   assertTeamMatches,
   assertProjectMatches,
-  factoryStageForStatus,
-  normalizeName,
   canonicalTeamKey,
   assigneeName,
   formatDate,
@@ -321,19 +317,38 @@ export function assertLinearTriageApplyAllowed(
   settings: FactoryLinearSettings,
   statusName: string | undefined,
   rerun = false,
+  continuation = false,
+  resume = false,
 ): void {
   if (!statusName) {
     throw new Error("Linear issue is missing a status; cannot apply factory triage.");
   }
-  if (rerun) return;
-  const allowed = [
+  if (continuation) {
+    if (normalizeName(statusName) === normalizeName(settings.statuses.triaging)) return;
+    throw new Error(
+      `Linear triage continuation requires ${settings.statuses.triaging}; issue is in ${statusName}.`,
+    );
+  }
+  if (resume && normalizeName(statusName) === normalizeName(settings.statuses.triaging)) return;
+  const entryStatuses = [
     settings.statuses.intake,
     settings.statuses.needsInfo,
     settings.statuses.triageFailed,
-  ].map(normalizeName);
+  ];
+  const allowed = (
+    rerun
+      ? [
+          ...entryStatuses,
+          settings.statuses.triaging,
+          settings.statuses.needsPlan,
+          settings.statuses.readyToImplement,
+          settings.statuses.parked,
+        ]
+      : entryStatuses
+  ).map(normalizeName);
   if (allowed.includes(normalizeName(statusName))) return;
   throw new Error(
-    `Linear issue is in ${statusName}; --apply only accepts ${settings.statuses.intake}, ${settings.statuses.needsInfo}, or ${settings.statuses.triageFailed}.`,
+    `Linear issue is in ${statusName}; --apply only accepts a configured triage entry or triage-owned status.`,
   );
 }
 
@@ -397,8 +412,27 @@ async function applyTriageStarted(
   const issue = await fetchIssue(client, settings, input.issueRef);
   const state = await resolveOptional(issue.state);
   await assertIssueInConfiguredScope(issue, settings);
-  assertLinearTriageApplyAllowed(settings, state?.name, input.rerun);
+  assertLinearTriageApplyAllowed(
+    settings,
+    state?.name,
+    input.rerun,
+    input.continuation,
+    input.resume,
+  );
 
+  if (
+    input.continuation ||
+    (input.resume && normalizeName(state?.name ?? "") === normalizeName(settings.statuses.triaging))
+  ) {
+    return {
+      issueIdentifier: issue.identifier,
+      runId: input.runId,
+      runDir: input.runDir,
+      stage: "start",
+      fromStatus: state?.name,
+      targetStatus: settings.statuses.triaging,
+    };
+  }
   const target = await fetchWorkflowState(client, settings, settings.statuses.triaging);
   assertLinearMutationSuccess(
     await client.updateIssue(issue.id, { stateId: target.id }),
@@ -428,6 +462,7 @@ async function applyTriageCompleted(
     settings,
     linearTriageTargetStatus(settings, input.triage.route),
   );
+  assertLinearTriageTerminalApplyAllowed(settings, state?.name, target.name);
   await updateIssueStatusIfNeeded(client, issue, state, target);
 
   const commentMarker = linearTriageCommentMarker(input.runId);
@@ -488,6 +523,7 @@ async function applyTriageFailed(
   const state = await resolveOptional(issue.state);
   await assertIssueInConfiguredScope(issue, settings);
   const target = await fetchWorkflowState(client, settings, settings.statuses.triageFailed);
+  assertLinearTriageTerminalApplyAllowed(settings, state?.name, target.name);
   await updateIssueStatusIfNeeded(client, issue, state, target);
 
   const commentMarker = linearTriageFailedCommentMarker(input.runId);
@@ -515,6 +551,21 @@ async function applyTriageFailed(
   };
 }
 
+function assertLinearTriageTerminalApplyAllowed(
+  settings: FactoryLinearSettings,
+  currentStatus: string | undefined,
+  targetStatus: string,
+): void {
+  if (
+    normalizeName(currentStatus ?? "") === normalizeName(settings.statuses.triaging) ||
+    normalizeName(currentStatus ?? "") === normalizeName(targetStatus)
+  )
+    return;
+  throw new Error(
+    `Linear triage terminal apply requires ${settings.statuses.triaging} or ${targetStatus}; issue is in ${currentStatus ?? "unknown"}.`,
+  );
+}
+
 async function fetchWorkItem(
   client: LinearClientLike,
   settings: FactoryLinearSettings,
@@ -539,9 +590,6 @@ async function fetchWorkItem(
       id: issue.identifier,
       url: issue.url,
     },
-    factoryStage: state
-      ? factoryStageForStatus(settings, state.name, commentResult.comments)
-      : undefined,
     linearIssueId: issue.id,
     linearIssueIdentifier: issue.identifier,
     linearTeamKey: team.key,
@@ -810,35 +858,6 @@ function renderLinearIssueBody(issue: LinearIssueLike, comments: LinearCommentLi
     );
   }
   return sections.join("\n\n");
-}
-
-function factoryStageForStatus(
-  settings: FactoryLinearSettings,
-  statusName: string,
-  comments: LinearCommentLike[] = [],
-): FactoryStage | undefined {
-  // Bootstrap fallback only. Durable lifecycle state is canonical; workspace-local state is legacy.
-  const normalized = normalizeName(statusName);
-  const statuses = settings.statuses;
-  if (normalized === normalizeName(statuses.intake)) return "incoming";
-  if (normalized === normalizeName(statuses.triaging)) return "triaging";
-  if (normalized === normalizeName(statuses.needsInfo)) {
-    const stage = linearPlanningAttentionStageFromComments(comments);
-    return stage === "plan-needs-human" ? stage : "needs-info";
-  }
-  if (normalized === normalizeName(statuses.needsPlan)) return "ready-to-plan";
-  if (normalized === normalizeName(statuses.needsPlanReview)) return "plan-review-unresolved";
-  if (normalized === normalizeName(statuses.readyToImplement)) return "ready-to-implement";
-  if (normalized === normalizeName(statuses.implementing)) {
-    return "implementation-started";
-  }
-  if (normalized === normalizeName(statuses.implementationFailed)) {
-    return "implementation-failed";
-  }
-  if (normalized === normalizeName(statuses.parked)) return "wait-to-implement";
-  if (normalized === normalizeName(statuses.planning)) return "planning";
-  if (normalized === normalizeName(statuses.planningFailed)) return "planning-failed";
-  return undefined;
 }
 
 async function resolveOptional<T>(

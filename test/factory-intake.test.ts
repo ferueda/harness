@@ -94,11 +94,10 @@ test("ready-to-implement maps to deterministic direct implementation plan", () =
     statusLabel: "ready-to-implement",
     artifactRelPath: "factory-route.md",
   });
-  expect(routePlan.command).toContain("no harness command in PR 1");
-  expect(routePlan.command).not.toBe("ignored");
+  expect(routePlan.command).toBeUndefined();
 });
 
-test("ready-to-plan maps to planning workflow handoff guidance", () => {
+test("ready-to-plan maps to a non-executable planning reaction", () => {
   const triage = parseFactoryTriageOutput({
     ...BASE_TRIAGE,
     ...NO_FOLLOWUP,
@@ -108,8 +107,7 @@ test("ready-to-plan maps to planning workflow handoff guidance", () => {
 
   const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
   expect(routePlan.nextAction).toBe("create-plan");
-  expect(routePlan.command).toContain("planning-workflow");
-  expect(routePlan.command).toContain("harness run plan-review --plan <plan-path>");
+  expect(routePlan.command).toBeUndefined();
 });
 
 test("needs-info requires questions and maps to ask-human", () => {
@@ -129,10 +127,8 @@ test("needs-info requires questions and maps to ask-human", () => {
   expect(routePlan.nextAction).toBe("ask-human");
   expect(
     buildFactoryRoutePlan(WORK_ITEM, triage, { nextLiveRunRequiresRerun: true }).command,
-  ).toContain("--rerun");
-  expect(buildFactoryRoutePlan(WORK_ITEM, triage, { isDryRun: true }).command).toContain(
-    "live factory triage without --rerun",
-  );
+  ).toBeUndefined();
+  expect(buildFactoryRoutePlan(WORK_ITEM, triage, { isDryRun: true }).command).toBeUndefined();
 });
 
 test("wait-to-implement requires reconsiderWhen and maps to park", () => {
@@ -150,10 +146,10 @@ test("wait-to-implement requires reconsiderWhen and maps to park", () => {
   });
   const routePlan = buildFactoryRoutePlan(WORK_ITEM, triage);
   expect(routePlan.nextAction).toBe("park");
-  expect(routePlan.command).toContain("reconsiderWhen");
+  expect(routePlan.command).toBeUndefined();
   expect(
     buildFactoryRoutePlan(WORK_ITEM, triage, { nextLiveRunRequiresRerun: true }).command,
-  ).toContain("--rerun");
+  ).toBeUndefined();
 });
 
 test("route/action mismatches fail validation", () => {
@@ -194,28 +190,28 @@ test("factory route markdown includes route-specific operator guidance", () => {
       action: "implement-directly",
       questions: [],
       reconsiderWhen: null,
-      expected: "no harness command in PR 1",
+      expected: "implement-directly",
     },
     {
       route: "ready-to-plan",
       action: "create-plan",
       questions: [],
       reconsiderWhen: null,
-      expected: "planning-workflow coordinator",
+      expected: "create-plan",
     },
     {
       route: "needs-info",
       action: "ask-human",
       questions: ["Which export formats are in scope?"],
       reconsiderWhen: null,
-      expected: "Ask the emitted questions[]",
+      expected: "ask-human",
     },
     {
       route: "wait-to-implement",
       action: "park",
       questions: [],
       reconsiderWhen: "Roadmap includes export shortcuts.",
-      expected: "Park until reconsiderWhen is true",
+      expected: "park",
     },
   ] as const;
 

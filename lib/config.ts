@@ -18,6 +18,7 @@ import {
   type FactoryStoreConfig,
   type HarnessConfig,
 } from "./schemas.ts";
+import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
 
 const CONFIG_FILE = "harness.json";
 const FACTORY_PLANNING_CODEX_PLANNER_SANDBOX = "workspace-write" satisfies AgentSandboxMode;
@@ -107,6 +108,19 @@ type ResolveFactoryRoleAgentInput =
       role: Extract<FactoryStationRole, "implementer">;
     };
 
+export type FactoryConfigSnapshot = Readonly<{
+  workspace: string;
+  config: HarnessConfig;
+}>;
+
+export function loadFactoryConfigSnapshot(
+  workspaceInput?: string,
+  cwd = process.cwd(),
+): FactoryConfigSnapshot {
+  const workspace = resolveHarnessWorkspace(workspaceInput, cwd);
+  return Object.freeze({ workspace, config: readHarnessConfig(workspace) });
+}
+
 export function resolveHarnessOptions<T extends HarnessOptions>(
   options: T,
   cwd = process.cwd(),
@@ -139,8 +153,17 @@ export function resolveFactoryRoleAgent(
   input: ResolveFactoryRoleAgentInput,
   cwd = process.cwd(),
 ): FactoryRoleAgent & { workspace: string } {
-  const workspace = resolveHarnessWorkspace(input.workspace, cwd);
-  const config = readHarnessConfig(workspace);
+  return resolveFactoryRoleAgentFromSnapshot(
+    loadFactoryConfigSnapshot(input.workspace, cwd),
+    input,
+  );
+}
+
+export function resolveFactoryRoleAgentFromSnapshot(
+  snapshot: FactoryConfigSnapshot,
+  input: ResolveFactoryRoleAgentInput,
+): FactoryRoleAgent & { workspace: string } {
+  const { workspace, config } = snapshot;
   const roleConfig = factoryRoleConfig(config, input);
   const agent = roleConfig?.agent ?? config.defaultAgent ?? "cursor";
   const agentConfig = config.agents?.[agent] ?? {};
@@ -172,6 +195,26 @@ export function resolveFactoryRoleAgent(
   };
 }
 
+/** Freeze the invocation-effective PR 1 triage policy under its handler key. */
+export function factoryTriageExecutionProfile(
+  role: FactoryRoleAgent,
+): FactoryActionExecutionProfile {
+  if (role.agent === "cursor") {
+    return {
+      provider: "cursor",
+      model: role.model ?? DEFAULT_AGENT_MODELS.cursor,
+    };
+  }
+  return {
+    provider: "codex",
+    model: role.model ?? DEFAULT_AGENT_MODELS.codex,
+    ...(role.codexPathOverride ? { executable: role.codexPathOverride } : {}),
+    sandbox: role.sandboxMode ?? "read-only",
+    approvalPolicy: role.approvalPolicy ?? "never",
+    reasoningEffort: role.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
+  };
+}
+
 export function resolveFactoryPlanningSettings(
   options: { workspace?: string },
   cwd = process.cwd(),
@@ -188,8 +231,15 @@ export function resolveFactoryLinearSettings(
   options: { workspace?: string },
   cwd = process.cwd(),
 ): FactoryLinearSettings & { workspace: string } {
-  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
-  const config = readHarnessConfig(workspace);
+  return resolveFactoryLinearSettingsFromSnapshot(
+    loadFactoryConfigSnapshot(options.workspace, cwd),
+  );
+}
+
+export function resolveFactoryLinearSettingsFromSnapshot(
+  snapshot: FactoryConfigSnapshot,
+): FactoryLinearSettings & { workspace: string } {
+  const { workspace, config } = snapshot;
   if (!config.factory?.linear) {
     throw new Error(
       "factory.linear is required in harness.json for Linear commands. Configure teamKey and statuses.",
@@ -205,8 +255,13 @@ export function resolveFactoryStoreSettings(
   options: { workspace?: string },
   cwd = process.cwd(),
 ): FactoryStoreSettings & { workspace: string } {
-  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
-  const config = readHarnessConfig(workspace);
+  return resolveFactoryStoreSettingsFromSnapshot(loadFactoryConfigSnapshot(options.workspace, cwd));
+}
+
+export function resolveFactoryStoreSettingsFromSnapshot(
+  snapshot: FactoryConfigSnapshot,
+): FactoryStoreSettings & { workspace: string } {
+  const { workspace, config } = snapshot;
   return {
     workspace,
     ...config.factory?.store,

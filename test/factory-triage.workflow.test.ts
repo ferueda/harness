@@ -1,10 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import type { AgentRunInput } from "../lib/agents.ts";
+import type { AgentProviderOptions, AgentRunInput } from "../lib/agents.ts";
 import {
+  createFactoryRunContext,
   createFactoryRunContextForTest,
+  openFactoryRunContext,
   readFactoryWorkItemFile,
 } from "../lib/factory-run-context.ts";
 import type { FactoryTriageOutput, FactoryWorkItem } from "../lib/factory-schemas.ts";
@@ -48,6 +50,7 @@ test("factory triage dry-run writes placeholder artifacts without calling provid
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-runs-"));
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir,
     workItem: WORK_ITEM,
@@ -71,19 +74,18 @@ test("factory triage dry-run writes placeholder artifacts without calling provid
   expect(existsSync(join(ctx.runDir, "context/work-item.json"))).toBe(true);
   expect(existsSync(join(ctx.runDir, "context/diff.patch"))).toBe(false);
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("# Factory Route");
-  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain(
-    "live factory triage without --rerun",
-  );
+  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("ask-human");
   expect(JSON.parse(readFileSync(join(ctx.runDir, "factory-route.json"), "utf8"))).toMatchObject({
     route: "needs-info",
     nextAction: "ask-human",
   });
 });
 
-test("factory triage renders rerun guidance only when requested", async () => {
+test("factory triage does not invent an executable rerun command", async () => {
   for (const nextLiveRunRequiresRerun of [false, true]) {
     const workspace = createWorkspace();
     const ctx = createFactoryRunContextForTest({
+      executionProfile: { provider: "cursor", model: "test-model" },
       workspace,
       runsDir: mkdtempSync(join(tmpdir(), "harness-factory-runs-")),
       workItem: WORK_ITEM,
@@ -100,12 +102,7 @@ test("factory triage renders rerun guidance only when requested", async () => {
     });
     await runFactoryTriage(ctx, { nextLiveRunRequiresRerun });
     const route = readFileSync(join(ctx.runDir, "factory-route.md"), "utf8");
-    if (nextLiveRunRequiresRerun) {
-      expect(route).toContain("Use --rerun");
-      expect(route).not.toContain("without --rerun");
-    } else {
-      expect(route).toContain("live factory triage without --rerun");
-    }
+    expect(route).not.toContain("--rerun");
   }
 });
 
@@ -115,6 +112,7 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   const events: WorkflowEvent[] = [];
   const calls: AgentRunInput[] = [];
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir,
     workItem: WORK_ITEM,
@@ -158,9 +156,7 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   expect(prompt).toContain("Include blocking questions only for needs-info");
   expect(prompt).toContain("ready-to-implement must use questions: []");
   expect(prompt).toContain("ready-to-plan may include non-blocking planning questions");
-  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain(
-    "Use the planning-workflow coordinator",
-  );
+  expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("create-plan");
   expect(JSON.parse(readFileSync(join(ctx.runDir, "meta.json"), "utf8"))).toMatchObject({
     status: "completed",
     workflow: "factory-triage",
@@ -192,11 +188,39 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   expect(readFileSync(join(ctx.runDir, "events.jsonl"), "utf8")).toContain('"type":"run:start"');
 });
 
+test("factory triage persists heartbeats while the handler is running", async () => {
+  const workspace = createWorkspace();
+  const events: WorkflowEvent[] = [];
+  const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
+    workspace,
+    runsDir: mkdtempSync(join(tmpdir(), "harness-factory-runs-")),
+    workItem: WORK_ITEM,
+    maxRuntimeMs: 1_000,
+    eventSink: (event) => events.push(event),
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return { ok: true, structuredOutput: TRIAGE_OUTPUT, raw: {} };
+        },
+      };
+    },
+  });
+  await runFactoryTriage(ctx, { heartbeatMs: 1 });
+  expect(events.some((event) => event.type === "step:heartbeat")).toBe(true);
+  expect(readFileSync(join(ctx.runDir, "events.jsonl"), "utf8")).toContain(
+    '"type":"step:heartbeat"',
+  );
+});
+
 test("factory triage provider failure writes failed metadata and returns without throwing", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-runs-"));
   const events: WorkflowEvent[] = [];
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir,
     workItem: WORK_ITEM,
@@ -226,6 +250,7 @@ test("factory triage invalid provider output writes failed metadata and preserve
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-runs-"));
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir,
     workItem: WORK_ITEM,
@@ -268,6 +293,65 @@ test("factory work item fixture parses through runtime reader", () => {
     source: "file",
     title: "Add keyboard shortcut for export",
   });
+});
+
+test("opening a phase uses its persisted profile and validates it before provider construction", () => {
+  const workspace = createWorkspace();
+  const projectRoot = mkdtempSync(join(tmpdir(), "factory-store-project-"));
+  const runsDir = join(projectRoot, "runs/factory");
+  const factoryStore = {
+    storeRoot: projectRoot,
+    projectId: "project",
+    projectRoot,
+    factoryStateRoot: join(projectRoot, "factory"),
+    factoryRunsDir: runsDir,
+    reviewRunsDir: join(projectRoot, "runs/reviews"),
+    repo: { name: "repo", id: "repo", idSource: "config" as const },
+    overrides: {},
+    warnings: [],
+  };
+  const providers: string[] = [];
+  const providerFactory = (options: AgentProviderOptions) => {
+    providers.push(options.provider);
+    return {
+      name: options.provider,
+      run: async () => ({ ok: false as const, error: "unused", exitCode: 1 }),
+    };
+  };
+  const created = createFactoryRunContext({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    executionProfile: { provider: "cursor", model: "frozen-model" },
+    maxRuntimeMs: 1_000,
+    factoryStore,
+    agentProviderFactory: providerFactory,
+  });
+  const opened = openFactoryRunContext({
+    workspace,
+    runsDir,
+    phaseRunId: created.runId,
+    workItem: WORK_ITEM,
+    maxRuntimeMs: 1_000,
+    factoryStore,
+    agentProviderFactory: providerFactory,
+  });
+  expect(opened.executionProfile).toEqual({ provider: "cursor", model: "frozen-model" });
+  expect(providers).toEqual(["cursor", "cursor"]);
+
+  writeFileSync(join(created.runDir, "context/phase-run.json"), "{}\n");
+  expect(() =>
+    openFactoryRunContext({
+      workspace,
+      runsDir,
+      phaseRunId: created.runId,
+      workItem: WORK_ITEM,
+      maxRuntimeMs: 1_000,
+      factoryStore,
+      agentProviderFactory: providerFactory,
+    }),
+  ).toThrow();
+  expect(providers).toEqual(["cursor", "cursor"]);
 });
 
 function dirnameFromTest(): string {

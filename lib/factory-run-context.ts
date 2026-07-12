@@ -1,17 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type Agent,
-  type AgentApprovalPolicy,
   type AgentProviderName,
   type AgentProviderOptions,
-  type AgentReasoningEffort,
   type AgentRunInput,
   type AgentRunResult,
-  type AgentSandboxMode,
 } from "./agents.ts";
-import { DEFAULT_AGENT_MODELS, DEFAULT_CODEX_REASONING_EFFORT } from "./agents.ts";
 import { buildRunId, fillTemplate } from "./context.ts";
 import {
   DRY_RUN_FACTORY_TRIAGE,
@@ -39,6 +35,10 @@ import {
   type FactoryExecutionProvenance,
   type FactoryStoreMeta,
 } from "./factory-store.ts";
+import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
+import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
+import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
 type FactoryRunStatus = "completed" | "dry_run" | "failed";
 
@@ -64,14 +64,15 @@ export type FactoryRunMeta = {
   agent: {
     name: AgentProviderName;
     model: string;
-    sandboxMode?: AgentSandboxMode;
-    approvalPolicy?: AgentApprovalPolicy;
-    modelReasoningEffort?: AgentReasoningEffort;
+    sandboxMode?: AgentRunInput["sandboxMode"];
+    approvalPolicy?: AgentRunInput["approvalPolicy"];
+    modelReasoningEffort?: AgentRunInput["modelReasoningEffort"];
   };
   startedAt: string;
   durationMs: number;
   eventsFile?: typeof WORKFLOW_EVENTS_FILE;
   error?: string;
+  failureKind?: "retryable" | "human-required" | "terminal";
   factoryStore?: FactoryStoreMeta;
   execution?: FactoryExecutionProvenance;
 };
@@ -83,28 +84,41 @@ export type FactoryRunContext = {
   workItem: FactoryWorkItem;
   factoryStore?: FactoryStoreMeta;
   dryRun?: boolean;
+  executionProfile: FactoryActionExecutionProfile;
   eventSink: WorkflowEventSink;
+  bindActionOutcome?(input: {
+    path: string;
+    action: {
+      phaseRunId: string;
+      handler: "triageWorkItem";
+      attempt: number;
+      causationEventId: string;
+    };
+  }): void;
   invokeTriageAgent(): Promise<FactoryTriageOutput>;
   export(input: { triage: FactoryTriageOutput; routePlan: FactoryRoutePlan }): FactoryRunMeta;
-  exportFailed(error: unknown): FactoryRunMeta;
+  exportFailed(error: unknown, options?: { publishActionOutcome?: boolean }): FactoryRunMeta;
 };
 
 export type FactoryRunContextFactoryOptions = {
   workspace: string;
   runsDir?: string;
   workItem: FactoryWorkItem;
-  agentProvider?: AgentProviderName;
-  codexPathOverride?: string;
-  model?: string;
-  sandboxMode?: AgentSandboxMode;
-  approvalPolicy?: AgentApprovalPolicy;
-  modelReasoningEffort?: AgentReasoningEffort;
+  executionProfile: FactoryActionExecutionProfile;
   maxRuntimeMs: number;
   dryRun?: boolean;
   signal?: AbortSignal;
   eventSink?: WorkflowEventSink;
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
   factoryStore?: FactoryStoreMeta;
+};
+
+export type OpenFactoryRunContextOptions = Omit<
+  FactoryRunContextFactoryOptions,
+  "executionProfile" | "runsDir"
+> & {
+  runsDir: string;
+  phaseRunId: string;
 };
 
 const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -116,8 +130,6 @@ export const FACTORY_TRIAGE_SCHEMA_PATH = join(
 );
 const FACTORY_TRIAGE_WORKFLOW = "factory-triage" as const;
 const FACTORY_TRIAGE_STEP = "factory-triage" as const;
-const FACTORY_SANDBOX_MODE = "read-only" satisfies AgentSandboxMode;
-const FACTORY_APPROVAL_POLICY = "never" satisfies AgentApprovalPolicy;
 
 export function readFactoryWorkItemFile(path: string): FactoryWorkItem {
   let parsed: unknown;
@@ -150,16 +162,40 @@ export function assertFactoryItemFileExists(workspace: string, itemFile: string)
 }
 
 export function createFactoryRunContext(options: FactoryRunContextFactoryOptions) {
-  return createFactoryRunContextInternal(options);
+  return createFactoryRunContextInternal(options, "create");
+}
+
+export function openFactoryRunContext(options: OpenFactoryRunContextOptions) {
+  const runDir = join(resolve(options.runsDir), options.phaseRunId);
+  const identity = readFactoryPhaseRunIdentity(runDir);
+  const workspace = resolve(options.workspace);
+  if (
+    identity.phaseRunId !== options.phaseRunId ||
+    identity.phase !== "triage" ||
+    identity.workItemKey !== deriveFactoryWorkItemKey(options.workItem) ||
+    identity.workspace !== workspace ||
+    !options.factoryStore ||
+    identity.projectId !== options.factoryStore.projectId ||
+    identity.factoryStateRoot !== resolve(options.factoryStore.factoryStateRoot)
+  ) {
+    throw new FactoryTriageError(`Factory phase-run identity conflicts with ${options.phaseRunId}`);
+  }
+  return createFactoryRunContextInternal(
+    { ...options, executionProfile: identity.actions.triageWorkItem },
+    "open",
+    options.phaseRunId,
+  );
 }
 
 // Test-only seam for provider injection; production callers should use createFactoryRunContext.
 export function createFactoryRunContextForTest(options: FactoryRunContextFactoryOptions) {
-  return createFactoryRunContextInternal(options);
+  return createFactoryRunContextInternal(options, "create");
 }
 
 function createFactoryRunContextInternal(
   options: FactoryRunContextFactoryOptions,
+  mode: "create" | "open",
+  existingRunId?: string,
 ): FactoryRunContext {
   const workspace = resolve(options.workspace);
   if (!existsSync(workspace)) {
@@ -167,26 +203,65 @@ function createFactoryRunContextInternal(
   }
 
   const startedAt = new Date();
-  const runId = buildRunId(startedAt);
+  const executionProfile = options.executionProfile;
+  const runId = existingRunId ?? buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/factory")), runId);
-  const prompt = renderPrompt(options.workItem);
+  const workItem =
+    mode === "open"
+      ? readFactoryWorkItemFile(join(runDir, "context/work-item.json"))
+      : options.workItem;
+  const prompt = renderPrompt(workItem);
+  let actionOutcomeBinding:
+    | {
+        path: string;
+        action: {
+          phaseRunId: string;
+          handler: "triageWorkItem";
+          attempt: number;
+          causationEventId: string;
+        };
+      }
+    | undefined;
   let triageProvider: Agent;
   try {
-    mkdirSync(runDir, { recursive: true });
-    mkdirSync(join(runDir, "context"), { recursive: true });
-    writeJson(join(runDir, "context/work-item.json"), options.workItem);
-    writeFileSync(join(runDir, "factory-triage.prompt.md"), prompt, "utf8");
+    if (mode === "open") {
+      if (
+        !existsSync(join(runDir, "context/work-item.json")) ||
+        !existsSync(join(runDir, "factory-triage.prompt.md"))
+      ) {
+        throw new FactoryTriageError(`Factory phase run is incomplete: ${runDir}`);
+      }
+    } else {
+      mkdirSync(runDir, { recursive: true });
+      mkdirSync(join(runDir, "context"), { recursive: true });
+      writeJson(join(runDir, "context/work-item.json"), workItem);
+      writeDurableFactoryFile(join(runDir, "factory-triage.prompt.md"), prompt);
+      if (options.factoryStore) {
+        writeFactoryPhaseRunIdentity(runDir, {
+          version: 1,
+          phaseRunId: runId,
+          phase: "triage",
+          workItemKey: deriveFactoryWorkItemKey(workItem),
+          workspace,
+          projectId: options.factoryStore.projectId,
+          factoryStateRoot: resolve(options.factoryStore.factoryStateRoot),
+          actions: { triageWorkItem: executionProfile },
+        });
+      }
+    }
 
     const agentProviderFactory = options.agentProviderFactory;
     if (!agentProviderFactory) {
       throw new FactoryTriageError("agentProviderFactory is required");
     }
     triageProvider = agentProviderFactory({
-      provider: options.agentProvider ?? "cursor",
-      codexPathOverride: options.codexPathOverride,
+      provider: executionProfile.provider,
+      ...(executionProfile.provider === "codex" && executionProfile.executable
+        ? { codexPathOverride: executionProfile.executable }
+        : {}),
     });
   } catch (error) {
-    cleanupOrphanedFactoryRunDir(runDir);
+    if (mode === "create") cleanupOrphanedFactoryRunDir(runDir);
     throw asFactoryTriageError(error);
   }
 
@@ -195,10 +270,15 @@ function createFactoryRunContextInternal(
     : options.eventSink
       ? createCompositeEventSink(createFileEventSink(runDir), options.eventSink)
       : createFileEventSink(runDir);
-  const agentPolicyMeta = factoryPolicyOptions(triageProvider.name, options);
+  if (triageProvider.name !== executionProfile.provider) {
+    throw new FactoryTriageError(
+      `Factory triage provider conflicts with execution profile: expected ${executionProfile.provider}, got ${triageProvider.name}`,
+    );
+  }
+  const agentPolicyMeta = factoryPolicyOptions(executionProfile);
   const agentMeta = {
     name: triageProvider.name,
-    model: resolvedAgentModel(triageProvider.name, options),
+    model: executionProfile.model,
     ...agentPolicyMeta,
   };
 
@@ -206,10 +286,16 @@ function createFactoryRunContextInternal(
     runId,
     runDir,
     workspace,
-    workItem: options.workItem,
+    workItem,
     factoryStore: options.factoryStore,
     dryRun: options.dryRun,
+    executionProfile,
     eventSink,
+    bindActionOutcome(binding): void {
+      if (actionOutcomeBinding)
+        throw new Error(`Factory action outcome already bound for ${runId}`);
+      actionOutcomeBinding = binding;
+    },
     async invokeTriageAgent(): Promise<FactoryTriageOutput> {
       if (options.dryRun) {
         writeJson(join(runDir, "factory-triage.raw.json"), DRY_RUN_FACTORY_TRIAGE);
@@ -223,7 +309,7 @@ function createFactoryRunContextInternal(
           workspace,
           prompt,
           schemaPath: FACTORY_TRIAGE_SCHEMA_PATH,
-          model: resolvedAgentModel(triageProvider.name, options),
+          model: executionProfile.model,
           ...agentPolicyMeta,
           maxRuntimeMs: options.maxRuntimeMs,
           logPath: join(runDir, "factory-triage.stream.jsonl"),
@@ -235,7 +321,12 @@ function createFactoryRunContextInternal(
           const error = result.aborted
             ? "Agent was aborted: factory-triage"
             : `factory-triage failed: ${result.error}`;
-          throw new FactoryTriageError(error);
+          throw new FactoryTriageError(error, {
+            failureKind:
+              result.aborted || result.failureKind === "workspace-guard"
+                ? "human-required"
+                : "retryable",
+          });
         }
 
         const triage = parseFactoryTriageOutput(result.structuredOutput);
@@ -251,15 +342,13 @@ function createFactoryRunContextInternal(
     export(input: { triage: FactoryTriageOutput; routePlan: FactoryRoutePlan }): FactoryRunMeta {
       try {
         writeJson(join(runDir, "factory-route.json"), input.routePlan);
-        writeFileSync(
+        writeDurableFactoryFile(
           join(runDir, "factory-route.md"),
-          renderFactoryRouteMarkdown(options.workItem, input.triage, input.routePlan),
-          "utf8",
+          renderFactoryRouteMarkdown(workItem, input.triage, input.routePlan),
         );
-        writeFileSync(
+        writeDurableFactoryFile(
           join(runDir, "summary.md"),
-          renderFactoryTriageSummary(options.workItem, input.triage, input.routePlan),
-          "utf8",
+          renderFactoryTriageSummary(workItem, input.triage, input.routePlan),
         );
 
         const meta = buildMeta({
@@ -268,13 +357,14 @@ function createFactoryRunContextInternal(
           runId,
           runDir,
           workspace,
-          workItem: options.workItem,
+          workItem,
           triage: input.triage,
           routePlan: input.routePlan,
           agent: agentMeta,
           includeEventsFile: !options.dryRun,
           factoryStore: options.factoryStore,
         });
+        publishBoundActionOutcome(actionOutcomeBinding, meta);
         writeJson(join(runDir, "meta.json"), meta);
         return meta;
       } catch (error) {
@@ -286,23 +376,44 @@ function createFactoryRunContextInternal(
         );
       }
     },
-    exportFailed(error: unknown): FactoryRunMeta {
+    exportFailed(error: unknown, exportOptions = {}): FactoryRunMeta {
       const meta = buildMeta({
         status: "failed",
         startedAt,
         runId,
         runDir,
         workspace,
-        workItem: options.workItem,
+        workItem,
         agent: agentMeta,
         error: errorMessage(error),
+        failureKind:
+          error instanceof FactoryTriageError
+            ? error.failureKind
+            : options.signal?.aborted
+              ? "human-required"
+              : "terminal",
         includeEventsFile: !options.dryRun,
         factoryStore: options.factoryStore,
       });
+      if (exportOptions.publishActionOutcome !== false) {
+        publishBoundActionOutcome(actionOutcomeBinding, meta);
+      }
       writeJson(join(runDir, "meta.json"), meta);
       return meta;
     },
   };
+}
+
+function publishBoundActionOutcome(
+  binding: Parameters<NonNullable<FactoryRunContext["bindActionOutcome"]>>[0] | undefined,
+  meta: FactoryRunMeta,
+): void {
+  if (!binding) return;
+  writeDurableFactoryFile(
+    binding.path,
+    `${JSON.stringify({ version: 1, action: binding.action, meta }, null, 2)}\n`,
+    true,
+  );
 }
 
 function renderPrompt(workItem: FactoryWorkItem): string {
@@ -322,6 +433,7 @@ function buildMeta(input: {
   routePlan?: FactoryRoutePlan;
   agent: FactoryRunMeta["agent"];
   error?: string;
+  failureKind?: FactoryRunMeta["failureKind"];
   includeEventsFile: boolean;
   factoryStore?: FactoryStoreMeta;
 }): FactoryRunMeta {
@@ -353,28 +465,21 @@ function buildMeta(input: {
     durationMs: Date.now() - input.startedAt.getTime(),
     ...(input.includeEventsFile ? { eventsFile: WORKFLOW_EVENTS_FILE } : {}),
     ...(input.error ? { error: input.error } : {}),
+    ...(input.failureKind ? { failureKind: input.failureKind } : {}),
     ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
     execution: factoryExecutionProvenance(input.workspace, input.runDir),
   };
 }
 
 function factoryPolicyOptions(
-  providerName: AgentProviderName,
-  options: FactoryRunContextFactoryOptions,
+  profile: FactoryActionExecutionProfile,
 ): Pick<AgentRunInput, "sandboxMode" | "approvalPolicy" | "modelReasoningEffort"> {
-  if (providerName !== "codex") return {};
+  if (profile.provider !== "codex") return {};
   return {
-    sandboxMode: options.sandboxMode ?? FACTORY_SANDBOX_MODE,
-    approvalPolicy: options.approvalPolicy ?? FACTORY_APPROVAL_POLICY,
-    modelReasoningEffort: options.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
+    sandboxMode: profile.sandbox,
+    approvalPolicy: profile.approvalPolicy,
+    modelReasoningEffort: profile.reasoningEffort,
   };
-}
-
-function resolvedAgentModel(
-  providerName: AgentProviderName,
-  options: FactoryRunContextFactoryOptions,
-): string {
-  return options.model ?? DEFAULT_AGENT_MODELS[providerName];
 }
 
 function rawAgentArtifact(result: AgentRunResult): unknown {
@@ -383,7 +488,7 @@ function rawAgentArtifact(result: AgentRunResult): unknown {
 }
 
 function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, JSON.stringify(value, null, 2), "utf8");
+  writeDurableFactoryFile(path, JSON.stringify(value, null, 2));
 }
 
 function cleanupOrphanedFactoryRunDir(runDir: string): boolean {

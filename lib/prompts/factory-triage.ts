@@ -22,6 +22,7 @@ Important constraints:
 - ready-to-plan may include non-blocking planning questions; use rationale/evidence to explain why planning is needed.
 - Always include reconsiderWhen; use null unless route is wait-to-implement.
 - Always include nullable evidence.path, suggestedNext.command, and suggestedNext.artifact fields; use null when absent.
+- Tracker evidence.path may be null or the tracker identifier/URL; other non-null evidence paths must be repository-relative files.
 - Use ready-to-plan instead of ready-to-implement when the work needs a plan or design review before code changes.
 
 Work item JSON:

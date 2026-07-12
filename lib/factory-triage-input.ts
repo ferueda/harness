@@ -1,14 +1,7 @@
 import { type FactoryLinearSettings } from "./config.ts";
 import { type LinearFactoryAdapter, createLinearFactoryAdapter } from "./factory-linear-adapter.ts";
 import type { FactoryLockRuntimeOptions } from "./factory-locks.ts";
-import {
-  deriveFactoryWorkItemKey,
-  inspectFactoryLifecycleState,
-  loadFactoryLifecycleState,
-  mergeFactoryStateIntoWorkItem,
-  resolveFactoryStateRoot,
-  type FactoryLifecycleWarning,
-} from "./factory-lifecycle.ts";
+import type { FactoryLifecycleWarning } from "./factory-lifecycle.ts";
 import { type FactoryWorkItem } from "./factory-schemas.ts";
 import { assertFactoryItemFileExists, readFactoryWorkItemFile } from "./factory-run-context.ts";
 
@@ -23,7 +16,7 @@ export type FactoryResolvedWorkItemInput = {
   warnings?: FactoryLifecycleWarning[];
 };
 
-export type FactoryLifecycleReadMode = "inspect" | "load";
+export type FactoryLifecycleReadMode = "inspect" | "load" | "none";
 
 export type ResolveFactoryWorkItemInput = {
   workspace: string;
@@ -109,32 +102,8 @@ export function mergeLifecycleState(input: {
   lifecycleReadMode: FactoryLifecycleReadMode;
   lifecycleLockOptions?: FactoryLockRuntimeOptions;
 }): { workItem: FactoryWorkItem; warnings: FactoryLifecycleWarning[] } {
-  if (!input.factoryStateRoot && !input.allowWorkspaceLocalStateRoot) {
-    throw new Error(
-      "factoryStateRoot is required for factory station lifecycle reads; pass allowWorkspaceLocalStateRoot only for low-level workspace-local tests.",
-    );
-  }
-  const factoryStateRoot = resolveFactoryStateRoot(input);
-  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
-  if (input.lifecycleReadMode === "inspect") {
-    const inspected = inspectFactoryLifecycleState({ factoryStateRoot, workItemKey });
-    return {
-      workItem: mergeFactoryStateIntoWorkItem(input.workItem, inspected.state),
-      warnings: inspected.warnings,
-    };
-  }
-  return {
-    workItem: mergeFactoryStateIntoWorkItem(
-      input.workItem,
-      loadFactoryLifecycleState({
-        factoryStateRoot,
-        workItemKey,
-        workspace: input.workspace,
-        lockOptions: input.lifecycleLockOptions,
-      }),
-    ),
-    warnings: [],
-  };
+  if (input.lifecycleReadMode === "none") return { workItem: input.workItem, warnings: [] };
+  throw new Error("Legacy Factory lifecycle reads are unavailable; use the action store kernel.");
 }
 
 export function validateFactoryTriageWorkItemInput(input: {

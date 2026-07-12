@@ -327,6 +327,32 @@ acquire it inside `produceImplementationCandidate`. It is only a
 single-machine safety guard. Future scheduled implementation uses dedicated
 checkouts/worktrees.
 
+### Configuration decision: roles resolve to immutable action profiles
+
+User configuration remains role-based. Runtime handlers map to roles exactly:
+`triageWorkItem` -> `factory.triage.roles.triager`, `producePlanCandidate` ->
+`factory.planning.roles.planner`, `reviewPlanCandidate` ->
+`factory.planning.roles.reviewer`, `produceImplementationCandidate` ->
+`factory.implementation.roles.implementer`, and `reviewImplementationCandidate`
+-> `factory.implementation.roles.reviewer` (introduced in PR 3). Do not add a
+`factory.actions` tree, handler registry, compatibility layer, or Factory
+per-review-step model hierarchy.
+
+Creating a phase reads and validates configuration once, resolves the
+invocation-effective action profiles including action defaults, and snapshots
+them by handler in `context/phase-run.json`. A profile contains provider,
+model, executable override when present, sandbox, approval policy, and
+reasoning effort. It excludes credentials, environment authentication,
+signals, telemetry, `--apply` authorization, and invocation timeout.
+Continuations and retries use the snapshot and never silently re-resolve from
+current configuration; an explicit new phase run uses current configuration.
+
+`plan-review` uses one planning-reviewer profile for its fixed steps.
+`change-review` uses one implementation-reviewer profile for all its fixed
+steps. PR 1 establishes and uses the snapshot contract for triage. PR 2
+consumes the existing planning planner/reviewer roles. PR 3 adds the
+implementation reviewer role.
+
 ## PR 1 — New action kernel and manually run triage
 
 Create the new-only domain foundation and prove it vertically with triage.
@@ -365,12 +391,13 @@ input, and the configured completed-review ceiling.
 Changes:
 
 - Add `lib/factory-plan-candidate-action.ts` and
-  `factory-plan-review-action.ts` around the existing `invokePlanner` and
-  `runReview` seams.
+  `factory-plan-review-action.ts` around the retained run-context/provider and
+  `runPlanReview` seams, extracting small equivalents where needed.
 - Split planning context creation from `openFactoryPlanningRunContext`; persist
   the phase context, effective session, immutable candidates, review refs, and
   blocking-finding refs.
-- Replace `runPlanningLoop` with an explicit one-action planning coordinator.
+- Add an explicit one-action planning coordinator in place of the deleted
+  legacy planning loop.
   A fresh command appends `planning.requested` and runs only candidate attempt
   1. Every later command reopens the run and executes exactly the latest
      reaction. It recomputes `next` but never invokes it.

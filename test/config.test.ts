@@ -19,9 +19,14 @@ import {
   type InitHarnessOptions,
   findHarnessConfig,
   initHarnessConfig,
+  loadFactoryConfigSnapshot,
   resolveFactoryLinearSettings,
+  resolveFactoryLinearSettingsFromSnapshot,
   resolveFactoryPlanningSettings,
   resolveFactoryRoleAgent,
+  resolveFactoryRoleAgentFromSnapshot,
+  resolveFactoryStoreSettingsFromSnapshot,
+  factoryTriageExecutionProfile,
   resolveHarnessOptions,
 } from "../lib/config.ts";
 const TEST_HARNESS_ENTRYPOINT = "/opt/harness/dist/bin/harness.js";
@@ -169,6 +174,20 @@ test("resolveFactoryRoleAgent resolves absent factory through defaultAgent then 
   });
 });
 
+test("factory triage execution profile freezes invocation-effective defaults", () => {
+  expect(factoryTriageExecutionProfile({ agent: "codex" })).toEqual({
+    provider: "codex",
+    model: "gpt-5.6-sol",
+    sandbox: "read-only",
+    approvalPolicy: "never",
+    reasoningEffort: "high",
+  });
+  expect(factoryTriageExecutionProfile({ agent: "cursor" })).toEqual({
+    provider: "cursor",
+    model: "grok-4.5",
+  });
+});
+
 test("resolveFactoryRoleAgent reads triage role model override", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeHarnessJson(workspace, {
@@ -188,6 +207,36 @@ test("resolveFactoryRoleAgent reads triage role model override", () => {
     agent: "cursor",
     model: "claude-opus-4-8",
   });
+});
+
+test("Factory creation resolvers share one immutable configuration snapshot", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-snapshot-"));
+  writeHarnessJson(workspace, {
+    agents: { cursor: { model: "composer-2.5" } },
+    factory: {
+      store: { root: "/first-store" },
+      linear: { teamKey: "ENG", statuses: LINEAR_STATUSES },
+      triage: { roles: { triager: { agent: "cursor", model: "grok-4.5" } } },
+    },
+  });
+  const snapshot = loadFactoryConfigSnapshot(workspace, "/");
+  writeHarnessJson(workspace, {
+    agents: { cursor: { model: "composer-2.5" } },
+    factory: {
+      store: { root: "/second-store" },
+      linear: { teamKey: "OTHER", statuses: LINEAR_STATUSES },
+      triage: { roles: { triager: { agent: "cursor", model: "claude-opus-4-8" } } },
+    },
+  });
+
+  expect(resolveFactoryStoreSettingsFromSnapshot(snapshot).root).toBe("/first-store");
+  expect(resolveFactoryLinearSettingsFromSnapshot(snapshot).teamKey).toBe("ENG");
+  expect(
+    resolveFactoryRoleAgentFromSnapshot(snapshot, {
+      station: "triage",
+      role: "triager",
+    }).model,
+  ).toBe("grok-4.5");
 });
 
 test("resolveFactoryRoleAgent accepts Cursor grok-4.5 role model", () => {

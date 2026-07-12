@@ -59,9 +59,18 @@ export type JsonValue =
   | { [key: string]: JsonValue };
 
 export class FactoryTriageError extends Error {
-  constructor(message: string, options: { cause?: unknown } = {}) {
+  readonly failureKind: "retryable" | "human-required" | "terminal";
+
+  constructor(
+    message: string,
+    options: {
+      cause?: unknown;
+      failureKind?: "retryable" | "human-required" | "terminal";
+    } = {},
+  ) {
     super(message, options);
     this.name = "FactoryTriageError";
+    this.failureKind = options.failureKind ?? "terminal";
   }
 }
 

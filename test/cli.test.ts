@@ -23,12 +23,9 @@ import {
   fetchFactoryLinearWorkItem,
   createFactoryLinearWorkItem,
 } from "../bin/factory-commands.ts";
-import {
-  appendFactoryLifecycleEvent,
-  factoryLifecycleStatePath,
-  loadFactoryLifecycleState,
-} from "../lib/factory-lifecycle.ts";
 import { resolveFactoryStore } from "../lib/factory-store.ts";
+import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
+import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import {
   fakeLinearAdapter,
   LINEAR_SETTINGS,
@@ -77,36 +74,6 @@ function createPlainWorkspace() {
   return workspace;
 }
 
-function seedMissingLifecycleProjection(input: {
-  workspace: string;
-  storeRoot: string;
-  id: string;
-  source: "file" | "linear";
-  title: string;
-}) {
-  const store = resolveFactoryStore({
-    workspace: input.workspace,
-    factoryStoreRoot: input.storeRoot,
-    env: {},
-  });
-  const workItemKey = `${input.source}:${input.id}`;
-  appendFactoryLifecycleEvent({
-    factoryStateRoot: store.factoryStateRoot,
-    event: {
-      version: 1,
-      id: `work_item.imported:${workItemKey}`,
-      type: "work_item.imported",
-      workItemKey,
-      occurredAt: "2026-07-09T00:00:00.000Z",
-      source: "harness",
-      data: { source: input.source, title: input.title },
-    },
-  });
-  rmSync(factoryLifecycleStatePath(store.factoryStateRoot, workItemKey));
-  rmSync(join(store.factoryStateRoot, "locks"), { recursive: true, force: true });
-  return store;
-}
-
 function writeLinearConfig(workspace: string): void {
   writeFileSync(
     join(workspace, "harness.json"),
@@ -140,35 +107,6 @@ function writeLinearConfig(workspace: string): void {
     ),
     "utf8",
   );
-}
-
-function createFactoryPlanningPublicationRun() {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-cli-planning-publication-workspace-"));
-  const runDir = mkdtempSync(join(tmpdir(), "harness-cli-planning-publication-run-"));
-  const meta = {
-    runId: "20260707-120000",
-    workflow: "factory-planning",
-    status: "plan-approved",
-    workspace,
-    runDir,
-    workItem: { id: "linear:ENG-123", source: "linear", title: "Linear issue" },
-    outputPlan: join(workspace, "dev/plans/ENG-123.md"),
-    factoryMetadata: {
-      tracker: { source: "linear", id: "ENG-123" },
-      factoryStage: "plan-pr-open",
-      approvedPlanPath: "dev/plans/ENG-123.md",
-    },
-    iterations: [{ index: 1 }],
-    plannerAgent: { name: "cursor", model: "composer-2.5" },
-    reviewerAgent: { name: "cursor", model: "composer-2.5" },
-    summaryPath: join(runDir, "summary.md"),
-    metaPath: join(runDir, "meta.json"),
-    startedAt: "2026-07-07T12:00:00.000Z",
-    durationMs: 1,
-  };
-  writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
-  writeFileSync(join(runDir, "summary.md"), "# Old Summary\n", "utf8");
-  return { workspace, runDir };
 }
 
 function expectInitShim(
@@ -308,18 +246,10 @@ test("harness run change-review help exits cleanly", () => {
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).toMatch(/--verbose/);
 });
-test("harness run factory-triage help exposes item-only options", () => {
-  const result = runHarness(["run", "factory-triage", "--help"]);
-  expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/harness run factory-triage/);
-  expect(result.stdout).toMatch(/--item-file <path>/);
-  expect(result.stdout).toMatch(/--dry-run/);
-  expect(result.stdout).not.toMatch(/--linear-issue/);
-  expect(result.stdout).not.toMatch(/--base/);
-  expect(result.stdout).not.toMatch(/--head/);
-  expect(result.stdout).not.toMatch(/--plan/);
-  expect(result.stdout).not.toMatch(/--handoff/);
-  expect(result.stdout).not.toMatch(/--steps/);
+test("harness run factory-triage is not a public workflow bypass", () => {
+  const result = runHarness(["run", "factory-triage"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown command 'factory-triage'/i);
 });
 test("harness factory help exits cleanly", () => {
   const result = runHarness(["factory", "--help"]);
@@ -633,72 +563,7 @@ test("createFactoryLinearWorkItem returns compact JSON for inline, file, and std
     { title: "Stdin", body: "Stdin body" },
   ]);
 });
-test("harness factory linear fetch overlays seeded lifecycle state", async () => {
-  const workspace = createPlainWorkspace();
-  const factoryStateRoot = mkdtempSync(join(tmpdir(), "harness-cli-fetch-store-"));
-  appendFactoryLifecycleEvent({
-    factoryStateRoot,
-    event: {
-      version: 1,
-      id: "work_item.imported:linear:ENG-123",
-      type: "work_item.imported",
-      workItemKey: "linear:ENG-123",
-      occurredAt: "2026-07-08T00:00:00.000Z",
-      source: "harness",
-      data: {
-        source: "linear",
-        title: "Linear issue",
-        tracker: { source: "linear", id: "ENG-123" },
-      },
-    },
-  });
-  appendFactoryLifecycleEvent({
-    factoryStateRoot,
-    event: {
-      version: 1,
-      id: "triage.completed:triage-run-1",
-      type: "triage.completed",
-      workItemKey: "linear:ENG-123",
-      occurredAt: "2026-07-08T00:01:00.000Z",
-      runId: "triage-run-1",
-      source: "harness",
-      data: {
-        route: "ready-to-plan",
-        nextAction: "create-plan",
-        rationale: "Requires a plan.",
-        routeArtifactPath: "factory-route.md",
-        triageArtifactPath: "factory-triage.json",
-      },
-    },
-  });
 
-  const workItem = await fetchFactoryLinearWorkItem({
-    issue: "ENG-123",
-    workspace,
-    factoryStateRoot,
-    env: { LINEAR_API_KEY: "test-key" },
-    resolveLinearSettings: () => LINEAR_SETTINGS,
-    adapterFactory: () =>
-      fakeLinearAdapter({
-        fetchWorkItem: async () => ({
-          ...LINEAR_WORK_ITEM,
-          metadata: {
-            ...LINEAR_WORK_ITEM.metadata,
-            factoryStage: "incoming",
-            factoryRoute: "needs-info",
-            factoryNextAction: "ask-human",
-          },
-        }),
-      }),
-  });
-
-  expect(workItem.metadata).toMatchObject({
-    factoryStage: "ready-to-plan",
-    factoryRoute: "ready-to-plan",
-    factoryNextAction: "create-plan",
-    factoryRunId: "triage-run-1",
-  });
-});
 test("harness factory status help exits cleanly", () => {
   const result = runHarness(["factory", "status", "--help"]);
   expect(result.status).toBe(0);
@@ -720,54 +585,6 @@ test("harness factory triage help exits cleanly without direct agent flags", () 
   expect(result.stdout).not.toMatch(/--sandbox/);
   expect(result.stdout).not.toMatch(/--approval-policy/);
   expect(result.stdout).not.toMatch(/--reasoning-effort/);
-});
-test("harness factory planning help exits cleanly without direct agent flags", () => {
-  const result = runHarness(["factory", "planning", "--help"]);
-  expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/harness factory planning/);
-  expect(result.stdout).toMatch(/run/);
-  expect(result.stdout).toMatch(/publish/);
-  expect(result.stdout).toMatch(/mark-plan-merged/);
-  expect(result.stdout).not.toMatch(/--agent/);
-  expect(result.stdout).not.toMatch(/--model/);
-  expect(result.stdout).not.toMatch(/--codex-executable/);
-  expect(result.stdout).not.toMatch(/--sandbox/);
-  expect(result.stdout).not.toMatch(/--approval-policy/);
-  expect(result.stdout).not.toMatch(/--reasoning-effort/);
-});
-test("harness factory planning run help exits cleanly without direct agent flags", () => {
-  const result = runHarness(["factory", "planning", "run", "--help"]);
-  expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/harness factory planning run/);
-  expect(result.stdout).toMatch(/--item-file <path>/);
-  expect(result.stdout).toMatch(/--linear-issue <issue>/);
-  expect(result.stdout).toMatch(/--output-plan <path>/);
-  expect(result.stdout).toMatch(/--max-review-iterations <count>/);
-  expect(result.stdout).toMatch(/--apply/);
-  expect(result.stdout).toMatch(/--dry-run/);
-  expect(result.stdout).not.toMatch(/--agent/);
-  expect(result.stdout).not.toMatch(/--model/);
-  expect(result.stdout).not.toMatch(/--codex-executable/);
-  expect(result.stdout).not.toMatch(/--sandbox/);
-  expect(result.stdout).not.toMatch(/--approval-policy/);
-  expect(result.stdout).not.toMatch(/--reasoning-effort/);
-});
-test("harness factory planning publication help exits cleanly", () => {
-  const publish = runHarness(["factory", "planning", "publish", "--help"]);
-  expect(publish.status).toBe(0);
-  expect(publish.stdout).toMatch(/harness factory planning publish/);
-  expect(publish.stdout).toMatch(/--run-dir <path>/);
-  expect(publish.stdout).toMatch(/--pr-url <url>/);
-  expect(publish.stdout).toMatch(/--linear-issue <issue>/);
-  expect(publish.stdout).toMatch(/--apply/);
-
-  const merged = runHarness(["factory", "planning", "mark-plan-merged", "--help"]);
-  expect(merged.status).toBe(0);
-  expect(merged.stdout).toMatch(/harness factory planning mark-plan-merged/);
-  expect(merged.stdout).toMatch(/--run-dir <path>/);
-  expect(merged.stdout).toMatch(/--commit <sha>/);
-  expect(merged.stdout).toMatch(/--linear-issue <issue>/);
-  expect(merged.stdout).toMatch(/--apply/);
 });
 test("harness run factory-planning is not a command", () => {
   const result = runHarness(["run", "factory-planning"]);
@@ -1422,202 +1239,6 @@ test("harness run plan-review rejects change-review flags", () => {
   }
 });
 
-test("harness run factory-triage dry-run works in non-git workspaces", () => {
-  const workspace = createPlainWorkspace();
-  writeFileSync(
-    join(workspace, "item.json"),
-    JSON.stringify(
-      {
-        id: "local-1",
-        source: "file",
-        title: "Clarify export shortcut",
-        body: "Should export have a keyboard shortcut?",
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
-
-  const result = runHarness([
-    "run",
-    "factory-triage",
-    "--workspace",
-    workspace,
-    "--item-file",
-    "item.json",
-    "--dry-run",
-  ]);
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output).toMatchObject({
-    workflow: "factory-triage",
-    status: "dry_run",
-    workspace,
-    workItem: {
-      id: "local-1",
-      source: "file",
-      title: "Clarify export shortcut",
-    },
-    route: "needs-info",
-    nextAction: "ask-human",
-    summaryPath: "summary.md",
-    triagePath: "factory-triage.json",
-    routePath: "factory-route.json",
-    routeSummaryPath: "factory-route.md",
-  });
-  expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
-  expect(existsSync(join(output.runDir, "context/diff.patch"))).toBe(false);
-  expect(readFileSync(join(output.runDir, "context/work-item.json"), "utf8")).toContain(
-    "Clarify export shortcut",
-  );
-  expect(readFileSync(join(output.runDir, "factory-triage.prompt.md"), "utf8")).toContain(
-    "Work item JSON",
-  );
-  expect(readFileSync(join(output.runDir, "factory-route.md"), "utf8")).toContain(
-    "# Factory Route",
-  );
-});
-
-test("harness run factory-triage accepts absolute item-file paths", () => {
-  const workspace = createPlainWorkspace();
-  const itemPath = join(workspace, "item.json");
-  writeFileSync(
-    itemPath,
-    JSON.stringify({
-      id: "local-absolute",
-      source: "file",
-      title: "Absolute item path",
-      body: "Route an item loaded by absolute path.",
-    }),
-    "utf8",
-  );
-
-  const result = runHarness([
-    "run",
-    "factory-triage",
-    "--workspace",
-    workspace,
-    "--item-file",
-    itemPath,
-    "--dry-run",
-  ]);
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output.workItem).toMatchObject({
-    id: "local-absolute",
-    source: "file",
-    title: "Absolute item path",
-  });
-});
-
-test("harness run factory-triage requires an item file", () => {
-  const workspace = createPlainWorkspace();
-  const result = runHarness(["run", "factory-triage", "--workspace", workspace, "--dry-run"]);
-  expect(result.status).toBe(2);
-  expect(result.stderr).toMatch(/required option.*--item-file/i);
-});
-
-test("harness run factory-triage rejects missing item files", () => {
-  const workspace = createPlainWorkspace();
-  const result = runHarness([
-    "run",
-    "factory-triage",
-    "--workspace",
-    workspace,
-    "--item-file",
-    "missing.json",
-    "--dry-run",
-  ]);
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory item file does not exist: missing\.json/);
-});
-
-test("harness run factory-triage rejects invalid item JSON", () => {
-  const workspace = createPlainWorkspace();
-  writeFileSync(join(workspace, "item.json"), "{ nope", "utf8");
-  const result = runHarness([
-    "run",
-    "factory-triage",
-    "--workspace",
-    workspace,
-    "--item-file",
-    "item.json",
-    "--dry-run",
-  ]);
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Invalid factory work item JSON/);
-});
-
-test("harness run factory-triage preserves post-bootstrap failure artifacts", () => {
-  const workspace = createPlainWorkspace();
-  writeFileSync(
-    join(workspace, "item.json"),
-    JSON.stringify({
-      id: "local-fail",
-      source: "file",
-      title: "Provider failure",
-      body: "Force provider failure after context bootstrap.",
-    }),
-    "utf8",
-  );
-  const result = runHarness(
-    [
-      "run",
-      "factory-triage",
-      "--workspace",
-      workspace,
-      "--item-file",
-      "item.json",
-      "--max-runtime-ms",
-      "1000",
-    ],
-    { env: { CURSOR_API_KEY: "" } },
-  );
-  expect(result.status).toBe(1);
-  const output = JSON.parse(result.stdout);
-  expect(output).toMatchObject({
-    workflow: "factory-triage",
-    status: "failed",
-    workItem: {
-      id: "local-fail",
-      source: "file",
-      title: "Provider failure",
-    },
-  });
-  expect(existsSync(join(output.runDir, "factory-triage.prompt.md"))).toBe(true);
-  expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain('"status": "failed"');
-});
-
-test("harness run factory-triage rejects review workflow flags", () => {
-  const workspace = createPlainWorkspace();
-  writeFileSync(
-    join(workspace, "item.json"),
-    JSON.stringify({ id: "local-1", source: "file", title: "Task", body: "" }),
-    "utf8",
-  );
-  for (const args of [
-    ["--base", "HEAD"],
-    ["--head", "HEAD"],
-    ["--plan", "plan.md"],
-    ["--handoff", "handoff.md"],
-    ["--steps", "implementation"],
-  ] as const) {
-    const result = runHarness([
-      "run",
-      "factory-triage",
-      "--workspace",
-      workspace,
-      "--item-file",
-      "item.json",
-      "--dry-run",
-      ...args,
-    ]);
-    expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/unknown option/i);
-  }
-});
-
 test("harness factory status lists local inbox items", () => {
   const workspace = createPlainWorkspace();
   const inboxDir = join(workspace, ".harness/inbox/factory");
@@ -1667,6 +1288,7 @@ test("harness factory status reports stale locks and ignored legacy state withou
   ]);
   expect(first.status).toBe(0);
   const factoryStateRoot = JSON.parse(first.stdout).store.factoryStateRoot as string;
+  ensureFactoryStoreFormat(factoryStateRoot);
 
   const legacyEventPath = join(workspace, ".harness/factory/events/file-legacy.jsonl");
   mkdirSync(dirname(legacyEventPath), { recursive: true });
@@ -1762,13 +1384,7 @@ test("harness factory triage dry-run handles one item file", () => {
     }),
     "utf8",
   );
-  const store = seedMissingLifecycleProjection({
-    workspace,
-    storeRoot,
-    id: "local-1",
-    source: "file",
-    title: "Queued item",
-  });
+  const store = resolveFactoryStore({ workspace, factoryStoreRoot: storeRoot, env: {} });
 
   const result = runHarness([
     "factory",
@@ -1804,99 +1420,59 @@ test("harness factory triage dry-run handles one item file", () => {
     workspace,
   });
   expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
-  expect(output.warnings).toEqual([
-    expect.objectContaining({
-      code: "durable-state-missing",
-      factoryStateRoot: store.factoryStateRoot,
-      workItemKey: "file:local-1",
-    }),
-  ]);
-  expect(existsSync(factoryLifecycleStatePath(store.factoryStateRoot, "file:local-1"))).toBe(false);
+  expect(output.warnings).toBeUndefined();
+  expect(existsSync(join(store.factoryStateRoot, "store-format.json"))).toBe(false);
   expect(existsSync(join(store.factoryStateRoot, "locks"))).toBe(false);
 });
 
-test("harness factory triage gates completed history before run creation", () => {
+test("harness factory triage rejects an unmarked old store before run creation", () => {
   const workspace = createPlainWorkspace();
-  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-rerun-store-"));
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-old-store-"));
   const itemFile = join(workspace, "item.json");
   writeFileSync(
     itemFile,
-    JSON.stringify({ id: "local-rerun", source: "file", title: "Rerun item", body: "" }),
+    JSON.stringify({ id: "local-old-store", source: "file", title: "Old store", body: "" }),
   );
   const store = resolveFactoryStore({ workspace, factoryStoreRoot: storeRoot, env: {} });
-  appendFactoryLifecycleEvent({
-    factoryStateRoot: store.factoryStateRoot,
-    event: {
-      version: 1,
-      id: "triage.completed:old-run",
-      type: "triage.completed",
-      workItemKey: "file:local-rerun",
-      occurredAt: "2026-07-09T00:00:00.000Z",
-      runId: "old-run",
-      source: "harness",
-      data: {
-        route: "needs-info",
-        nextAction: "ask-human",
-        rationale: "Question",
-        routeArtifactPath: "factory-route.md",
-        triageArtifactPath: "factory-triage.json",
-      },
-    },
-  });
-  const args = [
-    "factory",
-    "triage",
-    "--workspace",
-    workspace,
-    "--item-file",
-    itemFile,
-    "--factory-store-root",
-    storeRoot,
-  ];
-  for (const extra of [[], ["--dry-run"]]) {
-    const result = runHarness([...args, ...extra]);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("--rerun");
+  mkdirSync(store.factoryStateRoot, { recursive: true });
+  writeFileSync(join(store.factoryStateRoot, "old-state.json"), "{}\n", "utf8");
+
+  for (const extra of [[], ["--dry-run"], ["--rerun", "--dry-run"]]) {
+    const result = runHarness([
+      "factory",
+      "triage",
+      "--workspace",
+      workspace,
+      "--item-file",
+      itemFile,
+      "--factory-store-root",
+      storeRoot,
+      ...extra,
+    ]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Archive or reset");
     expect(result.stderr).not.toContain('"harnessFactory":"run-started"');
     expect(existsSync(itemFile)).toBe(true);
     expect(existsSync(store.factoryRunsDir)).toBe(false);
   }
-
-  const rerun = runHarness([...args, "--rerun", "--dry-run"]);
-  expect(rerun.status).toBe(0);
-  const output = JSON.parse(rerun.stdout);
-  expect(output.status).toBe("dry_run");
-  expect(readFileSync(join(output.runDir, "factory-route.md"), "utf8")).toContain("--rerun");
-  expect(
-    loadFactoryLifecycleState({
-      factoryStateRoot: store.factoryStateRoot,
-      workItemKey: "file:local-rerun",
-    })?.lastEventId,
-  ).toBe("triage.completed:old-run");
 });
 
-test("harness factory triage allows a failed-only history without rerun", () => {
+test("harness factory triage rejects an incompatible store marker", () => {
   const workspace = createPlainWorkspace();
-  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-retry-store-"));
+  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-old-marker-"));
   const itemFile = join(workspace, "item.json");
   writeFileSync(
     itemFile,
-    JSON.stringify({ id: "local-retry", source: "file", title: "Retry item", body: "" }),
+    JSON.stringify({ id: "local-old-marker", source: "file", title: "Old marker", body: "" }),
   );
   const store = resolveFactoryStore({ workspace, factoryStoreRoot: storeRoot, env: {} });
-  appendFactoryLifecycleEvent({
-    factoryStateRoot: store.factoryStateRoot,
-    event: {
-      version: 1,
-      id: "triage.failed:old-run",
-      type: "triage.failed",
-      workItemKey: "file:local-retry",
-      occurredAt: "2026-07-09T00:00:00.000Z",
-      runId: "old-run",
-      source: "harness",
-      data: { error: "Previous provider failure" },
-    },
-  });
+  mkdirSync(store.factoryStateRoot, { recursive: true });
+  writeFileSync(
+    join(store.factoryStateRoot, "store-format.json"),
+    `${JSON.stringify({ format: "harness-factory", version: 0 })}\n`,
+    "utf8",
+  );
+
   const result = runHarness([
     "factory",
     "triage",
@@ -1908,8 +1484,11 @@ test("harness factory triage allows a failed-only history without rerun", () => 
     "--factory-store-root",
     storeRoot,
   ]);
-  expect(result.status).toBe(0);
-  expect(JSON.parse(result.stdout).status).toBe("dry_run");
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("Archive or reset");
+  expect(result.stderr).not.toContain('"harnessFactory":"run-started"');
+  expect(existsSync(itemFile)).toBe(true);
+  expect(existsSync(store.factoryRunsDir)).toBe(false);
 });
 
 test("harness factory triage records explicit runs-dir overrides in durable metadata", () => {
@@ -2188,110 +1767,12 @@ test("harness factory triage rejects invalid item JSON", () => {
   expect(result.stderr).toMatch(/Invalid factory work item JSON/);
 });
 
-test("harness factory planning dry-run works in non-git workspaces", () => {
-  const workspace = createPlainWorkspace();
-  const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-planning-store-"));
-  writeFileSync(
-    join(workspace, "item.json"),
-    JSON.stringify(
-      {
-        id: "plan-local-1",
-        source: "file",
-        title: "Plan export shortcut",
-        body: "Design the keyboard shortcut implementation.",
-        metadata: {
-          factoryRoute: "ready-to-plan",
-          factoryNextAction: "create-plan",
-        },
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
-  const store = seedMissingLifecycleProjection({
-    workspace,
-    storeRoot,
-    id: "plan-local-1",
-    source: "file",
-    title: "Plan export shortcut",
-  });
-
-  const result = runHarness([
-    "factory",
-    "planning",
-    "--workspace",
-    workspace,
-    "--item-file",
-    "item.json",
-    "--dry-run",
-    "--factory-store-root",
-    storeRoot,
-  ]);
-
-  expect(result.status).toBe(0);
-  const output = JSON.parse(result.stdout);
-  expect(output).toMatchObject({
-    workflow: "factory-planning",
-    status: "dry_run",
-    workspace,
-    workItem: {
-      id: "plan-local-1",
-      source: "file",
-      title: "Plan export shortcut",
-    },
-    iterations: 1,
-  });
-  expect(output.outputPlan).toBeUndefined();
-  expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
-  expect(existsSync(join(workspace, ".harness/factory"))).toBe(false);
-  expect(readFileSync(join(output.runDir, "context/work-item.json"), "utf8")).toContain(
-    "Plan export shortcut",
-  );
-  expect(readFileSync(join(output.runDir, "iterations/1/planner.prompt.md"), "utf8")).toContain(
-    "Factory Planning",
-  );
-  expect(readFileSync(join(output.runDir, "iterations/1/plan.md"), "utf8")).toContain(
-    "Dry Run Plan",
-  );
-  expect(readFileSync(join(output.runDir, "planning/draft.md"), "utf8")).toBe(
-    readFileSync(join(output.runDir, "iterations/1/plan.md"), "utf8"),
-  );
-  expect(
-    readFileSync(join(workspace, ".harness/factory-drafts", output.runId, "draft.md"), "utf8"),
-  ).toContain("Dry Run Plan");
-  expect(readFileSync(join(output.runDir, "iterations/1/planner.prompt.md"), "utf8")).toContain(
-    join(workspace, ".harness/factory-drafts", output.runId, "draft.md"),
-  );
-  expect(readFileSync(join(output.runDir, "meta.json"), "utf8")).toContain(
-    '"workflow": "factory-planning"',
-  );
-  expect(parseFactoryRunStartedProgress(result.stderr)).toEqual({
-    harnessFactory: "run-started",
-    station: "planning",
-    runId: output.runId,
-    runDir: output.runDir,
-    workspace,
-  });
-  expect(output.warnings).toEqual([
-    expect.objectContaining({
-      code: "durable-state-missing",
-      factoryStateRoot: store.factoryStateRoot,
-      workItemKey: "file:plan-local-1",
-    }),
-  ]);
-  expect(existsSync(factoryLifecycleStatePath(store.factoryStateRoot, "file:plan-local-1"))).toBe(
-    false,
-  );
-  expect(existsSync(join(store.factoryStateRoot, "locks"))).toBe(false);
-});
-
 test("harness factory planning requires one input source", () => {
   const workspace = createPlainWorkspace();
   const result = runHarness(["factory", "planning", "--workspace", workspace, "--dry-run"]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/one of --item-file or --linear-issue is required/);
+  expect(result.stderr).toMatch(/Factory planning is not available/);
 });
 
 test("harness factory planning rejects multiple input sources before role config resolution", () => {
@@ -2331,7 +1812,7 @@ test("harness factory planning rejects multiple input sources before role config
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--item-file and --linear-issue are mutually exclusive/);
+  expect(result.stderr).toMatch(/Factory planning is not available/);
   expect(result.stderr).not.toMatch(/sandboxMode applies only when role agent is codex/);
 });
 
@@ -2370,7 +1851,7 @@ test("harness factory planning apply rejects item-file mode before role config r
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--apply cannot be used with --item-file/);
+  expect(result.stderr).toMatch(/Factory planning is not available/);
   expect(result.stderr).not.toMatch(/sandboxMode applies only when role agent is codex/);
 });
 
@@ -2389,7 +1870,7 @@ test("harness factory planning apply rejects dry-run before Linear config resolu
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--apply cannot be combined with --dry-run/);
+  expect(result.stderr).toMatch(/Factory planning is not available/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
@@ -2399,7 +1880,7 @@ test("harness factory planning apply requires Linear issue before role config re
   const result = runHarness(["factory", "planning", "--workspace", workspace, "--apply"]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--apply requires --linear-issue/);
+  expect(result.stderr).toMatch(/Factory planning is not available/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
@@ -2411,241 +1892,7 @@ test("harness factory planning with Linear input requires Linear config", () => 
   );
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/factory\.linear is required/);
-});
-
-test("harness factory planning with Linear input requires a Linear API key", () => {
-  const workspace = createPlainWorkspace();
-  writeLinearConfig(workspace);
-
-  const result = runHarness(
-    ["factory", "planning", "--linear-issue", "ENG-123", "--workspace", workspace, "--dry-run"],
-    { env: { LINEAR_API_KEY: "" } },
-  );
-
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
-});
-
-test("harness factory planning publication commands patch run metadata", () => {
-  const workspace = createPlainWorkspace();
-  const runDir = mkdtempSync(join(tmpdir(), "harness-cli-planning-run-"));
-  mkdirSync(join(workspace, "dev/plans"), { recursive: true });
-  writeFileSync(join(workspace, "dev/plans/FER-123.md"), "# Plan\n", "utf8");
-  writeFileSync(
-    join(runDir, "meta.json"),
-    JSON.stringify(
-      {
-        runId: "20260707-120000",
-        workflow: "factory-planning",
-        status: "plan-approved",
-        workspace,
-        runDir,
-        workItem: { id: "linear:FER-123", source: "linear", title: "Plan issue" },
-        outputPlan: join(workspace, "dev/plans/FER-123.md"),
-        factoryMetadata: {
-          tracker: { source: "linear", id: "FER-123" },
-          factoryStage: "plan-pr-open",
-          approvedPlanPath: "dev/plans/FER-123.md",
-        },
-        iterations: [{ index: 1 }],
-        plannerAgent: { name: "cursor", model: "composer-2.5" },
-        reviewerAgent: { name: "cursor", model: "composer-2.5" },
-        summaryPath: join(runDir, "summary.md"),
-        metaPath: join(runDir, "meta.json"),
-        factoryStore: {
-          storeRoot: join(runDir, "store"),
-          projectId: "cli-test-project",
-          projectRoot: join(runDir, "store/projects/cli-test-project"),
-          factoryStateRoot: join(runDir, "factory-state"),
-          factoryRunsDir: join(runDir, "store/projects/cli-test-project/runs/factory"),
-          reviewRunsDir: join(runDir, "store/projects/cli-test-project/runs/reviews"),
-          repo: { name: "cli-test", id: "cli-test-project", idSource: "config" },
-          overrides: {},
-          warnings: [],
-        },
-        startedAt: "2026-07-07T12:00:00.000Z",
-        durationMs: 1,
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
-  writeFileSync(join(runDir, "summary.md"), "# Old Summary\n", "utf8");
-
-  const publish = runHarness([
-    "factory",
-    "planning",
-    "publish",
-    "--run-dir",
-    runDir,
-    "--pr-url",
-    "https://github.com/owner/repo/pull/123",
-  ]);
-  expect(publish.status).toBe(0);
-  const published = JSON.parse(publish.stdout);
-  expect(published.factoryMetadata).toMatchObject({
-    factoryStage: "plan-pr-open",
-    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
-  });
-  expect(published.linearComment).toContain("Factory plan ready.");
-  expect(
-    loadFactoryLifecycleState({
-      factoryStateRoot: published.factoryStore.factoryStateRoot,
-      workItemKey: "linear:FER-123",
-    }),
-  ).toMatchObject({
-    factoryStage: "plan-pr-open",
-    approvedPlanPath: "dev/plans/FER-123.md",
-    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
-  });
-
-  const merged = runHarness([
-    "factory",
-    "planning",
-    "mark-plan-merged",
-    "--run-dir",
-    runDir,
-    "--commit",
-    "abc1234",
-  ]);
-  expect(merged.status).toBe(0);
-  const output = JSON.parse(merged.stdout);
-  expect(output.factoryMetadata).toMatchObject({
-    factoryStage: "plan-approved",
-    approvedPlanCommit: "abc1234",
-  });
-  expect(output.linearComment).toContain("Factory plan approved.");
-  expect(
-    loadFactoryLifecycleState({
-      factoryStateRoot: output.factoryStore.factoryStateRoot,
-      workItemKey: "linear:FER-123",
-    }),
-  ).toMatchObject({
-    factoryStage: "plan-approved",
-    approvedPlanPath: "dev/plans/FER-123.md",
-    approvedPlanPrUrl: "https://github.com/owner/repo/pull/123",
-    approvedPlanCommit: "abc1234",
-  });
-  expect(readFileSync(join(runDir, "summary.md"), "utf8")).toContain("Ready to implement");
-});
-
-test("harness factory planning publish apply rejects missing Linear issue before metadata write", () => {
-  const { runDir } = createFactoryPlanningPublicationRun();
-  const result = runHarness([
-    "factory",
-    "planning",
-    "publish",
-    "--run-dir",
-    runDir,
-    "--pr-url",
-    "https://github.com/owner/repo/pull/123",
-    "--apply",
-  ]);
-
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--apply requires --linear-issue/);
-  expect(readFileSync(join(runDir, "meta.json"), "utf8")).not.toContain("approvedPlanPrUrl");
-});
-
-test("harness factory planning publish apply rejects missing Linear key before metadata write", () => {
-  const { runDir } = createFactoryPlanningPublicationRun();
-  const result = runHarness(
-    [
-      "factory",
-      "planning",
-      "publish",
-      "--run-dir",
-      runDir,
-      "--pr-url",
-      "https://github.com/owner/repo/pull/123",
-      "--linear-issue",
-      "ENG-123",
-      "--apply",
-    ],
-    { env: { LINEAR_API_KEY: "" } },
-  );
-
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/LINEAR_API_KEY is required/);
-  expect(readFileSync(join(runDir, "meta.json"), "utf8")).not.toContain("approvedPlanPrUrl");
-});
-
-test("harness factory planning publish apply rejects missing Linear config before metadata write", () => {
-  const { runDir } = createFactoryPlanningPublicationRun();
-  const result = runHarness(
-    [
-      "factory",
-      "planning",
-      "publish",
-      "--run-dir",
-      runDir,
-      "--pr-url",
-      "https://github.com/owner/repo/pull/123",
-      "--linear-issue",
-      "ENG-123",
-      "--apply",
-    ],
-    { env: { LINEAR_API_KEY: "test-key" } },
-  );
-
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/factory\.linear is required/);
-  expect(readFileSync(join(runDir, "meta.json"), "utf8")).not.toContain("approvedPlanPrUrl");
-});
-
-test("harness factory planning rejects missing item files", () => {
-  const workspace = createPlainWorkspace();
-  const result = runHarness([
-    "factory",
-    "planning",
-    "--workspace",
-    workspace,
-    "--item-file",
-    "missing.json",
-    "--dry-run",
-  ]);
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory item file does not exist: missing\.json/);
-});
-
-test("harness factory planning rejects invalid item JSON", () => {
-  const workspace = createPlainWorkspace();
-  writeFileSync(join(workspace, "item.json"), "{ nope", "utf8");
-  const result = runHarness([
-    "factory",
-    "planning",
-    "--workspace",
-    workspace,
-    "--item-file",
-    "item.json",
-    "--dry-run",
-  ]);
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Invalid factory work item JSON/);
-});
-
-test("harness factory planning rejects unknown flags", () => {
-  const workspace = createPlainWorkspace();
-  writeFileSync(
-    join(workspace, "item.json"),
-    JSON.stringify({ id: "planning-flags", source: "file", title: "Flags", body: "" }),
-    "utf8",
-  );
-  const result = runHarness([
-    "factory",
-    "planning",
-    "--workspace",
-    workspace,
-    "--item-file",
-    "item.json",
-    "--dry-run",
-    "--base",
-    "HEAD",
-  ]);
-  expect(result.status).toBe(2);
-  expect(result.stderr).toMatch(/unknown option/i);
+  expect(result.stderr).toMatch(/Factory planning is not available/);
 });
 
 test("harness factory planning rejects invalid factory role config", () => {
@@ -2683,8 +1930,7 @@ test("harness factory planning rejects invalid factory role config", () => {
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Invalid harness\.json/);
-  expect(result.stderr).toMatch(/sandboxMode applies only when role agent is codex/);
+  expect(result.stderr).toMatch(/Factory planning is not available/);
 });
 
 test("harness factory triage rejects invalid factory role config", () => {
@@ -2769,13 +2015,10 @@ test("harness factory triage preserves post-bootstrap failure artifacts", () => 
   const runMeta = JSON.parse(readFileSync(join(output.runDir, "meta.json"), "utf8"));
   expect(JSON.stringify(runMeta)).toContain('"status":"failed"');
   expect(
-    loadFactoryLifecycleState({
-      factoryStateRoot: runMeta.factoryStore.factoryStateRoot,
-      workItemKey: "file:station-fail",
-    }),
+    readFactoryActionEvents(runMeta.factoryStore.factoryStateRoot, "file:station-fail").at(-1),
   ).toMatchObject({
-    factoryRunId: output.runId,
-    lastEventId: `triage.failed:${output.runId}`,
+    type: "factory.action.failed",
+    phaseRunId: output.runId,
   });
 });
 
@@ -2928,7 +2171,7 @@ test("harness factory implementation apply requires a Linear issue", () => {
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--apply requires --linear-issue/);
+  expect(result.stderr).toMatch(/Factory implementation is not available/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
@@ -2946,7 +2189,7 @@ test("harness factory implementation apply rejects item-file mode", () => {
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--apply cannot be used with --item-file/);
+  expect(result.stderr).toMatch(/Factory implementation is not available/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
@@ -2965,6 +2208,6 @@ test("harness factory implementation apply rejects dry-run", () => {
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/--apply cannot be combined with --dry-run/);
+  expect(result.stderr).toMatch(/Factory implementation is not available/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });

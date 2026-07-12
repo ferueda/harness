@@ -5,7 +5,7 @@
 ```text
 CLI (bin/harness.ts)
   -> workspace/config resolution (lib/config.ts, harness.json)
-  -> workflow context (lib/workflow-context.ts, lib/factory-run-context.ts, or lib/factory-planning-run-context.ts)
+  -> workflow context (lib/workflow-context.ts or lib/factory-run-context.ts)
   -> provider selection (providers/registry.ts and provider adapters)
   -> workflow definition (workflows/*.workflow.ts)
   -> artifacts (.harness/runs/reviews/<run-id>/ or durable factory store runs/<run-id>/)
@@ -19,10 +19,7 @@ Current public CLI surfaces:
 - `harness factory linear fetch`
 - `harness factory linear create`
 - `harness factory triage`
-- `harness factory planning`
-- `harness factory implementation`
 - `harness run change-review`
-- `harness run factory-triage`
 - `harness run plan-review`
 - `harness runs prune`
 - `harness models`
@@ -47,16 +44,12 @@ The harness repo owns the reusable workflow system:
 - `dev/plans/` - active plans and handoffs.
 
 Prompt templates live under `lib/prompts/`. Review prompts are loaded through
-`lib/workflow-context.ts`; factory triage uses `lib/factory-run-context.ts`;
-factory planning uses `lib/factory-planning-run-context.ts`; factory
-implementation uses `lib/factory-implementation-run-context.ts`.
+`lib/workflow-context.ts`; factory triage uses `lib/factory-run-context.ts`.
 
 Runtime Zod validation lives in `lib/schemas.ts` for reviews and
-`lib/factory-schemas.ts` for factory intake and
-`lib/factory-planning-schemas.ts` for factory planning. `schemas/` owns
-exported JSON schema artifacts such as `factory-triage-output.schema.json` and
-`factory-planning-output.schema.json`. Changes to one side may require checking
-the other.
+`lib/factory-schemas.ts` for factory intake and triage. `schemas/` owns
+exported JSON schema artifacts such as `factory-triage-output.schema.json`.
+Changes to one side may require checking the other.
 
 ## Target repo responsibilities
 
@@ -120,75 +113,20 @@ include git diff scope and does not mutate trackers.
 `lib/factory-triage-input.ts` owns shared factory work-item input handling.
 Station commands use it to validate the mutually exclusive `--item-file` and
 `--linear-issue` input contract before role/config resolution, then resolve file
-reads or Linear fetches after station settings are known. When a lifecycle log
-exists, it merges lifecycle state over tracker-derived fallback metadata before
-the station consumes the work item.
+reads or Linear fetches after station settings are known. Linear tracker
+metadata is input only; fetch never derives Factory state.
 
-`lib/factory-triage-policy.ts` reads canonical lifecycle event history before
-triage run creation. A prior `triage.completed` blocks live and dry-run triage
-unless the operator supplies `--rerun`; blocked commands create no station
-artifacts or tracker mutations.
+`lib/factory-lifecycle-events.ts`, `lib/factory-lifecycle-kernel.ts`, and
+`lib/factory-state-machine.ts` own the strict action event contract, expected-
+cursor append, and rebuildable state/reaction projection. Durable-store
+`factory/events/*.jsonl` is canonical machine state; `factory/state/*.json` is
+an atomically published projection protected by per-work-item locks. Current
+triage writes `work_item.imported`, `triage.requested`,
+`triage.work_item.completed`, or `factory.action.failed`.
 
-`lib/factory-lifecycle.ts` owns the factory lifecycle event contract, JSONL
-store, read-model reducer, state cache, work-item key derivation, and lifecycle
-metadata merge helper. Durable-store `factory/events/*.jsonl` is canonical
-machine state; `factory/state/*.json` is a rebuildable projection protected by
-per-work-item locks.
-
-`lib/factory-lifecycle-writes.ts` owns lifecycle event construction for current
-operator station commands. Live triage, planning, plan publication, plan-merge,
-and implementation paths append lifecycle events; dry-run station commands do
-not.
-
-`lib/factory-planning-input.ts` owns planning-specific work-item input guards.
-Linear-backed planning input accepts issues mapped to `ready-to-plan`,
-`plan-needs-human`, `plan-review-unresolved`, or `planning-failed` before
-creating a planning run. Planning-attention `Needs Clarification` issues are
-identified by the latest factory planning marker. Item-file planning remains
-manual/local and is not gated by Linear tracker metadata.
-
-`lib/factory-planning-run-context.ts` creates file-backed factory planning runs,
-copies `context/work-item.json`, and keeps three paths separate: planner scratch
-at `.harness/factory-drafts/<run-id>/draft.md`, canonical latest evidence at
-`<runDir>/planning/draft.md`, and immutable review snapshots at
-`<runDir>/iterations/<n>/plan.md`. Scratch is prepared lazily, validated with
-real-path and no-follow checks, and intentionally retained as ignored,
-non-authoritative state. Harness publishes snapshots through completed
-same-directory staging and no-replace hard links, writes `factoryMetadata` into
-`meta.json`, and writes an approved final plan under `dev/plans/`. Tracker-backed
-plans should be published through a plan PR before tracker status moves to
-`Ready to Implement`.
-
-`lib/factory-planning-handoff.ts` owns planning handoff metadata helpers:
-loading validated planning `meta.json`, rendering planning summaries, patching
-plan PR and merge metadata, and validating approved-plan metadata for future
-implementation stations.
-
-`lib/factory-implementation-input.ts` owns the implementation station input
-contract. It classifies resolved work-item input into planned or direct mode,
-validates approved-plan handoff metadata, and treats Linear
-`Ready to Implement` as a projection guard rather than source of truth.
-`lib/factory-implementation-policy.ts` owns the per-work-item live execution
-lease and its inspectable filename policy.
-`lib/factory-implementation-run-context.ts` owns the implementation station run
-directory, context artifacts, prompt and change-review handoff artifacts,
-provider raw/status/diff outputs, summary, and metadata.
-`lib/factory-workspace-changes.ts` owns porcelain status parsing, patch
-material capture (including untracked no-index diffs and truncation caps), and
-changed-file lists for live implementation.
-`lib/factory-review-head.ts` owns harness-owned review-ref materialization via
-a temporary index and `commit-tree`, writing
-`refs/harness/factory/<run-id>/implementation` without moving `HEAD` or using
-the real index.
-`lib/factory-linear-implementation-apply.ts` owns exact Linear implementation
-entry/postcondition checks, status projection, and terminal marker comments;
-`lib/factory-linear-adapter.ts` exposes that behavior to station commands.
-`harness factory implementation run` supports dry-run or one live provider pass
-plus harness-owned review-ref materialization. Live runs hold a per-item
-execution lease through local and requested Linear terminalization. With
-`--apply`, the command owns fail-closed Linear status/comment projection;
-without it, implementation does not mutate Linear, create human branches, or
-open PRs.
+Planning, publication, and implementation action handlers are intentionally
+unavailable in PR 1. Their later PRs will consume the same action kernel; no
+current CLI path falls back to the removed lifecycle.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `lib/factory-status.ts`
 composes that inbox data with durable-store, lock, and legacy-state inspection
@@ -202,10 +140,6 @@ create, and explicit station apply updates. `lib/factory-linear-list.ts` owns
 read-only status-key listing, query pagination, and lightweight summary mapping
 behind the adapter facade. `lib/factory-linear-create.ts` owns constrained
 intake issue creation behind the same adapter facade.
-`lib/factory-linear-planning-apply.ts` owns planning run apply markers,
-target-status mapping, comments, and mutation helpers.
-`lib/factory-linear-planning-handoff.ts` owns planning publication apply
-guards, comments, and status movement for plan PR and merge handoff commands.
 `harness factory linear list --status intake` validates `factory.linear` status
 mapping, queries the configured team and optional project scope, and prints
 lightweight issue summaries for configured status keys. `harness factory linear
@@ -215,45 +149,27 @@ comments. `harness factory linear create` creates one configured-project intake
 issue and prints compact JSON; it does not write lifecycle events or factory
 run artifacts. Linear team owns the issue key and workflow statuses;
 `factory.linear.projectId`, when set, scopes issues to the target repo project
-and is required for create. Linear status and recent marker comments are
-bootstrap fallback metadata; lifecycle state wins when present.
+and is required for create. Linear status and recent comments remain tracker
+metadata; fetch does not derive Factory state.
 `harness factory triage --linear-issue TEAM-123` uses the same adapter as an
 input source before running the station. List, fetch, and default Linear-backed
 triage do not mutate Linear. Create is the only non-station Linear
-issue-creation path; other Linear writes stay on explicit station `--apply`
-or planning publication commands with `--linear-issue ... --apply`.
+issue-creation path; other Linear writes stay on explicit triage `--apply`.
 `harness factory triage --linear-issue TEAM-123 --apply` additionally moves the
 issue to `Triaging`, then to the terminal triage status, and writes a marker
 comment.
-Normal apply retains its entry-status allowlist. With `--rerun`, lifecycle
-history remains authoritative and apply accepts any present in-scope Linear
-status before moving it to `Triaging`.
+Apply retains its entry-status allowlist and permits only an already-idempotent
+matching terminal state during recovery. It does not overwrite an intervening
+human or external status.
 
 `harness factory triage --item-file ...` or
 `harness factory triage --linear-issue ...` runs one work item through the
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
-`harness factory planning run --item-file ...` or
-`harness factory planning run --linear-issue ...` runs one work item through the
-station-level planning command and uses `factory.planning.roles.planner` and
-`factory.planning.roles.reviewer` config for agent and model selection.
-Linear-backed planning input performs a live read. With `--apply`, it moves
-`Needs Plan`, planning-attention `Needs Clarification`, `Plan Needs Review`, or
-`Planning Failed` to `Planning`, runs the planning loop, then posts one outcome
-comment. Human questions move to `Needs Clarification`, unresolved reviews move
-to `Plan Needs Review`, and station/runtime failures move to `Planning Failed`.
-It does not move issues to `Ready to Implement`.
-`harness factory planning --item-file ...` and
-`harness factory planning --linear-issue ...` remain default-subcommand aliases
-for the run command. `harness factory planning publish` and
-`harness factory planning mark-plan-merged` update local planning run metadata.
-Without `--apply`, they print suggested Linear comment text only. With
-`--linear-issue ... --apply`, they validate the Linear issue and configured
-status, post marker comments, and move `publish` to `Plan Needs Review` or
-`mark-plan-merged` to `Ready to Implement`. They do not open PRs or inspect
-GitHub merge state. Operators link PRs to Linear via branch/title conventions;
-see Linear PR linking in [Factory operation](./factory.md).
+Planning, publication, and implementation commands are unavailable until their
+follow-up PRs. A terminal triage can therefore yield a wait reaction with no
+executable downstream Factory command; its route command may be absent.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation, quality, and simplify. Full default runs execute these
@@ -268,22 +184,9 @@ partial run covers only its requested roles.
 
 `workflows/factory-triage.workflow.ts` runs one factory triage step. The agent
 returns structured triage JSON; deterministic harness code maps that output to
-one route plan. Current input is `--item-file`; future GitHub, Linear, Jira, or
-orchestrator adapters should feed the same `FactoryWorkItem` contract.
-
-`workflows/factory-planning.workflow.ts` runs one planning station loop. The
-planner writes/edits the workspace-local scratch draft and returns small
-structured metadata. Harness publishes validated snapshots, runs `plan-review`
-against the immutable snapshot, guards against tracked source edits during
-planner turns, and reuses the captured planner session for revisions until the
-plan is approved, needs human input, fails, or reaches the review-iteration
-limit.
-
-`workflows/factory-implementation.workflow.ts` runs dry-run or one live
-implementer pass. Live mode records workspace changes, materializes
-`refs/harness/factory/<run-id>/implementation`, and exports handoff artifacts
-for a separate operator-run `change-review`. Nested review loops remain out of
-scope.
+one route plan. Current input is `--item-file` or `--linear-issue`; future
+GitHub, Jira, or orchestrator adapters should feed the same `FactoryWorkItem`
+contract.
 
 `workflows/plan-review.workflow.ts` runs one fixed spec-review step. The
 plan-review command/runtime omits git diff scope and relies on `context/plan.md`
@@ -328,13 +231,14 @@ scope by default and may also include a plan or handoff.
 
 ## Factory artifact lifecycle
 
-Each `harness factory` station run creates
+Each `harness factory triage` run creates
 `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/`
-by default, or uses an explicit `--runs-dir` override.
+by default. `--runs-dir` is available only for dry-run triage.
 
 Factory triage artifacts include:
 
 - `context/work-item.json`
+- `context/phase-run.json`
 - `factory-triage.prompt.md`
 - `factory-triage.raw.json`
 - `factory-triage.json`
@@ -343,76 +247,20 @@ Factory triage artifacts include:
 - `summary.md`
 - `meta.json`
 - `events.jsonl` for live runs
+- `actions/<attempt>/triageWorkItem/<action-key>/action-result.json` as the
+  immutable terminal result used for crash recovery
+
+Artifact refs in action events use store-relative `/` paths plus SHA-256
+content hashes. The CLI validates terminal evidence before recovery or Linear
+projection. PR 1 has no executable downstream Factory command; route evidence
+and wait reactions may omit a command.
 
 `--dry-run` writes placeholder triage and route artifacts but does not invoke a
 provider, does not write run `events.jsonl`, and does not write lifecycle
 events in the durable factory store.
 
-Factory planning artifacts include:
-
-- `context/work-item.json`
-- `planning/draft.md` (canonical latest successful draft)
-- `iterations/<n>/planner.prompt.md`
-- `iterations/<n>/planner.raw.json`
-- `iterations/<n>/planner.json` when structured planner output parses
-- `iterations/<n>/planner.failure.json` for failed or non-publishable turns
-- `iterations/<n>/planner.stream.jsonl` when the provider streams output
-- `iterations/<n>/plan.md` when the planner produced a draft
-- `iterations/<n>/plan-review-ref.json` when a review ran
-- `iterations/<n>/review-findings.json` when review findings need revision
-- `summary.md`
-- `meta.json`
-- `events.jsonl` for live runs
-
-`planner.failure.json` records the classified failure. If structured output
-parsed before a later validation or publication failure, `planner.json` may
-also remain alongside it.
-
-The planner scratch path is outside the durable run and is not exported in
-metadata, lifecycle events, review references, or handoffs. Live planning
-rejects a workspace-local `--runs-dir`, because a workspace-write planner must
-not be able to alter durable evidence. Dry-run may use a local run root and
-still announces `run-started` on stderr; it suppresses provider/reviewer,
-workflow-event, and lifecycle writes. Retained scratch may be removed manually
-only after checking that it still resolves inside the workspace and remains
-disjoint from the durable run directory.
-
-Live planning runs create nested plan-review runs under the durable store's
-`runs/reviews/<run-id>/`. When a plan is approved, the station writes
-the final tracked plan file under `dev/plans/`. Tracker-backed flows should
-publish that file through a plan PR before implementation starts. `--dry-run`
-writes placeholder planning artifacts but does not invoke providers or reviewers
-does not write run `events.jsonl`, and does not write lifecycle events.
-
-Planning `meta.json` includes `factoryMetadata` with reserved handoff keys such
-as `tracker`, `factoryRoute`, `factoryNextAction`, `factoryStage`,
-`factoryRunId`, `approvedPlanPath`, `approvedPlanPrUrl`, and
-`approvedPlanCommit`. This metadata is execution evidence and station handoff
-context; durable lifecycle state is the per-work-item machine source of truth
-when present. Tracker-backed approved plan filenames should use
-the tracker key, for example `dev/plans/FER-123.md`; local/manual items fall
-back to title-derived slugs. Tracker-backed planning approval records
-`factoryStage: "plan-pr-open"` until the plan PR URL and merge commit are
-registered through the planning publication commands.
-
-Factory implementation dry-run artifacts include:
-
-- `context/work-item.json`
-- `context/implementation-input.json`
-- `context/plan-ref.json` for planned work
-- `context/source-material.json` for direct work
-- `implementation/prompt.md`
-- `implementation/change-review-handoff.md`
-- live only: `implementer.raw.json`, optional `implementer.stream.jsonl`
-  when the provider streams, `workspace-status.json`, `diff.patch`, run
-  `events.jsonl`
-- `summary.md`
-- `meta.json`
-
-Dry-run prepares prompt/handoff artifacts only. Live mode invokes one
-implementer with `workspaceGuard: "record"`, writes lifecycle events, and
-creates the internal review ref. Without `--apply`, it does not mutate Linear, create human
-branches/worktrees, or open PRs.
+Planning and implementation run artifacts are not part of the shipped PR 1
+surface.
 
 ## Factory inbox lifecycle
 
@@ -450,9 +298,9 @@ adapter.
 
 ## What is not in this map yet
 
-Active runtime roadmap items such as `steps.json`, graders, tracker mutation
-beyond explicit Linear triage/planning apply modes, GitHub/Jira adapters,
-hosted trigger inboxes, and Inngest are future work. Linear-backed triage and
-planning input plus their explicit status/comment mutation via `--apply` are
-current. Future items should be added to this map only after they describe
-current behavior in the repo.
+Active runtime roadmap items such as planning and implementation actions,
+`steps.json`, graders, tracker mutation beyond explicit Linear triage apply,
+GitHub/Jira adapters, hosted trigger inboxes, and Inngest are future work.
+Linear-backed triage input and its explicit status/comment projection via
+`--apply` are current. Future items should be added to this map only after they
+describe current behavior in the repo.

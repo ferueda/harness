@@ -82,7 +82,7 @@ harness run plan-review --help
 
 ## Run Factory Intake
 
-Route one local work item through factory triage or planning:
+Route one local work item through factory triage:
 
 ```bash
 harness factory status --workspace /path/to/repo
@@ -91,15 +91,6 @@ harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example intake" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
-harness factory planning run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
-harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
-harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
-harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory implementation run --workspace /path/to/repo --item-file .harness/inbox/factory/item.json
 ```
 
 The item file is JSON with `id`, `source`, `title`, and `body`. `status` is
@@ -112,41 +103,19 @@ by default. Factory lifecycle JSONL and rebuildable state live under that
 project's `factory/` directory. This default is intentionally outside the
 documented harness checkout at `~/.harness`. Triage routes are
 `ready-to-implement`, `ready-to-plan`, `needs-info`, or `wait-to-implement`.
-Planning keeps mutable planner scratch under ignored workspace
-`.harness/factory-drafts/<run-id>/` and writes reviewed plans into the target
-repo only after approval. Harness alone publishes canonical and immutable
-planning evidence to the durable store. Factory plans are minimum-sufficient:
-three reviews by default, with only blocking findings revised. For tracker-backed
-work, publish the plan file through a plan PR, then register the
-PR URL and merge commit with the planning publication commands before treating
-the tracker item as ready to implement.
-
-Use low-level workflow primitives when you need direct workflow execution:
-
-```bash
-harness run factory-triage --item-file path/to/work-item.json --verbose
-harness run plan-review --plan path/to/implementation-plan.md --verbose
-```
+Planning and implementation actions are not shipped yet. A terminal triage
+therefore returns a reaction without an executable downstream Factory command;
+its route command may be absent. The CLI never synthesizes or automatically
+executes a follow-up action.
 
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear list and fetch use `LINEAR_API_KEY` and
 `factory.linear` config and are read-only. Linear create is a constrained write
 that creates one configured-project intake issue and prints compact JSON; it
 does not use `--apply` and does not write factory lifecycle or run artifacts.
-Factory triage and planning can use `--linear-issue`; `--apply` is explicit.
-Triage moves Linear through `Triaging`; planning moves eligible planning
-statuses to `Planning`, routes human attention to `Needs Clarification` or
-`Plan Needs Review`, and leaves Ready to Implement for the plan-merge handoff.
-Publication commands are local-only unless `--apply` is present; apply mode
-moves Linear to `Plan Needs Review` after the plan PR is registered and to
-`Ready to Implement` after the merge commit is recorded.
-Live implementation runs one implementer, writes candidate changes plus an
-internal review ref, and stops before change-review. Linear `--apply` moves an
-eligible first run or retry to `Implementing`, then posts the terminal handoff
-or failure projection; without `--apply` it does not mutate Linear or create a
-human branch/PR/commit. Optional `--dry-run` prepares prompt/handoff artifacts
-without a provider. See the factory guide for lease and projection-recovery
-behavior.
+Factory triage can use `--linear-issue`; `--apply` is explicit and projects the
+triage start and terminal result to Linear. Optional `--dry-run` prepares
+triage artifacts without a provider and does not initialize Factory state.
 Harness adapters for GitHub, Jira, and Inngest remain future layers. Linking
 factory PRs to Linear issues via branch/title naming is current operator
 practice (see Linear PR linking in
@@ -192,25 +161,6 @@ ownership and mutability, read
     "triage": {
       "roles": {
         "triager": {
-          "agent": "cursor",
-          "model": "grok-4.5"
-        }
-      }
-    },
-    "planning": {
-      "maxReviewIterations": 3,
-      "roles": {
-        "planner": { "agent": "cursor", "model": "grok-4.5" },
-        "reviewer": {
-          "agent": "codex",
-          "model": "gpt-5.6-sol",
-          "modelReasoningEffort": "high"
-        }
-      }
-    },
-    "implementation": {
-      "roles": {
-        "implementer": {
           "agent": "cursor",
           "model": "grok-4.5"
         }
