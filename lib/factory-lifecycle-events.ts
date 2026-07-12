@@ -150,6 +150,11 @@ export function parseFactoryLifecycleEvent(value: unknown): FactoryLifecycleEven
 
 export function parseFactoryActionEvent(value: unknown): FactoryActionEvent {
   const event = parseFactoryLifecycleEvent(value);
+  if (isFactoryActionEvent(event)) return event;
+  throw new Error(`Expected Factory action event, received ${event.type}`);
+}
+
+export function isFactoryActionEvent(event: FactoryLifecycleEvent): event is FactoryActionEvent {
   switch (event.type) {
     case "triage.work_item.completed":
     case "planning.candidate.produced":
@@ -158,8 +163,8 @@ export function parseFactoryActionEvent(value: unknown): FactoryActionEvent {
     case "implementation.candidate.produced":
     case "implementation.review.completed":
     case "factory.action.failed":
-      return event;
+      return true;
     default:
-      throw new Error(`Expected Factory action event, received ${event.type}`);
+      return false;
   }
 }

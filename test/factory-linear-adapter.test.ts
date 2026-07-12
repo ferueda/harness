@@ -1800,6 +1800,29 @@ test("Linear adapter guards an active triage continuation without mutating statu
   expect(updates).toEqual([]);
 });
 
+test("Linear adapter continuation rejects a normal triage entry status", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-active",
+      runDir: ".harness/runs/factory/run-active",
+      continuation: true,
+    }),
+  ).rejects.toThrow(/continuation requires Triaging/);
+  expect(updates).toEqual([]);
+});
+
 test("Linear adapter rerun accepts any present in-scope status", async () => {
   for (const statusName of ["Needs Plan", "Ready to Implement", "Parked", "Planning", "Done"]) {
     const updates: Array<{ id: string; input: { stateId: string } }> = [];

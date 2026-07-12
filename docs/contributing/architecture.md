@@ -20,7 +20,6 @@ Current public CLI surfaces:
 - `harness factory linear create`
 - `harness factory triage`
 - `harness run change-review`
-- `harness run factory-triage`
 - `harness run plan-review`
 - `harness runs prune`
 - `harness models`
@@ -225,7 +224,7 @@ scope by default and may also include a plan or handoff.
 
 ## Factory artifact lifecycle
 
-Each `harness factory` station run creates
+Each `harness factory triage` run creates
 `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/`
 by default, or uses an explicit `--runs-dir` override.
 

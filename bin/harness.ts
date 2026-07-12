@@ -6,7 +6,6 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertCodexOnlyAgentOptions } from "./cli-validation.ts";
 import { addFactoryCommands } from "./factory-commands.ts";
-import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import { formatHarnessError } from "../lib/factory-cli-errors.ts";
 import {
   AGENT_APPROVAL_POLICIES,
@@ -26,14 +25,7 @@ import {
   type ChangeReviewStepId,
 } from "../workflows/change-review.workflow.ts";
 import { run as runPlanReview } from "../workflows/plan-review.workflow.ts";
-import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
 import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
-import {
-  assertFactoryItemFileExists,
-  createFactoryRunContext,
-  readFactoryWorkItemFile,
-  type FactoryRunMeta,
-} from "../lib/factory-run-context.ts";
 import {
   assertNonEmptyHandoffStdin,
   assertPipedHandoffStdin,
@@ -72,21 +64,6 @@ type ReviewOptions = {
 
 type PlanReviewOptions = Omit<ReviewOptions, "base" | "head" | "steps" | "plan"> & {
   plan: string;
-};
-
-type FactoryTriageOptions = {
-  workspace?: string;
-  itemFile: string;
-  runsDir?: string;
-  agent?: AgentProviderName;
-  codexExecutable?: string;
-  model?: string;
-  sandbox?: AgentSandboxMode;
-  approvalPolicy?: AgentApprovalPolicy;
-  reasoningEffort?: AgentReasoningEffort;
-  maxRuntimeMs: number;
-  dryRun: boolean;
-  verbose: boolean;
 };
 
 type HandoffCliOptions = {
@@ -202,7 +179,6 @@ function buildProgram(): Command {
     workflow: runChangeReview,
   });
   addPlanReviewCommand(run);
-  addFactoryTriageCommand(run);
 
   const runs = program.command("runs").description("Manage harness run artifacts");
   runs
@@ -264,85 +240,6 @@ function buildProgram(): Command {
     });
 
   return program;
-}
-
-function addFactoryTriageCommand(parent: Command): void {
-  parent
-    .command("factory-triage")
-    .description("Route one factory work item to the next deterministic station")
-    .option("--workspace <path>", "target repo")
-    .requiredOption("--item-file <path>", "factory work item JSON file")
-    .option("--runs-dir <path>", "output root (default: <workspace>/.harness/runs/factory)")
-    .option("--agent <provider>", "triage agent provider: cursor or codex", parseAgentProvider)
-    .option("--codex-executable <path>", "Codex CLI executable override")
-    .option("--model <id>", "agent model override")
-    .option(
-      "--sandbox <mode>",
-      "Codex-only sandbox mode (default for factory triage: read-only)",
-      parseSandboxMode,
-    )
-    .option(
-      "--approval-policy <policy>",
-      "Codex-only approval policy (default for factory triage: never)",
-      parseApprovalPolicy,
-    )
-    .option(
-      "--reasoning-effort <effort>",
-      "Codex-only reasoning effort: minimal,low,medium,high,xhigh",
-      parseReasoningEffort,
-    )
-    .option(
-      "--max-runtime-ms <ms>",
-      `triage timeout (default: ${DEFAULT_MAX_RUNTIME_MS})`,
-      positiveNumber,
-      DEFAULT_MAX_RUNTIME_MS,
-    )
-    .option("--dry-run", "prepare context and placeholder routing only", false)
-    .option("--verbose", "emit workflow events as JSONL to stderr", false)
-    .action(async (options: FactoryTriageOptions) => {
-      const resolvedOptions = resolveHarnessOptions({
-        workspace: options.workspace,
-        runsDir: options.runsDir,
-        agentProvider: options.agent,
-        codexPathOverride: options.codexExecutable,
-        model: options.model,
-        sandboxMode: options.sandbox,
-        approvalPolicy: options.approvalPolicy,
-        modelReasoningEffort: options.reasoningEffort,
-        maxRuntimeMs: options.maxRuntimeMs,
-        dryRun: options.dryRun,
-        includeGitScope: false,
-      });
-      const itemPath = assertFactoryItemFileExists(resolvedOptions.workspace, options.itemFile);
-      assertCodexOnlyAgentOptions(resolvedOptions.agentProvider, {
-        codexExecutable: options.codexExecutable,
-        sandbox: options.sandbox,
-        approvalPolicy: options.approvalPolicy,
-        reasoningEffort: options.reasoningEffort,
-      });
-
-      const workItem = readFactoryWorkItemFile(itemPath);
-      const runAbort = new AbortController();
-      const onRunAbort = () => runAbort.abort();
-      process.once("SIGINT", onRunAbort);
-      process.once("SIGTERM", onRunAbort);
-      let meta: FactoryRunMeta;
-      try {
-        const ctx = createFactoryRunContext({
-          ...resolvedOptions,
-          workItem,
-          agentProviderFactory: createAgentProvider,
-          signal: runAbort.signal,
-          eventSink: options.verbose ? writeVerboseWorkflowEvent : undefined,
-        });
-        meta = await runFactoryTriage(ctx);
-      } finally {
-        process.off("SIGINT", onRunAbort);
-        process.off("SIGTERM", onRunAbort);
-      }
-      console.log(JSON.stringify(factoryTriageCliOutput(meta), null, 2));
-      process.exitCode = meta.status === "failed" ? 1 : 0;
-    });
 }
 
 function addPlanReviewCommand(parent: Command): void {

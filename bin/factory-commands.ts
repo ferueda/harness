@@ -1,6 +1,6 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
 import { factoryImplementationCliOutput } from "./factory-implementation-cli.ts";
@@ -28,7 +28,6 @@ import {
 import type { FactoryLifecycleEvent as FactoryActionLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import {
   readFactoryPhaseRunIdentity,
-  resolveFactoryTriageExecutionProfileForRun,
   writeFactoryPhaseRunIdentity,
 } from "../lib/factory-phase-run.ts";
 import { assertFactoryStoreFormat } from "../lib/factory-store-format.ts";
@@ -1486,17 +1485,12 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       // Validate source flags before role/config resolution so CLI usage errors win.
       validateFactoryApplyOptions(options);
       validateFactoryWorkItemInput(options);
-      const role = resolveFactoryRoleAgent({
-        workspace: options.workspace,
-        station: "triage",
-        role: "triager",
-      });
-      const newTriageExecutionProfile = factoryTriageExecutionProfile(role);
+      const workspace = resolveHarnessOptions({ workspace: options.workspace }).workspace;
       const linearSettings = options.linearIssue
-        ? resolveFactoryLinearSettings({ workspace: role.workspace })
+        ? resolveFactoryLinearSettings({ workspace })
         : undefined;
       const store = resolveFactoryStore({
-        workspace: role.workspace,
+        workspace,
         factoryStoreRoot: options.factoryStoreRoot,
         factoryStoreProjectId: options.factoryStoreProjectId,
         env: process.env,
@@ -1515,7 +1509,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
           }
         : undefined;
       const input = await resolveFactoryWorkItemInput({
-        workspace: role.workspace,
+        workspace,
         itemFile: options.itemFile,
         linearIssue: options.linearIssue,
         linearSettings,
@@ -1528,7 +1522,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
       const result = await runFactoryTriageWithLinearApply({
         factoryStateRoot: store.factoryStateRoot,
-        workspace: role.workspace,
+        workspace,
         projectId: store.projectId,
         workItem: input.workItem,
         rerun: options.rerun,
@@ -1537,14 +1531,19 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         itemFile: options.itemFile,
         applyAdapter,
         createContext: (signal, existingRunId) => {
-          const executionProfile = resolveFactoryTriageExecutionProfileForRun({
-            ...(existingRunId
-              ? { existingRunDir: join(options.runsDir ?? store.factoryRunsDir, existingRunId) }
-              : {}),
-            newPhaseProfile: newTriageExecutionProfile,
-          });
+          const executionProfile = existingRunId
+            ? readFactoryPhaseRunIdentity(
+                join(options.runsDir ?? store.factoryRunsDir, existingRunId),
+              ).actions.triageWorkItem
+            : factoryTriageExecutionProfile(
+                resolveFactoryRoleAgent({
+                  workspace,
+                  station: "triage",
+                  role: "triager",
+                }),
+              );
           return createFactoryRunContext({
-            workspace: role.workspace,
+            workspace,
             runsDir: options.runsDir ?? store.factoryRunsDir,
             factoryStore,
             ...(existingRunId ? { existingRunId } : {}),
@@ -1649,7 +1648,12 @@ export async function runFactoryTriageWithLinearApply(input: {
     existingLatest && existingState
       ? decideNextFactoryAction(existingState, existingLatest)
       : undefined;
-  const terminalCompletion = existingLatest?.type === "triage.work_item.completed";
+  const terminalProjectionRecoverable =
+    existingLatest?.type === "triage.work_item.completed" ||
+    (existingLatest?.type === "factory.action.failed" &&
+      existingLatest.data.phase === "triage" &&
+      existingLatest.data.failureKind !== "retryable" &&
+      !existingLatest.data.message.startsWith("Linear start projection failed:"));
   if (
     !input.dryRun &&
     !input.rerun &&
@@ -1657,7 +1661,7 @@ export async function runFactoryTriageWithLinearApply(input: {
     existingReaction?.kind === "wait"
   ) {
     // Explicit apply may repair a failed terminal projection from immutable completion evidence.
-    if (input.applyAdapter && terminalCompletion) {
+    if (input.applyAdapter && terminalProjectionRecoverable) {
       const recovered = await recoverTriageActionResult(input);
       if (recovered) return recovered;
     }
@@ -1869,7 +1873,11 @@ export async function runFactoryTriageWithLinearApply(input: {
     }
     let meta: FactoryRunMeta;
     if (startApplyError) {
-      meta = ctx.exportFailed(startApplyError);
+      meta = ctx.exportFailed(
+        new Error(`Linear start projection failed: ${errorMessage(startApplyError)}`, {
+          cause: startApplyError,
+        }),
+      );
     } else
       try {
         meta = await runTriage(ctx, {
@@ -1913,7 +1921,7 @@ export async function runFactoryTriageWithLinearApply(input: {
     }
     let terminalUpdate: LinearTriageUpdatePlan | undefined;
     let terminalApplyError: unknown;
-    if (input.applyAdapter && !ctx.dryRun && !startApplyError) {
+    if (input.applyAdapter && !ctx.dryRun && !startApplyError && meta.failureKind !== "retryable") {
       try {
         terminalUpdate = completedTriage
           ? await input.applyAdapter.applyTriageCompleted({
@@ -2257,9 +2265,9 @@ function readVerifiedFactoryTriageArtifact(
   if (resolve(relativePath) === relativePath) {
     throw new Error("Recovered Factory triage artifact path must be relative");
   }
-  const triagePath = resolve(meta.runDir, relativePath);
+  const declaredTriagePath = resolve(meta.runDir, relativePath);
   const runRoot = resolve(meta.runDir);
-  if (relative(runRoot, triagePath).startsWith("..")) {
+  if (relative(runRoot, declaredTriagePath).startsWith("..")) {
     throw new Error(`Recovered Factory triage artifact escapes ${meta.runId}`);
   }
   const roots = {
@@ -2269,7 +2277,11 @@ function readVerifiedFactoryTriageArtifact(
   const evidencePaths = event.data.evidence.map((ref) =>
     resolve(verifyFactoryArtifactRef(ref, roots)),
   );
-  if (!evidencePaths.includes(triagePath)) {
+  const triagePath = evidencePaths.find(
+    (path) =>
+      basename(path) === basename(relativePath) && !relative(runRoot, path).startsWith(".."),
+  );
+  if (!triagePath) {
     throw new Error("Recovered Factory triage artifact is not immutable terminal evidence");
   }
   const triage = parseFactoryTriageOutput(JSON.parse(readFileSync(triagePath, "utf8")));
@@ -2316,23 +2328,37 @@ function buildTriageActionEvent(
 > {
   const store = ctx.factoryStore;
   if (!store) throw new Error("Factory action requires durable store metadata");
-  const summaryPath = join(meta.runDir, meta.artifacts?.summary ?? "meta.json");
+  const actionKey = factoryActionKey({ ...reaction, phaseRunId: ctx.runId });
+  const evidenceDir = join(
+    ctx.runDir,
+    "actions",
+    String(reaction.attempt),
+    reaction.handler,
+    actionKey,
+    "evidence",
+  );
+  const summaryPath = publishImmutableActionEvidence(
+    join(meta.runDir, meta.artifacts?.summary ?? "meta.json"),
+    join(evidenceDir, "summary.md"),
+  );
   const runRef = createFactoryArtifactRef({
     base: "factory-store",
     root: store.projectRoot,
     path: relative(store.projectRoot, summaryPath),
   });
-  const triageRef = triage
+  const triagePath = triage
+    ? publishImmutableActionEvidence(
+        join(meta.runDir, meta.artifacts?.triage ?? "factory-triage.json"),
+        join(evidenceDir, "factory-triage.json"),
+      )
+    : undefined;
+  const triageRef = triagePath
     ? createFactoryArtifactRef({
         base: "factory-store",
         root: store.projectRoot,
-        path: relative(
-          store.projectRoot,
-          join(meta.runDir, meta.artifacts?.triage ?? "factory-triage.json"),
-        ),
+        path: relative(store.projectRoot, triagePath),
       })
     : undefined;
-  const actionKey = factoryActionKey({ ...reaction, phaseRunId: ctx.runId });
   const common = {
     version: 1 as const,
     workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
@@ -2360,7 +2386,10 @@ function buildTriageActionEvent(
       },
     };
   }
-  const routePlanPath = join(meta.runDir, "factory-route.json");
+  const routePlanPath = publishImmutableActionEvidence(
+    join(meta.runDir, "factory-route.json"),
+    join(evidenceDir, "factory-route.json"),
+  );
   const routePlanValue: unknown = JSON.parse(readFileSync(routePlanPath, "utf8"));
   if (!isRecord(routePlanValue)) throw new Error("Factory triage route plan is invalid");
   const nextCommand =
@@ -2378,6 +2407,18 @@ function buildTriageActionEvent(
       rationale: triage.rationale,
     },
   };
+}
+
+function publishImmutableActionEvidence(source: string, destination: string): string {
+  mkdirSync(dirname(destination), { recursive: true });
+  if (existsSync(destination)) {
+    if (!readFileSync(source).equals(readFileSync(destination))) {
+      throw new Error(`Factory action evidence conflicts with ${destination}`);
+    }
+    return destination;
+  }
+  copyFileSync(source, destination);
+  return destination;
 }
 
 function assertFactoryActionTriageAllowed(input: {

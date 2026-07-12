@@ -108,13 +108,6 @@ therefore returns a reaction without an executable downstream Factory command;
 its route command may be absent. The CLI never synthesizes or automatically
 executes a follow-up action.
 
-Use low-level workflow primitives when you need direct workflow execution:
-
-```bash
-harness run factory-triage --item-file path/to/work-item.json --verbose
-harness run plan-review --plan path/to/implementation-plan.md --verbose
-```
-
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear list and fetch use `LINEAR_API_KEY` and
 `factory.linear` config and are read-only. Linear create is a constrained write

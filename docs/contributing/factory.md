@@ -27,12 +27,6 @@ or event backends should call the same station code instead of replacing it.
 
 ## Command Model
 
-`harness run` commands are low-level workflow primitives:
-
-```bash
-harness run factory-triage --item-file work-item.json
-```
-
 `harness factory` commands are operator-facing station commands:
 
 ```bash
@@ -171,9 +165,14 @@ Factory station roles use `harness.json`:
         "parked": "Parked",
         "needsInfo": "Needs Clarification",
         "needsPlan": "Needs Plan",
+        "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
+        "implementing": "Implementing",
+        "implementationFailed": "Implementation Failed",
         "triaging": "Triaging",
-        "triageFailed": "Triage Failed"
+        "planning": "Planning",
+        "triageFailed": "Triage Failed",
+        "planningFailed": "Planning Failed"
       }
     }
   }
@@ -183,6 +182,9 @@ Factory station roles use `harness.json`:
 Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
 `statuses` when operator tools like `linear-cli` or `factory linear list`
 should target those board states by key; factory stations do not require them.
+
+The schema currently requires the downstream status names shown above, but PR 1
+does not expose planning or implementation commands that use them.
 
 ### Durable Store Overrides
 
@@ -324,6 +326,8 @@ Routes:
 Triage artifacts under the durable factory `runs/factory/<run-id>/` include:
 
 - `context/work-item.json`
+- `context/phase-run.json` with immutable work-item, workspace, store, project,
+  phase, and phase-run identity
 - `factory-triage.prompt.md`
 - `factory-triage.raw.json`
 - `factory-triage.json`
@@ -332,6 +336,8 @@ Triage artifacts under the durable factory `runs/factory/<run-id>/` include:
 - `summary.md`
 - `meta.json`
 - `events.jsonl` for live runs
+- `actions/<attempt>/triageWorkItem/<action-key>/action-result.json` as the
+  immutable terminal result used for crash recovery
 
 Live triage appends `work_item.imported`, `triage.requested`, and one terminal
 action event. Dry-run does not write lifecycle events. A prior terminal triage

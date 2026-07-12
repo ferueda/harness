@@ -63,9 +63,6 @@ durable action and emits a separate context-only record:
 }
 ```
 
-Low-level `harness run factory-triage` does not emit either station progress
-record.
-
 Optional: background the command only when needed, parse that one progress
 line, then wait once for completion. After exit, trust stdout JSON and read
 `summary.md` / `meta.json` for narrative. Do not treat mid-run `runDir`
@@ -100,12 +97,6 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --rerun --apply
 ```
 
-Low-level triage workflow escape hatch:
-
-```bash
-harness run factory-triage --item-file work-item.json
-```
-
 Live is the default. Use `--dry-run` only to verify command wiring and artifact
 layout — not for classification. Dry-run skips the triager
 and writes placeholders; for `--linear-issue` it still does the live Linear
@@ -134,9 +125,14 @@ Minimal shape:
         "parked": "Parked",
         "needsInfo": "Needs Clarification",
         "needsPlan": "Needs Plan",
+        "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
+        "implementing": "Implementing",
+        "implementationFailed": "Implementation Failed",
         "triaging": "Triaging",
-        "triageFailed": "Triage Failed"
+        "planning": "Planning",
+        "triageFailed": "Triage Failed",
+        "planningFailed": "Planning Failed"
       }
     }
   }
@@ -146,6 +142,9 @@ Minimal shape:
 Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
 `factory.linear.statuses` when operator list/move tools need those board
 states; stations do not require them.
+
+The schema currently requires the downstream status names shown above, but PR 1
+does not expose planning or implementation commands that use them.
 
 - `station`: the current lifecycle step, `triage`.
 - `role`: the current station job, `triager`.
@@ -264,6 +263,10 @@ ${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<
 
 Read `summary.md` and `meta.json` first. Lifecycle truth lives under durable
 `factory/events/*.jsonl`; `factory/state/*.json` is a rebuildable cache.
+`context/phase-run.json` fixes the work-item, workspace, store/project, phase,
+and phase-run identity. The hashed
+`actions/<attempt>/triageWorkItem/<action-key>/action-result.json` is immutable
+terminal recovery evidence; do not edit either file.
 Durable store contents are user data; do not commit workspace `.harness/runs/*`
 or legacy `.harness/factory/*`.
 

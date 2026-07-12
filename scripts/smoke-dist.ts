@@ -53,8 +53,8 @@ function runHarnessAllowFailure(args: string[]) {
 }
 
 runHarness(["--help"]);
-const factoryHelp = runHarness(["run", "factory-triage", "--help"]);
-if (!factoryHelp.includes("harness run factory-triage")) {
+const factoryHelp = runHarness(["factory", "triage", "--help"]);
+if (!factoryHelp.includes("harness factory triage")) {
   throw new Error("Expected factory-triage help to include command usage");
 }
 if (!factoryHelp.includes("--item-file <path>")) {

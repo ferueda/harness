@@ -514,10 +514,10 @@ test("persists a terminal failure when Linear phase start fails", async () => {
   const ctx = context(workspace, false);
   const startError = new Error("Linear unavailable");
   ctx.exportFailed = vi.fn(
-    (): FactoryRunMeta => ({
+    (error: unknown): FactoryRunMeta => ({
       ...meta(ctx),
       status: "failed",
-      error: startError.message,
+      error: error instanceof Error ? error.message : String(error),
       failureKind: "terminal",
     }),
   );
@@ -570,6 +570,14 @@ test("retries the same triage action and phase run after a retryable failure", a
     }),
   );
   const failedRun = vi.fn(async () => Promise.reject(new Error("provider unavailable")));
+  const applyTriageFailed = vi.fn();
+  const applyTriageStarted = vi.fn(async () => ({
+    issueIdentifier: "ENG-37",
+    runId: ctx.runId,
+    runDir: ctx.runDir,
+    stage: "start" as const,
+    targetStatus: "Triaging",
+  }));
   const first = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
     workItem: WORK_ITEM,
@@ -577,9 +585,11 @@ test("retries the same triage action and phase run after a retryable failure", a
     issueRef: "ENG-37",
     createContext: () => ctx,
     runTriage: failedRun,
+    applyAdapter: fakeLinearAdapter({ applyTriageStarted, applyTriageFailed }),
   });
   assertActionResult(first);
   expect(first.next).toMatchObject({ kind: "invoke", scheduling: "retry", attempt: 1 });
+  expect(applyTriageFailed).not.toHaveBeenCalled();
 
   writeFileSync(
     join(ctx.runDir, "factory-triage.json"),
@@ -609,4 +619,71 @@ test("retries the same triage action and phase run after a retryable failure", a
   expect(successfulRun).toHaveBeenCalledOnce();
   expect(second.phaseRunId).toBe(first.phaseRunId);
   expect(second.action.attempt).toBe(1);
+});
+
+test("retries a failed terminal projection without rerunning the provider", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "triage-failed-projection-"));
+  const root = join(workspace, "state");
+  const ctx = context(workspace, false);
+  ctx.runDir = join(workspace, "runs", "factory", ctx.runId);
+  ctx.factoryStore = { ...ctx.factoryStore!, factoryStateRoot: root, projectRoot: workspace };
+  mkdirSync(join(ctx.runDir, "context"), { recursive: true });
+  writeFileSync(join(ctx.runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
+  writeFileSync(join(ctx.runDir, "summary.md"), "summary");
+  writeFileSync(join(ctx.runDir, "factory-route.json"), JSON.stringify({ command: null }));
+  ctx.exportFailed = vi.fn(
+    (error: unknown): FactoryRunMeta => ({
+      ...meta(ctx),
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+      failureKind: "terminal",
+      factoryStore: { factoryStateRoot: root } as FactoryRunMeta["factoryStore"],
+    }),
+  );
+  const runTriage = vi.fn(async () => Promise.reject(new Error("invalid output")));
+  const projectionError = new Error("Linear unavailable");
+  const failedProjection = vi.fn(async () => Promise.reject(projectionError));
+  const first = await runFactoryTriageWithLinearApply({
+    factoryStateRoot: root,
+    workItem: WORK_ITEM,
+    rerun: false,
+    issueRef: "ENG-37",
+    createContext: () => ctx,
+    runTriage,
+    applyAdapter: fakeLinearAdapter({
+      applyTriageStarted: async () => ({
+        issueIdentifier: "ENG-37",
+        runId: ctx.runId,
+        runDir: ctx.runDir,
+        stage: "start",
+        targetStatus: "Triaging",
+      }),
+      applyTriageFailed: failedProjection,
+    }),
+  });
+  assertActionResult(first);
+  expect(first.terminalApplyError).toBe(projectionError);
+  writeFileSync(join(ctx.runDir, "meta.json"), JSON.stringify(first.meta));
+
+  const recoveredProjection = vi.fn(async () => ({
+    issueIdentifier: "ENG-37",
+    runId: ctx.runId,
+    runDir: ctx.runDir,
+    stage: "failed" as const,
+    targetStatus: "Triage Failed",
+  }));
+  const createContext = vi.fn();
+  const second = await runFactoryTriageWithLinearApply({
+    factoryStateRoot: root,
+    workItem: WORK_ITEM,
+    rerun: false,
+    issueRef: "ENG-37",
+    createContext,
+    applyAdapter: fakeLinearAdapter({ applyTriageFailed: recoveredProjection }),
+  });
+  assertActionResult(second);
+  expect(createContext).not.toHaveBeenCalled();
+  expect(runTriage).toHaveBeenCalledOnce();
+  expect(recoveredProjection).toHaveBeenCalledOnce();
+  expect(second.terminalApplyError).toBeUndefined();
 });

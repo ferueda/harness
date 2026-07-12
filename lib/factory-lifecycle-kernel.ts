@@ -13,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { assertFactoryStoreFormat, ensureFactoryStoreFormat } from "./factory-store-format.ts";
 import {
+  isFactoryActionEvent,
   parseFactoryLifecycleEvent,
   type FactoryLifecycleEvent,
 } from "./factory-lifecycle-events.ts";
@@ -23,6 +24,7 @@ import {
 } from "./factory-state-machine.ts";
 import { withFactoryWorkItemLock, type FactoryLockRuntimeOptions } from "./factory-locks.ts";
 import { canonicalFactoryEvent } from "./factory-event-canonical.ts";
+import { assertFactoryActionEventIdentity } from "./factory-action-identity.ts";
 
 export class FactoryLifecycleConflictError extends Error {
   constructor(message: string) {
@@ -57,6 +59,7 @@ export function appendFactoryActionEvent(input: AppendFactoryActionEventInput): 
   state: FactoryLifecycleState;
 } {
   const event = parseFactoryLifecycleEvent(input.event);
+  if (isFactoryActionEvent(event)) assertFactoryActionEventIdentity(event);
   const root = resolve(input.factoryStateRoot);
   ensureFactoryStoreFormat(root);
   return withFactoryWorkItemLock(

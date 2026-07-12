@@ -326,8 +326,11 @@ export function assertLinearTriageApplyAllowed(
     throw new Error("Linear issue is missing a status; cannot apply factory triage.");
   }
   if (rerun) return;
-  if (continuation && normalizeName(statusName) === normalizeName(settings.statuses.triaging)) {
-    return;
+  if (continuation) {
+    if (normalizeName(statusName) === normalizeName(settings.statuses.triaging)) return;
+    throw new Error(
+      `Linear triage continuation requires ${settings.statuses.triaging}; issue is in ${statusName}.`,
+    );
   }
   const allowed = [
     settings.statuses.intake,

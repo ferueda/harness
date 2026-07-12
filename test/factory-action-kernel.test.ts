@@ -274,6 +274,14 @@ describe("Factory action lifecycle kernel", () => {
         { ...terminal, data: { ...terminal.data, attempt: 2 } },
       ]),
     ).toThrow(/Invalid Factory transition/);
+    expect(() =>
+      appendFactoryActionEvent({
+        factoryStateRoot: store,
+        event: { ...terminal, id: "triage.work_item.completed:wrong" },
+        expectedLastEventId: request.id,
+      }),
+    ).toThrow(/action event identity mismatch/);
+    expect(readFactoryActionEvents(store, "item-1")).toHaveLength(2);
     writeFactoryActionResult(actionDir, terminal);
     expect(writeFactoryActionResult(actionDir, terminal)).toBe(
       join(actionDir, "action-result.json"),
@@ -293,7 +301,7 @@ describe("Factory action lifecycle kernel", () => {
     ).toThrow(/Divergent Factory action result/);
     expect(() =>
       writeFactoryActionResult(join(store, "actions", "0".repeat(64)), terminal),
-    ).toThrow(/identity mismatch/);
+    ).toThrow(/path mismatch/);
     expect(() =>
       writeFactoryActionResult(join(store, "actions", actionKey), {
         ...terminal,
@@ -348,6 +356,12 @@ describe("Factory action lifecycle kernel", () => {
         rationale: "bad",
       },
     };
+    terminal.id = `${terminal.type}:${factoryActionKey({
+      phaseRunId: terminal.phaseRunId,
+      handler: terminal.data.handler,
+      attempt: terminal.data.attempt,
+      causationEventId: terminal.data.causationEventId,
+    })}`;
     expect(() =>
       appendFactoryActionEvent({
         factoryStateRoot: store,
