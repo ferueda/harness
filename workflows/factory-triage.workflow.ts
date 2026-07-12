@@ -477,7 +477,7 @@ function readTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {
   );
   const triage = parseFactoryTriageOutput(JSON.parse(readFileSync(triagePath, "utf8")));
   for (const evidence of triage.evidence) {
-    if (evidence.path === null) continue;
+    if (evidence.path === null || evidence.kind === "tracker") continue;
     if (evidence.path.includes("\\") || !isFactoryRelativePathContained(evidence.path)) {
       throw new Error(`Factory triage evidence path is not portable: ${evidence.path}`);
     }

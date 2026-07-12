@@ -161,7 +161,7 @@ test.each([
   { prior: false, dryRun: true, expected: false },
   { prior: false, dryRun: false, expected: true },
 ])(
-  "passes rerun guidance and apply intent: $prior/$dryRun",
+  "passes rerun guidance and apply intent with external tracker evidence: $prior/$dryRun",
   async ({ prior, dryRun, expected }) => {
     const workspace = mkdtempSync(join(tmpdir(), "triage-apply-run-"));
     const root = join(workspace, "state");
@@ -172,7 +172,7 @@ test.each([
         route: "needs-info",
         confidence: "high",
         rationale: "Question",
-        evidence: [{ kind: "tracker", path: null, summary: "Missing detail" }],
+        evidence: [{ kind: "tracker", path: "linear:ENG-37", summary: "Missing detail" }],
         questions: ["Which target?"],
         reconsiderWhen: null,
         suggestedNext: { action: "ask-human", command: null, artifact: null },

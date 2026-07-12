@@ -1028,7 +1028,7 @@ function readFactoryTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {
 
 function assertTriageEvidenceContained(workspace: string, triage: FactoryTriageOutput): void {
   for (const evidence of triage.evidence) {
-    if (evidence.path === null) continue;
+    if (evidence.path === null || evidence.kind === "tracker") continue;
     if (evidence.path.includes("\\") || !isFactoryRelativePathContained(evidence.path)) {
       throw new Error(`Factory triage evidence path is not portable: ${evidence.path}`);
     }
