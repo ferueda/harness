@@ -1,14 +1,21 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { isAbsolute, normalize, resolve, sep } from "node:path";
+import { relative, resolve } from "node:path";
 import { z } from "zod";
 
 const RelativePathSchema = z
   .string()
   .min(1)
   .superRefine((value, ctx) => {
-    const normalized = normalize(value);
-    if (isAbsolute(value) || normalized === ".." || normalized.startsWith(`..${sep}`)) {
+    const portable = value.replaceAll("\\", "/");
+    const segments = portable.split("/");
+    if (
+      value.includes("\\") ||
+      portable.startsWith("/") ||
+      /^\/?[A-Za-z]:/.test(portable) ||
+      portable.startsWith("//") ||
+      segments.some((segment) => segment === ".." || segment === "" || segment === ".")
+    ) {
       ctx.addIssue({ code: "custom", message: "must be a portable relative path" });
     }
   });
@@ -37,6 +44,7 @@ export function createFactoryArtifactRef(input: {
 }): FactoryArtifactRef {
   const candidate = FactoryArtifactRefInputSchema.parse({ base: input.base, path: input.path });
   const absolute = resolve(input.root, candidate.path);
+  assertContained(input.root, absolute);
   return FactoryArtifactRefSchema.parse({
     ...candidate,
     sha256: createHash("sha256").update(readFileSync(absolute)).digest("hex"),
@@ -49,7 +57,15 @@ export function verifyFactoryArtifactRef(
 ): string {
   const parsed = FactoryArtifactRefSchema.parse(ref);
   const path = resolve(roots[parsed.base], parsed.path);
+  assertContained(roots[parsed.base], path);
   const digest = createHash("sha256").update(readFileSync(path)).digest("hex");
   if (digest !== parsed.sha256) throw new Error(`Factory artifact hash mismatch: ${parsed.path}`);
   return path;
+}
+
+function assertContained(root: string, path: string): void {
+  const value = relative(resolve(root), path);
+  if (value === ".." || value.startsWith("../") || value.startsWith("..\\")) {
+    throw new Error("Factory artifact path escapes its declared root");
+  }
 }

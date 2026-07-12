@@ -131,6 +131,15 @@ describe("Factory action lifecycle kernel", () => {
       },
     };
     writeFactoryActionResult(actionDir, terminal);
+    expect(writeFactoryActionResult(actionDir, terminal)).toBe(
+      join(actionDir, "action-result.json"),
+    );
+    expect(() =>
+      writeFactoryActionResult(actionDir, {
+        ...terminal,
+        data: { ...terminal.data, rationale: "Divergent" },
+      }),
+    ).toThrow(/Divergent Factory action result/);
     const recovered = appendFactoryActionEvent({
       factoryStateRoot: store,
       event: readFactoryActionResult(actionDir),
@@ -142,6 +151,44 @@ describe("Factory action lifecycle kernel", () => {
       reason: "phase-command",
       command: terminal.data.nextCommand,
     });
+  });
+
+  test("rejects a terminal event without its request transition", () => {
+    const store = root();
+    appendFactoryActionEvent({
+      factoryStateRoot: store,
+      event: imported(),
+      expectedLastEventId: null,
+    });
+    const terminal: Extract<FactoryLifecycleEvent, { type: "triage.work_item.completed" }> = {
+      version: 1,
+      id: "bad-terminal",
+      type: "triage.work_item.completed",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T02:00:00.000Z",
+      phaseRunId: "triage-run",
+      data: {
+        handler: "triageWorkItem",
+        handlerVersion: 1,
+        attempt: 1,
+        causationEventId: "import:item-1",
+        execution: {
+          workspaceRef: "repo",
+          runRef: { base: "factory-store", path: "runs/triage", sha256: "a".repeat(64) },
+        },
+        evidence: [],
+        route: "ready-to-plan",
+        nextCommand: "next",
+        rationale: "bad",
+      },
+    };
+    expect(() =>
+      appendFactoryActionEvent({
+        factoryStateRoot: store,
+        event: terminal,
+        expectedLastEventId: "import:item-1",
+      }),
+    ).toThrow(/Invalid Factory transition/);
   });
 });
 
@@ -160,6 +207,11 @@ describe("Factory store and artifact boundaries", () => {
         sha256: "a".repeat(64),
       }),
     ).toThrow();
+    for (const path of ["C:\\temp\\x", "\\\\server\\share", "..\\x", "a\\..\\x"]) {
+      expect(() =>
+        FactoryArtifactRefSchema.parse({ base: "repository", path, sha256: "a".repeat(64) }),
+      ).toThrow();
+    }
     expect(() =>
       FactoryArtifactRefSchema.parse({ base: "repository", path: "../x", sha256: "a".repeat(64) }),
     ).toThrow();

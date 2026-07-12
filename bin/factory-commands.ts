@@ -1,6 +1,6 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
 import { factoryImplementationCliOutput } from "./factory-implementation-cli.ts";
@@ -9,14 +9,22 @@ import {
   type FactoryPlanningLinearUpdate,
 } from "./factory-planning-cli.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
-import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
-import { writeFactoryActionResult } from "../lib/factory-action-result.ts";
+import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import {
+  factoryActionResultPath,
+  readFactoryActionResult,
+  writeFactoryActionResult,
+} from "../lib/factory-action-result.ts";
 import {
   appendFactoryActionEvent,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent as FactoryActionLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
-import { decideNextFactoryAction, type FactoryReaction } from "../lib/factory-state-machine.ts";
+import {
+  decideNextFactoryAction,
+  reduceFactoryLifecycleEvents,
+  type FactoryReaction,
+} from "../lib/factory-state-machine.ts";
 import { errorMessage } from "../lib/agent-invoke.ts";
 import {
   resolveFactoryLinearSettings,
@@ -595,6 +603,7 @@ function addFactoryImplementationStationCommand(
         factoryStoreProjectId: options.factoryStoreProjectId,
         env: process.env,
       });
+      assertLegacyPhaseStoreAvailable(store.factoryStateRoot, "implementation");
       const factoryStore = factoryStoreForRun(store, options.runsDir);
       const implementationAdapter = options.apply
         ? (config.implementationLinearAdapterFactory ?? createLinearFactoryAdapter)({
@@ -1027,6 +1036,7 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
         factoryStoreProjectId: options.factoryStoreProjectId,
         env: process.env,
       });
+      assertLegacyPhaseStoreAvailable(store.factoryStateRoot, "planning");
       const factoryStore = factoryStoreForRun(store, options.runsDir);
       let linearAdapter: LinearFactoryAdapter | undefined;
       const linearAdapterFactory = options.linearIssue
@@ -1491,6 +1501,11 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         env: process.env,
       });
       const factoryStore = factoryStoreForRun(store, options.runsDir);
+      if (!options.dryRun && options.runsDir && !isPathWithin(store.projectRoot, options.runsDir)) {
+        throw new Error(
+          "Live Factory triage --runs-dir must remain inside the durable project store so action evidence refs stay portable.",
+        );
+      }
       let linearAdapter: LinearFactoryAdapter | undefined;
       const linearAdapterFactory = options.linearIssue
         ? (adapterInput: Parameters<typeof createLinearFactoryAdapter>[0]) => {
@@ -1505,7 +1520,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         linearSettings,
         env: process.env,
         linearAdapterFactory,
-        lifecycleReadMode: options.dryRun ? "inspect" : "none",
+        lifecycleReadMode: "none",
         factoryStateRoot: store.factoryStateRoot,
       });
 
@@ -1547,10 +1562,15 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
                 : {}),
               ...(input.warnings ? { warnings: input.warnings } : {}),
             }),
-            outcome: meta.status === "completed" ? "action-completed" : "failed",
+            outcome:
+              meta.status === "completed"
+                ? "action-completed"
+                : meta.status === "dry_run"
+                  ? "waiting"
+                  : "failed",
             phase: "triage",
             phaseRunId: result.phaseRunId,
-            action: result.action,
+            ...(meta.status === "dry_run" ? {} : { action: result.action }),
             next: result.next,
           },
           null,
@@ -1592,6 +1612,10 @@ export async function runFactoryTriageWithLinearApply(input: {
   const usesLegacyTestSeams = Boolean(
     input.appendImported || input.appendStarted || input.appendTerminal,
   );
+  if (!usesLegacyTestSeams && !input.rerun) {
+    const recovered = recoverTriageActionResult(input);
+    if (recovered) return recovered;
+  }
   const policy = usesLegacyTestSeams
     ? assertFactoryTriageAllowed({
         factoryStateRoot: input.factoryStateRoot,
@@ -1757,6 +1781,54 @@ export async function runFactoryTriageWithLinearApply(input: {
   }
 }
 
+function recoverTriageActionResult(input: { factoryStateRoot: string; workItem: FactoryWorkItem }):
+  | {
+      meta: FactoryRunMeta;
+      phaseRunId: string;
+      action: { handler: "triageWorkItem"; attempt: 1; eventId: string };
+      next: FactoryReaction;
+    }
+  | undefined {
+  const key = deriveFactoryWorkItemKey(input.workItem);
+  const events = readFactoryActionEvents(input.factoryStateRoot, key);
+  const latest = events.at(-1);
+  if (latest?.type !== "triage.requested") return undefined;
+  const runDir = join(dirname(input.factoryStateRoot), "runs", "factory", latest.phaseRunId);
+  const eventIds = [
+    `triage.work_item.completed:${latest.phaseRunId}:1`,
+    `factory.action.failed:${latest.phaseRunId}:triageWorkItem:1`,
+  ];
+  const actionDir = eventIds
+    .map((eventId) => join(runDir, "actions", "1", "triageWorkItem", eventId))
+    .find((candidate) => existsSync(factoryActionResultPath(candidate)));
+  if (!actionDir) {
+    throw new Error(
+      `Factory triage run ${latest.phaseRunId} is active without a terminal action result; inspect ${runDir} before retrying.`,
+    );
+  }
+  const terminal = readFactoryActionResult(actionDir);
+  if (terminal.phaseRunId !== latest.phaseRunId || terminal.data.causationEventId !== latest.id) {
+    throw new Error(
+      `Recovered Factory action result conflicts with active run ${latest.phaseRunId}`,
+    );
+  }
+  const meta = JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) as FactoryRunMeta;
+  const roots = { "factory-store": dirname(input.factoryStateRoot), repository: meta.workspace };
+  verifyFactoryArtifactRef(terminal.data.execution.runRef, roots);
+  for (const ref of terminal.data.evidence) verifyFactoryArtifactRef(ref, roots);
+  const appended = appendFactoryActionEvent({
+    factoryStateRoot: input.factoryStateRoot,
+    event: terminal,
+    expectedLastEventId: latest.id,
+  });
+  return {
+    meta,
+    phaseRunId: latest.phaseRunId,
+    action: { handler: "triageWorkItem", attempt: 1, eventId: terminal.id },
+    next: decideNextFactoryAction(appended.state, appended.event),
+  };
+}
+
 function validateFactoryApplyOptions(options: {
   apply: boolean;
   itemFile?: string;
@@ -1782,6 +1854,22 @@ function requireLinearApplyAdapter(
     throw new Error("Linear adapter is required for --apply.");
   }
   return adapter;
+}
+
+function isPathWithin(root: string, candidate: string): boolean {
+  const value = relative(resolve(root), resolve(candidate));
+  return value === "" || (value !== ".." && !value.startsWith("../") && !value.startsWith("..\\"));
+}
+
+function assertLegacyPhaseStoreAvailable(
+  factoryStateRoot: string,
+  phase: "planning" | "implementation",
+): void {
+  if (existsSync(join(factoryStateRoot, "store-format.json"))) {
+    throw new Error(
+      `Factory ${phase} action coordination is not available in PR 1; the clean action store will be supported by its dedicated follow-up PR.`,
+    );
+  }
 }
 
 function readFactoryTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {
@@ -1828,7 +1916,7 @@ function buildTriageActionEvent(
       data: {
         ...common.data,
         phase: "triage",
-        failureKind: "terminal",
+        failureKind: meta.failureKind ?? "terminal",
         message: meta.error ?? "Factory triage failed.",
       },
     };
@@ -1856,13 +1944,16 @@ function assertFactoryActionTriageAllowed(input: {
 }): { hadPriorCompletion: boolean } {
   const key = deriveFactoryWorkItemKey(input.workItem);
   const events = readFactoryActionEvents(input.factoryStateRoot, key);
-  const hadPriorCompletion = events.some((event) => event.type === "triage.work_item.completed");
-  if (hadPriorCompletion && !input.rerun) {
+  const state = reduceFactoryLifecycleEvents(events);
+  const requiresRestart =
+    state?.phase === "triage" &&
+    ["routed", "parked", "needs-human", "failed"].includes(state.status);
+  if (requiresRestart && !input.rerun) {
     throw new Error(
       `Factory triage already completed for ${key}; use --rerun to start an explicit new triage phase run.`,
     );
   }
-  return { hadPriorCompletion };
+  return { hadPriorCompletion: requiresRestart };
 }
 
 function linearPlanningCompletedInput(

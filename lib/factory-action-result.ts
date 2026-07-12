@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
@@ -13,9 +13,24 @@ export function writeFactoryActionResult(actionDir: string, event: FactoryAction
   const parsed = FactoryLifecycleEventSchema.parse(event) as FactoryActionEvent;
   const path = factoryActionResultPath(actionDir);
   mkdirSync(dirname(path), { recursive: true });
+  if (existsSync(path)) {
+    if (JSON.stringify(readFactoryActionResult(actionDir)) !== JSON.stringify(parsed)) {
+      throw new Error(`Divergent Factory action result: ${path}`);
+    }
+    return path;
+  }
   const temp = `${path}.${randomUUID()}.tmp`;
   writeFileSync(temp, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
-  renameSync(temp, path);
+  try {
+    writeFileSync(path, readFileSync(temp), { flag: "wx" });
+  } catch (error) {
+    if (!existsSync(path)) throw error;
+    if (JSON.stringify(readFactoryActionResult(actionDir)) !== JSON.stringify(parsed)) {
+      throw new Error(`Divergent Factory action result: ${path}`);
+    }
+  } finally {
+    unlinkSync(temp);
+  }
   return path;
 }
 export function readFactoryActionResult(actionDir: string): FactoryActionEvent {

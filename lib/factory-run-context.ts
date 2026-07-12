@@ -72,6 +72,7 @@ export type FactoryRunMeta = {
   durationMs: number;
   eventsFile?: typeof WORKFLOW_EVENTS_FILE;
   error?: string;
+  failureKind?: "retryable" | "human-required" | "terminal";
   factoryStore?: FactoryStoreMeta;
   execution?: FactoryExecutionProvenance;
 };
@@ -235,7 +236,9 @@ function createFactoryRunContextInternal(
           const error = result.aborted
             ? "Agent was aborted: factory-triage"
             : `factory-triage failed: ${result.error}`;
-          throw new FactoryTriageError(error);
+          throw new FactoryTriageError(error, {
+            failureKind: result.aborted ? "human-required" : "retryable",
+          });
         }
 
         const triage = parseFactoryTriageOutput(result.structuredOutput);
@@ -296,6 +299,12 @@ function createFactoryRunContextInternal(
         workItem: options.workItem,
         agent: agentMeta,
         error: errorMessage(error),
+        failureKind:
+          error instanceof FactoryTriageError
+            ? error.failureKind
+            : options.signal?.aborted
+              ? "human-required"
+              : "terminal",
         includeEventsFile: !options.dryRun,
         factoryStore: options.factoryStore,
       });
@@ -322,6 +331,7 @@ function buildMeta(input: {
   routePlan?: FactoryRoutePlan;
   agent: FactoryRunMeta["agent"];
   error?: string;
+  failureKind?: FactoryRunMeta["failureKind"];
   includeEventsFile: boolean;
   factoryStore?: FactoryStoreMeta;
 }): FactoryRunMeta {
@@ -353,6 +363,7 @@ function buildMeta(input: {
     durationMs: Date.now() - input.startedAt.getTime(),
     ...(input.includeEventsFile ? { eventsFile: WORKFLOW_EVENTS_FILE } : {}),
     ...(input.error ? { error: input.error } : {}),
+    ...(input.failureKind ? { failureKind: input.failureKind } : {}),
     ...(input.factoryStore ? { factoryStore: input.factoryStore } : {}),
     execution: factoryExecutionProvenance(input.workspace, input.runDir),
   };

@@ -192,6 +192,32 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   expect(readFileSync(join(ctx.runDir, "events.jsonl"), "utf8")).toContain('"type":"run:start"');
 });
 
+test("factory triage persists heartbeats while the handler is running", async () => {
+  const workspace = createWorkspace();
+  const events: WorkflowEvent[] = [];
+  const ctx = createFactoryRunContextForTest({
+    workspace,
+    runsDir: mkdtempSync(join(tmpdir(), "harness-factory-runs-")),
+    workItem: WORK_ITEM,
+    maxRuntimeMs: 1_000,
+    eventSink: (event) => events.push(event),
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return { ok: true, structuredOutput: TRIAGE_OUTPUT, raw: {} };
+        },
+      };
+    },
+  });
+  await runFactoryTriage(ctx, { heartbeatMs: 1 });
+  expect(events.some((event) => event.type === "step:heartbeat")).toBe(true);
+  expect(readFileSync(join(ctx.runDir, "events.jsonl"), "utf8")).toContain(
+    '"type":"step:heartbeat"',
+  );
+});
+
 test("factory triage provider failure writes failed metadata and returns without throwing", async () => {
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-runs-"));

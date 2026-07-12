@@ -35,6 +35,8 @@ const ActionData = z
     evidence: z.array(FactoryArtifactRefSchema),
   })
   .strict();
+const Session = z.object({ provider: z.string().min(1), id: z.string().min(1) }).strict();
+const ReviewVerdict = z.enum(["pass", "needs_changes", "blocked", "human_required"]);
 
 export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
@@ -61,9 +63,59 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
     data: RequestData.extend({ reviewCeiling: z.number().int().positive() }),
   }),
   Base.extend({
+    type: z.literal("planning.candidate.produced"),
+    phaseRunId: z.string().min(1),
+    data: ActionData.extend({ candidate: FactoryArtifactRefSchema, effectiveSession: Session }),
+  }),
+  Base.extend({
+    type: z.literal("planning.input.required"),
+    phaseRunId: z.string().min(1),
+    data: ActionData.extend({ questions: FactoryArtifactRefSchema }),
+  }),
+  Base.extend({
+    type: z.literal("planning.review.completed"),
+    phaseRunId: z.string().min(1),
+    data: ActionData.extend({
+      verdict: ReviewVerdict,
+      review: FactoryArtifactRefSchema,
+      blockingFindings: FactoryArtifactRefSchema.optional(),
+      reviewCeiling: z.number().int().positive(),
+    }),
+  }),
+  Base.extend({
+    type: z.literal("plan_pr.opened"),
+    phaseRunId: z.string().min(1),
+    data: z.object({ url: z.url(), plan: FactoryArtifactRefSchema }).strict(),
+  }),
+  Base.extend({
+    type: z.literal("plan_pr.merged"),
+    phaseRunId: z.string().min(1),
+    data: z.object({ url: z.url(), commit: z.string().min(1) }).strict(),
+  }),
+  Base.extend({
     type: z.literal("implementation.requested"),
     phaseRunId: z.string().min(1),
     data: RequestData.extend({ reviewCeiling: z.number().int().positive() }),
+  }),
+  Base.extend({
+    type: z.literal("implementation.candidate.produced"),
+    phaseRunId: z.string().min(1),
+    data: ActionData.extend({
+      commit: z.string().min(1),
+      tree: z.string().min(1),
+      candidate: FactoryArtifactRefSchema,
+      effectiveSession: Session,
+    }),
+  }),
+  Base.extend({
+    type: z.literal("implementation.review.completed"),
+    phaseRunId: z.string().min(1),
+    data: ActionData.extend({
+      verdict: ReviewVerdict,
+      review: FactoryArtifactRefSchema,
+      blockingFindings: FactoryArtifactRefSchema.optional(),
+      reviewCeiling: z.number().int().positive(),
+    }),
   }),
   Base.extend({
     type: z.literal("factory.action.failed"),
@@ -79,7 +131,16 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
 export type FactoryLifecycleEvent = z.infer<typeof FactoryLifecycleEventSchema>;
 export type FactoryActionEvent = Extract<
   FactoryLifecycleEvent,
-  { type: "triage.work_item.completed" | "factory.action.failed" }
+  {
+    type:
+      | "triage.work_item.completed"
+      | "planning.candidate.produced"
+      | "planning.input.required"
+      | "planning.review.completed"
+      | "implementation.candidate.produced"
+      | "implementation.review.completed"
+      | "factory.action.failed";
+  }
 >;
 
 export function parseFactoryLifecycleEvent(value: unknown): FactoryLifecycleEvent {

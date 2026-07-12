@@ -74,6 +74,7 @@ function reduce(
   };
   if (current && current.workItemKey !== event.workItemKey)
     throw new Error("Factory event work-item mismatch");
+  validateFactoryTransition(current, event);
   switch (event.type) {
     case "work_item.imported":
       return { ...base, phase: "idle", status: "idle" };
@@ -101,11 +102,62 @@ function reduce(
         status: "awaiting-candidate",
         phaseRunId: event.phaseRunId,
       };
+    case "planning.candidate.produced":
+      return {
+        ...base,
+        phase: "planning",
+        status: "awaiting-review",
+        phaseRunId: event.phaseRunId,
+      };
+    case "planning.input.required":
+      return { ...base, phase: "planning", status: "needs-human", phaseRunId: event.phaseRunId };
+    case "planning.review.completed":
+      return {
+        ...base,
+        phase: "planning",
+        status:
+          event.data.verdict === "pass"
+            ? "awaiting-plan-merge"
+            : event.data.verdict === "needs_changes" &&
+                event.data.attempt < event.data.reviewCeiling
+              ? "needs-revision"
+              : "needs-human",
+        phaseRunId: event.phaseRunId,
+      };
+    case "plan_pr.opened":
+      return {
+        ...base,
+        phase: "planning",
+        status: "awaiting-plan-merge",
+        phaseRunId: event.phaseRunId,
+      };
+    case "plan_pr.merged":
+      return { ...base, phase: "planning", status: "approved", phaseRunId: event.phaseRunId };
     case "implementation.requested":
       return {
         ...base,
         phase: "implementation",
         status: "awaiting-candidate",
+        phaseRunId: event.phaseRunId,
+      };
+    case "implementation.candidate.produced":
+      return {
+        ...base,
+        phase: "implementation",
+        status: "awaiting-review",
+        phaseRunId: event.phaseRunId,
+      };
+    case "implementation.review.completed":
+      return {
+        ...base,
+        phase: "implementation",
+        status:
+          event.data.verdict === "pass"
+            ? "complete"
+            : event.data.verdict === "needs_changes" &&
+                event.data.attempt < event.data.reviewCeiling
+              ? "needs-revision"
+              : "needs-human",
         phaseRunId: event.phaseRunId,
       };
     case "factory.action.failed":
@@ -114,8 +166,97 @@ function reduce(
         phase: event.data.phase,
         status: event.data.failureKind === "terminal" ? "failed" : "needs-human",
         phaseRunId: event.phaseRunId,
-      } as FactoryLifecycleState;
+      };
   }
+}
+
+function validateFactoryTransition(
+  current: FactoryLifecycleState | undefined,
+  event: FactoryLifecycleEvent,
+): void {
+  if (event.type === "work_item.imported") {
+    if (current) throw new Error("work_item.imported must be the first Factory event");
+    return;
+  }
+  if (!current) throw new Error(`${event.type} requires an imported work item`);
+  if (
+    "expectedPredecessor" in event.data &&
+    event.data.expectedPredecessor !== current.lastEventId
+  ) {
+    throw new Error(`${event.type} expected predecessor does not match the Factory cursor`);
+  }
+  if ("causationEventId" in event.data && event.data.causationEventId !== current.lastEventId) {
+    throw new Error(`${event.type} causation does not match the Factory cursor`);
+  }
+  if ("phaseRunId" in current && event.phaseRunId && current.phaseRunId !== event.phaseRunId) {
+    const startsPhase = event.type.endsWith(".requested");
+    if (!startsPhase) throw new Error(`${event.type} phase run does not match active state`);
+  }
+  const allowed = (() => {
+    switch (event.type) {
+      case "triage.requested":
+        return (
+          current.phase === "idle" ||
+          current.status === "routed" ||
+          current.status === "parked" ||
+          current.status === "needs-human" ||
+          current.status === "failed"
+        );
+      case "triage.work_item.completed":
+        return (
+          current.phase === "triage" &&
+          current.status === "awaiting-result" &&
+          event.data.handler === "triageWorkItem"
+        );
+      case "planning.requested":
+        return current.phase === "triage" && current.status === "routed";
+      case "planning.candidate.produced":
+        return (
+          current.phase === "planning" &&
+          (current.status === "awaiting-candidate" || current.status === "needs-revision") &&
+          event.data.handler === "producePlanCandidate"
+        );
+      case "planning.input.required":
+        return (
+          current.phase === "planning" &&
+          (current.status === "awaiting-candidate" || current.status === "needs-revision") &&
+          event.data.handler === "producePlanCandidate"
+        );
+      case "planning.review.completed":
+        return (
+          current.phase === "planning" &&
+          current.status === "awaiting-review" &&
+          event.data.handler === "reviewPlanCandidate"
+        );
+      case "plan_pr.opened":
+        return current.phase === "planning" && current.status === "awaiting-plan-merge";
+      case "plan_pr.merged":
+        return current.phase === "planning" && current.status === "awaiting-plan-merge";
+      case "implementation.requested":
+        return (
+          (current.phase === "triage" && current.status === "routed") ||
+          (current.phase === "planning" && current.status === "approved")
+        );
+      case "implementation.candidate.produced":
+        return (
+          current.phase === "implementation" &&
+          (current.status === "awaiting-candidate" || current.status === "needs-revision") &&
+          event.data.handler === "produceImplementationCandidate"
+        );
+      case "implementation.review.completed":
+        return (
+          current.phase === "implementation" &&
+          current.status === "awaiting-review" &&
+          event.data.handler === "reviewImplementationCandidate"
+        );
+      case "factory.action.failed":
+        return current.status.startsWith("awaiting-") || current.status === "needs-revision";
+    }
+  })();
+  if (!allowed)
+    throw new Error(
+      `Invalid Factory transition: ${current.phase}/${current.status} -> ${event.type}`,
+    );
 }
 
 export function decideNextFactoryAction(
@@ -132,6 +273,56 @@ export function decideNextFactoryAction(
       causationEventId: latestEvent.id,
       scheduling: "immediate",
       reason: "triage-requested",
+    };
+  if (
+    latestEvent.type === "planning.requested" ||
+    (latestEvent.type === "planning.review.completed" && state.status === "needs-revision")
+  )
+    return {
+      kind: "invoke",
+      phase: "planning",
+      handler: "producePlanCandidate",
+      attempt: latestEvent.type === "planning.requested" ? 1 : latestEvent.data.attempt + 1,
+      causationEventId: latestEvent.id,
+      scheduling: "immediate",
+      reason:
+        latestEvent.type === "planning.requested" ? "planning-requested" : "review-needs-changes",
+    };
+  if (latestEvent.type === "planning.candidate.produced")
+    return {
+      kind: "invoke",
+      phase: "planning",
+      handler: "reviewPlanCandidate",
+      attempt: latestEvent.data.attempt,
+      causationEventId: latestEvent.id,
+      scheduling: "immediate",
+      reason: "candidate-produced",
+    };
+  if (
+    latestEvent.type === "implementation.requested" ||
+    (latestEvent.type === "implementation.review.completed" && state.status === "needs-revision")
+  )
+    return {
+      kind: "invoke",
+      phase: "implementation",
+      handler: "produceImplementationCandidate",
+      attempt: latestEvent.type === "implementation.requested" ? 1 : latestEvent.data.attempt + 1,
+      causationEventId: latestEvent.id,
+      scheduling: "immediate",
+      reason:
+        latestEvent.type === "implementation.requested"
+          ? "implementation-requested"
+          : "review-needs-changes",
+    };
+  if (latestEvent.type === "implementation.candidate.produced")
+    return {
+      kind: "invoke",
+      phase: "implementation",
+      handler: "reviewImplementationCandidate",
+      attempt: latestEvent.data.attempt,
+      causationEventId: latestEvent.id,
+      scheduling: "immediate",
+      reason: "candidate-produced",
     };
   if (latestEvent.type === "factory.action.failed" && latestEvent.data.failureKind === "retryable")
     return {

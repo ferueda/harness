@@ -35,10 +35,17 @@ export function ensureFactoryStoreFormat(factoryStateRoot: string): void {
     throw incompatible(root, "lifecycle directory has data but no format marker");
   }
   mkdirSync(root, { recursive: true });
-  writeFileSync(marker, `${JSON.stringify({ format: "harness-factory", version: 1 })}\n`, {
-    encoding: "utf8",
-    flag: "wx",
-  });
+  try {
+    writeFileSync(marker, `${JSON.stringify({ format: "harness-factory", version: 1 })}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
+  } catch (error) {
+    // Another process may have initialized the same empty root.
+    if (!existsSync(marker)) throw error;
+    const parsed = FactoryStoreFormatSchema.safeParse(JSON.parse(readFileSync(marker, "utf8")));
+    if (!parsed.success) throw incompatible(root, formatZodError(parsed.error), parsed.error);
+  }
 }
 
 function incompatible(root: string, reason: string, cause?: unknown): FactoryStoreFormatError {

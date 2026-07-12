@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import { runFactoryTriageWithLinearApply } from "../bin/factory-commands.ts";
 import { appendFactoryLifecycleEvent } from "../lib/factory-lifecycle.ts";
+import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
+import { writeFactoryActionResult } from "../lib/factory-action-result.ts";
+import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import type { FactoryLifecycleEvent as FactoryActionLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import type { FactoryRunContext, FactoryRunMeta } from "../lib/factory-run-context.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { fakeLinearAdapter } from "./factory-linear-test-helpers.ts";
@@ -216,4 +220,79 @@ test("new triage action invokes one handler and returns the next reaction", asyn
     reason: "phase-command",
     command: "harness factory planning run --item-file item.json",
   });
+});
+
+test("recovers a persisted triage result without invoking the handler", async () => {
+  const projectRoot = mkdtempSync(join(tmpdir(), "triage-recovery-"));
+  const root = join(projectRoot, "factory");
+  const runId = "run-recovery";
+  const runDir = join(projectRoot, "runs", "factory", runId);
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(runDir, "summary.md"), "recovered summary");
+  const runRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: projectRoot,
+    path: "runs/factory/run-recovery/summary.md",
+  });
+  const imported: FactoryActionLifecycleEvent = {
+    version: 1,
+    id: "work_item.imported:linear:ENG-37",
+    type: "work_item.imported",
+    workItemKey: "linear:ENG-37",
+    occurredAt: "2026-07-11T00:00:00.000Z",
+    data: { source: "linear", title: WORK_ITEM.title },
+  };
+  appendFactoryActionEvent({ factoryStateRoot: root, event: imported, expectedLastEventId: null });
+  const request: Extract<FactoryActionLifecycleEvent, { type: "triage.requested" }> = {
+    version: 1,
+    id: `triage.requested:${runId}`,
+    type: "triage.requested",
+    workItemKey: "linear:ENG-37",
+    occurredAt: "2026-07-11T00:01:00.000Z",
+    phaseRunId: runId,
+    data: { expectedPredecessor: imported.id, inputRefs: [] },
+  };
+  appendFactoryActionEvent({
+    factoryStateRoot: root,
+    event: request,
+    expectedLastEventId: imported.id,
+  });
+  const terminal: Extract<FactoryActionLifecycleEvent, { type: "triage.work_item.completed" }> = {
+    version: 1,
+    id: `triage.work_item.completed:${runId}:1`,
+    type: "triage.work_item.completed",
+    workItemKey: "linear:ENG-37",
+    occurredAt: "2026-07-11T00:02:00.000Z",
+    phaseRunId: runId,
+    data: {
+      handler: "triageWorkItem",
+      handlerVersion: 1,
+      attempt: 1,
+      causationEventId: request.id,
+      execution: {
+        workspaceRef: "repo",
+        runRef,
+      },
+      evidence: [runRef],
+      route: "ready-to-plan",
+      nextCommand: "harness factory planning run",
+      rationale: "Needs plan",
+    },
+  };
+  writeFactoryActionResult(join(runDir, "actions", "1", "triageWorkItem", terminal.id), terminal);
+  writeFileSync(
+    join(runDir, "meta.json"),
+    JSON.stringify({ ...meta(context(projectRoot, false)), runId, runDir }),
+  );
+  const createContext = vi.fn();
+  const result = await runFactoryTriageWithLinearApply({
+    factoryStateRoot: root,
+    workItem: WORK_ITEM,
+    rerun: false,
+    issueRef: "ENG-37",
+    createContext,
+  });
+  expect(createContext).not.toHaveBeenCalled();
+  expect(result.action.eventId).toBe(terminal.id);
+  expect(result.next).toMatchObject({ kind: "wait", reason: "phase-command" });
 });

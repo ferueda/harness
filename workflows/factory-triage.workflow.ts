@@ -23,7 +23,7 @@ export async function triageWorkItem(
 
 export async function run(
   ctx: FactoryRunContext,
-  options: { nextLiveRunRequiresRerun?: boolean } = {},
+  options: { nextLiveRunRequiresRerun?: boolean; heartbeatMs?: number } = {},
 ): Promise<FactoryRunMeta> {
   const runStartedAt = Date.now();
   const stepStartedAt = new Date();
@@ -57,7 +57,7 @@ export async function run(
       status: "running",
       elapsedMs: Date.now() - stepStartedAt.getTime(),
     });
-  }, 30_000);
+  }, options.heartbeatMs ?? 30_000);
 
   try {
     const result = await triageWorkItem(ctx, options);
