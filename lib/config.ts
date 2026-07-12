@@ -215,9 +215,6 @@ export function factoryActionExecutionProfile(
   };
 }
 
-/** @deprecated Internal alias retained only while triage callers migrate. */
-export const factoryTriageExecutionProfile = factoryActionExecutionProfile;
-
 export function resolveFactoryPlanningSettings(
   options: { workspace?: string },
   cwd = process.cwd(),

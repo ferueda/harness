@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
-import { createFactoryArtifactRef } from "./factory-artifact-ref.ts";
+import type { Agent, AgentProviderOptions, AgentRunResult, AgentSessionRef } from "./agents.ts";
+import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
 import {
   factoryActionResultPath,
@@ -14,6 +14,7 @@ import type { openFactoryPlanningRunContext } from "./factory-planning-run-conte
 import { FACTORY_PLANNING_SCHEMA_PATH } from "./factory-planning-run-context.ts";
 import { parseFactoryPlanningOutput } from "./factory-planning-schemas.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import {
   renderFactoryPlanningInitialPrompt,
   renderFactoryPlanningRevisionPrompt,
@@ -66,30 +67,55 @@ export async function producePlanCandidate(input: {
         });
     writeFileSync(join(actionDir, "planner.prompt.md"), prompt);
     const profile = ctx.identity.actions.producePlanCandidate;
-    const provider = input.agentProviderFactory({
-      provider: profile.provider,
-      ...(profile.provider === "codex" && profile.executable
-        ? { codexPathOverride: profile.executable }
-        : {}),
-    });
-    const result = await provider.run({
-      workspace: ctx.workspace,
-      prompt,
-      schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
-      model: profile.model,
-      ...(profile.provider === "codex"
-        ? {
-            sandboxMode: profile.sandbox,
-            approvalPolicy: profile.approvalPolicy,
-            modelReasoningEffort: profile.reasoningEffort,
-          }
-        : {}),
-      workspaceGuard: "record",
-      maxRuntimeMs: input.maxRuntimeMs,
-      logPath: join(actionDir, "planner.stream.jsonl"),
-      ...(previous?.session ? { session: previous.session } : {}),
-      signal: input.signal,
-    });
+    const providerResultPath = join(actionDir, "provider-result.json");
+    let result: AgentRunResult;
+    if (existsSync(providerResultPath)) {
+      const staged = JSON.parse(readFileSync(providerResultPath, "utf8")) as {
+        version?: unknown;
+        action?: Record<string, unknown>;
+        result?: AgentRunResult;
+      };
+      if (
+        staged.version !== 1 ||
+        staged.action?.phaseRunId !== ctx.runId ||
+        staged.action?.handler !== reaction.handler ||
+        staged.action?.attempt !== reaction.attempt ||
+        staged.action?.causationEventId !== reaction.causationEventId ||
+        !staged.result
+      )
+        throw new Error("Staged planner outcome conflicts with action identity");
+      result = staged.result;
+    } else {
+      const provider = input.agentProviderFactory({
+        provider: profile.provider,
+        ...(profile.provider === "codex" && profile.executable
+          ? { codexPathOverride: profile.executable }
+          : {}),
+      });
+      result = await provider.run({
+        workspace: ctx.workspace,
+        prompt,
+        schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
+        model: profile.model,
+        ...(profile.provider === "codex"
+          ? {
+              sandboxMode: profile.sandbox,
+              approvalPolicy: profile.approvalPolicy,
+              modelReasoningEffort: profile.reasoningEffort,
+            }
+          : {}),
+        workspaceGuard: "record",
+        maxRuntimeMs: input.maxRuntimeMs,
+        logPath: join(actionDir, "planner.stream.jsonl"),
+        ...(previous?.session ? { session: previous.session } : {}),
+        signal: input.signal,
+      });
+      writeDurableFactoryFile(
+        providerResultPath,
+        `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, result }, null, 2)}\n`,
+        true,
+      );
+    }
     writeFileSync(
       join(actionDir, "planner.raw.json"),
       `${JSON.stringify(result.raw ?? result, null, 2)}\n`,
@@ -115,11 +141,32 @@ export async function producePlanCandidate(input: {
         );
     writeFactoryActionResult(actionDir, terminal);
   }
+  const recovered = readFactoryActionResult(actionDir);
+  assertRecoveredResult(ctx, reaction, recovered);
   return appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
-    event: readFactoryActionResult(actionDir),
+    event: recovered,
     expectedLastEventId: reaction.causationEventId,
   });
+}
+
+function assertRecoveredResult(
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  event: FactoryActionEvent,
+): void {
+  if (
+    event.workItemKey !== deriveFactoryWorkItemKey(ctx.workItem) ||
+    event.phaseRunId !== ctx.runId ||
+    event.data.handler !== "producePlanCandidate" ||
+    event.data.attempt !== reaction.attempt ||
+    event.data.causationEventId !== reaction.causationEventId ||
+    event.data.execution.workspaceRef !== ctx.factoryStore.repo.id
+  )
+    throw new Error("Recovered planning candidate result conflicts with phase identity");
+  const roots = { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace };
+  verifyFactoryArtifactRef(event.data.execution.runRef, roots);
+  for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots);
 }
 
 function validateDecisions(decisions: Array<{ findingId: string }>, blocking: unknown[]): void {
@@ -273,7 +320,10 @@ function previousCandidate(
   if (session.provider !== "cursor" && session.provider !== "codex")
     throw new Error("Planning candidate has an invalid provider session");
   return {
-    path: join(ctx.factoryStore.projectRoot, event.data.candidate.path),
+    path: verifyFactoryArtifactRef(event.data.candidate, {
+      "factory-store": ctx.factoryStore.projectRoot,
+      repository: ctx.workspace,
+    }),
     session: { provider: session.provider, id: session.id },
   };
 }
@@ -286,6 +336,12 @@ function latestBlocking(ctx: PlanningContext, root: string): unknown[] {
   if (!event || event.type !== "planning.review.completed" || !event.data.blockingFindings)
     throw new Error("Planning revision has no blocking findings");
   return JSON.parse(
-    readFileSync(join(ctx.factoryStore.projectRoot, event.data.blockingFindings.path), "utf8"),
+    readFileSync(
+      verifyFactoryArtifactRef(event.data.blockingFindings, {
+        "factory-store": ctx.factoryStore.projectRoot,
+        repository: ctx.workspace,
+      }),
+      "utf8",
+    ),
   );
 }

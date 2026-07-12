@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { Agent, AgentProviderOptions } from "./agents.ts";
-import { createFactoryArtifactRef } from "./factory-artifact-ref.ts";
+import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
 import {
   factoryActionResultPath,
@@ -28,6 +28,7 @@ import {
   type FactoryReaction,
 } from "./factory-state-machine.ts";
 import { run as runPlanReview } from "../workflows/plan-review.workflow.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
 type PlanningContext = ReturnType<typeof openFactoryPlanningRunContext>;
 
@@ -64,34 +65,61 @@ export async function reviewPlanCandidate(input: {
   );
   if (!existsSync(factoryActionResultPath(actionDir))) {
     mkdirSync(actionDir, { recursive: true });
-    const candidatePath = join(ctx.factoryStore.projectRoot, latest.data.candidate.path);
-    const profile = ctx.identity.actions.reviewPlanCandidate;
-    const reviewCtx = createWorkflowContext({
-      workspace: ctx.workspace,
-      planPath: candidatePath,
-      runsDir: join(actionDir, "review-runs"),
-      includeGitScope: false,
-      agentProvider: profile.provider,
-      ...(profile.provider === "codex" && profile.executable
-        ? { codexPathOverride: profile.executable }
-        : {}),
-      model: profile.model,
-      ...(profile.provider === "codex"
-        ? {
-            sandboxMode: profile.sandbox,
-            approvalPolicy: profile.approvalPolicy,
-            modelReasoningEffort: profile.reasoningEffort,
-          }
-        : {}),
-      maxRuntimeMs: input.maxRuntimeMs,
-      signal: input.signal,
-      agentProviderFactory: input.agentProviderFactory,
+    const candidatePath = verifyFactoryArtifactRef(latest.data.candidate, {
+      "factory-store": ctx.factoryStore.projectRoot,
+      repository: ctx.workspace,
     });
-    const meta = await (input.reviewRunner ?? runPlanReview)(reviewCtx);
-    const reviewSource = join(reviewCtx.runDir, "spec-review.json");
-    const review = ReviewOutputSchema.parse(JSON.parse(readFileSync(reviewSource, "utf8")));
     const reviewPath = join(actionDir, "spec-review.json");
-    copyFileSync(reviewSource, reviewPath);
+    const resultPath = join(actionDir, "review-result.json");
+    let meta: { status?: unknown };
+    if (existsSync(resultPath) && existsSync(reviewPath)) {
+      const staged = JSON.parse(readFileSync(resultPath, "utf8")) as {
+        version?: unknown;
+        action?: Record<string, unknown>;
+        meta?: { status?: unknown };
+      };
+      if (
+        staged.version !== 1 ||
+        staged.action?.phaseRunId !== ctx.runId ||
+        staged.action?.handler !== reaction.handler ||
+        staged.action?.attempt !== reaction.attempt ||
+        staged.action?.causationEventId !== reaction.causationEventId ||
+        !staged.meta
+      )
+        throw new Error("Staged review outcome conflicts with action identity");
+      meta = staged.meta;
+    } else {
+      const profile = ctx.identity.actions.reviewPlanCandidate;
+      const reviewCtx = createWorkflowContext({
+        workspace: ctx.workspace,
+        planPath: candidatePath,
+        runsDir: join(actionDir, "review-runs"),
+        includeGitScope: false,
+        agentProvider: profile.provider,
+        ...(profile.provider === "codex" && profile.executable
+          ? { codexPathOverride: profile.executable }
+          : {}),
+        model: profile.model,
+        ...(profile.provider === "codex"
+          ? {
+              sandboxMode: profile.sandbox,
+              approvalPolicy: profile.approvalPolicy,
+              modelReasoningEffort: profile.reasoningEffort,
+            }
+          : {}),
+        maxRuntimeMs: input.maxRuntimeMs,
+        signal: input.signal,
+        agentProviderFactory: input.agentProviderFactory,
+      });
+      meta = await (input.reviewRunner ?? runPlanReview)(reviewCtx);
+      copyFileSync(join(reviewCtx.runDir, "spec-review.json"), reviewPath);
+      writeDurableFactoryFile(
+        resultPath,
+        `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, meta }, null, 2)}\n`,
+        true,
+      );
+    }
+    const review = ReviewOutputSchema.parse(JSON.parse(readFileSync(reviewPath, "utf8")));
     const reviewRef = ref(ctx, reviewPath);
     const verdict = meta.status === "completed" ? review.verdict : "blocked";
     let blockingRef;
@@ -132,11 +160,44 @@ export async function reviewPlanCandidate(input: {
     };
     writeFactoryActionResult(actionDir, event);
   }
+  const recovered = readFactoryActionResult(actionDir);
+  assertRecoveredResult(ctx, reaction, recovered);
+  if (
+    recovered.type === "planning.review.completed" &&
+    recovered.data.verdict === "pass" &&
+    ctx.identity.publicationMode === "local"
+  ) {
+    const candidatePath = verifyFactoryArtifactRef(latest.data.candidate, {
+      "factory-store": ctx.factoryStore.projectRoot,
+      repository: ctx.workspace,
+    });
+    materialize(candidatePath, resolve(ctx.workspace, ctx.identity.outputPlan));
+  }
   return appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
-    event: readFactoryActionResult(actionDir),
+    event: recovered,
     expectedLastEventId: reaction.causationEventId,
   });
+}
+
+function assertRecoveredResult(
+  ctx: PlanningContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  event: FactoryLifecycleEvent,
+): void {
+  if (
+    (event.type !== "planning.review.completed" && event.type !== "factory.action.failed") ||
+    event.workItemKey !== deriveFactoryWorkItemKey(ctx.workItem) ||
+    event.phaseRunId !== ctx.runId ||
+    event.data.handler !== "reviewPlanCandidate" ||
+    event.data.attempt !== reaction.attempt ||
+    event.data.causationEventId !== reaction.causationEventId ||
+    event.data.execution.workspaceRef !== ctx.factoryStore.repo.id
+  )
+    throw new Error("Recovered planning review result conflicts with phase identity");
+  const roots = { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace };
+  verifyFactoryArtifactRef(event.data.execution.runRef, roots);
+  for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots);
 }
 
 function ref(ctx: PlanningContext, path: string) {

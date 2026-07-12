@@ -196,6 +196,7 @@ export type FactoryPlanningRunContextOptions = {
   plannerRole: FactoryPlanningAgentRole;
   reviewerRole: FactoryPlanningAgentRole;
   outputPlan?: string;
+  publicationMode?: "local" | "pull-request";
   maxReviewIterations: number;
   maxRuntimeMs: number;
   dryRun?: boolean;
@@ -399,7 +400,7 @@ function createFactoryPlanningRunContextInternal(
             workItem: options.workItem,
           }),
         ),
-        publicationMode: options.workItem.source === "linear" ? "pull-request" : "local",
+        publicationMode: options.publicationMode ?? "local",
         actions: {
           producePlanCandidate: planningExecutionProfile(options.plannerRole),
           reviewPlanCandidate: planningExecutionProfile(options.reviewerRole),

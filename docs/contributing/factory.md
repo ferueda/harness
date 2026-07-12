@@ -322,7 +322,7 @@ harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --apply
 Routes:
 
 - `ready-to-implement`: small and scoped enough for direct implementation.
-- `ready-to-plan`: planning is required, but its executable action ships after PR 1.
+- `ready-to-plan`: planning is required; start it with `harness factory planning run`.
 - `needs-info`: requires human answers before rerun.
 - `wait-to-implement`: valid but parked until `reconsiderWhen`.
 
