@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { formatZodError } from "./schemas.ts";
@@ -32,6 +32,7 @@ export function ensureFactoryStoreFormat(factoryStateRoot: string): void {
     if (!parsed.success) throw incompatible(root, formatZodError(parsed.error), parsed.error);
     return;
   }
+  removeOrphanedMarkerTemps(root);
   if (existsSync(root) && readdirSync(root).length > 0) {
     throw incompatible(root, "lifecycle directory has data but no format marker");
   }
@@ -50,12 +51,31 @@ export function ensureFactoryStoreFormat(factoryStateRoot: string): void {
   }
 }
 
+function removeOrphanedMarkerTemps(root: string): void {
+  if (!existsSync(root)) return;
+  for (const name of readdirSync(root)) {
+    if (isOrphanedMarkerTemp(name)) {
+      unlinkSync(join(root, name));
+    }
+  }
+}
+
+function hasOnlyOrphanedMarkerTemps(root: string): boolean {
+  return readdirSync(root).every(isOrphanedMarkerTemp);
+}
+
+function isOrphanedMarkerTemp(name: string): boolean {
+  return /^store-format\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/i.test(
+    name,
+  );
+}
+
 /** Validate an existing store without initializing an empty or absent root. */
 export function assertFactoryStoreFormat(factoryStateRoot: string): void {
   const root = resolve(factoryStateRoot);
   const marker = join(root, FACTORY_STORE_FORMAT_FILE);
   if (!existsSync(marker)) {
-    if (!existsSync(root) || readdirSync(root).length === 0) return;
+    if (!existsSync(root) || hasOnlyOrphanedMarkerTemps(root)) return;
     throw incompatible(root, "lifecycle directory has data but no format marker");
   }
   let value: unknown;

@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -572,6 +579,19 @@ describe("Factory store and artifact boundaries", () => {
     writeFileSync(join(store, "old.jsonl"), "{}\n");
     expect(() => ensureFactoryStoreFormat(store)).toThrow(FactoryStoreFormatError);
     expect(() => ensureFactoryStoreFormat(store)).toThrow(/Archive or reset/);
+  });
+  test("recovers an orphaned Harness format-marker temp", () => {
+    const store = root();
+    writeFileSync(
+      join(store, "store-format.json.123e4567-e89b-42d3-a456-426614174000.tmp"),
+      "partial",
+    );
+
+    expect(readFactoryActionEvents(store, "item-1")).toEqual([]);
+    ensureFactoryStoreFormat(store);
+
+    expect(readdirSync(store)).toEqual(["store-format.json"]);
+    expect(() => ensureFactoryStoreFormat(store)).not.toThrow();
   });
   test("read-only event access does not initialize an empty store", () => {
     const store = root();

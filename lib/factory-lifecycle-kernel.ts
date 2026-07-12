@@ -26,9 +26,12 @@ import { assertFactoryActionEventIdentity } from "./factory-action-identity.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
 export class FactoryLifecycleConflictError extends Error {
-  constructor(message: string) {
+  readonly reason: "divergent-event" | "stale-cursor";
+
+  constructor(message: string, reason: "divergent-event" | "stale-cursor") {
     super(message);
     this.name = "FactoryLifecycleConflictError";
+    this.reason = reason;
   }
 }
 export type AppendFactoryActionEventInput = {
@@ -95,6 +98,7 @@ export function appendFactoryActionEvent(input: AppendFactoryActionEventInput): 
         if (canonicalFactoryEvent(existing) !== canonicalFactoryEvent(event))
           throw new FactoryLifecycleConflictError(
             `Factory event ${event.id} already exists with different content`,
+            "divergent-event",
           );
         return { event: existing, state: requiredState(events) };
       }
@@ -102,6 +106,7 @@ export function appendFactoryActionEvent(input: AppendFactoryActionEventInput): 
       if (actual !== input.expectedLastEventId)
         throw new FactoryLifecycleConflictError(
           `Stale Factory cursor: expected ${String(input.expectedLastEventId)}, found ${String(actual)}`,
+          "stale-cursor",
         );
       const state = requiredState([...events, event]);
       appendAndSync(actionLifecycleEventPath(root, event.workItemKey), event);

@@ -723,14 +723,17 @@ export async function runFactoryTriageWithLinearApply(input: {
         occurredAt: new Date().toISOString(),
         data: { source: input.workItem.source },
       };
-      const importedResult =
-        existingLatest?.type === "work_item.imported" && existingState
-          ? { event: existingLatest, state: existingState }
-          : appendFactoryEventOrRejectConcurrent({
-              factoryStateRoot: input.factoryStateRoot,
-              event: importedEvent,
-              expectedLastEventId: null,
-            });
+      const expectedRequestPredecessor = existingState?.lastEventId ?? importedEvent.id;
+      const importedResult = appendFactoryEventOrRejectConcurrent({
+        factoryStateRoot: input.factoryStateRoot,
+        event: importedEvent,
+        expectedLastEventId: null,
+      });
+      if (importedResult.state.lastEventId !== expectedRequestPredecessor) {
+        throw new Error(
+          `Factory command lost the durable CAS for ${key}; another command owns the current action. Current event: ${importedResult.state.lastEventId}. Do not run Factory phase commands for the same work item concurrently.`,
+        );
+      }
       actionRequest = {
         version: 1,
         id: `triage.requested:${ctx.runId}`,
@@ -739,7 +742,7 @@ export async function runFactoryTriageWithLinearApply(input: {
         occurredAt: new Date().toISOString(),
         phaseRunId: ctx.runId,
         data: {
-          expectedPredecessor: importedResult.state.lastEventId,
+          expectedPredecessor: expectedRequestPredecessor,
           intent: policy.hadPriorCompletion ? "restart" : "start",
           inputRefs: ctx.factoryStore
             ? [
@@ -758,7 +761,7 @@ export async function runFactoryTriageWithLinearApply(input: {
       const requested = appendFactoryEventOrRejectConcurrent({
         factoryStateRoot: input.factoryStateRoot,
         event: actionRequest,
-        expectedLastEventId: importedResult.state.lastEventId,
+        expectedLastEventId: expectedRequestPredecessor,
       });
       const requestedReaction = decideNextFactoryAction(requested.state, requested.event);
       if (requestedReaction.kind !== "invoke") {
@@ -1151,7 +1154,8 @@ function appendFactoryEventOrRejectConcurrent(
   try {
     return appendFactoryActionEvent(input);
   } catch (error) {
-    if (!(error instanceof FactoryLifecycleConflictError)) throw error;
+    if (!(error instanceof FactoryLifecycleConflictError) || error.reason !== "stale-cursor")
+      throw error;
     const events = readFactoryActionEvents(input.factoryStateRoot, input.event.workItemKey);
     const latest = events.at(-1);
     const state = reduceFactoryLifecycleEvents(events);

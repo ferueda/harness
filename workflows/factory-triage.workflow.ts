@@ -133,15 +133,22 @@ export async function triageWorkItem(input: {
     if (!providerOutcome) {
       throw new Error(`Factory provider outcome was not published for ${ctx.runId}`);
     }
-    let terminalMeta = providerOutcome.meta;
-    try {
-      const triage =
-        terminalMeta.status === "completed" ? readTriageArtifact(terminalMeta) : undefined;
-      terminal = buildTriageActionEvent(ctx, terminalMeta, triage, reaction);
-    } catch (error) {
-      terminalMeta = ctx.exportFailed(error, { publishActionOutcome: false });
+    const failureEvidencePath = join(actionDir, "evidence", "failure.json");
+    let terminalMeta = readRecoveredFailureEvidence(failureEvidencePath, ctx);
+    if (terminalMeta) {
       terminal = buildTriageActionEvent(ctx, terminalMeta, undefined, reaction);
+    } else {
+      terminalMeta = providerOutcome.meta;
+      try {
+        const triage =
+          terminalMeta.status === "completed" ? readTriageArtifact(terminalMeta) : undefined;
+        terminal = buildTriageActionEvent(ctx, terminalMeta, triage, reaction);
+      } catch (error) {
+        terminalMeta = ctx.exportFailed(error, { publishActionOutcome: false });
+        terminal = buildTriageActionEvent(ctx, terminalMeta, undefined, reaction);
+      }
     }
+    ensureCanonicalRunMeta(ctx, terminalMeta);
     input.onMeta?.(terminalMeta);
     writeFactoryActionResult(actionDir, terminal);
   }
@@ -154,6 +161,13 @@ export async function triageWorkItem(input: {
     workItemKey,
     actionDir,
   });
+  const recoveredMeta =
+    terminal.type === "factory.action.failed"
+      ? readRecoveredFailureEvidence(join(actionDir, "evidence", "failure.json"), ctx)
+      : readActionProviderOutcome(join(actionDir, "provider-result.json"), ctx, reaction)?.meta;
+  if (!recoveredMeta) throw new Error(`Factory action metadata is missing for ${ctx.runId}`);
+  ensureCanonicalRunMeta(ctx, recoveredMeta);
+  input.onMeta?.(recoveredMeta);
   return appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
     event: terminal,
@@ -295,14 +309,39 @@ function assertRecoveredMetaIdentity(value: FactoryRunMeta, ctx: FactoryRunConte
   if (value.status !== "completed" && value.status !== "failed") {
     throw new Error(`Factory action metadata has no terminal provider status for ${ctx.runId}`);
   }
+  const valueStore = value.factoryStore;
+  const contextStore = ctx.factoryStore;
+  const identity = readFactoryPhaseRunIdentity(ctx.runDir);
+  const profile = identity.actions.triageWorkItem;
   if (
     value.runId !== ctx.runId ||
     resolve(value.runDir) !== resolve(ctx.runDir) ||
     resolve(value.workspace) !== resolve(ctx.workspace) ||
     value.workItem.id !== ctx.workItem.id ||
-    (value.factoryStore !== undefined &&
-      resolve(value.factoryStore.factoryStateRoot) !==
-        resolve(ctx.factoryStore?.factoryStateRoot ?? ""))
+    value.workItem.source !== ctx.workItem.source ||
+    value.workItem.title !== ctx.workItem.title ||
+    !valueStore ||
+    !contextStore ||
+    resolve(valueStore.factoryStateRoot) !== resolve(contextStore.factoryStateRoot) ||
+    valueStore.projectId !== contextStore.projectId ||
+    resolve(valueStore.projectRoot) !== resolve(contextStore.projectRoot) ||
+    valueStore.repo.id !== contextStore.repo.id ||
+    valueStore.repo.name !== contextStore.repo.name ||
+    valueStore.repo.idSource !== contextStore.repo.idSource ||
+    identity.phaseRunId !== ctx.runId ||
+    identity.projectId !== contextStore.projectId ||
+    identity.factoryStateRoot !== resolve(contextStore.factoryStateRoot) ||
+    identity.workspace !== resolve(ctx.workspace) ||
+    value.agent.name !== profile.provider ||
+    value.agent.model !== profile.model ||
+    (profile.provider === "codex" &&
+      (value.agent.sandboxMode !== profile.sandbox ||
+        value.agent.approvalPolicy !== profile.approvalPolicy ||
+        value.agent.modelReasoningEffort !== profile.reasoningEffort)) ||
+    (profile.provider === "cursor" &&
+      (value.agent.sandboxMode !== undefined ||
+        value.agent.approvalPolicy !== undefined ||
+        value.agent.modelReasoningEffort !== undefined))
   ) {
     throw new Error(`Completed Factory run metadata conflicts with ${ctx.runId}`);
   }
@@ -362,6 +401,9 @@ function assertRecoveredActionResult(input: {
     throw new Error("Recovered Factory completion has no immutable triage evidence");
   }
   if (terminal.type === "triage.work_item.completed") {
+    if (terminal.data.nextCommand !== undefined) {
+      throw new Error("Recovered PR 1 triage completion cannot contain a next command");
+    }
     if (evidencePaths.length !== 2) {
       throw new Error("Recovered Factory completion has unexpected evidence");
     }
@@ -387,6 +429,25 @@ function assertRecoveredActionResult(input: {
       throw new Error("Recovered Factory failure conflicts with immutable evidence");
     }
   }
+}
+
+function readRecoveredFailureEvidence(
+  path: string,
+  ctx: FactoryRunContext,
+): FactoryRunMeta | undefined {
+  if (!existsSync(path)) return undefined;
+  const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (!isRecord(value)) throw new Error(`Factory action failure evidence is invalid: ${path}`);
+  const meta = value as FactoryRunMeta;
+  assertRecoveredMetaIdentity(meta, ctx);
+  if (meta.status !== "failed") {
+    throw new Error(`Factory action failure evidence is not failed: ${path}`);
+  }
+  return meta;
+}
+
+function ensureCanonicalRunMeta(ctx: FactoryRunContext, meta: FactoryRunMeta): void {
+  writeDurableFactoryFile(join(ctx.runDir, "meta.json"), JSON.stringify(meta, null, 2));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -15,8 +15,7 @@ command, and terminal route evidence may omit one. The CLI never invokes the
 next handler. An already-waiting state invokes no handler.
 
 Run only one Factory phase command at a time for a work item. Concurrent phase
-commands for the same work item are outside the supported action contract; one
-command will fail its durable compare-and-swap.
+commands for the same work item are unsupported and may fail.
 
 Triage is the first action slice: `triage.requested` invokes
 `triageWorkItem`; the terminal `triage.work_item.completed` event records the
