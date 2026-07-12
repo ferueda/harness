@@ -29,6 +29,11 @@ import {
 } from "../lib/factory-state-machine.ts";
 
 const root = () => mkdtempSync(join(tmpdir(), "factory-action-"));
+const inputRef = {
+  base: "factory-store" as const,
+  path: "inputs/item.json",
+  sha256: "0".repeat(64),
+};
 const imported = (
   occurredAt = "2026-07-11T00:00:00.000Z",
 ): Extract<FactoryLifecycleEvent, { type: "work_item.imported" }> => ({
@@ -86,7 +91,7 @@ describe("Factory action lifecycle kernel", () => {
       workItemKey: "item-1",
       occurredAt: "2026-07-11T02:00:00.000Z",
       phaseRunId: "planning-run",
-      data: { expectedPredecessor: "triage-complete", inputRefs: [], reviewCeiling: 2 },
+      data: { expectedPredecessor: "triage-complete", inputRefs: [inputRef], reviewCeiling: 2 },
     };
     const events: FactoryLifecycleEvent[] = [
       imported(),
@@ -97,7 +102,7 @@ describe("Factory action lifecycle kernel", () => {
         workItemKey: "item-1",
         occurredAt: "2026-07-11T01:00:00.000Z",
         phaseRunId: "triage-run",
-        data: { expectedPredecessor: "import:item-1", inputRefs: [] },
+        data: { expectedPredecessor: "import:item-1", inputRefs: [inputRef], intent: "start" },
       },
       {
         version: 1,
@@ -185,7 +190,7 @@ describe("Factory action lifecycle kernel", () => {
       workItemKey: "item-1",
       occurredAt: "2026-07-11T02:00:00.000Z",
       phaseRunId: "triage-run",
-      data: { expectedPredecessor: "import:item-1", inputRefs: [] },
+      data: { expectedPredecessor: "import:item-1", inputRefs: [inputRef], intent: "start" },
     };
     expect(() =>
       appendFactoryActionEvent({
@@ -226,7 +231,7 @@ describe("Factory action lifecycle kernel", () => {
       workItemKey: "item-1",
       occurredAt: "2026-07-11T01:00:00.000Z",
       phaseRunId: "triage-run",
-      data: { expectedPredecessor: "import:item-1", inputRefs: [] },
+      data: { expectedPredecessor: "import:item-1", inputRefs: [inputRef], intent: "start" },
     };
     const requested = appendFactoryActionEvent({
       factoryStateRoot: store,
@@ -381,7 +386,7 @@ describe("Factory action lifecycle kernel", () => {
         workItemKey: "item-1",
         occurredAt: "2026-07-11T01:00:00.000Z",
         phaseRunId: "triage-run",
-        data: { expectedPredecessor: "import:item-1", inputRefs: [] },
+        data: { expectedPredecessor: "import:item-1", inputRefs: [inputRef], intent: "start" },
       },
       {
         version: 1,
@@ -411,7 +416,7 @@ describe("Factory action lifecycle kernel", () => {
         workItemKey: "item-1",
         occurredAt: "2026-07-11T03:00:00.000Z",
         phaseRunId: "planning-run",
-        data: { expectedPredecessor: "triage-complete", inputRefs: [], reviewCeiling: 2 },
+        data: { expectedPredecessor: "triage-complete", inputRefs: [inputRef], reviewCeiling: 2 },
       },
       {
         version: 1,

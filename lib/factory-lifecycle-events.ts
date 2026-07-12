@@ -23,7 +23,7 @@ const Execution = z
 const RequestData = z
   .object({
     expectedPredecessor: z.string().min(1).nullable(),
-    inputRefs: z.array(FactoryArtifactRefSchema),
+    inputRefs: z.array(FactoryArtifactRefSchema).min(1),
   })
   .strict();
 const ActionData = z
@@ -47,7 +47,7 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
     type: z.literal("triage.requested"),
     phaseRunId: FactoryPhaseRunIdSchema,
-    data: RequestData,
+    data: RequestData.extend({ intent: z.enum(["start", "restart"]) }),
   }),
   Base.extend({
     type: z.literal("triage.work_item.completed"),

@@ -22,7 +22,6 @@ import {
   applyLinearPlanningCompleted,
   applyLinearPlanningFailed,
   applyLinearPlanningStarted,
-  linearPlanningAttentionStageFromComments,
   type LinearPlanningApplyInput,
   type LinearPlanningCompletedInput,
   type LinearPlanningFailedInput,
@@ -40,8 +39,6 @@ import {
 import type {
   LinearClientLike,
   LinearCommentLike,
-  LinearConnectionLike,
-  LinearIssueLabelLike,
   LinearIssueLike,
   LinearMutationPayload,
   LinearProjectLike,
@@ -52,7 +49,6 @@ import type {
 import {
   FactoryWorkItemSchema,
   type FactoryRoute,
-  type FactoryStage,
   type FactoryTriageOutput,
   type FactoryWorkItem,
   type JsonValue,
@@ -331,15 +327,25 @@ export function assertLinearTriageApplyAllowed(
       `Linear triage continuation requires ${settings.statuses.triaging}; issue is in ${statusName}.`,
     );
   }
-  if (rerun) return;
-  const allowed = [
+  const entryStatuses = [
     settings.statuses.intake,
     settings.statuses.needsInfo,
     settings.statuses.triageFailed,
-  ].map(normalizeName);
+  ];
+  const allowed = (
+    rerun
+      ? [
+          ...entryStatuses,
+          settings.statuses.triaging,
+          settings.statuses.needsPlan,
+          settings.statuses.readyToImplement,
+          settings.statuses.parked,
+        ]
+      : entryStatuses
+  ).map(normalizeName);
   if (allowed.includes(normalizeName(statusName))) return;
   throw new Error(
-    `Linear issue is in ${statusName}; --apply only accepts ${settings.statuses.intake}, ${settings.statuses.needsInfo}, or ${settings.statuses.triageFailed}.`,
+    `Linear issue is in ${statusName}; --apply only accepts a configured triage entry or triage-owned status.`,
   );
 }
 

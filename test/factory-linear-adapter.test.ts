@@ -630,7 +630,7 @@ test("Linear triage helpers map routes and render concise comments", () => {
     "Planning Failed",
   ]) {
     expect(() => assertLinearTriageApplyAllowed(LINEAR_SETTINGS, status)).toThrow(
-      /only accepts Backlog, Needs Clarification, or Triage Failed/,
+      /only accepts a configured triage entry or triage-owned status/,
     );
   }
   expect(() =>
@@ -1768,7 +1768,7 @@ test("Linear adapter rejects triage apply from terminal statuses before mutation
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
     }),
-  ).rejects.toThrow(/only accepts Backlog, Needs Clarification, or Triage Failed/);
+  ).rejects.toThrow(/only accepts a configured triage entry or triage-owned status/);
   expect(updates).toEqual([]);
 });
 
@@ -1826,8 +1826,16 @@ test("Linear adapter continuation rejects a normal triage entry status", async (
   expect(updates).toEqual([]);
 });
 
-test("Linear adapter rerun accepts any present in-scope status", async () => {
-  for (const statusName of ["Needs Plan", "Ready to Implement", "Parked", "Planning", "Done"]) {
+test("Linear adapter rerun accepts only triage entry and triage-owned statuses", async () => {
+  for (const statusName of [
+    "Backlog",
+    "Needs Clarification",
+    "Triage Failed",
+    "Triaging",
+    "Needs Plan",
+    "Ready to Implement",
+    "Parked",
+  ]) {
     const updates: Array<{ id: string; input: { stateId: string } }> = [];
     const adapter = createLinearFactoryAdapterForClient({
       client: fakeClient({
@@ -1852,6 +1860,35 @@ test("Linear adapter rerun accepts any present in-scope status", async () => {
     expect(result.fromStatus).toBe(statusName);
     expect(result.targetStatus).toBe("Triaging");
     expect(updates).toEqual([{ id: "issue-1", input: { stateId: "state-Triaging" } }]);
+  }
+});
+
+test("Linear adapter rerun rejects downstream and terminal human workflow statuses", async () => {
+  for (const statusName of ["Planning", "Implementing", "Done", "Canceled", "Duplicate"]) {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            { ...ISSUE, state: Promise.resolve({ id: `state-${statusName}`, name: statusName }) },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+      }),
+      settings: LINEAR_SETTINGS,
+    });
+    await expect(
+      adapter.applyTriageStarted({
+        issueRef: "ENG-123",
+        runId: "run-rerun",
+        runDir: ".harness/runs/factory/run-rerun",
+        rerun: true,
+      }),
+    ).rejects.toThrow(/triage-owned status/);
+    expect(updates).toEqual([]);
   }
 });
 

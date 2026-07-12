@@ -76,6 +76,7 @@ export type FactoryReaction =
       causationEventId: string;
       scheduling: "immediate" | "retry";
       reason: string;
+      command?: string;
     }
   | {
       kind: "wait";
@@ -296,10 +297,12 @@ function validateFactoryTransition(
   const allowed = (() => {
     switch (event.type) {
       case "triage.requested":
+        if (current.phase === "idle") return event.data.intent === "start";
         return (
-          current.phase === "idle" ||
-          (current.phase === "triage" &&
-            ["routed", "parked", "needs-human", "failed"].includes(current.status))
+          current.phase === "triage" &&
+          ["routed", "parked", "needs-human", "failed"].includes(current.status) &&
+          event.data.intent === "restart" &&
+          event.phaseRunId !== current.phaseRunId
         );
       case "triage.work_item.completed":
         return (

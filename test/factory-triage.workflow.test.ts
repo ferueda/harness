@@ -48,6 +48,7 @@ test("factory triage dry-run writes placeholder artifacts without calling provid
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-runs-"));
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir,
     workItem: WORK_ITEM,
@@ -82,6 +83,7 @@ test("factory triage does not invent an executable rerun command", async () => {
   for (const nextLiveRunRequiresRerun of [false, true]) {
     const workspace = createWorkspace();
     const ctx = createFactoryRunContextForTest({
+      executionProfile: { provider: "cursor", model: "test-model" },
       workspace,
       runsDir: mkdtempSync(join(tmpdir(), "harness-factory-runs-")),
       workItem: WORK_ITEM,
@@ -108,6 +110,7 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   const events: WorkflowEvent[] = [];
   const calls: AgentRunInput[] = [];
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir,
     workItem: WORK_ITEM,
@@ -187,6 +190,7 @@ test("factory triage persists heartbeats while the handler is running", async ()
   const workspace = createWorkspace();
   const events: WorkflowEvent[] = [];
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir: mkdtempSync(join(tmpdir(), "harness-factory-runs-")),
     workItem: WORK_ITEM,
@@ -214,6 +218,7 @@ test("factory triage provider failure writes failed metadata and returns without
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-runs-"));
   const events: WorkflowEvent[] = [];
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir,
     workItem: WORK_ITEM,
@@ -243,6 +248,7 @@ test("factory triage invalid provider output writes failed metadata and preserve
   const workspace = createWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-factory-runs-"));
   const ctx = createFactoryRunContextForTest({
+    executionProfile: { provider: "cursor", model: "test-model" },
     workspace,
     runsDir,
     workItem: WORK_ITEM,
