@@ -16,8 +16,9 @@ it.
 Wait for process exit; do not poll or start a second action. The command
 persists progress heartbeats in the action run (`--verbose` also emits them to
 stderr), writes a terminal event/state, and prints durable evidence plus the
-next reaction. PR 1 has no executable downstream command; routed triage can
-therefore return a wait reaction without a command. The invocation never
+next reaction. Planning is shipped as separately invoked candidate, review,
+and publication commands; implementation commands remain unavailable. Routed
+triage can return a wait reaction without a command. The invocation never
 executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
 
 Operate the current local harness factory one work item at a time.
@@ -143,8 +144,9 @@ Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
 `factory.linear.statuses` when operator list/move tools need those board
 states; stations do not require them.
 
-The schema currently requires the downstream status names shown above, but PR 1
-does not expose planning or implementation commands that use them.
+The schema requires the downstream status names shown above. Planning uses its
+configured statuses for explicit Linear boundary projections; implementation
+commands remain unavailable.
 
 - `station`: the current lifecycle step, `triage`.
 - `role`: the current station job, `triager`.

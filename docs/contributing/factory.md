@@ -10,9 +10,10 @@ logs are not parsed or migrated and data is never deleted automatically.
 
 Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
-prints the next reaction, then exits. PR 1 has no executable downstream Factory
-command, and terminal route evidence may omit one. The CLI never invokes the
-next handler. An already-waiting state invokes no handler.
+prints the next reaction, then exits. Planning is shipped as manually stepped
+candidate, review, and publication commands; implementation commands remain
+unavailable. The CLI never invokes the next handler. An already-waiting state
+invokes no handler.
 
 Run only one Factory phase command at a time for a work item. Concurrent phase
 commands for the same work item are unsupported and may fail.
@@ -186,8 +187,9 @@ Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
 `statuses` when operator tools like `linear-cli` or `factory linear list`
 should target those board states by key; factory stations do not require them.
 
-The schema currently requires the downstream status names shown above, but PR 1
-does not expose planning or implementation commands that use them.
+The schema requires the downstream status names shown above. Planning uses its
+configured statuses for explicit Linear boundary projections; implementation
+commands remain unavailable.
 
 ### Durable Store Overrides
 
