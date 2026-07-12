@@ -245,6 +245,11 @@ test("harness run change-review help exits cleanly", () => {
   expect(result.stdout).toMatch(/--dry-run/);
   expect(result.stdout).toMatch(/--verbose/);
 });
+test("harness run factory-triage is not a public workflow bypass", () => {
+  const result = runHarness(["run", "factory-triage"]);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown command 'factory-triage'/i);
+});
 test("harness factory help exits cleanly", () => {
   const result = runHarness(["factory", "--help"]);
   expect(result.status).toBe(0);

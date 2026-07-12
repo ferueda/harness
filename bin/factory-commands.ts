@@ -42,6 +42,7 @@ import {
   resolveFactoryPlanningSettings,
   resolveFactoryRoleAgent,
   factoryTriageExecutionProfile,
+  resolveHarnessWorkspace,
   resolveHarnessOptions,
 } from "../lib/config.ts";
 import {
@@ -1485,7 +1486,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       // Validate source flags before role/config resolution so CLI usage errors win.
       validateFactoryApplyOptions(options);
       validateFactoryWorkItemInput(options);
-      const workspace = resolveHarnessOptions({ workspace: options.workspace }).workspace;
+      const workspace = resolveHarnessWorkspace(options.workspace, process.cwd());
       const linearSettings = options.linearIssue
         ? resolveFactoryLinearSettings({ workspace })
         : undefined;

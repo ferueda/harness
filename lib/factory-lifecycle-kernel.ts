@@ -52,7 +52,11 @@ export function readFactoryActionEvents(root: string, key: string): FactoryLifec
   return readFileSync(path, "utf8")
     .split(/\r?\n/)
     .filter(Boolean)
-    .map((line) => parseFactoryLifecycleEvent(JSON.parse(line)));
+    .map((line) => {
+      const event = parseFactoryLifecycleEvent(JSON.parse(line));
+      if (isFactoryActionEvent(event)) assertFactoryActionEventIdentity(event);
+      return event;
+    });
 }
 export function appendFactoryActionEvent(input: AppendFactoryActionEventInput): {
   event: FactoryLifecycleEvent;
