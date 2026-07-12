@@ -415,7 +415,7 @@ export async function fetchFactoryLinearWorkItem(input: {
     workspace,
     factoryStateRoot,
     workItem: await adapter.fetchWorkItem(input.issue),
-    lifecycleReadMode: "inspect",
+    lifecycleReadMode: existsSync(join(factoryStateRoot, "store-format.json")) ? "none" : "inspect",
   });
   return {
     ...merged.workItem,
@@ -1279,6 +1279,11 @@ export async function runFactoryPlanningPublicationWithLinearApply(input: {
       "Factory planning publication requires a durable factoryStateRoot.",
     );
   }
+  if (existsSync(join(factoryStateRoot, "store-format.json"))) {
+    throw new FactoryPlanningError(
+      "Factory planning publication is not available against the PR 1 clean action store.",
+    );
+  }
   let applyAdapter: LinearFactoryAdapter | undefined;
   if (input.apply) {
     if (!input.issueRef) {
@@ -1501,9 +1506,9 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         env: process.env,
       });
       const factoryStore = factoryStoreForRun(store, options.runsDir);
-      if (!options.dryRun && options.runsDir && !isPathWithin(store.projectRoot, options.runsDir)) {
+      if (!options.dryRun && options.runsDir) {
         throw new Error(
-          "Live Factory triage --runs-dir must remain inside the durable project store so action evidence refs stay portable.",
+          "Live Factory triage does not support --runs-dir in the action store; use the durable store run root.",
         );
       }
       let linearAdapter: LinearFactoryAdapter | undefined;
@@ -1613,7 +1618,7 @@ export async function runFactoryTriageWithLinearApply(input: {
     input.appendImported || input.appendStarted || input.appendTerminal,
   );
   if (!usesLegacyTestSeams && !input.rerun) {
-    const recovered = recoverTriageActionResult(input);
+    const recovered = await recoverTriageActionResult(input);
     if (recovered) return recovered;
   }
   const policy = usesLegacyTestSeams
@@ -1634,12 +1639,14 @@ export async function runFactoryTriageWithLinearApply(input: {
   process.once("SIGTERM", onRunAbort);
   try {
     const ctx = input.createContext(runAbort.signal);
-    announceRunStarted({
-      station: "triage",
-      runId: ctx.runId,
-      runDir: ctx.runDir,
-      workspace: ctx.workspace,
-    });
+    if (usesLegacyTestSeams || ctx.dryRun) {
+      announceRunStarted({
+        station: "triage",
+        runId: ctx.runId,
+        runDir: ctx.runDir,
+        workspace: ctx.workspace,
+      });
+    }
     let actionRequest:
       | Extract<FactoryActionLifecycleEvent, { type: "triage.requested" }>
       | undefined;
@@ -1781,14 +1788,22 @@ export async function runFactoryTriageWithLinearApply(input: {
   }
 }
 
-function recoverTriageActionResult(input: { factoryStateRoot: string; workItem: FactoryWorkItem }):
+async function recoverTriageActionResult(input: {
+  factoryStateRoot: string;
+  workItem: FactoryWorkItem;
+  issueRef: string;
+  applyAdapter?: LinearFactoryAdapter;
+}): Promise<
   | {
       meta: FactoryRunMeta;
       phaseRunId: string;
       action: { handler: "triageWorkItem"; attempt: 1; eventId: string };
       next: FactoryReaction;
+      terminalUpdate?: LinearTriageUpdatePlan;
+      terminalApplyError?: unknown;
     }
-  | undefined {
+  | undefined
+> {
   const key = deriveFactoryWorkItemKey(input.workItem);
   const events = readFactoryActionEvents(input.factoryStateRoot, key);
   const latest = events.at(-1);
@@ -1798,21 +1813,41 @@ function recoverTriageActionResult(input: { factoryStateRoot: string; workItem: 
     `triage.work_item.completed:${latest.phaseRunId}:1`,
     `factory.action.failed:${latest.phaseRunId}:triageWorkItem:1`,
   ];
-  const actionDir = eventIds
+  const actionDirs = eventIds
     .map((eventId) => join(runDir, "actions", "1", "triageWorkItem", eventId))
-    .find((candidate) => existsSync(factoryActionResultPath(candidate)));
-  if (!actionDir) {
+    .filter((candidate) => existsSync(factoryActionResultPath(candidate)));
+  if (actionDirs.length === 0) {
     throw new Error(
       `Factory triage run ${latest.phaseRunId} is active without a terminal action result; inspect ${runDir} before retrying.`,
     );
   }
+  if (actionDirs.length !== 1)
+    throw new Error(`Multiple terminal results exist for ${latest.phaseRunId}`);
+  const actionDir = actionDirs[0]!;
   const terminal = readFactoryActionResult(actionDir);
-  if (terminal.phaseRunId !== latest.phaseRunId || terminal.data.causationEventId !== latest.id) {
+  if (
+    !["triage.work_item.completed", "factory.action.failed"].includes(terminal.type) ||
+    terminal.workItemKey !== key ||
+    terminal.phaseRunId !== latest.phaseRunId ||
+    terminal.data.causationEventId !== latest.id ||
+    terminal.data.handler !== "triageWorkItem" ||
+    (terminal.type === "factory.action.failed" && terminal.data.phase !== "triage") ||
+    terminal.data.attempt !== 1 ||
+    actionDir.split(/[\\/]/).at(-1) !== terminal.id
+  ) {
     throw new Error(
       `Recovered Factory action result conflicts with active run ${latest.phaseRunId}`,
     );
   }
   const meta = JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) as FactoryRunMeta;
+  if (
+    meta.runId !== latest.phaseRunId ||
+    resolve(meta.runDir) !== resolve(runDir) ||
+    meta.workItem.id !== input.workItem.id ||
+    meta.factoryStore?.factoryStateRoot !== input.factoryStateRoot
+  ) {
+    throw new Error(`Recovered Factory run metadata conflicts with ${latest.phaseRunId}`);
+  }
   const roots = { "factory-store": dirname(input.factoryStateRoot), repository: meta.workspace };
   verifyFactoryArtifactRef(terminal.data.execution.runRef, roots);
   for (const ref of terminal.data.evidence) verifyFactoryArtifactRef(ref, roots);
@@ -1821,11 +1856,35 @@ function recoverTriageActionResult(input: { factoryStateRoot: string; workItem: 
     event: terminal,
     expectedLastEventId: latest.id,
   });
+  let terminalUpdate: LinearTriageUpdatePlan | undefined;
+  let terminalApplyError: unknown;
+  if (input.applyAdapter) {
+    try {
+      terminalUpdate =
+        terminal.type === "triage.work_item.completed"
+          ? await input.applyAdapter.applyTriageCompleted({
+              issueRef: input.issueRef,
+              runId: meta.runId,
+              runDir: meta.runDir,
+              triage: readFactoryTriageArtifact(meta),
+            })
+          : await input.applyAdapter.applyTriageFailed({
+              issueRef: input.issueRef,
+              runId: meta.runId,
+              runDir: meta.runDir,
+              error: meta.error ?? "Factory triage failed.",
+            });
+    } catch (error) {
+      terminalApplyError = error;
+    }
+  }
   return {
     meta,
     phaseRunId: latest.phaseRunId,
     action: { handler: "triageWorkItem", attempt: 1, eventId: terminal.id },
     next: decideNextFactoryAction(appended.state, appended.event),
+    ...(terminalUpdate ? { terminalUpdate } : {}),
+    ...(terminalApplyError ? { terminalApplyError } : {}),
   };
 }
 
@@ -1854,11 +1913,6 @@ function requireLinearApplyAdapter(
     throw new Error("Linear adapter is required for --apply.");
   }
   return adapter;
-}
-
-function isPathWithin(root: string, candidate: string): boolean {
-  const value = relative(resolve(root), resolve(candidate));
-  return value === "" || (value !== ".." && !value.startsWith("../") && !value.startsWith("..\\"));
 }
 
 function assertLegacyPhaseStoreAvailable(
@@ -1921,9 +1975,6 @@ function buildTriageActionEvent(
       },
     };
   }
-  const route = JSON.parse(readFileSync(join(meta.runDir, "factory-route.json"), "utf8")) as {
-    command?: string;
-  };
   return {
     ...common,
     id: `triage.work_item.completed:${request.phaseRunId}:1`,
@@ -1931,7 +1982,6 @@ function buildTriageActionEvent(
     data: {
       ...common.data,
       route: triage.route,
-      nextCommand: route.command ?? meta.nextAction ?? "Await explicit phase command.",
       rationale: triage.rationale,
     },
   };

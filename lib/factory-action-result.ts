@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  linkSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
@@ -21,8 +31,21 @@ export function writeFactoryActionResult(actionDir: string, event: FactoryAction
   }
   const temp = `${path}.${randomUUID()}.tmp`;
   writeFileSync(temp, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+  const tempFd = openSync(temp, "r");
   try {
-    writeFileSync(path, readFileSync(temp), { flag: "wx" });
+    fsyncSync(tempFd);
+  } finally {
+    closeSync(tempFd);
+  }
+  try {
+    // Hard-link publication is atomic and never replaces an existing result.
+    linkSync(temp, path);
+    const dirFd = openSync(dirname(path), "r");
+    try {
+      fsyncSync(dirFd);
+    } finally {
+      closeSync(dirFd);
+    }
   } catch (error) {
     if (!existsSync(path)) throw error;
     if (JSON.stringify(readFactoryActionResult(actionDir)) !== JSON.stringify(parsed)) {

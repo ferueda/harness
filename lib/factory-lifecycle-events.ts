@@ -53,7 +53,7 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
     phaseRunId: z.string().min(1),
     data: ActionData.extend({
       route: z.enum(["ready-to-plan", "ready-to-implement", "needs-info", "wait-to-implement"]),
-      nextCommand: z.string().min(1),
+      nextCommand: z.string().min(1).optional(),
       rationale: z.string().min(1),
     }),
   }),

@@ -237,7 +237,10 @@ function createFactoryRunContextInternal(
             ? "Agent was aborted: factory-triage"
             : `factory-triage failed: ${result.error}`;
           throw new FactoryTriageError(error, {
-            failureKind: result.aborted ? "human-required" : "retryable",
+            failureKind:
+              result.aborted || result.failureKind === "workspace-guard"
+                ? "human-required"
+                : "retryable",
           });
         }
 

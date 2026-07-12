@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { z } from "zod";
 
@@ -64,7 +64,7 @@ export function verifyFactoryArtifactRef(
 }
 
 function assertContained(root: string, path: string): void {
-  const value = relative(resolve(root), path);
+  const value = relative(realpathSync(resolve(root)), realpathSync(path));
   if (value === ".." || value.startsWith("../") || value.startsWith("..\\")) {
     throw new Error("Factory artifact path escapes its declared root");
   }

@@ -215,11 +215,7 @@ test("new triage action invokes one handler and returns the next reaction", asyn
   });
   expect(runTriage).toHaveBeenCalledOnce();
   expect(result.action).toMatchObject({ handler: "triageWorkItem", attempt: 1 });
-  expect(result.next).toEqual({
-    kind: "wait",
-    reason: "phase-command",
-    command: "harness factory planning run --item-file item.json",
-  });
+  expect(result.next).toEqual({ kind: "wait", reason: "phase-command" });
 });
 
 test("recovers a persisted triage result without invoking the handler", async () => {
@@ -282,7 +278,12 @@ test("recovers a persisted triage result without invoking the handler", async ()
   writeFactoryActionResult(join(runDir, "actions", "1", "triageWorkItem", terminal.id), terminal);
   writeFileSync(
     join(runDir, "meta.json"),
-    JSON.stringify({ ...meta(context(projectRoot, false)), runId, runDir }),
+    JSON.stringify({
+      ...meta(context(projectRoot, false)),
+      runId,
+      runDir,
+      factoryStore: { factoryStateRoot: root },
+    }),
   );
   const createContext = vi.fn();
   const result = await runFactoryTriageWithLinearApply({

@@ -49,9 +49,10 @@ stderr JSON progress line so operators can learn `runDir` before exit:
 }
 ```
 
-`station` is `triage`, `planning`, or `implementation`. This line is CLI
-progress only — not a `WorkflowEvent`, not written to `events.jsonl`, and not
-lifecycle/Linear source of truth. Final stdout JSON contracts stay unchanged.
+PR-1 live triage emits one action-aware progress record containing phase,
+phase-run id, run directory, handler, and attempt. It is CLI progress only —
+not a lifecycle event. Final stdout adds `outcome`, `phase`, `phaseRunId`, the
+completed `action`, and `next`; dry-run omits the durable action.
 Low-level `harness run factory-triage` / `harness run plan-review` escape
 hatches do not emit this progress line.
 
@@ -271,6 +272,10 @@ progress; Linear status/comments remain human board projections.
 
 ## Planning
 
+Not available after a clean PR-1 action store is initialized. The planning
+action coordinator ships in the dedicated follow-up PR; do not use the legacy
+instructions below against `store-format.json` version 1.
+
 Run planning only for allowed planning entry stages: `ready-to-plan`,
 `plan-needs-human`, `plan-review-unresolved`, or `planning-failed`.
 
@@ -321,6 +326,10 @@ decisions should use the lifecycle read model when present instead of parsing
 recent Linear marker comments.
 
 ## Implementation
+
+Not available after a clean PR-1 action store is initialized. The
+implementation action coordinator ships in its dedicated follow-up PR; do not
+use the legacy instructions below against `store-format.json` version 1.
 
 Run implementation only for work items already ready to implement:
 

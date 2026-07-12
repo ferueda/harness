@@ -439,6 +439,10 @@ comments only; it does not mutate source files.
 
 ## Planning Station
 
+Legacy-only until the planning action follow-up ships. Commands in this
+section are rejected once a clean `store-format.json` version-1 action store
+exists.
+
 Use planning for work items that need a new plan, revised plan, or failed
 planning retry:
 
@@ -597,6 +601,10 @@ approved-plan marker comment. Both commands reject mismatched issue ids and
 non-Linear tracker metadata before local metadata writes.
 
 ## Implementation Station
+
+Legacy-only until the implementation action follow-up ships. Commands in this
+section are rejected once a clean `store-format.json` version-1 action store
+exists.
 
 Run one live implementer pass:
 

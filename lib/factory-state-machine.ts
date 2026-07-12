@@ -34,6 +34,8 @@ export const FactoryLifecycleStateSchema = z.union([
       "failed",
     ]),
     phaseRunId: z.string(),
+    reviewCeiling: z.number().int().positive(),
+    attempt: z.number().int().positive(),
   }),
 ]);
 export type FactoryLifecycleState = z.infer<typeof FactoryLifecycleStateSchema>;
@@ -101,6 +103,8 @@ function reduce(
         phase: "planning",
         status: "awaiting-candidate",
         phaseRunId: event.phaseRunId,
+        reviewCeiling: event.data.reviewCeiling,
+        attempt: 1,
       };
     case "planning.candidate.produced":
       return {
@@ -108,9 +112,18 @@ function reduce(
         phase: "planning",
         status: "awaiting-review",
         phaseRunId: event.phaseRunId,
+        reviewCeiling: current!.phase === "planning" ? current!.reviewCeiling : 1,
+        attempt: event.data.attempt,
       };
     case "planning.input.required":
-      return { ...base, phase: "planning", status: "needs-human", phaseRunId: event.phaseRunId };
+      return {
+        ...base,
+        phase: "planning",
+        status: "needs-human",
+        phaseRunId: event.phaseRunId,
+        reviewCeiling: current!.phase === "planning" ? current!.reviewCeiling : 1,
+        attempt: event.data.attempt,
+      };
     case "planning.review.completed":
       return {
         ...base,
@@ -123,6 +136,9 @@ function reduce(
               ? "needs-revision"
               : "needs-human",
         phaseRunId: event.phaseRunId,
+        reviewCeiling:
+          current!.phase === "planning" ? current!.reviewCeiling : event.data.reviewCeiling,
+        attempt: event.data.attempt,
       };
     case "plan_pr.opened":
       return {
@@ -130,15 +146,26 @@ function reduce(
         phase: "planning",
         status: "awaiting-plan-merge",
         phaseRunId: event.phaseRunId,
+        reviewCeiling: current!.phase === "planning" ? current!.reviewCeiling : 1,
+        attempt: current!.phase === "planning" ? current!.attempt : 1,
       };
     case "plan_pr.merged":
-      return { ...base, phase: "planning", status: "approved", phaseRunId: event.phaseRunId };
+      return {
+        ...base,
+        phase: "planning",
+        status: "approved",
+        phaseRunId: event.phaseRunId,
+        reviewCeiling: current!.phase === "planning" ? current!.reviewCeiling : 1,
+        attempt: current!.phase === "planning" ? current!.attempt : 1,
+      };
     case "implementation.requested":
       return {
         ...base,
         phase: "implementation",
         status: "awaiting-candidate",
         phaseRunId: event.phaseRunId,
+        reviewCeiling: event.data.reviewCeiling,
+        attempt: 1,
       };
     case "implementation.candidate.produced":
       return {
@@ -146,6 +173,8 @@ function reduce(
         phase: "implementation",
         status: "awaiting-review",
         phaseRunId: event.phaseRunId,
+        reviewCeiling: current!.phase === "implementation" ? current!.reviewCeiling : 1,
+        attempt: event.data.attempt,
       };
     case "implementation.review.completed":
       return {
@@ -159,14 +188,36 @@ function reduce(
               ? "needs-revision"
               : "needs-human",
         phaseRunId: event.phaseRunId,
+        reviewCeiling:
+          current!.phase === "implementation" ? current!.reviewCeiling : event.data.reviewCeiling,
+        attempt: event.data.attempt,
       };
     case "factory.action.failed":
+      if (event.data.failureKind === "retryable") {
+        return {
+          ...base,
+          phase: event.data.phase,
+          status:
+            event.data.handler === "triageWorkItem"
+              ? "awaiting-result"
+              : event.data.handler.startsWith("produce")
+                ? "awaiting-candidate"
+                : "awaiting-review",
+          phaseRunId: event.phaseRunId,
+          ...(current?.phase === "planning" || current?.phase === "implementation"
+            ? { reviewCeiling: current.reviewCeiling, attempt: current.attempt }
+            : {}),
+        } as FactoryLifecycleState;
+      }
       return {
         ...base,
         phase: event.data.phase,
         status: event.data.failureKind === "terminal" ? "failed" : "needs-human",
         phaseRunId: event.phaseRunId,
-      };
+        ...(current?.phase === "planning" || current?.phase === "implementation"
+          ? { reviewCeiling: current.reviewCeiling, attempt: current.attempt }
+          : {}),
+      } as FactoryLifecycleState;
   }
 }
 
@@ -209,23 +260,34 @@ function validateFactoryTransition(
           event.data.handler === "triageWorkItem"
         );
       case "planning.requested":
-        return current.phase === "triage" && current.status === "routed";
+        return (
+          current.phase === "triage" &&
+          current.status === "routed" &&
+          current.route === "ready-to-plan"
+        );
       case "planning.candidate.produced":
         return (
           current.phase === "planning" &&
           (current.status === "awaiting-candidate" || current.status === "needs-revision") &&
+          event.data.attempt ===
+            (current.status === "needs-revision" ? current.attempt + 1 : current.attempt) &&
           event.data.handler === "producePlanCandidate"
         );
       case "planning.input.required":
         return (
           current.phase === "planning" &&
           (current.status === "awaiting-candidate" || current.status === "needs-revision") &&
+          event.data.attempt ===
+            (current.status === "needs-revision" ? current.attempt + 1 : current.attempt) &&
           event.data.handler === "producePlanCandidate"
         );
       case "planning.review.completed":
         return (
           current.phase === "planning" &&
           current.status === "awaiting-review" &&
+          event.data.attempt === current.attempt &&
+          event.data.reviewCeiling === current.reviewCeiling &&
+          (event.data.verdict !== "needs_changes" || event.data.blockingFindings !== undefined) &&
           event.data.handler === "reviewPlanCandidate"
         );
       case "plan_pr.opened":
@@ -234,23 +296,43 @@ function validateFactoryTransition(
         return current.phase === "planning" && current.status === "awaiting-plan-merge";
       case "implementation.requested":
         return (
-          (current.phase === "triage" && current.status === "routed") ||
+          (current.phase === "triage" &&
+            current.status === "routed" &&
+            current.route === "ready-to-implement") ||
           (current.phase === "planning" && current.status === "approved")
         );
       case "implementation.candidate.produced":
         return (
           current.phase === "implementation" &&
           (current.status === "awaiting-candidate" || current.status === "needs-revision") &&
+          event.data.attempt ===
+            (current.status === "needs-revision" ? current.attempt + 1 : current.attempt) &&
           event.data.handler === "produceImplementationCandidate"
         );
       case "implementation.review.completed":
         return (
           current.phase === "implementation" &&
           current.status === "awaiting-review" &&
+          event.data.attempt === current.attempt &&
+          event.data.reviewCeiling === current.reviewCeiling &&
+          (event.data.verdict !== "needs_changes" || event.data.blockingFindings !== undefined) &&
           event.data.handler === "reviewImplementationCandidate"
         );
       case "factory.action.failed":
-        return current.status.startsWith("awaiting-") || current.status === "needs-revision";
+        return (
+          event.data.phase === current.phase &&
+          (current.phase === "triage"
+            ? event.data.attempt === 1
+            : event.data.attempt === current.attempt) &&
+          ((current.phase === "triage" && event.data.handler === "triageWorkItem") ||
+            (current.phase === "planning" &&
+              ["producePlanCandidate", "reviewPlanCandidate"].includes(event.data.handler)) ||
+            (current.phase === "implementation" &&
+              ["produceImplementationCandidate", "reviewImplementationCandidate"].includes(
+                event.data.handler,
+              ))) &&
+          (current.status.startsWith("awaiting-") || current.status === "needs-revision")
+        );
     }
   })();
   if (!allowed)
@@ -342,7 +424,9 @@ export function decideNextFactoryAction(
     kind: "wait",
     reason: "phase-command",
     ...(latestEvent.type === "triage.work_item.completed"
-      ? { command: latestEvent.data.nextCommand }
+      ? latestEvent.data.nextCommand
+        ? { command: latestEvent.data.nextCommand }
+        : {}
       : {}),
   };
 }
