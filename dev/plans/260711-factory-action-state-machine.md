@@ -391,12 +391,13 @@ input, and the configured completed-review ceiling.
 Changes:
 
 - Add `lib/factory-plan-candidate-action.ts` and
-  `factory-plan-review-action.ts` around the existing `invokePlanner` and
-  `runReview` seams.
+  `factory-plan-review-action.ts` around the retained run-context/provider and
+  `runPlanReview` seams, extracting small equivalents where needed.
 - Split planning context creation from `openFactoryPlanningRunContext`; persist
   the phase context, effective session, immutable candidates, review refs, and
   blocking-finding refs.
-- Replace `runPlanningLoop` with an explicit one-action planning coordinator.
+- Add an explicit one-action planning coordinator in place of the deleted
+  legacy planning loop.
   A fresh command appends `planning.requested` and runs only candidate attempt
   1. Every later command reopens the run and executes exactly the latest
      reaction. It recomputes `next` but never invokes it.

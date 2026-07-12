@@ -3,7 +3,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { resolveFactoryStoreSettings } from "./config.ts";
+import {
+  resolveFactoryStoreSettings,
+  resolveFactoryStoreSettingsFromSnapshot,
+  type FactoryConfigSnapshot,
+} from "./config.ts";
 import { FactoryStoreProjectIdSchema, formatZodError } from "./schemas.ts";
 
 export type FactoryRepoIdentitySource =
@@ -66,6 +70,7 @@ export type ResolveFactoryStoreInput = {
   factoryStoreProjectId?: string;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
+  configSnapshot?: FactoryConfigSnapshot;
 };
 
 export type LegacyFactoryState = {
@@ -88,10 +93,9 @@ export class FactoryStoreError extends Error {
  * It deliberately computes paths only; write paths create directories.
  */
 export function resolveFactoryStore(input: ResolveFactoryStoreInput = {}): FactoryStoreResolution {
-  const settings = resolveFactoryStoreSettings(
-    { workspace: input.workspace },
-    input.cwd ?? process.cwd(),
-  );
+  const settings = input.configSnapshot
+    ? resolveFactoryStoreSettingsFromSnapshot(input.configSnapshot)
+    : resolveFactoryStoreSettings({ workspace: input.workspace }, input.cwd ?? process.cwd());
   const env = input.env ?? process.env;
   const root = resolveStoreRoot(input, env, settings.root);
   const identity = deriveFactoryRepoIdentity(settings.workspace);

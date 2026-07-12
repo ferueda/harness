@@ -11,7 +11,6 @@ import {
   isFactoryRelativePathContained,
   verifyFactoryArtifactRef,
 } from "../lib/factory-artifact-ref.ts";
-import { factoryActionResultPath, readFactoryActionResult } from "../lib/factory-action-result.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import {
   appendFactoryActionEvent,
@@ -29,8 +28,11 @@ import {
 import { errorMessage } from "../lib/agent-invoke.ts";
 import {
   factoryTriageExecutionProfile,
+  loadFactoryConfigSnapshot,
   resolveFactoryLinearSettings,
+  resolveFactoryLinearSettingsFromSnapshot,
   resolveFactoryRoleAgent,
+  resolveFactoryRoleAgentFromSnapshot,
   resolveHarnessOptions,
   resolveHarnessWorkspace,
   type FactoryLinearSettings,
@@ -450,14 +452,16 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       validateFactoryApplyOptions(options);
       validateFactoryWorkItemInput(options);
       const workspace = resolveHarnessWorkspace(options.workspace, process.cwd());
+      const configSnapshot = loadFactoryConfigSnapshot(workspace);
       const linearSettings = options.linearIssue
-        ? resolveFactoryLinearSettings({ workspace })
+        ? resolveFactoryLinearSettingsFromSnapshot(configSnapshot)
         : undefined;
       const store = resolveFactoryStore({
         workspace,
         factoryStoreRoot: options.factoryStoreRoot,
         factoryStoreProjectId: options.factoryStoreProjectId,
         env: process.env,
+        configSnapshot,
       });
       const factoryStore = factoryStoreForRun(store, options.runsDir);
       if (!options.dryRun && options.runsDir) {
@@ -512,8 +516,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
           return createFactoryRunContext({
             ...common,
             executionProfile: factoryTriageExecutionProfile(
-              resolveFactoryRoleAgent({
-                workspace,
+              resolveFactoryRoleAgentFromSnapshot(configSnapshot, {
                 station: "triage",
                 role: "triager",
               }),
@@ -648,10 +651,6 @@ export async function runFactoryTriageWithLinearApply(input: {
       next: existingReaction,
     };
   }
-  if (!input.dryRun && !input.rerun) {
-    const recovered = await recoverTriageActionResult(input);
-    if (recovered) return recovered;
-  }
   const activeTriage =
     existingReaction?.kind === "invoke" && existingReaction.phase === "triage"
       ? {
@@ -672,7 +671,7 @@ export async function runFactoryTriageWithLinearApply(input: {
   process.once("SIGINT", onRunAbort);
   process.once("SIGTERM", onRunAbort);
   try {
-    let ctx = input.createContext(runAbort.signal, activeTriage?.phaseRunId);
+    const ctx = input.createContext(runAbort.signal, activeTriage?.phaseRunId);
     if (!ctx.dryRun && !ctx.factoryStore) {
       throw new Error("Live Factory triage requires durable store metadata");
     }
@@ -714,7 +713,6 @@ export async function runFactoryTriageWithLinearApply(input: {
       | Extract<FactoryActionLifecycleEvent, { type: "triage.requested" }>
       | undefined;
     let reaction = activeTriage?.reaction;
-    let adoptedConcurrentRequest = false;
     if (!ctx.dryRun && !activeTriage) {
       const key = deriveFactoryWorkItemKey(input.workItem);
       const importedEvent: FactoryActionLifecycleEvent = {
@@ -725,24 +723,14 @@ export async function runFactoryTriageWithLinearApply(input: {
         occurredAt: new Date().toISOString(),
         data: { source: input.workItem.source },
       };
-      let importedResult;
-      try {
-        importedResult = appendFactoryActionEvent({
-          factoryStateRoot: input.factoryStateRoot,
-          event: importedEvent,
-          expectedLastEventId: null,
-        });
-      } catch (error) {
-        if (!(error instanceof FactoryLifecycleConflictError)) throw error;
-        const racedEvents = readFactoryActionEvents(input.factoryStateRoot, key);
-        const racedImported = racedEvents.find(
-          (event): event is Extract<FactoryActionLifecycleEvent, { type: "work_item.imported" }> =>
-            event.type === "work_item.imported",
-        );
-        const racedState = reduceFactoryLifecycleEvents(racedEvents);
-        if (!racedImported || !racedState) throw error;
-        importedResult = { event: racedImported, state: racedState };
-      }
+      const importedResult =
+        existingLatest?.type === "work_item.imported" && existingState
+          ? { event: existingLatest, state: existingState }
+          : appendFactoryEventOrRejectConcurrent({
+              factoryStateRoot: input.factoryStateRoot,
+              event: importedEvent,
+              expectedLastEventId: null,
+            });
       actionRequest = {
         version: 1,
         id: `triage.requested:${ctx.runId}`,
@@ -767,42 +755,16 @@ export async function runFactoryTriageWithLinearApply(input: {
             : [],
         },
       };
-      let requested;
-      try {
-        requested = appendFactoryActionEvent({
-          factoryStateRoot: input.factoryStateRoot,
-          event: actionRequest,
-          expectedLastEventId: importedResult.state.lastEventId,
-        });
-      } catch (error) {
-        if (!(error instanceof FactoryLifecycleConflictError)) throw error;
-        const winningEvents = readFactoryActionEvents(input.factoryStateRoot, key);
-        const winningLatest = winningEvents.at(-1);
-        const winningState = reduceFactoryLifecycleEvents(winningEvents);
-        if (!winningLatest || !winningState || winningLatest.type !== "triage.requested")
-          throw error;
-        const winningReaction = decideNextFactoryAction(winningState, winningLatest);
-        if (winningReaction.kind !== "invoke" || winningReaction.phase !== "triage") throw error;
-        ctx = input.createContext(runAbort.signal, winningLatest.phaseRunId);
-        assertOpenedTriageContext({
-          ctx,
-          factoryStateRoot: input.factoryStateRoot,
-          workItem: input.workItem,
-          events: winningEvents,
-        });
-        reaction = winningReaction;
-        adoptedConcurrentRequest = true;
-        requested = undefined;
+      const requested = appendFactoryEventOrRejectConcurrent({
+        factoryStateRoot: input.factoryStateRoot,
+        event: actionRequest,
+        expectedLastEventId: importedResult.state.lastEventId,
+      });
+      const requestedReaction = decideNextFactoryAction(requested.state, requested.event);
+      if (requestedReaction.kind !== "invoke") {
+        throw new Error("New Factory triage request did not produce an action reaction");
       }
-      if (!requested) {
-        // A concurrent invocation owns the durable request adopted above.
-      } else {
-        const requestedReaction = decideNextFactoryAction(requested.state, requested.event);
-        if (requestedReaction.kind !== "invoke") {
-          throw new Error("New Factory triage request did not produce an action reaction");
-        }
-        reaction = requestedReaction;
-      }
+      reaction = requestedReaction;
     }
     if (!ctx.dryRun && (!reaction || reaction.kind !== "invoke")) {
       throw new Error("Factory triage has no invokable action");
@@ -829,10 +791,8 @@ export async function runFactoryTriageWithLinearApply(input: {
           runId: ctx.runId,
           runDir: ctx.runDir,
           rerun: input.rerun,
-          continuation: Boolean(
-            (activeTriage || adoptedConcurrentRequest) && providerAttemptPersisted,
-          ),
-          resume: Boolean((activeTriage || adoptedConcurrentRequest) && !providerAttemptPersisted),
+          continuation: Boolean(activeTriage && providerAttemptPersisted),
+          resume: Boolean(activeTriage && !providerAttemptPersisted),
         });
       } catch (error) {
         throw new Error(`Linear start projection failed: ${errorMessage(error)}`, { cause: error });
@@ -1026,117 +986,7 @@ async function recoverTriageActionResult(input: {
       ...(terminalApplyError ? { terminalApplyError } : {}),
     };
   }
-  if (
-    latest?.type !== "triage.requested" &&
-    !(
-      latest?.type === "factory.action.failed" &&
-      latest.data.phase === "triage" &&
-      latest.data.failureKind === "retryable"
-    )
-  )
-    return undefined;
-  const runDir = join(dirname(input.factoryStateRoot), "runs", "factory", latest.phaseRunId);
-  const reaction = decideNextFactoryAction(reduceFactoryLifecycleEvents(events)!, latest);
-  if (reaction.kind !== "invoke" || reaction.handler !== "triageWorkItem") return undefined;
-  const actionDir = join(
-    runDir,
-    "actions",
-    String(reaction.attempt),
-    reaction.handler,
-    factoryActionKey({ ...reaction, phaseRunId: latest.phaseRunId }),
-  );
-  if (!existsSync(factoryActionResultPath(actionDir))) return undefined;
-  const terminal = readFactoryActionResult(actionDir);
-  if (
-    (terminal.type !== "triage.work_item.completed" && terminal.type !== "factory.action.failed") ||
-    terminal.workItemKey !== key ||
-    terminal.phaseRunId !== latest.phaseRunId ||
-    terminal.data.causationEventId !== latest.id ||
-    terminal.data.handler !== "triageWorkItem" ||
-    (terminal.type === "factory.action.failed" && terminal.data.phase !== "triage") ||
-    terminal.data.attempt !== 1 ||
-    terminal.data.attempt !== reaction.attempt
-  ) {
-    throw new Error(
-      `Recovered Factory action result conflicts with active run ${latest.phaseRunId}`,
-    );
-  }
-  const metaValue: unknown = JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8"));
-  assertFactoryRunMeta(metaValue);
-  const meta = metaValue;
-  assertRecoveredWorkItem(meta, input.workItem);
-  const identity = readFactoryPhaseRunIdentity(runDir);
-  if (
-    meta.runId !== latest.phaseRunId ||
-    resolve(meta.runDir) !== resolve(runDir) ||
-    meta.workItem.id !== input.workItem.id ||
-    resolve(meta.factoryStore?.factoryStateRoot ?? "") !== resolve(input.factoryStateRoot) ||
-    identity.phaseRunId !== latest.phaseRunId ||
-    identity.workItemKey !== key ||
-    identity.factoryStateRoot !== resolve(input.factoryStateRoot) ||
-    (input.workspace !== undefined && identity.workspace !== resolve(input.workspace)) ||
-    (input.projectId !== undefined && identity.projectId !== input.projectId) ||
-    resolve(meta.workspace) !== identity.workspace
-  ) {
-    throw new Error(`Recovered Factory run metadata conflicts with ${latest.phaseRunId}`);
-  }
-  const roots = { "factory-store": dirname(input.factoryStateRoot), repository: meta.workspace };
-  const request = events.findLast(
-    (event): event is Extract<FactoryActionLifecycleEvent, { type: "triage.requested" }> =>
-      event.type === "triage.requested" && event.phaseRunId === latest.phaseRunId,
-  );
-  if (!request || request.data.inputRefs.length === 0) {
-    throw new Error(`Recovered Factory phase run ${latest.phaseRunId} has no input evidence`);
-  }
-  for (const ref of request.data.inputRefs) verifyFactoryArtifactRef(ref, roots);
-  if (terminal.data.execution.workspaceRef !== identity.projectId) {
-    throw new Error(`Recovered Factory execution identity conflicts with ${latest.phaseRunId}`);
-  }
-  const resolvedRunRef = verifyFactoryArtifactRef(terminal.data.execution.runRef, roots);
-  assertFactoryPathContained(runDir, resolvedRunRef);
-  for (const ref of terminal.data.evidence) verifyFactoryArtifactRef(ref, roots);
-  const verifiedTriage = assertRecoveredTerminalEvidence(
-    meta,
-    terminal,
-    dirname(input.factoryStateRoot),
-  );
-  const appended = appendFactoryActionEvent({
-    factoryStateRoot: input.factoryStateRoot,
-    event: terminal,
-    expectedLastEventId: latest.id,
-  });
-  let terminalUpdate: LinearTriageUpdatePlan | undefined;
-  let terminalApplyError: unknown;
-  if (input.applyAdapter) {
-    try {
-      if (terminal.type === "triage.work_item.completed") {
-        if (!verifiedTriage) throw new Error("Recovered Factory completion has no triage evidence");
-        terminalUpdate = await input.applyAdapter.applyTriageCompleted({
-          issueRef: input.issueRef,
-          runId: meta.runId,
-          runDir: meta.runDir,
-          triage: verifiedTriage,
-        });
-      } else {
-        terminalUpdate = await input.applyAdapter.applyTriageFailed({
-          issueRef: input.issueRef,
-          runId: meta.runId,
-          runDir: meta.runDir,
-          error: terminal.data.message,
-        });
-      }
-    } catch (error) {
-      terminalApplyError = error;
-    }
-  }
-  return {
-    meta,
-    phaseRunId: latest.phaseRunId,
-    action: { handler: "triageWorkItem", attempt: 1, eventId: terminal.id },
-    next: decideNextFactoryAction(appended.state, appended.event),
-    ...(terminalUpdate ? { terminalUpdate } : {}),
-    ...(terminalApplyError ? { terminalApplyError } : {}),
-  };
+  return undefined;
 }
 
 function validateFactoryApplyOptions(options: {
@@ -1295,29 +1145,21 @@ function expectedTriageNextAction(
   }
 }
 
-function assertOpenedTriageContext(input: {
-  ctx: FactoryRunContext;
-  factoryStateRoot: string;
-  workItem: FactoryWorkItem;
-  events: FactoryActionLifecycleEvent[];
-}): void {
-  const identity = readFactoryPhaseRunIdentity(input.ctx.runDir);
-  if (
-    identity.phaseRunId !== input.ctx.runId ||
-    identity.phase !== "triage" ||
-    identity.workItemKey !== deriveFactoryWorkItemKey(input.workItem) ||
-    identity.workspace !== resolve(input.ctx.workspace) ||
-    identity.projectId !== input.ctx.factoryStore?.projectId ||
-    identity.factoryStateRoot !== resolve(input.factoryStateRoot)
-  ) {
-    throw new Error(`Factory phase-run identity conflicts with ${input.ctx.runId}`);
-  }
-  const request = input.events.findLast(
-    (event): event is Extract<FactoryActionLifecycleEvent, { type: "triage.requested" }> =>
-      event.type === "triage.requested" && event.phaseRunId === input.ctx.runId,
-  );
-  if (!request || request.data.inputRefs.length === 0) {
-    throw new Error(`Factory phase run ${input.ctx.runId} has no immutable input reference`);
+function appendFactoryEventOrRejectConcurrent(
+  input: Parameters<typeof appendFactoryActionEvent>[0],
+): ReturnType<typeof appendFactoryActionEvent> {
+  try {
+    return appendFactoryActionEvent(input);
+  } catch (error) {
+    if (!(error instanceof FactoryLifecycleConflictError)) throw error;
+    const events = readFactoryActionEvents(input.factoryStateRoot, input.event.workItemKey);
+    const latest = events.at(-1);
+    const state = reduceFactoryLifecycleEvents(events);
+    const next = latest && state ? decideNextFactoryAction(state, latest) : undefined;
+    throw new Error(
+      `Factory command lost the durable CAS for ${input.event.workItemKey}; another command owns the current action. Current event: ${latest?.type ?? "none"}; next: ${next ? JSON.stringify(next) : "unknown"}. Do not run Factory phase commands for the same work item concurrently.`,
+      { cause: error },
+    );
   }
 }
 

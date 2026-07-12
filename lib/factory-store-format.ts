@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { formatZodError } from "./schemas.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
 export const FACTORY_STORE_FORMAT = 1 as const;
 export const FACTORY_STORE_FORMAT_FILE = "store-format.json";
@@ -36,10 +37,11 @@ export function ensureFactoryStoreFormat(factoryStateRoot: string): void {
   }
   mkdirSync(root, { recursive: true });
   try {
-    writeFileSync(marker, `${JSON.stringify({ format: "harness-factory", version: 1 })}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
+    writeDurableFactoryFile(
+      marker,
+      `${JSON.stringify({ format: "harness-factory", version: 1 })}\n`,
+      true,
+    );
   } catch (error) {
     // Another process may have initialized the same empty root.
     if (!existsSync(marker)) throw error;

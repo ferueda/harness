@@ -4,6 +4,7 @@ import {
   assertFactoryPathContained,
   createFactoryArtifactRef,
   isFactoryRelativePathContained,
+  verifyFactoryArtifactRef,
 } from "../lib/factory-artifact-ref.ts";
 import {
   factoryActionResultPath,
@@ -11,13 +12,12 @@ import {
   writeFactoryActionResult,
 } from "../lib/factory-action-result.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
-import { withFactoryActionClaim } from "../lib/factory-action-claim.ts";
 import {
   appendFactoryActionEvent,
-  FactoryLifecycleConflictError,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
+import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
 import { buildFactoryRoutePlan } from "../lib/factory-intake.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 import { copyDurableFactoryFile, writeDurableFactoryFile } from "../lib/factory-durable-file.ts";
@@ -29,6 +29,7 @@ import {
 } from "../lib/factory-run-context.ts";
 import {
   FactoryTriageError,
+  FactoryRoutePlanSchema,
   parseFactoryTriageOutput,
   type FactoryTriageOutput,
 } from "../lib/factory-schemas.ts";
@@ -65,10 +66,8 @@ export async function triageWorkItem(input: {
   onMeta?: (meta: FactoryRunMeta) => void;
 }): Promise<{ event: FactoryLifecycleEvent; state: FactoryLifecycleState }> {
   const { ctx, reaction } = input;
-  const events = readFactoryActionEvents(
-    input.factoryStateRoot,
-    deriveFactoryWorkItemKey(ctx.workItem),
-  );
+  const workItemKey = deriveFactoryWorkItemKey(ctx.workItem);
+  const events = readFactoryActionEvents(input.factoryStateRoot, workItemKey);
   const latest = events.at(-1);
   const state = reduceFactoryLifecycleEvents(events);
   if (!latest || !state || reaction.phase !== "triage" || reaction.handler !== "triageWorkItem") {
@@ -85,6 +84,15 @@ export async function triageWorkItem(input: {
   ) {
     throw new Error("triageWorkItem reaction conflicts with durable Factory state");
   }
+  const request = events.findLast(
+    (event): event is Extract<FactoryLifecycleEvent, { type: "triage.requested" }> =>
+      event.type === "triage.requested" && event.phaseRunId === ctx.runId,
+  );
+  if (!request || request.data.inputRefs.length === 0) {
+    throw new Error(`Factory triage phase ${ctx.runId} has no durable input evidence`);
+  }
+  const roots = { "factory-store": ctx.factoryStore!.projectRoot, repository: ctx.workspace };
+  for (const ref of request.data.inputRefs) verifyFactoryArtifactRef(ref, roots);
 
   const actionDir = join(
     ctx.runDir,
@@ -95,82 +103,62 @@ export async function triageWorkItem(input: {
   );
   const resultPath = factoryActionResultPath(actionDir);
   if (!existsSync(resultPath)) {
-    await withFactoryActionClaim({
-      actionDir,
-      resultPath,
-      action: async () => {
-        const providerMetaPath = join(actionDir, "provider-meta.json");
-        let meta = readActionProviderMeta(providerMetaPath, ctx);
-        if (!meta && latest.type === "triage.requested") meta = readTerminalMeta(ctx);
-        if (!meta) {
-          try {
-            meta = await (input.runProvider ?? run)(ctx, {
-              nextLiveRunRequiresRerun: input.nextLiveRunRequiresRerun,
-            });
-          } catch (error) {
-            meta = ctx.exportFailed(error);
-          }
-          writeDurableFactoryFile(providerMetaPath, JSON.stringify(meta, null, 2), true);
-        }
-        let terminal: Extract<
-          FactoryLifecycleEvent,
-          { type: "triage.work_item.completed" | "factory.action.failed" }
-        >;
-        try {
-          const metaPath = join(ctx.runDir, "meta.json");
-          if (!existsSync(metaPath)) {
-            writeDurableFactoryFile(metaPath, JSON.stringify(meta, null, 2));
-          }
-          let triage: FactoryTriageOutput | undefined;
-          if (meta.status === "completed") {
-            triage = readTriageArtifact(meta);
-          }
-          input.onMeta?.(meta);
-          terminal = buildTriageActionEvent(ctx, meta, triage, reaction);
-        } catch (error) {
-          meta = ctx.exportFailed(error);
-          input.onMeta?.(meta);
-          terminal = buildTriageActionEvent(ctx, meta, undefined, reaction);
-        }
-        writeFactoryActionResult(actionDir, terminal);
-      },
-    });
+    const providerOutcomePath = join(actionDir, "provider-result.json");
+    const actionIdentity = {
+      phaseRunId: ctx.runId,
+      handler: "triageWorkItem" as const,
+      attempt: reaction.attempt,
+      causationEventId: reaction.causationEventId,
+    };
+    ctx.bindActionOutcome?.({ path: providerOutcomePath, action: actionIdentity });
+    let providerOutcome = readActionProviderOutcome(providerOutcomePath, ctx, reaction);
+    if (!providerOutcome) {
+      let meta: FactoryRunMeta;
+      try {
+        meta = await (input.runProvider ?? run)(ctx, {
+          nextLiveRunRequiresRerun: input.nextLiveRunRequiresRerun,
+        });
+      } catch (error) {
+        meta = ctx.exportFailed(error);
+      }
+      if (!existsSync(providerOutcomePath)) {
+        writeActionProviderOutcome(providerOutcomePath, actionIdentity, meta);
+      }
+      providerOutcome = readActionProviderOutcome(providerOutcomePath, ctx, reaction);
+    }
+    let terminal: Extract<
+      FactoryLifecycleEvent,
+      { type: "triage.work_item.completed" | "factory.action.failed" }
+    >;
+    if (!providerOutcome) {
+      throw new Error(`Factory provider outcome was not published for ${ctx.runId}`);
+    }
+    let terminalMeta = providerOutcome.meta;
+    try {
+      const triage =
+        terminalMeta.status === "completed" ? readTriageArtifact(terminalMeta) : undefined;
+      terminal = buildTriageActionEvent(ctx, terminalMeta, triage, reaction);
+    } catch (error) {
+      terminalMeta = ctx.exportFailed(error, { publishActionOutcome: false });
+      terminal = buildTriageActionEvent(ctx, terminalMeta, undefined, reaction);
+    }
+    input.onMeta?.(terminalMeta);
+    writeFactoryActionResult(actionDir, terminal);
   }
   const terminal = readFactoryActionResult(actionDir);
-  if (
-    terminal.workItemKey !== deriveFactoryWorkItemKey(ctx.workItem) ||
-    terminal.phaseRunId !== ctx.runId ||
-    terminal.data.handler !== "triageWorkItem" ||
-    terminal.data.attempt !== reaction.attempt ||
-    terminal.data.causationEventId !== reaction.causationEventId ||
-    (terminal.type !== "triage.work_item.completed" && terminal.type !== "factory.action.failed")
-  ) {
-    throw new Error("Recovered triage action result conflicts with durable Factory state");
-  }
-  const currentEvents = readFactoryActionEvents(
-    input.factoryStateRoot,
-    deriveFactoryWorkItemKey(ctx.workItem),
-  );
-  const currentLatest = currentEvents.at(-1);
-  if (currentLatest?.id === terminal.id) {
-    return { event: currentLatest, state: reduceFactoryLifecycleEvents(currentEvents)! };
-  }
-  try {
-    return appendFactoryActionEvent({
-      factoryStateRoot: input.factoryStateRoot,
-      event: terminal,
-      expectedLastEventId: reaction.causationEventId,
-    });
-  } catch (error) {
-    if (!(error instanceof FactoryLifecycleConflictError)) throw error;
-    const racedEvents = readFactoryActionEvents(
-      input.factoryStateRoot,
-      deriveFactoryWorkItemKey(ctx.workItem),
-    );
-    const racedLatest = racedEvents.at(-1);
-    if (racedLatest?.id !== terminal.id) throw error;
-    return { event: racedLatest, state: reduceFactoryLifecycleEvents(racedEvents)! };
-  }
+  assertRecoveredActionResult({
+    terminal,
+    ctx,
+    reaction,
+    factoryStateRoot: input.factoryStateRoot,
+    workItemKey,
+    actionDir,
+  });
+  return appendFactoryActionEvent({
+    factoryStateRoot: input.factoryStateRoot,
+    event: terminal,
+    expectedLastEventId: reaction.causationEventId,
+  });
 }
 
 export async function run(
@@ -267,28 +255,40 @@ export async function run(
   }
 }
 
-function readTerminalMeta(ctx: FactoryRunContext): FactoryRunMeta | undefined {
-  const path = join(ctx.runDir, "meta.json");
+function readActionProviderOutcome(
+  path: string,
+  ctx: FactoryRunContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+): { meta: FactoryRunMeta } | undefined {
   if (!existsSync(path)) return undefined;
-  const value = JSON.parse(readFileSync(path, "utf8")) as FactoryRunMeta;
-  if (value.status !== "completed" && value.status !== "failed") return undefined;
+  const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.action) || !isRecord(value.meta)) {
+    throw new Error(`Factory action provider result is invalid: ${path}`);
+  }
   if (
-    value.runId !== ctx.runId ||
-    resolve(value.runDir) !== resolve(ctx.runDir) ||
-    resolve(value.workspace) !== resolve(ctx.workspace) ||
-    value.workItem.id !== ctx.workItem.id ||
-    resolve(value.factoryStore?.factoryStateRoot ?? "") !==
-      resolve(ctx.factoryStore?.factoryStateRoot ?? "")
-  )
-    throw new Error(`Completed Factory run metadata conflicts with ${ctx.runId}`);
-  return value;
+    value.action.phaseRunId !== ctx.runId ||
+    value.action.handler !== reaction.handler ||
+    value.action.attempt !== reaction.attempt ||
+    value.action.causationEventId !== reaction.causationEventId
+  ) {
+    throw new Error(`Factory action provider result identity conflicts with ${ctx.runId}`);
+  }
+  const meta = value.meta as FactoryRunMeta;
+  assertRecoveredMetaIdentity(meta, ctx);
+  return { meta };
 }
 
-function readActionProviderMeta(path: string, ctx: FactoryRunContext): FactoryRunMeta | undefined {
-  if (!existsSync(path)) return undefined;
-  const value = JSON.parse(readFileSync(path, "utf8")) as FactoryRunMeta;
-  assertRecoveredMetaIdentity(value, ctx);
-  return value;
+function writeActionProviderOutcome(
+  path: string,
+  action: {
+    phaseRunId: string;
+    handler: "triageWorkItem";
+    attempt: number;
+    causationEventId: string;
+  },
+  meta: FactoryRunMeta,
+): void {
+  writeDurableFactoryFile(path, `${JSON.stringify({ version: 1, action, meta }, null, 2)}\n`, true);
 }
 
 function assertRecoveredMetaIdentity(value: FactoryRunMeta, ctx: FactoryRunContext): void {
@@ -300,11 +300,97 @@ function assertRecoveredMetaIdentity(value: FactoryRunMeta, ctx: FactoryRunConte
     resolve(value.runDir) !== resolve(ctx.runDir) ||
     resolve(value.workspace) !== resolve(ctx.workspace) ||
     value.workItem.id !== ctx.workItem.id ||
-    resolve(value.factoryStore?.factoryStateRoot ?? "") !==
-      resolve(ctx.factoryStore?.factoryStateRoot ?? "")
+    (value.factoryStore !== undefined &&
+      resolve(value.factoryStore.factoryStateRoot) !==
+        resolve(ctx.factoryStore?.factoryStateRoot ?? ""))
   ) {
     throw new Error(`Completed Factory run metadata conflicts with ${ctx.runId}`);
   }
+}
+
+function assertRecoveredActionResult(input: {
+  terminal: FactoryLifecycleEvent;
+  ctx: FactoryRunContext;
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>;
+  factoryStateRoot: string;
+  workItemKey: string;
+  actionDir: string;
+}): void {
+  const { terminal, ctx, reaction } = input;
+  if (terminal.type !== "triage.work_item.completed" && terminal.type !== "factory.action.failed") {
+    throw new Error("Recovered triage action result is not terminal");
+  }
+  if (
+    terminal.workItemKey !== input.workItemKey ||
+    terminal.phaseRunId !== ctx.runId ||
+    terminal.data.handler !== "triageWorkItem" ||
+    terminal.data.attempt !== reaction.attempt ||
+    terminal.data.causationEventId !== reaction.causationEventId ||
+    (terminal.type === "factory.action.failed" && terminal.data.phase !== "triage")
+  ) {
+    throw new Error("Recovered triage action result conflicts with durable Factory state");
+  }
+  const identity = readFactoryPhaseRunIdentity(ctx.runDir);
+  if (
+    identity.phaseRunId !== ctx.runId ||
+    identity.phase !== "triage" ||
+    identity.workItemKey !== input.workItemKey ||
+    identity.workspace !== resolve(ctx.workspace) ||
+    identity.projectId !== ctx.factoryStore?.projectId ||
+    identity.factoryStateRoot !== resolve(input.factoryStateRoot) ||
+    terminal.data.execution.workspaceRef !== identity.projectId
+  ) {
+    throw new Error(`Recovered Factory phase identity conflicts with ${ctx.runId}`);
+  }
+  const roots = { "factory-store": ctx.factoryStore!.projectRoot, repository: ctx.workspace };
+  const evidencePaths = terminal.data.evidence.map((ref) =>
+    resolve(verifyFactoryArtifactRef(ref, roots)),
+  );
+  const runPath = resolve(verifyFactoryArtifactRef(terminal.data.execution.runRef, roots));
+  if (!evidencePaths.includes(runPath)) {
+    throw new Error("Recovered Factory action result omits its execution evidence");
+  }
+  const expectedRunName =
+    terminal.type === "triage.work_item.completed" ? "summary.md" : "failure.json";
+  if (runPath !== resolve(input.actionDir, "evidence", expectedRunName)) {
+    throw new Error(`Recovered Factory action result requires ${expectedRunName}`);
+  }
+  if (
+    terminal.type === "triage.work_item.completed" &&
+    !evidencePaths.includes(resolve(input.actionDir, "evidence", "factory-triage.json"))
+  ) {
+    throw new Error("Recovered Factory completion has no immutable triage evidence");
+  }
+  if (terminal.type === "triage.work_item.completed") {
+    if (evidencePaths.length !== 2) {
+      throw new Error("Recovered Factory completion has unexpected evidence");
+    }
+    const triage = parseFactoryTriageOutput(
+      JSON.parse(readFileSync(resolve(input.actionDir, "evidence", "factory-triage.json"), "utf8")),
+    );
+    if (triage.route !== terminal.data.route || triage.rationale !== terminal.data.rationale) {
+      throw new Error("Recovered Factory completion conflicts with immutable triage evidence");
+    }
+  } else {
+    if (evidencePaths.length !== 1) {
+      throw new Error("Recovered Factory failure has unexpected evidence");
+    }
+    const failureValue: unknown = JSON.parse(readFileSync(runPath, "utf8"));
+    if (!isRecord(failureValue)) throw new Error("Recovered Factory failure evidence is invalid");
+    const failure = failureValue as FactoryRunMeta;
+    assertRecoveredMetaIdentity(failure, ctx);
+    if (
+      failure.status !== "failed" ||
+      failure.error !== terminal.data.message ||
+      (failure.failureKind ?? "terminal") !== terminal.data.failureKind
+    ) {
+      throw new Error("Recovered Factory failure conflicts with immutable evidence");
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {
@@ -344,30 +430,45 @@ function buildTriageActionEvent(
     actionKey,
     "evidence",
   );
-  const summaryName =
-    meta.status === "completed" ? (meta.artifacts?.summary ?? "summary.md") : "meta.json";
-  const summaryPath = publishEvidence(
-    resolveRunArtifact(
-      meta.runDir,
-      summaryName,
-      meta.status === "completed" ? "summary.md" : "meta.json",
-    ),
-    join(evidenceDir, "summary.md"),
-  );
+  const completed = meta.status === "completed" && triage !== undefined;
+  const summarySource = completed
+    ? resolveRunArtifact(meta.runDir, meta.artifacts?.summary ?? "summary.md", "summary.md")
+    : undefined;
+  const routePlan = completed
+    ? FactoryRoutePlanSchema.parse(
+        JSON.parse(
+          readFileSync(
+            resolveRunArtifact(meta.runDir, "factory-route.json", "factory-route.json"),
+            "utf8",
+          ),
+        ),
+      )
+    : undefined;
+  if (
+    completed &&
+    (routePlan?.route !== triage.route ||
+      meta.route !== triage.route ||
+      meta.nextAction !== routePlan.nextAction)
+  ) {
+    throw new Error("Factory route artifact conflicts with completed triage output");
+  }
+  const triageSource = completed
+    ? resolveRunArtifact(
+        meta.runDir,
+        meta.artifacts?.triage ?? "factory-triage.json",
+        "factory-triage.json",
+      )
+    : undefined;
+  const summaryPath = completed
+    ? publishEvidence(summarySource!, join(evidenceDir, "summary.md"))
+    : publishFailureEvidence(meta, join(evidenceDir, "failure.json"));
   const runRef = createFactoryArtifactRef({
     base: "factory-store",
     root: store.projectRoot,
     path: relative(store.projectRoot, summaryPath),
   });
-  const triagePath = triage
-    ? publishEvidence(
-        resolveRunArtifact(
-          meta.runDir,
-          meta.artifacts?.triage ?? "factory-triage.json",
-          "factory-triage.json",
-        ),
-        join(evidenceDir, "factory-triage.json"),
-      )
+  const triagePath = triageSource
+    ? publishEvidence(triageSource, join(evidenceDir, "factory-triage.json"))
     : undefined;
   const triageRef = triagePath
     ? createFactoryArtifactRef({
@@ -390,7 +491,7 @@ function buildTriageActionEvent(
       evidence: triageRef ? [runRef, triageRef] : [runRef],
     },
   };
-  if (!triage || meta.status !== "completed")
+  if (!completed)
     return {
       ...common,
       id: `factory.action.failed:${actionKey}`,
@@ -402,11 +503,8 @@ function buildTriageActionEvent(
         message: meta.error ?? "Factory triage failed.",
       },
     };
-  const routePlan = JSON.parse(readFileSync(join(meta.runDir, "factory-route.json"), "utf8")) as {
-    command?: unknown;
-  };
   const nextCommand =
-    typeof routePlan.command === "string" && routePlan.command.trim()
+    typeof routePlan?.command === "string" && routePlan.command.trim()
       ? routePlan.command.trim()
       : undefined;
   return {
@@ -429,6 +527,11 @@ function publishEvidence(source: string, destination: string): string {
     return destination;
   }
   copyDurableFactoryFile(source, destination);
+  return destination;
+}
+
+function publishFailureEvidence(meta: FactoryRunMeta, destination: string): string {
+  writeDurableFactoryFile(destination, `${JSON.stringify(meta, null, 2)}\n`, true);
   return destination;
 }
 

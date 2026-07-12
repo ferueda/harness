@@ -86,9 +86,18 @@ export type FactoryRunContext = {
   dryRun?: boolean;
   executionProfile: FactoryActionExecutionProfile;
   eventSink: WorkflowEventSink;
+  bindActionOutcome?(input: {
+    path: string;
+    action: {
+      phaseRunId: string;
+      handler: "triageWorkItem";
+      attempt: number;
+      causationEventId: string;
+    };
+  }): void;
   invokeTriageAgent(): Promise<FactoryTriageOutput>;
   export(input: { triage: FactoryTriageOutput; routePlan: FactoryRoutePlan }): FactoryRunMeta;
-  exportFailed(error: unknown): FactoryRunMeta;
+  exportFailed(error: unknown, options?: { publishActionOutcome?: boolean }): FactoryRunMeta;
 };
 
 export type FactoryRunContextFactoryOptions = {
@@ -202,6 +211,17 @@ function createFactoryRunContextInternal(
       ? readFactoryWorkItemFile(join(runDir, "context/work-item.json"))
       : options.workItem;
   const prompt = renderPrompt(workItem);
+  let actionOutcomeBinding:
+    | {
+        path: string;
+        action: {
+          phaseRunId: string;
+          handler: "triageWorkItem";
+          attempt: number;
+          causationEventId: string;
+        };
+      }
+    | undefined;
   let triageProvider: Agent;
   try {
     if (mode === "open") {
@@ -271,6 +291,11 @@ function createFactoryRunContextInternal(
     dryRun: options.dryRun,
     executionProfile,
     eventSink,
+    bindActionOutcome(binding): void {
+      if (actionOutcomeBinding)
+        throw new Error(`Factory action outcome already bound for ${runId}`);
+      actionOutcomeBinding = binding;
+    },
     async invokeTriageAgent(): Promise<FactoryTriageOutput> {
       if (options.dryRun) {
         writeJson(join(runDir, "factory-triage.raw.json"), DRY_RUN_FACTORY_TRIAGE);
@@ -339,6 +364,7 @@ function createFactoryRunContextInternal(
           includeEventsFile: !options.dryRun,
           factoryStore: options.factoryStore,
         });
+        publishBoundActionOutcome(actionOutcomeBinding, meta);
         writeJson(join(runDir, "meta.json"), meta);
         return meta;
       } catch (error) {
@@ -350,7 +376,7 @@ function createFactoryRunContextInternal(
         );
       }
     },
-    exportFailed(error: unknown): FactoryRunMeta {
+    exportFailed(error: unknown, exportOptions = {}): FactoryRunMeta {
       const meta = buildMeta({
         status: "failed",
         startedAt,
@@ -369,10 +395,25 @@ function createFactoryRunContextInternal(
         includeEventsFile: !options.dryRun,
         factoryStore: options.factoryStore,
       });
+      if (exportOptions.publishActionOutcome !== false) {
+        publishBoundActionOutcome(actionOutcomeBinding, meta);
+      }
       writeJson(join(runDir, "meta.json"), meta);
       return meta;
     },
   };
+}
+
+function publishBoundActionOutcome(
+  binding: Parameters<NonNullable<FactoryRunContext["bindActionOutcome"]>>[0] | undefined,
+  meta: FactoryRunMeta,
+): void {
+  if (!binding) return;
+  writeDurableFactoryFile(
+    binding.path,
+    `${JSON.stringify({ version: 1, action: binding.action, meta }, null, 2)}\n`,
+    true,
+  );
 }
 
 function renderPrompt(workItem: FactoryWorkItem): string {

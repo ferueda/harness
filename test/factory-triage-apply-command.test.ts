@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { expect, test, vi } from "vitest";
@@ -33,13 +40,27 @@ const WORK_ITEM: FactoryWorkItem = {
   metadata: { tracker: { source: "linear", id: "ENG-37" } },
 };
 
-function context(workspace: string, dryRun: boolean): FactoryRunContext {
+function context(
+  workspace: string,
+  dryRun: boolean,
+  factoryStateRoot = join(workspace, "state"),
+): FactoryRunContext {
   const runDir = join(workspace, "runs/run-new");
   mkdirSync(runDir, { recursive: true });
   mkdirSync(join(runDir, "context"), { recursive: true });
   writeFileSync(join(runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
   writeFileSync(join(runDir, "summary.md"), "summary");
-  writeFileSync(join(runDir, "factory-route.json"), JSON.stringify({ command: "wait" }));
+  writeFileSync(
+    join(runDir, "factory-route.json"),
+    JSON.stringify({
+      route: "needs-info",
+      nextAction: "ask-human",
+      statusLabel: "needs-info",
+      artifactRelPath: "factory-route.md",
+      humanSummary: "Needs human clarification before routing further.",
+      command: "wait",
+    }),
+  );
   const ctx = {
     runId: "run-new",
     runDir,
@@ -50,14 +71,19 @@ function context(workspace: string, dryRun: boolean): FactoryRunContext {
     eventSink: () => {},
     invokeTriageAgent: vi.fn(),
     export: vi.fn(),
-    exportFailed: vi.fn(),
+    exportFailed: vi.fn((error: unknown) => ({
+      ...meta(ctx as unknown as FactoryRunContext),
+      status: "failed" as const,
+      failureKind: "terminal" as const,
+      error: error instanceof Error ? error.message : String(error),
+    })),
   } as unknown as FactoryRunContext;
   if (!dryRun) {
     ctx.factoryStore = {
       storeRoot: workspace,
       projectId: "repo",
       projectRoot: workspace,
-      factoryStateRoot: join(workspace, "state"),
+      factoryStateRoot,
       factoryRunsDir: join(workspace, "runs"),
       reviewRunsDir: join(workspace, "reviews"),
       repo: { name: "repo", id: "repo", idSource: "config" },
@@ -98,6 +124,37 @@ function meta(ctx: FactoryRunContext): FactoryRunMeta {
     startedAt: "2026-07-09T00:00:00.000Z",
     durationMs: 1,
   };
+}
+
+function writeProviderOutcome(
+  ctx: FactoryRunContext,
+  causationEventId: string,
+  value: FactoryRunMeta,
+  attempt = 1,
+): void {
+  const actionKey = factoryActionKey({
+    phaseRunId: ctx.runId,
+    handler: "triageWorkItem",
+    attempt,
+    causationEventId,
+  });
+  const path = join(
+    ctx.runDir,
+    "actions",
+    String(attempt),
+    "triageWorkItem",
+    actionKey,
+    "provider-result.json",
+  );
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      version: 1,
+      action: { phaseRunId: ctx.runId, handler: "triageWorkItem", attempt, causationEventId },
+      meta: value,
+    }),
+  );
 }
 
 test.each([
@@ -165,7 +222,7 @@ test.each([
 test("new triage action invokes one handler and returns the next reaction", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "triage-action-run-"));
   const root = join(workspace, "factory");
-  const ctx = context(workspace, false);
+  const ctx = context(workspace, false, root);
   ctx.factoryStore = {
     storeRoot: workspace,
     projectId: "repo",
@@ -178,7 +235,16 @@ test("new triage action invokes one handler and returns the next reaction", asyn
     warnings: [],
   };
   writeFileSync(join(ctx.runDir, "summary.md"), "summary");
-  writeFileSync(join(ctx.runDir, "factory-route.json"), JSON.stringify({}));
+  writeFileSync(
+    join(ctx.runDir, "factory-route.json"),
+    JSON.stringify({
+      route: "ready-to-plan",
+      nextAction: "create-plan",
+      statusLabel: "ready-to-plan",
+      artifactRelPath: "factory-route.md",
+      humanSummary: "Needs an implementation plan before coding.",
+    }),
+  );
   writeFileSync(
     join(ctx.runDir, "factory-triage.json"),
     JSON.stringify({
@@ -191,7 +257,11 @@ test("new triage action invokes one handler and returns the next reaction", asyn
       suggestedNext: { action: "create-plan", command: null, artifact: null },
     }),
   );
-  const runTriage = vi.fn(async () => meta(ctx));
+  const runTriage = vi.fn(async () => ({
+    ...meta(ctx),
+    route: "ready-to-plan" as const,
+    nextAction: "create-plan" as const,
+  }));
   const result = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
     workItem: WORK_ITEM,
@@ -201,10 +271,54 @@ test("new triage action invokes one handler and returns the next reaction", asyn
     runTriage,
   });
   assertActionResult(result);
+  expect(result.meta.error).toBeUndefined();
+  expect(result.meta).toMatchObject({ status: "completed" });
   expect(runTriage).toHaveBeenCalledOnce();
   expect(result.action).toMatchObject({ handler: "triageWorkItem", attempt: 1 });
   expect(result.next).toEqual({ kind: "wait", reason: "phase-command" });
 });
+
+test.each(["missing", "malformed"] as const)(
+  "publishes terminal failure evidence for a %s completed route artifact",
+  async (failure) => {
+    const workspace = mkdtempSync(join(tmpdir(), "triage-route-failure-"));
+    const root = join(workspace, "state");
+    const ctx = context(workspace, false);
+    writeFileSync(
+      join(ctx.runDir, "factory-triage.json"),
+      JSON.stringify({
+        route: "needs-info",
+        confidence: "high",
+        rationale: "Need detail",
+        evidence: [{ kind: "tracker", path: null, summary: "Missing detail" }],
+        questions: ["Which target?"],
+        reconsiderWhen: null,
+        suggestedNext: { action: "ask-human", command: null, artifact: null },
+      }),
+    );
+    if (failure === "missing") unlinkSync(join(ctx.runDir, "factory-route.json"));
+    else writeFileSync(join(ctx.runDir, "factory-route.json"), "{not-json");
+    const runProvider = vi.fn(async () => meta(ctx));
+
+    const result = await runFactoryTriageWithLinearApply({
+      factoryStateRoot: root,
+      workItem: WORK_ITEM,
+      rerun: false,
+      issueRef: "ENG-37",
+      createContext: () => ctx,
+      runTriage: runProvider,
+    });
+    assertActionResult(result);
+    expect(result.next).toEqual({ kind: "wait", reason: "failed" });
+    expect(runProvider).toHaveBeenCalledOnce();
+    const terminal = readFactoryActionEvents(root, "linear:ENG-37").at(-1)!;
+    expect(terminal.type).toBe("factory.action.failed");
+    if (terminal.type !== "factory.action.failed") throw new Error("Expected failure event");
+    const failureRef = terminal.data.execution.runRef;
+    expect(failureRef.path).toMatch(/\/evidence\/failure\.json$/);
+    expect(existsSync(join(workspace, failureRef.path))).toBe(true);
+  },
+);
 
 test("continues from an imported-only crash without replacing the import", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "triage-imported-crash-"));
@@ -248,7 +362,7 @@ test("continues from an imported-only crash without replacing the import", async
   expect(result.next).toMatchObject({ kind: "wait", reason: "human" });
 });
 
-test("recovers a persisted triage result without invoking the handler", async () => {
+test("the handler recovers a persisted triage result without invoking the provider", async () => {
   const projectRoot = mkdtempSync(join(tmpdir(), "triage-recovery-"));
   const root = join(projectRoot, "factory");
   const runId = "run-recovery";
@@ -274,11 +388,6 @@ test("recovers a persisted triage result without invoking the handler", async ()
     root: projectRoot,
     path: "runs/factory/run-recovery/context/work-item.json",
   });
-  const runRef = createFactoryArtifactRef({
-    base: "factory-store",
-    root: projectRoot,
-    path: "runs/factory/run-recovery/summary.md",
-  });
   const actionKey = factoryActionKey({
     phaseRunId: runId,
     handler: "triageWorkItem",
@@ -293,8 +402,15 @@ test("recovers a persisted triage result without invoking the handler", async ()
     actionKey,
     "evidence/factory-triage.json",
   );
+  const immutableSummaryPath = join(dirname(immutableTriagePath), "summary.md");
   mkdirSync(dirname(immutableTriagePath), { recursive: true });
   writeFileSync(immutableTriagePath, readFileSync(join(runDir, "factory-triage.json")));
+  writeFileSync(immutableSummaryPath, readFileSync(join(runDir, "summary.md")));
+  const runRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: projectRoot,
+    path: relative(projectRoot, immutableSummaryPath),
+  });
   const triageRef = createFactoryArtifactRef({
     base: "factory-store",
     root: projectRoot,
@@ -370,7 +486,15 @@ test("recovers a persisted triage result without invoking the handler", async ()
       factoryStore: { factoryStateRoot: root },
     }),
   );
-  const createContext = vi.fn();
+  const recoveredContext = context(projectRoot, false);
+  recoveredContext.runId = runId;
+  recoveredContext.runDir = runDir;
+  recoveredContext.factoryStore = {
+    ...recoveredContext.factoryStore!,
+    projectRoot,
+    factoryStateRoot: root,
+  };
+  const createContext = vi.fn(() => recoveredContext);
   const result = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
     workItem: WORK_ITEM,
@@ -379,9 +503,10 @@ test("recovers a persisted triage result without invoking the handler", async ()
     createContext,
   });
   assertActionResult(result);
-  expect(createContext).not.toHaveBeenCalled();
+  expect(createContext).toHaveBeenCalledOnce();
   expect(result.action.eventId).toBe(terminal.id);
   expect(result.next).toMatchObject({ kind: "wait", reason: "phase-command" });
+  createContext.mockClear();
 
   const repeated = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
@@ -478,7 +603,17 @@ test("recovers completed active-run artifacts without rerunning the provider", a
   mkdirSync(join(runDir, "context"), { recursive: true });
   writeFileSync(join(runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
   writeFileSync(join(runDir, "summary.md"), "summary");
-  writeFileSync(join(runDir, "factory-route.json"), JSON.stringify({ command: "wait" }));
+  writeFileSync(
+    join(runDir, "factory-route.json"),
+    JSON.stringify({
+      route: "needs-info",
+      nextAction: "ask-human",
+      statusLabel: "needs-info",
+      artifactRelPath: "factory-route.md",
+      humanSummary: "Needs human clarification before routing further.",
+      command: "wait",
+    }),
+  );
   writeFileSync(
     join(runDir, "factory-triage.json"),
     JSON.stringify({
@@ -515,6 +650,7 @@ test("recovers completed active-run artifacts without rerunning the provider", a
       factoryStore: { factoryStateRoot: root },
     }),
   );
+  writeProviderOutcome(ctx, request.id, { ...meta(ctx), runId, runDir });
 
   const result = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
@@ -564,16 +700,15 @@ test("recovers failed provider metadata without rerunning the provider", async (
       data: { expectedPredecessor: imported.id, inputRefs: [inputRef], intent: "start" },
     },
   });
-  writeFileSync(
-    join(ctx.runDir, "meta.json"),
-    JSON.stringify({
-      ...meta(ctx),
-      status: "failed",
-      error: "provider failed",
-      failureKind: "terminal",
-      factoryStore: ctx.factoryStore,
-    }),
-  );
+  const failedMeta: FactoryRunMeta = {
+    ...meta(ctx),
+    status: "failed",
+    error: "provider failed",
+    failureKind: "terminal",
+    factoryStore: ctx.factoryStore,
+  };
+  writeFileSync(join(ctx.runDir, "meta.json"), JSON.stringify(failedMeta));
+  writeProviderOutcome(ctx, `triage.requested:${ctx.runId}`, failedMeta);
   const runTriage = vi.fn();
   const result = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
@@ -629,6 +764,7 @@ test("rejects a recovered triage artifact outside the phase run", async () => {
   const completed = { ...meta(ctx), factoryStore: ctx.factoryStore };
   completed.artifacts = { ...completed.artifacts!, triage: "../secret.json" };
   writeFileSync(join(ctx.runDir, "meta.json"), JSON.stringify(completed));
+  writeProviderOutcome(ctx, `triage.requested:${ctx.runId}`, completed);
   ctx.exportFailed = vi.fn(
     (error: unknown): FactoryRunMeta => ({
       ...completed,

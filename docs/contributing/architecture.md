@@ -227,7 +227,7 @@ scope by default and may also include a plan or handoff.
 
 Each `harness factory triage` run creates
 `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/`
-by default, or uses an explicit `--runs-dir` override.
+by default. `--runs-dir` is available only for dry-run triage.
 
 Factory triage artifacts include:
 

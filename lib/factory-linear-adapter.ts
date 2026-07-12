@@ -1,9 +1,5 @@
 import { LinearClient } from "@linear/sdk";
-import { readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
 import { type FactoryLinearSettings } from "./config.ts";
-import { withFactoryActionClaim } from "./factory-action-claim.ts";
-import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import {
   createLinearWorkItem,
   type LinearCreateWorkItemInput,
@@ -457,16 +453,6 @@ async function applyTriageCompleted(
   settings: FactoryLinearSettings,
   input: LinearTriageCompletedInput,
 ): Promise<LinearTriageUpdatePlan> {
-  return applyTriageTerminalOnce(input, "completed", () =>
-    applyTriageCompletedUnclaimed(client, settings, input),
-  );
-}
-
-async function applyTriageCompletedUnclaimed(
-  client: LinearClientLike,
-  settings: FactoryLinearSettings,
-  input: LinearTriageCompletedInput,
-): Promise<LinearTriageUpdatePlan> {
   await validateStatusMap(client, settings);
   const issue = await fetchIssue(client, settings, input.issueRef);
   const state = await resolveOptional(issue.state);
@@ -532,16 +518,6 @@ async function applyTriageFailed(
   settings: FactoryLinearSettings,
   input: LinearTriageFailedInput,
 ): Promise<LinearTriageUpdatePlan> {
-  return applyTriageTerminalOnce(input, "failed", () =>
-    applyTriageFailedUnclaimed(client, settings, input),
-  );
-}
-
-async function applyTriageFailedUnclaimed(
-  client: LinearClientLike,
-  settings: FactoryLinearSettings,
-  input: LinearTriageFailedInput,
-): Promise<LinearTriageUpdatePlan> {
   await validateStatusMap(client, settings);
   const issue = await fetchIssue(client, settings, input.issueRef);
   const state = await resolveOptional(issue.state);
@@ -573,28 +549,6 @@ async function applyTriageFailedUnclaimed(
     commentMarker,
     commentBody,
   };
-}
-
-async function applyTriageTerminalOnce(
-  input: LinearTriageApplyInput,
-  outcome: "completed" | "failed",
-  apply: () => Promise<LinearTriageUpdatePlan>,
-): Promise<LinearTriageUpdatePlan> {
-  // Production phase runs are absolute; relative paths are test-only adapter fixtures.
-  if (!isAbsolute(input.runDir)) return apply();
-  const actionDir = join(input.runDir, "projections", `linear-triage-${outcome}`);
-  const resultPath = join(actionDir, "projection-result.json");
-  const applied = await withFactoryActionClaim({
-    actionDir,
-    resultPath,
-    action: async () => {
-      const result = await apply();
-      writeDurableFactoryFile(resultPath, `${JSON.stringify(result, null, 2)}\n`, true);
-      return result;
-    },
-  });
-  if (applied) return applied;
-  return JSON.parse(readFileSync(resultPath, "utf8")) as LinearTriageUpdatePlan;
 }
 
 function assertLinearTriageTerminalApplyAllowed(

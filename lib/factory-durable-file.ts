@@ -5,6 +5,7 @@ import {
   linkSync,
   mkdirSync,
   openSync,
+  readFileSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -15,8 +16,22 @@ import { randomUUID } from "node:crypto";
 export function writeDurableFactoryFile(path: string, data: string, exclusive = false): void {
   mkdirSync(dirname(path), { recursive: true });
   if (exclusive) {
-    writeFileSync(path, data, { encoding: "utf8", flag: "wx" });
-    syncFileAndDirectory(path);
+    const temp = `${path}.${randomUUID()}.tmp`;
+    writeFileSync(temp, data, "utf8");
+    syncFile(temp);
+    try {
+      try {
+        linkSync(temp, path);
+        syncDirectory(dirname(path));
+      } catch (error) {
+        if (!isAlreadyExistsError(error)) throw error;
+        if (readFileSync(path, "utf8") !== data) {
+          throw new Error(`Divergent durable Factory file: ${path}`);
+        }
+      }
+    } finally {
+      unlinkSync(temp);
+    }
     return;
   }
   const temp = `${path}.${randomUUID()}.tmp`;
@@ -39,11 +54,6 @@ export function copyDurableFactoryFile(source: string, destination: string): voi
   }
 }
 
-function syncFileAndDirectory(path: string): void {
-  syncFile(path);
-  syncDirectory(dirname(path));
-}
-
 function syncFile(path: string): void {
   const fd = openSync(path, "r");
   try {
@@ -60,4 +70,8 @@ function syncDirectory(path: string): void {
   } finally {
     closeSync(fd);
   }
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "EEXIST";
 }

@@ -45,7 +45,21 @@ export function actionLifecycleStatePath(root: string, key: string): string {
   return join(resolve(root), "state", `${workItemKeyToFilename(key)}.json`);
 }
 export function readFactoryActionEvents(root: string, key: string): FactoryLifecycleEvent[] {
-  assertFactoryStoreFormat(root);
+  const resolvedRoot = resolve(root);
+  assertFactoryStoreFormat(resolvedRoot);
+  if (!existsSync(actionLifecycleEventPath(resolvedRoot, key))) return [];
+  return withFactoryWorkItemLock(
+    {
+      factoryStateRoot: resolvedRoot,
+      workItemKey: key,
+      workItemFilename: workItemKeyToFilename(key),
+      workspace: process.cwd(),
+      operation: "read",
+    },
+    () => readFactoryActionEventsUnlocked(resolvedRoot, key),
+  );
+}
+function readFactoryActionEventsUnlocked(root: string, key: string): FactoryLifecycleEvent[] {
   const path = actionLifecycleEventPath(root, key);
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8")
@@ -75,7 +89,7 @@ export function appendFactoryActionEvent(input: AppendFactoryActionEventInput): 
       options: input.lockOptions,
     },
     () => {
-      const events = readFactoryActionEvents(root, event.workItemKey);
+      const events = readFactoryActionEventsUnlocked(root, event.workItemKey);
       const existing = events.find((candidate) => candidate.id === event.id);
       if (existing) {
         if (canonicalFactoryEvent(existing) !== canonicalFactoryEvent(event))
@@ -106,12 +120,21 @@ function requiredState(events: readonly FactoryLifecycleEvent[]): FactoryLifecyc
 }
 function appendAndSync(path: string, event: FactoryLifecycleEvent): void {
   mkdirSync(dirname(path), { recursive: true });
+  const creating = !existsSync(path);
   const fd = openSync(path, "a");
   try {
     writeSync(fd, `${JSON.stringify(event)}\n`);
     fsyncSync(fd);
   } finally {
     closeSync(fd);
+  }
+  if (creating) {
+    const directoryFd = openSync(dirname(path), "r");
+    try {
+      fsyncSync(directoryFd);
+    } finally {
+      closeSync(directoryFd);
+    }
   }
 }
 function writeAtomic(path: string, value: unknown): void {
