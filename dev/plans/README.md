@@ -6,7 +6,6 @@
 | ---------------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
-| [260711-factory-plan-simplicity.md](./260711-factory-plan-simplicity.md) | `in_progress` | Minimum-sufficient Factory plans and scope-first review |
 | [260711-factory-action-state-machine.md](./260711-factory-action-state-machine.md) | `approved` | Manually stepped Factory actions and review cycles |
 | [FER-61.md](./FER-61.md)                                               | `approved`    | Workspace-local planning scratch; Harness durable evidence |
 
@@ -61,6 +60,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Durable factory store                         | [#108](https://github.com/ferueda/harness/pull/108) |
 | —     | Lifecycle-authoritative triage rerun policy   | [#111](https://github.com/ferueda/harness/pull/111) |
 | —     | Fail-closed Linear implementation projection  | [#116](https://github.com/ferueda/harness/pull/116) |
+| —     | Minimum-sufficient Factory planning contract  | [#123](https://github.com/ferueda/harness/pull/123), [#125](https://github.com/ferueda/harness/pull/125) |
 
 ---
 

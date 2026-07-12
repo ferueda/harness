@@ -6,8 +6,9 @@
 - **Effort**: L overall; four bounded PRs
 - **Risk**: HIGH
 - **State**: approved direction
-- **Depends on**: PR 2 follows or explicitly supersedes
-  `dev/plans/260711-factory-plan-simplicity.md`
+- **Progress**: PR 1 shipped in PR #127; PR 2 is next
+- **Prerequisite**: minimum-sufficient Factory planning shipped in PRs #123
+  and #125. PR 2 reuses that prompt/review contract.
 - **Review note**: final automated plan review
   `20260712-041215-6cb58a` was triaged. Later human decisions deliberately
   replace its compatibility and synchronous-loop assumptions; do not run
@@ -57,9 +58,11 @@ instructions. Never delete user data automatically.
 Old `runs/factory/*` directories may remain as inert evidence. Old lifecycle
 JSONL, state caches, absolute artifact paths, `factoryStage` compatibility
 projections, and Linear status/comment-derived recovery are not read. Operators
-start with a new empty Factory state directory; existing Linear issues enter
-through an explicit new phase command after satisfying that phase's entry
-status.
+start with a new empty Factory state directory. An existing Linear issue may
+start planning directly through the explicit planning command after its live
+status satisfies the configured planning entry gate; a new triage
+`ready-to-plan` route may start it the same way. Both paths append new Factory
+events and never infer progress from Linear.
 
 Retain current phase command names and Linear status names because they are
 useful operator interfaces, not because their old lifecycle representation is
@@ -69,21 +72,21 @@ supported.
 
 Use one strict event union:
 
-| Event                               | Owner / meaning                                               |
-| ----------------------------------- | ------------------------------------------------------------- |
-| `work_item.imported`                | command imports current work-item identity and source         |
-| `triage.requested`                  | explicit triage phase start                                   |
-| `triage.work_item.completed`        | `triageWorkItem` route result                                 |
-| `planning.requested`                | explicit planning phase start and review ceiling              |
-| `planning.candidate.produced`       | immutable plan candidate and effective session                |
-| `planning.input.required`           | planner returned human questions                              |
-| `planning.review.completed`         | aggregate plan-review verdict and evidence                    |
-| `plan_pr.opened`                    | explicit publication command recorded the reviewed plan PR    |
-| `plan_pr.merged`                    | explicit command recorded the matching merged commit          |
-| `implementation.requested`          | explicit implementation phase start and review ceiling        |
-| `implementation.candidate.produced` | immutable Git candidate and effective session                 |
-| `implementation.review.completed`   | aggregate change-review verdict and evidence                  |
-| `factory.action.failed`             | expected handler ended retryable, terminal, or human-required |
+| Event                               | Owner / meaning                                                   |
+| ----------------------------------- | ----------------------------------------------------------------- |
+| `work_item.imported`                | command imports current work-item identity and source             |
+| `triage.requested`                  | explicit triage phase start                                       |
+| `triage.work_item.completed`        | `triageWorkItem` route result                                     |
+| `planning.requested`                | explicit planning start/restart, review ceiling, publication mode |
+| `planning.candidate.produced`       | immutable plan candidate and effective session                    |
+| `planning.input.required`           | planner returned human questions                                  |
+| `planning.review.completed`         | aggregate plan-review verdict and evidence                        |
+| `plan_pr.opened`                    | explicit publication command recorded the reviewed plan PR        |
+| `plan_pr.merged`                    | explicit command recorded the matching merged commit              |
+| `implementation.requested`          | explicit implementation phase start and review ceiling            |
+| `implementation.candidate.produced` | immutable Git candidate and effective session                     |
+| `implementation.review.completed`   | aggregate change-review verdict and evidence                      |
+| `factory.action.failed`             | expected handler ended retryable, terminal, or human-required     |
 
 Request events contain deterministic ID, work-item key, phase run ID, input
 refs, expected predecessor, and persisted policy such as review ceiling. Action
@@ -91,6 +94,12 @@ events add handler, handler version, positive attempt, causation event ID,
 execution provenance, decisions, session when relevant, and portable artifact
 refs. Events contain references and decisions, not full prompts, findings,
 diffs, or transcripts.
+
+`planning.requested` uses `intent: start | restart` and snapshots
+`publicationMode: local | pull-request`. The planning state carries that mode
+so a review pass has one deterministic transition without consulting live
+tracker or configuration state. `--item-file` selects `local`;
+`--linear-issue` selects `pull-request`.
 
 `FactoryLifecycleState` is a strict discriminated projection:
 
@@ -162,9 +171,11 @@ Each invocation:
    command, then exits.
 
 If the latest reaction is already `wait`, the command invokes no handler and
-prints why it cannot advance. Starting a new run after a terminal/human state
-requires explicit restart/rerun intent; never silently replace an active phase
-run.
+prints why it cannot advance. Planning `start` is valid from a newly imported
+item that passes the external entry gate or from a new `ready-to-plan` triage
+route. `--rerun` is valid only from planning `needs-human` or `failed`; it
+creates a new phase run from current input and configuration.
+Never silently replace an active phase run.
 
 The stdout JSON contract contains:
 
@@ -245,26 +256,35 @@ small artifact containing only `must_fix` findings. The next producer action:
 If a required revision lacks a valid same-provider session, return
 human-required. Never silently start a new conversation.
 
+After a human-required result, the operator updates the source work item and
+uses `--rerun`; this starts a new phase run and producer session. The
+same-session guarantee applies to review-driven `needs_changes` revisions
+inside one phase run, not to a human restart.
+
 ### Transition contract
 
-| Latest durable result                               | Next reaction                                      |
-| --------------------------------------------------- | -------------------------------------------------- |
-| `triage.requested`                                  | `triageWorkItem`, attempt 1                        |
-| triage route ready to plan/implement                | wait for explicit phase command                    |
-| `planning.requested`                                | `producePlanCandidate`, attempt 1                  |
-| plan candidate                                      | `reviewPlanCandidate`, same attempt                |
-| plan review `needs_changes` below ceiling           | producer, attempt + 1, caused by review            |
-| plan review `pass`                                  | wait for local completion or tracker plan PR/merge |
-| plan review blocked/exhausted                       | wait for human                                     |
-| `plan_pr.merged`                                    | wait for explicit implementation command           |
-| `implementation.requested`                          | `produceImplementationCandidate`, attempt 1        |
-| implementation candidate                            | `reviewImplementationCandidate`, same attempt      |
-| implementation review `needs_changes` below ceiling | producer, attempt + 1, caused by review            |
-| implementation review `pass`                        | complete                                           |
-| implementation review blocked/exhausted             | wait for human                                     |
-| retryable action failure                            | same handler/attempt with retry scheduling         |
-| human-required failure                              | wait for human                                     |
-| terminal failure                                    | failed                                             |
+| Latest durable result                               | Next reaction                                 |
+| --------------------------------------------------- | --------------------------------------------- |
+| `triage.requested`                                  | `triageWorkItem`, attempt 1                   |
+| triage route ready to plan/implement                | wait for explicit phase command               |
+| imported item + explicit planning start             | `planning.requested` in a new phase run       |
+| `planning.requested`                                | `producePlanCandidate`, attempt 1             |
+| plan candidate                                      | `reviewPlanCandidate`, same attempt           |
+| plan review `needs_changes` below ceiling           | producer, attempt + 1, caused by review       |
+| plan review `pass`, local publication               | materialize reviewed plan; approved           |
+| plan review `pass`, pull-request publication        | wait for plan PR/merge                        |
+| plan review blocked/exhausted                       | wait for human                                |
+| planning human/failure wait + `--rerun`             | `planning.requested` in a new phase run       |
+| `plan_pr.opened`                                    | wait for matching merge                       |
+| `plan_pr.merged`                                    | wait for explicit implementation command      |
+| `implementation.requested`                          | `produceImplementationCandidate`, attempt 1   |
+| implementation candidate                            | `reviewImplementationCandidate`, same attempt |
+| implementation review `needs_changes` below ceiling | producer, attempt + 1, caused by review       |
+| implementation review `pass`                        | complete                                      |
+| implementation review blocked/exhausted             | wait for human                                |
+| retryable action failure                            | same handler/attempt with retry scheduling    |
+| human-required failure                              | wait for human                                |
+| terminal failure                                    | failed                                        |
 
 The manual coordinator treats both immediate and retry reactions as guidance
 for a later invocation. It never automatically follows either.
@@ -293,11 +313,14 @@ Candidate/review/revision actions never become Linear board columns.
 
 Every invocation with `--linear-issue` performs a live read. Only that
 invocation's explicit `--apply` authorizes a mutation; authorization is not
-persisted or inherited. A continuation command must not replay the phase-start
-move. It validates that the issue remains in the projected phase status and
-applies only a human/terminal boundary produced by its one action. Without
-`--apply`, local Factory truth advances and stdout reports the intended
-projection.
+persisted or inherited. A new or restarted planning phase accepts only the
+configured Needs Plan, Needs Clarification, Plan Needs Review, or Planning
+Failed entry status and then projects Planning when `--apply` is present. A
+failed start projection may be repaired idempotently before the first provider
+result. Later continuations validate Planning without repeating the start move
+and apply only a human/terminal/publication boundary produced by their one
+action. Without `--apply`, local Factory truth advances and stdout reports the
+intended projection.
 
 Remove status/comment-to-Factory-stage bootstrap. Linear validates a new phase
 entry and receives projections; the Factory log exclusively owns active run,
@@ -384,39 +407,74 @@ change-review workflow.
 
 ## PR 2 — Manually stepped planning candidate and review
 
-Pass or explicitly supersede the active plan-simplicity prerequisite before
-editing planning. Preserve minimum-sufficient prompts, blocking-only revision
-input, and the configured completed-review ceiling.
+Reuse the shipped minimum-sufficient planner/spec-review prompts, shared
+verdict validation, blocking-only revision input, and configured completed
+review ceiling. Do not rebuild those contracts inside the action coordinator.
 
 Changes:
 
+- Extend `FactoryLifecycleEventSchema`, `FactoryLifecycleStateSchema`, and
+  `FactoryPhaseRunIdentitySchema` with the planning start/restart and local vs
+  pull-request decisions above. Make phase-run identity a strict triage/planning
+  union; snapshot `producePlanCandidate` and `reviewPlanCandidate` profiles,
+  review ceiling, output-plan path, and publication mode. Rename
+  `factoryTriageExecutionProfile` for shared action use; do not add a registry.
+  Resolve roles, planning, store, and optional Linear settings from one config
+  read when creating the run, adding
+  `resolveFactoryPlanningSettingsFromSnapshot`. Opening and retrying never
+  re-resolve action profiles or phase policy.
 - Add `lib/factory-plan-candidate-action.ts` and
   `factory-plan-review-action.ts` around the retained run-context/provider and
   `runPlanReview` seams, extracting small equivalents where needed.
-- Split planning context creation from `openFactoryPlanningRunContext`; persist
-  the phase context, effective session, immutable candidates, review refs, and
-  blocking-finding refs.
-- Add an explicit one-action planning coordinator in place of the deleted
-  legacy planning loop.
-  A fresh command appends `planning.requested` and runs only candidate attempt
-  1. Every later command reopens the run and executes exactly the latest
-     reaction. It recomputes `next` but never invokes it.
+- Add separate `createFactoryPlanningRunContext` and
+  `openFactoryPlanningRunContext` APIs. Retain only the safe scratch and atomic
+  plan-materialization helpers from the old planning context; legacy run meta,
+  `factoryStage`, and the deleted workflow loop are not transition authority.
+- Add one planning-specific coordinator rather than a generic phase engine. A
+  fresh command appends `planning.requested` and runs only candidate attempt 1.
+  Every later command reopens the run and executes exactly the latest reaction,
+  then recomputes but never invokes `next`. Do not carry forward the old
+  planning `--dry-run` or monolithic output contract. Keep this wiring in
+  `bin/factory-planning-cli.ts`, use `bin/factory-action-output.ts`, and leave
+  the existing triage command structure alone.
+- Replace the legacy planning input gate with direct live Linear status
+  validation for phase start/restart and Planning continuations. Never recover
+  Factory progress from status, comments, or `factoryStage`.
 - On revision, restore the prior candidate to scratch, resume the effective
-  provider session, and publish a new immutable candidate.
-- Keep `planning publish` and `mark-plan-merged` separate. Route their existing
-  event types through strict expected-cursor append and write lifecycle truth
-  before run-meta/Linear projection.
+  provider session, load only the latest review's digested `must_fix` artifact,
+  and publish a new immutable candidate. Preserve the full `plan-review`
+  evidence separately; derive stable blocking IDs after shared review
+  validation without changing its prompt or schema.
+- On review pass, atomically materialize the verified immutable candidate at
+  the snapshotted output path. Local mode becomes `approved`; pull-request mode
+  waits for publication and merge. An identical existing target is an
+  idempotent recovery; a different target fails closed. Keep `planning publish`
+  and `mark-plan-merged` separate for pull-request mode.
+- Append publication/merge lifecycle truth before derived run metadata or
+  Linear projection. A retry validates the recorded plan URL/ref/commit and
+  repairs only the idempotent projection; it never appends a duplicate event or
+  reruns a provider/reviewer.
 - Apply Planning only on phase request; continuation actions leave Linear in
   Planning until a human/terminal/publication boundary.
-- Update `skills/factory-operator/SKILL.md` in this PR with the repeated command
-  sequence, how to read `next`, same-session behavior, `--apply` rules,
-  heartbeat waiting, publication commands, and stop conditions.
+- Replace the planning-unavailable statements in `README.md`,
+  `docs/contributing/factory.md`, `docs/contributing/architecture.md`,
+  `docs/contributing/script-command-surface.md`,
+  `docs/contributing/setup-manifest.md`, `scripts/smoke-dist.ts`, and
+  `skills/factory-operator/SKILL.md`. Document only shipped planning:
+  repeated commands, `next`, same-session revisions, restart semantics,
+  `--apply`, heartbeats, artifacts, publication, and stop conditions;
+  implementation remains unavailable.
 
-Focused tests prove one provider/reviewer invocation per command, no hidden
-loop, candidate -> review -> revision across separate processes, effective
-session carry-forward, immutable scratch recovery, review ceiling, retry of the
-same action, tracker publication/merge gate, and Linear mutation only at the
-documented boundaries. Then run `pnpm check` and change-review.
+One coordinator integration sequence proves candidate -> review -> same-session
+revision -> review across separate invocations, exactly one provider/reviewer
+call per invocation, blocking-only revision input, and no hidden loop. Add one
+candidate and one review result-before-append recovery case, a mid-run config
+change proving profile snapshot reuse, local and pull-request completion, the
+completed-review ceiling, explicit human-state rerun, the documented
+Linear/projection-repair boundaries, and packaged CLI help/smoke. Rely on PR 1
+tests for generic CAS, hash, and concurrency behavior rather than duplicating
+that matrix. Then run `pnpm check` and the current two-reviewer change-review
+workflow.
 
 ## PR 3 — Manually stepped implementation candidate and one review
 
@@ -437,8 +495,10 @@ Changes:
 - Validate work-item/run/store/workspace identity, artifact digests, ref to
   commit, recorded tree, and base ancestry. Review the commit SHA, not a mutable
   ref or working tree.
-- Run the existing three-reviewer `change-review` workflow as one handler and
-  append one aggregate review event; never append per-reviewer Factory events.
+- Run the full default two-reviewer `change-review` workflow (`implementation`
+  plus `quality`, with scoped simplification owned by `quality`) once as one
+  handler and append one aggregate review event. Do not run partial steps,
+  embed the outer remediation loop, or append per-reviewer Factory events.
 - Replace the implementation workflow with a one-action coordinator. PR 3
   persists a review ceiling of 1, so pass completes and non-pass waits for a
   human; each candidate and review still requires a separate command.
@@ -493,6 +553,8 @@ change-review workflow.
 Out of scope:
 
 - parsing or migrating old lifecycle logs;
+- the deleted planning workflow loop, legacy planning dry-run/output contract,
+  or a separate simplify reviewer;
 - automatic CLI loops, generic dispatch, batch inbox processing, or automatic
   phase starts;
 - Inngest, webhooks, queues, polling, cron, or retry timing;
