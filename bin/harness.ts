@@ -175,7 +175,7 @@ function buildProgram(): Command {
   const run = program.command("run").description("Run a harness workflow");
   addReviewCommand(run, {
     name: "change-review",
-    description: "Run implementation, code-quality, and simplify reviewers",
+    description: "Run implementation and code-quality reviewers",
     workflow: runChangeReview,
   });
   addPlanReviewCommand(run);
@@ -377,7 +377,7 @@ function addReviewCommand(
     )
     .option(
       "--steps <ids>",
-      "comma-separated change-review steps: implementation,quality,simplify",
+      "comma-separated change-review steps: implementation,quality",
       parseStepList,
     )
     .option(

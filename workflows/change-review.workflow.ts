@@ -4,7 +4,7 @@ import { runReviewSteps, type ReviewStep, type WorkflowContext } from "./review-
 
 export const meta = { name: "change-review" };
 
-export const CHANGE_REVIEW_STEPS = ["implementation", "quality", "simplify"] as const;
+export const CHANGE_REVIEW_STEPS = ["implementation", "quality"] as const;
 export type ChangeReviewStepId = (typeof CHANGE_REVIEW_STEPS)[number];
 
 type ChangeReviewOptions = {
@@ -14,7 +14,6 @@ type ChangeReviewOptions = {
 const STEP_AGENTS = {
   implementation: "review-implementation",
   quality: "code-quality-review",
-  simplify: "simplify",
 } satisfies Record<ChangeReviewStepId, ReviewAgentName>;
 
 export function run(ctx: WorkflowContext, options: ChangeReviewOptions = {}) {

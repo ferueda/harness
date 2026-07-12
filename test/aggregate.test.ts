@@ -79,17 +79,17 @@ test("renderSummary includes omitted steps for partial reviews", () => {
     durationMs: 1_000,
     steps: {
       workflow: "change-review",
-      availableSteps: ["implementation", "quality", "simplify"],
+      availableSteps: ["implementation", "quality"],
       requestedSteps: ["implementation"],
       executedSteps: ["implementation"],
-      omittedSteps: ["quality", "simplify"],
+      omittedSteps: ["quality"],
       partial: true,
     },
   });
 
   expect(summary).toMatch(/## Steps/);
   expect(summary).toMatch(/Executed: `implementation`/);
-  expect(summary).toMatch(/Omitted: `quality`, `simplify`/);
+  expect(summary).toMatch(/Omitted: `quality`/);
 });
 
 test("renderFailedSummary includes omitted steps for failed partial reviews", () => {
@@ -109,16 +109,16 @@ test("renderFailedSummary includes omitted steps for failed partial reviews", ()
     durationMs: 1_000,
     steps: {
       workflow: "change-review",
-      availableSteps: ["implementation", "quality", "simplify"],
+      availableSteps: ["implementation", "quality"],
       requestedSteps: ["implementation"],
       executedSteps: ["implementation"],
-      omittedSteps: ["quality", "simplify"],
+      omittedSteps: ["quality"],
       partial: true,
     },
   });
 
   expect(summary).toMatch(/## Steps/);
-  expect(summary).toMatch(/Omitted: `quality`, `simplify`/);
+  expect(summary).toMatch(/Omitted: `quality`/);
   expect(summary).toMatch(/## Failed reviewers/);
 });
 
@@ -139,9 +139,9 @@ test("renderSummary omits step section for full reviews", () => {
     durationMs: 1_000,
     steps: {
       workflow: "change-review",
-      availableSteps: ["implementation", "quality", "simplify"],
-      requestedSteps: ["implementation", "quality", "simplify"],
-      executedSteps: ["implementation", "quality", "simplify"],
+      availableSteps: ["implementation", "quality"],
+      requestedSteps: ["implementation", "quality"],
+      executedSteps: ["implementation", "quality"],
       omittedSteps: [],
       partial: false,
     },

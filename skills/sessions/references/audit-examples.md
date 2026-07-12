@@ -155,7 +155,7 @@ New `dev/plans/*.md` → look for `review-spec` turn on same path.
 
 ```bash
 for term in change-review-workflow change-review "harness run" \
-  review-spec review-implementation code-quality simplify-review; do
+  review-spec review-implementation code-quality; do
   echo -n "$term: "
   sessions analyze --provider codex --include-turns --extract-only \
     --workspace /path/to/repo --days 14 \

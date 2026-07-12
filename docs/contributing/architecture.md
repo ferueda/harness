@@ -172,7 +172,8 @@ follow-up PRs. A terminal triage can therefore yield a wait reaction with no
 executable downstream Factory command; its route command may be absent.
 
 `workflows/change-review.workflow.ts` runs the default review set:
-implementation, quality, and simplify. Full default runs execute these
+implementation and quality. The quality reviewer covers behavior-preserving
+clarity, simplicity, conventions, and maintainability. Full default runs execute these
 reviewers in parallel, then results are aggregated in workflow order. Callers
 may request a subset of reviewers. Reviewer blockers stay tied to the original
 task: acceptance gaps, hard-invariant violations, regressions introduced or

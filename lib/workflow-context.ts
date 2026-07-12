@@ -41,7 +41,6 @@ import {
 import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
-  SIMPLIFY_REVIEW_PROMPT,
   SPEC_REVIEW_PROMPT,
 } from "./prompts/index.ts";
 import type { ContextArtifact } from "./context.ts";
@@ -137,16 +136,6 @@ const REVIEWER_CONFIGS = {
     rawFile: "quality-review.raw.json",
     dryRunReview: DRY_RUN_REVIEW,
     stage: "quality",
-  },
-  simplify: {
-    title: "Simplify review",
-    summaryKey: "simplify",
-    promptTemplate: SIMPLIFY_REVIEW_PROMPT,
-    promptFile: "simplify-review.prompt.md",
-    reviewFile: "simplify-review.json",
-    rawFile: "simplify-review.raw.json",
-    dryRunReview: DRY_RUN_REVIEW,
-    stage: "simplify",
   },
   "review-spec": {
     title: "Spec review",
@@ -541,19 +530,16 @@ function buildReviewSummaries(reviews: ReviewSection[]): ReviewSummaries {
 function buildTopLevelReviewFields(reviewSummaries: ReviewSummaries): {
   implementationReview?: ReviewSummary;
   qualityReview?: ReviewSummary;
-  simplifyReview?: ReviewSummary;
   specReview?: ReviewSummary;
 } {
   const fields: {
     implementationReview?: ReviewSummary;
     qualityReview?: ReviewSummary;
-    simplifyReview?: ReviewSummary;
     specReview?: ReviewSummary;
   } = {};
   const fieldNames = {
     implementation: "implementationReview",
     codeQuality: "qualityReview",
-    simplify: "simplifyReview",
     spec: "specReview",
   } as const;
 

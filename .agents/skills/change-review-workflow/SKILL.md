@@ -14,9 +14,9 @@ cleanup effort.
 - Initial coverage runs all roles:
   - `implementation`: correctness, task and plan fidelity, contracts,
     regressions, and required behavioral tests.
-  - `quality`: behavior-preserving clarity, conventions, and maintainability.
-  - `simplify`: smaller equivalent shapes for complexity introduced by the
-    diff.
+  - `quality`: behavior-preserving clarity, simplicity, conventions, and
+    maintainability, including smaller equivalent shapes for complexity
+    introduced by the diff.
 - Approval requires completed initial coverage, a passing implementation review
   of the current head, and no `must_fix` findings.
 - `needs_changes` requires at least one `must_fix`. Advisory findings may
@@ -69,10 +69,10 @@ regression test when a bug fix needs one.
 
 ## Follow-up runs
 
-After any code edit, always rerun `implementation`; add `quality` or
-`simplify` only when the fix affects that role's domain. If no code changed
-and a reviewer failed, retry only that role. Record why omitted roles remain
-covered.
+After any code edit, always rerun `implementation`; add `quality` only when the
+fix affects clarity, simplicity, conventions, maintainability, or tests. If no
+code changed and a reviewer failed, retry only that role. Record why omitted
+roles remain covered.
 
 Use `--steps <ids>` for targeted follow-ups. A partial run passes only its
 requested roles; it does not establish approval by itself.

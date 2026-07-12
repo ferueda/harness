@@ -76,12 +76,11 @@ Coordinator: **`change-review-workflow`**. Triage (Implement / Adapt / Decline) 
 | `change-review-workflow` | Run harness reviewers, triage findings, apply fixes, re-review | Coordinator |
 | `review-spec` | Validate plan/spec before implementation | Advisory |
 | `review-implementation` | Adversarial review of implementation vs plan/spec | Skeptical; read-only |
-| `code-quality-review` | Clarity, conventions, maintainability | Read-only |
-| `simplify-review` | Behavior-preserving simplification (`change-review` step `simplify`) | Read-only |
+| `code-quality-review` | Behavior-preserving clarity, simplicity, conventions, maintainability | Read-only |
 
-`review-implementation`, `code-quality-review`, and `simplify-review` are read-only. Use `review-implementation` for correctness; `code-quality-review` for conventions; `simplify-review` for simplification suggestions.
+`review-implementation` and `code-quality-review` are read-only. Use `review-implementation` for correctness and `code-quality-review` for conventions, maintainability, and simplification suggestions.
 
-**Skill discovery (for implementation, `review-implementation`, `code-quality-review`, `simplify-review`):** Discover available skills in the host and target repo. Read relevant `SKILL.md` files for languages, frameworks, or patterns touched by the work. Use them as guidelines — no fixed checklist. For plan-driven work, use any executor aids named beside the relevant changes.
+**Skill discovery (for implementation, `review-implementation`, `code-quality-review`):** Discover available skills in the host and target repo. Read relevant `SKILL.md` files for languages, frameworks, or patterns touched by the work. Use them as guidelines — no fixed checklist. For plan-driven work, use any executor aids named beside the relevant changes.
 
 ## Handoff workflow
 

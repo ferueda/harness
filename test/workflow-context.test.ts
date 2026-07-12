@@ -305,10 +305,10 @@ test("exportFailed writes metadata and summary with no successful reviews", () =
     ],
     steps: {
       workflow: "change-review",
-      availableSteps: ["implementation", "quality", "simplify"],
+      availableSteps: ["implementation", "quality"],
       requestedSteps: ["implementation"],
       executedSteps: ["implementation"],
-      omittedSteps: ["quality", "simplify"],
+      omittedSteps: ["quality"],
       partial: true,
     },
   });
@@ -316,7 +316,7 @@ test("exportFailed writes metadata and summary with no successful reviews", () =
   expect(meta.status).toBe("failed");
   expect(meta.workflow).toBe("change-review");
   expect(meta.partial).toBe(true);
-  expect(meta.omittedSteps).toEqual(["quality", "simplify"]);
+  expect(meta.omittedSteps).toEqual(["quality"]);
   expect("verdict" in meta).toBe(false);
   expect(meta.reviews).toEqual({});
   expect("failedReviews" in meta ? meta.failedReviews : undefined).toEqual([
@@ -348,10 +348,10 @@ test("dry-run export writes workflow step metadata", () => {
     verdict: "pass",
     steps: {
       workflow: "change-review",
-      availableSteps: ["implementation", "quality", "simplify"],
+      availableSteps: ["implementation", "quality"],
       requestedSteps: ["implementation"],
       executedSteps: ["implementation"],
-      omittedSteps: ["quality", "simplify"],
+      omittedSteps: ["quality"],
       partial: true,
     },
   });
@@ -359,7 +359,7 @@ test("dry-run export writes workflow step metadata", () => {
   expect(meta.status).toBe("dry_run");
   expect(meta.workflow).toBe("change-review");
   expect(meta.executedSteps).toEqual(["implementation"]);
-  expect(meta.omittedSteps).toEqual(["quality", "simplify"]);
+  expect(meta.omittedSteps).toEqual(["quality"]);
   expect("streamArtifacts" in meta).toBe(false);
 });
 

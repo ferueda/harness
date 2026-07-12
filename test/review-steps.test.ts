@@ -35,7 +35,6 @@ function createDeferredReviews(): Record<ReviewAgentName, DeferredReview> {
   return {
     "review-implementation": createDeferredReview(),
     "code-quality-review": createDeferredReview(),
-    simplify: createDeferredReview(),
     "review-spec": createDeferredReview(),
   };
 }
@@ -72,7 +71,6 @@ function createContext(
           title: "Code quality review",
           stage: "quality",
         },
-        simplify: { key: "simplify", title: "Simplify review", stage: "simplify" },
         "review-spec": { key: "spec", title: "Spec review", stage: "spec" },
       } satisfies Record<ReviewAgentName, { key: string; title: string; stage: string }>;
       return info[name];
@@ -110,21 +108,19 @@ test("change-review starts all review steps by default before any review resolve
   const harness = createContext(deferred);
   const run = runChangeReview(harness.ctx);
 
-  expect(harness.started).toEqual(["review-implementation", "code-quality-review", "simplify"]);
-  deferred.simplify.resolve(PASS_REVIEW);
+  expect(harness.started).toEqual(["review-implementation", "code-quality-review"]);
   deferred["code-quality-review"].resolve(PASS_REVIEW);
   deferred["review-implementation"].resolve(PASS_REVIEW);
   await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
   expect(harness.exportedReviews?.map((review) => review.key)).toEqual([
     "implementation",
     "codeQuality",
-    "simplify",
   ]);
   expect(harness.exportedSteps).toEqual({
     workflow: "change-review",
-    availableSteps: ["implementation", "quality", "simplify"],
-    requestedSteps: ["implementation", "quality", "simplify"],
-    executedSteps: ["implementation", "quality", "simplify"],
+    availableSteps: ["implementation", "quality"],
+    requestedSteps: ["implementation", "quality"],
+    executedSteps: ["implementation", "quality"],
     omittedSteps: [],
     partial: false,
   });
@@ -159,15 +155,11 @@ test("change-review can run selected reviews serially", async () => {
   await flushAsyncWork();
   expect(harness.started).toEqual(["review-implementation", "code-quality-review"]);
   deferred["code-quality-review"].resolve(PASS_REVIEW);
-  await flushAsyncWork();
-  expect(harness.started).toEqual(["review-implementation", "code-quality-review", "simplify"]);
-  deferred.simplify.resolve(PASS_REVIEW);
 
   await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
   expect(harness.exportedReviews?.map((review) => review.key)).toEqual([
     "implementation",
     "codeQuality",
-    "simplify",
   ]);
 });
 
@@ -193,10 +185,10 @@ test("change-review serial mode stops after the first failed reviewer", async ()
   ]);
   expect(harness.exportedSteps).toEqual({
     workflow: "change-review",
-    availableSteps: ["implementation", "quality", "simplify"],
-    requestedSteps: ["implementation", "quality", "simplify"],
+    availableSteps: ["implementation", "quality"],
+    requestedSteps: ["implementation", "quality"],
     executedSteps: ["implementation"],
-    omittedSteps: ["quality", "simplify"],
+    omittedSteps: ["quality"],
     partial: true,
   });
 });
@@ -217,8 +209,8 @@ test("change-review starts only selected steps in workflow order", async () => {
   expect(harness.exportedSteps).toMatchObject({
     requestedSteps: ["implementation", "quality"],
     executedSteps: ["implementation", "quality"],
-    omittedSteps: ["simplify"],
-    partial: true,
+    omittedSteps: [],
+    partial: false,
   });
 });
 
@@ -234,14 +226,14 @@ test("change-review normalizes duplicate selected steps", async () => {
   expect(harness.exportedSteps).toMatchObject({
     requestedSteps: ["implementation"],
     executedSteps: ["implementation"],
-    omittedSteps: ["quality", "simplify"],
+    omittedSteps: ["quality"],
     partial: true,
   });
 });
 
 test("change-review rejects unknown selected steps", () => {
   expect(() => normalizeChangeReviewSteps(["missing"])).toThrow(
-    /Unknown change-review step: missing\. Valid steps: implementation, quality, simplify/,
+    /Unknown change-review step: missing\. Valid steps: implementation, quality/,
   );
 });
 
@@ -261,8 +253,8 @@ test("change-review exports failed selected reviews after all selected reviewers
   ]);
   expect(harness.exportedSteps).toMatchObject({
     requestedSteps: ["implementation", "quality"],
-    omittedSteps: ["simplify"],
-    partial: true,
+    omittedSteps: [],
+    partial: false,
   });
 });
 
