@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
-import type { AgentRunInput } from "../lib/agents.ts";
+import type { Agent, AgentRunInput } from "../lib/agents.ts";
 import { producePlanCandidate } from "../lib/factory-plan-candidate-action.ts";
 import { reviewPlanCandidate } from "../lib/factory-plan-review-action.ts";
 import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
@@ -50,7 +50,7 @@ test("candidate and review actions step separately and revisions resume the plan
     outputPlan: "dev/plans/item-1.md",
     maxReviewIterations: 2,
     maxRuntimeMs: 1_000,
-    agentProviderFactory: () => ({ name: "cursor", run: vi.fn() }),
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     factoryStore: store,
   });
   const ctx = openFactoryPlanningRunContext({
@@ -115,8 +115,8 @@ test("candidate and review actions step separately and revisions resume the plan
               ? []
               : [{ findingId: "spec-001", decision: "implement", rationale: "fixed" }],
         },
-        raw: {},
-        session: { provider: "cursor" as const, id: "planner-session" },
+        raw: unchangedWorkspace(),
+        session: { provider: "cursor" as const, id: "planner-session", raw: { transient: true } },
       };
     },
   });
@@ -128,6 +128,12 @@ test("candidate and review actions step separately and revisions resume the plan
     agentProviderFactory: providerFactory,
   });
   expect(providerCalls).toHaveLength(1);
+  expect(first.event).toMatchObject({
+    type: "planning.candidate.produced",
+    data: { effectiveSession: { provider: "cursor", id: "planner-session" } },
+  });
+  if (first.event.type !== "planning.candidate.produced") throw new Error("expected candidate");
+  expect(first.event.data.effectiveSession).not.toHaveProperty("raw");
 
   let reviewCount = 0;
   const reviewRunner = async (reviewCtx: { runDir?: string }) => {
@@ -200,6 +206,183 @@ test("candidate and review actions step separately and revisions resume the plan
     telemetry.filter((event) => event.type === "run:end" && event.stepId === "reviewPlanCandidate"),
   ).toHaveLength(2);
 });
+
+test.each([
+  {
+    name: "workspace mutation",
+    result: {
+      ok: false as const,
+      error: "Agent runtime modified the workspace during a review run",
+      exitCode: 1,
+      failureKind: "workspace-guard" as const,
+    },
+  },
+  {
+    name: "caller abort",
+    throws: Object.assign(new Error("planning aborted"), { name: "AbortError" }),
+  },
+])("candidate records $name as human-required", async ({ result, throws }) => {
+  const fixture = planningActionFixture();
+  const completed = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(fixture.start),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        if (throws) throw throws;
+        return result!;
+      },
+    }),
+  });
+  expect(completed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+});
+
+test.each([
+  { name: "workspace mutation", error: "Agent runtime modified the workspace during a review run" },
+  { name: "caller abort", error: "review aborted", aborted: true },
+])("review records $name as human-required", async ({ error, aborted }) => {
+  const fixture = planningActionFixture();
+  const candidate = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(fixture.start),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      async run(input) {
+        const draft = /Draft path:\s+```text\s+([^\n]+)/.exec(input.prompt)?.[1];
+        if (!draft) throw new Error("missing draft path");
+        writeFileSync(draft, "# Candidate\n");
+        return {
+          ok: true,
+          structuredOutput: {
+            outcome: "draft-ready",
+            summary: "ready",
+            humanQuestions: [],
+            findingDecisions: [],
+          },
+          raw: unchangedWorkspace(),
+          session: { provider: "cursor", id: "session" },
+        };
+      },
+    }),
+  });
+  const controller = new AbortController();
+  if (aborted) controller.abort();
+  const reviewed = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    signal: controller.signal,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
+      mkdirSync(reviewCtx.runDir!, { recursive: true });
+      writeFileSync(
+        join(reviewCtx.runDir!, "spec-review.json"),
+        JSON.stringify({ verdict: "blocked", summary: error, findings: [] }),
+      );
+      return {
+        status: "failed",
+        failedReviews: [{ key: "spec", stage: "review-spec", error }],
+      };
+    }) as never,
+  });
+  expect(reviewed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+});
+
+function planningActionFixture() {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-workspace-"));
+  const projectRoot = mkdtempSync(join(tmpdir(), "factory-planning-store-"));
+  const factoryStateRoot = join(projectRoot, "factory");
+  ensureFactoryStoreFormat(factoryStateRoot);
+  const store: FactoryStoreMeta = {
+    storeRoot: projectRoot,
+    projectId: "repo",
+    projectRoot,
+    factoryStateRoot,
+    factoryRunsDir: join(projectRoot, "runs/factory"),
+    reviewRunsDir: join(projectRoot, "runs/reviews"),
+    repo: { name: "repo", id: "repo", idSource: "config" },
+    overrides: {},
+    warnings: [],
+  };
+  const workItem: FactoryWorkItem = {
+    id: "item-1",
+    source: "file",
+    title: "Plan item",
+    body: "Ship it",
+    labels: [],
+  };
+  const created = createFactoryPlanningRunContext({
+    workspace,
+    runsDir: store.factoryRunsDir,
+    workItem,
+    plannerRole: { agent: "cursor", model: "planner" },
+    reviewerRole: { agent: "cursor", model: "reviewer" },
+    outputPlan: "dev/plans/item-1.md",
+    maxReviewIterations: 2,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    factoryStore: store,
+  });
+  const ctx = openFactoryPlanningRunContext({
+    workspace,
+    runsDir: store.factoryRunsDir,
+    phaseRunId: created.runId,
+    workItem,
+    factoryStore: store,
+  });
+  const imported: FactoryLifecycleEvent = {
+    version: 1,
+    id: "import:item-1",
+    type: "work_item.imported",
+    workItemKey: deriveFactoryWorkItemKey(workItem),
+    occurredAt: new Date().toISOString(),
+    data: { source: "file" },
+  };
+  appendFactoryActionEvent({ factoryStateRoot, event: imported, expectedLastEventId: null });
+  const requested: FactoryLifecycleEvent = {
+    version: 1,
+    id: `planning.requested:${created.runId}`,
+    type: "planning.requested",
+    workItemKey: deriveFactoryWorkItemKey(workItem),
+    occurredAt: new Date().toISOString(),
+    phaseRunId: created.runId,
+    data: {
+      expectedPredecessor: imported.id,
+      inputRefs: [
+        {
+          base: "factory-store",
+          path: `runs/factory/${created.runId}/context/work-item.json`,
+          sha256: "0".repeat(64),
+        },
+      ],
+      intent: "start",
+      reviewCeiling: 2,
+      publicationMode: "local",
+      outputPlan: "dev/plans/item-1.md",
+    },
+  };
+  const start = appendFactoryActionEvent({
+    factoryStateRoot,
+    event: requested,
+    expectedLastEventId: imported.id,
+  });
+  return { ctx, factoryStateRoot, start };
+}
+
+function unchangedWorkspace() {
+  return { workspaceStatus: { before: "clean", after: "clean" } };
+}
 
 function invoke(result: {
   event: FactoryLifecycleEvent;

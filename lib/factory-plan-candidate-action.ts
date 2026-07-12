@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import type { Agent, AgentProviderOptions, AgentRunResult, AgentSessionRef } from "./agents.ts";
+import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
 import {
@@ -68,7 +68,7 @@ export async function producePlanCandidate(input: {
     writeFileSync(join(actionDir, "planner.prompt.md"), prompt);
     const profile = ctx.identity.actions.producePlanCandidate;
     const providerResultPath = join(actionDir, "provider-result.json");
-    let result: AgentRunResult;
+    let result: PlannerOutcome;
     if (existsSync(providerResultPath)) {
       const staged = StagedProviderOutcomeSchema.parse(
         JSON.parse(readFileSync(providerResultPath, "utf8")),
@@ -79,10 +79,10 @@ export async function producePlanCandidate(input: {
         staged.action?.handler !== reaction.handler ||
         staged.action?.attempt !== reaction.attempt ||
         staged.action?.causationEventId !== reaction.causationEventId ||
-        !staged.result
+        !staged.outcome
       )
         throw new Error("Staged planner outcome conflicts with action identity");
-      result = staged.result;
+      result = staged.outcome;
     } else {
       const provider = input.agentProviderFactory({
         provider: profile.provider,
@@ -98,7 +98,7 @@ export async function producePlanCandidate(input: {
         stepId: reaction.handler,
       });
       try {
-        result = await provider.run({
+        const providerResult = await provider.run({
           workspace: ctx.workspace,
           prompt,
           schemaPath: FACTORY_PLANNING_SCHEMA_PATH,
@@ -116,23 +116,56 @@ export async function producePlanCandidate(input: {
           ...(previous?.session ? { session: previous.session } : {}),
           signal: input.signal,
         });
+        result = providerResult.ok
+          ? {
+              ok: true,
+              structuredOutput: providerResult.structuredOutput,
+              session: normalizeSession(providerResult.session),
+              workspaceUnchanged: workspaceUnchanged(providerResult.raw),
+            }
+          : {
+              ok: false,
+              error: providerResult.error,
+              ...(providerResult.aborted ? { aborted: true } : {}),
+              ...(providerResult.failureKind ? { failureKind: providerResult.failureKind } : {}),
+              workspaceUnchanged: workspaceUnchanged(providerResult.raw),
+            };
+        writeFileSync(
+          join(actionDir, "planner.raw.json"),
+          `${JSON.stringify(providerResult.raw ?? providerResult, null, 2)}\n`,
+        );
         finishTelemetry(result.ok ? "completed" : "failed", result.ok ? undefined : result.error);
       } catch (error) {
         finishTelemetry("failed", errorMessage(error));
-        const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "retryable");
+        const terminal = buildFailure(
+          ctx,
+          reaction,
+          actionDir,
+          errorMessage(error),
+          isAbortError(error) ? "human-required" : "terminal",
+        );
         writeFactoryActionResult(actionDir, terminal);
         return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
       }
       writeDurableFactoryFile(
         providerResultPath,
-        `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, result }, null, 2)}\n`,
+        `${JSON.stringify({ version: 1, action: { phaseRunId: ctx.runId, handler: reaction.handler, attempt: reaction.attempt, causationEventId: reaction.causationEventId }, outcome: result }, null, 2)}\n`,
         true,
       );
     }
-    writeFileSync(
-      join(actionDir, "planner.raw.json"),
-      `${JSON.stringify(result.raw ?? result, null, 2)}\n`,
-    );
+    if (!existsSync(join(actionDir, "planner.raw.json")))
+      writeFileSync(join(actionDir, "planner.raw.json"), "{}\n");
+    if (result.ok && !result.workspaceUnchanged) {
+      const terminal = buildFailure(
+        ctx,
+        reaction,
+        actionDir,
+        "Agent runtime modified the workspace during planning",
+        "human-required",
+      );
+      writeFactoryActionResult(actionDir, terminal);
+      return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
+    }
     let output: ReturnType<typeof parseFactoryPlanningOutput> | undefined;
     if (result.ok) {
       try {
@@ -150,17 +183,10 @@ export async function producePlanCandidate(input: {
           ctx,
           reaction,
           actionDir,
-          draftPath,
           output!,
-          result.session ?? previous?.session,
+          normalizeSession(result.session ?? previous?.session),
         )
-      : buildFailure(
-          ctx,
-          reaction,
-          actionDir,
-          result.error,
-          result.aborted ? "human-required" : "retryable",
-        );
+      : buildFailure(ctx, reaction, actionDir, result.error, classifyProviderFailure(result));
     writeFactoryActionResult(actionDir, terminal);
   }
   const recovered = readFactoryActionResult(actionDir);
@@ -175,24 +201,20 @@ export async function producePlanCandidate(input: {
 const AgentSessionSchema = z.object({
   provider: z.enum(["cursor", "codex"]),
   id: z.string().trim().min(1),
-  raw: z.unknown().optional(),
 });
-const AgentRunResultSchema = z.discriminatedUnion("ok", [
+const PlannerOutcomeSchema = z.discriminatedUnion("ok", [
   z.object({
     ok: z.literal(true),
     structuredOutput: z.unknown().optional(),
-    raw: z.unknown(),
     session: AgentSessionSchema.optional(),
-    usage: z.unknown().optional(),
+    workspaceUnchanged: z.boolean(),
   }),
   z.object({
     ok: z.literal(false),
     error: z.string(),
-    raw: z.unknown().optional(),
-    exitCode: z.number().int(),
-    stderr: z.string().optional(),
     aborted: z.boolean().optional(),
     failureKind: z.literal("workspace-guard").optional(),
+    workspaceUnchanged: z.boolean(),
   }),
 ]);
 const StagedProviderOutcomeSchema = z.object({
@@ -203,8 +225,9 @@ const StagedProviderOutcomeSchema = z.object({
     attempt: z.number().int().positive(),
     causationEventId: z.string(),
   }),
-  result: AgentRunResultSchema,
+  outcome: PlannerOutcomeSchema,
 });
+type PlannerOutcome = z.infer<typeof PlannerOutcomeSchema>;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -265,7 +288,6 @@ function buildSuccess(
   ctx: PlanningContext,
   reaction: Extract<FactoryReaction, { kind: "invoke" }>,
   actionDir: string,
-  draftPath: string,
   output: ReturnType<typeof parseFactoryPlanningOutput>,
   session: AgentSessionRef | undefined,
 ): FactoryActionEvent {
@@ -292,10 +314,14 @@ function buildSuccess(
       "Planner session was not captured",
       "human-required",
     );
-  if (!existsSync(draftPath) || readFileSync(draftPath).length === 0)
-    return buildFailure(ctx, reaction, actionDir, "Planner draft is missing or empty", "terminal");
   const candidatePath = join(actionDir, "candidate.md");
-  copyFileSync(draftPath, candidatePath);
+  let bytes: Buffer;
+  try {
+    bytes = ctx.readPlannerDraft();
+  } catch (error) {
+    return buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
+  }
+  writeDurableFactoryFile(candidatePath, bytes.toString("utf8"), true);
   const candidate = ref(ctx, candidatePath);
   return {
     ...common,
@@ -303,6 +329,30 @@ function buildSuccess(
     type: "planning.candidate.produced",
     data: { ...common.data, evidence: [candidate], candidate, effectiveSession: session },
   };
+}
+
+function normalizeSession(session: AgentSessionRef | undefined): AgentSessionRef | undefined {
+  return session ? { provider: session.provider, id: session.id } : undefined;
+}
+
+function classifyProviderFailure(
+  result: Extract<PlannerOutcome, { ok: false }>,
+): "retryable" | "human-required" | "terminal" {
+  if (result.aborted || result.failureKind === "workspace-guard") return "human-required";
+  return result.workspaceUnchanged ? "retryable" : "human-required";
+}
+
+function workspaceUnchanged(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("workspaceStatus" in raw))
+    return false;
+  const status = raw.workspaceStatus;
+  if (!status || typeof status !== "object" || !("before" in status) || !("after" in status))
+    return false;
+  return status.before === status.after;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || /aborted/i.test(error.message));
 }
 
 function buildFailure(

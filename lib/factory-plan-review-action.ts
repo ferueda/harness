@@ -117,7 +117,13 @@ export async function reviewPlanCandidate(input: {
         finishTelemetry(meta.status === "completed" ? "completed" : "failed");
       } catch (error) {
         finishTelemetry("failed", errorMessage(error));
-        const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "retryable");
+        const terminal = buildFailure(
+          ctx,
+          reaction,
+          actionDir,
+          errorMessage(error),
+          input.signal?.aborted || isAbortError(error) ? "human-required" : "retryable",
+        );
         writeFactoryActionResult(actionDir, terminal);
         return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
       }
@@ -128,6 +134,18 @@ export async function reviewPlanCandidate(input: {
         true,
       );
       writeDurableFactoryFile(reviewPath, `${JSON.stringify(review, null, 2)}\n`, true);
+    }
+    if (meta.status !== "completed") {
+      const message = reviewFailureMessage(meta);
+      const terminal = buildFailure(
+        ctx,
+        reaction,
+        actionDir,
+        message,
+        input.signal?.aborted || isReviewGuardFailure(meta) ? "human-required" : "retryable",
+      );
+      writeFactoryActionResult(actionDir, terminal);
+      return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
     }
     let review: z.infer<typeof ReviewOutputSchema>;
     try {
@@ -277,6 +295,31 @@ function appendRecovered(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || /aborted/i.test(error.message));
+}
+
+function isReviewGuardFailure(meta: unknown): boolean {
+  return /modified the workspace|workspace[- ]guard/i.test(JSON.stringify(meta));
+}
+
+function reviewFailureMessage(meta: unknown): string {
+  if (meta && typeof meta === "object" && "failedReviews" in meta) {
+    const failures = meta.failedReviews;
+    if (Array.isArray(failures)) {
+      const message = failures
+        .flatMap((failure) =>
+          failure && typeof failure === "object" && "error" in failure
+            ? [String(failure.error)]
+            : [],
+        )
+        .join("; ");
+      if (message) return message;
+    }
+  }
+  return "Plan reviewer failed";
 }
 
 function assertRecoveredResult(

@@ -4,12 +4,15 @@ import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import { formatFactoryActionOutput } from "../bin/factory-action-output.ts";
 import {
+  assertLivePlanningStatus,
   recordPlanningPublication,
   runOneFactoryPlanningAction,
 } from "../bin/factory-planning-cli.ts";
 import type { AgentRunInput } from "../lib/agents.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
+import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
+import { reduceFactoryLifecycleEvents } from "../lib/factory-state-machine.ts";
 import {
   factoryStoreMetadata,
   resolveFactoryStore,
@@ -50,14 +53,14 @@ test.each([
             humanQuestions: [],
             findingDecisions: [],
           },
-          raw: {},
+          raw: unchangedWorkspace(),
           session: { provider: "cursor" as const, id: "planner-session" },
         };
       }
       return {
         ok: true as const,
         structuredOutput: { verdict: "pass", summary: "approved", findings: [] },
-        raw: {},
+        raw: unchangedWorkspace(),
       };
     },
   });
@@ -74,6 +77,10 @@ test.each([
     },
     itemFile: testCase.linearIssue ? undefined : "item.json",
     linearIssue: testCase.linearIssue,
+    issueRef: testCase.linearIssue,
+    applyAdapter: testCase.linearIssue
+      ? ({ applyPlanningStarted: vi.fn(async () => undefined) } as never)
+      : undefined,
     outputPlan: "dev/plans/item.md",
     rerun: false,
     reviewCeiling: 2,
@@ -111,7 +118,7 @@ test("coordinator rejects rerun while planning remains active", async () => {
         humanQuestions: [],
         findingDecisions: [],
       },
-      raw: {},
+      raw: unchangedWorkspace(),
       session: { provider: "cursor" as const, id: "planner-session" },
     };
   });
@@ -125,6 +132,176 @@ test("coordinator rejects rerun while planning remains active", async () => {
     "planning --rerun is allowed only from needs-human or failed",
   );
   expect(provider).toHaveBeenCalledTimes(1);
+});
+
+test("active Linear planning continuations require Planning status", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-cli-workspace-"));
+  const store = createStore();
+  const input = coordinatorInput(workspace, store, passingProvider([]));
+  await runOneFactoryPlanningAction(input);
+  const events = readFactoryActionEvents(
+    store.factoryStateRoot,
+    deriveFactoryWorkItemKey(input.workItem),
+  );
+  const state = reduceFactoryLifecycleEvents(events);
+  const latest = events.at(-1);
+  if (!state || !latest) throw new Error("active planning state missing");
+  const settings = linearConfig().factory.linear;
+  expect(() =>
+    assertLivePlanningStatus(
+      { ...input.workItem, metadata: { linearStatus: "Needs Plan" } },
+      settings,
+      false,
+      state,
+      latest,
+    ),
+  ).toThrow("is not valid for Factory planning");
+  expect(() =>
+    assertLivePlanningStatus(
+      { ...input.workItem, metadata: { linearStatus: "Planning" } },
+      settings,
+      false,
+      state,
+      latest,
+    ),
+  ).not.toThrow();
+});
+
+test("Linear planning start requires apply and projects before lifecycle or provider work", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-start-"));
+  const store = createStore();
+  const provider = vi.fn(passingProvider([])().run);
+  const base = {
+    ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+    workItem: {
+      id: "linear:ENG-101",
+      source: "linear" as const,
+      title: "Plan",
+      body: "",
+      labels: [],
+    },
+    itemFile: undefined,
+    linearIssue: "ENG-101",
+    issueRef: "ENG-101",
+  };
+
+  await expect(runOneFactoryPlanningAction(base)).rejects.toThrow(/--apply|apply/i);
+  expect(readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-101")).toEqual([]);
+  expect(provider).not.toHaveBeenCalled();
+
+  const ordering: string[] = [];
+  const applyPlanningStarted = vi.fn(async () => {
+    expect(readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-101")).toEqual([]);
+    ordering.push("projection");
+  });
+  provider.mockImplementation(async (input) => {
+    expect(readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-101").at(-1)?.type).toBe(
+      "planning.requested",
+    );
+    ordering.push("provider");
+    return passingProvider([])().run(input);
+  });
+  const result = await runOneFactoryPlanningAction({
+    ...base,
+    applyAdapter: { applyPlanningStarted } as never,
+  });
+  expect(result.linearApplied).toBe(true);
+  expect(ordering).toEqual(["projection", "provider"]);
+});
+
+test("failed Linear start projection leaves no lifecycle or provider result", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-start-"));
+  const store = createStore();
+  const provider = vi.fn(passingProvider([])().run);
+  const input = {
+    ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+    workItem: {
+      id: "linear:ENG-102",
+      source: "linear" as const,
+      title: "Plan",
+      body: "",
+      labels: [],
+    },
+    itemFile: undefined,
+    linearIssue: "ENG-102",
+    issueRef: "ENG-102",
+    applyAdapter: {
+      applyPlanningStarted: vi.fn(async () => {
+        throw new Error("Linear unavailable");
+      }),
+    } as never,
+  };
+
+  await expect(runOneFactoryPlanningAction(input)).rejects.toThrow("Linear unavailable");
+  expect(readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-102")).toEqual([]);
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test("terminal Linear wait projection is repaired only with explicit apply", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-wait-"));
+  const store = createStore();
+  const provider = vi.fn(async () => ({
+    ok: true as const,
+    structuredOutput: {
+      outcome: "needs-human" as const,
+      summary: "question",
+      humanQuestions: ["Which scope?"],
+      findingDecisions: [],
+    },
+    raw: unchangedWorkspace(),
+  }));
+  const applyPlanningStarted = vi.fn(async () => undefined);
+  const applyPlanningCompleted = vi.fn(async () => undefined);
+  const base = {
+    ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+    workItem: {
+      id: "linear:ENG-103",
+      source: "linear" as const,
+      title: "Plan",
+      body: "",
+      labels: [],
+    },
+    itemFile: undefined,
+    linearIssue: "ENG-103",
+    issueRef: "ENG-103",
+  };
+  const adapter = { applyPlanningStarted, applyPlanningCompleted } as never;
+  const first = await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
+  expect(first.next).toMatchObject({ kind: "wait", reason: "human" });
+  expect(applyPlanningCompleted).toHaveBeenCalledTimes(1);
+
+  const withoutApply = await runOneFactoryPlanningAction(base);
+  expect(withoutApply.linearApplied).toBe(false);
+  expect(applyPlanningCompleted).toHaveBeenCalledTimes(1);
+  const repaired = await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
+  expect(repaired.linearApplied).toBe(true);
+  expect(applyPlanningCompleted).toHaveBeenCalledTimes(2);
+  expect(provider).toHaveBeenCalledTimes(1);
+});
+
+test("coordinator propagates its abort signal to the planning provider", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-abort-"));
+  const store = createStore();
+  const abort = new AbortController();
+  const provider = vi.fn(async (input: AgentRunInput) => {
+    expect(input.signal).toBe(abort.signal);
+    return {
+      ok: true as const,
+      structuredOutput: {
+        outcome: "needs-human" as const,
+        summary: "question",
+        humanQuestions: ["Continue?"],
+        findingDecisions: [],
+      },
+      raw: unchangedWorkspace(),
+    };
+  });
+
+  await runOneFactoryPlanningAction({
+    ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+    signal: abort.signal,
+  });
+  expect(provider).toHaveBeenCalledOnce();
 });
 
 test("publication apply appends once and repairs its Linear projection on retry", async () => {
@@ -154,6 +331,8 @@ test("publication apply appends once and repairs its Linear projection on retry"
     workspace,
     workItem,
     linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    applyAdapter: { applyPlanningStarted: vi.fn(async () => undefined) } as never,
     outputPlan: "dev/plans/item.md",
     rerun: false,
     reviewCeiling: 2,
@@ -254,14 +433,14 @@ function passingProvider(calls: AgentRunInput[]) {
             humanQuestions: [],
             findingDecisions: [],
           },
-          raw: {},
+          raw: unchangedWorkspace(),
           session: { provider: "cursor" as const, id: "planner-session" },
         };
       }
       return {
         ok: true as const,
         structuredOutput: { verdict: "pass", summary: "approved", findings: [] },
-        raw: {},
+        raw: unchangedWorkspace(),
       };
     },
   });
@@ -289,4 +468,8 @@ function linearConfig() {
       },
     },
   };
+}
+
+function unchangedWorkspace() {
+  return { workspaceStatus: { before: "clean", after: "clean" } };
 }

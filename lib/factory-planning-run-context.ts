@@ -32,7 +32,7 @@ import type {
   AgentSessionRef,
 } from "./agents.ts";
 import { DEFAULT_AGENT_MODELS } from "./agents.ts";
-import type { FactoryRoleAgent } from "./config.ts";
+import { factoryActionExecutionProfile, type FactoryRoleAgent } from "./config.ts";
 import { buildRunId } from "./context.ts";
 import { parseLinearIssueIdentifier } from "./factory-linear-adapter.ts";
 import { renderFactoryPlanningSummary } from "./factory-planning-handoff.ts";
@@ -57,7 +57,6 @@ import {
   type FactoryExecutionProvenance,
   type FactoryStoreMeta,
 } from "./factory-store.ts";
-import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
 import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 
@@ -402,8 +401,8 @@ function createFactoryPlanningRunContextInternal(
         ),
         publicationMode: options.publicationMode ?? "local",
         actions: {
-          producePlanCandidate: planningExecutionProfile(options.plannerRole),
-          reviewPlanCandidate: planningExecutionProfile(options.reviewerRole),
+          producePlanCandidate: factoryActionExecutionProfile(options.plannerRole),
+          reviewPlanCandidate: factoryActionExecutionProfile(options.reviewerRole),
         },
       });
     }
@@ -584,19 +583,6 @@ function createFactoryPlanningRunContextInternal(
   }
 }
 
-function planningExecutionProfile(role: FactoryPlanningAgentRole): FactoryActionExecutionProfile {
-  if (role.agent === "cursor")
-    return { provider: "cursor", model: role.model ?? DEFAULT_AGENT_MODELS.cursor };
-  return {
-    provider: "codex",
-    model: role.model ?? DEFAULT_AGENT_MODELS.codex,
-    ...(role.codexPathOverride ? { executable: role.codexPathOverride } : {}),
-    sandbox: role.sandboxMode ?? "read-only",
-    approvalPolicy: role.approvalPolicy ?? "never",
-    reasoningEffort: role.modelReasoningEffort ?? "medium",
-  };
-}
-
 export type OpenFactoryPlanningRunContextOptions = {
   workspace: string;
   runsDir: string;
@@ -629,6 +615,7 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
   const eventSink = options.eventSink
     ? createCompositeEventSink(createFileEventSink(runDir), options.eventSink)
     : createFileEventSink(runDir);
+  let preparedScratch: ScratchIdentity | undefined;
   return {
     runId: identity.phaseRunId,
     runDir,
@@ -657,7 +644,12 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
       );
       if (!existsSync(scratchRunDir))
         createExclusiveScratchRunDir(scratchRunDir, identity.workspace, runDir);
-      validatePreparedScratch({ workspace: identity.workspace, scratchRunDir, runDir });
+      preparedScratch = validatePreparedScratch({
+        workspace: identity.workspace,
+        scratchRunDir,
+        runDir,
+        ...(preparedScratch ? { expected: preparedScratch } : {}),
+      });
       const draftPath = join(scratchRunDir, "draft.md");
       try {
         const draft = lstatSync(draftPath);
@@ -667,6 +659,21 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
         if (!isNodeError(error, "ENOENT")) throw error;
       }
       return { scratchRunDir, draftPath };
+    },
+    readPlannerDraft(): Buffer {
+      if (!preparedScratch) throw new DraftValidationError("parent-unsafe");
+      const scratchRunDir = join(
+        identity.workspace,
+        ".harness/factory-drafts",
+        identity.phaseRunId,
+      );
+      return readValidatedScratchDraft({
+        workspace: identity.workspace,
+        scratchRunDir,
+        draftPath: join(scratchRunDir, "draft.md"),
+        runDir,
+        expected: preparedScratch,
+      });
     },
   };
 }

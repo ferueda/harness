@@ -130,6 +130,8 @@ async function runPlanningCommand(options: PlanningOptions): Promise<void> {
     deriveFactoryWorkItemKey(resolved.workItem),
   );
   const state = reduceFactoryLifecycleEvents(events);
+  if (options.linearIssue && !options.apply && (!state || options.rerun))
+    throw new Error("Linear planning start and --rerun require --apply");
   if (options.linearIssue)
     assertLivePlanningStatus(
       resolved.workItem,
@@ -138,46 +140,52 @@ async function runPlanningCommand(options: PlanningOptions): Promise<void> {
       state,
       events.at(-1),
     );
-  const result = await runOneFactoryPlanningAction({
-    factoryStateRoot: store.factoryStateRoot,
-    factoryStore,
-    workspace,
-    workItem: resolved.workItem,
-    itemFile: options.itemFile,
-    linearIssue: options.linearIssue,
-    outputPlan: options.outputPlan,
-    rerun: options.rerun,
-    reviewCeiling: resolveFactoryPlanningSettingsFromSnapshot(snapshot).maxReviewIterations,
-    plannerRole: resolveFactoryRoleAgentFromSnapshot(snapshot, {
-      station: "planning",
-      role: "planner",
-    }),
-    reviewerRole: resolveFactoryRoleAgentFromSnapshot(snapshot, {
-      station: "planning",
-      role: "reviewer",
-    }),
-    maxRuntimeMs: options.maxRuntimeMs,
-    issueRef: options.linearIssue,
-    applyAdapter: options.apply
-      ? createLinearFactoryAdapter({
-          apiKey: process.env.LINEAR_API_KEY ?? "",
-          settings: linearSettings!,
-        })
-      : undefined,
-    factoryStoreRoot: options.factoryStoreRoot,
-    factoryStoreProjectId: options.factoryStoreProjectId,
-    repairStartProjection:
-      options.apply &&
-      state?.phase === "planning" &&
-      state.status === "awaiting-candidate" &&
-      events.at(-1)?.type === "planning.requested" &&
-      resolved.workItem.metadata?.linearStatus !== linearSettings?.statuses.planning,
-    eventSink: options.verbose ? (event) => console.error(JSON.stringify(event)) : undefined,
-  });
-  console.log(JSON.stringify(formatFactoryActionOutput({ phase: "planning", ...result }), null, 2));
+  const runAbort = new AbortController();
+  const onRunAbort = () => runAbort.abort();
+  process.once("SIGINT", onRunAbort);
+  process.once("SIGTERM", onRunAbort);
+  try {
+    const result = await runOneFactoryPlanningAction({
+      factoryStateRoot: store.factoryStateRoot,
+      factoryStore,
+      workspace,
+      workItem: resolved.workItem,
+      itemFile: options.itemFile,
+      linearIssue: options.linearIssue,
+      outputPlan: options.outputPlan,
+      rerun: options.rerun,
+      reviewCeiling: resolveFactoryPlanningSettingsFromSnapshot(snapshot).maxReviewIterations,
+      plannerRole: resolveFactoryRoleAgentFromSnapshot(snapshot, {
+        station: "planning",
+        role: "planner",
+      }),
+      reviewerRole: resolveFactoryRoleAgentFromSnapshot(snapshot, {
+        station: "planning",
+        role: "reviewer",
+      }),
+      maxRuntimeMs: options.maxRuntimeMs,
+      issueRef: options.linearIssue,
+      applyAdapter: options.apply
+        ? createLinearFactoryAdapter({
+            apiKey: process.env.LINEAR_API_KEY ?? "",
+            settings: linearSettings!,
+          })
+        : undefined,
+      factoryStoreRoot: options.factoryStoreRoot,
+      factoryStoreProjectId: options.factoryStoreProjectId,
+      eventSink: options.verbose ? (event) => console.error(JSON.stringify(event)) : undefined,
+      signal: runAbort.signal,
+    });
+    console.log(
+      JSON.stringify(formatFactoryActionOutput({ phase: "planning", ...result }), null, 2),
+    );
+  } finally {
+    process.off("SIGINT", onRunAbort);
+    process.off("SIGTERM", onRunAbort);
+  }
 }
 
-function assertLivePlanningStatus(
+export function assertLivePlanningStatus(
   workItem: FactoryWorkItem,
   settings: FactoryLinearSettings,
   rerun: boolean,
@@ -185,28 +193,30 @@ function assertLivePlanningStatus(
   latest: FactoryLifecycleEvent | undefined,
 ): void {
   const status = workItem.metadata?.linearStatus;
-  const pendingStartRepair =
-    state?.phase === "planning" &&
-    state.status === "awaiting-candidate" &&
-    state.attempt === 1 &&
-    latest?.type === "planning.requested";
-  const allowed =
-    state?.phase === "planning" && !rerun
-      ? pendingStartRepair
-        ? [
-            settings.statuses.planning,
-            settings.statuses.needsPlan,
-            settings.statuses.needsInfo,
-            settings.statuses.needsPlanReview,
-            settings.statuses.planningFailed,
-          ]
-        : [settings.statuses.planning]
-      : [
+  const active = Boolean(
+    state &&
+    latest &&
+    state.phase === "planning" &&
+    decideNextFactoryAction(state, latest).kind === "invoke",
+  );
+  const allowed = active
+    ? [settings.statuses.planning]
+    : !state || state.phase !== "planning" || rerun
+      ? [
           settings.statuses.needsPlan,
           settings.statuses.needsInfo,
           settings.statuses.needsPlanReview,
           settings.statuses.planningFailed,
-        ];
+        ]
+      : state.status === "failed"
+        ? [settings.statuses.planning, settings.statuses.planningFailed]
+        : state.status === "needs-human"
+          ? [
+              settings.statuses.planning,
+              settings.statuses.needsInfo,
+              settings.statuses.needsPlanReview,
+            ]
+          : [settings.statuses.planning, settings.statuses.needsPlanReview];
   if (
     typeof status !== "string" ||
     !allowed.some((value) => value.toLowerCase() === status.toLowerCase())
@@ -233,9 +243,9 @@ export async function runOneFactoryPlanningAction(input: {
   applyAdapter?: LinearFactoryAdapter;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
-  repairStartProjection?: boolean;
   eventSink?: WorkflowEventSink;
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
+  signal?: AbortSignal;
 }) {
   const agentProviderFactory = input.agentProviderFactory ?? createAgentProvider;
   let linearApplied = false;
@@ -265,6 +275,8 @@ export async function runOneFactoryPlanningAction(input: {
       }
       return { phaseRunId: state.phaseRunId, next: reaction!, linearApplied };
     }
+    if (input.linearIssue && !input.applyAdapter)
+      throw new Error("Linear planning start and --rerun require --apply");
     const created = createFactoryPlanningRunContext({
       workspace: input.workspace,
       runsDir: join(input.factoryStore.projectRoot, "runs/factory"),
@@ -278,7 +290,16 @@ export async function runOneFactoryPlanningAction(input: {
       agentProviderFactory,
       factoryStore: input.factoryStore,
       eventSink: input.eventSink,
+      signal: input.signal,
     });
+    if (input.applyAdapter) {
+      await input.applyAdapter.applyPlanningStarted({
+        issueRef: input.issueRef!,
+        runId: created.runId,
+        runDir: created.runDir,
+      });
+      linearApplied = true;
+    }
     if (!state) {
       const imported: FactoryLifecycleEvent = {
         version: 1,
@@ -327,14 +348,6 @@ export async function runOneFactoryPlanningAction(input: {
       expectedLastEventId: state!.lastEventId,
     }));
     reaction = decideNextFactoryAction(state, latest);
-    if (input.applyAdapter) {
-      await input.applyAdapter.applyPlanningStarted({
-        issueRef: input.issueRef!,
-        runId: created.runId,
-        runDir: created.runDir,
-      });
-      linearApplied = true;
-    }
   }
   if (!reaction || reaction.kind !== "invoke" || reaction.phase !== "planning")
     throw new Error("Factory planning has no invokable action");
@@ -347,14 +360,6 @@ export async function runOneFactoryPlanningAction(input: {
     factoryStore: input.factoryStore,
     eventSink: input.eventSink,
   });
-  if (input.repairStartProjection && input.applyAdapter) {
-    await input.applyAdapter.applyPlanningStarted({
-      issueRef: input.issueRef!,
-      runId: phaseRunId,
-      runDir: ctx.runDir,
-    });
-    linearApplied = true;
-  }
   console.error(
     JSON.stringify({
       harnessFactory: "action-started",
@@ -373,6 +378,7 @@ export async function runOneFactoryPlanningAction(input: {
           reaction,
           maxRuntimeMs: input.maxRuntimeMs,
           agentProviderFactory,
+          signal: input.signal,
         })
       : await reviewPlanCandidate({
           ctx,
@@ -380,6 +386,7 @@ export async function runOneFactoryPlanningAction(input: {
           reaction,
           maxRuntimeMs: input.maxRuntimeMs,
           agentProviderFactory,
+          signal: input.signal,
         });
   if (
     input.applyAdapter &&
