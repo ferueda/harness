@@ -98,6 +98,9 @@ export function renderFactoryImplementationChangeReviewHandoff(
           ...(implementationInput.sourceMaterial.url
             ? [`- Source URL: ${implementationInput.sourceMaterial.url}`]
             : []),
+          ...(implementationInput.sourceMaterial.body
+            ? [`- Task context: ${excerpt(implementationInput.sourceMaterial.body)}`]
+            : []),
         ];
 
   const statusLines = statusLine ? [statusLine, ""] : [];
@@ -241,4 +244,9 @@ function renderAgent(agent: FactoryStationAgentMeta): string {
 
 function renderLabels(labels: string[]): string {
   return labels.length > 0 ? labels.join(", ") : "none";
+}
+
+function excerpt(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 240 ? `${normalized.slice(0, 237)}...` : normalized;
 }

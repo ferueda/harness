@@ -107,7 +107,7 @@ test("direct dry-run writes source material artifacts", async () => {
   expectHandoffModel(handoff);
   expect(handoff).toContain("- Source title: Add factory implementation station shell");
   expect(handoff).toContain("- Source URL: https://linear.app/acme/issue/FER-47");
-  expect(handoff).not.toContain("- Body excerpt:");
+  expect(handoff).toContain("- Task context: Build the dry-run shell.");
   expect(handoff).not.toContain("- Tracker:");
   const summary = readFileSync(join(ctx.runDir, "summary.md"), "utf8");
   expect(summary).toContain("Source title: Add factory implementation station shell");
