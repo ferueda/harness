@@ -254,9 +254,12 @@ Run `harness factory planning run` once per printed reaction. Stop on human,
 failed, plan-merge, or approved waits. Review-driven revisions stay in the
 phase and resume the saved planner session; use `--rerun` only after human or
 failed waits. Item files materialize locally after review pass. Linear issues
-require explicit `planning publish` and `mark-plan-merged`; pass `--apply` on
-each command that may project a boundary. Never infer action progress from
-Linear status or comments. Implementation commands remain unavailable.
+require `--apply` for planning start and rerun, then explicit `planning publish`
+and `mark-plan-merged`. The durable planning request precedes its Linear
+projection; if projection fails, repeat that command with `--apply` to repair
+the same request before provider work. Pass `--apply` on each later command
+that should project a wait boundary. Never infer action progress from Linear
+status or comments. Implementation commands remain unavailable.
 
 ## Artifacts
 

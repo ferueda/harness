@@ -359,9 +359,14 @@ comments only; it does not mutate source files.
 plan review actions. Revisions resume the original planner session and receive
 only the latest `must_fix` findings. `--rerun` starts a fresh phase only after
 needs-human or failure. Item files publish approved plans locally; Linear
-issues wait for explicit `planning publish` and `mark-plan-merged`. `--apply`
-authorizes only that invocation's Linear boundary projection. Implementation
-actions remain unavailable.
+starts and reruns require `--apply`, then wait for explicit `planning publish`
+and `mark-plan-merged`. Factory validates and appends the planning request
+before projecting Linear to Planning; a failed projection leaves that one
+request pending for the next explicit `--apply` invocation and never reaches
+the provider. Later human, failure, and publication waits may persist Factory
+truth without `--apply` and repair their Linear projection later. `--apply`
+authorizes only that invocation's projection. Implementation actions remain
+unavailable.
 
 ## Local Inbox
 

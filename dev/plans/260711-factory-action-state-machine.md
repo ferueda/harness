@@ -313,14 +313,17 @@ Candidate/review/revision actions never become Linear board columns.
 
 Every invocation with `--linear-issue` performs a live read. Only that
 invocation's explicit `--apply` authorizes a mutation; authorization is not
-persisted or inherited. A new or restarted planning phase accepts only the
-configured Needs Plan, Needs Clarification, Plan Needs Review, or Planning
-Failed entry status and then projects Planning when `--apply` is present. A
-failed start projection may be repaired idempotently before the first provider
-result. Later continuations validate Planning without repeating the start move
-and apply only a human/terminal/publication boundary produced by their one
-action. Without `--apply`, local Factory truth advances and stdout reports the
-intended projection.
+persisted or inherited. A Linear-backed new or restarted planning phase
+requires `--apply` and accepts only the configured Needs Plan, Needs
+Clarification, Plan Needs Review, or Planning Failed entry status. The
+coordinator validates and durably appends `planning.requested` before projecting
+Planning, and it never invokes the provider until that projection succeeds. A
+failed start projection leaves that one request pending; the next explicit
+`--apply` repairs the same projection without appending another request. Later
+continuations validate Planning without repeating the start move and apply only
+a human/terminal/publication boundary produced by their one action. Those wait
+boundaries may persist Factory truth without `--apply` and repair their Linear
+projection on a later explicit `--apply` invocation.
 
 Remove status/comment-to-Factory-stage bootstrap. Linear validates a new phase
 entry and receives projections; the Factory log exclusively owns active run,
@@ -432,6 +435,9 @@ Changes:
   `factoryStage`, and the deleted workflow loop are not transition authority.
 - Add one planning-specific coordinator rather than a generic phase engine. A
   fresh command appends `planning.requested` and runs only candidate attempt 1.
+  Linear-backed starts and restarts require `--apply`; validate and append the
+  request before projecting Planning, and repair a pending request projection
+  before allowing its provider action.
   Every later command reopens the run and executes exactly the latest reaction,
   then recomputes but never invokes `next`. Do not carry forward the old
   planning `--dry-run` or monolithic output contract. Keep this wiring in
