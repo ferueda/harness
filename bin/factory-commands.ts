@@ -67,7 +67,7 @@ import {
   appendTriageTerminalEvent,
   appendWorkItemImportedEvent,
   formatLifecycleArtifactPath,
-} from "../lib/factory-lifecycle-writes.ts";
+} from "../lib/factory-lifecycle-writes-legacy.ts";
 import {
   deriveFactoryWorkItemKey,
   type FactoryLifecycleWarning,
@@ -415,7 +415,7 @@ export async function fetchFactoryLinearWorkItem(input: {
     workspace,
     factoryStateRoot,
     workItem: await adapter.fetchWorkItem(input.issue),
-    lifecycleReadMode: existsSync(join(factoryStateRoot, "store-format.json")) ? "none" : "inspect",
+    lifecycleReadMode: "none",
   });
   return {
     ...merged.workItem,
@@ -515,21 +515,10 @@ function addFactoryPlanningStationCommand(parent: Command, config: FactoryComman
     .option("--factory-store-root <path>", "durable factory store root")
     .option("--factory-store-project-id <id>", "durable factory store project id")
     .option("--apply", "apply deterministic Linear status/comment updates", false)
-    .action(async (options: FactoryPlanningPublishOptions) => {
-      const result = await runFactoryPlanningPublicationWithLinearApply({
-        mode: "publish",
-        runDir: options.runDir,
-        prUrl: options.prUrl,
-        issueRef: options.linearIssue,
-        apply: options.apply,
-        factoryStoreRoot: options.factoryStoreRoot,
-        factoryStoreProjectId: options.factoryStoreProjectId,
-        env: process.env,
-      });
-      console.log(JSON.stringify(result.output, null, 2));
-      if (result.terminalApplyError) {
-        throw result.terminalApplyError;
-      }
+    .action(async (_options: FactoryPlanningPublishOptions) => {
+      throw new FactoryPlanningError(
+        "Factory planning publication is unavailable until the planning action follow-up ships.",
+      );
     });
   planning
     .command("mark-plan-merged")
@@ -540,21 +529,10 @@ function addFactoryPlanningStationCommand(parent: Command, config: FactoryComman
     .option("--factory-store-root <path>", "durable factory store root")
     .option("--factory-store-project-id <id>", "durable factory store project id")
     .option("--apply", "apply deterministic Linear status/comment updates", false)
-    .action(async (options: FactoryPlanningMarkMergedOptions) => {
-      const result = await runFactoryPlanningPublicationWithLinearApply({
-        mode: "mark-plan-merged",
-        runDir: options.runDir,
-        commit: options.commit,
-        issueRef: options.linearIssue,
-        apply: options.apply,
-        factoryStoreRoot: options.factoryStoreRoot,
-        factoryStoreProjectId: options.factoryStoreProjectId,
-        env: process.env,
-      });
-      console.log(JSON.stringify(result.output, null, 2));
-      if (result.terminalApplyError) {
-        throw result.terminalApplyError;
-      }
+    .action(async (_options: FactoryPlanningMarkMergedOptions) => {
+      throw new FactoryPlanningError(
+        "Factory planning publication is unavailable until the planning action follow-up ships.",
+      );
     });
 }
 
@@ -587,6 +565,7 @@ function addFactoryImplementationStationCommand(
     .option("--dry-run", "prepare implementation prompt and handoff artifacts", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryImplementationStationOptions) => {
+      rejectUnavailableImplementation();
       validateFactoryApplyOptions(options);
       validateFactoryWorkItemInput(options);
       const implementerRole = resolveFactoryRoleAgent({
@@ -771,6 +750,10 @@ function addFactoryImplementationStationCommand(
         process.off("SIGTERM", onRunAbort);
       }
     });
+}
+
+function rejectUnavailableImplementation(): void {
+  throw new Error("Factory implementation is not available until its action follow-up ships.");
 }
 
 function implementationLinearProjection(settings: FactoryLinearSettings, apply: boolean) {
@@ -1013,6 +996,7 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
     .option("--dry-run", "prepare context and placeholder plan only", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(async (options: FactoryPlanningStationOptions) => {
+      rejectUnavailablePlanning();
       // Validate source flags before role/config resolution so CLI usage errors win.
       validateFactoryApplyOptions(options);
       validateFactoryWorkItemInput(options);
@@ -1119,6 +1103,10 @@ function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOpt
       process.exitCode =
         meta.status === "planning-failed" || meta.status === "plan-review-unresolved" ? 1 : 0;
     });
+}
+
+function rejectUnavailablePlanning(): void {
+  throw new Error("Factory planning is not available until its action follow-up ships.");
 }
 
 export async function runFactoryPlanningWithLinearApply(input: {
@@ -1277,11 +1265,6 @@ export async function runFactoryPlanningPublicationWithLinearApply(input: {
   if (!factoryStateRoot) {
     throw new FactoryPlanningError(
       "Factory planning publication requires a durable factoryStateRoot.",
-    );
-  }
-  if (existsSync(join(factoryStateRoot, "store-format.json"))) {
-    throw new FactoryPlanningError(
-      "Factory planning publication is not available against the PR 1 clean action store.",
     );
   }
   let applyAdapter: LinearFactoryAdapter | undefined;
@@ -1534,6 +1517,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         factoryStateRoot: store.factoryStateRoot,
         workItem: input.workItem,
         rerun: options.rerun,
+        dryRun: options.dryRun,
         issueRef: options.linearIssue ?? "",
         itemFile: options.itemFile,
         applyAdapter,
@@ -1593,6 +1577,7 @@ export async function runFactoryTriageWithLinearApply(input: {
   factoryStateRoot: string;
   workItem: FactoryWorkItem;
   rerun: boolean;
+  dryRun?: boolean;
   issueRef: string;
   itemFile?: string;
   applyAdapter?: LinearFactoryAdapter;
@@ -1602,9 +1587,6 @@ export async function runFactoryTriageWithLinearApply(input: {
     options: { nextLiveRunRequiresRerun: boolean },
   ) => Promise<FactoryRunMeta>;
   announceRunStarted?: (input: Parameters<typeof announceFactoryRunStarted>[0]) => void;
-  appendImported?: (input: Parameters<typeof appendWorkItemImportedEvent>[0]) => void;
-  appendStarted?: (input: Parameters<typeof appendTriageStartedEvent>[0]) => void;
-  appendTerminal?: (input: Parameters<typeof appendTriageTerminalEvent>[0]) => void;
 }): Promise<{
   meta: FactoryRunMeta;
   phaseRunId: string;
@@ -1614,24 +1596,14 @@ export async function runFactoryTriageWithLinearApply(input: {
   terminalUpdate?: LinearTriageUpdatePlan;
   terminalApplyError?: unknown;
 }> {
-  const usesLegacyTestSeams = Boolean(
-    input.appendImported || input.appendStarted || input.appendTerminal,
-  );
-  if (!usesLegacyTestSeams && !input.rerun) {
+  if (!input.dryRun && !input.rerun) {
     const recovered = await recoverTriageActionResult(input);
     if (recovered) return recovered;
   }
-  const policy = usesLegacyTestSeams
-    ? assertFactoryTriageAllowed({
-        factoryStateRoot: input.factoryStateRoot,
-        workItem: input.workItem,
-        rerun: input.rerun,
-      })
+  const policy = input.dryRun
+    ? { hadPriorCompletion: false }
     : assertFactoryActionTriageAllowed(input);
   const announceRunStarted = input.announceRunStarted ?? announceFactoryRunStarted;
-  const appendImported = input.appendImported ?? appendWorkItemImportedEvent;
-  const appendStarted = input.appendStarted ?? appendTriageStartedEvent;
-  const appendTerminal = input.appendTerminal ?? appendTriageTerminalEvent;
   const runTriage = input.runTriage ?? runFactoryTriage;
   const runAbort = new AbortController();
   const onRunAbort = () => runAbort.abort();
@@ -1639,7 +1611,7 @@ export async function runFactoryTriageWithLinearApply(input: {
   process.once("SIGTERM", onRunAbort);
   try {
     const ctx = input.createContext(runAbort.signal);
-    if (usesLegacyTestSeams || ctx.dryRun) {
+    if (ctx.dryRun) {
       announceRunStarted({
         station: "triage",
         runId: ctx.runId,
@@ -1650,7 +1622,7 @@ export async function runFactoryTriageWithLinearApply(input: {
     let actionRequest:
       | Extract<FactoryActionLifecycleEvent, { type: "triage.requested" }>
       | undefined;
-    if (!ctx.dryRun && !usesLegacyTestSeams) {
+    if (!ctx.dryRun) {
       const key = deriveFactoryWorkItemKey(input.workItem);
       const importedEvent: FactoryActionLifecycleEvent = {
         version: 1,
@@ -1689,24 +1661,6 @@ export async function runFactoryTriageWithLinearApply(input: {
           attempt: 1,
         }),
       );
-    } else if (!ctx.dryRun) {
-      const execution = lifecycleExecutionForRun(ctx.workspace, ctx.runDir, ctx.factoryStore);
-      appendImported({
-        workspace: ctx.workspace,
-        workItem: input.workItem,
-        factoryStateRoot: input.factoryStateRoot,
-        execution,
-      });
-      const itemFile = lifecycleItemFilePath(ctx.workspace, input.itemFile);
-      appendStarted({
-        workspace: ctx.workspace,
-        workItem: input.workItem,
-        runId: ctx.runId,
-        factoryStateRoot: input.factoryStateRoot,
-        execution,
-        ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
-        ...(itemFile ? { itemFile } : {}),
-      });
     }
     let startedUpdate: LinearTriageUpdatePlan | undefined;
     if (input.applyAdapter) {
@@ -1739,14 +1693,6 @@ export async function runFactoryTriageWithLinearApply(input: {
         expectedLastEventId: actionRequest.id,
       });
       next = decideNextFactoryAction(appended.state, appended.event);
-    } else if (!ctx.dryRun) {
-      appendTerminal({
-        workspace: ctx.workspace,
-        workItem: input.workItem,
-        meta,
-        triage: completedTriage,
-        factoryStateRoot: input.factoryStateRoot,
-      });
     }
     let terminalUpdate: LinearTriageUpdatePlan | undefined;
     let terminalApplyError: unknown;
@@ -1916,14 +1862,12 @@ function requireLinearApplyAdapter(
 }
 
 function assertLegacyPhaseStoreAvailable(
-  factoryStateRoot: string,
+  _factoryStateRoot: string,
   phase: "planning" | "implementation",
 ): void {
-  if (existsSync(join(factoryStateRoot, "store-format.json"))) {
-    throw new Error(
-      `Factory ${phase} action coordination is not available in PR 1; the clean action store will be supported by its dedicated follow-up PR.`,
-    );
-  }
+  throw new Error(
+    `Factory ${phase} action coordination is unavailable until its dedicated follow-up PR ships.`,
+  );
 }
 
 function readFactoryTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {

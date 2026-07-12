@@ -8,7 +8,7 @@ import {
   mergeFactoryStateIntoWorkItem,
   resolveFactoryStateRoot,
   type FactoryLifecycleWarning,
-} from "./factory-lifecycle.ts";
+} from "./factory-lifecycle-legacy.ts";
 import { type FactoryWorkItem } from "./factory-schemas.ts";
 import { assertFactoryItemFileExists, readFactoryWorkItemFile } from "./factory-run-context.ts";
 

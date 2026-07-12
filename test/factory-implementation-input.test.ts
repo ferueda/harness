@@ -6,7 +6,7 @@ import {
   appendFactoryLifecycleEvent,
   deriveFactoryWorkItemKey,
   resolveFactoryStateRoot,
-} from "../lib/factory-lifecycle.ts";
+} from "../lib/factory-lifecycle-legacy.ts";
 import {
   factoryImplementationAttempt,
   FactoryImplementationInputError,

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import { runFactoryTriageWithLinearApply } from "../bin/factory-commands.ts";
-import { appendFactoryLifecycleEvent } from "../lib/factory-lifecycle.ts";
 import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
 import { writeFactoryActionResult } from "../lib/factory-action-result.ts";
 import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
@@ -20,28 +19,6 @@ const WORK_ITEM: FactoryWorkItem = {
   labels: [],
   metadata: { tracker: { source: "linear", id: "ENG-37" } },
 };
-
-function completed(root: string): void {
-  appendFactoryLifecycleEvent({
-    factoryStateRoot: root,
-    event: {
-      version: 1,
-      id: "triage.completed:old-run",
-      type: "triage.completed",
-      workItemKey: "linear:ENG-37",
-      occurredAt: "2026-07-09T00:00:00.000Z",
-      runId: "old-run",
-      source: "harness",
-      data: {
-        route: "ready-to-plan",
-        nextAction: "create-plan",
-        rationale: "Needs plan",
-        routeArtifactPath: "factory-route.md",
-        triageArtifactPath: "factory-triage.json",
-      },
-    },
-  });
-}
 
 function context(workspace: string, dryRun: boolean): FactoryRunContext {
   const runDir = join(workspace, "runs/run-new");
@@ -81,45 +58,14 @@ function meta(ctx: FactoryRunContext): FactoryRunMeta {
   };
 }
 
-test.each([false, true])(
-  "completed history blocks before every side effect (dryRun=%s)",
-  async (dryRun) => {
-    const root = mkdtempSync(join(tmpdir(), "triage-apply-blocked-"));
-    completed(root);
-    const calls = [vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()];
-    const runTriage = vi.fn();
-    const applyTriageStarted = vi.fn();
-    await expect(
-      runFactoryTriageWithLinearApply({
-        factoryStateRoot: root,
-        workItem: WORK_ITEM,
-        rerun: false,
-        issueRef: "ENG-37",
-        createContext: calls[0]!,
-        announceRunStarted: calls[1]!,
-        appendImported: calls[2]!,
-        appendStarted: calls[3]!,
-        appendTerminal: calls[4]!,
-        runTriage,
-        applyAdapter: fakeLinearAdapter({ applyTriageStarted }),
-      }),
-    ).rejects.toThrow(/--rerun/);
-    for (const call of calls) expect(call).not.toHaveBeenCalled();
-    expect(runTriage).not.toHaveBeenCalled();
-    expect(applyTriageStarted).not.toHaveBeenCalled();
-  },
-);
-
 test.each([
   { prior: false, dryRun: true, expected: false },
-  { prior: true, dryRun: true, expected: true },
   { prior: false, dryRun: false, expected: true },
 ])(
   "passes rerun guidance and apply intent: $prior/$dryRun",
   async ({ prior, dryRun, expected }) => {
     const workspace = mkdtempSync(join(tmpdir(), "triage-apply-run-"));
     const root = join(workspace, "state");
-    if (prior) completed(root);
     const ctx = context(workspace, dryRun);
     writeFileSync(
       join(ctx.runDir, "factory-triage.json"),
@@ -155,9 +101,6 @@ test.each([
       issueRef: "ENG-37",
       createContext: () => ctx,
       announceRunStarted: () => {},
-      appendImported: () => {},
-      appendStarted: () => {},
-      appendTerminal: () => {},
       runTriage,
       applyAdapter: fakeLinearAdapter({
         applyTriageStarted: started,

@@ -8,7 +8,7 @@ import {
   withFactoryImplementationExecutionLease,
 } from "../lib/factory-implementation-policy.ts";
 import { acquireFactoryWorkItemLock, releaseFactoryWorkItemLock } from "../lib/factory-locks.ts";
-import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
+import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle-legacy.ts";
 
 const workItem = {
   id: "linear:ENG-12",

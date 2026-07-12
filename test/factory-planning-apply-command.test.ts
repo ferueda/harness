@@ -7,7 +7,10 @@ import {
   runFactoryPlanningPublicationWithLinearApply,
   runFactoryPlanningWithLinearApply,
 } from "../bin/factory-commands.ts";
-import { deriveFactoryWorkItemKey, loadFactoryLifecycleState } from "../lib/factory-lifecycle.ts";
+import {
+  deriveFactoryWorkItemKey,
+  loadFactoryLifecycleState,
+} from "../lib/factory-lifecycle-legacy.ts";
 import type {
   FactoryPlanningRunContext,
   FactoryPlanningRunMeta,

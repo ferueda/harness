@@ -88,16 +88,6 @@ harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --rerun --apply
-harness factory planning run --workspace /path/to/repo --item-file work-item.json
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
-harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
-harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123 --linear-issue TEAM-123 --apply
-harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234 --linear-issue TEAM-123 --apply
-harness factory implementation run --workspace /path/to/repo --item-file work-item.json
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 ```
 
 Low-level workflow escape hatches:
@@ -270,147 +260,9 @@ action event in the durable factory store. Dry-run does not mutate lifecycle
 state. The strict state projection and pure next-reaction function own machine
 progress; Linear status/comments remain human board projections.
 
-## Planning
+## Unshipped phases
 
-Not available after a clean PR-1 action store is initialized. The planning
-action coordinator ships in the dedicated follow-up PR; do not use the legacy
-instructions below against `store-format.json` version 1.
-
-Run planning only for allowed planning entry stages: `ready-to-plan`,
-`plan-needs-human`, `plan-review-unresolved`, or `planning-failed`.
-
-```bash
-harness factory planning run --workspace /path/to/repo --item-file work-item.json
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-```
-
-`--linear-issue` planning requires `LINEAR_API_KEY` and `factory.linear` config.
-Every Linear-backed planning run performs a live Linear read before writing
-local factory artifacts. If `factory.linear.projectId` is set, the issue must
-belong to that project. It accepts `Needs Plan`, `Planning Failed`,
-`Plan Needs Review`, plus planning-attention `Needs Clarification` identified
-from the latest factory planning marker; other Linear statuses are rejected
-before creating a run directory.
-
-Live planning runs the planner/reviewer loop. Add `--apply` to move the issue
-to `Planning` before planner work, then post one marker comment after the
-station finishes. Approved plans stay in `Planning`; human questions move to
-`Needs Clarification`; unresolved reviews move to `Plan Needs Review`;
-station/runtime failures move to `Planning Failed`. Planning apply never moves
-the issue to `Ready to Implement`.
-
-Factory plans are minimum-sufficient: they preserve the explicit task and
-project intent, choose the smallest coherent change, and include only decisions
-and verification tied to a requirement, invariant, or demonstrated risk. The
-default three completed reviews allow two revisions. Review artifacts retain every
-finding; only `must_fix` findings return to the planner.
-
-The planner writes only the mutable draft at
-`.harness/factory-drafts/<run-id>/draft.md` in the workspace. Harness validates
-that ignored scratch, publishes canonical and immutable snapshots in the
-durable factory store, runs `plan-review` on the immutable snapshot, and
-reinvokes the same planner session for review findings. Scratch is retained,
-non-authoritative agent state; revisions edit the same path and add a new
-immutable snapshot. Never write durable `planning/draft.md` directly.
-
-Terminal statuses:
-
-- `plan-approved`
-- `plan-needs-human`
-- `plan-review-unresolved`
-- `planning-failed`
-
-Live planning appends lifecycle events in the durable factory store. Future station
-decisions should use the lifecycle read model when present instead of parsing
-recent Linear marker comments.
-
-## Implementation
-
-Not available after a clean PR-1 action store is initialized. The
-implementation action coordinator ships in its dedicated follow-up PR; do not
-use the legacy instructions below against `store-format.json` version 1.
-
-Run implementation only for work items already ready to implement:
-
-```bash
-harness factory implementation run --workspace /path/to/repo --item-file work-item.json
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-```
-
-Entry matrix:
-
-| Input        | Flags               | Entry status                                           | Linear mutation |
-| ------------ | ------------------- | ------------------------------------------------------ | --------------- |
-| item file    | live or `--dry-run` | direct/planned readiness                               | no              |
-| Linear issue | live or `--dry-run` | `Ready to Implement`                                   | no              |
-| Linear issue | live `--apply`      | `Ready to Implement`, or `Implementation Failed` retry | yes             |
-
-`--apply` requires `--linear-issue` and rejects `--item-file` and `--dry-run`.
-Retries are Linear apply-only so the station can validate a fresh failed
-projection before changing it.
-
-Live mode resolves direct or planned implementation input, validates readiness,
-resolves `factory.implementation.roles.implementer`, invokes one implementer,
-writes candidate change artifacts, creates
-`refs/harness/factory/<run-id>/implementation`, and appends lifecycle events.
-It does not run change-review, and without `--apply` does not mutate Linear, create human branches/worktrees,
-or open PRs. After `implementation-complete`, run
-`harness run change-review --base <reviewBase> --head <reviewHead>` separately.
-Optional `--dry-run` prepares prompt and handoff artifacts without invoking a
-provider or writing lifecycle state.
-
-Planned mode requires `factoryStage: "plan-approved"`, `approvedPlanPath`, and
-`approvedPlanCommit`; the approved plan file must exist in the workspace. Direct
-mode requires `factoryStage: "ready-to-implement"`,
-`factoryRoute: "ready-to-implement"`, and
-`factoryNextAction: "implement-directly"`. For Linear-backed input, Linear
-`Ready to Implement` is a projection consistency guard; lifecycle metadata is
-the source of truth.
-
-Live runs hold a per-work-item execution lease from the final input refresh
-through provider execution, local terminal lifecycle, and requested Linear
-terminal projection. Contention fails immediately. Same-host dead-process
-leases are recoverable. Remote-host leases never expire by age; remove one
-only after independently verifying its owner has stopped.
-
-Apply moves a first run from `Ready to Implement` to `Implementing`; retry
-moves `Implementation Failed` to `Implementing`. Completion leaves the issue
-in `Implementing` and posts the review handoff marker. Failure moves it to
-`Implementation Failed` and posts the retry marker. The command re-fetches and
-checks scope/status immediately before mutations; the implementer must not
-write the tracker.
-
-On start apply failure, no provider runs and `meta.json` truthfully omits
-prompt, handoff, and events paths. On a later terminal apply failure, local
-lifecycle and run artifacts remain terminal, stdout reports
-`linearApplied: false`, and the command exits non-zero. Inspect `meta.json` and
-`linearUpdate`; partial terminal progress identifies whether the status
-mutation/postcondition completed, whether the marker comment is present, and
-the intended marker/body. Manually complete only the missing Linear projection
-from that evidence; do not rerun the provider solely to repair it. There is no
-terminal-projection replay command in this slice.
-
-Live implementation artifacts:
-
-```text
-${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/
-  context/
-    work-item.json
-    implementation-input.json
-    plan-ref.json              # planned only
-    source-material.json       # direct only
-  implementation/
-    prompt.md
-    implementer.raw.json
-    implementer.stream.jsonl   # when provider streams
-    workspace-status.json
-    diff.patch
-    change-review-handoff.md
-  events.jsonl
-  summary.md
-  meta.json
-```
+Planning and implementation commands are intentionally unavailable in PR 1. Wait for their dedicated action-coordinator PRs; do not invoke legacy station flows or infer progress from tracker state.
 
 ## Artifacts
 

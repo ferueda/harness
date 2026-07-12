@@ -22,7 +22,7 @@ import {
   resolveFactoryStateRoot,
   workItemKeyToFilename,
   type FactoryLifecycleEvent,
-} from "../lib/factory-lifecycle.ts";
+} from "../lib/factory-lifecycle-legacy.ts";
 import {
   FACTORY_LOCK_STALE_MS,
   FactoryLifecycleLockTimeoutError,
@@ -36,7 +36,7 @@ import {
   appendImplementationStartedEvent,
   appendImplementationTerminalEvent,
   formatLifecycleArtifactPath,
-} from "../lib/factory-lifecycle-writes.ts";
+} from "../lib/factory-lifecycle-writes-legacy.ts";
 import type { FactoryImplementationRunMeta } from "../lib/factory-implementation-run-context.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 

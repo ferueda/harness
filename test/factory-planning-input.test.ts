@@ -2,7 +2,10 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { appendFactoryLifecycleEvent, resolveFactoryStateRoot } from "../lib/factory-lifecycle.ts";
+import {
+  appendFactoryLifecycleEvent,
+  resolveFactoryStateRoot,
+} from "../lib/factory-lifecycle-legacy.ts";
 import { assertFactoryPlanningLinearEntry } from "../lib/factory-planning-input.ts";
 import { createFactoryPlanningRunContextForTest } from "../lib/factory-planning-run-context.ts";
 import { resolveFactoryWorkItemInput } from "../lib/factory-triage-input.ts";

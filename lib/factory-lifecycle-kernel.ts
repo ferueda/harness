@@ -10,7 +10,7 @@ import {
   writeSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { ensureFactoryStoreFormat } from "./factory-store-format.ts";
 import {
   parseFactoryLifecycleEvent,
@@ -22,7 +22,6 @@ import {
   type FactoryLifecycleState,
 } from "./factory-state-machine.ts";
 import { withFactoryWorkItemLock, type FactoryLockRuntimeOptions } from "./factory-locks.ts";
-import { workItemKeyToFilename } from "./factory-lifecycle.ts";
 
 export class FactoryLifecycleConflictError extends Error {
   constructor(message: string) {
@@ -126,4 +125,14 @@ function writeAtomic(path: string, value: unknown): void {
   const temp = `${path}.${randomUUID()}.tmp`;
   writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   renameSync(temp, path);
+}
+
+function workItemKeyToFilename(workItemKey: string): string {
+  const readable =
+    workItemKey
+      .replace(/[^A-Za-z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "work-item";
+  return `${readable}-${createHash("sha256").update(workItemKey).digest("hex").slice(0, 12)}`;
 }

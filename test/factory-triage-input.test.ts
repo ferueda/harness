@@ -8,7 +8,7 @@ import {
   factoryLifecycleStatePath,
   resolveFactoryStateRoot,
   workItemKeyToFilename,
-} from "../lib/factory-lifecycle.ts";
+} from "../lib/factory-lifecycle-legacy.ts";
 import { FactoryLifecycleLockTimeoutError } from "../lib/factory-locks.ts";
 import {
   assertFactoryItemFileExists,

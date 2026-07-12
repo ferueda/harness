@@ -1,4 +1,7 @@
-import { deriveFactoryWorkItemKey, readFactoryLifecycleEvents } from "./factory-lifecycle.ts";
+import {
+  deriveFactoryWorkItemKey,
+  readFactoryLifecycleEvents,
+} from "./factory-lifecycle-legacy.ts";
 import type { FactoryWorkItem } from "./factory-schemas.ts";
 
 export type FactoryTriagePolicyResult = {

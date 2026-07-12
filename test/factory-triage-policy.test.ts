@@ -7,7 +7,7 @@ import {
   deriveFactoryWorkItemKey,
   factoryLifecycleEventPath,
   type FactoryLifecycleEvent,
-} from "../lib/factory-lifecycle.ts";
+} from "../lib/factory-lifecycle-legacy.ts";
 import { assertFactoryTriageAllowed } from "../lib/factory-triage-policy.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 
