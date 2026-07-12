@@ -256,8 +256,6 @@ const LINEAR_LIST_DEPS = {
   resolveOptional,
   assertTeamMatches,
   assertProjectMatches,
-  factoryStageForStatus,
-  normalizeName,
   canonicalTeamKey,
   assigneeName,
   formatDate,
@@ -428,6 +426,7 @@ async function applyTriageCompleted(
     settings,
     linearTriageTargetStatus(settings, input.triage.route),
   );
+  assertLinearTriageTerminalApplyAllowed(settings, state?.name, target.name);
   await updateIssueStatusIfNeeded(client, issue, state, target);
 
   const commentMarker = linearTriageCommentMarker(input.runId);
@@ -488,6 +487,7 @@ async function applyTriageFailed(
   const state = await resolveOptional(issue.state);
   await assertIssueInConfiguredScope(issue, settings);
   const target = await fetchWorkflowState(client, settings, settings.statuses.triageFailed);
+  assertLinearTriageTerminalApplyAllowed(settings, state?.name, target.name);
   await updateIssueStatusIfNeeded(client, issue, state, target);
 
   const commentMarker = linearTriageFailedCommentMarker(input.runId);
@@ -515,6 +515,17 @@ async function applyTriageFailed(
   };
 }
 
+function assertLinearTriageTerminalApplyAllowed(
+  settings: FactoryLinearSettings,
+  currentStatus: string | undefined,
+  targetStatus: string,
+): void {
+  if (currentStatus === settings.statuses.triaging || currentStatus === targetStatus) return;
+  throw new Error(
+    `Linear triage terminal apply requires ${settings.statuses.triaging} or ${targetStatus}; issue is in ${currentStatus ?? "unknown"}.`,
+  );
+}
+
 async function fetchWorkItem(
   client: LinearClientLike,
   settings: FactoryLinearSettings,
@@ -539,9 +550,6 @@ async function fetchWorkItem(
       id: issue.identifier,
       url: issue.url,
     },
-    factoryStage: state
-      ? factoryStageForStatus(settings, state.name, commentResult.comments)
-      : undefined,
     linearIssueId: issue.id,
     linearIssueIdentifier: issue.identifier,
     linearTeamKey: team.key,
@@ -810,35 +818,6 @@ function renderLinearIssueBody(issue: LinearIssueLike, comments: LinearCommentLi
     );
   }
   return sections.join("\n\n");
-}
-
-function factoryStageForStatus(
-  settings: FactoryLinearSettings,
-  statusName: string,
-  comments: LinearCommentLike[] = [],
-): FactoryStage | undefined {
-  // Bootstrap fallback only. Durable lifecycle state is canonical; workspace-local state is legacy.
-  const normalized = normalizeName(statusName);
-  const statuses = settings.statuses;
-  if (normalized === normalizeName(statuses.intake)) return "incoming";
-  if (normalized === normalizeName(statuses.triaging)) return "triaging";
-  if (normalized === normalizeName(statuses.needsInfo)) {
-    const stage = linearPlanningAttentionStageFromComments(comments);
-    return stage === "plan-needs-human" ? stage : "needs-info";
-  }
-  if (normalized === normalizeName(statuses.needsPlan)) return "ready-to-plan";
-  if (normalized === normalizeName(statuses.needsPlanReview)) return "plan-review-unresolved";
-  if (normalized === normalizeName(statuses.readyToImplement)) return "ready-to-implement";
-  if (normalized === normalizeName(statuses.implementing)) {
-    return "implementation-started";
-  }
-  if (normalized === normalizeName(statuses.implementationFailed)) {
-    return "implementation-failed";
-  }
-  if (normalized === normalizeName(statuses.parked)) return "wait-to-implement";
-  if (normalized === normalizeName(statuses.planning)) return "planning";
-  if (normalized === normalizeName(statuses.planningFailed)) return "planning-failed";
-  return undefined;
 }
 
 async function resolveOptional<T>(

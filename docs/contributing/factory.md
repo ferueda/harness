@@ -42,20 +42,12 @@ harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
-harness factory planning run --workspace /path/to/repo --item-file work-item.json
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123
-harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory planning publish --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --pr-url https://github.com/owner/repo/pull/123
-harness factory planning mark-plan-merged --run-dir /path/to/store/projects/<repo-id>/runs/factory/<run-id> --commit abc1234
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
-harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 ```
 
 There is no batch dispatch command. Run an explicit station for an explicit
 work item while this surface is still local-first.
 
-Triage, planning, and implementation station commands emit one always-on
+Triage commands emit one always-on
 stderr JSON progress line after run context creation and before provider work
 or Linear `--apply` started mutations:
 
@@ -101,13 +93,7 @@ Tracker adapters can attach reserved metadata under `metadata`:
       "id": "owner/repo#123",
       "url": "https://github.com/owner/repo/issues/123"
     },
-    "factoryRoute": "ready-to-plan",
-    "factoryNextAction": "create-plan",
-    "factoryStage": "plan-pr-open",
-    "factoryRunId": "20260707-120000",
-    "approvedPlanPath": "dev/plans/GH-123.md",
-    "approvedPlanPrUrl": "https://github.com/owner/repo/pull/123",
-    "approvedPlanCommit": "abc1234"
+    "linearStatus": "Backlog"
   },
   "title": "..."
 }
@@ -270,10 +256,8 @@ LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/rep
 
 The fetch command is read-only. It verifies the issue belongs to the configured
 `factory.linear.projectId` when set, fetches the issue description, labels, and
-recent comments, merges lifecycle state when present, then prints JSON suitable
-for `--item-file`. Comment-derived planning-attention stages such as
-`plan-needs-human` require fetch; list mode does not read comments and omits
-`factoryStage` for the configured `needsInfo` status.
+recent comments, then prints JSON suitable for `--item-file`. Tracker status
+remains tracker metadata; fetch and list never derive Factory machine state.
 
 ### Linear Create
 
@@ -300,8 +284,8 @@ Linear team and project serve different purposes:
 - `projectId` scopes the target repo. Use it when multiple repo projects share
   one Linear team.
 
-When `projectId` is configured, Linear-backed list, fetch, triage, planning
-input, and triage apply reject issues outside that project before running
+When `projectId` is configured, Linear-backed list, fetch, triage input, and
+triage apply reject issues outside that project before running
 station work or mutating Linear. Local `--item-file` inputs are not revalidated
 against Linear.
 
@@ -317,29 +301,6 @@ LINEAR_API_KEY=... harness factory triage --workspace /path/to/repo --linear-iss
 `--linear-issue` triage invocation performs a live Linear read before creating
 local factory artifacts. Linear-backed triage currently uses Linear only as the
 input source unless `--apply` is passed.
-
-The planning station can fetch Linear directly too:
-
-```bash
-LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --linear-issue ENG-123
-LINEAR_API_KEY=... harness factory planning run --workspace /path/to/repo --linear-issue ENG-123 --apply
-```
-
-Linear-backed planning performs a live Linear read, validates configured project
-scope when set, validates that the issue maps to `Needs Plan` or
-`Planning Failed`, `Needs Clarification`, or `Plan Needs Review`, then runs the
-existing planning station from the fetched `FactoryWorkItem`. It writes local
-factory artifacts and, for live approved runs, the reviewed plan under
-`dev/plans/<issue-key>.md`.
-
-Planning `--apply` is Linear-only and cannot be combined with `--item-file` or
-`--dry-run`. It moves allowed entry statuses (`Needs Plan`,
-`Needs Clarification`, `Plan Needs Review`, or `Planning Failed`) to
-`Planning`, runs the station, posts one deterministic planning outcome comment,
-and moves human questions to `Needs Clarification`, unresolved reviews to
-`Plan Needs Review`, and station/runtime failures to `Planning Failed`.
-It never moves Linear to `Ready to Implement`; that happens only after the plan
-PR is opened, merged, and recorded by the plan-merge handoff.
 
 Triage `--apply` is also Linear-only and cannot be combined with `--item-file`
 or `--dry-run`. It moves allowed entry statuses (`Backlog`,
@@ -360,34 +321,8 @@ intentional re-triage. Normal apply retains the three entry statuses above;
 team/project scope checks. The new completion invalidates prior approved plan
 path, PR URL, and commit metadata.
 
-Comment dedupe and planning-attention detection check the most recent Linear
-comments fetched by the adapter (currently 20). If the relevant marker is older
-than that window, a retry may post another marker comment or classify
-`Needs Clarification` as generic human input instead of a planning re-entry
-state.
-
-Linear status is human board state. The adapter maps statuses as a bootstrap
-fallback when no lifecycle log exists:
-
-- `Backlog` -> `incoming`
-- `Triaging` -> `triaging`
-- `Needs Clarification` -> `needs-info`
-- `Plan Needs Review` -> `plan-review-unresolved`
-- `Needs Plan` -> `ready-to-plan`
-- `Ready to Implement` -> `ready-to-implement`
-- `Implementing` -> `implementation-started`
-- `Implementation Failed` -> `implementation-failed`
-- `Parked` -> `wait-to-implement`
-- `Planning` -> `planning`
-- `Planning Failed` -> `planning-failed`
-
-When `Needs Clarification` carries the latest factory planning marker for
-`plan-needs-human`, the adapter preserves that planning-attention stage in
-metadata as a bootstrap fallback. When lifecycle state exists, planning uses
-the lifecycle read model instead of recent marker comments.
-
-`Triage Failed` is kept as `metadata.linearStatus`; it is not a `factoryStage`
-today.
+Linear status is human board state, not Factory machine state. The action log
+alone drives Factory transitions.
 
 ## Triage Station
 
@@ -402,7 +337,7 @@ harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --apply
 Routes:
 
 - `ready-to-implement`: small and scoped enough for direct implementation.
-- `ready-to-plan`: should go through the planning station first.
+- `ready-to-plan`: planning is required, but its executable action ships after PR 1.
 - `needs-info`: requires human answers before rerun.
 - `wait-to-implement`: valid but parked until `reconsiderWhen`.
 
@@ -477,9 +412,7 @@ Stop and re-check scope if the work requires:
 - moving every inbox item in a batch
 - mutating GitHub, Jira, or Inngest from current station commands
 - mutating Linear outside documented `harness factory linear create` or explicit
-  `harness factory triage --linear-issue ... --apply`,
-  `harness factory planning run --linear-issue ... --apply`, or explicit
-  planning publication commands with `--linear-issue ... --apply`
+  `harness factory triage --linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked files

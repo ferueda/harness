@@ -41,7 +41,7 @@ const ReviewVerdict = z.enum(["pass", "needs_changes", "blocked", "human_require
 export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
     type: z.literal("work_item.imported"),
-    data: z.object({ source: z.string().min(1), title: z.string().min(1) }).strict(),
+    data: z.object({ source: z.string().min(1) }).strict(),
   }),
   Base.extend({
     type: z.literal("triage.requested"),
@@ -145,4 +145,20 @@ export type FactoryActionEvent = Extract<
 
 export function parseFactoryLifecycleEvent(value: unknown): FactoryLifecycleEvent {
   return FactoryLifecycleEventSchema.parse(value);
+}
+
+export function parseFactoryActionEvent(value: unknown): FactoryActionEvent {
+  const event = parseFactoryLifecycleEvent(value);
+  switch (event.type) {
+    case "triage.work_item.completed":
+    case "planning.candidate.produced":
+    case "planning.input.required":
+    case "planning.review.completed":
+    case "implementation.candidate.produced":
+    case "implementation.review.completed":
+    case "factory.action.failed":
+      return event;
+    default:
+      throw new Error(`Expected Factory action event, received ${event.type}`);
+  }
 }

@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { ensureFactoryStoreFormat } from "./factory-store-format.ts";
+import { assertFactoryStoreFormat, ensureFactoryStoreFormat } from "./factory-store-format.ts";
 import {
   parseFactoryLifecycleEvent,
   type FactoryLifecycleEvent,
@@ -43,7 +43,7 @@ export function actionLifecycleStatePath(root: string, key: string): string {
   return join(resolve(root), "state", `${workItemKeyToFilename(key)}.json`);
 }
 export function readFactoryActionEvents(root: string, key: string): FactoryLifecycleEvent[] {
-  ensureFactoryStoreFormat(root);
+  assertFactoryStoreFormat(root);
   const path = actionLifecycleEventPath(root, key);
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8")

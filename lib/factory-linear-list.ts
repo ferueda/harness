@@ -6,7 +6,6 @@ import type {
   LinearTeamLike,
   LinearUserLike,
 } from "./factory-linear-types.ts";
-import type { FactoryStage } from "./factory-schemas.ts";
 
 const DEFAULT_LIST_PAGE_SIZE = 50;
 const MAX_LIST_PAGE_SIZE = 100;
@@ -28,7 +27,6 @@ export type LinearIssueSummary = {
   url: string;
   status?: string;
   statusType?: string;
-  factoryStage?: FactoryStage;
   projectId?: string;
   projectName?: string;
   projectUrl?: string;
@@ -68,11 +66,6 @@ type LinearListDeps = {
     settings: FactoryLinearSettings,
     project: LinearProjectLike | undefined,
   ) => string | undefined;
-  factoryStageForStatus: (
-    settings: FactoryLinearSettings,
-    statusName: string,
-  ) => FactoryStage | undefined;
-  normalizeName: (value: string) => string;
   canonicalTeamKey: (value: string) => string;
   assigneeName: (user: LinearUserLike | undefined) => string | undefined;
   formatDate: (value: Date | string | undefined) => string | undefined;
@@ -171,8 +164,6 @@ async function linearIssueSummary(
   ]);
   deps.assertTeamMatches(issue, settings, team);
   const linearProjectId = deps.assertProjectMatches(issue, settings, project);
-  const isCommentDerivedStage =
-    state && deps.normalizeName(state.name) === deps.normalizeName(settings.statuses.needsInfo);
 
   const summary: LinearIssueSummary = {
     id: `linear:${issue.identifier}`,
@@ -183,10 +174,6 @@ async function linearIssueSummary(
   };
   if (state?.name) summary.status = state.name;
   if (state?.type) summary.statusType = state.type;
-  if (state && !isCommentDerivedStage) {
-    const factoryStage = deps.factoryStageForStatus(settings, state.name);
-    if (factoryStage) summary.factoryStage = factoryStage;
-  }
   if (linearProjectId) summary.projectId = linearProjectId;
   if (project?.name) summary.projectName = project.name;
   if (project?.url) summary.projectUrl = project.url;

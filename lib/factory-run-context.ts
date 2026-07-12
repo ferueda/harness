@@ -106,6 +106,7 @@ export type FactoryRunContextFactoryOptions = {
   eventSink?: WorkflowEventSink;
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
   factoryStore?: FactoryStoreMeta;
+  existingRunId?: string;
 };
 
 const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -168,15 +169,27 @@ function createFactoryRunContextInternal(
   }
 
   const startedAt = new Date();
-  const runId = buildRunId(startedAt);
+  const runId = options.existingRunId ?? buildRunId(startedAt);
   const runDir = join(resolve(options.runsDir ?? join(workspace, ".harness/runs/factory")), runId);
-  const prompt = renderPrompt(options.workItem);
+  const workItem = options.existingRunId
+    ? readFactoryWorkItemFile(join(runDir, "context/work-item.json"))
+    : options.workItem;
+  const prompt = renderPrompt(workItem);
   let triageProvider: Agent;
   try {
-    mkdirSync(runDir, { recursive: true });
-    mkdirSync(join(runDir, "context"), { recursive: true });
-    writeJson(join(runDir, "context/work-item.json"), options.workItem);
-    writeFileSync(join(runDir, "factory-triage.prompt.md"), prompt, "utf8");
+    if (options.existingRunId) {
+      if (
+        !existsSync(join(runDir, "context/work-item.json")) ||
+        !existsSync(join(runDir, "factory-triage.prompt.md"))
+      ) {
+        throw new FactoryTriageError(`Factory phase run is incomplete: ${runDir}`);
+      }
+    } else {
+      mkdirSync(runDir, { recursive: true });
+      mkdirSync(join(runDir, "context"), { recursive: true });
+      writeJson(join(runDir, "context/work-item.json"), workItem);
+      writeFileSync(join(runDir, "factory-triage.prompt.md"), prompt, "utf8");
+    }
 
     const agentProviderFactory = options.agentProviderFactory;
     if (!agentProviderFactory) {
@@ -187,7 +200,7 @@ function createFactoryRunContextInternal(
       codexPathOverride: options.codexPathOverride,
     });
   } catch (error) {
-    cleanupOrphanedFactoryRunDir(runDir);
+    if (!options.existingRunId) cleanupOrphanedFactoryRunDir(runDir);
     throw asFactoryTriageError(error);
   }
 
@@ -207,7 +220,7 @@ function createFactoryRunContextInternal(
     runId,
     runDir,
     workspace,
-    workItem: options.workItem,
+    workItem,
     factoryStore: options.factoryStore,
     dryRun: options.dryRun,
     eventSink,
@@ -259,12 +272,12 @@ function createFactoryRunContextInternal(
         writeJson(join(runDir, "factory-route.json"), input.routePlan);
         writeFileSync(
           join(runDir, "factory-route.md"),
-          renderFactoryRouteMarkdown(options.workItem, input.triage, input.routePlan),
+          renderFactoryRouteMarkdown(workItem, input.triage, input.routePlan),
           "utf8",
         );
         writeFileSync(
           join(runDir, "summary.md"),
-          renderFactoryTriageSummary(options.workItem, input.triage, input.routePlan),
+          renderFactoryTriageSummary(workItem, input.triage, input.routePlan),
           "utf8",
         );
 
@@ -274,7 +287,7 @@ function createFactoryRunContextInternal(
           runId,
           runDir,
           workspace,
-          workItem: options.workItem,
+          workItem,
           triage: input.triage,
           routePlan: input.routePlan,
           agent: agentMeta,
@@ -299,7 +312,7 @@ function createFactoryRunContextInternal(
         runId,
         runDir,
         workspace,
-        workItem: options.workItem,
+        workItem,
         agent: agentMeta,
         error: errorMessage(error),
         failureKind:

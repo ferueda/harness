@@ -1,6 +1,6 @@
 ---
 name: factory-operator
-description: Operate the current harness factory flow for one local work item through status, triage, planning, or implementation stations.
+description: Operate the current harness factory flow through status, Linear intake, and triage.
 ---
 
 # Factory Operator
@@ -25,13 +25,12 @@ Operate the current local harness factory one work item at a time.
 ## When To Use
 
 Use this skill when the user wants to inspect factory inbox state, triage a
-factory work item, fetch or create a Linear intake issue, run the planning
-station for a `ready-to-plan` item, run implementation for a
-`ready-to-implement` item, or understand factory artifacts and statuses.
+factory work item, fetch or create a Linear intake issue, or understand current
+triage artifacts and statuses.
 
 ## Waiting For Station Runs
 
-Factory station commands (`harness factory triage|planning|implementation`)
+Factory triage commands
 stay synchronous. Prefer one Shell invocation with a long enough
 `block_until_ms`, then wait for process exit. Do **not** poll with repeated
 AwaitShell or status checks while the command is running.
@@ -188,11 +187,11 @@ LINEAR_API_KEY=... harness factory linear fetch ENG-123 --workspace /path/to/rep
 This command is read-only. It validates the configured Linear team statuses,
 verifies the configured Linear project when `factory.linear.projectId` is set,
 then prints a work item with issue description, labels, recent comments, and
-tracker metadata. Fetch merges durable lifecycle state in inspect-only mode;
-it does not wait on a lock or rebuild state, and reports stale-state warnings.
+tracker metadata. Fetch does not read or initialize Factory state. Linear
+status never becomes a Factory transition input.
 `teamKey` owns issue identifiers and
 statuses; `projectId` scopes the target repo. Redirect the output to an item
-file before planning, or pass the issue directly to triage with
+file for inspection, or pass the issue directly to triage with
 `--linear-issue`.
 
 Use Linear create only for Harness backlog intake when the target repo's
@@ -272,24 +271,10 @@ Factory run root:
 ${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/
 ```
 
-Read `summary.md` and `meta.json` first. Planning snapshots live under
-`iterations/<n>/`, nested plan-review artifacts live under durable
-`runs/reviews/`, and approved plans live under `dev/plans/`. Lifecycle truth
-lives under durable `factory/events/*.jsonl`; `factory/state/*.json` is a
-rebuildable cache. Tracker-backed approved plans should be published through a
-plan PR before the tracker moves to `Ready to Implement`. During manual
-publication, `factoryStage: "plan-pr-open"` can exist before
-`approvedPlanPrUrl`; record the URL when the plan PR exists. Use
-`harness factory planning publish` to record the plan PR URL, then
-`harness factory planning mark-plan-merged` to record the merge commit. These
-commands update local run metadata and lifecycle state, and print suggested
-Linear comments by default; they do not mutate Linear or GitHub unless
-`--linear-issue ... --apply` is present. `publish --apply` moves Linear to
-`Plan Needs Review` and posts a plan-PR marker comment.
-`mark-plan-merged --apply` moves Linear to `Ready to Implement` and posts an
-approved-plan marker comment. Neither command opens PRs or inspects GitHub
-merge state. Durable store contents are user data; do not commit workspace
-`.harness/runs/*` or legacy `.harness/factory/*`.
+Read `summary.md` and `meta.json` first. Lifecycle truth lives under durable
+`factory/events/*.jsonl`; `factory/state/*.json` is a rebuildable cache.
+Durable store contents are user data; do not commit workspace `.harness/runs/*`
+or legacy `.harness/factory/*`.
 
 ### Linear PR linking
 
@@ -324,9 +309,7 @@ Stop before proceeding if the task requires:
 - batch-moving every inbox item
 - mutating GitHub, Jira, or Inngest
 - mutating Linear outside documented `harness factory linear create` or explicit
-  `harness factory triage --linear-issue ... --apply`,
-  `harness factory planning run --linear-issue ... --apply`, or explicit
-  planning publication commands with `--linear-issue ... --apply`
+  `harness factory triage --linear-issue ... --apply`
 - committing `.harness/runs/*`
 - overwriting an existing final plan
 - letting planner agents write directly to tracked source files

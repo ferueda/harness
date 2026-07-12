@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 
 export const FACTORY_HANDLERS = [
   "triageWorkItem",
@@ -20,5 +21,14 @@ export function factoryActionKey(input: {
   attempt: number;
   causationEventId: string;
 }): string {
-  return `${input.phaseRunId}:${input.handler}:${input.attempt}:${input.causationEventId}`;
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        phaseRunId: input.phaseRunId,
+        handler: input.handler,
+        attempt: input.attempt,
+        causationEventId: input.causationEventId,
+      }),
+    )
+    .digest("hex");
 }

@@ -11,16 +11,13 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import {
-  FactoryLifecycleEventSchema,
-  type FactoryActionEvent,
-} from "./factory-lifecycle-events.ts";
+import { parseFactoryActionEvent, type FactoryActionEvent } from "./factory-lifecycle-events.ts";
 
 export function factoryActionResultPath(actionDir: string): string {
   return join(actionDir, "action-result.json");
 }
 export function writeFactoryActionResult(actionDir: string, event: FactoryActionEvent): string {
-  const parsed = FactoryLifecycleEventSchema.parse(event) as FactoryActionEvent;
+  const parsed = parseFactoryActionEvent(event);
   const path = factoryActionResultPath(actionDir);
   mkdirSync(dirname(path), { recursive: true });
   if (existsSync(path)) {
@@ -57,7 +54,7 @@ export function writeFactoryActionResult(actionDir: string, event: FactoryAction
   return path;
 }
 export function readFactoryActionResult(actionDir: string): FactoryActionEvent {
-  return FactoryLifecycleEventSchema.parse(
+  return parseFactoryActionEvent(
     JSON.parse(readFileSync(factoryActionResultPath(actionDir), "utf8")),
-  ) as FactoryActionEvent;
+  );
 }
