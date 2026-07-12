@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { factoryInboxStatus, type FactoryInboxStatus } from "./factory-inbox.ts";
 import { inspectFactoryLocks, type FactoryLockInspection } from "./factory-locks.ts";
 import { isFactoryImplementationExecutionLeaseFilename } from "./factory-implementation-policy.ts";
+import { assertFactoryStoreFormat } from "./factory-store-format.ts";
 import {
   countFactoryStateFiles,
   detectLegacyFactoryState,
@@ -21,6 +22,7 @@ export function factoryStatus(input: {
   inboxDir?: string;
   store: FactoryStoreResolution;
 }): FactoryStatus {
+  assertFactoryStoreFormat(input.store.factoryStateRoot);
   const inbox = factoryInboxStatus({ workspace: input.workspace, inboxDir: input.inboxDir });
   const legacyFactoryState = detectLegacyFactoryState(input.workspace);
   const hasDurableState =

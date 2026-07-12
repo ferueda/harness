@@ -178,8 +178,9 @@ may request a subset of reviewers.
 
 `workflows/factory-triage.workflow.ts` runs one factory triage step. The agent
 returns structured triage JSON; deterministic harness code maps that output to
-one route plan. Current input is `--item-file`; future GitHub, Linear, Jira, or
-orchestrator adapters should feed the same `FactoryWorkItem` contract.
+one route plan. Current input is `--item-file` or `--linear-issue`; future
+GitHub, Jira, or orchestrator adapters should feed the same `FactoryWorkItem`
+contract.
 
 `workflows/plan-review.workflow.ts` runs one fixed spec-review step. The
 plan-review command/runtime omits git diff scope and relies on `context/plan.md`

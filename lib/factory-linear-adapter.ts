@@ -114,6 +114,7 @@ export type LinearTriageApplyInput = {
   runDir: string;
   rerun?: boolean;
   continuation?: boolean;
+  resume?: boolean;
 };
 
 export type LinearTriageCompletedInput = LinearTriageApplyInput & {
@@ -317,6 +318,7 @@ export function assertLinearTriageApplyAllowed(
   statusName: string | undefined,
   rerun = false,
   continuation = false,
+  resume = false,
 ): void {
   if (!statusName) {
     throw new Error("Linear issue is missing a status; cannot apply factory triage.");
@@ -327,6 +329,7 @@ export function assertLinearTriageApplyAllowed(
       `Linear triage continuation requires ${settings.statuses.triaging}; issue is in ${statusName}.`,
     );
   }
+  if (resume && normalizeName(statusName) === normalizeName(settings.statuses.triaging)) return;
   const entryStatuses = [
     settings.statuses.intake,
     settings.statuses.needsInfo,
@@ -409,9 +412,18 @@ async function applyTriageStarted(
   const issue = await fetchIssue(client, settings, input.issueRef);
   const state = await resolveOptional(issue.state);
   await assertIssueInConfiguredScope(issue, settings);
-  assertLinearTriageApplyAllowed(settings, state?.name, input.rerun, input.continuation);
+  assertLinearTriageApplyAllowed(
+    settings,
+    state?.name,
+    input.rerun,
+    input.continuation,
+    input.resume,
+  );
 
-  if (input.continuation) {
+  if (
+    input.continuation ||
+    (input.resume && normalizeName(state?.name ?? "") === normalizeName(settings.statuses.triaging))
+  ) {
     return {
       issueIdentifier: issue.identifier,
       runId: input.runId,

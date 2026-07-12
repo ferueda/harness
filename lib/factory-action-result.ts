@@ -40,16 +40,23 @@ export function writeFactoryActionResult(actionDir: string, event: FactoryAction
     closeSync(tempFd);
   }
   try {
-    // Hard-link publication is atomic and never replaces an existing result.
-    linkSync(temp, path);
-    const dirFd = openSync(dirname(path), "r");
+    let published = false;
     try {
-      fsyncSync(dirFd);
-    } finally {
-      closeSync(dirFd);
+      // Hard-link publication is atomic and never replaces an existing result.
+      linkSync(temp, path);
+      published = true;
+    } catch (error) {
+      if (!isAlreadyExistsError(error)) throw error;
     }
-  } catch (error) {
-    if (!existsSync(path)) throw error;
+    if (published) {
+      const dirFd = openSync(dirname(path), "r");
+      try {
+        fsyncSync(dirFd);
+      } finally {
+        closeSync(dirFd);
+      }
+    }
+    if (!existsSync(path)) throw new Error(`Factory action result was not published: ${path}`);
     if (
       canonicalFactoryEvent(readFactoryActionResult(actionDir)) !== canonicalFactoryEvent(parsed)
     ) {
@@ -59,6 +66,10 @@ export function writeFactoryActionResult(actionDir: string, event: FactoryAction
     unlinkSync(temp);
   }
   return path;
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "EEXIST";
 }
 export function readFactoryActionResult(actionDir: string): FactoryActionEvent {
   const event = parseFactoryActionEvent(

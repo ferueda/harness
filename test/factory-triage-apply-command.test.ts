@@ -685,6 +685,13 @@ test("leaves the durable triage request pending when Linear phase start fails", 
   });
 
   const createContext = vi.fn(() => ctx);
+  const resumedStart = vi.fn(async () => ({
+    issueIdentifier: "ENG-37",
+    runId: ctx.runId,
+    runDir: ctx.runDir,
+    stage: "start" as const,
+    targetStatus: "Triaging",
+  }));
   const repeated = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
     workItem: WORK_ITEM,
@@ -692,18 +699,13 @@ test("leaves the durable triage request pending when Linear phase start fails", 
     issueRef: "ENG-37",
     createContext,
     applyAdapter: fakeLinearAdapter({
-      applyTriageStarted: async () => ({
-        issueIdentifier: "ENG-37",
-        runId: ctx.runId,
-        runDir: ctx.runDir,
-        stage: "start",
-        targetStatus: "Triaging",
-      }),
+      applyTriageStarted: resumedStart,
     }),
   });
   assertActionResult(repeated);
   expect(repeated.phaseRunId).toBe(ctx.runId);
   expect(createContext).toHaveBeenCalledOnce();
+  expect(resumedStart).toHaveBeenCalledWith(expect.objectContaining({ resume: true }));
 });
 
 test("retries the same triage action and phase run after a retryable failure", async () => {
@@ -822,6 +824,22 @@ test("retries a failed terminal projection without rerunning the provider", asyn
   });
   assertActionResult(first);
   expect(first.terminalApplyError).toBe(projectionError);
+  writeFileSync(join(ctx.runDir, "meta.json"), JSON.stringify(first.meta));
+
+  writeFileSync(
+    join(ctx.runDir, "meta.json"),
+    JSON.stringify({ ...first.meta, error: "tampered failure" }),
+  );
+  await expect(
+    runFactoryTriageWithLinearApply({
+      factoryStateRoot: root,
+      workItem: WORK_ITEM,
+      rerun: false,
+      issueRef: "ENG-37",
+      createContext: vi.fn(),
+      applyAdapter: fakeLinearAdapter({ applyTriageFailed: vi.fn() }),
+    }),
+  ).rejects.toThrow(/failure metadata conflicts/);
   writeFileSync(join(ctx.runDir, "meta.json"), JSON.stringify(first.meta));
 
   const recoveredProjection = vi.fn(async () => ({

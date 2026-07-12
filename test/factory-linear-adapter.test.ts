@@ -1826,6 +1826,65 @@ test("Linear adapter continuation rejects a normal triage entry status", async (
   expect(updates).toEqual([]);
 });
 
+test("Linear adapter resumes an uncertain start without replaying Triaging", async () => {
+  for (const [statusName, expectedUpdates] of [
+    ["Backlog", 1],
+    ["Triaging", 0],
+  ] as const) {
+    const updates: Array<{ id: string; input: { stateId: string } }> = [];
+    const adapter = createLinearFactoryAdapterForClient({
+      client: fakeClient({
+        issues: async () => ({
+          nodes: [
+            {
+              ...ISSUE,
+              state: Promise.resolve({ id: `state-${statusName}`, name: statusName }),
+            },
+          ],
+        }),
+        updateIssue: async (id, input) => {
+          updates.push({ id, input });
+          return { success: true };
+        },
+      }),
+      settings: LINEAR_SETTINGS,
+    });
+
+    await adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-active",
+      runDir: ".harness/runs/factory/run-active",
+      resume: true,
+    });
+    expect(updates).toHaveLength(expectedUpdates);
+  }
+});
+
+test("Linear adapter uncertain-start resume rejects a routed status", async () => {
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Needs-Plan", name: "Needs Plan" }),
+          },
+        ],
+      }),
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  await expect(
+    adapter.applyTriageStarted({
+      issueRef: "ENG-123",
+      runId: "run-active",
+      runDir: ".harness/runs/factory/run-active",
+      resume: true,
+    }),
+  ).rejects.toThrow(/only accepts a configured triage entry or triage-owned status/);
+});
+
 test("Linear adapter rerun accepts only triage entry and triage-owned statuses", async () => {
   for (const statusName of [
     "Backlog",

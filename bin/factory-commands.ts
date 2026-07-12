@@ -636,10 +636,10 @@ export async function runFactoryTriageWithLinearApply(input: {
     existingLatest?.type !== "work_item.imported" &&
     existingReaction?.kind === "wait"
   ) {
-    // Explicit apply may repair a failed terminal projection from immutable completion evidence.
-    if (input.applyAdapter && terminalProjectionRecoverable) {
+    // Validate terminal truth on every retry; explicit apply may also repair its projection.
+    if (terminalProjectionRecoverable) {
       const recovered = await recoverTriageActionResult(input);
-      if (recovered) return recovered;
+      if (recovered && input.applyAdapter) return recovered;
     }
     return {
       waiting: true,
@@ -787,8 +787,9 @@ export async function runFactoryTriageWithLinearApply(input: {
           issueRef: input.issueRef,
           runId: ctx.runId,
           runDir: ctx.runDir,
-          rerun: input.rerun || Boolean(activeTriage && !providerAttemptPersisted),
+          rerun: input.rerun,
           continuation: Boolean(activeTriage && providerAttemptPersisted),
+          resume: Boolean(activeTriage && !providerAttemptPersisted),
         });
       } catch (error) {
         throw new Error(`Linear start projection failed: ${errorMessage(error)}`, { cause: error });
@@ -828,6 +829,13 @@ export async function runFactoryTriageWithLinearApply(input: {
         terminalAction?.type === "triage.work_item.completed"
           ? readVerifiedFactoryTriageArtifact(meta, terminalAction, ctx.factoryStore?.projectRoot)
           : readFactoryTriageArtifact(meta);
+      if (
+        terminalAction?.type === "triage.work_item.completed" &&
+        (completedTriage.route !== terminalAction.data.route ||
+          completedTriage.rationale !== terminalAction.data.rationale)
+      ) {
+        throw new Error("Persisted triage evidence conflicts with the terminal Factory event");
+      }
     }
     let terminalUpdate: LinearTriageUpdatePlan | undefined;
     let terminalApplyError: unknown;
@@ -844,7 +852,10 @@ export async function runFactoryTriageWithLinearApply(input: {
               issueRef: input.issueRef,
               runId: ctx.runId,
               runDir: ctx.runDir,
-              error: meta.error ?? "Factory triage failed.",
+              error:
+                terminalAction?.type === "factory.action.failed"
+                  ? terminalAction.data.message
+                  : (meta.error ?? "Factory triage failed."),
             });
       } catch (error) {
         terminalApplyError = error;
@@ -928,33 +939,30 @@ async function recoverTriageActionResult(input: {
     const resolvedRunRef = verifyFactoryArtifactRef(latest.data.execution.runRef, roots);
     assertFactoryPathContained(runDir, resolvedRunRef);
     for (const ref of latest.data.evidence) verifyFactoryArtifactRef(ref, roots);
+    const verifiedTriage = assertRecoveredTerminalEvidence(
+      meta,
+      latest,
+      dirname(input.factoryStateRoot),
+    );
     let terminalUpdate: LinearTriageUpdatePlan | undefined;
     let terminalApplyError: unknown;
     if (input.applyAdapter) {
       try {
-        const triage =
-          latest.type === "triage.work_item.completed"
-            ? readVerifiedFactoryTriageArtifact(meta, latest, dirname(input.factoryStateRoot))
-            : undefined;
-        if (
-          triage &&
-          latest.type === "triage.work_item.completed" &&
-          (triage.route !== latest.data.route || triage.rationale !== latest.data.rationale)
-        ) {
-          throw new Error("Persisted triage evidence conflicts with the terminal Factory event");
-        }
-        terminalUpdate = triage
+        terminalUpdate = verifiedTriage
           ? await input.applyAdapter.applyTriageCompleted({
               issueRef: input.issueRef,
               runId: meta.runId,
               runDir: meta.runDir,
-              triage,
+              triage: verifiedTriage,
             })
           : await input.applyAdapter.applyTriageFailed({
               issueRef: input.issueRef,
               runId: meta.runId,
               runDir: meta.runDir,
-              error: meta.error ?? "Factory triage failed.",
+              error:
+                latest.type === "factory.action.failed"
+                  ? latest.data.message
+                  : "Factory triage failed.",
             });
       } catch (error) {
         terminalApplyError = error;
@@ -996,7 +1004,7 @@ async function recoverTriageActionResult(input: {
   if (!existsSync(factoryActionResultPath(actionDir))) return undefined;
   const terminal = readFactoryActionResult(actionDir);
   if (
-    !["triage.work_item.completed", "factory.action.failed"].includes(terminal.type) ||
+    (terminal.type !== "triage.work_item.completed" && terminal.type !== "factory.action.failed") ||
     terminal.workItemKey !== key ||
     terminal.phaseRunId !== latest.phaseRunId ||
     terminal.data.causationEventId !== latest.id ||
@@ -1042,6 +1050,11 @@ async function recoverTriageActionResult(input: {
   const resolvedRunRef = verifyFactoryArtifactRef(terminal.data.execution.runRef, roots);
   assertFactoryPathContained(runDir, resolvedRunRef);
   for (const ref of terminal.data.evidence) verifyFactoryArtifactRef(ref, roots);
+  const verifiedTriage = assertRecoveredTerminalEvidence(
+    meta,
+    terminal,
+    dirname(input.factoryStateRoot),
+  );
   const appended = appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
     event: terminal,
@@ -1051,24 +1064,22 @@ async function recoverTriageActionResult(input: {
   let terminalApplyError: unknown;
   if (input.applyAdapter) {
     try {
-      terminalUpdate =
-        terminal.type === "triage.work_item.completed"
-          ? await input.applyAdapter.applyTriageCompleted({
-              issueRef: input.issueRef,
-              runId: meta.runId,
-              runDir: meta.runDir,
-              triage: readVerifiedFactoryTriageArtifact(
-                meta,
-                terminal,
-                dirname(input.factoryStateRoot),
-              ),
-            })
-          : await input.applyAdapter.applyTriageFailed({
-              issueRef: input.issueRef,
-              runId: meta.runId,
-              runDir: meta.runDir,
-              error: meta.error ?? "Factory triage failed.",
-            });
+      if (terminal.type === "triage.work_item.completed") {
+        if (!verifiedTriage) throw new Error("Recovered Factory completion has no triage evidence");
+        terminalUpdate = await input.applyAdapter.applyTriageCompleted({
+          issueRef: input.issueRef,
+          runId: meta.runId,
+          runDir: meta.runDir,
+          triage: verifiedTriage,
+        });
+      } else {
+        terminalUpdate = await input.applyAdapter.applyTriageFailed({
+          issueRef: input.issueRef,
+          runId: meta.runId,
+          runDir: meta.runDir,
+          error: terminal.data.message,
+        });
+      }
     } catch (error) {
       terminalApplyError = error;
     }
@@ -1168,6 +1179,45 @@ function readVerifiedFactoryTriageArtifact(
   const triage = parseFactoryTriageOutput(JSON.parse(readFileSync(triagePath, "utf8")));
   assertTriageEvidenceContained(meta.workspace, triage);
   return triage;
+}
+
+function assertRecoveredTerminalEvidence(
+  meta: FactoryRunMeta,
+  event: Extract<
+    FactoryActionLifecycleEvent,
+    { type: "triage.work_item.completed" | "factory.action.failed" }
+  >,
+  projectRoot: string,
+): FactoryTriageOutput | undefined {
+  if (event.type === "triage.work_item.completed") {
+    if (meta.status !== "completed") {
+      throw new Error("Recovered Factory metadata status conflicts with the terminal event");
+    }
+    const triage = readVerifiedFactoryTriageArtifact(meta, event, projectRoot);
+    if (triage.route !== event.data.route || triage.rationale !== event.data.rationale) {
+      throw new Error("Persisted triage evidence conflicts with the terminal Factory event");
+    }
+    return triage;
+  }
+  if (
+    meta.status !== "failed" ||
+    (meta.failureKind ?? "terminal") !== event.data.failureKind ||
+    (meta.error ?? "Factory triage failed.") !== event.data.message
+  ) {
+    throw new Error("Recovered Factory failure metadata conflicts with the terminal event");
+  }
+  const roots = { "factory-store": projectRoot, repository: meta.workspace };
+  const evidencePath = resolve(verifyFactoryArtifactRef(event.data.execution.runRef, roots));
+  const evidenceValue: unknown = JSON.parse(readFileSync(evidencePath, "utf8"));
+  assertFactoryRunMeta(evidenceValue);
+  if (
+    evidenceValue.status !== "failed" ||
+    (evidenceValue.failureKind ?? "terminal") !== event.data.failureKind ||
+    (evidenceValue.error ?? "Factory triage failed.") !== event.data.message
+  ) {
+    throw new Error("Persisted Factory failure evidence conflicts with the terminal event");
+  }
+  return undefined;
 }
 
 function assertFactoryRunMeta(value: unknown): asserts value is FactoryRunMeta {

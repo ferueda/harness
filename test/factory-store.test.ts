@@ -10,6 +10,7 @@ import {
   resolveFactoryStore,
 } from "../lib/factory-store.ts";
 import { factoryStatus } from "../lib/factory-status.ts";
+import { ensureFactoryStoreFormat, FactoryStoreFormatError } from "../lib/factory-store-format.ts";
 
 function tempWorkspace(prefix = "harness-factory-store-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -211,6 +212,7 @@ test("factory status reports ignored legacy state and stale locks without mutati
   writeFileSync(join(workspace, ".harness/factory/state/file-legacy.json"), "{}\n", "utf8");
 
   const lockDir = join(store.factoryStateRoot, "locks/file-legacy.lock");
+  ensureFactoryStoreFormat(store.factoryStateRoot);
   const ownerPath = join(lockDir, "owner.json");
   mkdirSync(lockDir, { recursive: true });
   writeFileSync(
@@ -287,6 +289,7 @@ test("factory status applies execution-lease staleness without changing ordinary
       hostname: "remote-test-host",
     },
   ];
+  ensureFactoryStoreFormat(store.factoryStateRoot);
   for (const owner of owners) {
     const lockDir = join(store.factoryStateRoot, "locks", `${owner.filename}.lock`);
     mkdirSync(lockDir, { recursive: true });
@@ -319,4 +322,17 @@ test("factory status applies execution-lease staleness without changing ordinary
       }),
     ]),
   );
+});
+
+test("factory status rejects a non-empty store without a format marker", () => {
+  const workspace = tempWorkspace();
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: join(workspace, "durable-store"),
+    env: {},
+  });
+  mkdirSync(join(store.factoryStateRoot, "events"), { recursive: true });
+  writeFileSync(join(store.factoryStateRoot, "events/legacy.jsonl"), "{}\n");
+
+  expect(() => factoryStatus({ workspace, store })).toThrow(FactoryStoreFormatError);
 });

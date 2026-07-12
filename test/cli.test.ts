@@ -25,6 +25,7 @@ import {
 } from "../bin/factory-commands.ts";
 import { resolveFactoryStore } from "../lib/factory-store.ts";
 import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
+import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import {
   fakeLinearAdapter,
   LINEAR_SETTINGS,
@@ -1287,6 +1288,7 @@ test("harness factory status reports stale locks and ignored legacy state withou
   ]);
   expect(first.status).toBe(0);
   const factoryStateRoot = JSON.parse(first.stdout).store.factoryStateRoot as string;
+  ensureFactoryStoreFormat(factoryStateRoot);
 
   const legacyEventPath = join(workspace, ".harness/factory/events/file-legacy.jsonl");
   mkdirSync(dirname(legacyEventPath), { recursive: true });

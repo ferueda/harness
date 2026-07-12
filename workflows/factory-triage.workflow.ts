@@ -11,8 +11,10 @@ import {
   writeFactoryActionResult,
 } from "../lib/factory-action-result.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
+import { withFactoryActionClaim } from "../lib/factory-action-claim.ts";
 import {
   appendFactoryActionEvent,
+  FactoryLifecycleConflictError,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
@@ -91,36 +93,40 @@ export async function triageWorkItem(input: {
     reaction.handler,
     factoryActionKey({ ...reaction, phaseRunId: ctx.runId }),
   );
-  let terminal: FactoryLifecycleEvent;
-  if (existsSync(factoryActionResultPath(actionDir))) {
-    terminal = readFactoryActionResult(actionDir);
-  } else {
-    let meta = latest.type === "triage.requested" ? readTerminalMeta(ctx) : undefined;
-    if (!meta) {
-      try {
-        meta = await (input.runProvider ?? run)(ctx, {
-          nextLiveRunRequiresRerun: input.nextLiveRunRequiresRerun,
-        });
-      } catch (error) {
-        meta = ctx.exportFailed(error);
-      }
-    }
-    const metaPath = join(ctx.runDir, "meta.json");
-    if (!existsSync(metaPath)) {
-      writeDurableFactoryFile(metaPath, JSON.stringify(meta, null, 2));
-    }
-    let triage: FactoryTriageOutput | undefined;
-    if (meta.status === "completed") {
-      try {
-        triage = readTriageArtifact(meta);
-      } catch (error) {
-        meta = ctx.exportFailed(error);
-      }
-    }
-    input.onMeta?.(meta);
-    terminal = buildTriageActionEvent(ctx, meta, triage, reaction);
-    writeFactoryActionResult(actionDir, terminal);
+  const resultPath = factoryActionResultPath(actionDir);
+  if (!existsSync(resultPath)) {
+    await withFactoryActionClaim({
+      actionDir,
+      resultPath,
+      action: async () => {
+        let meta = latest.type === "triage.requested" ? readTerminalMeta(ctx) : undefined;
+        if (!meta) {
+          try {
+            meta = await (input.runProvider ?? run)(ctx, {
+              nextLiveRunRequiresRerun: input.nextLiveRunRequiresRerun,
+            });
+          } catch (error) {
+            meta = ctx.exportFailed(error);
+          }
+        }
+        const metaPath = join(ctx.runDir, "meta.json");
+        if (!existsSync(metaPath)) {
+          writeDurableFactoryFile(metaPath, JSON.stringify(meta, null, 2));
+        }
+        let triage: FactoryTriageOutput | undefined;
+        if (meta.status === "completed") {
+          try {
+            triage = readTriageArtifact(meta);
+          } catch (error) {
+            meta = ctx.exportFailed(error);
+          }
+        }
+        input.onMeta?.(meta);
+        writeFactoryActionResult(actionDir, buildTriageActionEvent(ctx, meta, triage, reaction));
+      },
+    });
   }
+  const terminal = readFactoryActionResult(actionDir);
   if (
     terminal.workItemKey !== deriveFactoryWorkItemKey(ctx.workItem) ||
     terminal.phaseRunId !== ctx.runId ||
@@ -131,11 +137,30 @@ export async function triageWorkItem(input: {
   ) {
     throw new Error("Recovered triage action result conflicts with durable Factory state");
   }
-  return appendFactoryActionEvent({
-    factoryStateRoot: input.factoryStateRoot,
-    event: terminal,
-    expectedLastEventId: reaction.causationEventId,
-  });
+  const currentEvents = readFactoryActionEvents(
+    input.factoryStateRoot,
+    deriveFactoryWorkItemKey(ctx.workItem),
+  );
+  const currentLatest = currentEvents.at(-1);
+  if (currentLatest?.id === terminal.id) {
+    return { event: currentLatest, state: reduceFactoryLifecycleEvents(currentEvents)! };
+  }
+  try {
+    return appendFactoryActionEvent({
+      factoryStateRoot: input.factoryStateRoot,
+      event: terminal,
+      expectedLastEventId: reaction.causationEventId,
+    });
+  } catch (error) {
+    if (!(error instanceof FactoryLifecycleConflictError)) throw error;
+    const racedEvents = readFactoryActionEvents(
+      input.factoryStateRoot,
+      deriveFactoryWorkItemKey(ctx.workItem),
+    );
+    const racedLatest = racedEvents.at(-1);
+    if (racedLatest?.id !== terminal.id) throw error;
+    return { event: racedLatest, state: reduceFactoryLifecycleEvents(racedEvents)! };
+  }
 }
 
 export async function run(
