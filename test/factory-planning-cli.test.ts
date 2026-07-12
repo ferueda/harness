@@ -8,9 +8,13 @@ import {
   recordPlanningPublication,
   runOneFactoryPlanningAction,
 } from "../bin/factory-planning-cli.ts";
+import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import type { AgentRunInput } from "../lib/agents.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
-import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
+import {
+  appendFactoryActionEvent,
+  readFactoryActionEvents,
+} from "../lib/factory-lifecycle-kernel.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 import { reduceFactoryLifecycleEvents } from "../lib/factory-state-machine.ts";
 import {
@@ -167,7 +171,7 @@ test("active Linear planning continuations require Planning status", async () =>
   ).not.toThrow();
 });
 
-test("Linear planning start requires apply and projects before lifecycle or provider work", async () => {
+test("Linear planning start appends its request before projection and provider work", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-start-"));
   const store = createStore();
   const provider = vi.fn(passingProvider([])().run);
@@ -191,7 +195,9 @@ test("Linear planning start requires apply and projects before lifecycle or prov
 
   const ordering: string[] = [];
   const applyPlanningStarted = vi.fn(async () => {
-    expect(readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-101")).toEqual([]);
+    const events = readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-101");
+    expect(events.at(-1)?.type).toBe("planning.requested");
+    expect(events.filter((event) => event.type === "planning.requested")).toHaveLength(1);
     ordering.push("projection");
   });
   provider.mockImplementation(async (input) => {
@@ -209,10 +215,14 @@ test("Linear planning start requires apply and projects before lifecycle or prov
   expect(ordering).toEqual(["projection", "provider"]);
 });
 
-test("failed Linear start projection leaves no lifecycle or provider result", async () => {
+test("failed Linear start projection repairs the same request before provider work", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-start-"));
   const store = createStore();
   const provider = vi.fn(passingProvider([])().run);
+  const applyPlanningStarted = vi
+    .fn<() => Promise<void>>()
+    .mockRejectedValueOnce(new Error("Linear unavailable"))
+    .mockResolvedValue(undefined);
   const input = {
     ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
     workItem: {
@@ -225,16 +235,127 @@ test("failed Linear start projection leaves no lifecycle or provider result", as
     itemFile: undefined,
     linearIssue: "ENG-102",
     issueRef: "ENG-102",
-    applyAdapter: {
-      applyPlanningStarted: vi.fn(async () => {
-        throw new Error("Linear unavailable");
-      }),
-    } as never,
+    applyAdapter: { applyPlanningStarted } as never,
   };
 
   await expect(runOneFactoryPlanningAction(input)).rejects.toThrow("Linear unavailable");
-  expect(readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-102")).toEqual([]);
+  const pending = readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-102");
+  expect(pending.at(-1)?.type).toBe("planning.requested");
+  expect(pending.filter((event) => event.type === "planning.requested")).toHaveLength(1);
   expect(provider).not.toHaveBeenCalled();
+
+  const repaired = await runOneFactoryPlanningAction(input);
+  expect(repaired.phaseRunId).toBe(pending.at(-1)?.phaseRunId);
+  expect(repaired.action).toMatchObject({ handler: "producePlanCandidate", attempt: 1 });
+  expect(applyPlanningStarted).toHaveBeenCalledTimes(2);
+  expect(provider).toHaveBeenCalledTimes(1);
+  const recovered = readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-102");
+  expect(recovered.filter((event) => event.type === "planning.requested")).toHaveLength(1);
+  expect(recovered.filter((event) => event.type === "planning.candidate.produced")).toHaveLength(1);
+});
+
+test("failed Linear rerun projection repairs the same restart request", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-rerun-"));
+  const store = createStore();
+  let providerCalls = 0;
+  const provider = vi.fn(async (input: AgentRunInput) => {
+    providerCalls += 1;
+    if (providerCalls === 1)
+      return {
+        ok: true as const,
+        structuredOutput: {
+          outcome: "needs-human" as const,
+          summary: "question",
+          humanQuestions: ["Which scope?"],
+          findingDecisions: [],
+        },
+        raw: unchangedWorkspace(),
+      };
+    return passingProvider([])().run(input);
+  });
+  const workItem = {
+    id: "linear:ENG-104",
+    source: "linear" as const,
+    title: "Plan",
+    body: "",
+    labels: [],
+  };
+  const base = {
+    ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+    workItem,
+    itemFile: undefined,
+    linearIssue: "ENG-104",
+    issueRef: "ENG-104",
+  };
+  const initial = await runOneFactoryPlanningAction({
+    ...base,
+    applyAdapter: {
+      applyPlanningStarted: vi.fn(async () => undefined),
+      applyPlanningCompleted: vi.fn(async () => undefined),
+    } as never,
+  });
+  expect(initial.next).toMatchObject({ kind: "wait", reason: "human" });
+
+  const failedApply = vi.fn(async () => {
+    throw new Error("Linear unavailable");
+  });
+  const rerun = {
+    ...base,
+    rerun: true,
+    applyAdapter: { applyPlanningStarted: failedApply } as never,
+  };
+  await expect(runOneFactoryPlanningAction(rerun)).rejects.toThrow("Linear unavailable");
+  const pending = readFactoryActionEvents(store.factoryStateRoot, workItem.id);
+  const requests = pending.filter((event) => event.type === "planning.requested");
+  expect(requests).toHaveLength(2);
+  expect(requests.at(-1)?.data.intent).toBe("restart");
+  expect(provider).toHaveBeenCalledTimes(1);
+
+  const repaired = await runOneFactoryPlanningAction({
+    ...rerun,
+    applyAdapter: { applyPlanningStarted: vi.fn(async () => undefined) } as never,
+  });
+  expect(repaired.phaseRunId).toBe(requests.at(-1)?.phaseRunId);
+  expect(repaired.action).toMatchObject({ handler: "producePlanCandidate", attempt: 1 });
+  expect(provider).toHaveBeenCalledTimes(2);
+  expect(
+    readFactoryActionEvents(store.factoryStateRoot, workItem.id).filter(
+      (event) => event.type === "planning.requested",
+    ),
+  ).toHaveLength(2);
+});
+
+test("illegal planning predecessor fails before Linear or provider mutation", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-illegal-"));
+  const store = createStore();
+  const workItem = {
+    id: "linear:ENG-105",
+    source: "linear" as const,
+    title: "Plan",
+    body: "",
+    labels: [],
+  };
+  appendTriageRoute(store, workItem.id, "ready-to-implement");
+  const applyPlanningStarted = vi.fn(async () => undefined);
+  const provider = vi.fn(passingProvider([])().run);
+
+  await expect(
+    runOneFactoryPlanningAction({
+      ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+      workItem,
+      itemFile: undefined,
+      linearIssue: "ENG-105",
+      issueRef: "ENG-105",
+      applyAdapter: { applyPlanningStarted } as never,
+    }),
+  ).rejects.toThrow("Invalid Factory transition");
+  expect(applyPlanningStarted).not.toHaveBeenCalled();
+  expect(provider).not.toHaveBeenCalled();
+  expect(
+    readFactoryActionEvents(store.factoryStateRoot, workItem.id).filter(
+      (event) => event.type === "planning.requested",
+    ),
+  ).toHaveLength(0);
 });
 
 test("terminal Linear wait projection is repaired only with explicit apply", async () => {
@@ -415,6 +536,73 @@ function createStore(): FactoryStoreMeta {
     overrides: {},
     warnings: [],
   };
+}
+
+function appendTriageRoute(
+  store: FactoryStoreMeta,
+  workItemKey: string,
+  route: "ready-to-plan" | "ready-to-implement",
+): void {
+  const importedId = `work_item.imported:${workItemKey}`;
+  const requestId = `triage.requested:${workItemKey}`;
+  const runRef = {
+    base: "factory-store" as const,
+    path: "runs/factory/triage-run/meta.json",
+    sha256: "0".repeat(64),
+  };
+  appendFactoryActionEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    expectedLastEventId: null,
+    event: {
+      version: 1,
+      id: importedId,
+      type: "work_item.imported",
+      workItemKey,
+      occurredAt: "2026-07-12T00:00:00.000Z",
+      data: { source: "linear" },
+    },
+  });
+  appendFactoryActionEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    expectedLastEventId: importedId,
+    event: {
+      version: 1,
+      id: requestId,
+      type: "triage.requested",
+      workItemKey,
+      occurredAt: "2026-07-12T00:01:00.000Z",
+      phaseRunId: "triage-run",
+      data: { expectedPredecessor: importedId, inputRefs: [runRef], intent: "start" },
+    },
+  });
+  const actionKey = factoryActionKey({
+    phaseRunId: "triage-run",
+    handler: "triageWorkItem",
+    attempt: 1,
+    causationEventId: requestId,
+  });
+  appendFactoryActionEvent({
+    factoryStateRoot: store.factoryStateRoot,
+    expectedLastEventId: requestId,
+    event: {
+      version: 1,
+      id: `triage.work_item.completed:${actionKey}`,
+      type: "triage.work_item.completed",
+      workItemKey,
+      occurredAt: "2026-07-12T00:02:00.000Z",
+      phaseRunId: "triage-run",
+      data: {
+        handler: "triageWorkItem",
+        handlerVersion: 1,
+        attempt: 1,
+        causationEventId: requestId,
+        execution: { workspaceRef: "repo", runRef },
+        evidence: [runRef],
+        route,
+        rationale: "routed",
+      },
+    },
+  });
 }
 
 function passingProvider(calls: AgentRunInput[]) {

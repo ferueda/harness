@@ -130,16 +130,16 @@ async function runPlanningCommand(options: PlanningOptions): Promise<void> {
     deriveFactoryWorkItemKey(resolved.workItem),
   );
   const state = reduceFactoryLifecycleEvents(events);
-  if (options.linearIssue && !options.apply && (!state || options.rerun))
+  const latest = events.at(-1);
+  const pendingStartProjection = isPendingPlanningStartProjection(state, latest);
+  if (
+    options.linearIssue &&
+    !options.apply &&
+    (options.rerun || !state || state.phase !== "planning" || pendingStartProjection)
+  )
     throw new Error("Linear planning start and --rerun require --apply");
   if (options.linearIssue)
-    assertLivePlanningStatus(
-      resolved.workItem,
-      linearSettings!,
-      options.rerun,
-      state,
-      events.at(-1),
-    );
+    assertLivePlanningStatus(resolved.workItem, linearSettings!, options.rerun, state, latest);
   const runAbort = new AbortController();
   const onRunAbort = () => runAbort.abort();
   process.once("SIGINT", onRunAbort);
@@ -193,30 +193,34 @@ export function assertLivePlanningStatus(
   latest: FactoryLifecycleEvent | undefined,
 ): void {
   const status = workItem.metadata?.linearStatus;
+  const pendingStartProjection = isPendingPlanningStartProjection(state, latest);
   const active = Boolean(
     state &&
     latest &&
     state.phase === "planning" &&
     decideNextFactoryAction(state, latest).kind === "invoke",
   );
-  const allowed = active
-    ? [settings.statuses.planning]
-    : !state || state.phase !== "planning" || rerun
-      ? [
-          settings.statuses.needsPlan,
-          settings.statuses.needsInfo,
-          settings.statuses.needsPlanReview,
-          settings.statuses.planningFailed,
-        ]
-      : state.status === "failed"
-        ? [settings.statuses.planning, settings.statuses.planningFailed]
-        : state.status === "needs-human"
-          ? [
-              settings.statuses.planning,
-              settings.statuses.needsInfo,
-              settings.statuses.needsPlanReview,
-            ]
-          : [settings.statuses.planning, settings.statuses.needsPlanReview];
+  const entryStatuses = [
+    settings.statuses.needsPlan,
+    settings.statuses.needsInfo,
+    settings.statuses.needsPlanReview,
+    settings.statuses.planningFailed,
+  ];
+  const allowed = pendingStartProjection
+    ? [...entryStatuses, settings.statuses.planning]
+    : active
+      ? [settings.statuses.planning]
+      : !state || state.phase !== "planning" || rerun
+        ? entryStatuses
+        : state.status === "failed"
+          ? [settings.statuses.planning, settings.statuses.planningFailed]
+          : state.status === "needs-human"
+            ? [
+                settings.statuses.planning,
+                settings.statuses.needsInfo,
+                settings.statuses.needsPlanReview,
+              ]
+            : [settings.statuses.planning, settings.statuses.needsPlanReview];
   if (
     typeof status !== "string" ||
     !allowed.some((value) => value.toLowerCase() === status.toLowerCase())
@@ -254,8 +258,13 @@ export async function runOneFactoryPlanningAction(input: {
   let latest = events.at(-1);
   let state = reduceFactoryLifecycleEvents(events);
   let reaction = latest && state ? decideNextFactoryAction(state, latest) : undefined;
+  const pendingRestartProjection =
+    isPendingPlanningStartProjection(state, latest) &&
+    latest?.type === "planning.requested" &&
+    latest.data.intent === "restart";
   if (
     input.rerun &&
+    !pendingRestartProjection &&
     !(state?.phase === "planning" && (state.status === "needs-human" || state.status === "failed"))
   )
     throw new Error("planning --rerun is allowed only from needs-human or failed");
@@ -292,14 +301,6 @@ export async function runOneFactoryPlanningAction(input: {
       eventSink: input.eventSink,
       signal: input.signal,
     });
-    if (input.applyAdapter) {
-      await input.applyAdapter.applyPlanningStarted({
-        issueRef: input.issueRef!,
-        runId: created.runId,
-        runDir: created.runDir,
-      });
-      linearApplied = true;
-    }
     if (!state) {
       const imported: FactoryLifecycleEvent = {
         version: 1,
@@ -360,6 +361,16 @@ export async function runOneFactoryPlanningAction(input: {
     factoryStore: input.factoryStore,
     eventSink: input.eventSink,
   });
+  if (input.linearIssue && isPendingPlanningStartProjection(state, latest)) {
+    if (!input.applyAdapter)
+      throw new Error("Pending Linear planning start projection requires --apply");
+    await input.applyAdapter.applyPlanningStarted({
+      issueRef: input.issueRef ?? input.linearIssue,
+      runId: phaseRunId,
+      runDir: ctx.runDir,
+    });
+    linearApplied = true;
+  }
   console.error(
     JSON.stringify({
       harnessFactory: "action-started",
@@ -411,6 +422,18 @@ export async function runOneFactoryPlanningAction(input: {
     ),
     linearApplied,
   };
+}
+
+function isPendingPlanningStartProjection(
+  state: ReturnType<typeof reduceFactoryLifecycleEvents>,
+  latest: FactoryLifecycleEvent | undefined,
+): boolean {
+  return (
+    state?.phase === "planning" &&
+    state.status === "awaiting-candidate" &&
+    state.attempt === 1 &&
+    latest?.type === "planning.requested"
+  );
 }
 
 async function applyTerminalPlanningProjection(input: {
