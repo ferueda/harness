@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -38,6 +38,7 @@ import {
 import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
 import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
 type FactoryRunStatus = "completed" | "dry_run" | "failed";
 
@@ -214,7 +215,7 @@ function createFactoryRunContextInternal(
       mkdirSync(runDir, { recursive: true });
       mkdirSync(join(runDir, "context"), { recursive: true });
       writeJson(join(runDir, "context/work-item.json"), workItem);
-      writeFileSync(join(runDir, "factory-triage.prompt.md"), prompt, "utf8");
+      writeDurableFactoryFile(join(runDir, "factory-triage.prompt.md"), prompt);
       if (options.factoryStore) {
         writeFactoryPhaseRunIdentity(runDir, {
           version: 1,
@@ -316,15 +317,13 @@ function createFactoryRunContextInternal(
     export(input: { triage: FactoryTriageOutput; routePlan: FactoryRoutePlan }): FactoryRunMeta {
       try {
         writeJson(join(runDir, "factory-route.json"), input.routePlan);
-        writeFileSync(
+        writeDurableFactoryFile(
           join(runDir, "factory-route.md"),
           renderFactoryRouteMarkdown(workItem, input.triage, input.routePlan),
-          "utf8",
         );
-        writeFileSync(
+        writeDurableFactoryFile(
           join(runDir, "summary.md"),
           renderFactoryTriageSummary(workItem, input.triage, input.routePlan),
-          "utf8",
         );
 
         const meta = buildMeta({
@@ -448,7 +447,7 @@ function rawAgentArtifact(result: AgentRunResult): unknown {
 }
 
 function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, JSON.stringify(value, null, 2), "utf8");
+  writeDurableFactoryFile(path, JSON.stringify(value, null, 2));
 }
 
 function cleanupOrphanedFactoryRunDir(runDir: string): boolean {

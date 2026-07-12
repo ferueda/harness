@@ -1,5 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { basename, join, relative, resolve } from "node:path";
 import {
   assertFactoryPathContained,
   createFactoryArtifactRef,
@@ -18,6 +18,7 @@ import {
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { buildFactoryRoutePlan } from "../lib/factory-intake.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
+import { copyDurableFactoryFile, writeDurableFactoryFile } from "../lib/factory-durable-file.ts";
 import {
   FACTORY_TRIAGE_EVENT_STEP,
   FACTORY_TRIAGE_STEP_OUTPUTS,
@@ -94,7 +95,7 @@ export async function triageWorkItem(input: {
   if (existsSync(factoryActionResultPath(actionDir))) {
     terminal = readFactoryActionResult(actionDir);
   } else {
-    let meta = readCompletedMeta(ctx);
+    let meta = latest.type === "triage.requested" ? readTerminalMeta(ctx) : undefined;
     if (!meta) {
       try {
         meta = await (input.runProvider ?? run)(ctx, {
@@ -104,7 +105,10 @@ export async function triageWorkItem(input: {
         meta = ctx.exportFailed(error);
       }
     }
-    input.onMeta?.(meta);
+    const metaPath = join(ctx.runDir, "meta.json");
+    if (!existsSync(metaPath)) {
+      writeDurableFactoryFile(metaPath, JSON.stringify(meta, null, 2));
+    }
     let triage: FactoryTriageOutput | undefined;
     if (meta.status === "completed") {
       try {
@@ -113,6 +117,7 @@ export async function triageWorkItem(input: {
         meta = ctx.exportFailed(error);
       }
     }
+    input.onMeta?.(meta);
     terminal = buildTriageActionEvent(ctx, meta, triage, reaction);
     writeFactoryActionResult(actionDir, terminal);
   }
@@ -227,11 +232,11 @@ export async function run(
   }
 }
 
-function readCompletedMeta(ctx: FactoryRunContext): FactoryRunMeta | undefined {
+function readTerminalMeta(ctx: FactoryRunContext): FactoryRunMeta | undefined {
   const path = join(ctx.runDir, "meta.json");
   if (!existsSync(path)) return undefined;
   const value = JSON.parse(readFileSync(path, "utf8")) as FactoryRunMeta;
-  if (value.status !== "completed") return undefined;
+  if (value.status !== "completed" && value.status !== "failed") return undefined;
   if (
     value.runId !== ctx.runId ||
     resolve(value.runDir) !== resolve(ctx.runDir) ||
@@ -245,11 +250,12 @@ function readCompletedMeta(ctx: FactoryRunContext): FactoryRunMeta | undefined {
 }
 
 function readTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {
-  const triage = parseFactoryTriageOutput(
-    JSON.parse(
-      readFileSync(join(meta.runDir, meta.artifacts?.triage ?? "factory-triage.json"), "utf8"),
-    ),
+  const triagePath = resolveRunArtifact(
+    meta.runDir,
+    meta.artifacts?.triage ?? "factory-triage.json",
+    "factory-triage.json",
   );
+  const triage = parseFactoryTriageOutput(JSON.parse(readFileSync(triagePath, "utf8")));
   for (const evidence of triage.evidence) {
     if (evidence.path === null) continue;
     if (evidence.path.includes("\\") || !isFactoryRelativePathContained(evidence.path)) {
@@ -280,8 +286,14 @@ function buildTriageActionEvent(
     actionKey,
     "evidence",
   );
+  const summaryName =
+    meta.status === "completed" ? (meta.artifacts?.summary ?? "summary.md") : "meta.json";
   const summaryPath = publishEvidence(
-    join(meta.runDir, meta.artifacts?.summary ?? "meta.json"),
+    resolveRunArtifact(
+      meta.runDir,
+      summaryName,
+      meta.status === "completed" ? "summary.md" : "meta.json",
+    ),
     join(evidenceDir, "summary.md"),
   );
   const runRef = createFactoryArtifactRef({
@@ -291,7 +303,11 @@ function buildTriageActionEvent(
   });
   const triagePath = triage
     ? publishEvidence(
-        join(meta.runDir, meta.artifacts?.triage ?? "factory-triage.json"),
+        resolveRunArtifact(
+          meta.runDir,
+          meta.artifacts?.triage ?? "factory-triage.json",
+          "factory-triage.json",
+        ),
         join(evidenceDir, "factory-triage.json"),
       )
     : undefined;
@@ -349,12 +365,21 @@ function buildTriageActionEvent(
 }
 
 function publishEvidence(source: string, destination: string): string {
-  mkdirSync(dirname(destination), { recursive: true });
   if (existsSync(destination)) {
     if (!readFileSync(source).equals(readFileSync(destination)))
       throw new Error(`Factory action evidence conflicts with ${destination}`);
     return destination;
   }
-  copyFileSync(source, destination);
+  copyDurableFactoryFile(source, destination);
   return destination;
+}
+
+function resolveRunArtifact(runDir: string, path: string, expectedName: string): string {
+  if (basename(path) !== expectedName || path !== expectedName) {
+    throw new Error(`Factory run artifact must be ${expectedName}`);
+  }
+  const runRoot = realpathSync(runDir);
+  const artifact = realpathSync(resolve(runDir, path));
+  assertFactoryPathContained(runRoot, artifact);
+  return artifact;
 }

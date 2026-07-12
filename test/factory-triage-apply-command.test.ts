@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { expect, test, vi } from "vitest";
 import { runFactoryTriageWithLinearApply } from "../bin/factory-commands.ts";
 import {
@@ -279,10 +279,26 @@ test("recovers a persisted triage result without invoking the handler", async ()
     root: projectRoot,
     path: "runs/factory/run-recovery/summary.md",
   });
+  const actionKey = factoryActionKey({
+    phaseRunId: runId,
+    handler: "triageWorkItem",
+    attempt: 1,
+    causationEventId: `triage.requested:${runId}`,
+  });
+  const immutableTriagePath = join(
+    runDir,
+    "actions",
+    "1",
+    "triageWorkItem",
+    actionKey,
+    "evidence/factory-triage.json",
+  );
+  mkdirSync(dirname(immutableTriagePath), { recursive: true });
+  writeFileSync(immutableTriagePath, readFileSync(join(runDir, "factory-triage.json")));
   const triageRef = createFactoryArtifactRef({
     base: "factory-store",
     root: projectRoot,
-    path: "runs/factory/run-recovery/factory-triage.json",
+    path: relative(projectRoot, immutableTriagePath),
   });
   const imported: FactoryActionLifecycleEvent = {
     version: 1,
@@ -341,12 +357,6 @@ test("recovers a persisted triage result without invoking the handler", async ()
       rationale: "Needs plan",
     },
   };
-  const actionKey = factoryActionKey({
-    phaseRunId: runId,
-    handler: "triageWorkItem",
-    attempt: 1,
-    causationEventId: request.id,
-  });
   terminal.id = `${terminal.type}:${actionKey}`;
   writeFactoryActionResult(join(runDir, "actions", "1", "triageWorkItem", actionKey), terminal);
   writeFileSync(
@@ -404,7 +414,7 @@ test("recovers a persisted triage result without invoking the handler", async ()
   expect(applyTriageCompleted).toHaveBeenCalledOnce();
   expect(retry.terminalApplyError).toBeUndefined();
 
-  writeFileSync(join(runDir, "factory-triage.json"), "{}\n");
+  writeFileSync(immutableTriagePath, "{}\n");
   await expect(
     runFactoryTriageWithLinearApply({
       factoryStateRoot: root,
@@ -519,6 +529,125 @@ test("recovers completed active-run artifacts without rerunning the provider", a
   expect(createContext).toHaveBeenCalledOnce();
   expect(runTriage).not.toHaveBeenCalled();
   expect(result.phaseRunId).toBe(runId);
+});
+
+test("recovers failed provider metadata without rerunning the provider", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "triage-failed-meta-"));
+  const root = join(workspace, "state");
+  const ctx = context(workspace, false);
+  const inputRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: workspace,
+    path: relative(workspace, join(ctx.runDir, "context/work-item.json")),
+  });
+  const imported: FactoryActionLifecycleEvent = {
+    version: 1,
+    id: "work_item.imported:linear:ENG-37",
+    type: "work_item.imported",
+    workItemKey: "linear:ENG-37",
+    occurredAt: "2026-07-11T00:00:00.000Z",
+    data: { source: "linear" },
+  };
+  appendFactoryActionEvent({ factoryStateRoot: root, event: imported, expectedLastEventId: null });
+  appendFactoryActionEvent({
+    factoryStateRoot: root,
+    expectedLastEventId: imported.id,
+    event: {
+      version: 1,
+      id: `triage.requested:${ctx.runId}`,
+      type: "triage.requested",
+      workItemKey: "linear:ENG-37",
+      occurredAt: "2026-07-11T00:01:00.000Z",
+      phaseRunId: ctx.runId,
+      data: { expectedPredecessor: imported.id, inputRefs: [inputRef], intent: "start" },
+    },
+  });
+  writeFileSync(
+    join(ctx.runDir, "meta.json"),
+    JSON.stringify({
+      ...meta(ctx),
+      status: "failed",
+      error: "provider failed",
+      failureKind: "terminal",
+      factoryStore: ctx.factoryStore,
+    }),
+  );
+  const runTriage = vi.fn();
+  const result = await runFactoryTriageWithLinearApply({
+    factoryStateRoot: root,
+    workItem: WORK_ITEM,
+    rerun: false,
+    issueRef: "ENG-37",
+    createContext: (_signal, existingRunId) => {
+      expect(existingRunId).toBe(ctx.runId);
+      return ctx;
+    },
+    runTriage,
+  });
+  assertActionResult(result);
+  expect(runTriage).not.toHaveBeenCalled();
+  expect(result.meta.status).toBe("failed");
+  expect(readFactoryActionEvents(root, "linear:ENG-37").at(-1)).toMatchObject({
+    type: "factory.action.failed",
+    data: { message: "provider failed" },
+  });
+});
+
+test("rejects a recovered triage artifact outside the phase run", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "triage-escaped-meta-"));
+  const root = join(workspace, "state");
+  const ctx = context(workspace, false);
+  const inputRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: workspace,
+    path: relative(workspace, join(ctx.runDir, "context/work-item.json")),
+  });
+  const imported: FactoryActionLifecycleEvent = {
+    version: 1,
+    id: "work_item.imported:linear:ENG-37",
+    type: "work_item.imported",
+    workItemKey: "linear:ENG-37",
+    occurredAt: "2026-07-11T00:00:00.000Z",
+    data: { source: "linear" },
+  };
+  appendFactoryActionEvent({ factoryStateRoot: root, event: imported, expectedLastEventId: null });
+  appendFactoryActionEvent({
+    factoryStateRoot: root,
+    expectedLastEventId: imported.id,
+    event: {
+      version: 1,
+      id: `triage.requested:${ctx.runId}`,
+      type: "triage.requested",
+      workItemKey: "linear:ENG-37",
+      occurredAt: "2026-07-11T00:01:00.000Z",
+      phaseRunId: ctx.runId,
+      data: { expectedPredecessor: imported.id, inputRefs: [inputRef], intent: "start" },
+    },
+  });
+  const completed = { ...meta(ctx), factoryStore: ctx.factoryStore };
+  completed.artifacts = { ...completed.artifacts!, triage: "../secret.json" };
+  writeFileSync(join(ctx.runDir, "meta.json"), JSON.stringify(completed));
+  ctx.exportFailed = vi.fn(
+    (error: unknown): FactoryRunMeta => ({
+      ...completed,
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+      failureKind: "terminal",
+    }),
+  );
+  const runTriage = vi.fn();
+  const result = await runFactoryTriageWithLinearApply({
+    factoryStateRoot: root,
+    workItem: WORK_ITEM,
+    rerun: false,
+    issueRef: "ENG-37",
+    createContext: () => ctx,
+    runTriage,
+  });
+  assertActionResult(result);
+  expect(runTriage).not.toHaveBeenCalled();
+  expect(result.meta.error).toMatch(/must be factory-triage.json/);
+  expect(result.next).toMatchObject({ kind: "wait", reason: "failed" });
 });
 
 test("leaves the durable triage request pending when Linear phase start fails", async () => {

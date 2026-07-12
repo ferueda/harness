@@ -5,12 +5,10 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  renameSync,
-  writeFileSync,
   writeSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { assertFactoryStoreFormat, ensureFactoryStoreFormat } from "./factory-store-format.ts";
 import {
   isFactoryActionEvent,
@@ -25,6 +23,7 @@ import {
 import { withFactoryWorkItemLock, type FactoryLockRuntimeOptions } from "./factory-locks.ts";
 import { canonicalFactoryEvent } from "./factory-event-canonical.ts";
 import { assertFactoryActionEventIdentity } from "./factory-action-identity.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
 export class FactoryLifecycleConflictError extends Error {
   constructor(message: string) {
@@ -116,10 +115,7 @@ function appendAndSync(path: string, event: FactoryLifecycleEvent): void {
   }
 }
 function writeAtomic(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const temp = `${path}.${randomUUID()}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  renameSync(temp, path);
+  writeDurableFactoryFile(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function workItemKeyToFilename(workItemKey: string): string {

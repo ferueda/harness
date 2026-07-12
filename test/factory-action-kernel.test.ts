@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -15,10 +15,12 @@ import {
   appendFactoryActionEvent,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
-import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
+import {
+  FactoryLifecycleEventSchema,
+  type FactoryLifecycleEvent,
+} from "../lib/factory-lifecycle-events.ts";
 import {
   FactoryPhaseRunIdentitySchema,
-  resolveFactoryTriageExecutionProfileForRun,
   writeFactoryPhaseRunIdentity,
 } from "../lib/factory-phase-run.ts";
 import { ensureFactoryStoreFormat, FactoryStoreFormatError } from "../lib/factory-store-format.ts";
@@ -34,6 +36,41 @@ const inputRef = {
   path: "inputs/item.json",
   sha256: "0".repeat(64),
 };
+
+function completedTriageEvents(
+  route: "ready-to-plan" | "ready-to-implement",
+): FactoryLifecycleEvent[] {
+  return [
+    imported(),
+    {
+      version: 1,
+      id: "triage-request",
+      type: "triage.requested",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T01:00:00.000Z",
+      phaseRunId: "triage-run",
+      data: { expectedPredecessor: "import:item-1", inputRefs: [inputRef], intent: "start" },
+    },
+    {
+      version: 1,
+      id: "triage-complete",
+      type: "triage.work_item.completed",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T02:00:00.000Z",
+      phaseRunId: "triage-run",
+      data: {
+        handler: "triageWorkItem",
+        handlerVersion: 1,
+        attempt: 1,
+        causationEventId: "triage-request",
+        execution: { workspaceRef: "repo", runRef: inputRef },
+        evidence: [inputRef],
+        route,
+        rationale: "routed",
+      },
+    },
+  ];
+}
 const imported = (
   occurredAt = "2026-07-11T00:00:00.000Z",
 ): Extract<FactoryLifecycleEvent, { type: "work_item.imported" }> => ({
@@ -46,6 +83,64 @@ const imported = (
 });
 
 describe("Factory action lifecycle kernel", () => {
+  test("requires request inputs and action evidence", () => {
+    expect(() =>
+      FactoryLifecycleEventSchema.parse({
+        version: 1,
+        id: "request",
+        type: "triage.requested",
+        workItemKey: "item-1",
+        occurredAt: "2026-07-11T01:00:00.000Z",
+        phaseRunId: "triage-run",
+        data: { expectedPredecessor: "import:item-1", inputRefs: [], intent: "start" },
+      }),
+    ).toThrow(/Too small/);
+    const completed = completedTriageEvents("ready-to-plan").at(-1)!;
+    expect(() =>
+      FactoryLifecycleEventSchema.parse({
+        ...completed,
+        data: { ...completed.data, evidence: [] },
+      }),
+    ).toThrow(/Too small/);
+  });
+  test("requires a new phase-run ID for planning and implementation requests", () => {
+    expect(() =>
+      reduceFactoryLifecycleEvents([
+        ...completedTriageEvents("ready-to-plan"),
+        {
+          version: 1,
+          id: "planning-request",
+          type: "planning.requested",
+          workItemKey: "item-1",
+          occurredAt: "2026-07-11T03:00:00.000Z",
+          phaseRunId: "triage-run",
+          data: {
+            expectedPredecessor: "triage-complete",
+            inputRefs: [inputRef],
+            reviewCeiling: 1,
+          },
+        },
+      ]),
+    ).toThrow(/Invalid Factory transition/);
+    expect(() =>
+      reduceFactoryLifecycleEvents([
+        ...completedTriageEvents("ready-to-implement"),
+        {
+          version: 1,
+          id: "implementation-request",
+          type: "implementation.requested",
+          workItemKey: "item-1",
+          occurredAt: "2026-07-11T03:00:00.000Z",
+          phaseRunId: "triage-run",
+          data: {
+            expectedPredecessor: "triage-complete",
+            inputRefs: [inputRef],
+            reviewCeiling: 1,
+          },
+        },
+      ]),
+    ).toThrow(/Invalid Factory transition/);
+  });
   test("state schema rejects phase-incompatible statuses and routes", () => {
     const common = {
       projectionVersion: 1,
@@ -120,7 +215,7 @@ describe("Factory action lifecycle kernel", () => {
             workspaceRef: "repo",
             runRef: { base: "factory-store", path: "runs/triage", sha256: "a".repeat(64) },
           },
-          evidence: [],
+          evidence: [inputRef],
           route: "ready-to-plan",
           rationale: "Plan first",
         },
@@ -143,7 +238,7 @@ describe("Factory action lifecycle kernel", () => {
           workspaceRef: "repo",
           runRef: { base: "factory-store", path: "runs/planning", sha256: "b".repeat(64) },
         },
-        evidence: [],
+        evidence: [inputRef],
         phase: "planning",
         failureKind: "retryable",
         message: "review failed before candidate",
@@ -258,7 +353,7 @@ describe("Factory action lifecycle kernel", () => {
           workspaceRef: "repo",
           runRef: { base: "factory-store", path: "runs/triage", sha256: "a".repeat(64) },
         },
-        evidence: [],
+        evidence: [inputRef],
         route: "ready-to-plan",
         nextCommand: "harness factory planning run --item-file item.json",
         rationale: "Needs planning",
@@ -355,7 +450,7 @@ describe("Factory action lifecycle kernel", () => {
           workspaceRef: "repo",
           runRef: { base: "factory-store", path: "runs/triage", sha256: "a".repeat(64) },
         },
-        evidence: [],
+        evidence: [inputRef],
         route: "ready-to-plan",
         nextCommand: "next",
         rationale: "bad",
@@ -404,7 +499,7 @@ describe("Factory action lifecycle kernel", () => {
             workspaceRef: "repo",
             runRef: { base: "factory-store", path: "runs/triage", sha256: "a".repeat(64) },
           },
-          evidence: [],
+          evidence: [inputRef],
           route: "ready-to-plan",
           rationale: "Plan first",
         },
@@ -434,7 +529,7 @@ describe("Factory action lifecycle kernel", () => {
             workspaceRef: "repo",
             runRef: { base: "factory-store", path: "runs/planning", sha256: "b".repeat(64) },
           },
-          evidence: [],
+          evidence: [inputRef],
           candidate: { base: "factory-store", path: "plans/candidate", sha256: "c".repeat(64) },
           effectiveSession: { provider: "codex", id: "session" },
         },
@@ -455,7 +550,7 @@ describe("Factory action lifecycle kernel", () => {
             workspaceRef: "repo",
             runRef: { base: "factory-store", path: "runs/planning", sha256: "b".repeat(64) },
           },
-          evidence: [],
+          evidence: [inputRef],
           verdict: "pass",
           review: { base: "factory-store", path: "reviews/result", sha256: "d".repeat(64) },
           reviewCeiling: 2,
@@ -561,16 +656,10 @@ describe("Factory store and artifact boundaries", () => {
     });
 
     expect(
-      resolveFactoryTriageExecutionProfileForRun({
-        existingRunDir: runDir,
-        newPhaseProfile: { provider: "cursor", model: "changed-model" },
-      }),
+      FactoryPhaseRunIdentitySchema.parse(
+        JSON.parse(readFileSync(join(runDir, "context/phase-run.json"), "utf8")),
+      ).actions.triageWorkItem,
     ).toEqual(frozen);
-    expect(
-      resolveFactoryTriageExecutionProfileForRun({
-        newPhaseProfile: { provider: "cursor", model: "changed-model" },
-      }),
-    ).toEqual({ provider: "cursor", model: "changed-model" });
   });
 
   test("rejects malformed persisted action profiles", () => {
@@ -590,10 +679,9 @@ describe("Factory store and artifact boundaries", () => {
       }),
     );
     expect(() =>
-      resolveFactoryTriageExecutionProfileForRun({
-        existingRunDir: runDir,
-        newPhaseProfile: { provider: "cursor", model: "changed-model" },
-      }),
+      FactoryPhaseRunIdentitySchema.parse(
+        JSON.parse(readFileSync(join(runDir, "context/phase-run.json"), "utf8")),
+      ),
     ).toThrow();
   });
 });

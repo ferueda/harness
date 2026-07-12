@@ -16,13 +16,14 @@ export function formatFactoryActionOutput(input: {
   next: FactoryReaction;
   linearApplied: boolean;
 }): FactoryActionOutput {
-  const outcome = input.action
-    ? "action-completed"
-    : input.next.kind === "wait" && input.next.reason === "complete"
-      ? "complete"
-      : input.next.kind === "wait" && input.next.reason === "failed"
-        ? "failed"
-        : "waiting";
+  const outcome =
+    input.next.kind === "wait" && input.next.reason === "failed"
+      ? "failed"
+      : input.action
+        ? "action-completed"
+        : input.next.kind === "wait" && input.next.reason === "complete"
+          ? "complete"
+          : "waiting";
   return {
     outcome,
     phase: input.phase,

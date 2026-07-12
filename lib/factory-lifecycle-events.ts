@@ -33,7 +33,7 @@ const ActionData = z
     attempt: z.number().int().positive(),
     causationEventId: z.string().min(1),
     execution: Execution,
-    evidence: z.array(FactoryArtifactRefSchema),
+    evidence: z.array(FactoryArtifactRefSchema).min(1),
   })
   .strict();
 const Session = z.object({ provider: z.string().min(1), id: z.string().min(1) }).strict();

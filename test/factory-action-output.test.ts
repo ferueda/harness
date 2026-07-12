@@ -39,4 +39,15 @@ describe("Factory manual action output", () => {
     });
     expect(JSON.stringify(reaction)).not.toMatch(/API_KEY|token|secret/i);
   });
+
+  test("reports a terminal failed action as failed", () => {
+    expect(
+      formatFactoryActionOutput({
+        phase: "triage",
+        action: { handler: "triageWorkItem", attempt: 1, eventId: "failed" },
+        next: { kind: "wait", reason: "failed" },
+        linearApplied: false,
+      }).outcome,
+    ).toBe("failed");
+  });
 });

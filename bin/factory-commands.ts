@@ -1,6 +1,6 @@
 import { InvalidArgumentError, type Command } from "commander";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
 import { formatFactoryActionOutput, withManualCommand } from "./factory-action-output.ts";
@@ -824,11 +824,10 @@ export async function runFactoryTriageWithLinearApply(input: {
     }
     let completedTriage: FactoryTriageOutput | undefined;
     if (meta.status === "completed") {
-      try {
-        completedTriage = readFactoryTriageArtifact(meta);
-      } catch (error) {
-        meta = ctx.exportFailed(error);
-      }
+      completedTriage =
+        terminalAction?.type === "triage.work_item.completed"
+          ? readVerifiedFactoryTriageArtifact(meta, terminalAction, ctx.factoryStore?.projectRoot)
+          : readFactoryTriageArtifact(meta);
     }
     let terminalUpdate: LinearTriageUpdatePlan | undefined;
     let terminalApplyError: unknown;
@@ -935,7 +934,7 @@ async function recoverTriageActionResult(input: {
       try {
         const triage =
           latest.type === "triage.work_item.completed"
-            ? readVerifiedFactoryTriageArtifact(meta, latest)
+            ? readVerifiedFactoryTriageArtifact(meta, latest, dirname(input.factoryStateRoot))
             : undefined;
         if (
           triage &&
@@ -1058,7 +1057,11 @@ async function recoverTriageActionResult(input: {
               issueRef: input.issueRef,
               runId: meta.runId,
               runDir: meta.runDir,
-              triage: readVerifiedFactoryTriageArtifact(meta, terminal),
+              triage: readVerifiedFactoryTriageArtifact(
+                meta,
+                terminal,
+                dirname(input.factoryStateRoot),
+              ),
             })
           : await input.applyAdapter.applyTriageFailed({
               issueRef: input.issueRef,
@@ -1127,6 +1130,7 @@ function assertTriageEvidenceContained(workspace: string, triage: FactoryTriageO
 function readVerifiedFactoryTriageArtifact(
   meta: FactoryRunMeta,
   event: Extract<FactoryActionLifecycleEvent, { type: "triage.work_item.completed" }>,
+  projectRoot?: string,
 ): FactoryTriageOutput {
   const relativePath = meta.artifacts?.triage ?? "factory-triage.json";
   if (resolve(relativePath) === relativePath) {
@@ -1138,17 +1142,27 @@ function readVerifiedFactoryTriageArtifact(
     throw new Error(`Recovered Factory triage artifact escapes ${meta.runId}`);
   }
   const roots = {
-    "factory-store": dirname(meta.factoryStore?.factoryStateRoot ?? ""),
+    "factory-store": projectRoot ?? dirname(meta.factoryStore?.factoryStateRoot ?? ""),
     repository: meta.workspace,
   };
-  const evidencePaths = event.data.evidence.map((ref) =>
-    resolve(verifyFactoryArtifactRef(ref, roots)),
+  const actionKey = factoryActionKey({
+    phaseRunId: event.phaseRunId,
+    handler: event.data.handler,
+    attempt: event.data.attempt,
+    causationEventId: event.data.causationEventId,
+  });
+  const expectedTriagePath = resolve(
+    runRoot,
+    "actions",
+    String(event.data.attempt),
+    event.data.handler,
+    actionKey,
+    "evidence/factory-triage.json",
   );
-  const triagePath = evidencePaths.find(
-    (path) =>
-      basename(path) === basename(relativePath) && !relative(runRoot, path).startsWith(".."),
-  );
-  if (!triagePath) {
+  const triagePath = event.data.evidence
+    .map((ref) => resolve(verifyFactoryArtifactRef(ref, roots)))
+    .find((path) => path === expectedTriagePath);
+  if (!triagePath || relative(runRoot, triagePath).startsWith("..")) {
     throw new Error("Recovered Factory triage artifact is not immutable terminal evidence");
   }
   const triage = parseFactoryTriageOutput(JSON.parse(readFileSync(triagePath, "utf8")));

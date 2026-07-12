@@ -1,10 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import type { AgentRunInput } from "../lib/agents.ts";
+import type { AgentProviderOptions, AgentRunInput } from "../lib/agents.ts";
 import {
+  createFactoryRunContext,
   createFactoryRunContextForTest,
+  openFactoryRunContext,
   readFactoryWorkItemFile,
 } from "../lib/factory-run-context.ts";
 import type { FactoryTriageOutput, FactoryWorkItem } from "../lib/factory-schemas.ts";
@@ -291,6 +293,65 @@ test("factory work item fixture parses through runtime reader", () => {
     source: "file",
     title: "Add keyboard shortcut for export",
   });
+});
+
+test("opening a phase uses its persisted profile and validates it before provider construction", () => {
+  const workspace = createWorkspace();
+  const projectRoot = mkdtempSync(join(tmpdir(), "factory-store-project-"));
+  const runsDir = join(projectRoot, "runs/factory");
+  const factoryStore = {
+    storeRoot: projectRoot,
+    projectId: "project",
+    projectRoot,
+    factoryStateRoot: join(projectRoot, "factory"),
+    factoryRunsDir: runsDir,
+    reviewRunsDir: join(projectRoot, "runs/reviews"),
+    repo: { name: "repo", id: "repo", idSource: "config" as const },
+    overrides: {},
+    warnings: [],
+  };
+  const providers: string[] = [];
+  const providerFactory = (options: AgentProviderOptions) => {
+    providers.push(options.provider);
+    return {
+      name: options.provider,
+      run: async () => ({ ok: false as const, error: "unused", exitCode: 1 }),
+    };
+  };
+  const created = createFactoryRunContext({
+    workspace,
+    runsDir,
+    workItem: WORK_ITEM,
+    executionProfile: { provider: "cursor", model: "frozen-model" },
+    maxRuntimeMs: 1_000,
+    factoryStore,
+    agentProviderFactory: providerFactory,
+  });
+  const opened = openFactoryRunContext({
+    workspace,
+    runsDir,
+    phaseRunId: created.runId,
+    workItem: WORK_ITEM,
+    maxRuntimeMs: 1_000,
+    factoryStore,
+    agentProviderFactory: providerFactory,
+  });
+  expect(opened.executionProfile).toEqual({ provider: "cursor", model: "frozen-model" });
+  expect(providers).toEqual(["cursor", "cursor"]);
+
+  writeFileSync(join(created.runDir, "context/phase-run.json"), "{}\n");
+  expect(() =>
+    openFactoryRunContext({
+      workspace,
+      runsDir,
+      phaseRunId: created.runId,
+      workItem: WORK_ITEM,
+      maxRuntimeMs: 1_000,
+      factoryStore,
+      agentProviderFactory: providerFactory,
+    }),
+  ).toThrow();
+  expect(providers).toEqual(["cursor", "cursor"]);
 });
 
 function dirnameFromTest(): string {

@@ -315,7 +315,8 @@ function validateFactoryTransition(
         return (
           current.phase === "triage" &&
           current.status === "routed" &&
-          current.route === "ready-to-plan"
+          current.route === "ready-to-plan" &&
+          event.phaseRunId !== current.phaseRunId
         );
       case "planning.candidate.produced":
         return (
@@ -356,10 +357,12 @@ function validateFactoryTransition(
         );
       case "implementation.requested":
         return (
-          (current.phase === "triage" &&
+          "phaseRunId" in current &&
+          event.phaseRunId !== current.phaseRunId &&
+          ((current.phase === "triage" &&
             current.status === "routed" &&
             current.route === "ready-to-implement") ||
-          (current.phase === "planning" && current.status === "approved")
+            (current.phase === "planning" && current.status === "approved"))
         );
       case "implementation.candidate.produced":
         return (

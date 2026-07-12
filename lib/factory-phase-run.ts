@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { AGENT_APPROVAL_POLICIES, AGENT_REASONING_EFFORTS, AGENT_SANDBOX_MODES } from "./agents.ts";
 import { FactoryPhaseRunIdSchema } from "./factory-action-contract.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
 export const FactoryActionExecutionProfileSchema = z.discriminatedUnion("provider", [
   z.object({ provider: z.literal("cursor"), model: z.string().min(1) }).strict(),
@@ -38,40 +38,20 @@ export const FactoryPhaseRunIdentitySchema = z
   .strict();
 export type FactoryPhaseRunIdentity = z.infer<typeof FactoryPhaseRunIdentitySchema>;
 
-export function factoryPhaseRunId(input: {
-  workItemKey: string;
-  phase: string;
-  requestId: string;
-}): string {
-  const digest = createHash("sha256")
-    .update(`${input.workItemKey}\0${input.phase}\0${input.requestId}`)
-    .digest("hex")
-    .slice(0, 20);
-  return `${input.phase}-${digest}`;
-}
-
 export function writeFactoryPhaseRunIdentity(
   runDir: string,
   identity: FactoryPhaseRunIdentity,
 ): void {
   const parsed = FactoryPhaseRunIdentitySchema.parse(identity);
-  writeFileSync(join(runDir, "context/phase-run.json"), `${JSON.stringify(parsed, null, 2)}\n`, {
-    encoding: "utf8",
-    flag: "wx",
-  });
+  writeDurableFactoryFile(
+    join(runDir, "context/phase-run.json"),
+    `${JSON.stringify(parsed, null, 2)}\n`,
+    true,
+  );
 }
 
 export function readFactoryPhaseRunIdentity(runDir: string): FactoryPhaseRunIdentity {
   return FactoryPhaseRunIdentitySchema.parse(
     JSON.parse(readFileSync(join(runDir, "context/phase-run.json"), "utf8")),
   );
-}
-
-export function resolveFactoryTriageExecutionProfileForRun(input: {
-  existingRunDir?: string;
-  newPhaseProfile: FactoryActionExecutionProfile;
-}): FactoryActionExecutionProfile {
-  return input.existingRunDir
-    ? readFactoryPhaseRunIdentity(input.existingRunDir).actions.triageWorkItem
-    : FactoryActionExecutionProfileSchema.parse(input.newPhaseProfile);
 }
