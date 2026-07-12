@@ -365,6 +365,8 @@ test("recovers a persisted triage result without invoking the handler", async ()
       ...meta(context(projectRoot, false)),
       runId,
       runDir,
+      route: "ready-to-plan",
+      nextAction: "create-plan",
       factoryStore: { factoryStateRoot: root },
     }),
   );

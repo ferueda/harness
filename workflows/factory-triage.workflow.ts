@@ -99,7 +99,9 @@ export async function triageWorkItem(input: {
       actionDir,
       resultPath,
       action: async () => {
-        let meta = latest.type === "triage.requested" ? readTerminalMeta(ctx) : undefined;
+        const providerMetaPath = join(actionDir, "provider-meta.json");
+        let meta = readActionProviderMeta(providerMetaPath, ctx);
+        if (!meta && latest.type === "triage.requested") meta = readTerminalMeta(ctx);
         if (!meta) {
           try {
             meta = await (input.runProvider ?? run)(ctx, {
@@ -108,21 +110,29 @@ export async function triageWorkItem(input: {
           } catch (error) {
             meta = ctx.exportFailed(error);
           }
+          writeDurableFactoryFile(providerMetaPath, JSON.stringify(meta, null, 2), true);
         }
-        const metaPath = join(ctx.runDir, "meta.json");
-        if (!existsSync(metaPath)) {
-          writeDurableFactoryFile(metaPath, JSON.stringify(meta, null, 2));
-        }
-        let triage: FactoryTriageOutput | undefined;
-        if (meta.status === "completed") {
-          try {
-            triage = readTriageArtifact(meta);
-          } catch (error) {
-            meta = ctx.exportFailed(error);
+        let terminal: Extract<
+          FactoryLifecycleEvent,
+          { type: "triage.work_item.completed" | "factory.action.failed" }
+        >;
+        try {
+          const metaPath = join(ctx.runDir, "meta.json");
+          if (!existsSync(metaPath)) {
+            writeDurableFactoryFile(metaPath, JSON.stringify(meta, null, 2));
           }
+          let triage: FactoryTriageOutput | undefined;
+          if (meta.status === "completed") {
+            triage = readTriageArtifact(meta);
+          }
+          input.onMeta?.(meta);
+          terminal = buildTriageActionEvent(ctx, meta, triage, reaction);
+        } catch (error) {
+          meta = ctx.exportFailed(error);
+          input.onMeta?.(meta);
+          terminal = buildTriageActionEvent(ctx, meta, undefined, reaction);
         }
-        input.onMeta?.(meta);
-        writeFactoryActionResult(actionDir, buildTriageActionEvent(ctx, meta, triage, reaction));
+        writeFactoryActionResult(actionDir, terminal);
       },
     });
   }
@@ -272,6 +282,29 @@ function readTerminalMeta(ctx: FactoryRunContext): FactoryRunMeta | undefined {
   )
     throw new Error(`Completed Factory run metadata conflicts with ${ctx.runId}`);
   return value;
+}
+
+function readActionProviderMeta(path: string, ctx: FactoryRunContext): FactoryRunMeta | undefined {
+  if (!existsSync(path)) return undefined;
+  const value = JSON.parse(readFileSync(path, "utf8")) as FactoryRunMeta;
+  assertRecoveredMetaIdentity(value, ctx);
+  return value;
+}
+
+function assertRecoveredMetaIdentity(value: FactoryRunMeta, ctx: FactoryRunContext): void {
+  if (value.status !== "completed" && value.status !== "failed") {
+    throw new Error(`Factory action metadata has no terminal provider status for ${ctx.runId}`);
+  }
+  if (
+    value.runId !== ctx.runId ||
+    resolve(value.runDir) !== resolve(ctx.runDir) ||
+    resolve(value.workspace) !== resolve(ctx.workspace) ||
+    value.workItem.id !== ctx.workItem.id ||
+    resolve(value.factoryStore?.factoryStateRoot ?? "") !==
+      resolve(ctx.factoryStore?.factoryStateRoot ?? "")
+  ) {
+    throw new Error(`Completed Factory run metadata conflicts with ${ctx.runId}`);
+  }
 }
 
 function readTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {

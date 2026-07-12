@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { FactoryLinearSettings } from "../lib/config.ts";
 import {
@@ -2484,6 +2487,44 @@ test("Linear adapter applies completed triage with case-insensitive current stat
     targetStatus: "Needs Plan",
     commentMarker: "<!-- harness-factory:triage:run-1 -->",
   });
+});
+
+test("Linear adapter serializes concurrent terminal triage projection", async () => {
+  const comments: Array<{ issueId: string; body: string }> = [];
+  const runDir = mkdtempSync(join(tmpdir(), "linear-triage-projection-"));
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Triaging", name: "Triaging" }),
+          },
+        ],
+      }),
+      updateIssue: async () => ({ success: true }),
+      createComment: async (input) => {
+        comments.push(input);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+  const input = {
+    issueRef: "ENG-123",
+    runId: "run-concurrent",
+    runDir,
+    triage: TRIAGE_READY_TO_PLAN,
+  };
+
+  const [first, second] = await Promise.all([
+    adapter.applyTriageCompleted(input),
+    adapter.applyTriageCompleted(input),
+  ]);
+
+  expect(comments).toHaveLength(1);
+  expect(second).toEqual(first);
 });
 
 test("Linear adapter refuses terminal triage over an intervening human status", async () => {
