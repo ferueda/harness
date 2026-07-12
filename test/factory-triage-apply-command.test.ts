@@ -167,3 +167,53 @@ test.each([
     );
   },
 );
+
+test("new triage action invokes one handler and returns the next reaction", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "triage-action-run-"));
+  const root = join(workspace, "factory");
+  const ctx = context(workspace, false);
+  ctx.factoryStore = {
+    storeRoot: workspace,
+    projectId: "repo",
+    projectRoot: workspace,
+    factoryStateRoot: root,
+    factoryRunsDir: join(workspace, "runs"),
+    reviewRunsDir: join(workspace, "reviews"),
+    repo: { name: "repo", id: "repo", idSource: "config" },
+    overrides: {},
+    warnings: [],
+  };
+  writeFileSync(join(ctx.runDir, "summary.md"), "summary");
+  writeFileSync(
+    join(ctx.runDir, "factory-route.json"),
+    JSON.stringify({ command: "harness factory planning run --item-file item.json" }),
+  );
+  writeFileSync(
+    join(ctx.runDir, "factory-triage.json"),
+    JSON.stringify({
+      route: "ready-to-plan",
+      confidence: "high",
+      rationale: "Needs plan",
+      evidence: [{ kind: "repo-state", path: null, summary: "Needs design" }],
+      questions: [],
+      reconsiderWhen: null,
+      suggestedNext: { action: "create-plan", command: null, artifact: null },
+    }),
+  );
+  const runTriage = vi.fn(async () => meta(ctx));
+  const result = await runFactoryTriageWithLinearApply({
+    factoryStateRoot: root,
+    workItem: WORK_ITEM,
+    rerun: false,
+    issueRef: "ENG-37",
+    createContext: () => ctx,
+    runTriage,
+  });
+  expect(runTriage).toHaveBeenCalledOnce();
+  expect(result.action).toMatchObject({ handler: "triageWorkItem", attempt: 1 });
+  expect(result.next).toEqual({
+    kind: "wait",
+    reason: "phase-command",
+    command: "harness factory planning run --item-file item.json",
+  });
+});

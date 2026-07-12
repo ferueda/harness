@@ -5,6 +5,21 @@ description: Operate the current harness factory flow for one local work item th
 
 # Factory Operator
 
+## Manually stepped triage
+
+The new Factory action store requires `store-format.json` version 1. Harness
+initializes an empty state directory. It rejects old, unmarked, or differently
+versioned state with archive/reset instructions and never migrates or deletes
+it.
+
+`harness factory triage ...` blocks until its one `triageWorkItem` action ends.
+Wait for process exit; do not poll or start a second action. The command
+persists progress heartbeats in the action run (`--verbose` also emits them to
+stderr), writes a terminal event/state, and prints durable evidence plus the
+next reaction and exact command. Run that command manually. The invocation
+never executes a second handler. If `next.kind` is `wait`, stop and follow its
+reason.
+
 Operate the current local harness factory one work item at a time.
 
 ## When To Use
@@ -25,7 +40,13 @@ After run context creation, those station commands emit exactly one always-on
 stderr JSON progress line so operators can learn `runDir` before exit:
 
 ```json
-{"harnessFactory":"run-started","station":"triage","runId":"...","runDir":"...","workspace":"..."}
+{
+  "harnessFactory": "run-started",
+  "station": "triage",
+  "runId": "...",
+  "runDir": "...",
+  "workspace": "..."
+}
 ```
 
 `station` is `triage`, `planning`, or `implementation`. This line is CLI
@@ -218,8 +239,9 @@ write one marker comment. `--apply` cannot be combined with `--dry-run` or
 `--item-file`. Comment dedupe checks the most recent Linear comments fetched
 by the adapter (currently 20); older markers can be reposted on retry.
 
-Durable lifecycle event history is canonical. A prior `triage.completed`
-blocks normal live and dry-run triage before run creation, lifecycle writes,
+Durable lifecycle event history is canonical. A prior
+`triage.work_item.completed` blocks normal live triage before run creation,
+lifecycle writes,
 provider calls, or Linear mutation. Use `--rerun` only for intentional
 re-triage. Normal apply accepts Backlog, Needs Clarification, or Triage Failed;
 `--rerun --apply` accepts any present status after the same issue and configured
@@ -242,11 +264,10 @@ Routes:
 Read the run `summary.md`, `factory-triage.json`, and `factory-route.md` before
 deciding the next station.
 
-Live triage appends lifecycle events in the durable factory store. Dry-run does
-not mutate lifecycle state and can warn when the durable projection is stale.
-The lifecycle read model owns machine fields such as `factoryStage`,
-`factoryRoute`, `factoryNextAction`, and `factoryRunId`; Linear status/comments
-are human board projections.
+Live triage appends `work_item.imported`, `triage.requested`, and one terminal
+action event in the durable factory store. Dry-run does not mutate lifecycle
+state. The strict state projection and pure next-reaction function own machine
+progress; Linear status/comments remain human board projections.
 
 ## Planning
 
@@ -310,11 +331,11 @@ harness factory implementation run --workspace /path/to/repo --linear-issue TEAM
 
 Entry matrix:
 
-| Input | Flags | Entry status | Linear mutation |
-| --- | --- | --- | --- |
-| item file | live or `--dry-run` | direct/planned readiness | no |
-| Linear issue | live or `--dry-run` | `Ready to Implement` | no |
-| Linear issue | live `--apply` | `Ready to Implement`, or `Implementation Failed` retry | yes |
+| Input        | Flags               | Entry status                                           | Linear mutation |
+| ------------ | ------------------- | ------------------------------------------------------ | --------------- |
+| item file    | live or `--dry-run` | direct/planned readiness                               | no              |
+| Linear issue | live or `--dry-run` | `Ready to Implement`                                   | no              |
+| Linear issue | live `--apply`      | `Ready to Implement`, or `Implementation Failed` retry | yes             |
 
 `--apply` requires `--linear-issue` and rejects `--item-file` and `--dry-run`.
 Retries are Linear apply-only so the station can validate a fresh failed

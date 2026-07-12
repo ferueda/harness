@@ -9,6 +9,18 @@ import { FactoryTriageError } from "../lib/factory-schemas.ts";
 
 export const meta = { name: "factory-triage" };
 
+export async function triageWorkItem(
+  ctx: FactoryRunContext,
+  options: { nextLiveRunRequiresRerun?: boolean } = {},
+): Promise<FactoryRunMeta> {
+  const triage = await ctx.invokeTriageAgent();
+  const routePlan = buildFactoryRoutePlan(ctx.workItem, triage, {
+    ...options,
+    isDryRun: ctx.dryRun,
+  });
+  return ctx.export({ triage, routePlan });
+}
+
 export async function run(
   ctx: FactoryRunContext,
   options: { nextLiveRunRequiresRerun?: boolean } = {},
@@ -34,13 +46,21 @@ export async function run(
     startedAt: stepStartedAt.toISOString(),
   });
 
-  try {
-    const triage = await ctx.invokeTriageAgent();
-    const routePlan = buildFactoryRoutePlan(ctx.workItem, triage, {
-      ...options,
-      isDryRun: ctx.dryRun,
+  const heartbeat = setInterval(() => {
+    ctx.eventSink({
+      type: "step:heartbeat",
+      runId: ctx.runId,
+      runDir: ctx.runDir,
+      workspace: ctx.workspace,
+      stepId: FACTORY_TRIAGE_EVENT_STEP,
+      cliStep: FACTORY_TRIAGE_EVENT_STEP,
+      status: "running",
+      elapsedMs: Date.now() - stepStartedAt.getTime(),
     });
-    const result = ctx.export({ triage, routePlan });
+  }, 30_000);
+
+  try {
+    const result = await triageWorkItem(ctx, options);
     ctx.eventSink({
       type: "step:end",
       runId: ctx.runId,
@@ -90,5 +110,7 @@ export async function run(
       error: factoryError.message,
     });
     return result;
+  } finally {
+    clearInterval(heartbeat);
   }
 }

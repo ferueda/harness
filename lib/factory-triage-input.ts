@@ -23,7 +23,7 @@ export type FactoryResolvedWorkItemInput = {
   warnings?: FactoryLifecycleWarning[];
 };
 
-export type FactoryLifecycleReadMode = "inspect" | "load";
+export type FactoryLifecycleReadMode = "inspect" | "load" | "none";
 
 export type ResolveFactoryWorkItemInput = {
   workspace: string;
@@ -109,6 +109,7 @@ export function mergeLifecycleState(input: {
   lifecycleReadMode: FactoryLifecycleReadMode;
   lifecycleLockOptions?: FactoryLockRuntimeOptions;
 }): { workItem: FactoryWorkItem; warnings: FactoryLifecycleWarning[] } {
+  if (input.lifecycleReadMode === "none") return { workItem: input.workItem, warnings: [] };
   if (!input.factoryStateRoot && !input.allowWorkspaceLocalStateRoot) {
     throw new Error(
       "factoryStateRoot is required for factory station lifecycle reads; pass allowWorkspaceLocalStateRoot only for low-level workspace-local tests.",

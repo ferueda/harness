@@ -29,6 +29,7 @@ import {
   loadFactoryLifecycleState,
 } from "../lib/factory-lifecycle.ts";
 import { resolveFactoryStore } from "../lib/factory-store.ts";
+import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
 import {
   fakeLinearAdapter,
   LINEAR_SETTINGS,
@@ -1762,13 +1763,7 @@ test("harness factory triage dry-run handles one item file", () => {
     }),
     "utf8",
   );
-  const store = seedMissingLifecycleProjection({
-    workspace,
-    storeRoot,
-    id: "local-1",
-    source: "file",
-    title: "Queued item",
-  });
+  const store = resolveFactoryStore({ workspace, factoryStoreRoot: storeRoot, env: {} });
 
   const result = runHarness([
     "factory",
@@ -1804,18 +1799,12 @@ test("harness factory triage dry-run handles one item file", () => {
     workspace,
   });
   expect(existsSync(join(output.runDir, "events.jsonl"))).toBe(false);
-  expect(output.warnings).toEqual([
-    expect.objectContaining({
-      code: "durable-state-missing",
-      factoryStateRoot: store.factoryStateRoot,
-      workItemKey: "file:local-1",
-    }),
-  ]);
+  expect(output.warnings).toBeUndefined();
   expect(existsSync(factoryLifecycleStatePath(store.factoryStateRoot, "file:local-1"))).toBe(false);
   expect(existsSync(join(store.factoryStateRoot, "locks"))).toBe(false);
 });
 
-test("harness factory triage gates completed history before run creation", () => {
+test("harness factory triage rejects old lifecycle history before run creation", () => {
   const workspace = createPlainWorkspace();
   const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-rerun-store-"));
   const itemFile = join(workspace, "item.json");
@@ -1856,26 +1845,18 @@ test("harness factory triage gates completed history before run creation", () =>
   for (const extra of [[], ["--dry-run"]]) {
     const result = runHarness([...args, ...extra]);
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("--rerun");
+    expect(result.stderr).toContain("Archive or reset");
     expect(result.stderr).not.toContain('"harnessFactory":"run-started"');
     expect(existsSync(itemFile)).toBe(true);
     expect(existsSync(store.factoryRunsDir)).toBe(false);
   }
 
   const rerun = runHarness([...args, "--rerun", "--dry-run"]);
-  expect(rerun.status).toBe(0);
-  const output = JSON.parse(rerun.stdout);
-  expect(output.status).toBe("dry_run");
-  expect(readFileSync(join(output.runDir, "factory-route.md"), "utf8")).toContain("--rerun");
-  expect(
-    loadFactoryLifecycleState({
-      factoryStateRoot: store.factoryStateRoot,
-      workItemKey: "file:local-rerun",
-    })?.lastEventId,
-  ).toBe("triage.completed:old-run");
+  expect(rerun.status).not.toBe(0);
+  expect(rerun.stderr).toContain("Archive or reset");
 });
 
-test("harness factory triage allows a failed-only history without rerun", () => {
+test("harness factory triage rejects failed old lifecycle history", () => {
   const workspace = createPlainWorkspace();
   const storeRoot = mkdtempSync(join(tmpdir(), "harness-cli-triage-retry-store-"));
   const itemFile = join(workspace, "item.json");
@@ -1908,8 +1889,8 @@ test("harness factory triage allows a failed-only history without rerun", () => 
     "--factory-store-root",
     storeRoot,
   ]);
-  expect(result.status).toBe(0);
-  expect(JSON.parse(result.stdout).status).toBe("dry_run");
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("Archive or reset");
 });
 
 test("harness factory triage records explicit runs-dir overrides in durable metadata", () => {
@@ -2769,13 +2750,10 @@ test("harness factory triage preserves post-bootstrap failure artifacts", () => 
   const runMeta = JSON.parse(readFileSync(join(output.runDir, "meta.json"), "utf8"));
   expect(JSON.stringify(runMeta)).toContain('"status":"failed"');
   expect(
-    loadFactoryLifecycleState({
-      factoryStateRoot: runMeta.factoryStore.factoryStateRoot,
-      workItemKey: "file:station-fail",
-    }),
+    readFactoryActionEvents(runMeta.factoryStore.factoryStateRoot, "file:station-fail").at(-1),
   ).toMatchObject({
-    factoryRunId: output.runId,
-    lastEventId: `triage.failed:${output.runId}`,
+    type: "factory.action.failed",
+    phaseRunId: output.runId,
   });
 });
 

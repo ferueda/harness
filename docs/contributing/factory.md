@@ -1,5 +1,25 @@
 # Factory Operation
 
+## Factory action store
+
+Factory action state uses a clean version-1 store rooted at the configured
+durable `factory` directory. `store-format.json` is required. Harness creates
+it only for an empty directory. A non-empty unmarked directory or a marker
+with another version is rejected with archive/reset guidance; old lifecycle
+logs are not parsed or migrated and data is never deleted automatically.
+
+Factory commands are synchronous and manually stepped. One invocation runs at
+most one action, waits for it to finish, persists its terminal event and state,
+prints the next reaction and exact command, then exits. It never invokes the
+next handler. An already-waiting state invokes no handler.
+
+Triage is the first action slice: `triage.requested` invokes
+`triageWorkItem`; the terminal `triage.work_item.completed` event records the
+route and durable evidence refs. Progress is always emitted to stderr after
+the action is known. `step:start`, periodic `step:heartbeat`, and `step:end`
+telemetry is always persisted in the action run; `--verbose` also forwards it
+to stderr. Heartbeats are telemetry, not lifecycle events.
+
 Use this guide when operating or changing the current factory flow. The factory
 is local and explicit today: one command handles one work item. Future tracker
 or event backends should call the same station code instead of replacing it.
@@ -129,11 +149,10 @@ shim, inbox, and committed `dev/plans/*.md`. Legacy workspace-local
 `.harness/factory` state is detected by `factory status` and ignored; it is not
 silently imported into the durable store.
 
-`triage.started`, `planning.started`, and `implementation.started` events are
-audit history only; they do not move durable `factoryStage`. Terminal events
-such as `triage.completed`, `planning.completed`, `planning.failed`,
-`implementation.completed`, `implementation.failed`, `plan_pr.opened`, and
-`plan_pr.merged` own durable transitions.
+New Factory state is projected only from the strict action event log. Triage
+uses `work_item.imported`, `triage.requested`,
+`triage.work_item.completed`, and `factory.action.failed`. Legacy station event
+names and `factoryStage` fields are not transition inputs.
 
 ## Station Config
 
@@ -345,7 +364,7 @@ then moves to the terminal status and writes one marker comment:
 - triage failure -> `Triage Failed`
 
 Durable lifecycle history is authoritative for triage eligibility. Any prior
-`triage.completed` blocks normal live and dry-run triage before run artifacts,
+`triage.work_item.completed` blocks normal live triage before run artifacts,
 lifecycle writes, provider calls, or Linear mutations. Use `--rerun` only for
 intentional re-triage. Normal apply retains the three entry statuses above;
 `--rerun --apply` accepts any present status after the existing issue and
@@ -410,10 +429,9 @@ Triage artifacts under the durable factory `runs/factory/<run-id>/` include:
 - `meta.json`
 - `events.jsonl` for live runs
 
-Live triage appends lifecycle events for work-item import, station start, and
-terminal completion/failure. Dry-run does not write lifecycle events. Both
-modes enforce prior-completion history before creating a run; an eligible
-first dry-run needs no `--rerun`, while a dry-run over completed history does.
+Live triage appends `work_item.imported`, `triage.requested`, and one terminal
+action event. Dry-run does not write lifecycle events. A prior terminal triage
+requires explicit `--rerun` intent for another live phase run.
 
 Triage does not mutate tracker state, labels, branches, or source files unless
 `--apply` is used with `--linear-issue`. Apply mode mutates Linear status and
