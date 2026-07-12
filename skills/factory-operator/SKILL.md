@@ -124,7 +124,7 @@ Minimal shape:
       }
     },
     "planning": {
-      "maxReviewIterations": 2,
+      "maxReviewIterations": 3,
       "roles": {
         "planner": { "agent": "cursor", "model": "grok-4.5" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
@@ -277,7 +277,7 @@ the issue to `Ready to Implement`.
 Factory plans are minimum-sufficient: they preserve the explicit task and
 project intent, choose the smallest coherent change, and include only decisions
 and verification tied to a requirement, invariant, or demonstrated risk. The
-default two completed reviews allow one revision. Review artifacts retain every
+default three completed reviews allow two revisions. Review artifacts retain every
 finding; only `must_fix` findings return to the planner.
 
 The planner writes only the mutable draft at

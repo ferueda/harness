@@ -99,11 +99,11 @@ parses for a non-spec reviewer; existing blocked-flow coverage remains green.
 
 ### 3. Bound normal review churn and document the contract
 
-Change the default Factory review ceiling to two completed reviews while
+Change the default Factory review ceiling to three completed reviews while
 preserving explicit configuration overrides. Update repo configuration and
 active operator surfaces: `harness.json`, `bin/factory-commands.ts`, `README.md`,
 `docs/contributing/factory.md`, and `skills/factory-operator/SKILL.md`. Describe
-minimum-sufficient plans and one normal revision opportunity; retain a
+minimum-sufficient plans and two normal revision opportunities; retain a
 configured value such as five in tests to prove overrides.
 
 **Verify**:

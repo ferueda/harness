@@ -176,7 +176,7 @@ Factory station roles use `harness.json`:
       }
     },
     "planning": {
-      "maxReviewIterations": 2,
+      "maxReviewIterations": 3,
       "roles": {
         "planner": { "agent": "cursor", "model": "grok-4.5" },
         "reviewer": {
@@ -450,8 +450,8 @@ should use for readiness; Linear comments remain human context and dedupe.
 Factory plans are minimum-sufficient: preserve the explicit task and project
 intent, choose the smallest coherent change, and include only implementation
 decisions and verification tied to a requirement, invariant, or demonstrated
-risk. The default of two completed reviews allows the initial review and one
-revision; `factory.planning.maxReviewIterations` may override it. All findings
+risk. The default of three completed reviews allows the initial review and two
+revisions; `factory.planning.maxReviewIterations` may override it. All findings
 remain durable evidence, but only `must_fix` findings enter a revision.
 
 The planner writes only to the ignored workspace-local

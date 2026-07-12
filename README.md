@@ -116,7 +116,7 @@ Planning keeps mutable planner scratch under ignored workspace
 `.harness/factory-drafts/<run-id>/` and writes reviewed plans into the target
 repo only after approval. Harness alone publishes canonical and immutable
 planning evidence to the durable store. Factory plans are minimum-sufficient:
-two reviews by default, with only blocking findings revised. For tracker-backed
+three reviews by default, with only blocking findings revised. For tracker-backed
 work, publish the plan file through a plan PR, then register the
 PR URL and merge commit with the planning publication commands before treating
 the tracker item as ready to implement.
@@ -198,7 +198,7 @@ ownership and mutability, read
       }
     },
     "planning": {
-      "maxReviewIterations": 2,
+      "maxReviewIterations": 3,
       "roles": {
         "planner": { "agent": "cursor", "model": "grok-4.5" },
         "reviewer": {
