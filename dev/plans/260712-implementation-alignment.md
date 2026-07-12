@@ -1,0 +1,89 @@
+# Align implementation with accepted task authority
+
+## Goal
+
+Keep intent intact from planning through implementation and change review. Plans
+should name behavior ownership, removals, cutover order, and compatibility only
+when a change actually replaces or retires an existing path. Normal and Factory
+implementers should reconcile those accepted decisions with repository
+invariants and current code before editing; implementation review and triage
+should then verify the resulting diff without letting handoffs or reviewer
+preferences redefine the task.
+
+Preserve the recent minimum-sufficient plan and prompt shape. This is one
+process-quality PR: concise instruction changes plus focused contract tests, not
+new orchestration.
+
+## Changes
+
+1. `skills/create-plan/references/plan-template.md:Default shape`,
+   `skills/audit/references/plan-template.md`, and
+   `lib/prompts/factory-planning.ts:PLANNING_RULES` — add the same conditional
+   planning rule: when work replaces, redirects, splits, deprecates, or removes
+   an existing behavior, name its post-change owner, exact removals/cutover
+   order, and required compatibility. Omit that lifecycle detail for ordinary
+   additive work; do not add a new required section or restore the removed
+   planning ceremony. Extend the existing create-plan and audit template seams
+   in `test/skills.test.ts` and the rendered Factory contract in
+   `test/factory-planning-prompt.test.ts`.
+2. `skills/planning-workflow/SKILL.md:4. Implement` — add a compact execution
+   alignment before edits: repository guidance constrains the work, the
+   original request or approved plan defines the intended outcome, and verified
+   current code is the implementation baseline. Treat historical branches and
+   superseded implementations as context only. Carry forward any named
+   ownership/removal/cutover/compatibility decisions; return to planning or the
+   user when a material conflict invalidates the approach. Before review or
+   handoff, reconcile the resulting diff with those same decisions. Make both
+   checks in-session, not a new artifact, checklist, or plan rewrite. Cover the
+   skill contract in `test/skills.test.ts`.
+3. `skills/handoff-work/SKILL.md:Handoff Focus` — make handoffs explicitly
+   subordinate to repository guidance and the original task/accepted plan.
+   Point to inspectable sources and repeat only session-only or otherwise
+   load-bearing constraints and decisions; do not duplicate the plan, diff, or
+   an exhaustive inspectable file inventory, and do not create a second source
+   of authority. Retain important files and material adaptations needed for
+   continuation. Preserve the compact change-review handoff shape already
+   enforced by `test/skills.test.ts`; add focused assertions there for the
+   handoff-work authority, source, and non-duplication contract.
+4. `lib/prompts/factory-implementation.ts:renderFactoryImplementationPrompt`
+   — mirror the normal execution alignment with a compact, mode-aware authority
+   rule: repository invariants and project intent first; then the approved plan
+   for planned mode or resolved source request for direct mode; then verified
+   repository facts. Require the implementer to check named ownership,
+   removals, cutover, and compatibility before editing and report an unresolved
+   material conflict rather than improvise. Keep existing station ownership
+   boundaries and generated review-handoff shape intact. Add planned- and
+   direct-mode assertions to `test/factory-implementation-prompt.test.ts` using
+   `renderFactoryImplementationPrompt`.
+5. `lib/prompts/implementation-review.ts:IMPLEMENTATION_REVIEW_PROMPT` and
+   `skills/review-implementation/SKILL.md:Review Focus` — when the authoritative
+   task or plan names a post-change owner, removal, cutover, or compatibility
+   commitment, verify it against the diff and directly affected paths. Keep the
+   check conditional so the reviewer neither invents migration work nor turns
+   a handoff into authority. Extend
+   `test/review-prompts.test.ts:implementation review prompt keeps blockers tied
+   to the original task` and the corresponding skill assertion in
+   `test/skills.test.ts`.
+6. `skills/change-review-workflow/SKILL.md:Triage` and the synchronized
+   `.agents/skills/change-review-workflow/SKILL.md` copy — reconcile conflicts
+   among findings, the task/plan, handoff context, and diff using the existing
+   authority and scope rules. Require an evidence-backed disposition for each
+   underlying issue; forbid blanket Implement/Adapt/Decline decisions for an
+   entire reviewer, run, or finding set. Retain duplicate grouping and reviewer
+   provenance. Extend the existing convergence assertions in
+   `test/skills.test.ts`; its packaged/local sync test continues to protect both
+   copies.
+
+## Verify
+
+- `pnpm test -- test/skills.test.ts test/review-prompts.test.ts test/factory-planning-prompt.test.ts test/factory-implementation-prompt.test.ts`
+- `pnpm check`
+
+## Boundaries
+
+- No new skill, workflow, schema, reviewer, artifact, state transition, or
+  runtime orchestration.
+- Do not change `AGENTS.md`, `lib/prompts/quality-review.ts`, or
+  `skills/code-quality-review/SKILL.md`.
+- Do not make ownership/cutover sections mandatory, expand handoffs into work
+  logs, or undo the recent plan/prompt simplification.
