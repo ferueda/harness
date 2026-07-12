@@ -196,6 +196,213 @@ Concurrent invocations are not specially coordinated in this scope. Both can cre
 - No remediation, recovery, new Git lineage, new reviewer configuration, or review-engine changes are introduced.
 - Operator docs and dist smoke match the shipped command.
 
+## Verification matrix
+
+The required gate is layered. Deterministic tests prove every branch and safety
+boundary; live provider smoke proves that the packaged command, configured
+agents, real Git objects, durable store, and existing `change-review` workflow
+compose successfully. Live smoke uses only disposable repositories, item files,
+and store roots. It never reads or mutates Linear.
+
+| ID | Layer | Scenario | Execution | Required oracle |
+| --- | --- | --- | --- | --- |
+| U1 | Lifecycle | Completed `pass`, `needs_changes`, `blocked`, and failed review results | Append/read real lifecycle JSONL and reduce state | `pass` projects `review-complete`; every other result projects `ready-for-human`; failed results have no invented verdict; review run id becomes authoritative. |
+| U2 | Evidence resolver | Valid completed implementation, with and without approved plan | Real temporary Git repository, Factory store, lifecycle JSONL, run metadata, and artifacts | Resolver returns canonical workspace/artifact paths and immutable commit SHA; optional plan is propagated only when valid. |
+| U3 | Evidence resolver | Wrong stage/run/work item/store/project/workspace; malformed metadata; missing event | Mutate one authority at a time | STOP before agent/provider creation and before a review run directory or terminal lifecycle event exists. |
+| U4 | Filesystem safety | Relative/wrong-root run dir; traversal, symlink escape, missing, directory, or unreadable handoff/plan | Real filesystem fixtures | Unsafe evidence is rejected before provider creation; no outside file is read or changed. |
+| U5 | Git safety | Missing/non-commit base, head, or SHA; moved review ref; head/SHA disagreement; unrelated history | Real Git refs and commits | Review never starts; recorded SHA is the only head passed to the workflow when evidence is valid. |
+| U6 | Result mapping | Review `pass`, `needs_changes`, `blocked`, and failed run | Inject only the review result at the narrow runner seam | Stable CLI/domain result contains correct status, outcome, paths, verdict presence, and failed-review evidence. |
+| U7 | Persistence failure | Review artifacts complete, lifecycle append fails | Inject append failure after a completed review fixture | Error reports review run id, directory, and meta path; artifacts remain; lifecycle remains at `implementation-complete`. |
+| C1 | CLI contract | Help, exactly-one input, bounded options, exit behavior | Commander command tests | No `--runs-dir`; item-file/Linear exclusivity enforced; zero only for `review-complete`; stable JSON emitted. |
+| I1 | Workflow integration | Pass through the actual `runChangeReview` implementation | Real `WorkflowContext`, Git diff, review run directory, and artifact writers; deterministic fake agents return valid implementation/quality/simplify outputs | All three standard roles run once; aggregate/meta/summary artifacts are real; Factory lifecycle points to that review run. No custom reviewer loop is involved. |
+| I2 | Workflow integration | One role returns a valid must-fix finding; one role invocation fails | Same real workflow as I1, varying only fake agent output/failure | Must-fix aggregates to `needs_changes`; invocation failure creates failed review metadata; both project `ready-for-human` without remediation. |
+| D1 | Distribution | Packaged nested command and bounded help surface | `pnpm build && pnpm smoke:dist` | Built CLI exposes `factory implementation review`; help contains intended options and omits `--runs-dir`. |
+| L1 | Live provider smoke | Benign synthetic change passes | Real packaged implementation run followed by real packaged review run against a disposable repo | Three real reviewer turns complete; command exits 0; lifecycle is `review-complete`; refs, summary, meta, and aggregate artifacts agree. |
+| L2 | Live failure smoke | Reviewer executable/provider fails | Real packaged implementation run, then real review with deliberately broken reviewer config | Review exits nonzero; a failed nested review is preserved; lifecycle is `ready-for-human`; terminal event has no verdict. |
+| L3 | Live preflight smoke | Implementation review ref is moved after completion | Real packaged implementation run, mutate only its disposable internal ref, then invoke review | Command rejects evidence before provider invocation; no review run and no review terminal event are created. |
+
+### Deterministic integration additions
+
+`I1` and `I2` are the most important additions beyond the existing focused
+tests. They must not inject `reviewRunner`. Inject agents at
+`agentProviderFactory`, then run the production `change-review` workflow and
+real artifact writers. Assert artifact contents and lifecycle JSONL, not only
+mock call counts. Keep these tests offline and include them in `pnpm test`.
+
+The fake-agent matrix is:
+
+| Case | Implementation reviewer | Quality reviewer | Simplify reviewer | Expected aggregate |
+| --- | --- | --- | --- | --- |
+| Clean candidate | `pass`, no findings | `pass`, no findings | `pass`, no findings | completed `pass` -> `review-complete` |
+| Actionable defect | one valid `must_fix` finding | `pass` | `pass` | completed `needs_changes` -> `ready-for-human` |
+| Reviewer failure | valid output | invocation throws | valid output | failed run -> `ready-for-human`, no verdict |
+
+For every case verify `meta.json`, `summary.md`, aggregate result, per-step
+artifacts, Factory terminal event, projected lifecycle stage, review run id, and
+that the source workspace/ref pair did not change.
+
+### Live smoke protocol
+
+Run live smoke only when provider credentials are available, after
+`pnpm check`, from the candidate commit. It is a release/PR verification step,
+not part of the offline unit-test gate. Preserve failed roots for diagnosis;
+clean successful roots after recording the evidence.
+
+#### Shared disposable fixture
+
+1. Build Harness, create a temporary target repository and external store, and
+   record their paths. Never point the smoke at a developer checkout or the
+   default Factory store.
+
+   ```bash
+   export HARNESS_CHECKOUT="$PWD"
+   pnpm install --frozen-lockfile
+   pnpm build
+
+   export SMOKE_ROOT="$(mktemp -d)"
+   export TARGET="$SMOKE_ROOT/target"
+   export STORE="$SMOKE_ROOT/store"
+   mkdir -p "$TARGET" "$STORE"
+   git -C "$TARGET" init -b main
+   git -C "$TARGET" config user.name "Harness Smoke"
+   git -C "$TARGET" config user.email "harness-smoke@example.invalid"
+   printf '# Factory review smoke\n' > "$TARGET/README.md"
+   git -C "$TARGET" add README.md
+   git -C "$TARGET" commit -m "Seed smoke repository"
+   ```
+
+2. Add a target-local `harness.json`. Use the configured real provider with a
+   read-only default reviewer policy and a workspace-write override only for
+   `factory.implementation.roles.implementer`. Use a low-cost model suitable
+   for smoke, `approvalPolicy: "never"`, and a finite timeout. Do not configure
+   Linear. Commit `harness.json` so the target is clean before implementation.
+
+   ```json
+   {
+     "defaultAgent": "codex",
+     "agents": {
+       "codex": {
+         "model": "gpt-5.6-luna",
+         "modelReasoningEffort": "medium",
+         "sandboxMode": "read-only",
+         "approvalPolicy": "never"
+       }
+     },
+     "factory": {
+       "implementation": {
+         "roles": {
+           "implementer": {
+             "agent": "codex",
+             "model": "gpt-5.6-luna",
+             "modelReasoningEffort": "medium",
+             "sandboxMode": "workspace-write",
+             "approvalPolicy": "never"
+           }
+         }
+       }
+     }
+   }
+   ```
+
+3. Add `.harness/inbox/factory/work-item.json` with synthetic direct-mode
+   readiness. Keeping the item under ignored `.harness/` avoids contaminating
+   the implementation candidate:
+
+   ```json
+   {
+     "id": "fer62-live-smoke-pass",
+     "source": "file",
+     "title": "Add a harmless smoke marker",
+     "body": "Create SMOKE.md containing exactly: Factory review smoke passed. Do not change any other file.",
+     "labels": ["smoke"],
+     "metadata": {
+       "factoryStage": "ready-to-implement",
+       "factoryRoute": "ready-to-implement",
+       "factoryNextAction": "implement-directly"
+     }
+   }
+   ```
+
+The `.example.invalid` identity, item, repository, and store are disposable
+fake data. Item-file mode guarantees no tracker reads or writes.
+
+#### L1 — real implementation and passing review
+
+Run both packaged commands against the same item identity and explicit store:
+
+```bash
+node "$HARNESS_CHECKOUT/dist/bin/harness.js" factory implementation run \
+  --workspace "$TARGET" \
+  --item-file "$TARGET/.harness/inbox/factory/work-item.json" \
+  --factory-store-root "$STORE" \
+  --factory-store-project-id fer62-live-pass \
+  --max-runtime-ms 300000 | tee "$SMOKE_ROOT/implementation.json"
+
+node "$HARNESS_CHECKOUT/dist/bin/harness.js" factory implementation review \
+  --workspace "$TARGET" \
+  --item-file "$TARGET/.harness/inbox/factory/work-item.json" \
+  --factory-store-root "$STORE" \
+  --factory-store-project-id fer62-live-pass \
+  --max-runtime-ms 300000 | tee "$SMOKE_ROOT/review.json"
+```
+
+Pass only when all of these hold:
+
+- implementation status is `implementation-complete`, and its base, internal
+  head ref, and commit SHA peel to the recorded objects;
+- review exits zero with `reviewStatus: "completed"`, `verdict: "pass"`, and
+  `outcome: "review-complete"`;
+- review run directory is a direct child of the explicit store's review-runs
+  root and contains `meta.json`, `summary.md`, and structured/raw artifacts for
+  implementation, quality, and simplify;
+- lifecycle JSONL ends with one `implementation.review.completed` event whose
+  implementation/review run ids and relative artifact paths match disk;
+- lifecycle projection is `review-complete` and points at the review run;
+- `git rev-parse HEAD` in the target remains the committed fixture tip, the
+  internal implementation ref is unchanged, and no Linear
+  marker/config/artifact exists.
+
+A real reviewer may occasionally return a justified non-pass. Treat that as a
+smoke failure and inspect the finding; do not rewrite lifecycle evidence or
+rerun until the fixture/prompt or product defect is understood.
+
+#### L2 — real failed review run
+
+Create a fresh shared fixture and complete its real implementation run. Before
+review, change only the disposable target's reviewer executable/config to a
+known failing command while leaving the implementation role usable. Invoke the
+same review command.
+
+Pass when the command exits nonzero, reports `reviewStatus: "failed"` and
+`outcome: "ready-for-human"`, preserves the nested failed review meta/summary
+and per-role failure evidence, appends exactly one terminal Factory review
+event with no verdict, and projects `ready-for-human`. The implementation ref
+and commit must remain unchanged. This tests orchestration failure mapping, not
+model judgment.
+
+#### L3 — moved-ref rejection before spend
+
+Create another fresh fixture and complete its implementation run. Read the
+recorded `reviewHead` and `reviewBase`, then move the internal head to the base
+commit in the disposable target:
+
+```bash
+git -C "$TARGET" update-ref "$REVIEW_HEAD" "$REVIEW_BASE"
+```
+
+Record the review-runs directory and lifecycle JSONL before invoking review.
+Pass when the command exits nonzero with the moved-ref evidence error, the
+review-runs directory is byte-for-byte/listing-identical, lifecycle has no
+`implementation.review.completed` event, and provider logs show no invocation.
+This smoke must not consume reviewer turns.
+
+### Verification record
+
+Record candidate commit, provider/model, command exit codes, implementation and
+review run ids, durable store path, terminal lifecycle stage, and the three
+reviewer statuses in the PR. Do not commit generated smoke repositories,
+credentials, provider logs, or durable run artifacts.
+
 ## Skills for the executor
 
 | Skill                    | Use                                                                                   |
