@@ -6,8 +6,10 @@ import {
   readdirSync,
   writeFileSync,
 } from "node:fs";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
   FactoryArtifactRefSchema,
@@ -590,8 +592,46 @@ describe("Factory store and artifact boundaries", () => {
     expect(readFactoryActionEvents(store, "item-1")).toEqual([]);
     ensureFactoryStoreFormat(store);
 
-    expect(readdirSync(store)).toEqual(["store-format.json"]);
+    expect(readdirSync(store).sort()).toEqual([
+      "store-format.json",
+      "store-format.json.123e4567-e89b-42d3-a456-426614174000.tmp",
+    ]);
     expect(() => ensureFactoryStoreFormat(store)).not.toThrow();
+  });
+  test("concurrent processes converge while initializing one shared store", async () => {
+    const moduleUrl = pathToFileURL(join(process.cwd(), "lib/factory-store-format.ts")).href;
+    const source = `import { ensureFactoryStoreFormat } from ${JSON.stringify(moduleUrl)}; ensureFactoryStoreFormat(process.argv[1]);`;
+    for (let round = 0; round < 4; round += 1) {
+      const store = root();
+      const children = Array.from({ length: 8 }, () =>
+        spawn(
+          process.execPath,
+          ["--experimental-strip-types", "--input-type=module", "-e", source, store],
+          {
+            stdio: ["ignore", "ignore", "pipe"],
+          },
+        ),
+      );
+
+      const results = await Promise.all(
+        children.map(
+          (child) =>
+            new Promise<{ code: number | null; stderr: string }>((resolveResult) => {
+              let stderr = "";
+              child.stderr.on("data", (chunk: Buffer) => {
+                stderr += chunk.toString();
+              });
+              child.on("close", (code) => resolveResult({ code, stderr }));
+            }),
+        ),
+      );
+
+      expect(results).toEqual(Array.from({ length: 8 }, () => ({ code: 0, stderr: "" })));
+      expect(JSON.parse(readFileSync(join(store, "store-format.json"), "utf8"))).toEqual({
+        format: "harness-factory",
+        version: 1,
+      });
+    }
   });
   test("read-only event access does not initialize an empty store", () => {
     const store = root();

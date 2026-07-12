@@ -600,7 +600,10 @@ test("the handler rejects an injected command in a recovered PR 1 result", async
   expect(createContext).toHaveBeenCalledOnce();
 });
 
-async function assertCompletedProviderMetaRecovery(canonicalMeta: "missing" | "stale") {
+async function assertCompletedProviderMetaRecovery(
+  canonicalMeta: "missing" | "stale",
+  mismatch?: "failed-status" | "wrong-route",
+) {
   const projectRoot = mkdtempSync(join(tmpdir(), "triage-resume-"));
   const root = join(projectRoot, "factory");
   const runId = "run-active";
@@ -700,7 +703,77 @@ async function assertCompletedProviderMetaRecovery(canonicalMeta: "missing" | "s
       }),
     );
   }
-  writeProviderOutcome(ctx, request.id, { ...meta(ctx), runId, runDir });
+  const providerMeta: FactoryRunMeta = {
+    ...meta(ctx),
+    runId,
+    runDir,
+    ...(mismatch === "failed-status"
+      ? { status: "failed", error: "provider failed", failureKind: "terminal" }
+      : mismatch === "wrong-route"
+        ? { route: "ready-to-plan", nextAction: "create-plan" }
+        : {}),
+  };
+  writeProviderOutcome(ctx, request.id, providerMeta);
+
+  if (mismatch) {
+    const actionKey = factoryActionKey({
+      phaseRunId: runId,
+      handler: "triageWorkItem",
+      attempt: 1,
+      causationEventId: request.id,
+    });
+    const actionDir = join(runDir, "actions/1/triageWorkItem", actionKey);
+    const summaryPath = join(actionDir, "evidence/summary.md");
+    const triagePath = join(actionDir, "evidence/factory-triage.json");
+    mkdirSync(dirname(summaryPath), { recursive: true });
+    writeFileSync(summaryPath, readFileSync(join(runDir, "summary.md")));
+    writeFileSync(triagePath, readFileSync(join(runDir, "factory-triage.json")));
+    const summaryRef = createFactoryArtifactRef({
+      base: "factory-store",
+      root: projectRoot,
+      path: relative(projectRoot, summaryPath),
+    });
+    const triageRef = createFactoryArtifactRef({
+      base: "factory-store",
+      root: projectRoot,
+      path: relative(projectRoot, triagePath),
+    });
+    writeFactoryActionResult(actionDir, {
+      version: 1,
+      id: `triage.work_item.completed:${actionKey}`,
+      type: "triage.work_item.completed",
+      workItemKey: imported.workItemKey,
+      occurredAt: "2026-07-11T00:02:00.000Z",
+      phaseRunId: runId,
+      data: {
+        handler: "triageWorkItem",
+        handlerVersion: 1,
+        attempt: 1,
+        causationEventId: request.id,
+        execution: { workspaceRef: "repo", runRef: summaryRef },
+        evidence: [summaryRef, triageRef],
+        route: "needs-info",
+        rationale: "Need answer",
+      },
+    });
+
+    await expect(
+      runFactoryTriageWithLinearApply({
+        factoryStateRoot: root,
+        workspace: projectRoot,
+        projectId: "repo",
+        workItem: WORK_ITEM,
+        rerun: false,
+        issueRef: "ENG-37",
+        createContext,
+        runTriage,
+      }),
+    ).rejects.toThrow("conflicts with action-bound provider metadata");
+    expect(existsSync(join(runDir, "meta.json"))).toBe(false);
+    expect(readFactoryActionEvents(root, imported.workItemKey).at(-1)?.id).toBe(request.id);
+    expect(runTriage).not.toHaveBeenCalled();
+    return;
+  }
 
   const result = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
@@ -747,6 +820,13 @@ test("recovers action-bound provider metadata when canonical meta is missing", a
 test("replaces stale canonical meta with validated action-bound provider metadata", async () => {
   await expect(assertCompletedProviderMetaRecovery("stale")).resolves.toBeUndefined();
 });
+
+test.each(["failed-status", "wrong-route"] as const)(
+  "rejects completed action-result joined to %s provider metadata",
+  async (mismatch) => {
+    await expect(assertCompletedProviderMetaRecovery("missing", mismatch)).resolves.toBeUndefined();
+  },
+);
 
 test("recovers immutable finalization failure without rerunning the provider", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "triage-failed-meta-"));

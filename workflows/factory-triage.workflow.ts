@@ -153,7 +153,7 @@ export async function triageWorkItem(input: {
     writeFactoryActionResult(actionDir, terminal);
   }
   const terminal = readFactoryActionResult(actionDir);
-  assertRecoveredActionResult({
+  const recoveredEvidence = assertRecoveredActionResult({
     terminal,
     ctx,
     reaction,
@@ -162,10 +162,23 @@ export async function triageWorkItem(input: {
     actionDir,
   });
   const recoveredMeta =
-    terminal.type === "factory.action.failed"
-      ? readRecoveredFailureEvidence(join(actionDir, "evidence", "failure.json"), ctx)
+    recoveredEvidence.kind === "failed"
+      ? recoveredEvidence.meta
       : readActionProviderOutcome(join(actionDir, "provider-result.json"), ctx, reaction)?.meta;
   if (!recoveredMeta) throw new Error(`Factory action metadata is missing for ${ctx.runId}`);
+  if (recoveredEvidence.kind === "completed") {
+    const expectedNextAction = buildFactoryRoutePlan(
+      ctx.workItem,
+      recoveredEvidence.triage,
+    ).nextAction;
+    if (
+      recoveredMeta.status !== "completed" ||
+      recoveredMeta.route !== recoveredEvidence.triage.route ||
+      recoveredMeta.nextAction !== expectedNextAction
+    ) {
+      throw new Error("Recovered Factory completion conflicts with action-bound provider metadata");
+    }
+  }
   ensureCanonicalRunMeta(ctx, recoveredMeta);
   input.onMeta?.(recoveredMeta);
   return appendFactoryActionEvent({
@@ -354,7 +367,7 @@ function assertRecoveredActionResult(input: {
   factoryStateRoot: string;
   workItemKey: string;
   actionDir: string;
-}): void {
+}): { kind: "completed"; triage: FactoryTriageOutput } | { kind: "failed"; meta: FactoryRunMeta } {
   const { terminal, ctx, reaction } = input;
   if (terminal.type !== "triage.work_item.completed" && terminal.type !== "factory.action.failed") {
     throw new Error("Recovered triage action result is not terminal");
@@ -413,6 +426,7 @@ function assertRecoveredActionResult(input: {
     if (triage.route !== terminal.data.route || triage.rationale !== terminal.data.rationale) {
       throw new Error("Recovered Factory completion conflicts with immutable triage evidence");
     }
+    return { kind: "completed", triage };
   } else {
     if (evidencePaths.length !== 1) {
       throw new Error("Recovered Factory failure has unexpected evidence");
@@ -428,6 +442,7 @@ function assertRecoveredActionResult(input: {
     ) {
       throw new Error("Recovered Factory failure conflicts with immutable evidence");
     }
+    return { kind: "failed", meta: failure };
   }
 }
 
