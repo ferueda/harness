@@ -633,6 +633,10 @@ test("Linear triage helpers map routes and render concise comments", () => {
       /only accepts Backlog, Needs Clarification, or Triage Failed/,
     );
   }
+  expect(() =>
+    assertLinearTriageApplyAllowed(LINEAR_SETTINGS, "Triaging", false, true),
+  ).not.toThrow();
+  expect(() => assertLinearTriageApplyAllowed(LINEAR_SETTINGS, "Planning", false, true)).toThrow();
 
   const comment = renderLinearTriageCompleteComment({
     runId: "run-1",

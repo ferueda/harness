@@ -22,6 +22,7 @@ import {
   type FactoryLifecycleState,
 } from "./factory-state-machine.ts";
 import { withFactoryWorkItemLock, type FactoryLockRuntimeOptions } from "./factory-locks.ts";
+import { canonicalFactoryEvent } from "./factory-event-canonical.ts";
 
 export class FactoryLifecycleConflictError extends Error {
   constructor(message: string) {
@@ -71,7 +72,7 @@ export function appendFactoryActionEvent(input: AppendFactoryActionEventInput): 
       const events = readFactoryActionEvents(root, event.workItemKey);
       const existing = events.find((candidate) => candidate.id === event.id);
       if (existing) {
-        if (canonical(existing) !== canonical(event))
+        if (canonicalFactoryEvent(existing) !== canonicalFactoryEvent(event))
           throw new FactoryLifecycleConflictError(
             `Factory event ${event.id} already exists with different content`,
           );
@@ -91,19 +92,6 @@ export function appendFactoryActionEvent(input: AppendFactoryActionEventInput): 
       return { event, state };
     },
   );
-}
-function canonical(event: FactoryLifecycleEvent): string {
-  const { occurredAt: _ignored, ...content } = event;
-  return stable(content);
-}
-function stable(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  if (value && typeof value === "object")
-    return `{${Object.entries(value)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${JSON.stringify(k)}:${stable(v)}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
 }
 function requiredState(events: readonly FactoryLifecycleEvent[]): FactoryLifecycleState {
   const state = reduceFactoryLifecycleEvents(events);

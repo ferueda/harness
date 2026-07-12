@@ -13,6 +13,14 @@ import type { FactoryRunContext, FactoryRunMeta } from "../lib/factory-run-conte
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { fakeLinearAdapter } from "./factory-linear-test-helpers.ts";
 
+type TriageCoordinatorResult = Awaited<ReturnType<typeof runFactoryTriageWithLinearApply>>;
+
+function assertActionResult(
+  value: TriageCoordinatorResult,
+): asserts value is Extract<TriageCoordinatorResult, { meta: FactoryRunMeta }> {
+  if ("waiting" in value) throw new Error("Expected an action result");
+}
+
 const WORK_ITEM: FactoryWorkItem = {
   id: "linear:ENG-37",
   source: "linear",
@@ -28,6 +36,7 @@ function context(workspace: string, dryRun: boolean): FactoryRunContext {
   mkdirSync(join(runDir, "context"), { recursive: true });
   writeFileSync(join(runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
   writeFileSync(join(runDir, "summary.md"), "summary");
+  writeFileSync(join(runDir, "factory-route.json"), JSON.stringify({ command: "wait" }));
   const ctx = {
     runId: "run-new",
     runDir,
@@ -180,9 +189,14 @@ test("new triage action invokes one handler and returns the next reaction", asyn
     createContext: () => ctx,
     runTriage,
   });
+  assertActionResult(result);
   expect(runTriage).toHaveBeenCalledOnce();
   expect(result.action).toMatchObject({ handler: "triageWorkItem", attempt: 1 });
-  expect(result.next).toEqual({ kind: "wait", reason: "phase-command" });
+  expect(result.next).toEqual({
+    kind: "wait",
+    reason: "phase-command",
+    command: "harness factory planning run --item-file item.json",
+  });
 });
 
 test("recovers a persisted triage result without invoking the handler", async () => {
@@ -301,6 +315,7 @@ test("recovers a persisted triage result without invoking the handler", async ()
     issueRef: "ENG-37",
     createContext,
   });
+  assertActionResult(result);
   expect(createContext).not.toHaveBeenCalled();
   expect(result.action.eventId).toBe(terminal.id);
   expect(result.next).toMatchObject({ kind: "wait", reason: "phase-command" });
@@ -320,6 +335,7 @@ test("recovers a persisted triage result without invoking the handler", async ()
     createContext,
     applyAdapter: fakeLinearAdapter({ applyTriageCompleted }),
   });
+  assertActionResult(retry);
   expect(createContext).not.toHaveBeenCalled();
   expect(applyTriageCompleted).toHaveBeenCalledOnce();
   expect(retry.terminalApplyError).toBeUndefined();
@@ -386,6 +402,7 @@ test("reopens an active phase run without allocating a replacement", async () =>
   mkdirSync(join(runDir, "context"), { recursive: true });
   writeFileSync(join(runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
   writeFileSync(join(runDir, "summary.md"), "summary");
+  writeFileSync(join(runDir, "factory-route.json"), JSON.stringify({ command: "wait" }));
   writeFileSync(
     join(runDir, "factory-triage.json"),
     JSON.stringify({
@@ -423,6 +440,7 @@ test("reopens an active phase run without allocating a replacement", async () =>
     createContext,
     runTriage,
   });
+  assertActionResult(result);
 
   expect(createContext).toHaveBeenCalledOnce();
   expect(runTriage).toHaveBeenCalledOnce();
@@ -455,6 +473,7 @@ test("persists a terminal failure when Linear phase start fails", async () => {
       applyTriageStarted: vi.fn(async () => Promise.reject(startError)),
     }),
   });
+  assertActionResult(result);
 
   expect(runTriage).not.toHaveBeenCalled();
   expect(result.terminalApplyError).toBe(startError);
@@ -482,6 +501,7 @@ test("retries the same triage action and phase run after a retryable failure", a
     createContext: () => ctx,
     runTriage: failedRun,
   });
+  assertActionResult(first);
   expect(first.next).toMatchObject({ kind: "invoke", scheduling: "retry", attempt: 1 });
 
   writeFileSync(
@@ -508,6 +528,7 @@ test("retries the same triage action and phase run after a retryable failure", a
     },
     runTriage: successfulRun,
   });
+  assertActionResult(second);
   expect(successfulRun).toHaveBeenCalledOnce();
   expect(second.phaseRunId).toBe(first.phaseRunId);
   expect(second.action.attempt).toBe(1);

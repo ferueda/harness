@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { FactoryPhaseRunIdSchema } from "./factory-action-contract.ts";
 
 export const FactoryPhaseRunIdentitySchema = z
   .object({
     version: z.literal(1),
-    phaseRunId: z.string().min(1),
+    phaseRunId: FactoryPhaseRunIdSchema,
     phase: z.literal("triage"),
     workItemKey: z.string().min(1),
     workspace: z.string().min(1),

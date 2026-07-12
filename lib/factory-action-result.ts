@@ -12,6 +12,7 @@ import {
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseFactoryActionEvent, type FactoryActionEvent } from "./factory-lifecycle-events.ts";
+import { canonicalFactoryEvent } from "./factory-event-canonical.ts";
 
 export function factoryActionResultPath(actionDir: string): string {
   return join(actionDir, "action-result.json");
@@ -21,7 +22,9 @@ export function writeFactoryActionResult(actionDir: string, event: FactoryAction
   const path = factoryActionResultPath(actionDir);
   mkdirSync(dirname(path), { recursive: true });
   if (existsSync(path)) {
-    if (JSON.stringify(readFactoryActionResult(actionDir)) !== JSON.stringify(parsed)) {
+    if (
+      canonicalFactoryEvent(readFactoryActionResult(actionDir)) !== canonicalFactoryEvent(parsed)
+    ) {
       throw new Error(`Divergent Factory action result: ${path}`);
     }
     return path;
@@ -45,7 +48,9 @@ export function writeFactoryActionResult(actionDir: string, event: FactoryAction
     }
   } catch (error) {
     if (!existsSync(path)) throw error;
-    if (JSON.stringify(readFactoryActionResult(actionDir)) !== JSON.stringify(parsed)) {
+    if (
+      canonicalFactoryEvent(readFactoryActionResult(actionDir)) !== canonicalFactoryEvent(parsed)
+    ) {
       throw new Error(`Divergent Factory action result: ${path}`);
     }
   } finally {

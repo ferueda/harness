@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { FactoryHandler, FactoryPhase } from "./factory-action-contract.ts";
+import { FactoryPhaseRunIdSchema } from "./factory-action-contract.ts";
 import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 
 const Common = z
@@ -11,7 +12,7 @@ const Common = z
   })
   .strict();
 const PhaseState = Common.extend({
-  phaseRunId: z.string(),
+  phaseRunId: FactoryPhaseRunIdSchema,
 });
 const ReviewState = PhaseState.extend({
   reviewCeiling: z.number().int().positive(),
@@ -489,6 +490,8 @@ export function decideNextFactoryAction(
   if (state.status === "failed") return { kind: "wait", reason: "failed" };
   if (state.status === "needs-human" || state.status === "parked")
     return { kind: "wait", reason: "human" };
+  if (state.phase === "planning" && state.status === "awaiting-plan-merge")
+    return { kind: "wait", reason: "plan-merge" };
   if (state.status === "complete") return { kind: "wait", reason: "complete" };
   return {
     kind: "wait",

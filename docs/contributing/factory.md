@@ -10,8 +10,10 @@ logs are not parsed or migrated and data is never deleted automatically.
 
 Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
-prints the next reaction and exact command, then exits. It never invokes the
-next handler. An already-waiting state invokes no handler.
+prints the next reaction, then exits. It prints an exact next command only when
+the terminal evidence contains one and never invokes the next handler. An
+already-waiting state invokes no handler and may have no executable downstream
+command.
 
 Triage is the first action slice: `triage.requested` invokes
 `triageWorkItem`; the terminal `triage.work_item.completed` event records the
@@ -47,21 +49,20 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 There is no batch dispatch command. Run an explicit station for an explicit
 work item while this surface is still local-first.
 
-Triage commands emit one always-on
-stderr JSON progress line after run context creation and before provider work
-or Linear `--apply` started mutations:
+Live triage commands emit one always-on stderr JSON progress line after the
+action identity is selected and before provider work:
 
 ```json
 {
-  "harnessFactory": "run-started",
-  "station": "triage",
+  "harnessFactory": "action-started",
   "runId": "...",
   "runDir": "...",
-  "workspace": "..."
+  "handler": "triageWorkItem",
+  "attempt": 1
 }
 ```
 
-The line is CLI progress only so operators can learn `runDir` early; it is not
+The line is CLI progress only; it is not
 a `WorkflowEvent` and is not appended to `events.jsonl`. Final stdout JSON
 stays the station contract.
 
@@ -168,25 +169,6 @@ Factory station roles use `harness.json`:
         "triageFailed": "Triage Failed",
         "planningFailed": "Planning Failed"
       }
-    },
-    "planning": {
-      "maxReviewIterations": 3,
-      "roles": {
-        "planner": { "agent": "cursor", "model": "grok-4.5" },
-        "reviewer": {
-          "agent": "codex",
-          "model": "gpt-5.6-sol",
-          "modelReasoningEffort": "high"
-        }
-      }
-    },
-    "implementation": {
-      "roles": {
-        "implementer": {
-          "agent": "cursor",
-          "model": "grok-4.5"
-        }
-      }
     }
   }
 }
@@ -209,23 +191,18 @@ committed plans; workspace-local `.harness/factory` lifecycle files are legacy.
 
 Vocabulary:
 
-- `station`: lifecycle step such as `triage`, `planning`, or `implementation`.
-- `role`: job inside a station such as `triager`, `planner`, `reviewer`, or `implementer`.
+- `station`: the current lifecycle step, `triage`.
+- `role`: a job inside a station, currently `triager`.
 - `agent`: backend identity such as `cursor` or `codex`.
 
 Keep factory config role-based. Do not add per-role CLI flag sprawl.
-Codex implementation roles may use the same optional provider policy fields as
-other Codex roles: `executable`, `sandboxMode`, `approvalPolicy`, and
-`modelReasoningEffort`.
+Codex roles may use optional provider policy fields such as `executable`,
+`sandboxMode`, `approvalPolicy`, and `modelReasoningEffort`.
 
-Linear status config is a coordinated board/config contract. When upgrading an
-existing repo, rename the old human-input status to `Needs Clarification`, add
-`Plan Needs Review`, `Implementing`, and `Implementation Failed`, then add the
-matching `needsPlanReview`, `implementing`, and `implementationFailed` mappings
-to `harness.json` in the same change. These mappings are a required config
-migration, including for observe-only commands; they are not enabled lazily by
-`--apply`. Commands fail fast if a configured status does not exist on the
-Linear team.
+Linear status config is a coordinated board/config contract. Commands fail
+fast if a configured status does not exist on the Linear team. Downstream
+planning and implementation mappings are reserved for later PRs and have no
+executable Factory command in PR 1.
 
 ## Linear Adapter
 
@@ -316,10 +293,9 @@ then moves to the terminal status and writes one marker comment:
 Durable lifecycle history is authoritative for triage eligibility. Any prior
 `triage.work_item.completed` blocks normal live triage before run artifacts,
 lifecycle writes, provider calls, or Linear mutations. Use `--rerun` only for
-intentional re-triage. Normal apply retains the three entry statuses above;
-`--rerun --apply` accepts any present status after the existing issue and
-team/project scope checks. The new completion invalidates prior approved plan
-path, PR URL, and commit metadata.
+intentional re-triage. Apply still accepts only an allowed entry status or an
+already-idempotent matching terminal status; it never overwrites unrelated
+human or external state.
 
 Linear status is human board state, not Factory machine state. The action log
 alone drives Factory transitions.
@@ -363,7 +339,12 @@ comments only; it does not mutate source files.
 
 ## Unshipped phases
 
-Planning and implementation commands, including plan publication and merge recording, are intentionally unavailable in PR 1. They do not fall back to the old lifecycle. Their dedicated follow-up PRs will consume the action kernel. Until then, triage returns a wait reaction without an executable downstream command.
+Planning and implementation commands, including plan publication and merge
+recording, are intentionally unavailable in PR 1. They do not fall back to the
+old lifecycle. Their dedicated follow-up PRs will consume the action kernel.
+Until then, triage can return a wait reaction without an executable downstream
+command. The CLI prints a command only when the durable terminal evidence
+contains that exact command.
 
 ## Local Inbox
 

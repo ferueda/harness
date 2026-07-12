@@ -42,13 +42,20 @@ export function createFactoryArtifactRef(input: {
   root: string;
   path: string;
 }): FactoryArtifactRef {
-  const candidate = FactoryArtifactRefInputSchema.parse({ base: input.base, path: input.path });
+  const candidate = FactoryArtifactRefInputSchema.parse({
+    base: input.base,
+    path: portableFactoryArtifactPath(input.path),
+  });
   const absolute = resolve(input.root, candidate.path);
   assertContained(input.root, absolute);
   return FactoryArtifactRefSchema.parse({
     ...candidate,
     sha256: createHash("sha256").update(readFileSync(absolute)).digest("hex"),
   });
+}
+
+export function portableFactoryArtifactPath(path: string): string {
+  return path.replaceAll("\\", "/");
 }
 
 export function verifyFactoryArtifactRef(

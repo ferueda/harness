@@ -8,12 +8,14 @@ import {
   verifyFactoryArtifactRef,
 } from "../lib/factory-artifact-ref.ts";
 import { readFactoryActionResult, writeFactoryActionResult } from "../lib/factory-action-result.ts";
+import { FactoryPhaseRunIdSchema } from "../lib/factory-action-contract.ts";
 import {
   FactoryLifecycleConflictError,
   appendFactoryActionEvent,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
+import { FactoryPhaseRunIdentitySchema } from "../lib/factory-phase-run.ts";
 import { ensureFactoryStoreFormat, FactoryStoreFormatError } from "../lib/factory-store-format.ts";
 import {
   decideNextFactoryAction,
@@ -257,6 +259,13 @@ describe("Factory action lifecycle kernel", () => {
     expect(writeFactoryActionResult(actionDir, terminal)).toBe(
       join(actionDir, "action-result.json"),
     );
+    expect(
+      writeFactoryActionResult(actionDir, {
+        ...terminal,
+        occurredAt: "2026-07-12T02:00:00.000Z",
+      }),
+    ).toBe(join(actionDir, "action-result.json"));
+    expect(readFactoryActionResult(actionDir).occurredAt).toBe(terminal.occurredAt);
     expect(() =>
       writeFactoryActionResult(actionDir, {
         ...terminal,
@@ -313,6 +322,100 @@ describe("Factory action lifecycle kernel", () => {
       }),
     ).toThrow(/Invalid Factory transition/);
   });
+
+  test("emits an explicit plan-merge reaction after planning approval", () => {
+    const events: FactoryLifecycleEvent[] = [
+      imported(),
+      {
+        version: 1,
+        id: "triage-request",
+        type: "triage.requested",
+        workItemKey: "item-1",
+        occurredAt: "2026-07-11T01:00:00.000Z",
+        phaseRunId: "triage-run",
+        data: { expectedPredecessor: "import:item-1", inputRefs: [] },
+      },
+      {
+        version: 1,
+        id: "triage-complete",
+        type: "triage.work_item.completed",
+        workItemKey: "item-1",
+        occurredAt: "2026-07-11T02:00:00.000Z",
+        phaseRunId: "triage-run",
+        data: {
+          handler: "triageWorkItem",
+          handlerVersion: 1,
+          attempt: 1,
+          causationEventId: "triage-request",
+          execution: {
+            workspaceRef: "repo",
+            runRef: { base: "factory-store", path: "runs/triage", sha256: "a".repeat(64) },
+          },
+          evidence: [],
+          route: "ready-to-plan",
+          rationale: "Plan first",
+        },
+      },
+      {
+        version: 1,
+        id: "planning-request",
+        type: "planning.requested",
+        workItemKey: "item-1",
+        occurredAt: "2026-07-11T03:00:00.000Z",
+        phaseRunId: "planning-run",
+        data: { expectedPredecessor: "triage-complete", inputRefs: [], reviewCeiling: 2 },
+      },
+      {
+        version: 1,
+        id: "candidate",
+        type: "planning.candidate.produced",
+        workItemKey: "item-1",
+        occurredAt: "2026-07-11T04:00:00.000Z",
+        phaseRunId: "planning-run",
+        data: {
+          handler: "producePlanCandidate",
+          handlerVersion: 1,
+          attempt: 1,
+          causationEventId: "planning-request",
+          execution: {
+            workspaceRef: "repo",
+            runRef: { base: "factory-store", path: "runs/planning", sha256: "b".repeat(64) },
+          },
+          evidence: [],
+          candidate: { base: "factory-store", path: "plans/candidate", sha256: "c".repeat(64) },
+          effectiveSession: { provider: "codex", id: "session" },
+        },
+      },
+      {
+        version: 1,
+        id: "review",
+        type: "planning.review.completed",
+        workItemKey: "item-1",
+        occurredAt: "2026-07-11T05:00:00.000Z",
+        phaseRunId: "planning-run",
+        data: {
+          handler: "reviewPlanCandidate",
+          handlerVersion: 1,
+          attempt: 1,
+          causationEventId: "candidate",
+          execution: {
+            workspaceRef: "repo",
+            runRef: { base: "factory-store", path: "runs/planning", sha256: "b".repeat(64) },
+          },
+          evidence: [],
+          verdict: "pass",
+          review: { base: "factory-store", path: "reviews/result", sha256: "d".repeat(64) },
+          reviewCeiling: 2,
+        },
+      },
+    ];
+    const state = reduceFactoryLifecycleEvents(events);
+    expect(state).toBeDefined();
+    expect(decideNextFactoryAction(state!, events.at(-1)!)).toEqual({
+      kind: "wait",
+      reason: "plan-merge",
+    });
+  });
 });
 
 describe("Factory store and artifact boundaries", () => {
@@ -349,11 +452,29 @@ describe("Factory store and artifact boundaries", () => {
     const ref = createFactoryArtifactRef({
       base: "repository",
       root: repo,
-      path: "evidence/result.json",
+      path: "evidence\\result.json",
     });
+    expect(ref.path).toBe("evidence/result.json");
     writeFileSync(join(repo, "evidence/result.json"), "two");
     expect(() =>
       verifyFactoryArtifactRef(ref, { repository: repo, "factory-store": root() }),
     ).toThrow(/hash mismatch/);
+  });
+
+  test("rejects unsafe phase-run identifiers at every durable boundary", () => {
+    for (const phaseRunId of ["../run", "run/child", "run\\child", ".", "run name"]) {
+      expect(() => FactoryPhaseRunIdSchema.parse(phaseRunId)).toThrow(/phase-run identifier/);
+      expect(() =>
+        FactoryPhaseRunIdentitySchema.parse({
+          version: 1,
+          phaseRunId,
+          phase: "triage",
+          workItemKey: "item-1",
+          workspace: "/repo",
+          projectId: "project",
+          factoryStateRoot: "/store",
+        }),
+      ).toThrow(/phase-run identifier/);
+    }
   });
 });
