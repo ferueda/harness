@@ -239,19 +239,22 @@ Routes:
 - `wait-to-implement`
 
 Read the run `summary.md`, `factory-triage.json`, and `factory-route.md` before
-acting on the reaction. No route has an executable downstream Factory command
-in PR 1.
+acting on the reaction.
 
 Live triage appends `work_item.imported`, `triage.requested`, and one terminal
 action event in the durable factory store. Dry-run does not mutate lifecycle
 state. The strict state projection and pure next-reaction function own machine
 progress; Linear status/comments remain human board projections.
 
-## Unshipped phases
+## Planning
 
-Planning and implementation commands are intentionally unavailable in PR 1.
-Wait for their dedicated action-coordinator PRs; do not invoke legacy station
-flows or infer progress from tracker state.
+Run `harness factory planning run` once per printed reaction. Stop on human,
+failed, plan-merge, or approved waits. Review-driven revisions stay in the
+phase and resume the saved planner session; use `--rerun` only after human or
+failed waits. Item files materialize locally after review pass. Linear issues
+require explicit `planning publish` and `mark-plan-merged`; pass `--apply` on
+each command that may project a boundary. Never infer action progress from
+Linear status or comments. Implementation commands remain unavailable.
 
 ## Artifacts
 

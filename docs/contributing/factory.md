@@ -350,13 +350,16 @@ Triage does not mutate tracker state, labels, branches, or source files unless
 `--apply` is used with `--linear-issue`. Apply mode mutates Linear status and
 comments only; it does not mutate source files.
 
-## Unshipped phases
+## Planning
 
-Planning and implementation commands, including plan publication and merge
-recording, are intentionally unavailable in PR 1. They do not fall back to the
-old lifecycle. Their dedicated follow-up PRs will consume the action kernel.
-Until then, triage can return a wait reaction without an executable downstream
-Factory command. Terminal route evidence may omit a command.
+`harness factory planning run` executes one pending action and exits with
+`next`; repeat the printed command to alternate candidate and fixed one-step
+plan review actions. Revisions resume the original planner session and receive
+only the latest `must_fix` findings. `--rerun` starts a fresh phase only after
+needs-human or failure. Item files publish approved plans locally; Linear
+issues wait for explicit `planning publish` and `mark-plan-merged`. `--apply`
+authorizes only that invocation's Linear boundary projection. Implementation
+actions remain unavailable.
 
 ## Local Inbox
 

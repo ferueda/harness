@@ -167,9 +167,10 @@ human or external status.
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
-Planning, publication, and implementation commands are unavailable until their
-follow-up PRs. A terminal triage can therefore yield a wait reaction with no
-executable downstream Factory command; its route command may be absent.
+Planning candidate/review and explicit plan publication commands consume the
+same action kernel, one handler per invocation. Candidate revisions reuse the
+snapshotted planner profile and original session. Implementation commands
+remain unavailable.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation and quality. The quality reviewer covers behavior-preserving

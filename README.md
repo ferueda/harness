@@ -103,10 +103,9 @@ by default. Factory lifecycle JSONL and rebuildable state live under that
 project's `factory/` directory. This default is intentionally outside the
 documented harness checkout at `~/.harness`. Triage routes are
 `ready-to-implement`, `ready-to-plan`, `needs-info`, or `wait-to-implement`.
-Planning and implementation actions are not shipped yet. A terminal triage
-therefore returns a reaction without an executable downstream Factory command;
-its route command may be absent. The CLI never synthesizes or automatically
-executes a follow-up action.
+Planning candidate/review actions are manually stepped with
+`harness factory planning run`; implementation actions are not shipped yet.
+The CLI prints but never automatically executes a follow-up action.
 
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear list and fetch use `LINEAR_API_KEY` and

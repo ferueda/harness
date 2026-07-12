@@ -111,8 +111,9 @@ Linear list, fetch, create, and Linear-backed station input use
 `harness factory linear fetch`, `harness factory linear create`,
 `harness factory triage --linear-issue TEAM-123`. Create is a constrained
 intake write (no `--apply`); adding `--apply` to Linear triage projects its
-guarded start and terminal status/comment updates. Planning, publication, and
-implementation commands are unavailable.
+guarded start and terminal status/comment updates. Linear-backed planning also
+requires live status validation; each mutation needs that invocation's
+`--apply`. Implementation commands are unavailable.
 
 Do not write secrets into docs, plans, generated artifacts, committed
 `harness.json`, or checked-in config.
