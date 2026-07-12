@@ -147,21 +147,6 @@ const factoryPlanningRunHelp = runHarness(["factory", "planning", "run", "--help
 if (!factoryPlanningRunHelp.includes("harness factory planning run")) {
   throw new Error("Expected factory planning run help to include command usage");
 }
-if (!factoryPlanningRunHelp.includes("--item-file <path>")) {
-  throw new Error("Expected factory planning help to include --item-file");
-}
-if (!factoryPlanningRunHelp.includes("--linear-issue <issue>")) {
-  throw new Error("Expected factory planning help to include --linear-issue");
-}
-if (!factoryPlanningRunHelp.includes("--output-plan <path>")) {
-  throw new Error("Expected factory planning help to include --output-plan");
-}
-if (!factoryPlanningRunHelp.includes("--apply")) {
-  throw new Error("Expected factory planning help to include --apply");
-}
-if (!factoryPlanningRunHelp.includes("--dry-run")) {
-  throw new Error("Expected factory planning help to include --dry-run");
-}
 const factoryPlanningPublishHelp = runHarness(["factory", "planning", "publish", "--help"]);
 if (!factoryPlanningPublishHelp.includes("harness factory planning publish")) {
   throw new Error("Expected factory planning publish help to include command usage");
@@ -178,35 +163,10 @@ const factoryImplementationRunHelp = runHarness(["factory", "implementation", "r
 if (!factoryImplementationRunHelp.includes("harness factory implementation run")) {
   throw new Error("Expected factory implementation run help to include command usage");
 }
-if (!factoryImplementationRunHelp.includes("--workspace <path>")) {
-  throw new Error("Expected factory implementation run help to include --workspace");
-}
-if (!factoryImplementationRunHelp.includes("--item-file <path>")) {
-  throw new Error("Expected factory implementation run help to include --item-file");
-}
-if (!factoryImplementationRunHelp.includes("--linear-issue <issue>")) {
-  throw new Error("Expected factory implementation run help to include --linear-issue");
-}
-if (!factoryImplementationRunHelp.includes("--runs-dir <path>")) {
-  throw new Error("Expected factory implementation run help to include --runs-dir");
-}
-if (!factoryImplementationRunHelp.includes("--dry-run")) {
-  throw new Error("Expected factory implementation run help to include --dry-run");
-}
-if (!factoryImplementationRunHelp.includes("--max-runtime-ms")) {
-  throw new Error("Expected factory implementation run help to include --max-runtime-ms");
-}
-if (!factoryImplementationRunHelp.includes("--verbose")) {
-  throw new Error("Expected factory implementation run help to include --verbose");
-}
 for (const [name, help] of [
   ["factory status", factoryStatusHelp],
   ["factory linear fetch", factoryLinearFetchHelp],
   ["factory triage", factoryTriageStationHelp],
-  ["factory planning run", factoryPlanningRunHelp],
-  ["factory planning publish", factoryPlanningPublishHelp],
-  ["factory planning mark-plan-merged", factoryPlanningMergedHelp],
-  ["factory implementation run", factoryImplementationRunHelp],
 ] as const) {
   if (!help.includes("--factory-store-root")) {
     throw new Error(`Expected ${name} help to include --factory-store-root`);
@@ -215,11 +175,7 @@ for (const [name, help] of [
     throw new Error(`Expected ${name} help to include --factory-store-project-id`);
   }
 }
-for (const [name, help] of [
-  ["factory triage", factoryTriageStationHelp],
-  ["factory planning run", factoryPlanningRunHelp],
-  ["factory implementation run", factoryImplementationRunHelp],
-] as const) {
+for (const [name, help] of [["factory triage", factoryTriageStationHelp]] as const) {
   if (!/default: durable\s+factory store runs\/factory/.test(help)) {
     throw new Error(`Expected ${name} help to describe the durable factory run default`);
   }

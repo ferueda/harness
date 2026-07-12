@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import { runFactoryTriageWithLinearApply } from "../bin/factory-commands.ts";
-import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
+import {
+  appendFactoryActionEvent,
+  readFactoryActionEvents,
+} from "../lib/factory-lifecycle-kernel.ts";
 import { writeFactoryActionResult } from "../lib/factory-action-result.ts";
 import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
@@ -61,6 +64,16 @@ function context(workspace: string, dryRun: boolean): FactoryRunContext {
       overrides: {},
       warnings: [],
     };
+    writeFactoryPhaseRunIdentity(runDir, {
+      version: 1,
+      phaseRunId: ctx.runId,
+      phase: "triage",
+      workItemKey: "linear:ENG-37",
+      workspace,
+      projectId: ctx.factoryStore.projectId,
+      factoryStateRoot: ctx.factoryStore.factoryStateRoot,
+      actions: { triageWorkItem: ctx.executionProfile },
+    });
   }
   return ctx;
 }
@@ -287,7 +300,7 @@ test("recovers a persisted triage result without invoking the handler", async ()
     workItemKey: "linear:ENG-37",
     occurredAt: "2026-07-11T00:01:00.000Z",
     phaseRunId: runId,
-    data: { expectedPredecessor: imported.id, inputRefs: [inputRef] },
+    data: { expectedPredecessor: imported.id, inputRefs: [inputRef], intent: "start" },
   };
   appendFactoryActionEvent({
     factoryStateRoot: root,
@@ -433,7 +446,7 @@ test("recovers completed active-run artifacts without rerunning the provider", a
     workItemKey: imported.workItemKey,
     occurredAt: "2026-07-11T00:01:00.000Z",
     phaseRunId: runId,
-    data: { expectedPredecessor: imported.id, inputRefs: [inputRef] },
+    data: { expectedPredecessor: imported.id, inputRefs: [inputRef], intent: "start" },
   };
   appendFactoryActionEvent({
     factoryStateRoot: root,
@@ -508,7 +521,7 @@ test("recovers completed active-run artifacts without rerunning the provider", a
   expect(result.phaseRunId).toBe(runId);
 });
 
-test("persists a terminal failure when Linear phase start fails", async () => {
+test("leaves the durable triage request pending when Linear phase start fails", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "triage-start-failure-"));
   const root = join(workspace, "state");
   const ctx = context(workspace, false);
@@ -523,38 +536,45 @@ test("persists a terminal failure when Linear phase start fails", async () => {
   );
   const runTriage = vi.fn();
 
-  const result = await runFactoryTriageWithLinearApply({
-    factoryStateRoot: root,
-    workItem: WORK_ITEM,
-    rerun: false,
-    issueRef: "ENG-37",
-    createContext: () => ctx,
-    runTriage,
-    applyAdapter: fakeLinearAdapter({
-      applyTriageStarted: vi.fn(async () => Promise.reject(startError)),
+  await expect(
+    runFactoryTriageWithLinearApply({
+      factoryStateRoot: root,
+      workItem: WORK_ITEM,
+      rerun: false,
+      issueRef: "ENG-37",
+      createContext: () => ctx,
+      runTriage,
+      applyAdapter: fakeLinearAdapter({
+        applyTriageStarted: vi.fn(async () => Promise.reject(startError)),
+      }),
     }),
-  });
-  assertActionResult(result);
-
+  ).rejects.toThrow(/Linear start projection failed: Linear unavailable/);
   expect(runTriage).not.toHaveBeenCalled();
-  expect(result.terminalApplyError).toBe(startError);
-  expect(result.next).toMatchObject({ kind: "wait", reason: "failed" });
+  expect(readFactoryActionEvents(root, "linear:ENG-37").at(-1)).toMatchObject({
+    type: "triage.requested",
+    phaseRunId: ctx.runId,
+  });
 
-  const createContext = vi.fn();
+  const createContext = vi.fn(() => ctx);
   const repeated = await runFactoryTriageWithLinearApply({
     factoryStateRoot: root,
     workItem: WORK_ITEM,
     rerun: false,
     issueRef: "ENG-37",
     createContext,
-    applyAdapter: fakeLinearAdapter(),
+    applyAdapter: fakeLinearAdapter({
+      applyTriageStarted: async () => ({
+        issueIdentifier: "ENG-37",
+        runId: ctx.runId,
+        runDir: ctx.runDir,
+        stage: "start",
+        targetStatus: "Triaging",
+      }),
+    }),
   });
-  expect(repeated).toEqual({
-    waiting: true,
-    phaseRunId: ctx.runId,
-    next: expect.objectContaining({ kind: "wait", reason: "failed" }),
-  });
-  expect(createContext).not.toHaveBeenCalled();
+  assertActionResult(repeated);
+  expect(repeated.phaseRunId).toBe(ctx.runId);
+  expect(createContext).toHaveBeenCalledOnce();
 });
 
 test("retries the same triage action and phase run after a retryable failure", async () => {
@@ -629,6 +649,16 @@ test("retries a failed terminal projection without rerunning the provider", asyn
   ctx.factoryStore = { ...ctx.factoryStore!, factoryStateRoot: root, projectRoot: workspace };
   mkdirSync(join(ctx.runDir, "context"), { recursive: true });
   writeFileSync(join(ctx.runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
+  writeFactoryPhaseRunIdentity(ctx.runDir, {
+    version: 1,
+    phaseRunId: ctx.runId,
+    phase: "triage",
+    workItemKey: "linear:ENG-37",
+    workspace,
+    projectId: ctx.factoryStore.projectId,
+    factoryStateRoot: root,
+    actions: { triageWorkItem: ctx.executionProfile },
+  });
   writeFileSync(join(ctx.runDir, "summary.md"), "summary");
   writeFileSync(join(ctx.runDir, "factory-route.json"), JSON.stringify({ command: null }));
   ctx.exportFailed = vi.fn(

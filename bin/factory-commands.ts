@@ -1,13 +1,9 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
-import { factoryImplementationCliOutput } from "./factory-implementation-cli.ts";
-import {
-  factoryPlanningCliOutput,
-  type FactoryPlanningLinearUpdate,
-} from "./factory-planning-cli.ts";
+import { formatFactoryActionOutput, withManualCommand } from "./factory-action-output.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import {
   assertFactoryPathContained,
@@ -15,21 +11,14 @@ import {
   isFactoryRelativePathContained,
   verifyFactoryArtifactRef,
 } from "../lib/factory-artifact-ref.ts";
-import {
-  factoryActionResultPath,
-  readFactoryActionResult,
-  writeFactoryActionResult,
-} from "../lib/factory-action-result.ts";
+import { factoryActionResultPath, readFactoryActionResult } from "../lib/factory-action-result.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import {
   appendFactoryActionEvent,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent as FactoryActionLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
-import {
-  readFactoryPhaseRunIdentity,
-  writeFactoryPhaseRunIdentity,
-} from "../lib/factory-phase-run.ts";
+import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
 import { assertFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import {
   decideNextFactoryAction,
@@ -38,36 +27,19 @@ import {
 } from "../lib/factory-state-machine.ts";
 import { errorMessage } from "../lib/agent-invoke.ts";
 import {
-  resolveFactoryLinearSettings,
-  resolveFactoryPlanningSettings,
-  resolveFactoryRoleAgent,
   factoryTriageExecutionProfile,
-  resolveHarnessWorkspace,
+  resolveFactoryLinearSettings,
+  resolveFactoryRoleAgent,
   resolveHarnessOptions,
+  resolveHarnessWorkspace,
+  type FactoryLinearSettings,
 } from "../lib/config.ts";
 import {
-  factoryExecutionProvenance,
-  factoryLifecycleExecutionProvenance,
   factoryStoreMetadata,
   resolveFactoryStore,
   type FactoryStoreMeta,
   type FactoryStoreResolution,
 } from "../lib/factory-store.ts";
-import {
-  factoryImplementationAttempt,
-  resolveFactoryImplementationInput,
-} from "../lib/factory-implementation-input.ts";
-import type {
-  LinearImplementationUpdatePlan,
-  LinearImplementationUpdateSummary,
-} from "../lib/factory-linear-implementation-apply.ts";
-import { LinearImplementationTerminalApplyError } from "../lib/factory-linear-implementation-apply.ts";
-import { withFactoryImplementationExecutionLease } from "../lib/factory-implementation-policy.ts";
-import {
-  createFactoryImplementationRunContext,
-  type FactoryImplementationRunContext,
-  type FactoryImplementationRunMeta,
-} from "../lib/factory-implementation-run-context.ts";
 import { factoryStatus } from "../lib/factory-status.ts";
 import {
   deriveFactoryWorkItemKey,
@@ -76,41 +48,19 @@ import {
 import {
   createLinearFactoryAdapter,
   parseLinearFactoryStatusKeys,
-  parseLinearIssueIdentifier,
   type LinearFactoryAdapter,
   type LinearTriageUpdatePlan,
 } from "../lib/factory-linear-adapter.ts";
 import type { LinearCreateWorkItemResult } from "../lib/factory-linear-create.ts";
-import type { FactoryLinearSettings } from "../lib/config.ts";
-import {
-  renderLinearPlanningApprovedComment,
-  renderLinearPlanningReadyComment,
-  type LinearPlanningHandoffUpdatePlan,
-} from "../lib/factory-linear-planning-handoff.ts";
-import type {
-  LinearPlanningCompletedInput,
-  LinearPlanningUpdatePlan,
-} from "../lib/factory-linear-planning-apply.ts";
-import {
-  loadFactoryPlanningRunMeta,
-  updateFactoryPlanningHandoff,
-  updateFactoryPlanningRunMeta,
-} from "../lib/factory-planning-handoff.ts";
-import { FactoryPlanningError } from "../lib/factory-planning-schemas.ts";
-import {
-  createFactoryPlanningRunContext,
-  type FactoryPlanningRunContext,
-  type FactoryPlanningRunMeta,
-} from "../lib/factory-planning-run-context.ts";
-import { assertFactoryPlanningLinearEntry } from "../lib/factory-planning-input.ts";
 import {
   mergeLifecycleState,
   resolveFactoryWorkItemInput,
   validateFactoryWorkItemInput,
 } from "../lib/factory-triage-input.ts";
 import {
-  createFactoryRunContext,
   assertFactoryItemFileExists,
+  createFactoryRunContext,
+  openFactoryRunContext,
   type FactoryRunContext,
   type FactoryRunMeta,
 } from "../lib/factory-run-context.ts";
@@ -122,21 +72,7 @@ import {
 } from "../lib/factory-schemas.ts";
 import type { WorkflowEvent } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
-import { run as runFactoryImplementation } from "../workflows/factory-implementation.workflow.ts";
-import { run as runFactoryPlanning } from "../workflows/factory-planning.workflow.ts";
-import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
-
-const unshippedPhaseUnavailable = (..._args: unknown[]): never => {
-  throw new Error("This Factory phase is unavailable until its action PR ships.");
-};
-const appendImplementationStartedEvent = unshippedPhaseUnavailable;
-const appendImplementationTerminalEvent = unshippedPhaseUnavailable;
-const appendPlanPrMergedEvent = unshippedPhaseUnavailable;
-const appendPlanPrOpenedEvent = unshippedPhaseUnavailable;
-const appendPlanningStartedEvent = unshippedPhaseUnavailable;
-const appendPlanningTerminalEvent = unshippedPhaseUnavailable;
-const appendWorkItemImportedEvent = unshippedPhaseUnavailable;
-const formatLifecycleArtifactPath = unshippedPhaseUnavailable;
+import { run as runFactoryTriage, triageWorkItem } from "../workflows/factory-triage.workflow.ts";
 
 type FactoryStatusOptions = {
   workspace?: string;
@@ -158,54 +94,6 @@ type FactoryTriageStationOptions = {
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
 };
-
-type FactoryPlanningStationOptions = {
-  workspace?: string;
-  itemFile?: string;
-  linearIssue?: string;
-  runsDir?: string;
-  outputPlan?: string;
-  maxReviewIterations?: number;
-  maxRuntimeMs: number;
-  apply: boolean;
-  dryRun: boolean;
-  verbose: boolean;
-  factoryStoreRoot?: string;
-  factoryStoreProjectId?: string;
-};
-
-type FactoryPlanningPublishOptions = {
-  runDir: string;
-  prUrl: string;
-  linearIssue?: string;
-  apply: boolean;
-  factoryStoreRoot?: string;
-  factoryStoreProjectId?: string;
-};
-
-type FactoryPlanningMarkMergedOptions = {
-  runDir: string;
-  commit: string;
-  linearIssue?: string;
-  apply: boolean;
-  factoryStoreRoot?: string;
-  factoryStoreProjectId?: string;
-};
-
-type FactoryImplementationStationOptions = {
-  workspace?: string;
-  itemFile?: string;
-  linearIssue?: string;
-  runsDir?: string;
-  maxRuntimeMs: number;
-  apply: boolean;
-  dryRun: boolean;
-  verbose: boolean;
-  factoryStoreRoot?: string;
-  factoryStoreProjectId?: string;
-};
-
-const IMPLEMENTATION_LEASE_IDENTITY_RETRY_LIMIT = 3;
 
 type FactoryLinearFetchOptions = {
   workspace?: string;
@@ -232,12 +120,6 @@ export type FactoryCommandOptions = {
   positiveNumber: (value: string) => number;
   defaultMaxRuntimeMs: number;
   writeVerboseWorkflowEvent: (event: WorkflowEvent) => void;
-  implementationLinearAdapterFactory?: typeof createLinearFactoryAdapter;
-  implementationAgentProviderFactory?: typeof createAgentProvider;
-  implementationRunner?: (
-    ctx: FactoryImplementationRunContext,
-  ) => Promise<FactoryImplementationRunMeta>;
-  implementationExecutionLease?: typeof withFactoryImplementationExecutionLease;
 };
 
 function factoryStoreForRun(
@@ -254,37 +136,31 @@ function factoryStoreForRun(
   };
 }
 
-function lifecycleExecutionForRun(
-  workspace: string,
-  runDir: string,
-  factoryStore: FactoryStoreMeta | undefined,
-) {
-  return factoryLifecycleExecutionProvenance(
-    factoryExecutionProvenance(workspace, runDir),
-    factoryStore,
-  );
-}
-
-/** Item-file provenance is workspace-relative when it is inside the workspace. */
-function lifecycleItemFilePath(
-  workspace: string,
-  itemFile: string | undefined,
-): string | undefined {
-  if (!itemFile) return undefined;
-  const absolutePath = resolve(workspace, itemFile);
-  const path = relative(resolve(workspace), absolutePath);
-  return path === ".." || path.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
-    ? absolutePath
-    : path;
-}
-
 export function addFactoryCommands(parent: Command, options: FactoryCommandOptions): void {
   const factory = parent.command("factory").description("Manage local factory intake");
   addFactoryStatusCommand(factory);
   addFactoryLinearCommand(factory);
   addFactoryTriageStationCommand(factory, options);
-  addFactoryPlanningStationCommand(factory, options);
-  addFactoryImplementationStationCommand(factory, options);
+  addFactoryPlanningStationCommand(factory);
+  addFactoryImplementationStationCommand(factory);
+}
+
+function positiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError("must be a positive integer");
+  }
+  return parsed;
+}
+
+function collectValues(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function boundedFirstPageSize(value: string): number {
+  const parsed = positiveInteger(value);
+  if (parsed > 100) throw new InvalidArgumentError("must be between 1 and 100");
+  return parsed;
 }
 
 function addFactoryStatusCommand(parent: Command): void {
@@ -515,948 +391,34 @@ async function readStreamToString(stream: Readable): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function addFactoryPlanningStationCommand(parent: Command, config: FactoryCommandOptions): void {
+function addFactoryPlanningStationCommand(parent: Command): void {
   const planning = parent.command("planning").description("Manage factory planning station");
-  addFactoryPlanningRunCommand(planning, config);
-  planning
-    .command("publish")
-    .description("Register the plan PR for an approved planning run")
-    .requiredOption("--run-dir <path>", "factory planning run directory")
-    .requiredOption("--pr-url <url>", "plan PR URL")
-    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
-    .option("--factory-store-root <path>", "durable factory store root")
-    .option("--factory-store-project-id <id>", "durable factory store project id")
-    .option("--apply", "apply deterministic Linear status/comment updates", false)
-    .action(async (_options: FactoryPlanningPublishOptions) => {
-      throw new FactoryPlanningError(
-        "Factory planning publication is unavailable until the planning action follow-up ships.",
-      );
-    });
-  planning
-    .command("mark-plan-merged")
-    .description("Register the merged plan commit for an approved planning run")
-    .requiredOption("--run-dir <path>", "factory planning run directory")
-    .requiredOption("--commit <sha>", "merged plan commit")
-    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
-    .option("--factory-store-root <path>", "durable factory store root")
-    .option("--factory-store-project-id <id>", "durable factory store project id")
-    .option("--apply", "apply deterministic Linear status/comment updates", false)
-    .action(async (_options: FactoryPlanningMarkMergedOptions) => {
-      throw new FactoryPlanningError(
-        "Factory planning publication is unavailable until the planning action follow-up ships.",
-      );
-    });
+  addUnavailableFactoryPhaseCommand(planning, "run", "planning", true);
+  addUnavailableFactoryPhaseCommand(planning, "publish", "planning publication");
+  addUnavailableFactoryPhaseCommand(planning, "mark-plan-merged", "planning publication");
 }
 
-function addFactoryImplementationStationCommand(
-  parent: Command,
-  config: FactoryCommandOptions,
-): void {
+function addFactoryImplementationStationCommand(parent: Command): void {
   const implementation = parent
     .command("implementation")
     .description("Manage factory implementation station");
-  implementation
-    .command("run", { isDefault: true })
-    .description("Run one factory work item through the implementation station")
-    .option("--workspace <path>", "target repo")
-    .option("--item-file <path>", "factory work item JSON file")
-    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
-    .option(
-      "--runs-dir <path>",
-      "output root override (default: durable factory store runs/factory)",
-    )
-    .option("--factory-store-root <path>", "durable factory store root")
-    .option("--factory-store-project-id <id>", "durable factory store project id")
-    .option(
-      "--max-runtime-ms <ms>",
-      `per-agent timeout (default: ${config.defaultMaxRuntimeMs})`,
-      config.positiveNumber,
-      config.defaultMaxRuntimeMs,
-    )
-    .option("--apply", "apply deterministic Linear status/comment updates", false)
-    .option("--dry-run", "prepare implementation prompt and handoff artifacts", false)
-    .option("--verbose", "emit workflow events as JSONL to stderr", false)
-    .action(async (options: FactoryImplementationStationOptions) => {
-      rejectUnavailableImplementation();
-      validateFactoryApplyOptions(options);
-      validateFactoryWorkItemInput(options);
-      const implementerRole = resolveFactoryRoleAgent({
-        workspace: options.workspace,
-        station: "implementation",
-        role: "implementer",
-      });
-      const linearSettings = options.linearIssue
-        ? resolveFactoryLinearSettings({ workspace: implementerRole.workspace })
-        : undefined;
-      const store = resolveFactoryStore({
-        workspace: implementerRole.workspace,
-        factoryStoreRoot: options.factoryStoreRoot,
-        factoryStoreProjectId: options.factoryStoreProjectId,
-        env: process.env,
-      });
-      assertLegacyPhaseStoreAvailable(store.factoryStateRoot, "implementation");
-      const factoryStore = factoryStoreForRun(store, options.runsDir);
-      const implementationAdapter = options.apply
-        ? (config.implementationLinearAdapterFactory ?? createLinearFactoryAdapter)({
-            apiKey:
-              process.env.LINEAR_API_KEY ??
-              (() => {
-                throw new Error("LINEAR_API_KEY is required for Linear commands.");
-              })(),
-            settings: linearSettings!,
-          })
-        : undefined;
-      const input = await resolveFactoryWorkItemInput({
-        workspace: implementerRole.workspace,
-        itemFile: options.itemFile,
-        linearIssue: options.linearIssue,
-        linearSettings,
-        ...(implementationAdapter ? { linearAdapterFactory: () => implementationAdapter } : {}),
-        env: process.env,
-        lifecycleReadMode: options.dryRun ? "inspect" : "load",
-        factoryStateRoot: store.factoryStateRoot,
-      });
-      let activeInput = input;
-      let implementationInput = resolveFactoryImplementationInput({
-        workspace: implementerRole.workspace,
-        resolvedInput: input,
-        ...(linearSettings
-          ? {
-              linearProjection: implementationLinearProjection(linearSettings, options.apply),
-            }
-          : {}),
-      });
-      const runAbort = new AbortController();
-      const onRunAbort = () => runAbort.abort();
-      process.once("SIGINT", onRunAbort);
-      process.once("SIGTERM", onRunAbort);
-      let meta: FactoryImplementationRunMeta | undefined;
-      try {
-        const run = async () => {
-          const ctx = createFactoryImplementationRunContext({
-            workspace: implementerRole.workspace,
-            runsDir: options.runsDir ?? store.factoryRunsDir,
-            factoryStore,
-            workItem: activeInput.workItem,
-            implementationInput,
-            implementerRole,
-            dryRun: Boolean(options.dryRun),
-            maxRuntimeMs: options.maxRuntimeMs,
-            signal: runAbort.signal,
-            eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
-            linearApplyRequested: options.apply,
-            agentProviderFactory: config.implementationAgentProviderFactory ?? createAgentProvider,
-          });
-          announceFactoryRunStarted({
-            station: "implementation",
-            runId: ctx.runId,
-            runDir: ctx.runDir,
-            workspace: ctx.workspace,
-          });
-          const result = options.apply
-            ? await runFactoryImplementationWithLinearApply({
-                ctx,
-                adapter: implementationAdapter!,
-                issueRef: options.linearIssue!,
-                factoryStateRoot: store.factoryStateRoot,
-                ...(config.implementationRunner
-                  ? { runImplementation: config.implementationRunner }
-                  : {}),
-              })
-            : {
-                meta: await runFactoryImplementationWithLifecycle({
-                  ctx,
-                  issueRef: options.linearIssue,
-                  itemFile: options.itemFile,
-                  factoryStateRoot: store.factoryStateRoot,
-                  ...(config.implementationRunner
-                    ? { runImplementation: config.implementationRunner }
-                    : {}),
-                }),
-                linearUpdate: undefined,
-                startApplyFailed: false,
-                terminalApplyFailed: false,
-                startApplyError: undefined,
-                terminalApplyError: undefined,
-              };
-          meta = result.meta;
-          console.log(
-            JSON.stringify(
-              factoryImplementationCliOutput(meta, {
-                warnings: activeInput.warnings,
-                ...(options.apply
-                  ? {
-                      linearApplied: !result.startApplyFailed && !result.terminalApplyFailed,
-                      linearUpdate: result.linearUpdate,
-                    }
-                  : {}),
-              }),
-              null,
-              2,
-            ),
-          );
-          if (meta.status === "implementation-failed") process.exitCode = 1;
-          if (result.startApplyFailed) throw result.startApplyError;
-          if (result.terminalApplyFailed) throw result.terminalApplyError;
-        };
-        if (options.dryRun) await run();
-        else {
-          let leaseInput = input;
-          let identityChanges = 0;
-          for (;;) {
-            let refreshedInput: typeof input | undefined;
-            await (config.implementationExecutionLease ?? withFactoryImplementationExecutionLease)({
-              factoryStateRoot: store.factoryStateRoot,
-              workspace: implementerRole.workspace,
-              workItem: leaseInput.workItem,
-              action: async () => {
-                activeInput = await resolveFactoryWorkItemInput({
-                  workspace: implementerRole.workspace,
-                  ...(options.linearIssue
-                    ? {
-                        linearIssue: options.linearIssue,
-                        linearSettings,
-                        ...(implementationAdapter
-                          ? { linearAdapterFactory: () => implementationAdapter }
-                          : {}),
-                      }
-                    : { itemFile: options.itemFile! }),
-                  env: process.env,
-                  lifecycleReadMode: "load",
-                  factoryStateRoot: store.factoryStateRoot,
-                });
-                if (
-                  deriveFactoryWorkItemKey(activeInput.workItem) !==
-                  deriveFactoryWorkItemKey(leaseInput.workItem)
-                ) {
-                  identityChanges += 1;
-                  if (identityChanges > IMPLEMENTATION_LEASE_IDENTITY_RETRY_LIMIT) {
-                    throw new Error(
-                      "Implementation item identity changed repeatedly during lease acquisition.",
-                    );
-                  }
-                  refreshedInput = activeInput;
-                  return;
-                }
-                implementationInput = resolveFactoryImplementationInput({
-                  workspace: implementerRole.workspace,
-                  resolvedInput: activeInput,
-                  ...(linearSettings
-                    ? {
-                        linearProjection: implementationLinearProjection(
-                          linearSettings,
-                          options.apply,
-                        ),
-                      }
-                    : {}),
-                });
-                await run();
-              },
-            });
-            if (!refreshedInput) break;
-            leaseInput = refreshedInput;
-          }
-        }
-      } finally {
-        process.off("SIGINT", onRunAbort);
-        process.off("SIGTERM", onRunAbort);
-      }
-    });
+  addUnavailableFactoryPhaseCommand(implementation, "run", "implementation", true);
 }
 
-function rejectUnavailableImplementation(): void {
-  throw new Error("Factory implementation is not available until its action follow-up ships.");
-}
-
-function implementationLinearProjection(settings: FactoryLinearSettings, apply: boolean) {
-  return {
-    mode: apply ? ("apply" as const) : ("observe" as const),
-    readyToImplement: settings.statuses.readyToImplement,
-    implementationFailed: settings.statuses.implementationFailed,
-  };
-}
-
-export async function runFactoryImplementationWithLifecycle(input: {
-  ctx: FactoryImplementationRunContext;
-  issueRef?: string;
-  itemFile?: string;
-  factoryStateRoot?: string;
-  runImplementation?: (
-    ctx: FactoryImplementationRunContext,
-  ) => Promise<FactoryImplementationRunMeta>;
-}): Promise<FactoryImplementationRunMeta> {
-  const runImplementation = input.runImplementation ?? runFactoryImplementation;
-  if (input.ctx.dryRun) {
-    return runImplementation(input.ctx);
-  }
-
-  // Item-file is an input reference, not a run artifact; keep its workspace path.
-  const itemFileRelative = lifecycleItemFilePath(input.ctx.workspace, input.itemFile);
-  appendFactoryImplementationStartAudit({
-    ctx: input.ctx,
-    factoryStateRoot: input.factoryStateRoot,
-    issueRef: input.issueRef,
-    itemFile: itemFileRelative,
-  });
-  return runFactoryImplementationToLocalTerminal({
-    ctx: input.ctx,
-    factoryStateRoot: input.factoryStateRoot,
-    runImplementation,
-  });
-}
-
-function appendFactoryImplementationStartAudit(input: {
-  ctx: FactoryImplementationRunContext;
-  factoryStateRoot?: string;
-  issueRef?: string;
-  itemFile?: string;
-}): void {
-  const execution = lifecycleExecutionForRun(
-    input.ctx.workspace,
-    input.ctx.runDir,
-    input.ctx.factoryStore,
-  );
-  appendWorkItemImportedEvent({
-    workspace: input.ctx.workspace,
-    workItem: input.ctx.workItem,
-    factoryStateRoot: input.factoryStateRoot,
-    execution,
-  });
-  appendImplementationStartedEvent({
-    workspace: input.ctx.workspace,
-    workItem: input.ctx.workItem,
-    runId: input.ctx.runId,
-    factoryStateRoot: input.factoryStateRoot,
-    execution,
-    ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
-    ...(input.itemFile ? { itemFile: input.itemFile } : {}),
-  });
-}
-
-async function runFactoryImplementationToLocalTerminal(input: {
-  ctx: FactoryImplementationRunContext;
-  factoryStateRoot?: string;
-  runImplementation: (
-    ctx: FactoryImplementationRunContext,
-  ) => Promise<FactoryImplementationRunMeta>;
-}): Promise<FactoryImplementationRunMeta> {
-  let meta: FactoryImplementationRunMeta;
-  let providerError: unknown;
-  try {
-    meta = await input.runImplementation(input.ctx);
-  } catch (error) {
-    providerError = error;
-    try {
-      meta = input.ctx.export({
-        status: "implementation-failed",
-        error: errorMessage(error),
-        includeLiveArtifacts: false,
-      });
-    } catch (exportError) {
-      throw new AggregateError(
-        [error, exportError],
-        `Failed to export factory implementation failure: ${errorMessage(error)}; export failed: ${errorMessage(exportError)}`,
-      );
-    }
-  }
-  try {
-    appendImplementationTerminalEvent({
-      meta,
-      factoryStateRoot: input.factoryStateRoot,
-      ...(meta.error ? { error: meta.error } : {}),
-    });
-  } catch (terminalizationError) {
-    throw new AggregateError(
-      providerError ? [providerError, terminalizationError] : [terminalizationError],
-      `Failed to append factory implementation terminal lifecycle event: ${errorMessage(terminalizationError)}`,
-    );
-  }
-  return meta;
-}
-
-export type FactoryImplementationApplyRunResult = {
-  meta: FactoryImplementationRunMeta;
-  linearUpdate?: LinearImplementationUpdateSummary;
-  startApplyFailed: boolean;
-  terminalApplyFailed: boolean;
-  startApplyError?: unknown;
-  terminalApplyError?: unknown;
-};
-
-export async function runFactoryImplementationWithLinearApply(input: {
-  ctx: FactoryImplementationRunContext;
-  adapter: LinearFactoryAdapter;
-  issueRef: string;
-  factoryStateRoot?: string;
-  runImplementation?: (
-    ctx: FactoryImplementationRunContext,
-  ) => Promise<FactoryImplementationRunMeta>;
-}): Promise<FactoryImplementationApplyRunResult> {
-  appendFactoryImplementationStartAudit({
-    ctx: input.ctx,
-    factoryStateRoot: input.factoryStateRoot,
-    issueRef: input.issueRef,
-  });
-  let started: LinearImplementationUpdatePlan;
-  try {
-    started = await input.adapter.applyImplementationStarted({
-      issueRef: input.issueRef,
-      runId: input.ctx.runId,
-      runDir: input.ctx.runDir,
-      attempt: factoryImplementationAttempt(input.ctx.implementationInput),
-    });
-  } catch (startApplyError) {
-    let meta: FactoryImplementationRunMeta;
-    try {
-      meta = input.ctx.export({
-        status: "implementation-failed",
-        error: errorMessage(startApplyError),
-        includeLiveArtifacts: false,
-        preProviderFailure: true,
-      });
-    } catch (exportError) {
-      throw new AggregateError(
-        [startApplyError, exportError],
-        `Failed to export implementation start-apply failure: ${errorMessage(startApplyError)}; export failed: ${errorMessage(exportError)}`,
-      );
-    }
-    return {
-      meta,
-      startApplyFailed: true,
-      terminalApplyFailed: false,
-      startApplyError,
-    };
-  }
-  const meta = await runFactoryImplementationToLocalTerminal({
-    ctx: input.ctx,
-    factoryStateRoot: input.factoryStateRoot,
-    runImplementation: input.runImplementation ?? runFactoryImplementation,
-  });
-  try {
-    const terminal =
-      meta.status === "implementation-complete"
-        ? await input.adapter.applyImplementationCompleted({
-            issueRef: input.issueRef,
-            runId: meta.runId,
-            runDir: meta.runDir,
-            reviewBase: requireImplementationReviewRef(meta.reviewBase, "reviewBase"),
-            reviewHead: requireImplementationReviewRef(meta.reviewHead, "reviewHead"),
-            reviewCommitSha: requireImplementationReviewRef(
-              meta.reviewCommitSha,
-              "reviewCommitSha",
-            ),
-          })
-        : await input.adapter.applyImplementationFailed({
-            issueRef: input.issueRef,
-            runId: meta.runId,
-            runDir: meta.runDir,
-            error: meta.error ?? "Factory implementation failed.",
-          });
-    return {
-      meta,
-      linearUpdate: { started, terminal },
-      startApplyFailed: false,
-      terminalApplyFailed: false,
-    };
-  } catch (terminalApplyError) {
-    return {
-      meta,
-      linearUpdate: {
-        started,
-        ...(terminalApplyError instanceof LinearImplementationTerminalApplyError
-          ? { terminal: terminalApplyError.update }
-          : {}),
-      },
-      startApplyFailed: false,
-      terminalApplyFailed: true,
-      terminalApplyError,
-    };
-  }
-}
-
-function requireImplementationReviewRef(value: string | undefined, name: string): string {
-  if (value) return value;
-  throw new Error(`Completed factory implementation is missing ${name}.`);
-}
-
-function addFactoryPlanningRunCommand(parent: Command, config: FactoryCommandOptions): void {
+function addUnavailableFactoryPhaseCommand(
+  parent: Command,
+  name: string,
+  label: string,
+  isDefault = false,
+): void {
   parent
-    .command("run", { isDefault: true })
-    .description("Run one factory work item through the planning station")
-    .option("--workspace <path>", "target repo")
-    .option("--item-file <path>", "factory work item JSON file")
-    .option("--linear-issue <issue>", "Linear issue identifier, e.g. TEAM-123")
-    .option(
-      "--runs-dir <path>",
-      "output root override (default: durable factory store runs/factory)",
-    )
-    .option("--factory-store-root <path>", "durable factory store root")
-    .option("--factory-store-project-id <id>", "durable factory store project id")
-    .option("--output-plan <path>", "final plan path under dev/plans")
-    .option(
-      "--max-review-iterations <count>",
-      "maximum completed plan reviews (default: factory.planning.maxReviewIterations or 3)",
-      positiveInteger,
-    )
-    .option(
-      "--max-runtime-ms <ms>",
-      `per-agent timeout (default: ${config.defaultMaxRuntimeMs})`,
-      config.positiveNumber,
-      config.defaultMaxRuntimeMs,
-    )
-    .option("--apply", "apply deterministic Linear status/comment updates", false)
-    .option("--dry-run", "prepare context and placeholder plan only", false)
-    .option("--verbose", "emit workflow events as JSONL to stderr", false)
-    .action(async (options: FactoryPlanningStationOptions) => {
-      rejectUnavailablePlanning();
-      // Validate source flags before role/config resolution so CLI usage errors win.
-      validateFactoryApplyOptions(options);
-      validateFactoryWorkItemInput(options);
-      const settings = resolveFactoryPlanningSettings({ workspace: options.workspace });
-      const plannerRole = resolveFactoryRoleAgent({
-        workspace: settings.workspace,
-        station: "planning",
-        role: "planner",
-      });
-      const reviewerRole = resolveFactoryRoleAgent({
-        workspace: settings.workspace,
-        station: "planning",
-        role: "reviewer",
-      });
-      const linearSettings = options.linearIssue
-        ? resolveFactoryLinearSettings({ workspace: settings.workspace })
-        : undefined;
-      const store = resolveFactoryStore({
-        workspace: settings.workspace,
-        factoryStoreRoot: options.factoryStoreRoot,
-        factoryStoreProjectId: options.factoryStoreProjectId,
-        env: process.env,
-      });
-      assertLegacyPhaseStoreAvailable(store.factoryStateRoot, "planning");
-      const factoryStore = factoryStoreForRun(store, options.runsDir);
-      let linearAdapter: LinearFactoryAdapter | undefined;
-      const linearAdapterFactory = options.linearIssue
-        ? (adapterInput: Parameters<typeof createLinearFactoryAdapter>[0]) => {
-            linearAdapter ??= createLinearFactoryAdapter(adapterInput);
-            return linearAdapter;
-          }
-        : undefined;
-      const input = await resolveFactoryWorkItemInput({
-        workspace: settings.workspace,
-        itemFile: options.itemFile,
-        linearIssue: options.linearIssue,
-        linearSettings,
-        env: process.env,
-        linearAdapterFactory,
-        lifecycleReadMode: options.dryRun ? "inspect" : "load",
-        factoryStateRoot: store.factoryStateRoot,
-      });
-      assertFactoryPlanningLinearEntry(input);
-
-      const runAbort = new AbortController();
-      const onRunAbort = () => runAbort.abort();
-      process.once("SIGINT", onRunAbort);
-      process.once("SIGTERM", onRunAbort);
-      let meta: FactoryPlanningRunMeta;
-      let linearUpdate: FactoryPlanningLinearUpdate | undefined;
-      let terminalApplyError: unknown;
-      try {
-        const ctx = createFactoryPlanningRunContext({
-          workspace: settings.workspace,
-          runsDir: options.runsDir ?? store.factoryRunsDir,
-          factoryStore,
-          reviewRunsDir: store.reviewRunsDir,
-          workItem: input.workItem,
-          plannerRole,
-          reviewerRole,
-          outputPlan: options.outputPlan,
-          maxReviewIterations: options.maxReviewIterations ?? settings.maxReviewIterations,
-          maxRuntimeMs: options.maxRuntimeMs,
-          dryRun: options.dryRun,
-          signal: runAbort.signal,
-          eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
-          agentProviderFactory: createAgentProvider,
-        });
-        announceFactoryRunStarted({
-          station: "planning",
-          runId: ctx.runId,
-          runDir: ctx.runDir,
-          workspace: ctx.workspace,
-        });
-        const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
-        ({ meta, linearUpdate, terminalApplyError } = await runFactoryPlanningWithLinearApply({
-          ctx,
-          issueRef: options.linearIssue ?? "",
-          itemFile: options.itemFile,
-          applyAdapter,
-          factoryStateRoot: store.factoryStateRoot,
-        }));
-      } finally {
-        process.off("SIGINT", onRunAbort);
-        process.off("SIGTERM", onRunAbort);
-      }
-      console.log(
-        JSON.stringify(
-          factoryPlanningCliOutput(meta, {
-            ...(options.apply
-              ? { linearApplied: true, linearUpdate }
-              : options.linearIssue
-                ? { linearApplied: false }
-                : {}),
-            ...(input.warnings ? { warnings: input.warnings } : {}),
-          }),
-          null,
-          2,
-        ),
-      );
-      if (terminalApplyError) {
-        throw terminalApplyError;
-      }
-      process.exitCode =
-        meta.status === "planning-failed" || meta.status === "plan-review-unresolved" ? 1 : 0;
+    .command(name, { isDefault })
+    .description(`Factory ${label} action shell`)
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .action(() => {
+      throw new Error(`Factory ${label} is not available until its dedicated action PR ships.`);
     });
-}
-
-function rejectUnavailablePlanning(): void {
-  throw new Error("Factory planning is not available until its action follow-up ships.");
-}
-
-export async function runFactoryPlanningWithLinearApply(input: {
-  ctx: FactoryPlanningRunContext;
-  issueRef: string;
-  itemFile?: string;
-  applyAdapter?: LinearFactoryAdapter;
-  runPlanning?: (ctx: FactoryPlanningRunContext) => Promise<FactoryPlanningRunMeta>;
-  factoryStateRoot?: string;
-}): Promise<{
-  meta: FactoryPlanningRunMeta;
-  linearUpdate?: FactoryPlanningLinearUpdate;
-  terminalApplyError?: unknown;
-}> {
-  const runPlanning = input.runPlanning ?? runFactoryPlanning;
-  const itemFilePath = lifecycleItemFilePath(input.ctx.workspace, input.itemFile);
-  let startedUpdate: LinearPlanningUpdatePlan | undefined;
-  let terminalUpdate: LinearPlanningUpdatePlan | undefined;
-  if (!input.ctx.dryRun) {
-    appendWorkItemImportedEvent({
-      workspace: input.ctx.workspace,
-      workItem: input.ctx.workItem,
-      factoryStateRoot: input.factoryStateRoot,
-      execution: lifecycleExecutionForRun(
-        input.ctx.workspace,
-        input.ctx.runDir,
-        input.ctx.factoryStore,
-      ),
-    });
-    appendPlanningStartedEvent({
-      workspace: input.ctx.workspace,
-      workItem: input.ctx.workItem,
-      runId: input.ctx.runId,
-      factoryStateRoot: input.factoryStateRoot,
-      execution: lifecycleExecutionForRun(
-        input.ctx.workspace,
-        input.ctx.runDir,
-        input.ctx.factoryStore,
-      ),
-      ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
-      ...(itemFilePath ? { itemFile: itemFilePath } : {}),
-    });
-  }
-  if (input.applyAdapter) {
-    startedUpdate = await input.applyAdapter.applyPlanningStarted({
-      issueRef: input.issueRef,
-      runId: input.ctx.runId,
-      runDir: input.ctx.runDir,
-    });
-  }
-  let meta: FactoryPlanningRunMeta;
-  try {
-    meta = await runPlanning(input.ctx);
-  } catch (error) {
-    if (!input.ctx.dryRun && typeof input.ctx.export === "function") {
-      const failedMeta = input.ctx.export({
-        status: "planning-failed",
-        iterations: [],
-        error: errorMessage(error),
-      });
-      appendPlanningTerminalEvent({
-        meta: failedMeta,
-        error: errorMessage(error),
-        factoryStateRoot: input.factoryStateRoot,
-      });
-    }
-    if (input.applyAdapter && startedUpdate) {
-      try {
-        terminalUpdate = await input.applyAdapter.applyPlanningFailed({
-          issueRef: input.issueRef,
-          runId: input.ctx.runId,
-          runDir: input.ctx.runDir,
-          error: errorMessage(error),
-        });
-      } catch {
-        // Preserve the planning/provider error. Cleanup failures are secondary.
-      }
-    }
-    throw error;
-  }
-  if (!input.ctx.dryRun) {
-    appendPlanningTerminalEvent({ meta, factoryStateRoot: input.factoryStateRoot });
-  }
-  let terminalApplyError: unknown;
-  if (input.applyAdapter) {
-    try {
-      terminalUpdate = await input.applyAdapter.applyPlanningCompleted(
-        linearPlanningCompletedInput(meta, input.issueRef),
-      );
-    } catch (error) {
-      terminalApplyError = error;
-    }
-  }
-  return {
-    meta,
-    ...(input.applyAdapter
-      ? { linearUpdate: { started: startedUpdate, terminal: terminalUpdate } }
-      : {}),
-    ...(terminalApplyError ? { terminalApplyError } : {}),
-  };
-}
-
-type FactoryPlanningPublicationMode = "publish" | "mark-plan-merged";
-
-type FactoryPlanningPublicationOutput = ReturnType<typeof factoryPlanningPublicationCliOutput> & {
-  linearApplied?: boolean;
-  linearUpdate?: {
-    terminal?: LinearPlanningHandoffUpdatePlan;
-  };
-};
-
-export async function runFactoryPlanningPublicationWithLinearApply(input: {
-  mode: FactoryPlanningPublicationMode;
-  runDir: string;
-  issueRef?: string;
-  prUrl?: string;
-  commit?: string;
-  apply: boolean;
-  factoryStateRoot?: string;
-  factoryStoreRoot?: string;
-  factoryStoreProjectId?: string;
-  env?: NodeJS.ProcessEnv;
-  resolveLinearSettings?: (input: { workspace?: string }) => FactoryLinearSettings;
-  adapterFactory?: (input: {
-    apiKey: string;
-    settings: FactoryLinearSettings;
-  }) => LinearFactoryAdapter;
-}): Promise<{
-  output: FactoryPlanningPublicationOutput;
-  terminalApplyError?: unknown;
-}> {
-  let existingMeta = loadFactoryPlanningRunMeta(input.runDir);
-  const fallbackStore = existingMeta.factoryStore
-    ? undefined
-    : resolveFactoryStore({
-        workspace: existingMeta.workspace,
-        factoryStoreRoot: input.factoryStoreRoot,
-        factoryStoreProjectId: input.factoryStoreProjectId,
-        env: input.env,
-      });
-  if (fallbackStore) {
-    const factoryStore = factoryStoreMetadata(fallbackStore);
-    existingMeta = updateFactoryPlanningRunMeta(input.runDir, {
-      factoryStore,
-      warnings: [
-        {
-          code: "factory-store-meta-missing",
-          message:
-            "Planning run metadata lacked factoryStore; durable store metadata was resolved and persisted.",
-          factoryStateRoot: factoryStore.factoryStateRoot,
-        },
-      ],
-    });
-  }
-  const factoryStateRoot = existingMeta.factoryStore?.factoryStateRoot ?? input.factoryStateRoot;
-  if (!factoryStateRoot) {
-    throw new FactoryPlanningError(
-      "Factory planning publication requires a durable factoryStateRoot.",
-    );
-  }
-  let applyAdapter: LinearFactoryAdapter | undefined;
-  if (input.apply) {
-    if (!input.issueRef) {
-      throw new FactoryPlanningError("--apply requires --linear-issue");
-    }
-    assertLinearPublicationIssueMatches(existingMeta, input.issueRef);
-    const apiKey = input.env?.LINEAR_API_KEY;
-    if (!apiKey) {
-      throw new FactoryPlanningError("LINEAR_API_KEY is required for Linear commands.");
-    }
-    const settings = (input.resolveLinearSettings ?? resolveFactoryLinearSettings)({
-      workspace: existingMeta.workspace,
-    });
-    applyAdapter = (input.adapterFactory ?? createLinearFactoryAdapter)({ apiKey, settings });
-  }
-
-  const meta =
-    input.mode === "publish"
-      ? updateFactoryPlanningHandoff(input.runDir, {
-          approvedPlanPrUrl: requirePrUrl(input.prUrl),
-          factoryStage: "plan-pr-open",
-        })
-      : updateFactoryPlanningHandoff(input.runDir, {
-          approvedPlanCommit: requireCommit(input.commit),
-          factoryStage: "plan-approved",
-        });
-  if (input.mode === "publish") {
-    appendPlanPrOpenedEvent({ meta, factoryStateRoot });
-  } else {
-    appendPlanPrMergedEvent({ meta, factoryStateRoot });
-  }
-  const metadata = requirePlanningFactoryMetadata(meta);
-  const linearComment =
-    input.mode === "publish"
-      ? renderLinearPlanningReadyComment({
-          runId: meta.runId,
-          runDir: meta.runDir,
-          approvedPlanPath: metadata.approvedPlanPath,
-          approvedPlanPrUrl: metadata.approvedPlanPrUrl,
-        })
-      : renderLinearPlanningApprovedComment({
-          runId: meta.runId,
-          runDir: meta.runDir,
-          approvedPlanPath: metadata.approvedPlanPath,
-          approvedPlanPrUrl: metadata.approvedPlanPrUrl,
-          approvedPlanCommit: metadata.approvedPlanCommit,
-        });
-
-  if (!input.apply || !applyAdapter) {
-    return {
-      output: factoryPlanningPublicationCliOutput(meta, linearComment),
-    };
-  }
-
-  try {
-    const terminal =
-      input.mode === "publish"
-        ? await applyAdapter.applyPlanningPublished({
-            issueRef: input.issueRef ?? "",
-            runId: meta.runId,
-            runDir: meta.runDir,
-            approvedPlanPath: metadata.approvedPlanPath,
-            approvedPlanPrUrl: metadata.approvedPlanPrUrl,
-          })
-        : await applyAdapter.applyPlanningMerged({
-            issueRef: input.issueRef ?? "",
-            runId: meta.runId,
-            runDir: meta.runDir,
-            approvedPlanPath: metadata.approvedPlanPath,
-            approvedPlanPrUrl: metadata.approvedPlanPrUrl,
-            approvedPlanCommit: metadata.approvedPlanCommit,
-          });
-    return {
-      output: factoryPlanningPublicationCliOutput(meta, linearComment, {
-        linearApplied: true,
-        linearUpdate: { terminal },
-      }),
-    };
-  } catch (error) {
-    return {
-      output: factoryPlanningPublicationCliOutput(meta, linearComment, {
-        linearApplied: false,
-      }),
-      terminalApplyError: error,
-    };
-  }
-}
-
-function positiveInteger(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new InvalidArgumentError("must be a positive integer");
-  }
-  return parsed;
-}
-
-function collectValues(value: string, previous: string[]): string[] {
-  return [...previous, value];
-}
-
-function boundedFirstPageSize(value: string): number {
-  const parsed = positiveInteger(value);
-  if (parsed > 100) {
-    throw new InvalidArgumentError("must be between 1 and 100");
-  }
-  return parsed;
-}
-
-function factoryPlanningPublicationCliOutput(
-  meta: FactoryPlanningRunMeta,
-  linearComment: string,
-  extra: {
-    linearApplied?: boolean;
-    linearUpdate?: { terminal?: LinearPlanningHandoffUpdatePlan };
-  } = {},
-) {
-  return {
-    runId: meta.runId,
-    workflow: meta.workflow,
-    status: meta.status,
-    workspace: meta.workspace,
-    runDir: meta.runDir,
-    factoryMetadata: meta.factoryMetadata,
-    ...(meta.factoryStore ? { factoryStore: meta.factoryStore } : {}),
-    ...(meta.warnings?.length ? { warnings: meta.warnings } : {}),
-    summaryPath: meta.summaryPath,
-    metaPath: meta.metaPath,
-    linearComment,
-    ...extra,
-  };
-}
-
-function assertLinearPublicationIssueMatches(meta: FactoryPlanningRunMeta, issueRef: string): void {
-  const tracker = meta.factoryMetadata?.tracker;
-  if (tracker?.source !== "linear") {
-    throw new FactoryPlanningError("Linear apply requires linear tracker metadata.");
-  }
-  const expected = parseLinearIssueIdentifier(tracker.id);
-  const actual = parseLinearIssueIdentifier(issueRef);
-  if (!expected || !actual) {
-    throw new FactoryPlanningError(
-      `Linear apply requires issue identifiers like TEAM-123: ${issueRef}`,
-    );
-  }
-  if (expected.teamKey !== actual.teamKey || expected.number !== actual.number) {
-    throw new FactoryPlanningError(
-      `--linear-issue ${issueRef} does not match planning run tracker ${tracker.id}.`,
-    );
-  }
-}
-
-function requirePrUrl(value: string | undefined): string {
-  if (!value) throw new FactoryPlanningError("--pr-url is required");
-  return value;
-}
-
-function requireCommit(value: string | undefined): string {
-  if (!value) throw new FactoryPlanningError("--commit is required");
-  return value;
-}
-
-function requirePlanningFactoryMetadata(meta: FactoryPlanningRunMeta): {
-  approvedPlanPath: string;
-  approvedPlanPrUrl: string;
-  approvedPlanCommit: string;
-} {
-  const metadata = meta.factoryMetadata;
-  if (!metadata?.approvedPlanPath) {
-    throw new FactoryPlanningError("Planning run is missing approvedPlanPath");
-  }
-  if (!metadata.approvedPlanPrUrl) {
-    throw new FactoryPlanningError("Planning run is missing approvedPlanPrUrl");
-  }
-  return {
-    approvedPlanPath: metadata.approvedPlanPath,
-    approvedPlanPrUrl: metadata.approvedPlanPrUrl,
-    approvedPlanCommit: metadata.approvedPlanCommit ?? "",
-  };
 }
 
 function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandOptions): void {
@@ -1532,49 +494,53 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         itemFile: options.itemFile,
         applyAdapter,
         createContext: (signal, existingRunId) => {
-          const executionProfile = existingRunId
-            ? readFactoryPhaseRunIdentity(
-                join(options.runsDir ?? store.factoryRunsDir, existingRunId),
-              ).actions.triageWorkItem
-            : factoryTriageExecutionProfile(
-                resolveFactoryRoleAgent({
-                  workspace,
-                  station: "triage",
-                  role: "triager",
-                }),
-              );
-          return createFactoryRunContext({
+          const common = {
             workspace,
             runsDir: options.runsDir ?? store.factoryRunsDir,
             factoryStore,
-            ...(existingRunId ? { existingRunId } : {}),
             workItem: input.workItem,
-            executionProfile,
             maxRuntimeMs: options.maxRuntimeMs,
             dryRun: options.dryRun,
             signal,
             eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
             agentProviderFactory: createAgentProvider,
+          };
+          if (existingRunId) {
+            return openFactoryRunContext({ ...common, phaseRunId: existingRunId });
+          }
+          return createFactoryRunContext({
+            ...common,
+            executionProfile: factoryTriageExecutionProfile(
+              resolveFactoryRoleAgent({
+                workspace,
+                station: "triage",
+                role: "triager",
+              }),
+            ),
           });
         },
       });
       if ("waiting" in result) {
-        console.log(
-          JSON.stringify(
-            {
-              outcome: "waiting",
-              phase: "triage",
-              ...(result.phaseRunId ? { phaseRunId: result.phaseRunId } : {}),
-              next: result.next,
-            },
-            null,
-            2,
-          ),
-        );
-        process.exitCode = 0;
+        const next = withManualCommand(result.next, factoryTriageManualCommand(options, workspace));
+        const output = formatFactoryActionOutput({
+          phase: "triage",
+          ...(result.phaseRunId ? { phaseRunId: result.phaseRunId } : {}),
+          next,
+          linearApplied: input.linearApplied ?? false,
+        });
+        console.log(JSON.stringify(output, null, 2));
+        process.exitCode = output.outcome === "failed" ? 1 : 0;
         return;
       }
       const { meta, startedUpdate, terminalUpdate, terminalApplyError } = result;
+      const next = withManualCommand(result.next, factoryTriageManualCommand(options, workspace));
+      const actionOutput = formatFactoryActionOutput({
+        phase: "triage",
+        phaseRunId: result.phaseRunId,
+        ...(meta.status === "dry_run" ? {} : { action: result.action }),
+        next,
+        linearApplied: options.apply ? !terminalApplyError : (input.linearApplied ?? false),
+      });
       console.log(
         JSON.stringify(
           {
@@ -1585,16 +551,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
                 : {}),
               ...(input.warnings ? { warnings: input.warnings } : {}),
             }),
-            outcome:
-              meta.status === "completed"
-                ? "action-completed"
-                : meta.status === "dry_run"
-                  ? "waiting"
-                  : "failed",
-            phase: "triage",
-            phaseRunId: result.phaseRunId,
-            ...(meta.status === "dry_run" ? {} : { action: result.action }),
-            next: result.next,
+            ...actionOutput,
           },
           null,
           2,
@@ -1605,6 +562,25 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
       }
       process.exitCode = meta.status === "failed" ? 1 : 0;
     });
+}
+
+function factoryTriageManualCommand(
+  options: FactoryTriageStationOptions,
+  workspace: string,
+): string {
+  const args = ["harness", "factory", "triage", "--workspace", workspace];
+  if (options.linearIssue) args.push("--linear-issue", options.linearIssue);
+  else if (options.itemFile) args.push("--item-file", options.itemFile);
+  if (options.apply) args.push("--apply");
+  if (options.rerun) args.push("--rerun");
+  if (options.factoryStoreRoot) args.push("--factory-store-root", options.factoryStoreRoot);
+  if (options.factoryStoreProjectId)
+    args.push("--factory-store-project-id", options.factoryStoreProjectId);
+  return args.map(shellArg).join(" ");
+}
+
+function shellArg(value: string): string {
+  return /^[A-Za-z0-9_./:@=-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 export async function runFactoryTriageWithLinearApply(input: {
@@ -1653,8 +629,7 @@ export async function runFactoryTriageWithLinearApply(input: {
     existingLatest?.type === "triage.work_item.completed" ||
     (existingLatest?.type === "factory.action.failed" &&
       existingLatest.data.phase === "triage" &&
-      existingLatest.data.failureKind !== "retryable" &&
-      !existingLatest.data.message.startsWith("Linear start projection failed:"));
+      existingLatest.data.failureKind !== "retryable");
   if (
     !input.dryRun &&
     !input.rerun &&
@@ -1734,50 +709,6 @@ export async function runFactoryTriageWithLinearApply(input: {
         workspace: ctx.workspace,
       });
     }
-    if (activeTriage && !ctx.dryRun) {
-      const published = recoverCompletedTriageRun(ctx, activeTriage.reaction);
-      if (published) {
-        const actionDir = join(
-          ctx.runDir,
-          "actions",
-          String(activeTriage.reaction.attempt),
-          activeTriage.reaction.handler,
-          factoryActionKey({ ...activeTriage.reaction, phaseRunId: ctx.runId }),
-        );
-        writeFactoryActionResult(actionDir, published.event);
-        const appended = appendFactoryActionEvent({
-          factoryStateRoot: input.factoryStateRoot,
-          event: published.event,
-          expectedLastEventId: activeTriage.reaction.causationEventId,
-        });
-        let terminalUpdate: LinearTriageUpdatePlan | undefined;
-        let terminalApplyError: unknown;
-        if (input.applyAdapter) {
-          try {
-            terminalUpdate = await input.applyAdapter.applyTriageCompleted({
-              issueRef: input.issueRef,
-              runId: ctx.runId,
-              runDir: ctx.runDir,
-              triage: published.triage,
-            });
-          } catch (error) {
-            terminalApplyError = error;
-          }
-        }
-        return {
-          meta: published.meta,
-          phaseRunId: ctx.runId,
-          action: {
-            handler: "triageWorkItem",
-            attempt: 1,
-            eventId: published.event.id,
-          },
-          next: decideNextFactoryAction(appended.state, appended.event),
-          ...(terminalUpdate ? { terminalUpdate } : {}),
-          ...(terminalApplyError ? { terminalApplyError } : {}),
-        };
-      }
-    }
     let actionRequest:
       | Extract<FactoryActionLifecycleEvent, { type: "triage.requested" }>
       | undefined;
@@ -1806,6 +737,7 @@ export async function runFactoryTriageWithLinearApply(input: {
         phaseRunId: ctx.runId,
         data: {
           expectedPredecessor: importedResult.state.lastEventId,
+          intent: policy.hadPriorCompletion ? "restart" : "start",
           inputRefs: ctx.factoryStore
             ? [
                 createFactoryArtifactRef({
@@ -1820,16 +752,6 @@ export async function runFactoryTriageWithLinearApply(input: {
             : [],
         },
       };
-      writeFactoryPhaseRunIdentity(ctx.runDir, {
-        version: 1,
-        phaseRunId: ctx.runId,
-        phase: "triage",
-        workItemKey: key,
-        workspace: resolve(ctx.workspace),
-        projectId: ctx.factoryStore!.projectId,
-        factoryStateRoot: resolve(input.factoryStateRoot),
-        actions: { triageWorkItem: ctx.executionProfile },
-      });
       const requested = appendFactoryActionEvent({
         factoryStateRoot: input.factoryStateRoot,
         event: actionRequest,
@@ -1845,7 +767,6 @@ export async function runFactoryTriageWithLinearApply(input: {
       throw new Error("Factory triage has no invokable action");
     }
     let startedUpdate: LinearTriageUpdatePlan | undefined;
-    let startApplyError: unknown;
     if (!ctx.dryRun && reaction?.kind === "invoke") {
       console.error(
         JSON.stringify({
@@ -1860,33 +781,47 @@ export async function runFactoryTriageWithLinearApply(input: {
     }
     // The idempotent start projection is also the pre-provider status guard for continuations.
     if (input.applyAdapter && reaction?.kind === "invoke") {
+      const providerAttemptPersisted = existsSync(join(ctx.runDir, "meta.json"));
       try {
         startedUpdate = await input.applyAdapter.applyTriageStarted({
           issueRef: input.issueRef,
           runId: ctx.runId,
           runDir: ctx.runDir,
-          rerun: input.rerun,
-          continuation: Boolean(activeTriage),
+          rerun: input.rerun || Boolean(activeTriage && !providerAttemptPersisted),
+          continuation: Boolean(activeTriage && providerAttemptPersisted),
         });
       } catch (error) {
-        startApplyError = error;
+        throw new Error(`Linear start projection failed: ${errorMessage(error)}`, { cause: error });
       }
     }
     let meta: FactoryRunMeta;
-    if (startApplyError) {
-      meta = ctx.exportFailed(
-        new Error(`Linear start projection failed: ${errorMessage(startApplyError)}`, {
-          cause: startApplyError,
-        }),
-      );
-    } else
-      try {
-        meta = await runTriage(ctx, {
-          nextLiveRunRequiresRerun: !ctx.dryRun || policy.hadPriorCompletion,
-        });
-      } catch (error) {
-        meta = ctx.exportFailed(error);
+    let terminalAction: FactoryActionLifecycleEvent | undefined;
+    let next: FactoryReaction = { kind: "wait", reason: "human" };
+    if (ctx.dryRun) {
+      meta = await runTriage(ctx, {
+        nextLiveRunRequiresRerun: !ctx.dryRun || policy.hadPriorCompletion,
+      });
+    } else {
+      let handledMeta: FactoryRunMeta | undefined;
+      const appended = await triageWorkItem({
+        ctx,
+        factoryStateRoot: input.factoryStateRoot,
+        reaction: reaction!,
+        nextLiveRunRequiresRerun: !ctx.dryRun || policy.hadPriorCompletion,
+        runProvider: runTriage,
+        onMeta: (value) => {
+          handledMeta = value;
+        },
+      });
+      if (handledMeta) meta = handledMeta;
+      else {
+        const metaValue: unknown = JSON.parse(readFileSync(join(ctx.runDir, "meta.json"), "utf8"));
+        assertFactoryRunMeta(metaValue);
+        meta = metaValue;
       }
+      terminalAction = appended.event;
+      next = decideNextFactoryAction(appended.state, appended.event);
+    }
     let completedTriage: FactoryTriageOutput | undefined;
     if (meta.status === "completed") {
       try {
@@ -1895,34 +830,9 @@ export async function runFactoryTriageWithLinearApply(input: {
         meta = ctx.exportFailed(error);
       }
     }
-    let terminalAction: FactoryActionLifecycleEvent | undefined;
-    let next: FactoryReaction = { kind: "wait", reason: "human" };
-    if (!ctx.dryRun && reaction?.kind === "invoke" && ctx.factoryStore) {
-      try {
-        terminalAction = buildTriageActionEvent(ctx, meta, completedTriage, reaction);
-      } catch (error) {
-        meta = ctx.exportFailed(error);
-        completedTriage = undefined;
-        terminalAction = buildTriageActionEvent(ctx, meta, undefined, reaction);
-      }
-      const actionDir = join(
-        ctx.runDir,
-        "actions",
-        String(reaction.attempt),
-        reaction.handler,
-        factoryActionKey({ ...reaction, phaseRunId: ctx.runId }),
-      );
-      writeFactoryActionResult(actionDir, terminalAction);
-      const appended = appendFactoryActionEvent({
-        factoryStateRoot: input.factoryStateRoot,
-        event: terminalAction,
-        expectedLastEventId: reaction.causationEventId,
-      });
-      next = decideNextFactoryAction(appended.state, appended.event);
-    }
     let terminalUpdate: LinearTriageUpdatePlan | undefined;
     let terminalApplyError: unknown;
-    if (input.applyAdapter && !ctx.dryRun && !startApplyError && meta.failureKind !== "retryable") {
+    if (input.applyAdapter && !ctx.dryRun && meta.failureKind !== "retryable") {
       try {
         terminalUpdate = completedTriage
           ? await input.applyAdapter.applyTriageCompleted({
@@ -1952,9 +862,7 @@ export async function runFactoryTriageWithLinearApply(input: {
       next,
       ...(startedUpdate ? { startedUpdate } : {}),
       ...(terminalUpdate ? { terminalUpdate } : {}),
-      ...(terminalApplyError || startApplyError
-        ? { terminalApplyError: terminalApplyError ?? startApplyError }
-        : {}),
+      ...(terminalApplyError ? { terminalApplyError } : {}),
     };
   } finally {
     process.off("SIGINT", onRunAbort);
@@ -2199,15 +1107,6 @@ function requireLinearApplyAdapter(
   return adapter;
 }
 
-function assertLegacyPhaseStoreAvailable(
-  _factoryStateRoot: string,
-  phase: "planning" | "implementation",
-): void {
-  throw new Error(
-    `Factory ${phase} action coordination is unavailable until its dedicated follow-up PR ships.`,
-  );
-}
-
 function readFactoryTriageArtifact(meta: FactoryRunMeta): FactoryTriageOutput {
   const triagePath = join(meta.runDir, meta.artifacts?.triage ?? "factory-triage.json");
   const triage = parseFactoryTriageOutput(JSON.parse(readFileSync(triagePath, "utf8")));
@@ -2223,39 +1122,6 @@ function assertTriageEvidenceContained(workspace: string, triage: FactoryTriageO
     }
     assertFactoryPathContained(workspace, resolve(workspace, evidence.path));
   }
-}
-
-function recoverCompletedTriageRun(
-  ctx: FactoryRunContext,
-  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
-):
-  | {
-      meta: FactoryRunMeta;
-      triage: FactoryTriageOutput;
-      event: Extract<FactoryActionLifecycleEvent, { type: "triage.work_item.completed" }>;
-    }
-  | undefined {
-  const metaPath = join(ctx.runDir, "meta.json");
-  if (!existsSync(metaPath)) return undefined;
-  const value: unknown = JSON.parse(readFileSync(metaPath, "utf8"));
-  assertFactoryRunMeta(value);
-  if (value.status !== "completed") return undefined;
-  if (
-    value.runId !== ctx.runId ||
-    resolve(value.runDir) !== resolve(ctx.runDir) ||
-    resolve(value.workspace) !== resolve(ctx.workspace) ||
-    value.workItem.id !== ctx.workItem.id ||
-    resolve(value.factoryStore?.factoryStateRoot ?? "") !==
-      resolve(ctx.factoryStore?.factoryStateRoot ?? "")
-  ) {
-    throw new Error(`Completed Factory run metadata conflicts with ${ctx.runId}`);
-  }
-  const triage = readFactoryTriageArtifact(value);
-  const event = buildTriageActionEvent(ctx, value, triage, reaction);
-  if (event.type !== "triage.work_item.completed") {
-    throw new Error(`Completed Factory run ${ctx.runId} produced a failure event`);
-  }
-  return { meta: value, triage, event };
 }
 
 function readVerifiedFactoryTriageArtifact(
@@ -2318,110 +1184,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function buildTriageActionEvent(
-  ctx: FactoryRunContext,
-  meta: FactoryRunMeta,
-  triage: FactoryTriageOutput | undefined,
-  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
-): Extract<
-  FactoryActionLifecycleEvent,
-  { type: "triage.work_item.completed" | "factory.action.failed" }
-> {
-  const store = ctx.factoryStore;
-  if (!store) throw new Error("Factory action requires durable store metadata");
-  const actionKey = factoryActionKey({ ...reaction, phaseRunId: ctx.runId });
-  const evidenceDir = join(
-    ctx.runDir,
-    "actions",
-    String(reaction.attempt),
-    reaction.handler,
-    actionKey,
-    "evidence",
-  );
-  const summaryPath = publishImmutableActionEvidence(
-    join(meta.runDir, meta.artifacts?.summary ?? "meta.json"),
-    join(evidenceDir, "summary.md"),
-  );
-  const runRef = createFactoryArtifactRef({
-    base: "factory-store",
-    root: store.projectRoot,
-    path: relative(store.projectRoot, summaryPath),
-  });
-  const triagePath = triage
-    ? publishImmutableActionEvidence(
-        join(meta.runDir, meta.artifacts?.triage ?? "factory-triage.json"),
-        join(evidenceDir, "factory-triage.json"),
-      )
-    : undefined;
-  const triageRef = triagePath
-    ? createFactoryArtifactRef({
-        base: "factory-store",
-        root: store.projectRoot,
-        path: relative(store.projectRoot, triagePath),
-      })
-    : undefined;
-  const common = {
-    version: 1 as const,
-    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
-    occurredAt: new Date().toISOString(),
-    phaseRunId: ctx.runId,
-    data: {
-      handler: "triageWorkItem" as const,
-      handlerVersion: 1 as const,
-      attempt: reaction.attempt,
-      causationEventId: reaction.causationEventId,
-      execution: { workspaceRef: store.repo.id, runRef },
-      evidence: triageRef ? [runRef, triageRef] : [runRef],
-    },
-  };
-  if (!triage || meta.status !== "completed") {
-    return {
-      ...common,
-      id: `factory.action.failed:${actionKey}`,
-      type: "factory.action.failed",
-      data: {
-        ...common.data,
-        phase: "triage",
-        failureKind: meta.failureKind ?? "terminal",
-        message: meta.error ?? "Factory triage failed.",
-      },
-    };
-  }
-  const routePlanPath = publishImmutableActionEvidence(
-    join(meta.runDir, "factory-route.json"),
-    join(evidenceDir, "factory-route.json"),
-  );
-  const routePlanValue: unknown = JSON.parse(readFileSync(routePlanPath, "utf8"));
-  if (!isRecord(routePlanValue)) throw new Error("Factory triage route plan is invalid");
-  const nextCommand =
-    typeof routePlanValue.command === "string" && routePlanValue.command.trim()
-      ? routePlanValue.command.trim()
-      : undefined;
-  return {
-    ...common,
-    id: `triage.work_item.completed:${actionKey}`,
-    type: "triage.work_item.completed",
-    data: {
-      ...common.data,
-      route: triage.route,
-      ...(nextCommand ? { nextCommand } : {}),
-      rationale: triage.rationale,
-    },
-  };
-}
-
-function publishImmutableActionEvidence(source: string, destination: string): string {
-  mkdirSync(dirname(destination), { recursive: true });
-  if (existsSync(destination)) {
-    if (!readFileSync(source).equals(readFileSync(destination))) {
-      throw new Error(`Factory action evidence conflicts with ${destination}`);
-    }
-    return destination;
-  }
-  copyFileSync(source, destination);
-  return destination;
-}
-
 function assertFactoryActionTriageAllowed(input: {
   factoryStateRoot: string;
   workItem: FactoryWorkItem;
@@ -2439,40 +1201,4 @@ function assertFactoryActionTriageAllowed(input: {
     );
   }
   return { hadPriorCompletion: requiresRestart };
-}
-
-function linearPlanningCompletedInput(
-  meta: FactoryPlanningRunMeta,
-  issueRef: string,
-): LinearPlanningCompletedInput {
-  const latestIteration = meta.iterations.at(-1);
-  const latestIterationDir = latestIteration
-    ? join(meta.runDir, "iterations", String(latestIteration.index))
-    : undefined;
-  return {
-    issueRef,
-    runId: meta.runId,
-    runDir: meta.runDir,
-    status: meta.status,
-    approvedPlanPath:
-      meta.factoryMetadata?.approvedPlanPath ??
-      (meta.outputPlan ? formatPlanningDisplayPath(meta, meta.outputPlan) : undefined),
-    draftPlanPath: latestIteration?.planPath
-      ? formatPlanningDisplayPath(meta, latestIteration.planPath)
-      : undefined,
-    reviewFindingsPath:
-      meta.status === "plan-review-unresolved" && latestIterationDir
-        ? formatPlanningDisplayPath(meta, join(latestIterationDir, "review-findings.json"))
-        : undefined,
-    humanQuestions: meta.humanQuestions,
-    error: meta.error,
-  };
-}
-
-function formatPlanningDisplayPath(meta: FactoryPlanningRunMeta, path: string): string {
-  return formatLifecycleArtifactPath({
-    runDir: meta.runDir,
-    projectRoot: meta.factoryStore?.projectRoot,
-    path,
-  });
 }
