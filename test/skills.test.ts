@@ -171,8 +171,11 @@ test("architect prefers the smallest intent-aligned design", () => {
   expect(prose).toContain("highest existing stable test seam");
   expect(prose).toContain("only when its answer could change the recommendation");
   expect(prose).toContain("challenge the smallest proposed design");
+  expect(prose).toContain("Name the task `architect-advisor`");
   expect(prose).toContain("Only materially different viable choices");
   expect(prose).toContain("Omit when one direction is clear");
+  expect(architect).not.toContain("Use an alternate model");
+  expect(architect).not.toMatch(/gpt-5\.6-(terra|luna)/);
   expect(architect).not.toContain("Generate two to four viable designs");
   expect(architect).not.toContain("bolder architecture");
   expect(architect).not.toContain("## Current-State Anchors");

@@ -79,10 +79,9 @@ could change the recommendation. Ask it to challenge the smallest proposed
 design, identify a missing constraint, or test pattern fit—not to brainstorm
 more architecture.
 
-Use an alternate model: `gpt-5.6-terra`, or `gpt-5.6-luna` when Terra matches
-the coordinator. Name the task `architect-advisor`; provide grounded anchors
-and request an evidence-backed response. Use another advisor only for a
-distinct unresolved uncertainty.
+Name the task `architect-advisor`; provide grounded anchors and request an
+evidence-backed response. Use another advisor only for a distinct unresolved
+uncertainty.
 
 Triage actual advice as **Adopt**, **Adapt**, or **Decline**. Omit empty
 categories and omit advisor reporting when consultation did not affect the
