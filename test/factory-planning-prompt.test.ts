@@ -4,7 +4,7 @@ import {
   renderFactoryPlanningRevisionPrompt,
 } from "../lib/prompts/factory-planning.ts";
 
-test("factory planner prioritizes explicit intent and minimum-sufficient scope", () => {
+test("factory planner preserves task authority", () => {
   const prompt = renderFactoryPlanningInitialPrompt({
     workItemJson: '{"title":"Small fix"}',
     draftPath: "/tmp/draft.md",
@@ -16,13 +16,35 @@ test("factory planner prioritizes explicit intent and minimum-sufficient scope",
   expect(prompt).toContain("accepted, current, locked, or superseding");
   expect(prompt).toContain("Never infer authority from tracker comment order");
   expect(prompt).toContain("return needs-human and quote the conflicting directions");
+});
+
+test("factory planner uses a compact decision-rich plan shape", () => {
+  const prompt = renderFactoryPlanningInitialPrompt({
+    workItemJson: '{"title":"Small fix"}',
+    draftPath: "/tmp/draft.md",
+    currentDate: "2026-07-11",
+  });
+
   expect(prompt).toContain("Write the minimum sufficient plan");
-  expect(prompt).toContain("Conditional content:");
+  expect(prompt).toContain("capable, context-limited executor with repository access");
+  expect(prompt).toContain("without prior context about the task at hand");
+  expect(prompt).not.toContain("no prior conversation");
+  expect(prompt).toContain("Use this default plan shape:");
+  expect(prompt).toContain("## Goal");
+  expect(prompt).toContain("## Changes");
+  expect(prompt).toContain("## Verify");
+  expect(prompt).toContain("## Boundaries");
+  expect(prompt).toContain("Omit when none exist");
+  expect(prompt).not.toContain("unresolved decisions");
   expect(prompt).toContain("smallest coherent change");
-  expect(prompt).toContain("smallest focused checks plus the repository's canonical validation");
+  expect(prompt).toContain("highest existing stable test seam proving acceptance");
+  expect(prompt).toContain("distinct invariant or failure mode unobservable there");
+  expect(prompt).toContain("changes an executor decision");
+  expect(prompt).toContain("Generic planning templates are optional");
   expect(prompt).toContain("routine diff inspection");
-  expect(prompt).toContain("must trace to an acceptance criterion");
-  expect(prompt).not.toContain('Include a "Skills for the executor" table');
+  expect(prompt).not.toContain("Conditional content:");
+  expect(prompt).not.toContain("separate test matrices");
+  expect(prompt).not.toContain("maintenance notes");
 });
 
 test("factory revision receives blockers and requires pruning", () => {

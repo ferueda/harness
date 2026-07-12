@@ -29,25 +29,35 @@ chat review is enough.
 
 **Done when:** every proposed change and major design choice has been checked against intent, code, and proportionality.
 
+## Plan Contract
+
+Review plans as decision records for capable, context-limited executors with
+repository access. `Goal`, `Changes`, `Verify`, and optional `Boundaries` are the
+default shape, but equivalent headings are valid. Require added detail only when
+it changes an executor decision or proves a distinct criterion, invariant, or
+verified risk. Do not request metadata, copied source, skills tables, separate
+test plans, done checklists, or maintenance notes for template completeness.
+
 ## Review Dimensions
 
 Evaluate across these areas (focus on what's relevant):
 
 - **Architecture**: Component boundaries, data flow, API contracts, separation of concerns
 - **Feasibility**: Implementation complexity, technology trade-offs, effort estimation
-- **Simplicity**: Overengineering, unnecessary phases, speculative abstractions, simpler equivalent shapes. Trace every proposed file, behavior, test family, documentation change, and future-compatibility item to an acceptance criterion, hard invariant, or verified regression risk. Unsupported work is a scope defect. Ask: does phase count and abstraction count match the problem? Any YAGNI (registry, plugin layer, future-proof hook without a current caller)? Could existing code do this with less surface? Phases that only defer thinking without a deliverable? Flag when: one-call-site abstractions, workflow/registry for a single use case, mergeable phases, patterns oversized for this repo, nice-to-haves without a named constraint.
-- **Project Alignment**: Fit with the target repo's documented intent source, audience, non-goals, hard invariants, source-of-truth boundaries, and current-vs-planned behavior. Look first for `docs/project-intent.md`, then root `VISION.md`, then explicit intent docs named from `AGENTS.md`, `README.md`, or contributor docs. If no intent source exists, narrow bug fixes and local refactors may proceed with a note; plans that make product, architecture, docs-architecture, data/tenancy, provider, public API, or workflow-wide decisions should include confirmed intent or a first step to create a minimal intent source.
+- **Simplicity**: Overengineering, unnecessary phases, speculative abstractions, and smaller equivalent shapes. Trace every change and test to acceptance, an invariant, or a verified risk. Unsupported work is a scope defect. Flag one-call-site abstractions, single-use registries or workflows, mergeable phases, oversized patterns, and nice-to-haves without a named constraint.
+- **Project Alignment**: Fit with documented intent, audience, non-goals, invariants, source-of-truth boundaries, and current-vs-planned behavior. Check `docs/project-intent.md`, root `VISION.md`, and intent docs linked from repo guidance. The gate below handles missing sources.
 - **Reliability**: Error handling, retries, idempotency, graceful degradation
 - **Performance**: Bottlenecks, caching, query patterns, scaling approach
 - **Security**: Auth, data protection, input validation, audit logging
 - **Edge Cases**: Null handling, limits, timeouts, race conditions, partial failures
-- **Testing**: Testability, integration strategy, rollback considerations
+- **Testing**: Prefer the highest existing stable seam proving acceptance. Require a lower seam only for a distinct invariant or failure mode unobservable there.
 
 ### Intent Source Gate
 
 - Use a High `must_fix` finding when a plan makes product, architecture, boundary, public API, data/tenancy, provider, docs-architecture, or workflow-wide decisions without an intent source or confirmed substitute.
 - Use a Medium finding when a known intent source exists but the plan does not inline the relevant constraints for the executor.
 - Use a Low advisory finding when narrow work can proceed but the repo would benefit from adding an intent source later.
+- For risky work without a source, require confirmed intent or a first step to create a minimal intent source.
 - Narrow bug fixes and local refactors may proceed without an intent source when the plan notes that none was found and the work does not make project-level direction or boundary decisions.
 
 ## Output Format
@@ -86,4 +96,5 @@ For each finding:
 - **Challenge assumptions** — Question decisions that lack justification
 - **Prefer smaller plans** — When two approaches work, recommend the one with fewer moving parts unless constraints require more
 - **Do not invent work** — Optional hardening, extra tests, docs, abstractions, and future-proofing need a named requirement, invariant, or demonstrated regression risk
+- **Review decisions, not ceremony** — Do not request a section, table, excerpt, checklist, or command unless its absence makes execution unsafe or ambiguous
 - **Keep advice advisory** — `must_fix: false` findings may record observations but should not ask for plan edits

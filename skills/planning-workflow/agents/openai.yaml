@@ -1,4 +1,4 @@
 interface:
   display_name: "Planning Workflow"
-  short_description: "Route from intent through shape, diagnose, review-spec, create-plan, plan-review, and implement"
-  default_prompt: "Use $planning-workflow to run the full planning cycle for this work."
+  short_description: "Route intent through planning, review, and implementation"
+  default_prompt: "Use $planning-workflow to route this work from intent through a reviewed, minimum-sufficient plan and implementation."

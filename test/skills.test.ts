@@ -27,6 +27,10 @@ function listFiles(root: string): string[] {
     .sort();
 }
 
+function normalizedProse(content: string): string {
+  return content.replace(/\s+/g, " ");
+}
+
 test("installPackagedSkill restores existing skill when forced replace fails", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-skills-"));
   const skillPath = join(workspace, ".agents/skills/change-review-workflow/SKILL.md");
@@ -117,4 +121,63 @@ test("sessions CLI lives under skills/sessions only", () => {
   }
   expect(statSync(join(REPO_ROOT, "skills/sessions/scripts/sessions.ts")).isFile()).toBe(true);
   expect(statSync(join(REPO_ROOT, "skills/sessions/scripts/install.sh")).isFile()).toBe(true);
+});
+
+test("planning skills use the compact capable-executor contract", () => {
+  const createPlan = readFileSync(join(REPO_ROOT, "skills/create-plan/SKILL.md"), "utf8");
+  const template = readFileSync(
+    join(REPO_ROOT, "skills/create-plan/references/plan-template.md"),
+    "utf8",
+  );
+  const coordinator = readFileSync(join(REPO_ROOT, "skills/planning-workflow/SKILL.md"), "utf8");
+  const audit = readFileSync(join(REPO_ROOT, "skills/audit/SKILL.md"), "utf8");
+  const auditTemplate = readFileSync(
+    join(REPO_ROOT, "skills/audit/references/plan-template.md"),
+    "utf8",
+  );
+
+  for (const content of [createPlan, template, coordinator, audit, auditTemplate]) {
+    expect(content).toMatch(/capable, context-limited\s+executors?/);
+    expect(content).toMatch(/highest existing\s+stable test seam/);
+    expect(content).not.toContain("weakest plausible executor");
+  }
+
+  for (const content of [createPlan, template, audit, auditTemplate]) {
+    expect(normalizedProse(content)).toContain("without prior context about the task at hand");
+    expect(content).not.toContain("no prior conversation");
+  }
+
+  expect(template).toContain("## Goal");
+  expect(template).toContain("## Changes");
+  expect(template).toContain("## Verify");
+  expect(template).toContain("## Boundaries");
+  expect(template).toContain("Do not add a skills table by default");
+  expect(template).not.toContain("## Status");
+  expect(template).not.toContain("## Maintenance notes");
+  expect(createPlan).not.toContain("less capable model with zero context");
+  expect(auditTemplate).toContain("Planned at");
+  expect(auditTemplate).toContain("## Index file: `dev/plans/README.md`");
+  expect(auditTemplate).not.toContain("## Commands you will need");
+});
+
+test("architect prefers the smallest intent-aligned design", () => {
+  const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
+  const prose = normalizedProse(architect);
+
+  expect(prose).toContain("Repository invariants and documented project intent");
+  expect(prose).toContain("Recommend no change when it already satisfies the goal");
+  expect(prose).toContain("smallest repo-native change");
+  expect(prose).toContain("Do not manufacture an option count");
+  expect(prose).toContain("highest existing stable test seam");
+  expect(prose).toContain("only when its answer could change the recommendation");
+  expect(prose).toContain("challenge the smallest proposed design");
+  expect(prose).toContain("Name the task `architect-advisor`");
+  expect(prose).toContain("Only materially different viable choices");
+  expect(prose).toContain("Omit when one direction is clear");
+  expect(architect).not.toContain("Use an alternate model");
+  expect(architect).not.toMatch(/gpt-5\.6-(terra|luna)/);
+  expect(architect).not.toContain("Generate two to four viable designs");
+  expect(architect).not.toContain("bolder architecture");
+  expect(architect).not.toContain("## Current-State Anchors");
+  expect(architect).not.toContain("## Locked For Planning");
 });

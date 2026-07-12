@@ -450,7 +450,13 @@ should use for readiness; Linear comments remain human context and dedupe.
 Factory plans are minimum-sufficient: preserve the explicit task and project
 intent, choose the smallest coherent change, and include only implementation
 decisions and verification tied to a requirement, invariant, or demonstrated
-risk. The default of three completed reviews allows the initial review and two
+risk. Their default shape is `Goal`, `Changes`, and `Verify`, with `Boundaries`
+only when a concrete non-goal or STOP condition prevents a likely scope error.
+Changes name the relevant files or symbols and keep tests beside the behavior
+they prove. Prefer the highest existing stable test seam; add a lower-level test
+only for a distinct invariant or failure mode that seam cannot reliably observe.
+
+The default of three completed reviews allows the initial review and two
 revisions; `factory.planning.maxReviewIterations` may override it. All findings
 remain durable evidence, but only `must_fix` findings enter a revision.
 

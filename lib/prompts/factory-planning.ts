@@ -25,22 +25,28 @@ Planning priorities, in order:
 4. Verified repository facts and existing patterns.
 Triage evidence and reviewer recommendations are advisory. Unmarked proposals and option lists are context, not accepted decisions. Never infer authority from tracker comment order. If explicit directions conflict and no explicit supersession resolves them, return needs-human and quote the conflicting directions.
 
-Write the minimum sufficient plan: every decision needed for safe execution, and nothing merely useful to know.
-Required content:
-- State the goal and acceptance criteria.
-- Inline only the project-intent constraints and current-state facts that affect the solution.
-- Choose the smallest coherent change that satisfies the goal and existing invariants.
-- Name the files or symbols to change, focused implementation steps, and relevant verification.
-- State meaningful non-goals or STOP conditions only when they prevent a likely scope mistake.
+Write the minimum sufficient plan for a capable, context-limited executor with repository access but without prior context about the task at hand. Include decisions needed for safe execution; omit useful-only context and inspectable repository basics.
 
-Conditional content:
-- Include code excerpts only when an exact target shape is load-bearing.
-- Include skills, command tables, separate test matrices, maintenance notes, failure matrices, or repeated done criteria only when a named constraint or risk makes them necessary.
-- Do not turn preserved behavior into new implementation work, add speculative hardening or future-proofing, or repeat the same command or criterion across sections.
-- Keep verification to the smallest focused checks plus the repository's canonical validation command. Do not separately list checks already covered by that command or routine diff inspection unless a specific risk requires them.
-- Every proposed file, abstraction, test family, documentation change, and future-compatibility item must trace to an acceptance criterion, hard invariant, or verified regression risk.
+Use this default plan shape:
+# <Outcome-oriented title>
+## Goal
+Problem, intended outcome, acceptance criteria, and material project constraints.
+## Changes
+Ordered items: file or symbol, decision, intended behavior, and relevant test seam. Inline current facts only when decision-shaping.
+## Verify
+Focused behavioral check and canonical repository validation. Do not repeat covered checks or routine diff inspection without a named risk.
+## Boundaries
+Concrete non-goals or STOP conditions that prevent a likely scope mistake. Omit when none exist.
 
-Verify current state before prescribing edits. Prefer concise references to repository sources over reproducing their contents. Plan length is not a target; proportionality to the required decisions and changed surface is.`;
+Planning rules:
+- Choose the smallest coherent change satisfying the goal and invariants.
+- Prefer the highest existing stable test seam proving acceptance; use a lower seam only for a distinct invariant or failure mode unobservable there.
+- Include excerpts only when the exact target shape is load-bearing.
+- Add material only when it changes an executor decision or proves a distinct criterion, invariant, or verified regression risk.
+- Do not add preserved behavior, speculative hardening, future-proofing, or repetition.
+- Generic planning templates are optional unless explicitly required for Factory plans.
+
+Verify current state. Prefer concise durable source references over reproduction. Length follows decision and change-surface complexity, not a target.`;
 
 export function renderFactoryPlanningInitialPrompt(
   input: FactoryPlanningInitialPromptInput,

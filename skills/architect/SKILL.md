@@ -6,94 +6,96 @@ disable-model-invocation: true
 
 # Architect
 
-Design the solution before planning or building. Product: an inline architecture memo the user can keep, discard, or ask to turn into a plan.
+Design the smallest repo-grounded solution before planning or building. Return
+an inline architecture memo the user can keep, discard, or turn into a plan.
 
 ## Rules
 
-- Stay read-only. Do not edit files, write artifacts, stage, commit, or create plan files.
-- Ground claims in current repo reality: guidance, docs, code, tests, callers, contracts, and existing patterns.
-- Ask the user when ambiguity materially changes architecture. Include a recommended answer, alternatives, and tradeoffs.
-- Proactively spawn one read-only advisor subagent for advice, second opinions, and critique on non-trivial designs. Set an explicit model override different from the coordinator: use `gpt-5.6-terra` unless it matches the coordinator, then use `gpt-5.6-luna`.
-- Triage advisor input as **Adopt**, **Adapt**, or **Decline**. Do not dump raw advisor output.
-- Stop before implementation planning: no phases, file-edit checklist, command gates, executor skills table, or task breakdown.
-- If the user gives a bug, symptom, or "what is true?" question, route to `diagnose-issue` first. If product intent is too vague to choose among designs, use `shape-requirements` gate.
+- Stay read-only. Do not edit files, write artifacts, stage, commit, or create
+  plans.
+- Stop before implementation planning: no phases, file-edit checklist, command
+  gates, executor skills table, or task breakdown.
+- Ask the user only when ambiguity materially changes the architecture. Include
+  a recommended answer and the real tradeoff.
+- Route bugs, symptoms, and code-truth questions to `diagnose-issue` first. Use
+  the `shape-requirements` gate when unclear product intent prevents a choice.
 
 ## Workflow
 
 ### 1. Frame
 
-Extract:
+Identify the goal, accepted decisions, scope, success criteria, constraints, and
+unknowns that could change the design. Resolve blocking unknowns before deep
+work.
 
-- goal or problem
-- suspected solution, if any
-- scope and non-goals
-- constraints
-- success criteria
-- unknowns that may change the architecture
-
-If an unknown blocks responsible design, ask the user before deep work. Give the recommended choice and alternatives.
-
-**Done when:** the design target and blocking unknowns are explicit.
+**Done when:** the design target and material unknowns are explicit.
 
 ### 2. Ground
 
-Read enough repo context to understand what the design must fit:
+Apply this authority order:
 
-- `AGENTS.md`, `README.md`, intent docs, ADRs, or relevant contributor docs
-- relevant code paths, tests, callers, exports, schemas, config, and lifecycle boundaries
-- prior plans or docs only when they explain current intent
-- official external docs when third-party behavior, standards, or provider contracts matter
+1. Repository invariants and documented project intent.
+2. Explicit user goals, scope, acceptance criteria, and accepted decisions.
+3. Verified current behavior and constraints.
+4. Existing patterns and unaccepted proposals.
 
-Do not stop at the first plausible file. Follow the flow until each design option can cite current-state anchors.
+Read `AGENTS.md`, repository guidance, and the relevant intent source before
+product, boundary, public API, provider, data, or documentation-architecture
+decisions. Inspect only the code paths, tests, callers, contracts, schemas,
+configuration, and lifecycle boundaries needed to follow the behavior. Use
+prior plans only for accepted decisions, and keep current behavior distinct
+from planned work. Consult official sources when third-party behavior matters.
 
-**Done when:** the memo can cite repo evidence with `file:line` anchors and label remaining assumptions.
+Follow the flow far enough to support each decision with durable `path:line`
+anchors. Label remaining assumptions.
 
-### 3. Explore
+**Done when:** repository evidence and project intent constrain the design.
 
-Generate two to four viable designs:
+### 3. Choose the smallest credible direction
 
-- smallest credible design
-- repo-native design that follows existing patterns
-- bolder architecture when justified by real constraints
-- defer or no-change option when credible
+- Recommend no change when it already satisfies the goal.
+- Otherwise prefer the smallest repo-native change that satisfies the goal and
+  invariants.
+- Require a present acceptance criterion, invariant, or verified risk before
+  adding an abstraction, boundary, extension point, registry, workflow, or
+  compatibility layer the smaller design does not need.
+- Add an alternative only when it is viable, materially different, and exposes
+  a decision-relevant tradeoff. Do not manufacture an option count.
+- When behavioral proof affects the choice, prefer the highest existing stable
+  test seam. Add a lower seam only for a distinct invariant or failure mode
+  unobservable there.
 
-For each option, capture fit, tradeoffs, risks, compatibility, testability, and what would make it the wrong choice.
+Evaluate only the fit, tradeoffs, risks, compatibility, and test implications
+that could change the recommendation.
 
-**Done when:** options are meaningfully different and each has a defensible acceptance or rejection case.
+**Done when:** one recommendation wins on current evidence; alternatives remain
+only where the user has a real choice.
 
-### 4. Consult
+### 4. Consult when decision-changing
 
-Spawn a read-only `explorer` advisor subagent when the design is non-trivial, cross-module, public API/data-contract affecting, migration-heavy, security-sensitive, or still uncertain after repo grounding. Give it the grounded repo anchors and a focused question; ask it to identify missed risks, simpler alternatives, pattern fit, or critique of the draft recommendation.
+For non-trivial, cross-module, public-contract, migration, security-sensitive,
+or still-uncertain designs, consult one read-only advisor only when its answer
+could change the recommendation. Ask it to challenge the smallest proposed
+design, identify a missing constraint, or test pattern fit—not to brainstorm
+more architecture.
 
-Use one explicit alternate model override. Prefer `gpt-5.6-terra`; if that is the coordinator model, use `gpt-5.6-luna`. Name the task `architect-advisor`, use `fork_turns: "all"`, and instruct the advisor to remain read-only and return an evidence-backed recommendation.
+Name the task `architect-advisor`; provide grounded anchors and request an
+evidence-backed response. Use another advisor only for a distinct unresolved
+uncertainty.
 
-Use focused prompts:
+Triage actual advice as **Adopt**, **Adapt**, or **Decline**. Omit empty
+categories and omit advisor reporting when consultation did not affect the
+decision. If consultation is unavailable, continue with grounded judgment.
 
-- ask for missed risks
-- ask for simpler alternatives
-- ask for pattern fit against specific files
-- ask for critique of a draft recommendation
+**Done when:** decision-changing critique has been resolved.
 
-Spawn another advisor only for a distinct remaining uncertainty. If subagents or an alternate model are unavailable, say so briefly and continue with the best grounded judgment.
+### 5. Decide and report
 
-**Done when:** advisor feedback is triaged as Adopt, Adapt, or Decline with short rationale.
+Recommend one direction. If product priority or risk tolerance—not repository
+evidence—decides between viable choices, ask the user with a recommended answer
+and concise tradeoff.
 
-### 5. Decide
-
-Recommend one architecture when evidence supports it. If product, priority, or risk tolerance decides between live options, ask the user and present:
-
-- recommended choice
-- alternatives
-- tradeoffs
-- what changes downstream planning
-
-Separate locked decisions from open questions.
-
-**Done when:** the user can either approve the design, answer a focused question, or ask for a plan.
-
-### 6. Report
-
-Return an inline memo. Keep it proportional: enough detail to support a later plan, not enough to become one.
+Return a proportional memo using the smallest useful shape:
 
 ```markdown
 ## Architecture Memo
@@ -102,45 +104,28 @@ Return an inline memo. Keep it proportional: enough detail to support a later pl
 **Recommendation**:
 **Confidence**: High | Medium | Low
 
-## Current-State Anchors
+## Why this fits
 
-- `<file:line>`: <fact this proves>
+Decision-shaping project intent, repository facts, and tradeoffs. Place each
+`path:line` anchor beside the claim it supports.
 
-## Constraints
+## Alternatives
 
-- <constraint>
+Only materially different viable choices. Omit when one direction is clear.
 
-## Options
+## Boundaries
 
-### 1. <name>
+Only planning-relevant locked decisions or concrete non-goals. Omit when none
+exist.
 
-<design, fit, tradeoffs, risks, compatibility, testability>
+## Advisor check
 
-### 2. <name>
-
-<design, fit, tradeoffs, risks, compatibility, testability>
-
-## Advisor Synthesis
-
-- Adopt: <advisor note and rationale>
-- Adapt: <advisor note and rationale>
-- Decline: <advisor note and rationale>
-
-## Decision
-
-<recommended architecture and why>
-
-## Locked For Planning
-
-- <decision>
-
-## Open Questions
-
-- <question with recommended answer and alternatives>
-
-## Non-Goals
-
-- <not part of this design>
+Only advice that affected the decision, labeled Adopt, Adapt, or Decline. Omit
+when no consultation affected the recommendation.
 ```
 
-**Done when:** inline architecture memo delivered, no files written, and next step named only at workflow level.
+Do not duplicate the recommendation as a separate decision or planning
+checklist. Add another section only when it changes the architecture choice.
+
+**Done when:** the user can approve the direction, answer one focused question,
+or ask to turn it into a plan.

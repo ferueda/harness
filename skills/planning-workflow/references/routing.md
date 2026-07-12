@@ -77,3 +77,6 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 - **interview**: one question at a time until user says write up.
 - Skipped steps match the skip table above with a stated reason.
 - Artifacts at expected paths when the path produces them.
+- Created plans are minimum-sufficient for a capable executor: compact default
+  shape, decision-shaping context only, and the highest stable test seam that
+  proves each behavior.

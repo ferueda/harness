@@ -1,63 +1,79 @@
 ---
 name: create-plan
-description: Create a scoped, code-backed implementation plan from a todo, spec, issue, review notes, or raw user instructions. Use when the user asks to convert requirements into a proper plan, phased implementation plan, executor handoff plan, or reviewable planning artifact before coding.
+description: Create a scoped, code-backed implementation plan from a todo, spec, issue, review notes, or raw instructions. Use for multi-step work, cross-area changes, executor handoffs, or a reviewable plan before coding.
 ---
 
 # Create Plan
 
-You are a senior advisor, not an implementer. Your job is to write an implementation plan good enough that a different, less capable model with zero context from this session can execute, test, and maintain them.
+Write the minimum sufficient plan for a capable, context-limited executor with
+repository access but without prior context about the task at hand. Resolve
+implementation decisions; do not teach inspectable repository basics.
 
-The economics of this skill: an expensive, high-ceiling model does the part where intelligence compounds (understanding, judging, specifying). Cheaper models do the execution. The plan is the product — its quality determines whether the executor succeeds.
+## Principles
 
-## Core Principles
-
-- **Requirements first**: Treat requirements and source artifacts as the source of truth.
-- **Verify before structuring**: Research the codebase, existing docs, tests, and external official guidance when needed before finalizing the plan.
-- **Challenge source claims**: Do not treat a todo, spec, issue, or review as fact. Validate it against current system behavior.
-- **Decisions before code**: Capture approach, boundaries, files, dependencies, risks, and test scenarios before prescribing edits. Include command-level gates only for executor handoff plans.
-- **Right-size the artifact**: Small work gets a compact plan. Large or cross-area work gets more structure.
-- **Keep it portable**: The plan should work as a living document, review artifact, or issue body.
+- Follow repository invariants and project intent, then explicit requirements
+  and accepted decisions, then verified codebase facts.
+- Choose the smallest coherent change that satisfies the acceptance criteria.
+- Prefer concise durable paths and symbols over copied source.
+- Prefer the highest existing stable test seam that proves acceptance. Add a
+  lower seam only for a distinct invariant or failure mode unobservable there.
+- Ask the user before writing when a missing decision materially changes scope
+  or architecture. Do not carry unresolved implementation choices into a plan.
 
 ## Workflow
 
-### 1. Map the territory and build context:
+### 1. Ground the work
 
-- Read repository guidance files such as `AGENTS.md`, `README.md`, `docs/project-intent.md`, `VISION.md`, `LEARNINGS.md`, root config files (`package.json`, `pyproject.toml`, `go.mod`, etc.), CI config, and the directory structure.
-- Identify: language(s), framework(s), package manager, **how to build / test / lint / typecheck** (exact commands — these go into every plan as verification gates), test coverage shape, deployment target.
-- Note repo conventions: code style, naming, folder layout, error-handling and state-management patterns. Plans must tell the executor to *match* these, with examples.
-- Investigate executor aids available in the environment before writing the plan — follow the discovery steps in [references/plan-template.md](references/plan-template.md) ("Skills for the executor"). Check: host available-skills list (if injected), repo `skills/`, `.agents/skills/`, `.cursor/skills/`, `.claude/skills/`, `AGENTS.md`, scripts, MCP/tooling docs, and reference docs. Read each candidate's `SKILL.md`; recommend only skills that match a concrete plan step. Do not invent unavailable tools.
-- Read the source artifact fully.
-- Search for related docs, previous plans, tests, and code named by the source.
-- Inspect immediate callers, exports, data contracts, validation boundaries, tests, and relevant operational paths.
-- Use official external docs when behavior depends on current third-party APIs, libraries, standards, or provider rules.
+- Read the source request and repository guidance, including the project intent
+  source when the work affects direction or boundaries.
+- Inspect only the relevant code, callers, contracts, tests, and current docs.
+- Verify repository commands and external contracts before prescribing them.
 
-### 2. Reconcile requirements with reality.
+**Done when:** acceptance criteria, relevant invariants, current behavior, and
+the smallest credible solution are known.
 
-- Separate verified current behavior from requested changes.
-- Mark implemented baseline, remaining gaps, stale claims, contradictions, and deferred follow-ups.
-- Surface conflicts directly; pick the safer or more established pattern when evidence supports it.
-- State assumptions explicitly.
-- List open questions only when they materially change implementation. Include a recommendation and why for each.
+### 2. Reconcile requirements with reality
 
-### 3. Design and write the plan.
+- Separate current behavior from requested behavior.
+- Resolve stale claims, conflicts, implemented baseline, and real gaps.
+- Reject speculative hardening, future-proofing, and unrelated cleanup.
+- Ask only questions whose answers change the implementation direction.
 
-- Write one plan file using the template in [references/plan-template.md](references/plan-template.md) — read it before writing the plan.
-- Define what is being built, why it matters, and expected behavior.
-- Describe boundaries: files, modules, APIs, data contracts, dependencies, and ownership.
-- Include validation before implementation when current data, contracts, permissions, migrations, or external behavior must be confirmed.
-- Include tests that verify intent, not just surface behavior.
+**Done when:** the plan has one coherent direction and no material open choice.
 
-**IMPORTANT:** Write each plan **for the weakest plausible executor**. That means:
+### 3. Discover executor aids
 
-- All context inlined: why this matters, exact file paths, current-state code excerpts, the repo's conventions to follow (with a snippet of an existing exemplar file).
-- Steps that are explicit and ordered, each with its own verification command and expected output.
-- Hard boundaries: files in scope, files explicitly out of scope, things that look related but must not be touched.
-- Machine-checkable done criteria — commands and expected results, not prose like "works correctly."
-- A test plan (what new tests to write, where, following which existing test as a pattern).
-- A maintenance note (what future changes will interact with this, what to watch in review).
-- **Skills for the executor** — matched to specific steps after discovering what's actually available (see plan template).
-- Escape hatches: "if X turns out to be true, STOP and report back instead of improvising."
+Inspect available skill descriptions and repository guidance. Read only skills
+that match a concrete change. Mention a verified skill beside that change only
+when it adds non-obvious execution guidance; do not add a skills table by
+default.
 
-## Tone of the output
+**Done when:** every named aid exists and changes how a step should be executed.
 
-You are advising, not selling. State findings plainly with evidence, flag uncertainty honestly, and prefer "not worth doing" verdicts over padding the list. A short list of high-confidence, high-leverage plans beats a long one.
+### 4. Write the plan
+
+Use [references/plan-template.md](references/plan-template.md). Name exact files
+or symbols and the decisions that matter. Keep relevant facts and tests beside
+the change they justify. Add a section, excerpt, checklist, or command only when
+it changes an executor decision or proves a distinct criterion, invariant, or
+verified regression risk.
+
+**Done when:** a capable executor can implement the outcome from the plan and
+repository without prior chat.
+
+### 5. Prune
+
+- Trace every change and test to acceptance, an invariant, or a verified risk.
+- Remove repeated criteria, covered commands, duplicated context, and empty
+  optional sections.
+- Keep verification to focused behavioral checks and the canonical repository
+  gate.
+
+**Done when:** removing any remaining material would make execution less safe or
+leave a decision ambiguous.
+
+## Output
+
+Write one plan under `dev/plans/` and reconcile `dev/plans/README.md` according
+to repository guidance. State findings plainly; plan length follows decision
+and change-surface complexity, not a target.

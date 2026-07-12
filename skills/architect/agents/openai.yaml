@@ -1,4 +1,4 @@
 interface:
   display_name: "Architect"
-  short_description: "Design repo-grounded technical solutions"
-  default_prompt: "Use $architect to explore the problem, compare repo-grounded solution options, consult an alternate-model subagent for critique, and recommend an architecture before planning."
+  short_description: "Design minimal, repo-grounded technical solutions"
+  default_prompt: "Use $architect to ground this design in project intent and codebase reality, then recommend the smallest credible direction."
