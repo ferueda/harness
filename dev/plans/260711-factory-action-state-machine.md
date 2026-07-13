@@ -3,12 +3,13 @@
 ## Status
 
 - **Priority**: P1
-- **Effort**: L overall; four bounded PRs
+- **Effort**: M remaining; two bounded PRs
 - **Risk**: HIGH
-- **State**: approved direction
-- **Progress**: PR 1 shipped in PR #127; PR 2 is next
+- **State**: in progress
+- **Progress**: PR 1 shipped in PR #127; PR 2 shipped in PR #129; PR 3 is next
 - **Prerequisite**: minimum-sufficient Factory planning shipped in PRs #123
-  and #125. PR 2 reuses that prompt/review contract.
+  and #125. PR #130 is the planning, implementation, and review authority
+  baseline for the remaining work.
 - **Review note**: final automated plan review
   `20260712-041215-6cb58a` was triaged. Later human decisions deliberately
   replace its compatibility and synchronous-loop assumptions; do not run
@@ -379,108 +380,17 @@ steps. PR 1 establishes and uses the snapshot contract for triage. PR 2
 consumes the existing planning planner/reviewer roles. PR 3 adds the
 implementation reviewer role.
 
-## PR 1 — New action kernel and manually run triage
+## Shipped foundation
 
-Create the new-only domain foundation and prove it vertically with triage.
+- PR 1 shipped the action kernel, clean store cutover, and manually run triage
+  in PR #127.
+- PR 2 shipped manually stepped planning candidates, reviews, revisions, and
+  publication in PR #129.
+- PR #130 aligned planning, implementation, and review authority across Factory
+  prompts, workflows, and manually invoked skills.
 
-Changes:
-
-- Add `lib/factory-store-format.ts`, `factory-lifecycle-events.ts`,
-  `factory-action-contract.ts`, `factory-artifact-ref.ts`,
-  `factory-action-result.ts`, `factory-phase-run.ts`, and
-  `factory-state-machine.ts`.
-- Replace lifecycle append/reduce behavior in `lib/factory-lifecycle.ts` and
-  `factory-lifecycle-writes.ts`; do not retain old schemas or replay cases.
-- Add the format marker, strict CAS/idempotency, portable refs, deterministic
-  action result recovery, state projection, and pure reaction.
-- Extract `triageWorkItem` from `workflows/factory-triage.workflow.ts` and wire
-  `harness factory triage` through one request/reaction/handler result.
-- Add the shared one-action stdout/progress/telemetry contract without a
-  generic handler registry.
-- Update `docs/contributing/factory.md` and `skills/factory-operator/SKILL.md`
-  for the clean store cutover, synchronous wait behavior, triage result, and
-  next-command output. Do not document planning/implementation behavior before
-  those PRs ship.
-
-Verify with focused lifecycle/state/action-result/triage CLI tests, including
-stale cursor, divergent duplicate, crash-after-result recovery, path/hash
-rejection, one handler call, no automatic follow-up, persisted heartbeat
-telemetry, and explicit old-store rejection. Then run `pnpm check` and the
-change-review workflow.
-
-## PR 2 — Manually stepped planning candidate and review
-
-Reuse the shipped minimum-sufficient planner/spec-review prompts, shared
-verdict validation, blocking-only revision input, and configured completed
-review ceiling. Do not rebuild those contracts inside the action coordinator.
-
-Changes:
-
-- Extend `FactoryLifecycleEventSchema`, `FactoryLifecycleStateSchema`, and
-  `FactoryPhaseRunIdentitySchema` with the planning start/restart and local vs
-  pull-request decisions above. Make phase-run identity a strict triage/planning
-  union; snapshot `producePlanCandidate` and `reviewPlanCandidate` profiles,
-  review ceiling, output-plan path, and publication mode. Rename
-  `factoryTriageExecutionProfile` for shared action use; do not add a registry.
-  Resolve roles, planning, store, and optional Linear settings from one config
-  read when creating the run, adding
-  `resolveFactoryPlanningSettingsFromSnapshot`. Opening and retrying never
-  re-resolve action profiles or phase policy.
-- Add `lib/factory-plan-candidate-action.ts` and
-  `factory-plan-review-action.ts` around the retained run-context/provider and
-  `runPlanReview` seams, extracting small equivalents where needed.
-- Add separate `createFactoryPlanningRunContext` and
-  `openFactoryPlanningRunContext` APIs. Retain only the safe scratch and atomic
-  plan-materialization helpers from the old planning context; legacy run meta,
-  `factoryStage`, and the deleted workflow loop are not transition authority.
-- Add one planning-specific coordinator rather than a generic phase engine. A
-  fresh command appends `planning.requested` and runs only candidate attempt 1.
-  Linear-backed starts and restarts require `--apply`; validate and append the
-  request before projecting Planning, and repair a pending request projection
-  before allowing its provider action.
-  Every later command reopens the run and executes exactly the latest reaction,
-  then recomputes but never invokes `next`. Do not carry forward the old
-  planning `--dry-run` or monolithic output contract. Keep this wiring in
-  `bin/factory-planning-cli.ts`, use `bin/factory-action-output.ts`, and leave
-  the existing triage command structure alone.
-- Replace the legacy planning input gate with direct live Linear status
-  validation for phase start/restart and Planning continuations. Never recover
-  Factory progress from status, comments, or `factoryStage`.
-- On revision, restore the prior candidate to scratch, resume the effective
-  provider session, load only the latest review's digested `must_fix` artifact,
-  and publish a new immutable candidate. Preserve the full `plan-review`
-  evidence separately; derive stable blocking IDs after shared review
-  validation without changing its prompt or schema.
-- On review pass, atomically materialize the verified immutable candidate at
-  the snapshotted output path. Local mode becomes `approved`; pull-request mode
-  waits for publication and merge. An identical existing target is an
-  idempotent recovery; a different target fails closed. Keep `planning publish`
-  and `mark-plan-merged` separate for pull-request mode.
-- Append publication/merge lifecycle truth before derived run metadata or
-  Linear projection. A retry validates the recorded plan URL/ref/commit and
-  repairs only the idempotent projection; it never appends a duplicate event or
-  reruns a provider/reviewer.
-- Apply Planning only on phase request; continuation actions leave Linear in
-  Planning until a human/terminal/publication boundary.
-- Replace the planning-unavailable statements in `README.md`,
-  `docs/contributing/factory.md`, `docs/contributing/architecture.md`,
-  `docs/contributing/script-command-surface.md`,
-  `docs/contributing/setup-manifest.md`, `scripts/smoke-dist.ts`, and
-  `skills/factory-operator/SKILL.md`. Document only shipped planning:
-  repeated commands, `next`, same-session revisions, restart semantics,
-  `--apply`, heartbeats, artifacts, publication, and stop conditions;
-  implementation remains unavailable.
-
-One coordinator integration sequence proves candidate -> review -> same-session
-revision -> review across separate invocations, exactly one provider/reviewer
-call per invocation, blocking-only revision input, and no hidden loop. Add one
-candidate and one review result-before-append recovery case, a mid-run config
-change proving profile snapshot reuse, local and pull-request completion, the
-completed-review ceiling, explicit human-state rerun, the documented
-Linear/projection-repair boundaries, and packaged CLI help/smoke. Rely on PR 1
-tests for generic CAS, hash, and concurrency behavior rather than duplicating
-that matrix. Then run `pnpm check` and the current two-reviewer change-review
-workflow.
+The remaining executor scope starts with PR 3. Use the shipped implementations
+and their tests as the source of truth for PR 1 and PR 2 behavior.
 
 ## PR 3 — Manually stepped implementation candidate and one review
 
@@ -508,6 +418,12 @@ Changes:
 - Replace the implementation workflow with a one-action coordinator. PR 3
   persists a review ceiling of 1, so pass completes and non-pass waits for a
   human; each candidate and review still requires a separate command.
+- Resolve an omitted `--max-runtime-ms` from the current reaction: a producer
+  action uses internal value `0` and installs no absolute timer; a reviewer
+  action retains the positive shared review default. An explicit positive value
+  overrides the current action. Preserve external cancellation and the positive
+  shared default for triage and planning. Provider silence remains evidence,
+  not a failure signal; add no heartbeat or inactivity subsystem.
 - Rekey and internalize the existing workspace execution lease as specified
   above.
 - Update run-meta/CLI/Linear projection and the operator skill. The skill must
@@ -517,9 +433,10 @@ Changes:
 
 Focused tests prove one handler per invocation, immutable commit/tree/ref
 integrity, tamper rejection, review by SHA, one aggregate review invocation,
-pass-only completion, no hidden revision, checkout contention, process restart,
-and Linear remaining Implementing through internal actions. Then run
-`pnpm check` and change-review.
+pass-only completion, no hidden revision, uncapped default plus positive timeout
+override and cancellation, checkout contention, process restart, and Linear
+remaining Implementing through internal actions. Then run `pnpm check` and
+change-review.
 
 ## PR 4 — Manually stepped implementation revisions and final docs
 
@@ -538,10 +455,9 @@ Changes:
   produces a `next` producer reaction but never runs it in the same command.
 - Keep implementation truth in Git evidence and aggregate review; do not add a
   model-authored implementation output schema.
-- Reconcile `README.md`, contributor architecture/factory/command docs,
-  `dev/plans/260621-agent-harness-handoff.md`,
-  `dev/plans/260704-factory-intake-routing.md`, and `dev/plans/README.md`.
-  Describe Inngest as a future consumer of reactions, not current behavior.
+- Reconcile `README.md`, contributor architecture/factory/command docs, and
+  `dev/plans/README.md`. Describe Inngest as a future consumer of reactions,
+  not current behavior.
 - Finish `skills/factory-operator/SKILL.md` with the full manual attempt/review
   sequence, continuation after restarts, same-session guarantees, inspection
   paths, `--verbose` heartbeats, Linear projections, plan merge gate, and
