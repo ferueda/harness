@@ -11,6 +11,7 @@ import { produceImplementationCandidate } from "../lib/factory-implementation-ca
 import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
 import { createFactoryImplementationRunContext } from "../lib/factory-implementation-run-context.ts";
 import {
+  actionLifecycleEventPath,
   appendFactoryActionEvent,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
@@ -92,6 +93,89 @@ test("provider completion and candidate ref recover without a second provider ca
   const recovered = await produceImplementationCandidate(action);
   expect(providerRun).toHaveBeenCalledTimes(1);
   expect(recovered.event.type).toBe("implementation.candidate.produced");
+});
+
+test("candidate recovery rejects a divergent create-only attempt ref", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const reaction = invoke(requested);
+  const candidate = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+      },
+    }),
+  });
+  if (candidate.event.type !== "implementation.candidate.produced") throw new Error("candidate");
+  removeLastLifecycleEvent(fixture);
+  git(fixture.workspace, [
+    "update-ref",
+    `refs/harness/factory/${ctx.runId}/1`,
+    fixture.baseSha,
+    candidate.event.data.commit,
+  ]);
+  await expect(
+    produceImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction,
+      maxRuntimeMs: 0,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    }),
+  ).rejects.toThrow(/candidate ref conflicts/);
+});
+
+test("malformed staged provider evidence becomes a terminal action failure", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const reaction = invoke(requested);
+  const actionDir = actionPath(ctx, reaction);
+  mkdirSync(actionDir, { recursive: true });
+  writeFileSync(join(actionDir, "provider-result.json"), "{not-json\n");
+  const providerRun = vi.fn<Agent["run"]>();
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+  expect(providerRun).not.toHaveBeenCalled();
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+});
+
+test("post-provider Git probe failure records human-required without rerunning provider", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const providerRun = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+    git(fixture.workspace, ["checkout", "--detach"]);
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
 });
 
 test("staged passing review recovers after branch promotion without rerunning reviewers", async () => {
@@ -226,6 +310,40 @@ test("non-pass review preserves the branch and publishes all reviewer blockers",
   ]);
 });
 
+test("review recovery rejects tampered blocking findings", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  const reaction = invoke(candidate);
+  const reviewed = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
+      writeBlockingReviews(reviewCtx.runDir!);
+      return fullReviewMeta("needs_changes");
+    }) as never,
+  });
+  if (reviewed.event.type !== "implementation.review.completed") throw new Error("review");
+  const blocking = verifyFactoryArtifactRef(reviewed.event.data.blockingFindings!, {
+    "factory-store": fixture.store.projectRoot,
+    repository: fixture.workspace,
+  });
+  removeLastLifecycleEvent(fixture);
+  writeFileSync(blocking, "[]\n");
+  await expect(
+    reviewImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction,
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: vi.fn() as never,
+    }),
+  ).rejects.toThrow(/hash mismatch/);
+});
+
 test.each(["symbolic-ref", "base-sha"] as const)(
   "review rejects %s branch drift without running reviewers",
   async (kind) => {
@@ -279,6 +397,29 @@ test.each([
   });
 });
 
+test("malformed staged review evidence becomes a terminal action failure", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  const reaction = invoke(candidate);
+  const actionDir = actionPath(ctx, reaction);
+  mkdirSync(actionDir, { recursive: true });
+  writeFileSync(join(actionDir, "review-result.json"), "{not-json\n");
+  const reviewRunner = vi.fn();
+  const reviewed = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  expect(reviewRunner).not.toHaveBeenCalled();
+  expect(reviewed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+});
+
 test.each(["before", "during"] as const)(
   "review rejects workspace mutation $name review",
   async (timing) => {
@@ -304,6 +445,55 @@ test.each(["before", "during"] as const)(
     });
   },
 );
+
+test("review rejects staged-only index drift before invoking reviewers", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  git(fixture.workspace, ["add", "tracked.txt"]);
+  const reviewRunner = vi.fn();
+  const reviewed = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  expect(reviewRunner).not.toHaveBeenCalled();
+  expect(reviewed.event.type).toBe("factory.action.failed");
+});
+
+test("retryable reviewer failure runs the same review action again", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  const reviewRunner = vi
+    .fn(async (reviewCtx: { runDir?: string }) => {
+      writePassReviews(reviewCtx.runDir!);
+      return fullReviewMeta("pass");
+    })
+    .mockImplementationOnce(async (reviewCtx: { runDir?: string }) => {
+      writePassReviews(reviewCtx.runDir!);
+      return { ...fullReviewMeta("pass"), status: "failed" };
+    });
+  const first = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  const second = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(first),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  expect(reviewRunner).toHaveBeenCalledTimes(2);
+  expect(second.state).toMatchObject({ status: "complete" });
+});
 
 test("candidate evidence digest tampering fails before reviewer invocation", async () => {
   const fixture = directFixture();
@@ -426,7 +616,7 @@ test("Linear start repair reuses one request and invokes the producer only after
   ).rejects.toThrow("projection unavailable");
   expect(providerRun).not.toHaveBeenCalled();
   fixture.workItem.metadata = { linearStatus: "Implementing" };
-  await runOneFactoryImplementationAction({
+  const repaired = await runOneFactoryImplementationAction({
     ...base,
     workItem: fixture.workItem,
     applyAdapter: fakeLinearAdapter({
@@ -440,6 +630,7 @@ test("Linear start repair reuses one request and invokes the producer only after
     }),
   });
   expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(repaired.next).toMatchObject({ command: expect.stringContaining("'--apply'") });
   expect(
     readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
       (event) => event.type === "implementation.requested",
@@ -582,6 +773,12 @@ function directFixture() {
     key,
     baseSha: git(workspace, ["rev-parse", "HEAD"]).trim(),
   };
+}
+
+function removeLastLifecycleEvent(fixture: ReturnType<typeof directFixture>): void {
+  const path = actionLifecycleEventPath(fixture.factoryStateRoot, fixture.key);
+  const lines = readFileSync(path, "utf8").trimEnd().split("\n");
+  writeFileSync(path, `${lines.slice(0, -1).join("\n")}\n`);
 }
 
 function createPhase(fixture: ReturnType<typeof directFixture>) {

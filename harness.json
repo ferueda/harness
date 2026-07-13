@@ -43,6 +43,11 @@
           "agent": "codex",
           "model": "gpt-5.6-luna",
           "modelReasoningEffort": "xhigh"
+        },
+        "reviewer": {
+          "agent": "codex",
+          "model": "gpt-5.6-luna",
+          "modelReasoningEffort": "xhigh"
         }
       }
     },

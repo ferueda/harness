@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import {
   createFactoryArtifactRef,
+  FactoryArtifactRefSchema,
   verifyFactoryArtifactRef,
   type FactoryArtifactRef,
 } from "./factory-artifact-ref.ts";
@@ -60,6 +61,23 @@ const StagedSchema = z.object({
   ]),
 });
 type Staged = z.infer<typeof StagedSchema>;
+const CandidateEvidenceSchema = z.object({
+  version: z.literal(1),
+  phaseRunId: z.string(),
+  attempt: z.number().int().positive(),
+  base: z.string(),
+  ref: z.string(),
+  commit: z.string(),
+  tree: z.string(),
+  status: z.string(),
+  effectiveSession: SessionSchema,
+  artifacts: z.object({
+    raw: FactoryArtifactRefSchema,
+    stream: FactoryArtifactRefSchema,
+    diff: FactoryArtifactRefSchema,
+    handoff: FactoryArtifactRefSchema,
+  }),
+});
 
 export async function produceImplementationCandidate(input: {
   ctx: FactoryImplementationRunContext;
@@ -100,10 +118,23 @@ async function runLeased(input: {
   const stagedPath = join(actionDir, "provider-result.json");
   let staged: Staged;
   if (existsSync(stagedPath)) {
-    staged = StagedSchema.parse(JSON.parse(readFileSync(stagedPath, "utf8")));
+    const parsed = readStaged(stagedPath);
+    if (!parsed)
+      return fail(input, actionDir, "Invalid staged implementation provider result", "terminal");
+    staged = parsed;
     assertStagedIdentity(ctx, reaction, staged);
   } else {
-    const before = facts(ctx.workspace);
+    let before: z.infer<typeof FactsSchema>;
+    try {
+      before = facts(ctx.workspace);
+    } catch (error) {
+      return fail(
+        input,
+        actionDir,
+        `Failed to inspect implementation workspace: ${message(error)}`,
+        "terminal",
+      );
+    }
     if (
       before.head !== ctx.identity.baseSha ||
       before.branchRef !== ctx.identity.branchRef ||
@@ -138,6 +169,7 @@ async function runLeased(input: {
       workspace: ctx.workspace,
       stepId: reaction.handler,
     });
+    const streamPath = join(actionDir, "implementer.stream.jsonl");
     let result: Staged["result"];
     try {
       const completed = await provider.run({
@@ -153,7 +185,7 @@ async function runLeased(input: {
           : {}),
         workspaceGuard: "record",
         maxRuntimeMs: input.maxRuntimeMs,
-        logPath: join(actionDir, "implementer.stream.jsonl"),
+        logPath: streamPath,
         signal: input.signal,
       });
       writeFileSync(
@@ -178,6 +210,19 @@ async function runLeased(input: {
       };
       writeFileSync(join(actionDir, "implementer.raw.json"), "{}\n");
     }
+    if (!existsSync(streamPath)) writeFileSync(streamPath, "");
+    let after: z.infer<typeof FactsSchema>;
+    try {
+      after = facts(ctx.workspace);
+    } catch (error) {
+      finish("failed", message(error));
+      return fail(
+        input,
+        actionDir,
+        `Failed to inspect workspace after implementer completion: ${message(error)}`,
+        "human-required",
+      );
+    }
     staged = {
       version: 1,
       action: {
@@ -188,7 +233,7 @@ async function runLeased(input: {
       },
       timestamp: new Date().toISOString(),
       before,
-      after: facts(ctx.workspace),
+      after,
       result,
     };
     finish(result.ok ? "completed" : "failed", result.ok ? undefined : result.error);
@@ -228,6 +273,7 @@ async function runLeased(input: {
     writeDurableFactoryFile(join(actionDir, "candidate.diff.patch"), head.diffPatch, true);
     const diff = ref(ctx, join(actionDir, "candidate.diff.patch"));
     const raw = ref(ctx, join(actionDir, "implementer.raw.json"));
+    const stream = ref(ctx, join(actionDir, "implementer.stream.jsonl"));
     const handoffPath = join(actionDir, "handoff.json");
     writeDurableFactoryFile(
       handoffPath,
@@ -248,7 +294,7 @@ async function runLeased(input: {
           tree: head.treeSha,
           status: staged.after.status,
           effectiveSession: staged.result.session,
-          artifacts: { raw, diff, handoff: ref(ctx, handoffPath) },
+          artifacts: { raw, stream, diff, handoff: ref(ctx, handoffPath) },
         },
         null,
         2,
@@ -256,11 +302,28 @@ async function runLeased(input: {
       true,
     );
     const candidate = ref(ctx, evidencePath);
-    const event = successEvent(ctx, reaction, actionDir, candidate, head, staged.result.session);
+    const event = successEvent(
+      ctx,
+      reaction,
+      actionDir,
+      candidate,
+      head,
+      staged.result.session,
+      stream,
+    );
     writeFactoryActionResult(actionDir, event);
     return appendRecovered(input, actionDir);
   } catch (error) {
     return fail(input, actionDir, message(error), "terminal");
+  }
+}
+
+function readStaged(path: string): Staged | undefined {
+  try {
+    const parsed = StagedSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -271,6 +334,7 @@ function successEvent(
   candidate: FactoryArtifactRef,
   head: { reviewCommitSha: string; treeSha: string },
   session: AgentSessionRef,
+  stream: FactoryArtifactRef,
 ): FactoryActionEvent {
   const runRef = ref(ctx, join(actionDir, "implementer.raw.json"));
   return {
@@ -286,7 +350,7 @@ function successEvent(
       attempt: reaction.attempt,
       causationEventId: reaction.causationEventId,
       execution: { workspaceRef: ctx.factoryStore.repo.id, runRef },
-      evidence: [candidate, runRef],
+      evidence: [candidate, runRef, stream],
       commit: head.reviewCommitSha,
       tree: head.treeSha,
       candidate,
@@ -343,11 +407,41 @@ function appendRecovered(input: Parameters<typeof runLeased>[0], actionDir: stri
   )
     throw new Error("Recovered implementation candidate result conflicts with phase identity");
   for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots(input.ctx));
+  if (event.type === "implementation.candidate.produced")
+    validateRecoveredCandidate(input.ctx, event);
   return appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
     event,
     expectedLastEventId: input.reaction.causationEventId,
   });
+}
+
+function validateRecoveredCandidate(
+  ctx: FactoryImplementationRunContext,
+  event: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
+): void {
+  const manifestPath = verifyFactoryArtifactRef(event.data.candidate, roots(ctx));
+  const manifest = CandidateEvidenceSchema.parse(JSON.parse(readFileSync(manifestPath, "utf8")));
+  const expectedRef = `refs/harness/factory/${ctx.runId}/${event.data.attempt}`;
+  if (
+    manifest.phaseRunId !== ctx.runId ||
+    manifest.attempt !== event.data.attempt ||
+    manifest.base !== ctx.identity.baseSha ||
+    manifest.ref !== expectedRef ||
+    manifest.commit !== event.data.commit ||
+    manifest.tree !== event.data.tree ||
+    manifest.effectiveSession.provider !== event.data.effectiveSession.provider ||
+    manifest.effectiveSession.id !== event.data.effectiveSession.id
+  )
+    throw new Error("Recovered candidate evidence conflicts with lifecycle identity");
+  for (const artifact of Object.values(manifest.artifacts))
+    verifyFactoryArtifactRef(artifact, roots(ctx));
+  if (git(ctx.workspace, ["rev-parse", expectedRef]).trim() !== event.data.commit)
+    throw new Error("Recovered candidate ref conflicts with lifecycle evidence");
+  if (git(ctx.workspace, ["rev-parse", `${event.data.commit}^`]).trim() !== ctx.identity.baseSha)
+    throw new Error("Recovered candidate parent conflicts with implementation base");
+  if (git(ctx.workspace, ["rev-parse", `${event.data.commit}^{tree}`]).trim() !== event.data.tree)
+    throw new Error("Recovered candidate tree conflicts with lifecycle evidence");
 }
 
 function assertReaction(input: Parameters<typeof produceImplementationCandidate>[0]): void {

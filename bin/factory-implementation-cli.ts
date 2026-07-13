@@ -488,10 +488,12 @@ function implementationCommand(input: {
   linearIssue?: string;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
+  applyAdapter?: LinearFactoryAdapter;
 }): string {
   const args = ["harness", "factory", "implementation", "run", "--workspace", input.workspace];
   if (input.itemFile) args.push("--item-file", input.itemFile);
   if (input.linearIssue) args.push("--linear-issue", input.linearIssue);
+  if (input.applyAdapter) args.push("--apply");
   if (input.factoryStoreRoot) args.push("--factory-store-root", input.factoryStoreRoot);
   if (input.factoryStoreProjectId)
     args.push("--factory-store-project-id", input.factoryStoreProjectId);

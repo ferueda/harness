@@ -104,11 +104,35 @@ export function readFactoryWorkspaceTree(input: {
 
 export function promoteFactoryCandidate(input: {
   workspace: string;
+  runDir: string;
   branchRef: string;
   baseSha: string;
   candidateSha: string;
 }): void {
   const current = git(input.workspace, ["rev-parse", input.branchRef], process.env).trim();
+  const candidateTree = git(
+    input.workspace,
+    ["rev-parse", `${input.candidateSha}^{tree}`],
+    process.env,
+  ).trim();
+  const baseTree = git(
+    input.workspace,
+    ["rev-parse", `${input.baseSha}^{tree}`],
+    process.env,
+  ).trim();
+  const live = readFactoryWorkspaceTree({
+    workspace: input.workspace,
+    runDir: input.runDir,
+    baseSha: input.baseSha,
+  });
+  const indexTree = git(input.workspace, ["write-tree"], process.env).trim();
+  if (live.tree !== candidateTree)
+    throw new FactoryReviewHeadError("Implementation workspace changed before promotion");
+  if (
+    (current === input.baseSha && indexTree !== baseTree) ||
+    (current === input.candidateSha && indexTree !== baseTree && indexTree !== candidateTree)
+  )
+    throw new FactoryReviewHeadError("Implementation index changed before promotion");
   if (current === input.baseSha)
     git(
       input.workspace,

@@ -100,8 +100,7 @@ export async function applyLinearImplementationStarted(
   await deps.assertIssueInConfiguredScope(issue, settings);
   const required =
     input.intent === "start" ? statuses.readyToImplement : statuses.implementationFailed;
-  const alreadyImplementing =
-    input.intent === "restart" && sameState(state?.name, statuses.implementing);
+  const alreadyImplementing = sameState(state?.name, statuses.implementing);
   if (!alreadyImplementing) assertState(state?.name, required, "implementation start");
   const target = await deps.fetchWorkflowState(client, settings, statuses.implementing);
   if (alreadyImplementing)
@@ -178,21 +177,24 @@ export async function applyLinearImplementationFailed(
   const issue = await deps.fetchIssue(client, settings, input.issueRef);
   const state = await deps.resolveOptional(issue.state);
   await deps.assertIssueInConfiguredScope(issue, settings);
-  assertState(state?.name, statuses.implementing, "implementation failure");
+  const alreadyFailed = sameState(state?.name, statuses.implementationFailed);
+  if (!alreadyFailed) assertState(state?.name, statuses.implementing, "implementation failure");
   const target = await deps.fetchWorkflowState(client, settings, statuses.implementationFailed);
-  const current = await assertFreshState(deps, client, settings, issue, statuses.implementing);
-  deps.assertMutationSuccess(
-    await client.updateIssue(current.id, { stateId: target.id }),
-    "implementation failure",
-  );
+  if (!alreadyFailed) {
+    const current = await assertFreshState(deps, client, settings, issue, statuses.implementing);
+    deps.assertMutationSuccess(
+      await client.updateIssue(current.id, { stateId: target.id }),
+      "implementation failure",
+    );
+  }
   const commentMarker = linearImplementationFailedMarker(input.runId);
   const commentBody = renderLinearImplementationFailedComment(input, issue.identifier);
   let progress: LinearImplementationUpdatePlan = {
     ...update(input, issue, "failed", state?.name, target.name),
     commentMarker,
     commentBody,
-    statusMutationCompleted: true,
-    statusPostconditionVerified: false,
+    statusMutationCompleted: !alreadyFailed,
+    statusPostconditionVerified: alreadyFailed,
     commentPresent: false,
   };
   try {

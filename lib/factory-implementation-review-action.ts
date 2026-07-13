@@ -61,9 +61,25 @@ const CandidateEvidenceSchema = z.object({
   effectiveSession: z.object({ provider: z.string(), id: z.string() }),
   artifacts: z.object({
     raw: FactoryArtifactRefSchema,
+    stream: FactoryArtifactRefSchema,
     diff: FactoryArtifactRefSchema,
     handoff: FactoryArtifactRefSchema,
   }),
+});
+const ReviewEvidenceSchema = z.object({
+  version: z.literal(1),
+  phaseRunId: z.string(),
+  attempt: z.number().int().positive(),
+  base: z.string(),
+  commit: z.string(),
+  tree: z.string(),
+  partial: z.literal(false),
+  verdict: z.enum(["pass", "needs_changes", "blocked"]),
+  reviewers: z.object({
+    implementation: FactoryArtifactRefSchema,
+    quality: FactoryArtifactRefSchema,
+  }),
+  blockingFindings: FactoryArtifactRefSchema.optional(),
 });
 
 export async function reviewImplementationCandidate(input: {
@@ -99,8 +115,9 @@ async function runLeased(
   );
   mkdirSync(actionDir, { recursive: true });
   if (existsSync(factoryActionResultPath(actionDir))) return appendRecovered(input, actionDir);
+  let candidateEvidence: z.infer<typeof CandidateEvidenceSchema>;
   try {
-    validateCandidate(ctx, candidate);
+    candidateEvidence = validateCandidate(ctx, candidate);
   } catch (error) {
     return fail(
       input,
@@ -110,9 +127,15 @@ async function runLeased(
     );
   }
   const stagedPath = join(actionDir, "review-result.json");
+  const recoveringStagedReview = existsSync(stagedPath);
   let staged: z.infer<typeof StagedReviewSchema>;
-  if (existsSync(stagedPath)) {
-    const parsed = StagedReviewSchema.safeParse(JSON.parse(readFileSync(stagedPath, "utf8")));
+  if (recoveringStagedReview) {
+    let parsed;
+    try {
+      parsed = StagedReviewSchema.safeParse(JSON.parse(readFileSync(stagedPath, "utf8")));
+    } catch {
+      return fail(input, actionDir, "Invalid staged change-review result", "terminal");
+    }
     if (!parsed.success)
       return fail(input, actionDir, "Invalid staged change-review result", "terminal");
     staged = parsed.data;
@@ -199,6 +222,19 @@ async function runLeased(
         "Review workspace changed from the immutable candidate tree",
         "human-required",
       );
+    const promotedRecovery =
+      recoveringStagedReview &&
+      git(ctx.workspace, ["rev-parse", ctx.identity.branchRef]).trim() === candidate.data.commit;
+    if (
+      !promotedRecovery &&
+      (postTree.status !== candidateEvidence.status || !realIndexMatchesBase(ctx))
+    )
+      return fail(
+        input,
+        actionDir,
+        "Review changed the implementation index or workspace status",
+        "human-required",
+      );
     if (isFailedReviewMeta(staged.meta))
       return fail(
         input,
@@ -247,6 +283,7 @@ async function runLeased(
     try {
       promoteFactoryCandidate({
         workspace: ctx.workspace,
+        runDir: actionDir,
         branchRef: ctx.identity.branchRef,
         baseSha: ctx.identity.baseSha,
         candidateSha: candidate.data.commit,
@@ -269,7 +306,7 @@ async function runLeased(
       attempt: reaction.attempt,
       causationEventId: reaction.causationEventId,
       execution: { workspaceRef: ctx.factoryStore.repo.id, runRef: manifest },
-      evidence: [manifest, implementationRef, qualityRef],
+      evidence: [manifest, implementationRef, qualityRef, ...(blockingRef ? [blockingRef] : [])],
       verdict: evidence.verdict,
       review: manifest,
       ...(blockingRef ? { blockingFindings: blockingRef } : {}),
@@ -283,7 +320,7 @@ async function runLeased(
 function validateCandidate(
   ctx: FactoryImplementationRunContext,
   candidate: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
-): void {
+): z.infer<typeof CandidateEvidenceSchema> {
   const branchRef = git(ctx.workspace, ["symbolic-ref", "-q", "HEAD"]).trim();
   if (branchRef !== ctx.identity.branchRef)
     throw new BranchDriftError("Implementation symbolic branch changed before review");
@@ -304,6 +341,7 @@ function validateCandidate(
   )
     throw new Error("Candidate evidence conflicts with lifecycle identity");
   verifyFactoryArtifactRef(manifest.artifacts.raw, roots(ctx));
+  verifyFactoryArtifactRef(manifest.artifacts.stream, roots(ctx));
   verifyFactoryArtifactRef(manifest.artifacts.diff, roots(ctx));
   verifyFactoryArtifactRef(manifest.artifacts.handoff, roots(ctx));
   if (
@@ -332,6 +370,17 @@ function validateCandidate(
   });
   if (live.tree !== candidate.data.tree)
     throw new Error("Live workspace tree does not match the candidate");
+  const baseTree = git(ctx.workspace, ["rev-parse", `${ctx.identity.baseSha}^{tree}`]).trim();
+  const candidateTree = candidate.data.tree;
+  const indexTree = git(ctx.workspace, ["write-tree"]).trim();
+  if (
+    (branchSha === ctx.identity.baseSha && indexTree !== baseTree) ||
+    (branchSha === candidate.data.commit && indexTree !== baseTree && indexTree !== candidateTree)
+  )
+    throw new Error("Live implementation index does not match a recoverable candidate state");
+  if (branchSha === ctx.identity.baseSha && live.status !== manifest.status)
+    throw new Error("Live workspace status does not match candidate evidence");
+  return manifest;
 }
 
 function fail(
@@ -381,6 +430,7 @@ function appendRecovered(
   )
     throw new Error("Recovered implementation review result conflicts with phase identity");
   for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots(input.ctx));
+  if (event.type === "implementation.review.completed") validateRecoveredReview(input, event);
   if (event.type === "implementation.review.completed" && event.data.verdict === "pass") {
     const candidate = readFactoryActionEvents(
       input.factoryStateRoot,
@@ -394,6 +444,7 @@ function appendRecovered(
       throw new Error("Recovered implementation pass has no candidate");
     promoteFactoryCandidate({
       workspace: input.ctx.workspace,
+      runDir: actionDir,
       branchRef: input.ctx.identity.branchRef,
       baseSha: input.ctx.identity.baseSha,
       candidateSha: candidate.data.commit,
@@ -413,15 +464,64 @@ function assertReaction(input: Parameters<typeof reviewImplementationCandidate>[
   );
   const state = reduceFactoryLifecycleEvents(events);
   const latest = events.at(-1);
+  const candidate = events.findLast(
+    (event) =>
+      event.type === "implementation.candidate.produced" && event.phaseRunId === input.ctx.runId,
+  );
   if (
     !state ||
     !latest ||
-    latest.type !== "implementation.candidate.produced" ||
+    !candidate ||
+    candidate.type !== "implementation.candidate.produced" ||
     input.reaction.handler !== "reviewImplementationCandidate" ||
     JSON.stringify(decideNextFactoryAction(state, latest)) !== JSON.stringify(input.reaction)
   )
     throw new Error("reviewImplementationCandidate reaction conflicts with durable Factory state");
-  return latest;
+  return candidate;
+}
+
+function validateRecoveredReview(
+  input: Parameters<typeof reviewImplementationCandidate>[0],
+  event: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>,
+): void {
+  const { ctx } = input;
+  const candidate = readFactoryActionEvents(
+    input.factoryStateRoot,
+    deriveFactoryWorkItemKey(ctx.workItem),
+  ).findLast(
+    (candidateEvent) =>
+      candidateEvent.type === "implementation.candidate.produced" &&
+      candidateEvent.phaseRunId === ctx.runId,
+  );
+  if (!candidate || candidate.type !== "implementation.candidate.produced")
+    throw new Error("Recovered implementation review has no candidate");
+  const path = verifyFactoryArtifactRef(event.data.review, roots(ctx));
+  const manifest = ReviewEvidenceSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+  if (
+    manifest.phaseRunId !== ctx.runId ||
+    manifest.attempt !== event.data.attempt ||
+    manifest.base !== ctx.identity.baseSha ||
+    manifest.commit !== candidate.data.commit ||
+    manifest.tree !== candidate.data.tree ||
+    manifest.verdict !== event.data.verdict ||
+    JSON.stringify(manifest.reviewers) !==
+      JSON.stringify({
+        implementation: event.data.evidence[1],
+        quality: event.data.evidence[2],
+      }) ||
+    JSON.stringify(manifest.blockingFindings) !== JSON.stringify(event.data.blockingFindings)
+  )
+    throw new Error("Recovered implementation review evidence conflicts with lifecycle identity");
+  verifyFactoryArtifactRef(manifest.reviewers.implementation, roots(ctx));
+  verifyFactoryArtifactRef(manifest.reviewers.quality, roots(ctx));
+  if (manifest.blockingFindings) verifyFactoryArtifactRef(manifest.blockingFindings, roots(ctx));
+}
+
+function realIndexMatchesBase(ctx: FactoryImplementationRunContext): boolean {
+  return (
+    git(ctx.workspace, ["write-tree"]).trim() ===
+    git(ctx.workspace, ["rev-parse", `${ctx.identity.baseSha}^{tree}`]).trim()
+  );
 }
 
 function roots(ctx: FactoryImplementationRunContext) {

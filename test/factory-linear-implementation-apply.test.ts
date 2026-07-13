@@ -134,6 +134,18 @@ test("implementation restart accepts already Implementing without another status
   });
 });
 
+test("implementation start repairs an already Implementing projection", async () => {
+  const state = harness("Implementing");
+  const result = await applyLinearImplementationStarted(state.deps, state.client, LINEAR_SETTINGS, {
+    issueRef: "ENG-123",
+    runId: "run-start-repair",
+    runDir: ".harness/runs/factory/run-start-repair",
+    intent: "start",
+  });
+  expect(state.updateIssue).not.toHaveBeenCalled();
+  expect(result.statusPostconditionVerified).toBe(true);
+});
+
 test("implementation attention remains Implementing and deduplicates its comment", async () => {
   const state = harness("Implementing");
   const input = {
@@ -296,6 +308,23 @@ test("implementation failure projects status and writes a retry comment", async 
   expect(result.commentBody).toContain("provider timed out");
 });
 
+test("implementation failure repairs its comment after status projection", async () => {
+  const state = harness("Implementation Failed");
+  const result = await applyLinearImplementationFailed(state.deps, state.client, LINEAR_SETTINGS, {
+    issueRef: "ENG-123",
+    runId: "run-failed-repair",
+    runDir: ".harness/runs/factory/run-failed-repair",
+    error: "provider timed out",
+  });
+  expect(state.updateIssue).not.toHaveBeenCalled();
+  expect(state.createComment).toHaveBeenCalledTimes(1);
+  expect(result).toMatchObject({
+    statusMutationCompleted: false,
+    statusPostconditionVerified: true,
+    commentPresent: true,
+  });
+});
+
 test.each(["Ready to Implement", "Implementation Failed", "Planning"])(
   "implementation completion rejects terminal entry %s before mutation",
   async (entry) => {
@@ -316,7 +345,7 @@ test.each(["Ready to Implement", "Implementation Failed", "Planning"])(
   },
 );
 
-test.each(["Ready to Implement", "Implementation Failed", "Planning", undefined])(
+test.each(["Ready to Implement", "Planning", undefined])(
   "implementation failure rejects terminal entry %s before mutation",
   async (entry) => {
     const state = harness(entry);
