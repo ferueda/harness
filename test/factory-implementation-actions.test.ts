@@ -223,6 +223,63 @@ test("revision workspace drift waits for a human before resuming the provider", 
   expect(result.next).toEqual({ kind: "wait", reason: "human" });
 });
 
+test("retryable revision failure retries the same attempt with its original session and blockers", async () => {
+  const fixture = directFixture();
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    reviewCeiling: 3,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "first\n");
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+      },
+    }),
+  });
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    reviewCeiling: 3,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (ctx: { runDir?: string }) => {
+      writeBlockingReviews(ctx.runDir!);
+      return fullReviewMeta("needs_changes");
+    }) as never,
+  });
+  const failedProvider = vi.fn<Agent["run"]>(async (input) => {
+    expect(input.session).toMatchObject({ id: "session-1" });
+    expect(input.prompt).toContain("Correctness");
+    return { ok: false, error: "temporary", exitCode: 1 };
+  });
+  const failed = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    reviewCeiling: 3,
+    agentProviderFactory: () => ({ name: "cursor", run: failedProvider }),
+  });
+  expect(failed.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 2 });
+  expect(failed.next).toMatchObject({
+    kind: "invoke",
+    handler: "produceImplementationCandidate",
+    attempt: 2,
+    scheduling: "retry",
+  });
+
+  const retriedProvider = vi.fn<Agent["run"]>(async (input) => {
+    expect(input.session).toMatchObject({ id: "session-1" });
+    expect(input.prompt).toContain("Clarity");
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "second\n");
+    return { ok: true, raw: {} };
+  });
+  const retried = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    reviewCeiling: 3,
+    agentProviderFactory: () => ({ name: "cursor", run: retriedProvider }),
+  });
+  expect(failedProvider).toHaveBeenCalledTimes(1);
+  expect(retriedProvider).toHaveBeenCalledTimes(1);
+  expect(retried.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 2 });
+  expect(retried.next).toMatchObject({ handler: "reviewImplementationCandidate", attempt: 2 });
+});
+
 test("provider completion and candidate ref recover without a second provider call", async () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);

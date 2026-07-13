@@ -11,6 +11,7 @@ import {
 } from "./factory-implementation-review-evidence.ts";
 import type { FactoryImplementationRunContext } from "./factory-implementation-run-context.ts";
 import { readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
+import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { readFactoryWorkspaceTree } from "./factory-review-head.ts";
 import type { FactoryReaction } from "./factory-state-machine.ts";
@@ -40,7 +41,7 @@ export function loadFactoryImplementationRevision(input: {
   const { ctx, reaction } = input;
   const workItemKey = deriveFactoryWorkItemKey(ctx.workItem);
   const events = readFactoryActionEvents(input.factoryStateRoot, workItemKey);
-  const review = events.find((event) => event.id === reaction.causationEventId);
+  const review = resolveOriginatingReview({ events, ctx, reaction, workItemKey });
   if (
     !review ||
     review.type !== "implementation.review.completed" ||
@@ -132,6 +133,43 @@ export function loadFactoryImplementationRevision(input: {
     priorStatus: candidateEvidence.status,
     session: candidateEvidence.effectiveSession,
   };
+}
+
+function resolveOriginatingReview(input: {
+  events: readonly FactoryLifecycleEvent[];
+  ctx: FactoryImplementationRunContext;
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>;
+  workItemKey: string;
+}): Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }> {
+  const byId = new Map(input.events.map((event) => [event.id, event]));
+  const seen = new Set<string>();
+  let causationEventId = input.reaction.causationEventId;
+  while (true) {
+    if (seen.has(causationEventId))
+      throw new FactoryImplementationRevisionError(
+        "Implementation revision retry causation is cyclic",
+      );
+    seen.add(causationEventId);
+    const event = byId.get(causationEventId);
+    if (!event)
+      throw new FactoryImplementationRevisionError(
+        "Implementation revision retry causation event is missing",
+      );
+    if (event.type === "implementation.review.completed") return event;
+    if (
+      event.type !== "factory.action.failed" ||
+      event.phaseRunId !== input.ctx.runId ||
+      event.workItemKey !== input.workItemKey ||
+      event.data.phase !== "implementation" ||
+      event.data.handler !== "produceImplementationCandidate" ||
+      event.data.failureKind !== "retryable" ||
+      event.data.attempt !== input.reaction.attempt
+    )
+      throw new FactoryImplementationRevisionError(
+        "Implementation revision retry causation conflicts with durable failure evidence",
+      );
+    causationEventId = event.data.causationEventId;
+  }
 }
 
 export function matchesFactoryImplementationRevisionWorkspace(input: {

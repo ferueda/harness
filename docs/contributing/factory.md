@@ -12,8 +12,9 @@ Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
 prints the next reaction, then exits. Planning is shipped as manually stepped
 candidate, review, and publication commands. Implementation is shipped as one
-candidate action followed by one full review action. The CLI never invokes the next handler. An already-waiting state
-invokes no handler.
+candidate action followed by a full review action and, when review requires it,
+later manual revision attempts. The CLI never invokes the next handler. An
+already-waiting state invokes no handler.
 
 Run only one Factory phase command at a time for a work item. Concurrent phase
 commands for the same work item are unsupported and may fail.
