@@ -1,0 +1,74 @@
+import { readFileSync } from "node:fs";
+import { z } from "zod";
+import { aggregateVerdict } from "./aggregate.ts";
+import { FactoryArtifactRefSchema } from "./factory-artifact-ref.ts";
+import { ReviewOutputSchema, type ReviewOutput } from "./schemas.ts";
+
+export const FactoryImplementationSessionSchema = z.object({
+  provider: z.enum(["cursor", "codex"]),
+  id: z.string().trim().min(1),
+});
+
+export const FactoryImplementationCandidateEvidenceSchema = z.object({
+  version: z.literal(1),
+  phaseRunId: z.string(),
+  attempt: z.number().int().positive(),
+  base: z.string(),
+  ref: z.string(),
+  commit: z.string(),
+  tree: z.string(),
+  status: z.string(),
+  effectiveSession: FactoryImplementationSessionSchema,
+  artifacts: z.object({
+    raw: FactoryArtifactRefSchema,
+    stream: FactoryArtifactRefSchema,
+    diff: FactoryArtifactRefSchema,
+    handoff: FactoryArtifactRefSchema,
+  }),
+});
+
+export type ImplementationReviewEvidence = {
+  verdict: "pass" | "needs_changes" | "blocked";
+  implementation: ReviewOutput;
+  quality: ReviewOutput;
+  blocking: Array<ReviewOutput["findings"][number] & { id: string; reviewer: string }>;
+};
+
+export function validateImplementationReviewEvidence(input: {
+  meta: unknown;
+  implementationPath: string;
+  qualityPath: string;
+}): ImplementationReviewEvidence {
+  if (!isRecord(input.meta)) throw new Error("Change-review metadata is invalid");
+  if (
+    input.meta.status !== "completed" ||
+    input.meta.partial !== false ||
+    JSON.stringify(input.meta.requestedSteps) !== JSON.stringify(["implementation", "quality"]) ||
+    JSON.stringify(input.meta.executedSteps) !== JSON.stringify(["implementation", "quality"]) ||
+    JSON.stringify(input.meta.omittedSteps) !== JSON.stringify([])
+  )
+    throw new Error("Change-review did not complete the fixed full reviewer set");
+  const implementation = ReviewOutputSchema.parse(
+    JSON.parse(readFileSync(input.implementationPath, "utf8")),
+  );
+  const quality = ReviewOutputSchema.parse(JSON.parse(readFileSync(input.qualityPath, "utf8")));
+  const verdict = aggregateVerdict(implementation, quality);
+  if (input.meta.verdict !== verdict) throw new Error("Change-review aggregate verdict mismatch");
+  const blocking = [
+    ...blockingFor("implementation", implementation),
+    ...blockingFor("quality", quality),
+  ];
+  if (verdict === "needs_changes" && blocking.length === 0)
+    throw new Error("needs_changes review has no blocking findings");
+  return { verdict, implementation, quality, blocking };
+}
+
+function blockingFor(reviewer: string, review: ReviewOutput) {
+  return review.findings.flatMap((finding, index) =>
+    finding.must_fix ? [{ ...finding, id: `${reviewer}-${index + 1}`, reviewer }] : [],
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

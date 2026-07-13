@@ -89,6 +89,9 @@ export function fakeLinearAdapter(
     applyImplementationCompleted: async () => {
       throw new Error("applyImplementationCompleted should not run");
     },
+    applyImplementationAttention: async () => {
+      throw new Error("applyImplementationAttention should not run");
+    },
     applyImplementationFailed: async () => {
       throw new Error("applyImplementationFailed should not run");
     },

@@ -11,8 +11,8 @@ logs are not parsed or migrated and data is never deleted automatically.
 Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
 prints the next reaction, then exits. Planning is shipped as manually stepped
-candidate, review, and publication commands; implementation commands remain
-unavailable. The CLI never invokes the next handler. An already-waiting state
+candidate, review, and publication commands. Implementation is shipped as one
+candidate action followed by one full review action. The CLI never invokes the next handler. An already-waiting state
 invokes no handler.
 
 Run only one Factory phase command at a time for a work item. Concurrent phase
@@ -40,6 +40,7 @@ harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 ```
 
 There is no batch dispatch command. Run an explicit station for an explicit
@@ -161,6 +162,12 @@ Factory station roles use `harness.json`:
         "triager": { "agent": "cursor", "model": "grok-4.5" }
       }
     },
+    "implementation": {
+      "roles": {
+        "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
+        "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
+      }
+    },
     "linear": {
       "teamKey": "ENG",
       "projectId": "00000000-0000-0000-0000-000000000000",
@@ -187,9 +194,8 @@ Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
 `statuses` when operator tools like `linear-cli` or `factory linear list`
 should target those board states by key; factory stations do not require them.
 
-The schema requires the downstream status names shown above. Planning uses its
-configured statuses for explicit Linear boundary projections; implementation
-commands remain unavailable.
+The schema requires the downstream status names shown above. Planning and
+implementation use configured statuses for explicit Linear boundary projections.
 
 ### Durable Store Overrides
 
@@ -365,8 +371,40 @@ before projecting Linear to Planning; a failed projection leaves that one
 request pending for the next explicit `--apply` invocation and never reaches
 the provider. Later human, failure, and publication waits may persist Factory
 truth without `--apply` and repair their Linear projection later. `--apply`
-authorizes only that invocation's projection. Implementation actions remain
-unavailable.
+authorizes only that invocation's projection.
+
+## Implementation
+
+`harness factory implementation run` executes exactly one pending action.
+Start requires an attached branch, a clean workspace, and durable accepted
+direct or planned input. Planned input must match the reviewed candidate bytes
+committed at the original HEAD; pull-request planning also requires the
+recorded merge commit to be present and pulled.
+
+The candidate invocation runs the snapshotted implementer with no output
+schema and no timer by default. The implementer may edit and validate, but may
+not stage, commit, mutate refs, push, update trackers, review, or write Factory
+state. Harness captures the tree through a temporary index, creates one
+deterministic commit parented to the persisted base, and publishes a
+create-only `refs/harness/factory/<phase-run>/<attempt>` ref. HEAD and the real
+index do not move.
+
+Run the exact printed command again. The review invocation verifies the
+candidate evidence and live tree, then runs the fixed full implementation and
+quality reviewers once with review ceiling 1 and a positive timeout. Reviewers
+are read-only. Pass CAS-advances the persisted branch from the base to the
+exact reviewed candidate and aligns the already-matching real index, leaving a
+clean worktree. Every non-pass verdict stops for a human and never advances the
+branch. There is no separate accept command or standalone post-candidate
+`harness run change-review` step. Use `--rerun` only from human/failed state;
+it starts a fresh phase. Same-session review-driven revisions remain future
+PR 4 work.
+
+Linear starts and reruns require `--apply`. A failed start projection repairs
+the same durable request on the next explicit apply without provider work.
+Candidate/review keep Implementing; pass adds a deduplicated reviewed-candidate
+comment, non-pass adds an attention comment, and terminal failure projects
+Implementation Failed. A later explicit apply repairs a missing projection.
 
 ## Local Inbox
 

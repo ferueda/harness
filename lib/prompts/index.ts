@@ -1,7 +1,7 @@
 export { IMPLEMENTATION_REVIEW_PROMPT } from "./implementation-review.ts";
 export {
-  renderFactoryImplementationChangeReviewHandoff,
   renderFactoryImplementationPrompt,
+  renderFactoryImplementationReviewHandoff,
 } from "./factory-implementation.ts";
 export {
   renderFactoryPlanningInitialPrompt,

@@ -2203,7 +2203,7 @@ test("harness factory implementation apply requires a Linear issue", () => {
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory implementation is not available/);
+  expect(result.stderr).toMatch(/one of --item-file or --linear-issue is required/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
@@ -2221,7 +2221,7 @@ test("harness factory implementation apply rejects item-file mode", () => {
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory implementation is not available/);
+  expect(result.stderr).toMatch(/--apply requires --linear-issue/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
@@ -2239,7 +2239,7 @@ test("harness factory implementation apply rejects dry-run", () => {
     "--dry-run",
   ]);
 
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory implementation is not available/);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown option '--dry-run'/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });

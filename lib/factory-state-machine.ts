@@ -411,13 +411,19 @@ function validateFactoryTransition(
           current.planPrUrl === event.data.url
         );
       case "implementation.requested":
+        if (event.data.intent === "start")
+          return (
+            "phaseRunId" in current &&
+            event.phaseRunId !== current.phaseRunId &&
+            ((current.phase === "triage" &&
+              current.status === "routed" &&
+              current.route === "ready-to-implement") ||
+              (current.phase === "planning" && current.status === "approved"))
+          );
         return (
-          "phaseRunId" in current &&
-          event.phaseRunId !== current.phaseRunId &&
-          ((current.phase === "triage" &&
-            current.status === "routed" &&
-            current.route === "ready-to-implement") ||
-            (current.phase === "planning" && current.status === "approved"))
+          current.phase === "implementation" &&
+          (current.status === "needs-human" || current.status === "failed") &&
+          event.phaseRunId !== current.phaseRunId
         );
       case "implementation.candidate.produced":
         return (

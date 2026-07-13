@@ -4,14 +4,20 @@ import { expect, test } from "vitest";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 
-test.each([["--dry-run"], []])(
-  "implementation run is unavailable until its Factory PR ships",
-  (...args) => {
-    const result = spawnSync(process.execPath, [BIN, "factory", "implementation", ...args], {
-      encoding: "utf8",
-    });
+test("implementation run help exposes the manual action surface", () => {
+  const result = spawnSync(process.execPath, [BIN, "factory", "implementation", "run", "--help"], {
+    encoding: "utf8",
+  });
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Run exactly one pending implementation action");
+  expect(result.stdout).toContain("--rerun");
+  expect(result.stdout).not.toContain("--dry-run");
+});
 
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("Factory implementation is not available");
-  },
-);
+test("implementation run requires one durable input selector", () => {
+  const result = spawnSync(process.execPath, [BIN, "factory", "implementation", "run"], {
+    encoding: "utf8",
+  });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("one of --item-file or --linear-issue is required");
+});

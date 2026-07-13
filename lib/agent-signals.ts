@@ -34,11 +34,14 @@ export function createAgentSignalState(
     externallyAborted = true;
     controller.abort(externalSignal?.reason);
   };
-  const timeout = setTimeout(() => {
-    if (controller.signal.aborted) return;
-    timedOut = true;
-    controller.abort(new Error("timeout"));
-  }, timeoutMs);
+  const timeout =
+    timeoutMs === 0
+      ? undefined
+      : setTimeout(() => {
+          if (controller.signal.aborted) return;
+          timedOut = true;
+          controller.abort(new Error("timeout"));
+        }, timeoutMs);
 
   if (externalSignal?.aborted) {
     abortFromExternal();
@@ -51,7 +54,7 @@ export function createAgentSignalState(
     isTimedOut: () => timedOut,
     isExternallyAborted: () => externallyAborted,
     cleanup() {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       externalSignal?.removeEventListener("abort", abortFromExternal);
     },
   };

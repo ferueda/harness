@@ -6,6 +6,7 @@ import type { Readable } from "node:stream";
 import { formatFactoryActionOutput, withManualCommand } from "./factory-action-output.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import { addFactoryPlanningStationCommand } from "./factory-planning-cli.ts";
+import { addFactoryImplementationStationCommand } from "./factory-implementation-cli.ts";
 import {
   assertFactoryPathContained,
   createFactoryArtifactRef,
@@ -32,7 +33,6 @@ import {
   loadFactoryConfigSnapshot,
   resolveFactoryLinearSettings,
   resolveFactoryLinearSettingsFromSnapshot,
-  resolveFactoryRoleAgent,
   resolveFactoryRoleAgentFromSnapshot,
   resolveHarnessOptions,
   resolveHarnessWorkspace,
@@ -146,7 +146,7 @@ export function addFactoryCommands(parent: Command, options: FactoryCommandOptio
   addFactoryLinearCommand(factory);
   addFactoryTriageStationCommand(factory, options);
   addFactoryPlanningStationCommand(factory, options.defaultMaxRuntimeMs);
-  addFactoryImplementationStationCommand(factory);
+  addFactoryImplementationStationCommand(factory, options.positiveNumber);
 }
 
 function positiveInteger(value: string): number {
@@ -393,29 +393,6 @@ async function readStreamToString(stream: Readable): Promise<string> {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
-}
-
-function addFactoryImplementationStationCommand(parent: Command): void {
-  const implementation = parent
-    .command("implementation")
-    .description("Manage factory implementation station");
-  addUnavailableFactoryPhaseCommand(implementation, "run", "implementation", true);
-}
-
-function addUnavailableFactoryPhaseCommand(
-  parent: Command,
-  name: string,
-  label: string,
-  isDefault = false,
-): void {
-  parent
-    .command(name, { isDefault })
-    .description(`Factory ${label} action shell`)
-    .allowUnknownOption()
-    .allowExcessArguments()
-    .action(() => {
-      throw new Error(`Factory ${label} is not available until its dedicated action PR ships.`);
-    });
 }
 
 function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandOptions): void {

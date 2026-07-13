@@ -1,6 +1,6 @@
 ---
 name: factory-operator
-description: Operate the current harness factory flow through status, Linear intake, and triage.
+description: Operate the manually stepped harness Factory flow through status, Linear intake, triage, planning, implementation candidates, aggregate review, projection repair, and human restarts. Use for running or inspecting one Factory work item, its next reaction, durable evidence, Linear boundary, or stop condition.
 ---
 
 # Factory Operator
@@ -17,17 +17,12 @@ Wait for process exit; do not poll or start a second action. The command
 persists progress heartbeats in the action run (`--verbose` also emits them to
 stderr), writes a terminal event/state, and prints durable evidence plus the
 next reaction. Planning is shipped as separately invoked candidate, review,
-and publication commands; implementation commands remain unavailable. Routed
+and publication commands. Implementation is a separately invoked candidate and
+one full review; repeat only the exact printed command. Routed
 triage can return a wait reaction without a command. The invocation never
 executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
 
 Operate the current local harness factory one work item at a time.
-
-## When To Use
-
-Use this skill when the user wants to inspect factory inbox state, triage a
-factory work item, fetch or create a Linear intake issue, or understand current
-triage artifacts and statuses.
 
 ## Waiting For Station Runs
 
@@ -96,6 +91,8 @@ harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --rerun --apply
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
 ```
 
 Live is the default. Use `--dry-run` only to verify command wiring and artifact
@@ -116,6 +113,12 @@ Minimal shape:
     "triage": {
       "roles": {
         "triager": { "agent": "cursor", "model": "grok-4.5" }
+      }
+    },
+    "implementation": {
+      "roles": {
+        "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
+        "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
       }
     },
     "linear": {
@@ -144,12 +147,11 @@ Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
 `factory.linear.statuses` when operator list/move tools need those board
 states; stations do not require them.
 
-The schema requires the downstream status names shown above. Planning uses its
-configured statuses for explicit Linear boundary projections; implementation
-commands remain unavailable.
+The schema requires the downstream status names shown above. Planning and
+implementation use configured statuses for explicit Linear boundary projections.
 
-- `station`: the current lifecycle step, `triage`.
-- `role`: the current station job, `triager`.
+- `station`: the current lifecycle step, `triage`, `planning`, or `implementation`.
+- `role`: the configured station job, including implementation `implementer` and `reviewer`.
 - `agent`: backend identity such as `cursor` or `codex`.
 
 ## Linear List, Fetch, And Create
@@ -259,7 +261,36 @@ and `mark-plan-merged`. The durable planning request precedes its Linear
 projection; if projection fails, repeat that command with `--apply` to repair
 the same request before provider work. Pass `--apply` on each later command
 that should project a wait boundary. Never infer action progress from Linear
-status or comments. Implementation commands remain unavailable.
+status or comments.
+
+## Implementation
+
+Run `harness factory implementation run` once. A new phase requires a clean
+attached branch and durable direct readiness or an approved plan already
+committed at HEAD. For pull-request plans, pull the recorded merge first.
+
+The first invocation runs only `produceImplementationCandidate`. Wait for
+process exit; provider completion has no default timer, so heartbeat telemetry
+can continue while the synchronous command is healthy. Harness records one
+immutable candidate commit and attempt ref without moving HEAD or the real
+index. Inspect `candidate-evidence.json`, the diff, workspace facts, and
+`action-result.json` under the reported action directory.
+
+Run the exact command printed in `next` again. That invocation runs only
+`reviewImplementationCandidate`: the fixed implementation and quality
+reviewers, read-only, once, with review ceiling 1. Do not run a separate
+`harness run change-review`. Pass promotes the exact reviewed candidate and
+finishes with a clean branch/index/worktree. Any non-pass stops for a human and
+does not advance the branch. `--rerun` is allowed only after human/failed state
+and creates a fresh phase/profile/session/input snapshot; it is not a revision
+loop. Same-session review-driven revisions remain future PR 4 work.
+
+Linear implementation start/restart requires `--apply`. Repeat an explicit
+apply command to repair a failed start or terminal/comment projection; Harness
+reuses durable state and never appends a duplicate request or reruns the prior
+handler. Candidate/review remain Implementing, pass adds the reviewed-candidate
+comment, non-pass adds an attention comment, and terminal failure moves to
+Implementation Failed.
 
 ## Artifacts
 
@@ -286,5 +317,5 @@ Stop before proceeding if the task requires:
 - batch-moving every inbox item
 - mutating GitHub, Jira, or Inngest
 - mutating Linear outside documented `harness factory linear create` or explicit
-  `harness factory triage --linear-issue ... --apply`
+  `harness factory <triage|planning|implementation> ... --linear-issue ... --apply`
 - committing `.harness/runs/*`

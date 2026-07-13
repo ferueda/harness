@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   createAbortedAgentResult,
   createAgentAbortRace,
@@ -44,17 +44,40 @@ test("createAgentSignalState tracks timeout before later external abort", async 
   state.cleanup();
 });
 
-test("createAgentSignalState cleanup clears timeout and external listener", async () => {
-  const controller = new AbortController();
-  const state = createAgentSignalState(controller.signal, 1);
+test("createAgentSignalState zero timeout creates no timer but keeps external cancellation", () => {
+  vi.useFakeTimers();
+  try {
+    const timeout = vi.spyOn(globalThis, "setTimeout");
+    const controller = new AbortController();
+    const state = createAgentSignalState(controller.signal, 0);
+    expect(timeout).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(24 * 60 * 60 * 1_000);
+    expect(state.signal.aborted).toBe(false);
+    controller.abort();
+    expect(state.signal.aborted).toBe(true);
+    expect(state.isExternallyAborted()).toBe(true);
+    state.cleanup();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
-  state.cleanup();
-  controller.abort();
-  await delay(10);
+test("createAgentSignalState cleanup clears timeout and external listener", () => {
+  vi.useFakeTimers();
+  try {
+    const controller = new AbortController();
+    const state = createAgentSignalState(controller.signal, 1);
 
-  expect(state.signal.aborted).toBe(false);
-  expect(state.isTimedOut()).toBe(false);
-  expect(state.isExternallyAborted()).toBe(false);
+    state.cleanup();
+    controller.abort();
+    vi.advanceTimersByTime(10);
+
+    expect(state.signal.aborted).toBe(false);
+    expect(state.isTimedOut()).toBe(false);
+    expect(state.isExternallyAborted()).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("createAgentAbortRace rejects for already aborted signals", async () => {

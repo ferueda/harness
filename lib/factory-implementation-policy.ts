@@ -3,13 +3,26 @@ import {
   releaseFactoryWorkItemLock,
   type FactoryLockRuntimeOptions,
 } from "./factory-locks.ts";
-import { deriveFactoryWorkItemKey, workItemKeyToFilename } from "./factory-lifecycle.ts";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { workItemKeyToFilename } from "./factory-lifecycle.ts";
 import type { FactoryWorkItem } from "./factory-schemas.ts";
 
 const IMPLEMENTATION_EXECUTION_SUFFIX = ".implementation-execution";
 
-export function factoryImplementationExecutionLeaseFilename(workItemKey: string): string {
-  return `${workItemKeyToFilename(workItemKey)}${IMPLEMENTATION_EXECUTION_SUFFIX}`;
+export function canonicalFactoryImplementationWorkspace(workspace: string): string {
+  const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd: workspace,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+  return realpathSync(root);
+}
+
+export function factoryImplementationExecutionLeaseFilename(canonicalWorkspace: string): string {
+  const digest = createHash("sha256").update(canonicalWorkspace).digest("hex");
+  return `${workItemKeyToFilename(`workspace:${digest}`)}${IMPLEMENTATION_EXECUTION_SUFFIX}`;
 }
 
 export function isFactoryImplementationExecutionLeaseFilename(filename: string): boolean {
@@ -24,13 +37,14 @@ export async function withFactoryImplementationExecutionLease<T>(input: {
   options?: FactoryLockRuntimeOptions;
   action: () => Promise<T>;
 }): Promise<T> {
-  const workItemKey = deriveFactoryWorkItemKey(input.workItem);
-  const workItemFilename = factoryImplementationExecutionLeaseFilename(workItemKey);
+  const canonicalWorkspace = canonicalFactoryImplementationWorkspace(input.workspace);
+  const workItemKey = `workspace:${canonicalWorkspace}`;
+  const workItemFilename = factoryImplementationExecutionLeaseFilename(canonicalWorkspace);
   const owner = acquireFactoryWorkItemLock({
     factoryStateRoot: input.factoryStateRoot,
     workItemKey,
     workItemFilename,
-    workspace: input.workspace,
+    workspace: canonicalWorkspace,
     runDir: input.runDir,
     operation: "write",
     options: {

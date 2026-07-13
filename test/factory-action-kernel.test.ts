@@ -148,6 +148,7 @@ describe("Factory action lifecycle kernel", () => {
             expectedPredecessor: "triage-complete",
             inputRefs: [inputRef],
             reviewCeiling: 1,
+            intent: "start",
           },
         },
       ]),

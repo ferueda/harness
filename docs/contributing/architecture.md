@@ -19,6 +19,8 @@ Current public CLI surfaces:
 - `harness factory linear fetch`
 - `harness factory linear create`
 - `harness factory triage`
+- `harness factory planning run`
+- `harness factory implementation run`
 - `harness run change-review`
 - `harness run plan-review`
 - `harness runs prune`
@@ -44,7 +46,9 @@ The harness repo owns the reusable workflow system:
 - `dev/plans/` - active plans and handoffs.
 
 Prompt templates live under `lib/prompts/`. Review prompts are loaded through
-`lib/workflow-context.ts`; factory triage uses `lib/factory-run-context.ts`.
+`lib/workflow-context.ts`; Factory actions use immutable phase contexts and the
+durable action kernel. Implementation candidates materialize through a
+temporary Git index and are reviewed by recorded commit SHA.
 
 Runtime Zod validation lives in `lib/schemas.ts` for reviews and
 `lib/factory-schemas.ts` for factory intake and triage. `schemas/` owns
@@ -169,8 +173,10 @@ agent and model selection.
 
 Planning candidate/review and explicit plan publication commands consume the
 same action kernel, one handler per invocation. Candidate revisions reuse the
-snapshotted planner profile and original session. Implementation commands
-remain unavailable.
+snapshotted planner profile and original session. Implementation candidate and
+review commands use the same one-handler boundary, but review-driven revisions
+remain future work; `--rerun` creates a fresh phase after a human or failed
+wait.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation and quality. The quality reviewer covers behavior-preserving

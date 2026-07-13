@@ -1,9 +1,5 @@
-import {
-  validateApprovedPlanArtifacts,
-  validatePlannedWorkHandoff,
-} from "./factory-planning-handoff.ts";
-import { parseFactoryWorkItemMetadata, type FactoryWorkItemMetadata } from "./factory-schemas.ts";
-import type { FactoryResolvedWorkItemInput } from "./factory-triage-input.ts";
+import type { FactoryArtifactRef } from "./factory-artifact-ref.ts";
+import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 
 export class FactoryImplementationInputError extends Error {
   constructor(message: string, options: { cause?: unknown } = {}) {
@@ -12,186 +8,113 @@ export class FactoryImplementationInputError extends Error {
   }
 }
 
-export type FactoryImplementationSourceMaterial = {
-  title: string;
-  body: string;
-  labels: string[];
-  url?: string;
-  tracker?: FactoryWorkItemMetadata["tracker"];
-};
-
-export type FactoryPlannedImplementationInput = {
-  mode: "planned";
-  source: FactoryResolvedWorkItemInput["source"];
-  workItem: FactoryResolvedWorkItemInput["workItem"];
-  metadata: FactoryWorkItemMetadata;
-  approvedPlanPath: string;
-  planPath: string;
-  approvedPlanCommit: string;
-};
-
-export type FactoryDirectImplementationInput = {
-  mode: "direct";
-  source: FactoryResolvedWorkItemInput["source"];
-  workItem: FactoryResolvedWorkItemInput["workItem"];
-  metadata: FactoryWorkItemMetadata;
-  sourceMaterial: FactoryImplementationSourceMaterial;
-};
-
 export type FactoryImplementationInput =
-  | FactoryPlannedImplementationInput
-  | FactoryDirectImplementationInput;
-
-export type FactoryImplementationAttempt = "first" | "retry";
-
-export type FactoryImplementationLinearProjection = {
-  mode: "observe" | "apply";
-  readyToImplement: string;
-  implementationFailed: string;
-};
-
-export function resolveFactoryImplementationInput(input: {
-  workspace: string;
-  resolvedInput: FactoryResolvedWorkItemInput;
-  linearProjection?: FactoryImplementationLinearProjection;
-  /** Compatibility input for existing observe-only callers. */
-  linearReadyStatus?: string;
-}): FactoryImplementationInput {
-  const metadata = parseImplementationMetadata(input.resolvedInput.workItem.metadata);
-  const base = {
-    source: input.resolvedInput.source,
-    workItem: input.resolvedInput.workItem,
-    metadata,
-  };
-
-  if (input.resolvedInput.source === "linear") {
-    const legacyProjection = !input.linearProjection;
-    assertLinearProjection(
-      metadata,
-      input.linearProjection ??
-        (input.linearReadyStatus
-          ? {
-              mode: "observe",
-              readyToImplement: input.linearReadyStatus,
-              implementationFailed: "Implementation Failed",
-            }
-          : undefined),
-      legacyProjection,
-    );
-  }
-
-  // Any publication signal means planned work; validate it before direct mode.
-  if (hasAnyPlannedPublicationSignal(metadata)) {
-    const handoff =
-      metadata.factoryStage === "implementation-failed" &&
-      input.resolvedInput.source === "linear" &&
-      input.linearProjection?.mode === "apply"
-        ? validateApprovedPlanArtifacts(metadata, input.workspace)
-        : validatePlannedWorkHandoff(metadata, input.workspace);
-    const approvedPlanPath = metadata.approvedPlanPath;
-    if (!approvedPlanPath) {
-      throw new FactoryImplementationInputError(
-        "Planned implementation input is missing approvedPlanPath after handoff validation.",
-      );
+  | {
+      mode: "direct";
+      importedEventId: string;
+      workItem: FactoryArtifactRef;
+      readinessEventId: string;
+      readiness: FactoryArtifactRef;
     }
-    return {
-      mode: "planned",
-      ...base,
-      approvedPlanPath,
-      planPath: handoff.planPath,
-      approvedPlanCommit: handoff.approvedPlanCommit,
+  | {
+      mode: "planned";
+      importedEventId: string;
+      workItem: FactoryArtifactRef;
+      candidateEventId: string;
+      reviewEventId: string;
+      planCandidate: FactoryArtifactRef;
+      outputPlan: string;
+      publicationMode: "local" | "pull-request";
+      mergedEventId?: string;
+      mergedUrl?: string;
+      mergedCommit?: string;
     };
-  }
 
-  if (hasAllDirectMarkers(metadata, input.linearProjection)) {
+/** Resolve implementation authority only from immutable Factory events. */
+export function resolveFactoryImplementationInput(
+  events: FactoryLifecycleEvent[],
+): FactoryImplementationInput {
+  const imported = events.find((event) => event.type === "work_item.imported");
+  if (!imported)
+    throw new FactoryImplementationInputError("Implementation requires imported input");
+  const direct = events.findLast(
+    (event) =>
+      event.type === "triage.work_item.completed" && event.data.route === "ready-to-implement",
+  );
+  const approvedReview = events.findLast(
+    (event) => event.type === "planning.review.completed" && event.data.verdict === "pass",
+  );
+  const mergedPlan = events.findLast((event) => event.type === "plan_pr.merged");
+  if (direct && !approvedReview) {
+    if (direct.type !== "triage.work_item.completed")
+      throw new FactoryImplementationInputError("Direct readiness event is invalid");
+    const readiness = direct.data.evidence.at(-1);
+    if (!readiness)
+      throw new FactoryImplementationInputError(
+        "Direct implementation readiness evidence is missing",
+      );
+    const request = events.findLast(
+      (event) => event.type === "triage.requested" && event.id === direct.data.causationEventId,
+    );
+    const workItem = request?.type === "triage.requested" ? request.data.inputRefs[0] : undefined;
+    if (!workItem)
+      throw new FactoryImplementationInputError("Direct implementation work-item input is missing");
     return {
       mode: "direct",
-      ...base,
-      sourceMaterial: {
-        title: input.resolvedInput.workItem.title,
-        body: input.resolvedInput.workItem.body,
-        labels: [...input.resolvedInput.workItem.labels],
-        ...(input.resolvedInput.workItem.url ? { url: input.resolvedInput.workItem.url } : {}),
-        ...(metadata.tracker ? { tracker: metadata.tracker } : {}),
-      },
+      importedEventId: imported.id,
+      workItem,
+      readinessEventId: direct.id,
+      readiness,
     };
   }
 
-  throw new FactoryImplementationInputError(
-    `Factory work item is not ready for implementation: factoryStage=${metadata.factoryStage ?? "none"}, factoryRoute=${metadata.factoryRoute ?? "none"}, factoryNextAction=${metadata.factoryNextAction ?? "none"}, linearStatus=${metadata.linearStatus ?? "none"}`,
-  );
-}
-
-function parseImplementationMetadata(value: unknown): FactoryWorkItemMetadata {
-  try {
-    return parseFactoryWorkItemMetadata(value);
-  } catch (error) {
+  const latest = mergedPlan ?? approvedReview;
+  if (!latest)
     throw new FactoryImplementationInputError(
-      "Invalid factory work item metadata for implementation input.",
-      { cause: error },
+      "Implementation requires direct readiness or an approved planning result",
     );
-  }
-}
-
-export function factoryImplementationAttempt(
-  implementationInput: FactoryImplementationInput,
-): FactoryImplementationAttempt {
-  return implementationAttemptForMetadata(implementationInput.metadata);
-}
-
-function implementationAttemptForMetadata(
-  metadata: FactoryWorkItemMetadata,
-): FactoryImplementationAttempt {
-  return metadata.factoryStage === "implementation-failed" ? "retry" : "first";
-}
-
-function assertLinearProjection(
-  metadata: FactoryWorkItemMetadata,
-  projection: FactoryImplementationLinearProjection | undefined,
-  legacyProjection: boolean,
-): void {
-  if (!projection?.readyToImplement.trim() || !projection.implementationFailed.trim()) {
-    throw new FactoryImplementationInputError(
-      legacyProjection
-        ? "linearReadyStatus is required for Linear implementation input."
-        : "Linear implementation projection statuses are required for Linear implementation input.",
-    );
-  }
-  const attempt = implementationAttemptForMetadata(metadata);
-  if (attempt === "retry" && projection.mode !== "apply") {
-    throw new FactoryImplementationInputError("Linear implementation retries require --apply.");
-  }
-  const expected =
-    attempt === "retry" ? projection.implementationFailed : projection.readyToImplement;
-  if (!sameStatus(metadata.linearStatus, expected)) {
-    throw new FactoryImplementationInputError(
-      `Linear issue is in ${String(metadata.linearStatus ?? "none")}; implementation${attempt === "first" ? "" : ` ${attempt} runs`} accepts ${expected}.`,
-    );
-  }
-}
-
-function sameStatus(left: unknown, right: string): boolean {
-  return typeof left === "string" && left.trim().toLowerCase() === right.trim().toLowerCase();
-}
-
-function hasAnyPlannedPublicationSignal(metadata: FactoryWorkItemMetadata): boolean {
-  return (
-    metadata.factoryStage === "plan-approved" ||
-    metadata.factoryStage === "plan-pr-open" ||
-    Boolean(metadata.approvedPlanPath) ||
-    Boolean(metadata.approvedPlanPrUrl) ||
-    Boolean(metadata.approvedPlanCommit)
+  const phaseRunId = latest.phaseRunId;
+  const candidate = events.findLast(
+    (event) => event.type === "planning.candidate.produced" && event.phaseRunId === phaseRunId,
   );
-}
-
-function hasAllDirectMarkers(
-  metadata: FactoryWorkItemMetadata,
-  projection: FactoryImplementationLinearProjection | undefined,
-): boolean {
-  return (
-    (metadata.factoryStage === "ready-to-implement" ||
-      (metadata.factoryStage === "implementation-failed" && projection?.mode === "apply")) &&
-    metadata.factoryRoute === "ready-to-implement" &&
-    metadata.factoryNextAction === "implement-directly"
+  const review = events.findLast(
+    (event) => event.type === "planning.review.completed" && event.phaseRunId === phaseRunId,
   );
+  const request = events.findLast(
+    (event) => event.type === "planning.requested" && event.phaseRunId === phaseRunId,
+  );
+  if (
+    !candidate ||
+    candidate.type !== "planning.candidate.produced" ||
+    !review ||
+    review.type !== "planning.review.completed" ||
+    review.data.verdict !== "pass" ||
+    !request ||
+    request.type !== "planning.requested"
+  )
+    throw new FactoryImplementationInputError("Planned implementation input is incomplete");
+  const base = {
+    mode: "planned" as const,
+    importedEventId: imported.id,
+    workItem: request.data.inputRefs[0],
+    candidateEventId: candidate.id,
+    reviewEventId: review.id,
+    planCandidate: candidate.data.candidate,
+    outputPlan: request.data.outputPlan,
+    publicationMode: request.data.publicationMode,
+  };
+  if (!base.workItem)
+    throw new FactoryImplementationInputError("Planned implementation work-item input is missing");
+  if (request.data.publicationMode === "local") return base;
+  const merged = events.findLast(
+    (event) => event.type === "plan_pr.merged" && event.phaseRunId === phaseRunId,
+  );
+  if (!merged || merged.type !== "plan_pr.merged")
+    throw new FactoryImplementationInputError("Pull-request plan must be recorded as merged");
+  return {
+    ...base,
+    mergedEventId: merged.id,
+    mergedUrl: merged.data.url,
+    mergedCommit: merged.data.commit,
+  };
 }

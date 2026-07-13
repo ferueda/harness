@@ -579,6 +579,24 @@ test("resolveFactoryRoleAgent reads configured implementation Cursor role", () =
   });
 });
 
+test("resolveFactoryRoleAgent resolves a separate implementation reviewer profile", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(workspace, {
+    defaultAgent: "cursor",
+    factory: {
+      implementation: {
+        roles: {
+          implementer: { agent: "codex", model: "gpt-5.6-sol" },
+          reviewer: { agent: "codex", model: "gpt-5.4" },
+        },
+      },
+    },
+  });
+  expect(
+    resolveFactoryRoleAgent({ workspace, station: "implementation", role: "reviewer" }, "/"),
+  ).toMatchObject({ agent: "codex", model: "gpt-5.4" });
+});
+
 test("resolveFactoryRoleAgent preserves Codex implementation role fields", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   writeHarnessJson(workspace, {
