@@ -45,16 +45,19 @@ Omit this section when none exist.
   behavior, name its post-change owner, exact removals and cutover order, and
   required compatibility beside the change. Omit this lifecycle detail for
   ordinary additive work.
+- When work materially changes failure handling, state or data flow, privacy, or
+  security behavior, state the required behavior beside the affected change.
+  Omit this detail when that behavior is unchanged or irrelevant.
 - Add another section only when a migration, rollout, public contract, or named
   risk cannot be understood safely in the default shape.
-- Do not duplicate acceptance criteria as done criteria or repeat checks covered
-  by the canonical repository gate.
+- Prune repeated criteria, commands covered by the canonical repository gate,
+  duplicated context, and empty optional sections.
 
 ## Quality bar
 
 - Every change and test traces to acceptance, an invariant, or a verified risk.
 - Exact files or symbols make the intended ownership clear.
-- The plan contains no unresolved implementation decision.
+- No material implementation choice remains unresolved.
 - Boundaries are specific, not boilerplate.
 - Durable repository references replace copied context when practical.
 - No secrets appear in the plan.

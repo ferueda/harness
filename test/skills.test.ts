@@ -167,7 +167,35 @@ test("planning skills use the compact capable-executor contract", () => {
     expect(prose).toContain("post-change owner, exact removals and cutover order");
     expect(prose).toContain("required compatibility beside the change");
     expect(prose).toContain("Omit this lifecycle detail for ordinary additive work");
+    expect(prose).toContain(
+      "When work materially changes failure handling, state or data flow, privacy, or security behavior, state the required behavior beside the affected change. Omit this detail when that behavior is unchanged or irrelevant.",
+    );
+    expect(prose).toContain(
+      "Prune repeated criteria, commands covered by the canonical repository gate, duplicated context, and empty optional sections",
+    );
+    expect(prose).toContain("No secrets appear");
   }
+
+  expect(createPlan).toContain(
+    "Verify repository commands and external contracts before prescribing them",
+  );
+  expect(auditTemplate).toContain(
+    "Verify repository commands and external contracts before prescribing them",
+  );
+
+  const templateProse = normalizedProse(template);
+  expect(templateProse).toContain(
+    "Every change and test traces to acceptance, an invariant, or a verified risk",
+  );
+  expect(templateProse).toContain("Exact files or symbols make the intended ownership clear");
+  expect(templateProse).toContain("No material implementation choice remains unresolved");
+
+  const auditTemplateProse = normalizedProse(auditTemplate);
+  expect(auditTemplateProse).toContain(
+    "Every change and test traces to the finding, an invariant, or a verified risk",
+  );
+  expect(auditTemplateProse).toContain("Exact files or symbols make ownership clear");
+  expect(auditTemplateProse).toContain("The plan contains no unresolved implementation decision");
 
   const coordinatorProse = normalizedProse(coordinator);
   expect(coordinatorProse).toContain("repository guidance constrains the work");
@@ -295,4 +323,37 @@ test("change review converges within the original task scope", () => {
   expect(handoff).toContain("## Follow-up focus");
   expect(handoff).not.toContain("### Files changed");
   expect(handoff).not.toContain("Provider session");
+});
+
+test("manual implementation review matches the harness acceptance contract", () => {
+  const implementation = readFileSync(
+    join(REPO_ROOT, "skills/review-implementation/SKILL.md"),
+    "utf8",
+  );
+  const prose = normalizedProse(implementation);
+
+  expect(prose).toContain("Repository hard invariants and documented project intent");
+  expect(prose).toContain(
+    "Original goal, acceptance criteria, accepted decisions, and explicit boundaries",
+  );
+  expect(prose).toContain("Verified behavior of the current diff and directly affected code");
+  expect(prose).toContain("Reviewer preferences and improvement opportunities");
+  expect(prose).toContain("A finding may block acceptance only when it establishes");
+  expect(prose).toContain("an unmet acceptance criterion");
+  expect(prose).toContain("a hard invariant violated by the change");
+  expect(prose).toContain(
+    "a correctness, security, reliability, or compatibility regression introduced or worsened by the diff",
+  );
+  expect(prose).toContain("missing behavioral proof required for changed behavior");
+  expect(prose).toContain(
+    "pre-existing debt, optional hardening, alternative architecture, nearby cleanup, and out-of-scope refactors as non-blocking",
+  );
+  expect(prose).toContain("material scope expansion or a new product decision");
+  expect(prose).toContain("state the exact human decision needed");
+  expect(prose).toContain(
+    'Use `verdict: "pass"` when no finding has `must_fix: true`; advisory findings may accompany a pass',
+  );
+  expect(prose).not.toContain(
+    "blockers, major correctness issues, contract violations, data loss, security issues, or missing tests for changed behavior",
+  );
 });

@@ -19,13 +19,19 @@ new orchestration.
 
 1. `skills/create-plan/references/plan-template.md:Default shape`,
    `skills/audit/references/plan-template.md`, and
-   `lib/prompts/factory-planning.ts:PLANNING_RULES` — add the same conditional
-   planning rule: when work replaces, redirects, splits, deprecates, or removes
-   an existing behavior, name its post-change owner, exact removals/cutover
-   order, and required compatibility. Omit that lifecycle detail for ordinary
-   additive work; do not add a new required section or restore the removed
-   planning ceremony. Extend the existing create-plan and audit template seams
-   in `test/skills.test.ts` and the rendered Factory contract in
+   `lib/prompts/factory-planning.ts:PLANNING_RULES` — align the planning
+   contracts around the same minimum-sufficient semantics. When work replaces,
+   redirects, splits, deprecates, or removes an existing behavior, name its
+   post-change owner, exact removals/cutover order, and required compatibility.
+   When work materially changes failure handling, state/data flow, privacy, or
+   security, state the required behavior beside the affected change. Keep both
+   rules conditional; do not add a required section or restore removed planning
+   ceremony. Bring the Factory prompt to the same draft-ready bar: verified
+   commands/contracts, exact ownership, traceable changes/tests, no unresolved
+   material choice, compact pruning, and no secrets. Preserve Factory-only
+   scratch-draft and structured-response mechanics and audit-specific finding
+   language. Extend the create-plan and audit template seams in
+   `test/skills.test.ts` and the rendered Factory contract in
    `test/factory-planning-prompt.test.ts`.
 2. `skills/planning-workflow/SKILL.md:4. Implement` — add a compact execution
    alignment before edits: repository guidance constrains the work, the
@@ -65,11 +71,15 @@ new orchestration.
    `test/factory-implementation-prompt.test.ts` using
    `renderFactoryImplementationPrompt`.
 5. `lib/prompts/implementation-review.ts:IMPLEMENTATION_REVIEW_PROMPT` and
-   `skills/review-implementation/SKILL.md:Review Focus` — when the authoritative
-   task or plan names a post-change owner, removal, cutover, or compatibility
-   commitment, verify it against the diff and directly affected paths. Keep the
-   check conditional so the reviewer neither invents migration work nor turns
-   a handoff into authority. Extend
+   `skills/review-implementation/SKILL.md:Review Focus` — give the manually
+   invoked reviewer the executable prompt's authority order and acceptance-only
+   blocker contract. Pre-existing debt, optional hardening, alternative
+   architecture, nearby cleanup, and out-of-scope refactors remain advisory;
+   material scope expansion or a new product decision yields an exact blocked
+   question. When the authoritative task or plan names a post-change owner,
+   removal, cutover, or compatibility commitment, verify it against the diff
+   and directly affected paths. Keep the check conditional so the reviewer
+   neither invents migration work nor turns a handoff into authority. Extend
    `test/review-prompts.test.ts:implementation review prompt keeps blockers tied
    to the original task` and the corresponding skill assertion in
    `test/skills.test.ts`.
