@@ -92,6 +92,19 @@ new orchestration.
    provenance. Extend the existing convergence assertions in
    `test/skills.test.ts`; its packaged/local sync test continues to protect both
    copies.
+7. `lib/prompts/spec-review.ts:SPEC_REVIEW_PROMPT` and
+   `skills/review-spec/SKILL.md` — align executable and direct plan review with
+   the same authority order and acceptance-only blocker contract. Treat only
+   the original source request plus explicit goals, requirements, criteria,
+   boundaries, and marked accepted decisions inside labeled task/work-item
+   authority as authoritative; other handoff content stays context. Check
+   ownership/cutover and changed failure/state/data/privacy/security behavior
+   only when material. Return
+   `blocked` with the smallest exact missing evidence or human question instead
+   of converting unavailable intent into a plan-edit request. Keep structured
+   JSON schema-exact and direct Markdown findings explicit about must-fix status.
+   Extend `test/review-prompts.test.ts` and `test/workflow-context.test.ts`
+   without changing schemas or review runtime.
 
 ## Verify
 
