@@ -91,6 +91,16 @@ export async function reviewPlanCandidate(input: {
       const reviewCtx = createWorkflowContext({
         workspace: ctx.workspace,
         planPath: candidatePath,
+        handoffText: [
+          "# Factory work-item authority",
+          "",
+          "Use this durable source for the original goal, requirements, acceptance criteria, and explicit boundaries.",
+          "Only decisions marked accepted, current, locked, or superseding are authoritative; other proposals and metadata remain context.",
+          "",
+          "```json",
+          JSON.stringify(ctx.workItem, null, 2),
+          "```",
+        ].join("\n"),
         runsDir: join(actionDir, "review-runs"),
         includeGitScope: false,
         agentProvider: profile.provider,

@@ -133,6 +133,34 @@ test("candidate and review actions step separately and revisions resume the plan
   ).toHaveLength(2);
 });
 
+test("plan review receives the durable Factory work item as original-intent authority", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  const reviewerRun = vi.fn<Agent["run"]>(async () => ({
+    ok: true,
+    structuredOutput: { verdict: "pass", summary: "approved", findings: [] },
+    raw: unchangedWorkspace(),
+  }));
+
+  const reviewed = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: reviewerRun }),
+  });
+
+  expect(reviewerRun).toHaveBeenCalledTimes(1);
+  const prompt = reviewerRun.mock.calls[0]?.[0].prompt;
+  expect(prompt).toContain("# Factory work-item authority");
+  expect(prompt).toContain('"id": "item-1"');
+  expect(prompt).toContain('"body": "Ship it"');
+  expect(reviewed.event).toMatchObject({
+    type: "planning.review.completed",
+    data: { verdict: "pass" },
+  });
+});
+
 test("first candidate recovery publishes staged draft bytes without rerunning the provider", async () => {
   const fixture = planningActionFixture();
   const reaction = invoke(fixture.start);
