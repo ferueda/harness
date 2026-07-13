@@ -141,6 +141,8 @@ function resolveOriginatingReview(input: {
   reaction: Extract<FactoryReaction, { kind: "invoke" }>;
   workItemKey: string;
 }): Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }> {
+  // A retry keeps its attempt, so walk only validated retryable producer failures
+  // back to the needs_changes review that originally authorized that revision.
   const byId = new Map(input.events.map((event) => [event.id, event]));
   const seen = new Set<string>();
   let causationEventId = input.reaction.causationEventId;

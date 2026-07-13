@@ -21,7 +21,7 @@ import {
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
-import { FactoryReviewHeadError } from "../lib/factory-review-head.ts";
+import { createFactoryReviewHead, FactoryReviewHeadError } from "../lib/factory-review-head.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { decideNextFactoryAction } from "../lib/factory-state-machine.ts";
 import type { reduceFactoryLifecycleEvents } from "../lib/factory-state-machine.ts";
@@ -286,7 +286,6 @@ test("provider completion and candidate ref recover without a second provider ca
   const requested = appendRequest(fixture, ctx);
   const reaction = invoke(requested);
   const actionDir = actionPath(ctx, reaction);
-  mkdirSync(join(actionDir, "action-result.json"), { recursive: true });
   const providerRun = vi.fn<Agent["run"]>(async () => {
     writeFileSync(join(fixture.workspace, "tracked.txt"), "recovered\n");
     return {
@@ -301,12 +300,60 @@ test("provider completion and candidate ref recover without a second provider ca
     reaction,
     maxRuntimeMs: 0,
     agentProviderFactory: () => ({ name: "cursor" as const, run: providerRun }),
+    reviewHeadFactory: (input: Parameters<typeof createFactoryReviewHead>[0]) => {
+      const head = createFactoryReviewHead(input);
+      mkdirSync(join(actionDir, "action-result.json"), { recursive: true });
+      return head;
+    },
   };
   await expect(produceImplementationCandidate(action)).rejects.toThrow();
+  expect(providerRun).toHaveBeenCalledTimes(1);
   rmSync(join(actionDir, "action-result.json"), { recursive: true });
-  const recovered = await produceImplementationCandidate(action);
+  const recovered = await produceImplementationCandidate({
+    ...action,
+    reviewHeadFactory: undefined,
+  });
   expect(providerRun).toHaveBeenCalledTimes(1);
   expect(recovered.event.type).toBe("implementation.candidate.produced");
+});
+
+test("staged candidate recovery rejects same-status workspace drift without rerunning the provider", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const reaction = invoke(requested);
+  const actionDir = actionPath(ctx, reaction);
+  const providerRun = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "first candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  const action = {
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor" as const, run: providerRun }),
+    reviewHeadFactory: (input: Parameters<typeof createFactoryReviewHead>[0]) => {
+      const head = createFactoryReviewHead(input);
+      mkdirSync(join(actionDir, "action-result.json"), { recursive: true });
+      return head;
+    },
+  };
+  await expect(produceImplementationCandidate(action)).rejects.toThrow();
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  rmSync(join(actionDir, "action-result.json"), { recursive: true });
+  rmSync(join(actionDir, "failure.json"), { force: true });
+  writeFileSync(join(fixture.workspace, "tracked.txt"), "drifted candidate\n");
+
+  const recovered = await produceImplementationCandidate({
+    ...action,
+    reviewHeadFactory: undefined,
+  });
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(recovered.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
 });
 
 test("candidate recovery rejects a divergent create-only attempt ref", async () => {
@@ -573,6 +620,30 @@ test("blank provider session becomes human-required without candidate success", 
       run: async () => {
         writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
         return { ok: true, raw: {}, session: { provider: "cursor", id: "   " } };
+      },
+    }),
+  });
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+  expect(git(fixture.workspace, ["for-each-ref", "refs/harness"]).trim()).toBe("");
+});
+
+test("wrong-provider implementer session becomes human-required without candidate success", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+        return { ok: true, raw: {}, session: { provider: "codex", id: "wrong-provider" } };
       },
     }),
   });

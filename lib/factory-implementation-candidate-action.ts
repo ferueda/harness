@@ -30,7 +30,11 @@ import type { FactoryImplementationRunContext } from "./factory-implementation-r
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
-import { createFactoryReviewHead, FactoryReviewHeadError } from "./factory-review-head.ts";
+import {
+  createFactoryReviewHead,
+  FactoryReviewHeadError,
+  readFactoryWorkspaceTree,
+} from "./factory-review-head.ts";
 import {
   decideNextFactoryAction,
   reduceFactoryLifecycleEvents,
@@ -57,6 +61,7 @@ const StagedSchema = z.object({
   timestamp: z.iso.datetime(),
   before: FactsSchema,
   after: FactsSchema,
+  afterTree: z.string().regex(/^[0-9a-f]{40}$/),
   result: z.discriminatedUnion("ok", [
     z.object({
       ok: z.literal(true),
@@ -141,34 +146,37 @@ async function runLeased(input: {
     let before: z.infer<typeof FactsSchema>;
     try {
       before = facts(ctx.workspace);
-    } catch (error) {
-      return fail(
-        input,
-        actionDir,
-        `Failed to inspect implementation workspace: ${message(error)}`,
-        "human-required",
-      );
-    }
-    if (revision) {
-      if (!matchesFactoryImplementationRevisionWorkspace({ ctx, facts: before, revision }))
+      if (
+        revision &&
+        !matchesFactoryImplementationRevisionWorkspace({ ctx, facts: before, revision })
+      )
         return fail(
           input,
           actionDir,
           "Implementation workspace no longer matches the prior immutable candidate",
           "human-required",
         );
-    } else if (
-      before.head !== ctx.identity.baseSha ||
-      before.branchRef !== ctx.identity.branchRef ||
-      before.status.trim() ||
-      !before.indexClean
-    ) {
-      const kind = before.status.trim() ? "human-required" : "terminal";
+      if (
+        !revision &&
+        (before.head !== ctx.identity.baseSha ||
+          before.branchRef !== ctx.identity.branchRef ||
+          before.status.trim() ||
+          !before.indexClean)
+      ) {
+        const kind = before.status.trim() ? "human-required" : "terminal";
+        return fail(
+          input,
+          actionDir,
+          "Implementation workspace no longer matches its clean base",
+          kind,
+        );
+      }
+    } catch (error) {
       return fail(
         input,
         actionDir,
-        "Implementation workspace no longer matches its clean base",
-        kind,
+        `Failed to inspect implementation workspace: ${message(error)}`,
+        "human-required",
       );
     }
     const planPath =
@@ -227,18 +235,27 @@ async function runLeased(input: {
         `${JSON.stringify(completed.raw ?? completed, null, 2)}\n`,
       );
       if (completed.ok) {
-        const session = completed.session
-          ? FactoryImplementationSessionSchema.safeParse(completed.session)
-          : undefined;
-        const effectiveSession = session?.success ? session.data : revision?.session;
-        result = effectiveSession
-          ? { ok: true, session: effectiveSession, raw: completed.raw }
-          : {
-              ok: false,
-              error: "Implementer session was not captured or valid",
-              malformed: true,
-              raw: completed.raw,
-            };
+        if (completed.session === undefined) {
+          result = revision?.session
+            ? { ok: true, session: revision.session, raw: completed.raw }
+            : {
+                ok: false,
+                error: "Implementer session was not captured",
+                malformed: true,
+                raw: completed.raw,
+              };
+        } else {
+          const session = FactoryImplementationSessionSchema.safeParse(completed.session);
+          result =
+            session.success && session.data.provider === profile.provider
+              ? { ok: true, session: session.data, raw: completed.raw }
+              : {
+                  ok: false,
+                  error: "Implementer session was invalid or used the wrong provider",
+                  malformed: true,
+                  raw: completed.raw,
+                };
+        }
       } else {
         result = {
           ok: false,
@@ -257,8 +274,14 @@ async function runLeased(input: {
     }
     if (!existsSync(streamPath)) writeFileSync(streamPath, "");
     let after: z.infer<typeof FactsSchema>;
+    let afterTree: string;
     try {
       after = facts(ctx.workspace);
+      afterTree = readFactoryWorkspaceTree({
+        workspace: ctx.workspace,
+        runDir: actionDir,
+        baseSha: ctx.identity.baseSha,
+      }).tree;
     } catch (error) {
       finish("failed", message(error));
       return fail(
@@ -279,6 +302,7 @@ async function runLeased(input: {
       timestamp: new Date().toISOString(),
       before,
       after,
+      afterTree,
       result,
     };
     finish(result.ok ? "completed" : "failed", result.ok ? undefined : result.error);
@@ -294,6 +318,22 @@ async function runLeased(input: {
       staged.result.aborted || staged.result.malformed || !unchanged
         ? "human-required"
         : "retryable",
+    );
+  }
+  try {
+    if (!matchesStagedSuccessWorkspace(ctx, staged))
+      return fail(
+        input,
+        actionDir,
+        "Implementation workspace changed after the staged provider result",
+        "human-required",
+      );
+  } catch (error) {
+    return fail(
+      input,
+      actionDir,
+      `Failed to inspect staged implementation workspace: ${message(error)}`,
+      "human-required",
     );
   }
   if (
@@ -544,6 +584,27 @@ function facts(workspace: string) {
 
 function sameFacts(left: z.infer<typeof FactsSchema>, right: z.infer<typeof FactsSchema>) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function matchesStagedSuccessWorkspace(
+  ctx: FactoryImplementationRunContext,
+  staged: Staged,
+): boolean {
+  const live = facts(ctx.workspace);
+  if (
+    live.head !== staged.after.head ||
+    live.branchRef !== staged.after.branchRef ||
+    live.status !== staged.after.status ||
+    live.indexClean !== staged.after.indexClean
+  )
+    return false;
+  return (
+    readFactoryWorkspaceTree({
+      workspace: ctx.workspace,
+      runDir: ctx.runDir,
+      baseSha: ctx.identity.baseSha,
+    }).tree === staged.afterTree
+  );
 }
 
 function git(workspace: string, args: string[]): string {
