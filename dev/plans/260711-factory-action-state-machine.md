@@ -419,25 +419,26 @@ Changes:
   `factory.implementation.roles.reviewer`; keep role fallback and validation
   identical to the existing role resolver. Extend
   `FactoryPhaseRunIdentitySchema` with an implementation branch containing the
-  implementer and reviewer profiles, review ceiling 1, original base HEAD, and
-  a strict direct/planned input snapshot. Extend `implementation.requested`
-  with `intent: start | restart`. Direct input is the immutable imported work
-  item plus its durable `ready-to-implement` triage result. Planned input is the
-  immutable imported work item plus the exact reviewed planning candidate and
-  its output path; pull-request mode also records the matching `plan_pr.merged`
-  URL/commit. Put those refs in the request and phase context. Never derive
-  readiness, mode, retry, or progress from `factoryStage`, route metadata,
-  Linear comments, or status.
+  implementer and reviewer profiles, review ceiling 1, original branch ref and
+  base HEAD, and a strict direct/planned input snapshot. Extend
+  `implementation.requested` with `intent: start | restart`. Direct input is
+  the immutable imported work item plus its durable `ready-to-implement` triage
+  result. Planned input is the immutable imported work item plus the exact
+  reviewed planning candidate and its output path; pull-request mode also
+  records the matching `plan_pr.merged` URL/commit. Put those refs in the
+  request and phase context. Never derive readiness, mode, retry, or progress
+  from `factoryStage`, route metadata, Linear comments, or status.
 - Gate phase creation before provider work. Require a clean workspace and
-  snapshot its HEAD once as the original base. For planned input, require the
-  plan bytes at that base/output path to equal the reviewed candidate. In
-  pull-request mode, also require the recorded merge commit to exist, contain
-  those bytes, and be an ancestor of the base. A local operator therefore
-  commits the reviewed local plan; a pull-request operator pulls the recorded
-  merge before implementation. Reopen validates the persisted base and input
-  refs instead of adopting current Git/config state. `--rerun` is valid only
-  from implementation `needs-human` or `failed`; it creates a new phase with
-  current source/config, a fresh producer session, and the same readiness gates.
+  attached branch, and snapshot its branch ref and HEAD once as the original
+  base. For planned input, require the plan bytes at that base/output path to
+  equal the reviewed candidate. In pull-request mode, also require the recorded
+  merge commit to exist, contain those bytes, and be an ancestor of the base. A
+  local operator therefore commits the reviewed local plan; a pull-request
+  operator pulls the recorded merge before implementation. Reopen validates
+  the persisted branch, base, and input refs instead of adopting current
+  Git/config state. `--rerun` is valid only from implementation `needs-human`
+  or `failed`; it creates a new phase with current source/config, a fresh
+  producer session, and the same readiness gates.
 - Make the clean cutover explicit instead of adding parallel versions. Replace
   the legacy allocator/meta/dry-run contract in
   `lib/factory-implementation-run-context.ts` with separate create/open action
@@ -453,10 +454,13 @@ Changes:
 - Add `lib/factory-implementation-candidate-action.ts`. Under the canonical
   workspace lease, revalidate clean status and original HEAD, run the
   snapshotted implementer with the accepted work item/plan authority, and keep
-  the provider schema-free. After provider return, durably stage action
-  identity, completion/session, raw/stream refs, and before/after workspace
-  facts. A successful changed tree is published through a temporary index as a
-  commit parented to the original base and a create-only
+  the provider schema-free. The implementer edits files but cannot stage,
+  commit, or mutate branches/refs. After provider return, durably stage action
+  identity, completion/session, raw/stream refs, before/after workspace facts,
+  and a fixed commit envelope: parent/tree, Harness identity, persisted action
+  timestamp, and deterministic phase/attempt message. A successful changed tree
+  is published through a temporary index as one commit parented to the original
+  base and a create-only
   `refs/harness/factory/<phase-run>/<attempt>` ref without moving HEAD or the
   real index. Then write immutable candidate evidence containing the base, ref,
   commit, tree, cumulative diff, workspace status, handoff, effective session,
@@ -475,7 +479,7 @@ Changes:
   full `implementation` + `quality` set, the snapshotted reviewer profile, the
   accepted work item as handoff authority, and the reviewed plan as plan
   authority when present. Do not pass partial steps or invoke its outer
-  remediation loop.
+  remediation loop. Reviewers are read-only and never commit fixes.
 - Publish one immutable `review-evidence.json` manifest with candidate
   base/commit/tree, `partial: false`, refs to both schema-validated reviewer
   outputs, and the verdict recomputed through existing aggregation. For
@@ -486,7 +490,13 @@ Changes:
   verdict contract violation is terminal; a failed reviewer produces
   `factory.action.failed`, not `implementation.review.completed`. Stage the
   completed review-run identity/result before final evidence so restart can
-  validate and finalize one existing run without invoking reviewers again.
+  validate and finalize one existing run without invoking reviewers again. On
+  pass, compare-and-swap the persisted branch from the original base to that
+  exact candidate commit, align the real index with its already-matching
+  workspace tree, then append the terminal review event. Recovery may repair a
+  staged pass when the branch is still at the base or already at the candidate;
+  any other branch movement waits for human action. Non-pass never advances the
+  branch. Add no separate accept command or second commit.
 - Implement `harness factory implementation run` as the implementation-specific
   one-action coordinator. Create/repair a request only when appropriate,
   otherwise reopen its phase, compute one reaction, invoke exactly its named
@@ -515,8 +525,10 @@ committed-plan gates; dirty-base/no-provider; same-workspace contention with
 distinct-workspace independence; provider-stage/ref/action-result recovery with
 no second provider call; create-only ref/tamper rejection; pre/post-review
 workspace drift; full aggregate evidence and all blocking findings; failed or
-partial reviewer rejection; Linear request/projection/terminal repair; human
-`--rerun`; and fake-timer coverage for zero, positive, and external cancellation.
+partial reviewer rejection; exact-candidate branch promotion with a clean
+worktree/index, staged-pass recovery, and branch-drift rejection; Linear
+request/projection/terminal repair; human `--rerun`; and fake-timer coverage for
+zero, positive, and external cancellation.
 Use CLI help/distribution smoke for the public surface. Rely on PR 1/2 tests for
 generic CAS, artifact-ref, and one-action behavior instead of duplicating those
 matrices. Run `pnpm check` and the change-review workflow.
@@ -532,7 +544,9 @@ Changes:
   in `implementation.requested`.
 - For attempt > 1, load the prior aggregate review's blocking findings, resume
   the effective implementer session, retain the original base, require a new
-  tree, and create a new immutable attempt ref.
+  tree, and create a new immutable attempt ref. Each attempt remains a complete
+  snapshot parented to the original base; only the passing candidate is
+  promoted through the PR 3 path.
 - Review every candidate against the cumulative original-base-to-current-tree
   diff. Pass completes; blocked/exhausted waits for human; `needs_changes`
   produces a `next` producer reaction but never runs it in the same command.
