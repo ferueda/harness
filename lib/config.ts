@@ -105,7 +105,7 @@ type ResolveFactoryRoleAgentInput =
   | {
       workspace?: string;
       station: Extract<FactoryStationName, "implementation">;
-      role: Extract<FactoryStationRole, "implementer">;
+      role: Extract<FactoryStationRole, "implementer" | "reviewer">;
     };
 
 export type FactoryConfigSnapshot = Readonly<{
@@ -408,7 +408,7 @@ function factoryRoleConfig(
     return config.factory?.triage?.roles?.triager;
   }
   if (input.station === "implementation") {
-    return config.factory?.implementation?.roles?.implementer;
+    return config.factory?.implementation?.roles?.[input.role];
   }
   return config.factory?.planning?.roles?.[input.role];
 }

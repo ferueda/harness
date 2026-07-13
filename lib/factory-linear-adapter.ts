@@ -29,9 +29,11 @@ import {
 } from "./factory-linear-planning-apply.ts";
 import {
   applyLinearImplementationCompleted,
+  applyLinearImplementationAttention,
   applyLinearImplementationFailed,
   applyLinearImplementationStarted,
   type LinearImplementationCompletedInput,
+  type LinearImplementationAttentionInput,
   type LinearImplementationFailedInput,
   type LinearImplementationStartedInput,
   type LinearImplementationUpdatePlan,
@@ -95,6 +97,9 @@ export type LinearFactoryAdapter = {
   ) => Promise<LinearImplementationUpdatePlan>;
   applyImplementationCompleted: (
     input: LinearImplementationCompletedInput,
+  ) => Promise<LinearImplementationUpdatePlan>;
+  applyImplementationAttention: (
+    input: LinearImplementationAttentionInput,
   ) => Promise<LinearImplementationUpdatePlan>;
   applyImplementationFailed: (
     input: LinearImplementationFailedInput,
@@ -212,6 +217,13 @@ export function createLinearFactoryAdapterForClient(input: {
       ),
     applyImplementationCompleted: (applyInput) =>
       applyLinearImplementationCompleted(
+        LINEAR_IMPLEMENTATION_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
+    applyImplementationAttention: (applyInput) =>
+      applyLinearImplementationAttention(
         LINEAR_IMPLEMENTATION_APPLY_DEPS,
         input.client,
         input.settings,

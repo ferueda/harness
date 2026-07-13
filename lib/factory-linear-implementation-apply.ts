@@ -1,5 +1,4 @@
 import type { FactoryLinearSettings } from "./config.ts";
-import type { FactoryImplementationAttempt } from "./factory-implementation-input.ts";
 import type {
   LinearClientLike,
   LinearIssueLike,
@@ -15,7 +14,7 @@ export type LinearImplementationApplyInput = {
 };
 
 export type LinearImplementationStartedInput = LinearImplementationApplyInput & {
-  attempt: FactoryImplementationAttempt;
+  intent: "start" | "restart";
 };
 
 export type LinearImplementationCompletedInput = LinearImplementationApplyInput & {
@@ -25,6 +24,10 @@ export type LinearImplementationCompletedInput = LinearImplementationApplyInput 
 };
 
 export type LinearImplementationFailedInput = LinearImplementationApplyInput & { error: string };
+export type LinearImplementationAttentionInput = LinearImplementationApplyInput & {
+  verdict: "needs_changes" | "blocked" | "human_required";
+  candidateCommit: string;
+};
 
 export type LinearImplementationUpdatePlan = {
   issueIdentifier: string;
@@ -96,9 +99,17 @@ export async function applyLinearImplementationStarted(
   const state = await deps.resolveOptional(issue.state);
   await deps.assertIssueInConfiguredScope(issue, settings);
   const required =
-    input.attempt === "first" ? statuses.readyToImplement : statuses.implementationFailed;
-  assertState(state?.name, required, "implementation start");
+    input.intent === "start" ? statuses.readyToImplement : statuses.implementationFailed;
+  const alreadyImplementing =
+    input.intent === "restart" && sameState(state?.name, statuses.implementing);
+  if (!alreadyImplementing) assertState(state?.name, required, "implementation start");
   const target = await deps.fetchWorkflowState(client, settings, statuses.implementing);
+  if (alreadyImplementing)
+    return {
+      ...update(input, issue, "started", state?.name, target.name),
+      statusMutationCompleted: false,
+      statusPostconditionVerified: true,
+    };
   const current = await assertFreshState(deps, client, settings, issue, required);
   deps.assertMutationSuccess(
     await client.updateIssue(current.id, { stateId: target.id }),
@@ -201,6 +212,46 @@ export async function applyLinearImplementationFailed(
   }
 }
 
+export async function applyLinearImplementationAttention(
+  deps: LinearImplementationApplyDeps,
+  client: LinearClientLike,
+  settings: FactoryLinearSettings,
+  input: LinearImplementationAttentionInput,
+): Promise<LinearImplementationUpdatePlan> {
+  const statuses = requiredStatuses(settings);
+  await deps.validateStatusMap(client, settings);
+  const issue = await deps.fetchIssue(client, settings, input.issueRef);
+  const state = await deps.resolveOptional(issue.state);
+  await deps.assertIssueInConfiguredScope(issue, settings);
+  assertState(state?.name, statuses.implementing, "implementation attention");
+  const fresh = await assertFreshState(deps, client, settings, issue, statuses.implementing);
+  const commentMarker = `<!-- harness-factory:implementation-attention:${input.runId} -->`;
+  const commentBody = [
+    commentMarker,
+    "",
+    "Factory implementation needs human attention.",
+    "",
+    `Verdict: ${input.verdict}`,
+    `Candidate: \`${input.candidateCommit}\``,
+    `Run: \`${input.runDir}\``,
+    "",
+  ].join("\n");
+  if (!(await deps.issueHasCommentMarker(fresh, commentMarker)))
+    await deps.createComment(
+      client,
+      { issueId: fresh.id, body: commentBody },
+      "implementation attention comment",
+    );
+  return {
+    ...update(input, issue, "completed", state?.name, statuses.implementing),
+    commentMarker,
+    commentBody,
+    statusMutationCompleted: false,
+    statusPostconditionVerified: true,
+    commentPresent: true,
+  };
+}
+
 export function linearImplementationCompletedMarker(runId: string): string {
   return `<!-- harness-factory:implementation:${runId} -->`;
 }
@@ -239,10 +290,14 @@ async function assertFreshState(
 }
 
 function assertState(actual: string | undefined, expected: string, operation: string): void {
-  if (actual?.trim().toLowerCase() === expected.trim().toLowerCase()) return;
+  if (sameState(actual, expected)) return;
   throw new Error(
     `Linear issue is in ${String(actual ?? "none")}; ${operation} requires ${expected}.`,
   );
+}
+
+function sameState(actual: string | undefined, expected: string): boolean {
+  return actual?.trim().toLowerCase() === expected.trim().toLowerCase();
 }
 
 function update(
@@ -268,14 +323,14 @@ function renderLinearImplementationCompletedComment(
   return [
     linearImplementationCompletedMarker(input.runId),
     "",
-    "Factory implementation ready for review.",
+    "Factory implementation review passed.",
     "",
-    "Status: implementation-complete",
+    "Status: complete",
     `Run: \`${input.runDir}\``,
     `Review base: \`${input.reviewBase}\``,
     `Review head: \`${input.reviewHead}\``,
     `Review commit: \`${input.reviewCommitSha}\``,
-    `Next: \`harness run change-review --base ${input.reviewBase} --head ${input.reviewHead}\``,
+    "The persisted branch now points at this exact reviewed candidate.",
     "",
   ].join("\n");
 }
@@ -292,7 +347,7 @@ function renderLinearImplementationFailedComment(
     "Status: implementation-failed",
     `Run: \`${input.runDir}\``,
     `Error: ${input.error}`,
-    `Retry: inspect the run, then run \`harness factory implementation run --linear-issue ${issueIdentifier} --apply\`.`,
+    `Retry: inspect the run, then run \`harness factory implementation run --linear-issue ${issueIdentifier} --rerun --apply\`.`,
     "",
   ].join("\n");
 }
