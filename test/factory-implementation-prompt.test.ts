@@ -41,6 +41,16 @@ const directInput = {
   },
 } satisfies FactoryImplementationInput;
 
+function expectCompletionContract(prompt: string): void {
+  expect(prompt).toContain("Success means the accepted outcome is complete");
+  expect(prompt).toContain("relevant non-destructive repository validation has run");
+  expect(prompt).toContain("unavailable validation is reported");
+  expect(prompt).toContain("the final diff is reconciled against the accepted decisions");
+  expect(prompt).toContain("a material conflict invalidates the approach");
+  expect(prompt).toContain("completion requires material scope expansion");
+  expect(prompt).toContain("stop and report the conflict or exact decision needed");
+}
+
 test("planned implementation reconciles the approved plan before editing", () => {
   const prompt = renderFactoryImplementationPrompt({
     implementationInput: plannedInput,
@@ -54,8 +64,7 @@ test("planned implementation reconciles the approved plan before editing", () =>
   expect(prompt).toContain("Before editing, reconcile");
   expect(prompt).toContain("post-change ownership, removals, cutover order");
   expect(prompt).toContain("required compatibility");
-  expect(prompt).toContain("report it rather than improvise");
-  expect(prompt).toContain("Before handoff, reconcile the diff");
+  expectCompletionContract(prompt);
 });
 
 test("direct implementation keeps source context as task authority", () => {
@@ -69,8 +78,8 @@ test("direct implementation keeps source context as task authority", () => {
   expect(prompt).toContain("### Body");
   expect(prompt).toContain("Keep   the review\ncontext.");
   expect(prompt).toContain("Historical branches and superseded implementations are context only");
-  expect(prompt).toContain("report it rather than improvise");
   expect(prompt).toContain("This station does not own tracker mutation");
+  expectCompletionContract(prompt);
 });
 
 test("implementation review handoff preserves direct context without duplicating run evidence", () => {

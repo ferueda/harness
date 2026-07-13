@@ -90,7 +90,9 @@ function renderExecutionAlignment(input: FactoryImplementationInput): string {
     taskAuthority,
     "3. Verified current repository facts as the implementation baseline.",
     "Historical branches and superseded implementations are context only.",
-    "Before editing, reconcile any named post-change ownership, removals, cutover order, and required compatibility. If a material conflict invalidates the approach, report it rather than improvise. Before handoff, reconcile the diff with those same accepted decisions.",
+    "Before editing, reconcile any named post-change ownership, removals, cutover order, and required compatibility.",
+    "Success means the accepted outcome is complete, relevant non-destructive repository validation has run, unavailable validation is reported, and the final diff is reconciled against the accepted decisions.",
+    "If a material conflict invalidates the approach or completion requires material scope expansion, stop and report the conflict or exact decision needed.",
   ].join("\n");
 }
 

@@ -181,9 +181,16 @@ test("planning skills use the compact capable-executor contract", () => {
   expect(coordinatorProse).toContain(
     "Carry forward named ownership, removal, cutover, and compatibility decisions",
   );
-  expect(coordinatorProse).toContain("material conflict invalidates the approach");
   expect(coordinatorProse).toContain("Before review or handoff, reconcile the resulting diff");
   expect(coordinatorProse).toContain("Perform both checks in session");
+  expect(coordinatorProse).toContain("the accepted outcome is implemented");
+  expect(coordinatorProse).toContain("relevant non-destructive validation is complete");
+  expect(coordinatorProse).toContain("the exact unavailable checks are reported");
+  expect(coordinatorProse).toContain("the resulting diff is reconciled with accepted decisions");
+  expect(coordinatorProse).toContain(
+    "A material conflict or required scope expansion stops implementation and returns to planning or the user",
+  );
+  expect(coordinator).not.toContain("**Done when:** plan phases complete or scoped change landed.");
 });
 
 test("handoffs preserve accepted authority without duplicating inspectable sources", () => {
@@ -191,18 +198,30 @@ test("handoffs preserve accepted authority without duplicating inspectable sourc
   const prose = normalizedProse(handoff);
 
   expect(prose).toContain(
-    "subordinate to repository guidance and the original task or accepted plan",
+    "follows repository guidance and the original task or accepted plan as its authority",
   );
-  expect(prose).toContain("never becomes another source of authority");
   expect(prose).toContain("Point to inspectable sources");
   expect(prose).toContain(
     "Repeat only session-only or otherwise load-bearing constraints and decisions",
   );
-  expect(prose).toContain("important file entry points and material adaptations");
-  expect(prose).toContain(
-    "do not reproduce the plan, diff, or an exhaustive inspectable file inventory",
-  );
-  expect(handoff).toContain("### Important files");
+  expect(prose).toContain("Use when the user asks to hand off work");
+  expect(handoff).toContain("## Required core");
+  expect(handoff).toContain("**Status**");
+  expect(handoff).toContain("**Authority and goal**");
+  expect(handoff).toContain("**Current state**");
+  expect(handoff).toContain("**Verification**");
+  expect(handoff).toContain("### Authority and goal");
+  expect(handoff).toContain("### Current state");
+  expect(handoff).toContain("### Verification");
+  expect(handoff).toContain("## Add only when relevant");
+  expect(handoff).toContain("**Material adaptations**");
+  expect(handoff).toContain("**Important files**");
+  expect(handoff).toContain("**Next steps**");
+  expect(handoff).toContain("**Open items**");
+  expect(handoff).toContain("Return the handoff inline");
+  expect(handoff).not.toContain("### How it was done");
+  expect(handoff).not.toContain("### Why it was done");
+  expect(handoff).not.toContain("### What was worked on");
   expect(handoff).not.toContain("### Files referenced");
 });
 

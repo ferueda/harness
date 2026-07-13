@@ -8,7 +8,8 @@ when a change actually replaces or retires an existing path. Normal and Factory
 implementers should reconcile those accepted decisions with repository
 invariants and current code before editing; implementation review and triage
 should then verify the resulting diff without letting handoffs or reviewer
-preferences redefine the task.
+preferences redefine the task. Implementation completes only after relevant
+non-destructive validation, or an exact account of checks that could not run.
 
 Preserve the recent minimum-sufficient plan and prompt shape. This is one
 process-quality PR: concise instruction changes plus focused contract tests, not
@@ -33,27 +34,35 @@ new orchestration.
    superseded implementations as context only. Carry forward any named
    ownership/removal/cutover/compatibility decisions; return to planning or the
    user when a material conflict invalidates the approach. Before review or
-   handoff, reconcile the resulting diff with those same decisions. Make both
-   checks in-session, not a new artifact, checklist, or plan rewrite. Cover the
-   skill contract in `test/skills.test.ts`.
+   handoff, reconcile the resulting diff with those same decisions. Replace the
+   process-based completion line with a checkable bar: accepted outcome
+   implemented, relevant non-destructive validation completed or exact
+   unavailable checks reported, and no unresolved material conflict or scope
+   expansion. Make both checks in-session, not a new artifact, checklist, or
+   plan rewrite. Cover the skill contract in `test/skills.test.ts`.
 3. `skills/handoff-work/SKILL.md:Handoff Focus` — make handoffs explicitly
    subordinate to repository guidance and the original task/accepted plan.
    Point to inspectable sources and repeat only session-only or otherwise
    load-bearing constraints and decisions; do not duplicate the plan, diff, or
    an exhaustive inspectable file inventory, and do not create a second source
-   of authority. Retain important files and material adaptations needed for
-   continuation. Preserve the compact change-review handoff shape already
-   enforced by `test/skills.test.ts`; add focused assertions there for the
-   handoff-work authority, source, and non-duplication contract.
+   of authority. Keep only status, authority/goal, current state, and
+   verification as the stable core. Material adaptations, important files,
+   next steps, and open items are conditional. Preserve the compact
+   change-review handoff shape already enforced by `test/skills.test.ts`; add
+   focused assertions there for the handoff-work authority, source, and
+   non-duplication contract.
 4. `lib/prompts/factory-implementation.ts:renderFactoryImplementationPrompt`
    — mirror the normal execution alignment with a compact, mode-aware authority
    rule: repository invariants and project intent first; then the approved plan
    for planned mode or resolved source request for direct mode; then verified
    repository facts. Require the implementer to check named ownership,
    removals, cutover, and compatibility before editing and report an unresolved
-   material conflict rather than improvise. Keep existing station ownership
-   boundaries and generated review-handoff shape intact. Add planned- and
-   direct-mode assertions to `test/factory-implementation-prompt.test.ts` using
+   material conflict rather than improvise. Add one mode-independent completion
+   contract: accepted outcome complete, relevant non-destructive validation run
+   or unavailable checks reported, and final diff reconciled with accepted
+   decisions. Keep existing station ownership boundaries and generated
+   review-handoff shape intact. Add planned- and direct-mode assertions to
+   `test/factory-implementation-prompt.test.ts` using
    `renderFactoryImplementationPrompt`.
 5. `lib/prompts/implementation-review.ts:IMPLEMENTATION_REVIEW_PROMPT` and
    `skills/review-implementation/SKILL.md:Review Focus` — when the authoritative
