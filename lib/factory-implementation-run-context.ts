@@ -37,6 +37,7 @@ export function createFactoryImplementationRunContext(input: {
   workItem: FactoryWorkItem;
   factoryStore: FactoryStoreMeta;
   implementationInput: FactoryImplementationInput;
+  reviewCeiling: number;
   implementerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
   eventSink?: WorkflowEventSink;
@@ -77,7 +78,7 @@ export function createFactoryImplementationRunContext(input: {
       workspace,
       projectId: input.factoryStore.projectId,
       factoryStateRoot: resolve(input.factoryStore.factoryStateRoot),
-      reviewCeiling: 1,
+      reviewCeiling: input.reviewCeiling,
       branchRef: gitIdentity.branchRef,
       baseSha: gitIdentity.baseSha,
       input: snapshot,

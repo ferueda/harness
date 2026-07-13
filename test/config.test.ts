@@ -22,6 +22,7 @@ import {
   loadFactoryConfigSnapshot,
   resolveFactoryLinearSettings,
   resolveFactoryLinearSettingsFromSnapshot,
+  resolveFactoryImplementationSettingsFromSnapshot,
   resolveFactoryPlanningSettings,
   resolveFactoryRoleAgent,
   resolveFactoryRoleAgentFromSnapshot,
@@ -317,6 +318,23 @@ test("resolveFactoryPlanningSettings reads configured value and defaults to thre
     workspace: defaultWorkspace,
     maxReviewIterations: 3,
   });
+});
+
+test("resolveFactoryImplementationSettings snapshots configured value and defaults to three", () => {
+  const configuredWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  writeHarnessJson(configuredWorkspace, {
+    factory: { implementation: { maxReviewIterations: 5 } },
+  });
+  expect(
+    resolveFactoryImplementationSettingsFromSnapshot(
+      loadFactoryConfigSnapshot(configuredWorkspace),
+    ),
+  ).toMatchObject({ workspace: configuredWorkspace, maxReviewIterations: 5 });
+
+  const defaultWorkspace = mkdtempSync(join(tmpdir(), "harness-config-"));
+  expect(
+    resolveFactoryImplementationSettingsFromSnapshot(loadFactoryConfigSnapshot(defaultWorkspace)),
+  ).toMatchObject({ workspace: defaultWorkspace, maxReviewIterations: 3 });
 });
 
 test("resolveFactoryLinearSettings reads configured Linear tracker mapping", () => {

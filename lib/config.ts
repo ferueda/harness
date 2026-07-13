@@ -88,6 +88,10 @@ export type FactoryPlanningSettings = {
   maxReviewIterations: number;
 };
 
+export type FactoryImplementationSettings = {
+  maxReviewIterations: number;
+};
+
 export type FactoryLinearSettings = FactoryLinearConfig;
 export type FactoryStoreSettings = FactoryStoreConfig;
 
@@ -233,6 +237,15 @@ export function resolveFactoryPlanningSettingsFromSnapshot(
   return {
     workspace: snapshot.workspace,
     maxReviewIterations: snapshot.config.factory?.planning?.maxReviewIterations ?? 3,
+  };
+}
+
+export function resolveFactoryImplementationSettingsFromSnapshot(
+  snapshot: FactoryConfigSnapshot,
+): FactoryImplementationSettings & { workspace: string } {
+  return {
+    workspace: snapshot.workspace,
+    maxReviewIterations: snapshot.config.factory?.implementation?.maxReviewIterations ?? 3,
   };
 }
 

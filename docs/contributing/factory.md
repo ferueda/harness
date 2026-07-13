@@ -12,8 +12,9 @@ Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
 prints the next reaction, then exits. Planning is shipped as manually stepped
 candidate, review, and publication commands. Implementation is shipped as one
-candidate action followed by one full review action. The CLI never invokes the next handler. An already-waiting state
-invokes no handler.
+candidate action followed by a full review action and, when review requires it,
+later manual revision attempts. The CLI never invokes the next handler. An
+already-waiting state invokes no handler.
 
 Run only one Factory phase command at a time for a work item. Concurrent phase
 commands for the same work item are unsupported and may fail.
@@ -391,14 +392,17 @@ index do not move.
 
 Run the exact printed command again. The review invocation verifies the
 candidate evidence and live tree, then runs the fixed full implementation and
-quality reviewers once with review ceiling 1 and a positive timeout. Reviewers
-are read-only. Pass CAS-advances the persisted branch from the base to the
-exact reviewed candidate and aligns the already-matching real index, leaving a
-clean worktree. Every non-pass verdict stops for a human and never advances the
-branch. There is no separate accept command or standalone post-candidate
-`harness run change-review` step. Use `--rerun` only from human/failed state;
-it starts a fresh phase. Same-session review-driven revisions remain future
-PR 4 work.
+quality reviewers once with the phase's persisted
+`factory.implementation.maxReviewIterations` ceiling (default 3). Reviewers
+are read-only and review the cumulative original-base-to-candidate diff. A
+`needs_changes` verdict below the ceiling prints the next producer command and
+exits. Its later invocation reopens the phase, verifies the complete digested
+blockers and prior candidate, resumes the effective implementer session, and
+publishes a new tree/ref still parented to the original base. Pass CAS-advances
+only the exact reviewed candidate and leaves a clean worktree. Blocked or
+exhausted review waits for a human; no non-pass advances the branch. There is no
+separate accept command or standalone post-candidate `harness run change-review`
+step. Use `--rerun` only from human/failed state; it starts a fresh phase.
 
 Linear starts and reruns require `--apply`. A failed start projection repairs
 the same durable request on the next explicit apply without provider work.

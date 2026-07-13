@@ -3,10 +3,11 @@
 ## Status
 
 - **Priority**: P1
-- **Effort**: M remaining; two bounded PRs
+- **Effort**: S remaining; PR 4 completion and review
 - **Risk**: HIGH
 - **State**: in progress
-- **Progress**: PR 1 shipped in PR #127; PR 2 shipped in PR #129; PR 3 is next
+- **Progress**: PR 1 shipped in PR #127; PR 2 shipped in PR #129; PR 3 shipped
+  in PR #135; PR 4 is current executor scope
 - **Prerequisite**: minimum-sufficient Factory planning shipped in PRs #123
   and #125. PR #130 is the planning, implementation, and review authority
   baseline for the remaining work.

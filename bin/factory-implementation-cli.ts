@@ -4,6 +4,7 @@ import { formatFactoryActionOutput, withManualCommand } from "./factory-action-o
 import type { Agent, AgentProviderOptions } from "../lib/agents.ts";
 import {
   loadFactoryConfigSnapshot,
+  resolveFactoryImplementationSettingsFromSnapshot,
   resolveFactoryLinearSettingsFromSnapshot,
   resolveFactoryRoleAgentFromSnapshot,
   resolveHarnessWorkspace,
@@ -87,6 +88,7 @@ async function runImplementationCommand(options: Options): Promise<void> {
   const linearSettings = options.linearIssue
     ? resolveFactoryLinearSettingsFromSnapshot(snapshot)
     : undefined;
+  const implementationSettings = resolveFactoryImplementationSettingsFromSnapshot(snapshot);
   const store = resolveFactoryStore({
     workspace,
     factoryStoreRoot: options.factoryStoreRoot,
@@ -132,6 +134,7 @@ async function runImplementationCommand(options: Options): Promise<void> {
         station: "implementation",
         role: "reviewer",
       }),
+      reviewCeiling: implementationSettings.maxReviewIterations,
       applyAdapter: adapter,
       linearStatuses: linearSettings?.statuses,
       issueRef: options.linearIssue,
@@ -160,6 +163,7 @@ export async function runOneFactoryImplementationAction(input: {
   explicitMaxRuntimeMs?: number;
   implementerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
+  reviewCeiling: number;
   applyAdapter?: LinearFactoryAdapter;
   linearStatuses?: {
     readyToImplement: string;
@@ -227,6 +231,7 @@ export async function runOneFactoryImplementationAction(input: {
       workItem: input.workItem,
       factoryStore: input.factoryStore,
       implementationInput,
+      reviewCeiling: input.reviewCeiling,
       implementerRole: input.implementerRole,
       reviewerRole: input.reviewerRole,
       eventSink: input.eventSink,
@@ -243,7 +248,7 @@ export async function runOneFactoryImplementationAction(input: {
       data: {
         expectedPredecessor: state?.lastEventId ?? null,
         inputRefs: implementationInputRefs(identity.input),
-        reviewCeiling: 1,
+        reviewCeiling: identity.reviewCeiling,
         intent: input.rerun ? "restart" : "start",
       },
     };
@@ -266,6 +271,26 @@ export async function runOneFactoryImplementationAction(input: {
     eventSink: input.eventSink,
   });
   let linearApplied = false;
+  // The persisted review authorizes this revision; repair its projection before provider work.
+  if (
+    input.applyAdapter &&
+    reaction.handler === "produceImplementationCandidate" &&
+    state?.phase === "implementation" &&
+    state.status === "needs-revision" &&
+    latest?.type === "implementation.review.completed" &&
+    latest.data.verdict === "needs_changes" &&
+    latest.data.attempt + 1 === reaction.attempt &&
+    reaction.causationEventId === latest.id
+  ) {
+    await input.applyAdapter.applyImplementationAttention({
+      issueRef: input.issueRef!,
+      runId: phaseRunId,
+      runDir: ctx.runDir,
+      verdict: latest.data.verdict,
+      candidateCommit: readReviewCandidateCommit(events, latest),
+    });
+    linearApplied = true;
+  }
   if (input.linearIssue && pendingImplementationStart(state, latest)) {
     if (!input.applyAdapter)
       throw new Error("Pending Linear implementation start requires --apply");
@@ -506,6 +531,22 @@ function readCandidateCommit(events: FactoryLifecycleEvent[], phaseRunId: string
   );
   if (!candidate || candidate.type !== "implementation.candidate.produced")
     throw new Error("Implementation review has no candidate commit");
+  return candidate.data.commit;
+}
+
+function readReviewCandidateCommit(
+  events: FactoryLifecycleEvent[],
+  review: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>,
+): string {
+  const candidate = events.find((event) => event.id === review.data.causationEventId);
+  if (
+    !candidate ||
+    candidate.type !== "implementation.candidate.produced" ||
+    candidate.phaseRunId !== review.phaseRunId ||
+    candidate.workItemKey !== review.workItemKey ||
+    candidate.data.attempt !== review.data.attempt
+  )
+    throw new Error("Implementation review has no matching candidate commit");
   return candidate.data.commit;
 }
 

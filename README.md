@@ -113,11 +113,16 @@ harness factory implementation run --workspace /path/to/repo --item-file work-it
 
 Implementation starts only from accepted direct input or an approved plan
 committed at the attached branch HEAD. The first invocation creates one
-immutable candidate commit without moving the branch; the second runs the full
-implementation and quality review once. Pass advances the persisted branch to
-that exact commit and leaves the index/worktree clean. Non-pass waits for a
-human; `--rerun` starts a fresh phase after human/failed state.
-The CLI prints but never automatically executes a follow-up action.
+immutable candidate commit without moving the branch; the next invocation runs
+the full implementation and quality review once. A `needs_changes` verdict
+below the persisted `factory.implementation.maxReviewIterations` ceiling
+(default 3) prints, but does not run, a same-session revision command. That
+revision keeps the original base, consumes every digested blocking finding, and
+publishes a distinct immutable attempt ref. Pass advances the persisted branch
+to that exact latest candidate and leaves the index/worktree clean.
+Blocked/exhausted verdicts wait for a human; `--rerun` starts a fresh phase
+after human/failed state. The CLI prints but never automatically executes a
+follow-up action.
 
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear list and fetch use `LINEAR_API_KEY` and
@@ -178,6 +183,7 @@ ownership and mutability, read
       }
     },
     "implementation": {
+      "maxReviewIterations": 3,
       "roles": {
         "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
