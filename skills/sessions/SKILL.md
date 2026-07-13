@@ -59,6 +59,9 @@ Session index cache defaults to `~/.sessions/index` (migrated automatically from
 
 1. Refresh the provider index before analysis. Use the provider you will query:
    `sessions cursor reindex` or `sessions codex reindex`.
+   Codex reindex may shrink duplicate evidence rows when rollout message
+   representations are corrected; this is a fidelity correction and needs no
+   migration.
 2. Start narrow. Choose `--days`, `--workspace`, exact `--session-id`, fuzzy
    `--query`, or repeatable `--turn-query` before scanning transcript evidence.
 3. Use `--turn-query` for user-turn text. Starter terms by goal:

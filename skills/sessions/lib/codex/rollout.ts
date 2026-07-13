@@ -17,6 +17,11 @@ type RolloutPayload = {
   content?: unknown;
 };
 
+type ParsedRolloutTurn = {
+  turn: Turn;
+  messageSource?: "event_msg" | "response_item";
+};
+
 export type ParsedCodexRollout = {
   turns: Turn[];
   firstUserQuery?: string;
@@ -34,32 +39,44 @@ export function parseCodexRolloutFile(path: string): ParsedCodexRollout {
 }
 
 export function parseCodexRolloutText(text: string): ParsedCodexRollout {
-  const turns: Turn[] = [];
+  const parsedTurns: ParsedRolloutTurn[] = [];
   let firstUserQuery: string | undefined;
 
   for (const [index, line] of text.split(/\r?\n/).entries()) {
     if (!line.trim()) continue;
     const event = parseLine(line, index + 1);
-    const turn = turnForEvent(event);
-    if (!turn) continue;
-    if (turn.role === "user" && turn.text) firstUserQuery ??= turn.text;
-    turns.push(turn);
+    const parsedTurn = turnForEvent(event);
+    if (!parsedTurn) continue;
+
+    const previousIndex = parsedTurns.length - 1;
+    const previous = parsedTurns[previousIndex];
+    if (previous && isDuplicateMessage(previous, parsedTurn)) {
+      if (parsedTurn.messageSource === "event_msg") {
+        parsedTurns[previousIndex] = parsedTurn;
+      }
+      continue;
+    }
+
+    if (parsedTurn.turn.role === "user" && parsedTurn.turn.text) {
+      firstUserQuery ??= parsedTurn.turn.text;
+    }
+    parsedTurns.push(parsedTurn);
   }
 
-  return { turns, firstUserQuery };
+  return { turns: parsedTurns.map(({ turn }) => turn), firstUserQuery };
 }
 
-function turnForEvent(event: RolloutEvent): Turn | undefined {
+function turnForEvent(event: RolloutEvent): ParsedRolloutTurn | undefined {
   const payload = objectPayload(event.payload);
   if (!payload) return undefined;
 
   if (event.type === "event_msg") {
-    if (payload.type === "user_message") return messageTurn("user", payload.message);
-    if (payload.type === "agent_message") return messageTurn("assistant", payload.message);
+    if (payload.type === "user_message") return eventMessageTurn("user", payload.message);
+    if (payload.type === "agent_message") return eventMessageTurn("assistant", payload.message);
     if (payload.type === "task_started")
-      return { role: "system", text: "Task started", rawText: "Task started" };
+      return { turn: { role: "system", text: "Task started", rawText: "Task started" } };
     if (payload.type === "task_complete")
-      return { role: "system", text: "Task complete", rawText: "Task complete" };
+      return { turn: { role: "system", text: "Task complete", rawText: "Task complete" } };
     return undefined;
   }
 
@@ -68,27 +85,43 @@ function turnForEvent(event: RolloutEvent): Turn | undefined {
     const name = typeof payload.name === "string" ? payload.name : "unknown_tool";
     const args = typeof payload.arguments === "string" ? payload.arguments : "";
     const text = args ? `${name} ${args}` : name;
-    return { role: "tool", text, rawText: text };
+    return { turn: { role: "tool", text, rawText: text } };
   }
   if (payload.type === "function_call_output") {
     const output = typeof payload.output === "string" ? payload.output : "";
     if (!output) return undefined;
-    return { role: "tool", text: output, rawText: output };
+    return { turn: { role: "tool", text: output, rawText: output } };
   }
   if (payload.type === "message") {
     const role = normalizeRole(payload.role);
     const text = extractContentText(payload.content);
     if (!text || role === "system") return undefined;
-    return { role, text, rawText: text };
+    return {
+      turn: { role, text, rawText: text },
+      ...(role === "user" || role === "assistant" ? { messageSource: "response_item" } : {}),
+    };
   }
   return undefined;
 }
 
-function messageTurn(role: Turn["role"], value: unknown): Turn | undefined {
+function eventMessageTurn(
+  role: "user" | "assistant",
+  value: unknown,
+): ParsedRolloutTurn | undefined {
   if (typeof value !== "string") return undefined;
   const text = value.trim();
   if (!text) return undefined;
-  return { role, text, rawText: text };
+  return { turn: { role, text, rawText: text }, messageSource: "event_msg" };
+}
+
+function isDuplicateMessage(previous: ParsedRolloutTurn, current: ParsedRolloutTurn): boolean {
+  return (
+    previous.messageSource !== undefined &&
+    current.messageSource !== undefined &&
+    previous.messageSource !== current.messageSource &&
+    previous.turn.role === current.turn.role &&
+    previous.turn.text === current.turn.text
+  );
 }
 
 function parseLine(line: string, lineNumber: number): RolloutEvent {
