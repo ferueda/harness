@@ -2,7 +2,7 @@
 
 ## Active queue
 
-- [FER-75 — Inspect durable Factory work items without advancing them](FER-75.md) — approved; awaiting implementation. [Linear](https://linear.app/ferueda/issue/FER-75/add-read-only-factory-work-item-inspection)
+No approved implementation plans are currently active.
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
@@ -58,6 +58,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Planning/implementation/review authority      | [#130](https://github.com/ferueda/harness/pull/130)                                                      |
 | —     | Factory implementation candidate and review   | [#135](https://github.com/ferueda/harness/pull/135)                                                      |
 | —     | Factory implementation revisions              | [#143](https://github.com/ferueda/harness/pull/143)                                                      |
+| —     | Read-only Factory work-item inspection        | [#146](https://github.com/ferueda/harness/pull/146)                                                      |
 
 ---
 
