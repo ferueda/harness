@@ -104,7 +104,19 @@ project's `factory/` directory. This default is intentionally outside the
 documented harness checkout at `~/.harness`. Triage routes are
 `ready-to-implement`, `ready-to-plan`, `needs-info`, or `wait-to-implement`.
 Planning candidate/review actions are manually stepped with
-`harness factory planning run`; implementation actions are not shipped yet.
+`harness factory planning run`. Implementation is also manually stepped:
+
+```bash
+harness factory implementation run --workspace /path/to/repo --item-file work-item.json
+# Run the exact printed command again to review the immutable candidate.
+```
+
+Implementation starts only from accepted direct input or an approved plan
+committed at the attached branch HEAD. The first invocation creates one
+immutable candidate commit without moving the branch; the second runs the full
+implementation and quality review once. Pass advances the persisted branch to
+that exact commit and leaves the index/worktree clean. Non-pass waits for a
+human; `--rerun` starts a fresh phase after human/failed state.
 The CLI prints but never automatically executes a follow-up action.
 
 Factory station agent and model selection comes from `harness.json` role config
@@ -163,6 +175,12 @@ ownership and mutability, read
           "agent": "cursor",
           "model": "grok-4.5"
         }
+      }
+    },
+    "implementation": {
+      "roles": {
+        "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
+        "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
       }
     }
   }
