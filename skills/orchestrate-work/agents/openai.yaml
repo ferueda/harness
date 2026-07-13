@@ -1,0 +1,6 @@
+interface:
+  display_name: "Orchestrate Work"
+  short_description: "Delegate Codex work with decision checkpoints"
+  default_prompt: "Use $orchestrate-work to delegate this scoped task to an isolated Codex executor and steer it through decision checkpoints."
+policy:
+  allow_implicit_invocation: false

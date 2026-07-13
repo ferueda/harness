@@ -253,6 +253,26 @@ test("handoffs preserve accepted authority without duplicating inspectable sourc
   expect(handoff).not.toContain("### Files referenced");
 });
 
+test("orchestrated work uses verified callback ids and decision checkpoints", () => {
+  const skill = readFileSync(join(REPO_ROOT, "skills/orchestrate-work/SKILL.md"), "utf8");
+  const metadata = readFileSync(
+    join(REPO_ROOT, "skills/orchestrate-work/agents/openai.yaml"),
+    "utf8",
+  );
+  const prose = normalizedProse(skill);
+
+  expect(skill).toContain("name: orchestrate-work");
+  expect(skill).toContain("<source_thread_id>");
+  expect(skill).toContain("codex_app__list_projects");
+  expect(skill).toContain("codex_app__create_thread");
+  expect(skill).toContain("codex_app__send_message_to_thread");
+  expect(prose).toContain("Report and proceed when no material conflict exists");
+  expect(prose).toContain("pause when findings need triage");
+  expect(skill).toContain("`Implement`, `Adapt`, or `Decline`");
+  expect(prose).toContain("Avoid concurrent edits in that worktree");
+  expect(metadata).toContain("allow_implicit_invocation: false");
+});
+
 test("architect prefers the smallest intent-aligned design", () => {
   const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
   const prose = normalizedProse(architect);
