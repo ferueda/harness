@@ -41,18 +41,23 @@ export function parseCodexRolloutFile(path: string): ParsedCodexRollout {
 export function parseCodexRolloutText(text: string): ParsedCodexRollout {
   const parsedTurns: ParsedRolloutTurn[] = [];
   let firstUserQuery: string | undefined;
+  let previousCandidate: ParsedRolloutTurn | undefined;
 
   for (const [index, line] of text.split(/\r?\n/).entries()) {
     if (!line.trim()) continue;
     const event = parseLine(line, index + 1);
     const parsedTurn = turnForEvent(event);
-    if (!parsedTurn) continue;
+    if (!parsedTurn) {
+      // Omitted rollout records still break source-line adjacency.
+      previousCandidate = undefined;
+      continue;
+    }
 
     const previousIndex = parsedTurns.length - 1;
-    const previous = parsedTurns[previousIndex];
-    if (previous && isDuplicateMessage(previous, parsedTurn)) {
+    if (previousCandidate && isDuplicateMessage(previousCandidate, parsedTurn)) {
       if (parsedTurn.messageSource === "event_msg") {
         parsedTurns[previousIndex] = parsedTurn;
+        previousCandidate = parsedTurn;
       }
       continue;
     }
@@ -61,6 +66,7 @@ export function parseCodexRolloutText(text: string): ParsedCodexRollout {
       firstUserQuery ??= parsedTurn.turn.text;
     }
     parsedTurns.push(parsedTurn);
+    previousCandidate = parsedTurn;
   }
 
   return { turns: parsedTurns.map(({ turn }) => turn), firstUserQuery };

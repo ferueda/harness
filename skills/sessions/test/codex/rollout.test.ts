@@ -49,7 +49,7 @@ test("parseCodexRolloutText preserves source-only and same-source messages", () 
   ]);
 });
 
-test("parseCodexRolloutText keeps tool and system interruptions with rollout provenance", () => {
+test("parseCodexRolloutText keeps retained and skipped interruptions with rollout provenance", () => {
   const parsed = parseCodexRolloutText(`
 {"type":"event_msg","payload":{"type":"user_message","message":"Keep the tool boundary."}}
 {"type":"response_item","payload":{"type":"function_call","name":"read_file","arguments":"{\\"path\\":\\"README.md\\"}"}}
@@ -57,6 +57,12 @@ test("parseCodexRolloutText keeps tool and system interruptions with rollout pro
 {"type":"event_msg","payload":{"type":"agent_message","message":"Keep the system boundary."}}
 {"type":"event_msg","payload":{"type":"task_started"}}
 {"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Keep the system boundary."}]}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Keep the skipped boundary."}}
+{"type":"unknown","payload":{"type":"ignored"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Keep the skipped boundary."}]}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Keep the skipped system boundary."}}
+{"type":"response_item","payload":{"type":"message","role":"system","content":[{"type":"input_text","text":"System-only context."}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Keep the skipped system boundary."}]}}
 `);
 
   expect(parsed.turns).toEqual([
@@ -77,6 +83,18 @@ test("parseCodexRolloutText keeps tool and system interruptions with rollout pro
       role: "assistant",
       text: "Keep the system boundary.",
       rawText: "Keep the system boundary.",
+    },
+    { role: "user", text: "Keep the skipped boundary.", rawText: "Keep the skipped boundary." },
+    { role: "user", text: "Keep the skipped boundary.", rawText: "Keep the skipped boundary." },
+    {
+      role: "assistant",
+      text: "Keep the skipped system boundary.",
+      rawText: "Keep the skipped system boundary.",
+    },
+    {
+      role: "assistant",
+      text: "Keep the skipped system boundary.",
+      rawText: "Keep the skipped system boundary.",
     },
   ]);
 });
