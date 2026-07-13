@@ -33,7 +33,3 @@ export function formatFactoryActionOutput(input: {
     linearApplied: input.linearApplied,
   };
 }
-
-export function withManualCommand(reaction: FactoryReaction, command: string): FactoryReaction {
-  return reaction.kind === "invoke" ? { ...reaction, command } : reaction;
-}

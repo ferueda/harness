@@ -41,16 +41,25 @@ export type AppendFactoryActionEventInput = {
   lockOptions?: FactoryLockRuntimeOptions;
 };
 
+export type ReadFactoryActionEventsOptions = {
+  mode?: "locked" | "inspection";
+};
+
 export function actionLifecycleEventPath(root: string, key: string): string {
   return join(resolve(root), "events", `${workItemKeyToFilename(key)}.jsonl`);
 }
 export function actionLifecycleStatePath(root: string, key: string): string {
   return join(resolve(root), "state", `${workItemKeyToFilename(key)}.json`);
 }
-export function readFactoryActionEvents(root: string, key: string): FactoryLifecycleEvent[] {
+export function readFactoryActionEvents(
+  root: string,
+  key: string,
+  options: ReadFactoryActionEventsOptions = {},
+): FactoryLifecycleEvent[] {
   const resolvedRoot = resolve(root);
   assertFactoryStoreFormat(resolvedRoot);
   if (!existsSync(actionLifecycleEventPath(resolvedRoot, key))) return [];
+  if (options.mode === "inspection") return readFactoryActionEventsUnlocked(resolvedRoot, key);
   return withFactoryWorkItemLock(
     {
       factoryStateRoot: resolvedRoot,

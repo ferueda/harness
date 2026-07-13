@@ -656,6 +656,19 @@ describe("Factory store and artifact boundaries", () => {
     expect(readFactoryActionEvents(store, "item-1")).toEqual([]);
     expect(existsSync(join(store, "store-format.json"))).toBe(false);
   });
+  test("inspection event access does not acquire a lock for existing history", () => {
+    const store = root();
+    appendFactoryActionEvent({
+      factoryStateRoot: store,
+      expectedLastEventId: null,
+      event: imported(),
+    });
+    const locks = join(store, "locks");
+    const before = readdirSync(locks);
+
+    expect(readFactoryActionEvents(store, "item-1", { mode: "inspection" })).toHaveLength(1);
+    expect(readdirSync(locks)).toEqual(before);
+  });
   test("rejects absolute, traversal, and changed artifact content", () => {
     expect(() =>
       FactoryArtifactRefSchema.parse({

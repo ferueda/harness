@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
-import { formatFactoryActionOutput, withManualCommand } from "./factory-action-output.ts";
+import { formatFactoryActionOutput } from "./factory-action-output.ts";
+import { decorateFactoryReaction } from "./factory-manual-command.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
 import { addFactoryPlanningStationCommand } from "./factory-planning-cli.ts";
 import { addFactoryImplementationStationCommand } from "./factory-implementation-cli.ts";
@@ -49,9 +50,11 @@ import {
   deriveFactoryWorkItemKey,
   type FactoryLifecycleWarning,
 } from "../lib/factory-lifecycle.ts";
+import { inspectFactoryWorkItem } from "../lib/factory-inspect.ts";
 import {
   createLinearFactoryAdapter,
   parseLinearFactoryStatusKeys,
+  parseLinearIssueIdentifier,
   type LinearFactoryAdapter,
   type LinearTriageUpdatePlan,
 } from "../lib/factory-linear-adapter.ts";
@@ -65,6 +68,7 @@ import {
   assertFactoryItemFileExists,
   createFactoryRunContext,
   openFactoryRunContext,
+  readFactoryWorkItemFile,
   type FactoryRunContext,
   type FactoryRunMeta,
 } from "../lib/factory-run-context.ts";
@@ -81,6 +85,14 @@ import { run as runFactoryTriage, triageWorkItem } from "../workflows/factory-tr
 type FactoryStatusOptions = {
   workspace?: string;
   inboxDir?: string;
+  factoryStoreRoot?: string;
+  factoryStoreProjectId?: string;
+};
+
+type FactoryInspectOptions = {
+  workspace?: string;
+  itemFile?: string;
+  linearIssue?: string;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
 };
@@ -143,10 +155,70 @@ function factoryStoreForRun(
 export function addFactoryCommands(parent: Command, options: FactoryCommandOptions): void {
   const factory = parent.command("factory").description("Manage local factory intake");
   addFactoryStatusCommand(factory);
+  addFactoryInspectCommand(factory);
   addFactoryLinearCommand(factory);
   addFactoryTriageStationCommand(factory, options);
   addFactoryPlanningStationCommand(factory, options.defaultMaxRuntimeMs);
   addFactoryImplementationStationCommand(factory, options.positiveNumber);
+}
+
+function addFactoryInspectCommand(parent: Command): void {
+  parent
+    .command("inspect")
+    .description("Inspect one durable Factory work item without advancing it")
+    .option("--workspace <path>", "target repo")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "canonical Linear issue identifier, e.g. TEAM-123")
+    .option("--factory-store-root <path>", "durable factory store root")
+    .option("--factory-store-project-id <id>", "durable factory store project id")
+    .action((options: FactoryInspectOptions) => {
+      const result = inspectFactoryCommand(options);
+      console.log(JSON.stringify(result, null, 2));
+    });
+}
+
+function inspectFactoryCommand(options: FactoryInspectOptions) {
+  validateFactoryWorkItemInput({ itemFile: options.itemFile, linearIssue: options.linearIssue });
+  const workspace = resolveHarnessWorkspace(options.workspace, process.cwd());
+  const workItemKey = options.itemFile
+    ? deriveFactoryWorkItemKey(
+        readFactoryWorkItemFile(assertFactoryItemFileExists(workspace, options.itemFile)),
+      )
+    : inspectLinearWorkItemKey(options.linearIssue!);
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: options.factoryStoreRoot,
+    factoryStoreProjectId: options.factoryStoreProjectId,
+    env: process.env,
+  });
+  const inspection = inspectFactoryWorkItem({
+    workItemKey,
+    workspace,
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStoreProjectRoot: store.projectRoot,
+  });
+  return {
+    ...inspection,
+    reaction: decorateFactoryReaction(inspection.reaction, inspection.state, {
+      workspace,
+      ...(options.itemFile ? { itemFile: options.itemFile } : {}),
+      ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
+      ...(options.factoryStoreRoot ? { factoryStoreRoot: options.factoryStoreRoot } : {}),
+      ...(options.factoryStoreProjectId
+        ? { factoryStoreProjectId: options.factoryStoreProjectId }
+        : {}),
+    }),
+  };
+}
+
+function inspectLinearWorkItemKey(issue: string): string {
+  const parsed = parseLinearIssueIdentifier(issue);
+  if (!parsed) {
+    throw new Error(
+      `--linear-issue must be a canonical issue identifier such as TEAM-123; factory inspect is store-only and will not fetch opaque Linear identifiers.`,
+    );
+  }
+  return `linear:${parsed.teamKey}-${parsed.number}`;
 }
 
 function positiveInteger(value: string): number {
@@ -463,6 +535,8 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         factoryStateRoot: store.factoryStateRoot,
         workspace,
         projectId: store.projectId,
+        factoryStoreRoot: options.factoryStoreRoot,
+        factoryStoreProjectId: options.factoryStoreProjectId,
         workItem: input.workItem,
         rerun: options.rerun,
         dryRun: options.dryRun,
@@ -496,11 +570,10 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         },
       });
       if ("waiting" in result) {
-        const next = withManualCommand(result.next, factoryTriageManualCommand(options, workspace));
         const output = formatFactoryActionOutput({
           phase: "triage",
           ...(result.phaseRunId ? { phaseRunId: result.phaseRunId } : {}),
-          next,
+          next: result.next,
           linearApplied: input.linearApplied ?? false,
         });
         console.log(JSON.stringify(output, null, 2));
@@ -508,12 +581,11 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         return;
       }
       const { meta, startedUpdate, terminalUpdate, terminalApplyError } = result;
-      const next = withManualCommand(result.next, factoryTriageManualCommand(options, workspace));
       const actionOutput = formatFactoryActionOutput({
         phase: "triage",
         phaseRunId: result.phaseRunId,
         ...(meta.status === "dry_run" ? {} : { action: result.action }),
-        next,
+        next: result.next,
         linearApplied: options.apply ? !terminalApplyError : (input.linearApplied ?? false),
       });
       console.log(
@@ -539,29 +611,12 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
     });
 }
 
-function factoryTriageManualCommand(
-  options: FactoryTriageStationOptions,
-  workspace: string,
-): string {
-  const args = ["harness", "factory", "triage", "--workspace", workspace];
-  if (options.linearIssue) args.push("--linear-issue", options.linearIssue);
-  else if (options.itemFile) args.push("--item-file", options.itemFile);
-  if (options.apply) args.push("--apply");
-  if (options.rerun) args.push("--rerun");
-  if (options.factoryStoreRoot) args.push("--factory-store-root", options.factoryStoreRoot);
-  if (options.factoryStoreProjectId)
-    args.push("--factory-store-project-id", options.factoryStoreProjectId);
-  return args.map(shellArg).join(" ");
-}
-
-function shellArg(value: string): string {
-  return /^[A-Za-z0-9_./:@=-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
 export async function runFactoryTriageWithLinearApply(input: {
   factoryStateRoot: string;
   workspace?: string;
   projectId?: string;
+  factoryStoreRoot?: string;
+  factoryStoreProjectId?: string;
   workItem: FactoryWorkItem;
   rerun: boolean;
   dryRun?: boolean;
@@ -596,6 +651,7 @@ export async function runFactoryTriageWithLinearApply(input: {
     : readFactoryActionEvents(input.factoryStateRoot, deriveFactoryWorkItemKey(input.workItem));
   const existingLatest = existingEvents.at(-1);
   const existingState = reduceFactoryLifecycleEvents(existingEvents);
+  let currentState = existingState;
   const existingReaction =
     existingLatest && existingState
       ? decideNextFactoryAction(existingState, existingLatest)
@@ -619,7 +675,11 @@ export async function runFactoryTriageWithLinearApply(input: {
     return {
       waiting: true,
       ...(existingLatest?.phaseRunId ? { phaseRunId: existingLatest.phaseRunId } : {}),
-      next: existingReaction,
+      next: decorateFactoryReaction(
+        existingReaction,
+        existingState,
+        triageCommandProvenance(input),
+      ) as Extract<FactoryReaction, { kind: "wait" }>,
     };
   }
   const activeTriage =
@@ -739,6 +799,7 @@ export async function runFactoryTriageWithLinearApply(input: {
         throw new Error("New Factory triage request did not produce an action reaction");
       }
       reaction = requestedReaction;
+      currentState = requested.state;
     }
     if (!ctx.dryRun && (!reaction || reaction.kind !== "invoke")) {
       throw new Error("Factory triage has no invokable action");
@@ -798,6 +859,7 @@ export async function runFactoryTriageWithLinearApply(input: {
         meta = metaValue;
       }
       terminalAction = appended.event;
+      currentState = appended.state;
       next = decideNextFactoryAction(appended.state, appended.event);
     }
     let completedTriage: FactoryTriageOutput | undefined;
@@ -846,7 +908,11 @@ export async function runFactoryTriageWithLinearApply(input: {
         attempt: 1,
         eventId: terminalAction?.id ?? `triage.completed:${ctx.runId}`,
       },
-      next,
+      next: decorateFactoryReaction(
+        next,
+        currentState,
+        triageCommandProvenance(input, ctx.workspace),
+      )!,
       ...(startedUpdate ? { startedUpdate } : {}),
       ...(terminalUpdate ? { terminalUpdate } : {}),
       ...(terminalApplyError ? { terminalApplyError } : {}),
@@ -863,6 +929,9 @@ async function recoverTriageActionResult(input: {
   projectId?: string;
   workItem: FactoryWorkItem;
   issueRef: string;
+  itemFile?: string;
+  factoryStoreRoot?: string;
+  factoryStoreProjectId?: string;
   applyAdapter?: LinearFactoryAdapter;
 }): Promise<
   | {
@@ -955,12 +1024,36 @@ async function recoverTriageActionResult(input: {
         attempt: 1,
         eventId: latest.id,
       },
-      next: decideNextFactoryAction(state, latest),
+      next: decorateFactoryReaction(
+        decideNextFactoryAction(state, latest),
+        state,
+        triageCommandProvenance(input),
+      )!,
       ...(terminalUpdate ? { terminalUpdate } : {}),
       ...(terminalApplyError ? { terminalApplyError } : {}),
     };
   }
   return undefined;
+}
+
+function triageCommandProvenance(
+  input: {
+    workspace?: string;
+    itemFile?: string;
+    issueRef?: string;
+    factoryStoreRoot?: string;
+    factoryStoreProjectId?: string;
+  },
+  workspace = input.workspace,
+) {
+  if (!workspace) return undefined;
+  return {
+    workspace,
+    ...(input.itemFile ? { itemFile: input.itemFile } : {}),
+    ...(input.issueRef ? { linearIssue: input.issueRef } : {}),
+    ...(input.factoryStoreRoot ? { factoryStoreRoot: input.factoryStoreRoot } : {}),
+    ...(input.factoryStoreProjectId ? { factoryStoreProjectId: input.factoryStoreProjectId } : {}),
+  };
 }
 
 function validateFactoryApplyOptions(options: {

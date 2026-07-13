@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { formatFactoryActionOutput, withManualCommand } from "../bin/factory-action-output.ts";
+import { formatFactoryActionOutput } from "../bin/factory-action-output.ts";
+import { decorateFactoryReaction } from "../bin/factory-manual-command.ts";
 
 describe("Factory manual action output", () => {
   test.each([
@@ -20,7 +21,7 @@ describe("Factory manual action output", () => {
   });
 
   test("adds a secret-free exact command to invoke reactions", () => {
-    const reaction = withManualCommand(
+    const reaction = decorateFactoryReaction(
       {
         kind: "invoke",
         phase: "triage",
@@ -30,12 +31,13 @@ describe("Factory manual action output", () => {
         scheduling: "retry",
         reason: "retryable-failure",
       },
-      "harness factory triage --linear-issue ENG-1 --apply",
+      null,
+      { workspace: "/repo", linearIssue: "ENG-1" },
     );
     expect(reaction).toMatchObject({
       kind: "invoke",
       scheduling: "retry",
-      command: "harness factory triage --linear-issue ENG-1 --apply",
+      command: "harness factory triage --workspace /repo --linear-issue ENG-1 --apply",
     });
     expect(JSON.stringify(reaction)).not.toMatch(/API_KEY|token|secret/i);
   });

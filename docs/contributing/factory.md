@@ -37,6 +37,7 @@ replacing its state or transition logic.
 
 ```bash
 harness factory status --workspace /path/to/repo
+harness factory inspect --workspace /path/to/repo --linear-issue TEAM-123
 harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
@@ -47,6 +48,52 @@ harness factory implementation run --workspace /path/to/repo --item-file work-it
 
 There is no batch dispatch command. Run an explicit station for an explicit
 work item while this surface is still local-first.
+
+## Durable work-item inspection
+
+Use `harness factory inspect` to reconstruct one work item without advancing
+it:
+
+```bash
+harness factory inspect --workspace /path/to/repo --linear-issue TEAM-123
+harness factory inspect --workspace /path/to/repo --item-file work-item.json
+```
+
+Exactly one selector is required. Item files are parsed only to derive the
+durable key; their mutable fields never replace lifecycle truth. Linear input
+accepts human identifiers such as `TEAM-123`, normalizes the durable key, and
+performs no Linear request or API-key/configured-tracker lookup. Opaque Linear
+UUIDs are rejected with a store-only explanation.
+
+The output is one deterministic JSON object in this order:
+
+```json
+{
+  "workItemKey": "linear:TEAM-123",
+  "artifactRoots": {
+    "repository": "/path/to/repo",
+    "factory-store": "/path/to/factory-project"
+  },
+  "state": {},
+  "latestEvent": {},
+  "reaction": {}
+}
+```
+
+`state` is reduced from canonical lifecycle JSONL. `latestEvent` is the
+verbatim latest event, including every artifact reference as `{ base, path,
+sha256 }`; inspection does not crawl or inline those artifacts. With no
+history, `state`, `latestEvent`, and `reaction` are all `null`. The two roots
+resolve `repository` and `factory-store` references once. Unchanged repeated
+inspection produces byte-identical stdout, with no volatile fields, and does
+not create markers, locks, projections, or lifecycle events.
+
+The reaction is the same pure Factory decision used by station commands. When
+the next station is mechanically selectable, it includes the exact command
+with the original selector, workspace, and explicit store overrides. Linear
+commands include `--apply` because they must preserve the station's projection
+boundary. Human, plan-merge, complete, failed, stale-event, and null reactions
+remain commandless.
 
 Live triage commands emit one always-on stderr JSON progress line after the
 action identity is selected and before provider work:

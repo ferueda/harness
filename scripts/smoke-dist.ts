@@ -71,6 +71,26 @@ const factoryStatusHelp = runHarness(["factory", "status", "--help"]);
 if (!factoryStatusHelp.includes("harness factory status")) {
   throw new Error("Expected factory status help to include command usage");
 }
+const factoryInspectHelp = runHarness(["factory", "inspect", "--help"]);
+if (!factoryInspectHelp.includes("harness factory inspect")) {
+  throw new Error("Expected factory inspect help to include command usage");
+}
+for (const flag of [
+  "--workspace <path>",
+  "--item-file <path>",
+  "--linear-issue <issue>",
+  "--factory-store-root <path>",
+  "--factory-store-project-id <id>",
+] as const) {
+  if (!factoryInspectHelp.includes(flag)) {
+    throw new Error(`Expected factory inspect help to include ${flag}`);
+  }
+}
+for (const flag of ["--apply", "--rerun", "--work-item-key"] as const) {
+  if (factoryInspectHelp.includes(flag)) {
+    throw new Error(`Expected factory inspect help not to include ${flag}`);
+  }
+}
 const factoryLinearHelp = runHarness(["factory", "linear", "--help"]);
 if (!factoryLinearHelp.includes("harness factory linear")) {
   throw new Error("Expected factory linear help to include command usage");
