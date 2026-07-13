@@ -9,7 +9,10 @@ import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/facto
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import { produceImplementationCandidate } from "../lib/factory-implementation-candidate-action.ts";
 import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
-import { createFactoryImplementationRunContext } from "../lib/factory-implementation-run-context.ts";
+import {
+  createFactoryImplementationRunContext,
+  openFactoryImplementationRunContext,
+} from "../lib/factory-implementation-run-context.ts";
 import {
   actionLifecycleEventPath,
   appendFactoryActionEvent,
@@ -18,6 +21,7 @@ import {
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
+import { FactoryReviewHeadError } from "../lib/factory-review-head.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { decideNextFactoryAction } from "../lib/factory-state-machine.ts";
 import type { reduceFactoryLifecycleEvents } from "../lib/factory-state-machine.ts";
@@ -299,6 +303,73 @@ test("phase snapshots the immutable requested work item instead of changed same-
   const ctx = createPhase(fixture);
   expect(ctx.workItem.body).toBe("Change tracked.txt");
   expect(ctx.identity.input.workItem).toEqual(fixture.workItemRef);
+});
+
+test("phase reopen ignores same-key tampering of its audit work-item copy", () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  writeFileSync(
+    join(ctx.runDir, "context/work-item.json"),
+    `${JSON.stringify({ ...fixture.workItem, title: "Tampered", body: "Different task" })}\n`,
+  );
+  const reopened = openFactoryImplementationRunContext({
+    workspace: fixture.workspace,
+    runsDir: fixture.store.factoryRunsDir,
+    phaseRunId: ctx.runId,
+    workItem: fixture.workItem,
+    factoryStore: fixture.store,
+  });
+  expect(reopened.workItem).toMatchObject({ title: "Implement item", body: "Change tracked.txt" });
+});
+
+test("uncertain candidate materialization failure becomes human-required", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+      },
+    }),
+    reviewHeadFactory: () => {
+      throw new FactoryReviewHeadError("injected Git probe failure", { kind: "git" });
+    },
+  });
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+});
+
+test("blank provider session becomes human-required without candidate success", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "   " } };
+      },
+    }),
+  });
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+  expect(git(fixture.workspace, ["for-each-ref", "refs/harness"]).trim()).toBe("");
 });
 
 test("non-pass review preserves the branch and publishes all reviewer blockers", async () => {

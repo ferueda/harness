@@ -4,6 +4,11 @@ import { aggregateVerdict } from "./aggregate.ts";
 import { FactoryArtifactRefSchema } from "./factory-artifact-ref.ts";
 import { ReviewOutputSchema, type ReviewOutput } from "./schemas.ts";
 
+export const FactoryImplementationSessionSchema = z.object({
+  provider: z.enum(["cursor", "codex"]),
+  id: z.string().trim().min(1),
+});
+
 export const FactoryImplementationCandidateEvidenceSchema = z.object({
   version: z.literal(1),
   phaseRunId: z.string(),
@@ -13,7 +18,7 @@ export const FactoryImplementationCandidateEvidenceSchema = z.object({
   commit: z.string(),
   tree: z.string(),
   status: z.string(),
-  effectiveSession: z.object({ provider: z.enum(["cursor", "codex"]), id: z.string().min(1) }),
+  effectiveSession: FactoryImplementationSessionSchema,
   artifacts: z.object({
     raw: FactoryArtifactRefSchema,
     stream: FactoryArtifactRefSchema,

@@ -17,12 +17,15 @@ import {
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import { withFactoryImplementationExecutionLease } from "./factory-implementation-policy.ts";
-import { FactoryImplementationCandidateEvidenceSchema } from "./factory-implementation-review-evidence.ts";
+import {
+  FactoryImplementationCandidateEvidenceSchema,
+  FactoryImplementationSessionSchema,
+} from "./factory-implementation-review-evidence.ts";
 import type { FactoryImplementationRunContext } from "./factory-implementation-run-context.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
-import { createFactoryReviewHead } from "./factory-review-head.ts";
+import { createFactoryReviewHead, FactoryReviewHeadError } from "./factory-review-head.ts";
 import {
   decideNextFactoryAction,
   reduceFactoryLifecycleEvents,
@@ -31,7 +34,6 @@ import {
 } from "./factory-state-machine.ts";
 import { renderFactoryImplementationPrompt } from "./prompts/factory-implementation.ts";
 
-const SessionSchema = z.object({ provider: z.enum(["cursor", "codex"]), id: z.string().min(1) });
 const FactsSchema = z.object({
   head: z.string().regex(/^[0-9a-f]{40}$/),
   branchRef: z.string().min(1),
@@ -51,11 +53,16 @@ const StagedSchema = z.object({
   before: FactsSchema,
   after: FactsSchema,
   result: z.discriminatedUnion("ok", [
-    z.object({ ok: z.literal(true), session: SessionSchema, raw: z.unknown() }),
+    z.object({
+      ok: z.literal(true),
+      session: FactoryImplementationSessionSchema,
+      raw: z.unknown(),
+    }),
     z.object({
       ok: z.literal(false),
       error: z.string(),
       aborted: z.boolean().optional(),
+      malformed: z.boolean().optional(),
       raw: z.unknown().optional(),
     }),
   ]),
@@ -69,6 +76,7 @@ export async function produceImplementationCandidate(input: {
   maxRuntimeMs: number;
   signal?: AbortSignal;
   agentProviderFactory: (options: AgentProviderOptions) => Agent;
+  reviewHeadFactory?: typeof createFactoryReviewHead;
 }): Promise<{ event: FactoryLifecycleEvent; state: FactoryLifecycleState }> {
   assertReaction(input);
   return withFactoryImplementationExecutionLease({
@@ -87,6 +95,7 @@ async function runLeased(input: {
   maxRuntimeMs: number;
   signal?: AbortSignal;
   agentProviderFactory: (options: AgentProviderOptions) => Agent;
+  reviewHeadFactory?: typeof createFactoryReviewHead;
 }) {
   const { ctx, reaction } = input;
   const actionDir = join(
@@ -180,16 +189,26 @@ async function runLeased(input: {
         join(actionDir, "implementer.raw.json"),
         `${JSON.stringify(completed.raw ?? completed, null, 2)}\n`,
       );
-      result = completed.ok
-        ? completed.session
-          ? { ok: true, session: normalizeSession(completed.session), raw: completed.raw }
-          : { ok: false, error: "Implementer session was not captured", raw: completed.raw }
-        : {
-            ok: false,
-            error: completed.error,
-            ...(completed.aborted ? { aborted: true } : {}),
-            ...(completed.raw === undefined ? {} : { raw: completed.raw }),
-          };
+      if (completed.ok) {
+        const session = completed.session
+          ? FactoryImplementationSessionSchema.safeParse(completed.session)
+          : undefined;
+        result = session?.success
+          ? { ok: true, session: session.data, raw: completed.raw }
+          : {
+              ok: false,
+              error: "Implementer session was not captured or valid",
+              malformed: true,
+              raw: completed.raw,
+            };
+      } else {
+        result = {
+          ok: false,
+          error: completed.error,
+          ...(completed.aborted ? { aborted: true } : {}),
+          ...(completed.raw === undefined ? {} : { raw: completed.raw }),
+        };
+      }
     } catch (error) {
       result = {
         ok: false,
@@ -234,7 +253,9 @@ async function runLeased(input: {
       input,
       actionDir,
       staged.result.error,
-      staged.result.aborted || !unchanged ? "human-required" : "retryable",
+      staged.result.aborted || staged.result.malformed || !unchanged
+        ? "human-required"
+        : "retryable",
     );
   }
   if (
@@ -250,7 +271,7 @@ async function runLeased(input: {
       "human-required",
     );
   try {
-    const head = createFactoryReviewHead({
+    const head = (input.reviewHeadFactory ?? createFactoryReviewHead)({
       workspace: ctx.workspace,
       runDir: actionDir,
       runId: ctx.runId,
@@ -302,7 +323,14 @@ async function runLeased(input: {
     writeFactoryActionResult(actionDir, event);
     return appendRecovered(input, actionDir);
   } catch (error) {
-    return fail(input, actionDir, message(error), "terminal");
+    return fail(
+      input,
+      actionDir,
+      message(error),
+      error instanceof FactoryReviewHeadError && error.kind === "invariant"
+        ? "terminal"
+        : "human-required",
+    );
   }
 }
 
@@ -490,9 +518,16 @@ function gitStatus(workspace: string, args: string[]): boolean {
   try {
     execFileSync("git", args, { cwd: workspace, stdio: "ignore" });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isExitCode(error, 1)) return false;
+    throw error;
   }
+}
+
+function isExitCode(error: unknown, status: number): boolean {
+  return (
+    typeof error === "object" && error !== null && "status" in error && error.status === status
+  );
 }
 
 function ref(ctx: FactoryImplementationRunContext, path: string): FactoryArtifactRef {
@@ -508,7 +543,7 @@ function roots(ctx: FactoryImplementationRunContext) {
 }
 
 function normalizeSession(session: AgentSessionRef): AgentSessionRef {
-  return { provider: session.provider, id: session.id };
+  return FactoryImplementationSessionSchema.parse(session);
 }
 
 function message(error: unknown): string {

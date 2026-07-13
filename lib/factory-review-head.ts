@@ -3,9 +3,12 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 export class FactoryReviewHeadError extends Error {
-  constructor(message: string, options: { cause?: unknown } = {}) {
+  readonly kind: "invariant" | "git";
+
+  constructor(message: string, options: { cause?: unknown; kind?: "invariant" | "git" } = {}) {
     super(message, options);
     this.name = "FactoryReviewHeadError";
+    this.kind = options.kind ?? "invariant";
   }
 }
 
@@ -71,6 +74,7 @@ export function createFactoryReviewHead(input: {
     if (error instanceof FactoryReviewHeadError) throw error;
     throw new FactoryReviewHeadError(`Failed to materialize factory candidate: ${message(error)}`, {
       cause: error,
+      kind: "git",
     });
   } finally {
     rmSync(indexPath, { force: true });

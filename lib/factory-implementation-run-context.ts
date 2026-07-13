@@ -127,8 +127,12 @@ export function openFactoryImplementationRunContext(input: {
     throw new FactoryImplementationRunError(
       `Factory implementation branch conflicts with persisted ${identity.branchRef}`,
     );
+  const authoritativeWorkItemPath = verifyFactoryArtifactRef(
+    identity.input.workItem,
+    roots(input.factoryStore, workspace),
+  );
   const persisted = parseFactoryWorkItem(
-    JSON.parse(readFileSync(join(runDir, "context/work-item.json"), "utf8")),
+    JSON.parse(readFileSync(authoritativeWorkItemPath, "utf8")),
   );
   if (deriveFactoryWorkItemKey(persisted) !== identity.workItemKey)
     throw new FactoryImplementationRunError("Factory implementation work-item input changed");
