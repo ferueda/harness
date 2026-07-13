@@ -253,22 +253,36 @@ test("handoffs preserve accepted authority without duplicating inspectable sourc
   expect(handoff).not.toContain("### Files referenced");
 });
 
-test("orchestrated work uses verified callback ids and decision checkpoints", () => {
+test("orchestrated work fixes authority, sandbox, verification, and callback invariants", () => {
   const skill = readFileSync(join(REPO_ROOT, "skills/orchestrate-work/SKILL.md"), "utf8");
   const metadata = readFileSync(
     join(REPO_ROOT, "skills/orchestrate-work/agents/openai.yaml"),
     "utf8",
   );
   const prose = normalizedProse(skill);
+  const creationIndex = skill.indexOf("codex_app__create_thread");
+  const baselineProofIndex = skill.indexOf("Require the first before-edit checkpoint");
 
   expect(skill).toContain("name: orchestrate-work");
+  expect(skill).toContain("disable-model-invocation: true");
   expect(skill).toContain("<source_thread_id>");
   expect(skill).toContain("codex_app__list_projects");
   expect(skill).toContain("codex_app__create_thread");
   expect(skill).toContain("codex_app__send_message_to_thread");
-  expect(prose).toContain("Report and proceed when no material conflict exists");
-  expect(prose).toContain("pause when findings need triage");
-  expect(skill).toContain("`Implement`, `Adapt`, or `Decline`");
+  expect(creationIndex).toBeGreaterThan(-1);
+  expect(baselineProofIndex).toBeGreaterThan(creationIndex);
+  expect(prose).toContain("any new authority returns to the user");
+  expect(skill).toContain("Sandbox: write only inside this worktree and branch");
+  expect(skill).toContain("Verification: [exact commands/gates and evidence required]");
+  expect(skill).toContain(
+    "Done: [checkable behavior, artifacts, clean state, and review requirement]",
+  );
+  expect(skill).toContain("Publication: [none, commit, push, or pull request");
+  expect(skill).toContain("`change-review-workflow`");
+  expect(prose).toContain("`Implement`, `Adapt`, or `Decline`");
+  expect(prose).toContain("approved for the current head");
+  expect(prose).toContain("reported unresolved");
+  expect(prose).toContain("recorded as not requested");
   expect(prose).toContain("Avoid concurrent edits in that worktree");
   expect(metadata).toContain("allow_implicit_invocation: false");
 });

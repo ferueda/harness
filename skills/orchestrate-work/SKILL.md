@@ -1,13 +1,14 @@
 ---
 name: orchestrate-work
-description: Manual-only orchestration of substantial work in a separate Codex executor task while the current task stays the orchestrator. Use only when the user explicitly invokes `$orchestrate-work` or explicitly requests an isolated executor task with checkpoints, consultation, steering, review triage, and final handoff.
+description: Delegate substantial work to an isolated Codex executor while the current task retains user-authorized scope and review control.
+disable-model-invocation: true
 ---
 
 # Orchestrate Work
 
-Coordinate one substantial Codex executor task from the current Codex task. Keep
-the orchestrator responsible for authority and decisions; give the executor sole
-ownership of implementation in an isolated worktree.
+Coordinate one substantial Codex executor task from the current Codex task. The
+executor owns implementation inside its isolated worktree. The orchestrator
+stays read-only there and steers within the user's accepted authority.
 
 ## 1. Gate and divide ownership
 
@@ -15,15 +16,15 @@ Run only after the user explicitly requests this skill or a separate Codex task
 with the current task acting as orchestrator. For an ordinary implementation
 request, work in the current task.
 
-Define before delegation:
+Fill every bracketed field in the canonical delegation block before creating the
+executor. The user authorizes the goal, material boundaries, product and
+architecture changes, destructive actions, and external publication. The
+orchestrator may steer and triage only inside that accepted authority; any new
+authority returns to the user.
 
-- one bounded goal and its authoritative request, plan, or spec;
-- the exact repository, expected baseline, and material non-goals;
-- executor ownership of edits, commits, tests, and requested review work;
-- orchestrator ownership of scope, product and architecture decisions, review
-  triage, steering, and acceptance;
-- whether push, pull-request creation, merge, or other external actions are
-  authorized.
+The executor owns edits, commits, verification, and requested review work in
+its isolated worktree and branch. The orchestrator owns read-only inspection,
+in-bound steering, review triage, and acceptance recommendations.
 
 An explicit request to open a pull request also authorizes the branch push it
 requires. It does not authorize merge.
@@ -32,24 +33,44 @@ Use `handoff-work` for the initial context shape: status, authority and goal,
 current state, verification, then only relevant adaptations, files, next steps,
 and open items. Point to durable sources instead of copying them.
 
-**Done when:** worktree ownership and publication authority are unambiguous.
+**Done when:** the goal, authority, repository, expected branch and exact commit,
+mutation sandbox, non-goals, verification, completion criteria, and publication
+authority are explicit.
 
-## 2. Establish the callback channel
+## 2. Bootstrap and verify the executor
 
-A Codex-created executor receives the initial prompt inside a
-`<codex_delegation>` envelope. Instruct the executor to copy the envelope's
-verified `<source_thread_id>` exactly: that is the parent/orchestrator task ID.
-The executor sends checkpoints to it with
-`codex_app__send_message_to_thread`. If the envelope or ID is absent, stop and
-obtain a verified ID from Codex task metadata; never guess one or promise
-callbacks without it. The orchestrator can repair the channel by sending that
-verified ID to the stopped executor task.
+Confirm that project discovery, task creation, task inspection, and task
+messaging are available. Report `blocked` when the host cannot provide this
+minimum channel.
+
+1. Use `codex_app__list_projects`; select the project matching the repository.
+   Report `blocked` if project identity is missing or ambiguous.
+2. Resolve the expected branch and exact commit from the authoritative
+   repository state. Use `codex_app__create_thread` with the matching project, a
+   fresh worktree, the completed canonical delegation block, and the
+   `handoff-work` handoff. Omit a starting state unless the user explicitly
+   names an existing Git state. Omit model and reasoning overrides unless the
+   user explicitly requests them.
+3. Record the returned executor task ID. If creation returns only a queued
+   client ID, resolve the actual task through verified task results before
+   steering it. Use `codex_app__set_thread_title` for a useful title, then
+   `codex_app__read_thread` or `codex_app__list_threads` to verify the intended
+   project and worktree.
+4. Require the first before-edit checkpoint to report its actual branch and
+   `git rev-parse HEAD`. Pause on any mismatch with the expected baseline rather
+   than changing Git state implicitly.
+5. Prove both callback directions. A Codex-created executor receives the prompt
+   inside a `<codex_delegation>` envelope; its verified `<source_thread_id>` is
+   the parent task ID. The executor sends its first checkpoint there with
+   `codex_app__send_message_to_thread`; the orchestrator replies to the verified
+   executor task ID. If the parent ID is absent, obtain it from verified Codex
+   task metadata before continuing.
 
 Keep the two directions distinct:
 
-| Direction | Verified destination |
-|---|---|
-| Executor to orchestrator | Parent ID from the executor's delegation envelope |
+| Direction                | Verified destination                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| Executor to orchestrator | Parent ID from the executor's delegation envelope          |
 | Orchestrator to executor | Executor ID returned by task creation, listing, or reading |
 
 A callback displayed in the parent carries the executor's ID as its source.
@@ -57,31 +78,13 @@ That confirms the sender; it is not the parent ID. Use a `hostId` only when a
 Codex result verifies it and the destination requires it. Do not infer it from
 `source_host_id`.
 
-**Done when:** both sides know their verified destination ID and callback tool.
+**Done when:** the host channel, project, worktree, branch, exact commit, and both
+callback routes are verified.
 
-## 3. Create and verify the executor task
+## 3. Use decision checkpoints
 
-1. Use `codex_app__list_projects`; select the project matching the repository.
-   Stop if project identity is missing or ambiguous. Do not silently use a
-   projectless task or the current checkout.
-2. Use `codex_app__create_thread` with that project and a fresh worktree. Omit a
-   starting state unless the user explicitly names an existing Git state. Omit
-   model and reasoning overrides unless the user explicitly requests them.
-3. Include the handoff, ownership split, callback instructions, checkpoint
-   contract below, verification gates, and publication authority in the initial
-   prompt.
-4. Record the returned executor task ID. If creation returns only a queued
-   client ID, resolve the actual task through verified task results before
-   steering it. Use `codex_app__set_thread_title` for a useful title, then
-   `codex_app__read_thread` or `codex_app__list_threads` to verify that it
-   started in the intended project/worktree.
-
-**Done when:** the executor is running from the intended project and can report
-to the orchestrator.
-
-## 4. Use decision checkpoints
-
-Every checkpoint carries:
+The completed canonical delegation block is the executor's checkpoint contract.
+At each callback, require:
 
 - verified facts and inspectable evidence;
 - reconciliation with the accepted authority and boundaries;
@@ -89,48 +92,48 @@ Every checkpoint carries:
 - the smallest alternatives only when a decision exists;
 - an explicit `proceeding` or `paused for decision` state.
 
-Use these checkpoints:
-
-| Boundary | Required evidence | Default |
-|---|---|---|
-| Before edits | Clean isolated baseline; authority/code reconciliation; proposed file surface; existing seams to reuse; removals; conflicts | Report and proceed when no material conflict exists |
-| Coherent implementation | Diff/stat; behavior now working; focused verification; adaptations, risks, and remaining work | Report and proceed with remaining gates when no decision changes |
-| Review | Run IDs and requested roles; complete findings with evidence; proposed `Implement`, `Adapt`, or `Decline` triage | Report partial results without editing; wait for all requested roles; pause when findings need triage |
-| Final | Branch and exact tip; cleanliness; completed and pending work; all verification; review runs and caveats; publication state | Send a `handoff-work` handoff and stop |
-
 Pause early when the next action could change authority or scope: a plan/code
 conflict, a new product or architecture choice, a new contract or persistent
 mechanism, destructive or unauthorized external action, ambiguous review
 finding, overlapping unrecognized changes, unexpected routing, or an
-operational blocker. Include facts, recommendation, and smallest alternatives.
-Partial review evidence may trigger an immediate safety stop; otherwise wait
-for the complete requested role set before fixing findings.
+operational blocker. Keep the executor paused and ask the user when resolution
+needs new authority. Include facts, recommendation, and smallest alternatives.
+
+When review is requested, use `change-review-workflow` as the single source of
+truth. Wait until every requested role completes or terminally fails or blocks;
+account for every underlying issue with an issue-local `Implement`, `Adapt`, or
+`Decline`; and require the prescribed follow-up review after accepted fixes.
+Report failed, blocked, or exhausted review as unresolved. When review is not
+requested, record `not requested` instead of inventing a gate.
 
 Prefer milestone and exception checkpoints. Time-based, file-by-file, and
 "still working" updates add noise.
 
 **Done when:** every decision-changing boundary reaches the orchestrator before
-the executor commits to it.
+the executor commits to it, and review is approved for the current head,
+reported unresolved, or recorded as not requested.
 
-## 5. Inspect and steer
+## 4. Inspect and steer
 
 At a checkpoint, independently verify the important claims through
 `codex_app__read_thread` and read-only inspection of the executor worktree.
 Avoid concurrent edits in that worktree.
 
-Reply with one bounded direction: approve, correct, pause, or stop. State the
+Reply with one bounded direction: proceed, correct, pause, or stop. State the
 accepted constraint and the proof expected at the next checkpoint. Send it to
 the verified executor ID with `codex_app__send_message_to_thread`. Let the
 executor own the implementation details that remain inside the accepted
-boundary.
+boundary. Keep the executor paused and ask the user when the decision requires
+new authority.
 
 Monitor at checkpoints or when expected progress stops; avoid polling unchanged
 state. Preserve the same model and reasoning settings on follow-up messages
 unless the user explicitly changes them.
 
-**Done when:** the executor has an actionable decision without expanded scope.
+**Done when:** the executor has an actionable direction tied to accepted user
+authority and the next proof is explicit.
 
-## 6. Supersede or close
+## 5. Supersede or close
 
 For cancellation or supersession, discover the interruption controls available
 on the current host. When no supported interrupt is available, send an explicit
@@ -139,32 +142,56 @@ writes or external publications, and report branch, tip, and worktree status.
 Verify the executor stopped before starting replacement work. Archiving alone
 does not prove execution stopped.
 
-At normal completion, reconcile the final handoff and actual diff with the
-accepted authority. Request missing proof or corrections through the same task.
-Publish only within the authority fixed at delegation; merging always requires
+At normal completion, reconcile the final handoff, actual diff, exact tip,
+verification, and current-head review outcome with the accepted authority.
+Request missing proof or corrections through the same task. The executor
+performs only the publication authorized at delegation and reports the resulting
+branch or pull request; the orchestrator verifies it. Merging always requires
 separate user authority unless already explicit.
 
-**Done when:** the result is accepted or the stopped task's exact recoverable
-state is known.
+Return the final outcome to the user: status, branch and exact tip or pull
+request, verification, review result, caveats, and any open decision.
 
-## Compact delegation block
+**Done when:** the user receives an accepted result or the stopped/unresolved
+task's exact recoverable state, and the executor has stopped.
+
+## Canonical delegation block
 
 ```markdown
 Implement [bounded goal] in this isolated worktree.
 
 Authority: [request/plan/spec]
-Baseline: [verified branch or commit]
+Repository/worktree: [repository and fresh isolated worktree requirement]
+Baseline: [verified branch at exact commit]
+Sandbox: write only inside this worktree and branch; treat other repositories
+and worktrees as read-only. Perform external mutations only under Publication.
 Boundaries: [material constraints and non-goals]
 Ownership: you own implementation, commits, verification, and requested review
-work; the parent owns scope, decision feedback, review triage, and acceptance.
-[Publication authority.]
+work. The parent inspects read-only and owns in-bound steering, review triage,
+and acceptance recommendations. New authority returns to the user.
+Verification: [exact commands/gates and evidence required]
+Done: [checkable behavior, artifacts, clean state, and review requirement]
+Publication: [none, commit, push, or pull request; merge requires separate authority]
 
 Callback: read the parent task ID from this prompt's outer
 <codex_delegation>/<source_thread_id>. Send checkpoints with
 codex_app__send_message_to_thread. If it is absent, stop rather than guessing.
 
-Checkpoints: before edits; coherent implementation; complete review evidence
-and proposed triage; final handoff. Report and proceed at evidence-only
-milestones. Pause for authority, scope, architecture, external-action,
-destructive-action, or review-triage decisions.
+Checkpoints:
+
+- Before edits: prove the clean worktree, actual branch and exact HEAD, authority
+  reconciliation, proposed file surface, existing seams, removals, and conflicts.
+- Coherent implementation: report diff/stat, behavior working, focused
+  verification, adaptations, risks, and remaining gates.
+- Review, when requested: follow change-review-workflow; report the current tip,
+  every requested role's terminal status, every underlying issue and proposed
+  issue-local triage, then pause. After fixes, obtain the required current-head
+  follow-up review. Report blocked, failed, or exhausted coverage as unresolved.
+- Final: send a handoff-work handoff with branch and exact tip, cleanliness,
+  completed and pending work, verification, review outcome or `not requested`,
+  caveats, and publication state; then stop.
+
+Report and proceed at evidence-only milestones. Pause for authority, scope,
+architecture, external-action, destructive-action, or review-triage decisions.
+The parent returns to the user for any new authority.
 ```
