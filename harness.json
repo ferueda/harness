@@ -6,8 +6,8 @@
       "model": "auto"
     },
     "codex": {
-      "model": "gpt-5.6-luna",
-      "modelReasoningEffort": "xhigh",
+      "model": "gpt-5.6-sol",
+      "modelReasoningEffort": "high",
       "sandboxMode": "read-only",
       "approvalPolicy": "never"
     }
@@ -17,8 +17,8 @@
       "roles": {
         "triager": {
           "agent": "codex",
-          "model": "gpt-5.6-luna",
-          "modelReasoningEffort": "xhigh"
+          "model": "gpt-5.6-sol",
+          "modelReasoningEffort": "high"
         }
       }
     },
@@ -32,7 +32,7 @@
         },
         "reviewer": {
           "agent": "codex",
-          "model": "gpt-5.6-luna",
+          "model": "gpt-5.6-terra",
           "modelReasoningEffort": "high"
         }
       }
@@ -41,13 +41,13 @@
       "roles": {
         "implementer": {
           "agent": "codex",
-          "model": "gpt-5.6-luna",
-          "modelReasoningEffort": "xhigh"
+          "model": "gpt-5.6-sol",
+          "modelReasoningEffort": "medium"
         },
         "reviewer": {
           "agent": "codex",
-          "model": "gpt-5.6-luna",
-          "modelReasoningEffort": "xhigh"
+          "model": "gpt-5.6-terra",
+          "modelReasoningEffort": "high"
         }
       }
     },
