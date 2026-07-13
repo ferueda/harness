@@ -18,6 +18,105 @@ test("parseCodexRolloutText skips unknown and developer-only events", () => {
   expect(parsed.firstUserQuery).toBe("Keep this user text.");
 });
 
+test("parseCodexRolloutText canonicalizes adjacent event and response message pairs", () => {
+  const parsed = parseCodexRolloutText(`
+{"type":"event_msg","payload":{"type":"user_message","message":"Check the paired rollout."}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Check the paired rollout."}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Paired response."}]}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Paired response."}}
+`);
+
+  expect(parsed.firstUserQuery).toBe("Check the paired rollout.");
+  expect(parsed.turns).toEqual([
+    { role: "user", text: "Check the paired rollout.", rawText: "Check the paired rollout." },
+    { role: "assistant", text: "Paired response.", rawText: "Paired response." },
+  ]);
+});
+
+test("parseCodexRolloutText preserves source-only and same-source messages", () => {
+  const parsed = parseCodexRolloutText(`
+{"type":"event_msg","payload":{"type":"user_message","message":"Event only."}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Event only."}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Response only."}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Response only."}]}}
+`);
+
+  expect(parsed.turns.map((turn) => [turn.role, turn.text])).toEqual([
+    ["user", "Event only."],
+    ["user", "Event only."],
+    ["assistant", "Response only."],
+    ["assistant", "Response only."],
+  ]);
+});
+
+test("parseCodexRolloutText preserves same-source repeats after a canonical pair", () => {
+  const parsed = parseCodexRolloutText(`
+{"type":"event_msg","payload":{"type":"user_message","message":"Event then response twice."}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Event then response twice."}]}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Event then response twice."}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Response then event twice."}]}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Response then event twice."}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Response then event twice."}}
+`);
+
+  expect(parsed.turns.map((turn) => [turn.role, turn.text])).toEqual([
+    ["user", "Event then response twice."],
+    ["user", "Event then response twice."],
+    ["assistant", "Response then event twice."],
+    ["assistant", "Response then event twice."],
+  ]);
+});
+
+test("parseCodexRolloutText keeps retained and skipped interruptions with rollout provenance", () => {
+  const parsed = parseCodexRolloutText(`
+{"type":"event_msg","payload":{"type":"user_message","message":"Keep the tool boundary."}}
+{"type":"response_item","payload":{"type":"function_call","name":"read_file","arguments":"{\\"path\\":\\"README.md\\"}"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Keep the tool boundary."}]}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Keep the system boundary."}}
+{"type":"event_msg","payload":{"type":"task_started"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Keep the system boundary."}]}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Keep the skipped boundary."}}
+{"type":"unknown","payload":{"type":"ignored"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Keep the skipped boundary."}]}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Keep the skipped system boundary."}}
+{"type":"response_item","payload":{"type":"message","role":"system","content":[{"type":"input_text","text":"System-only context."}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Keep the skipped system boundary."}]}}
+`);
+
+  expect(parsed.turns).toEqual([
+    { role: "user", text: "Keep the tool boundary.", rawText: "Keep the tool boundary." },
+    {
+      role: "tool",
+      text: 'read_file {"path":"README.md"}',
+      rawText: 'read_file {"path":"README.md"}',
+    },
+    { role: "user", text: "Keep the tool boundary.", rawText: "Keep the tool boundary." },
+    {
+      role: "assistant",
+      text: "Keep the system boundary.",
+      rawText: "Keep the system boundary.",
+    },
+    { role: "system", text: "Task started", rawText: "Task started" },
+    {
+      role: "assistant",
+      text: "Keep the system boundary.",
+      rawText: "Keep the system boundary.",
+    },
+    { role: "user", text: "Keep the skipped boundary.", rawText: "Keep the skipped boundary." },
+    { role: "user", text: "Keep the skipped boundary.", rawText: "Keep the skipped boundary." },
+    {
+      role: "assistant",
+      text: "Keep the skipped system boundary.",
+      rawText: "Keep the skipped system boundary.",
+    },
+    {
+      role: "assistant",
+      text: "Keep the skipped system boundary.",
+      rawText: "Keep the skipped system boundary.",
+    },
+  ]);
+});
+
 test("parseCodexRolloutText rejects invalid json lines", () => {
   expect(() => parseCodexRolloutText(readFixture("codex-invalid.jsonl"))).toThrow(
     CodexRolloutParseError,
