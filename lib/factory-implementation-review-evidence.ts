@@ -27,6 +27,38 @@ export const FactoryImplementationCandidateEvidenceSchema = z.object({
   }),
 });
 
+export const FactoryImplementationReviewEvidenceSchema = z.object({
+  version: z.literal(1),
+  phaseRunId: z.string(),
+  attempt: z.number().int().positive(),
+  base: z.string(),
+  commit: z.string(),
+  tree: z.string(),
+  partial: z.literal(false),
+  verdict: z.enum(["pass", "needs_changes", "blocked"]),
+  reviewers: z.object({
+    implementation: FactoryArtifactRefSchema,
+    quality: FactoryArtifactRefSchema,
+  }),
+  blockingFindings: FactoryArtifactRefSchema.optional(),
+});
+
+const BlockingFindingSchema = z.object({
+  title: z.string(),
+  severity: z.enum(["Critical", "High", "Medium", "Low"]),
+  location: z.string(),
+  issue: z.string(),
+  recommendation: z.string(),
+  rationale: z.string(),
+  must_fix: z.literal(true),
+  id: z.string().min(1),
+  reviewer: z.enum(["implementation", "quality"]),
+});
+export const FactoryImplementationBlockingFindingsSchema = z.array(BlockingFindingSchema).min(1);
+export type FactoryImplementationBlockingFindings = z.infer<
+  typeof FactoryImplementationBlockingFindingsSchema
+>;
+
 export type ImplementationReviewEvidence = {
   verdict: "pass" | "needs_changes" | "blocked";
   implementation: ReviewOutput;
@@ -63,9 +95,25 @@ export function validateImplementationReviewEvidence(input: {
   return { verdict, implementation, quality, blocking };
 }
 
+export function collectImplementationBlockingFindings(input: {
+  implementationPath: string;
+  qualityPath: string;
+}): FactoryImplementationBlockingFindings {
+  const implementation = ReviewOutputSchema.parse(
+    JSON.parse(readFileSync(input.implementationPath, "utf8")),
+  );
+  const quality = ReviewOutputSchema.parse(JSON.parse(readFileSync(input.qualityPath, "utf8")));
+  return FactoryImplementationBlockingFindingsSchema.parse([
+    ...blockingFor("implementation", implementation),
+    ...blockingFor("quality", quality),
+  ]);
+}
+
 function blockingFor(reviewer: string, review: ReviewOutput) {
   return review.findings.flatMap((finding, index) =>
-    finding.must_fix ? [{ ...finding, id: `${reviewer}-${index + 1}`, reviewer }] : [],
+    finding.must_fix
+      ? [{ ...finding, must_fix: true as const, id: `${reviewer}-${index + 1}`, reviewer }]
+      : [],
   );
 }
 

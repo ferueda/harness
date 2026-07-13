@@ -91,7 +91,7 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
   }).strict(),
   FactoryPhaseRunBaseSchema.extend({
     phase: z.literal("implementation"),
-    reviewCeiling: z.literal(1),
+    reviewCeiling: z.number().int().positive(),
     branchRef: z.string().regex(/^refs\/heads\/.+/),
     baseSha: z.string().regex(/^[0-9a-f]{40}$/),
     input: FactoryImplementationInputSnapshotSchema,

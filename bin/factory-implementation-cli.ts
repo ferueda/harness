@@ -4,6 +4,7 @@ import { formatFactoryActionOutput, withManualCommand } from "./factory-action-o
 import type { Agent, AgentProviderOptions } from "../lib/agents.ts";
 import {
   loadFactoryConfigSnapshot,
+  resolveFactoryImplementationSettingsFromSnapshot,
   resolveFactoryLinearSettingsFromSnapshot,
   resolveFactoryRoleAgentFromSnapshot,
   resolveHarnessWorkspace,
@@ -87,6 +88,7 @@ async function runImplementationCommand(options: Options): Promise<void> {
   const linearSettings = options.linearIssue
     ? resolveFactoryLinearSettingsFromSnapshot(snapshot)
     : undefined;
+  const implementationSettings = resolveFactoryImplementationSettingsFromSnapshot(snapshot);
   const store = resolveFactoryStore({
     workspace,
     factoryStoreRoot: options.factoryStoreRoot,
@@ -132,6 +134,7 @@ async function runImplementationCommand(options: Options): Promise<void> {
         station: "implementation",
         role: "reviewer",
       }),
+      reviewCeiling: implementationSettings.maxReviewIterations,
       applyAdapter: adapter,
       linearStatuses: linearSettings?.statuses,
       issueRef: options.linearIssue,
@@ -160,6 +163,7 @@ export async function runOneFactoryImplementationAction(input: {
   explicitMaxRuntimeMs?: number;
   implementerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
+  reviewCeiling: number;
   applyAdapter?: LinearFactoryAdapter;
   linearStatuses?: {
     readyToImplement: string;
@@ -227,6 +231,7 @@ export async function runOneFactoryImplementationAction(input: {
       workItem: input.workItem,
       factoryStore: input.factoryStore,
       implementationInput,
+      reviewCeiling: input.reviewCeiling,
       implementerRole: input.implementerRole,
       reviewerRole: input.reviewerRole,
       eventSink: input.eventSink,
@@ -243,7 +248,7 @@ export async function runOneFactoryImplementationAction(input: {
       data: {
         expectedPredecessor: state?.lastEventId ?? null,
         inputRefs: implementationInputRefs(identity.input),
-        reviewCeiling: 1,
+        reviewCeiling: identity.reviewCeiling,
         intent: input.rerun ? "restart" : "start",
       },
     };

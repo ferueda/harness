@@ -171,12 +171,12 @@ human or external status.
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
-Planning candidate/review and explicit plan publication commands consume the
-same action kernel, one handler per invocation. Candidate revisions reuse the
-snapshotted planner profile and original session. Implementation candidate and
-review commands use the same one-handler boundary, but review-driven revisions
-remain future work; `--rerun` creates a fresh phase after a human or failed
-wait.
+Planning and implementation candidate/review commands consume the same action
+kernel, one handler per invocation. Review-driven revisions reuse the
+snapshotted producer profile and original session, retain the original base,
+and publish a new immutable attempt ref. The next producer reaction is guidance
+for a later manual invocation; `--rerun` instead creates a fresh phase after a
+human or failed wait. Inngest is only a future consumer of these pure reactions.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation and quality. The quality reviewer covers behavior-preserving

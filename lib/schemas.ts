@@ -99,6 +99,7 @@ const FactoryConfigSchema = z
       .optional(),
     implementation: z
       .object({
+        maxReviewIterations: z.number().int().positive().optional(),
         roles: z
           .object({
             implementer: FactoryRoleSchema.optional(),

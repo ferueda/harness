@@ -3,11 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import type { Agent, AgentProviderOptions } from "./agents.ts";
-import {
-  createFactoryArtifactRef,
-  FactoryArtifactRefSchema,
-  verifyFactoryArtifactRef,
-} from "./factory-artifact-ref.ts";
+import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
 import {
   factoryActionResultPath,
@@ -19,6 +15,7 @@ import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import { withFactoryImplementationExecutionLease } from "./factory-implementation-policy.ts";
 import {
   FactoryImplementationCandidateEvidenceSchema,
+  FactoryImplementationReviewEvidenceSchema,
   validateImplementationReviewEvidence,
   type ImplementationReviewEvidence,
 } from "./factory-implementation-review-evidence.ts";
@@ -52,21 +49,6 @@ const StagedReviewSchema = z.object({
   refsBefore: z.string(),
   refsAfter: z.string(),
   meta: z.unknown(),
-});
-const ReviewEvidenceSchema = z.object({
-  version: z.literal(1),
-  phaseRunId: z.string(),
-  attempt: z.number().int().positive(),
-  base: z.string(),
-  commit: z.string(),
-  tree: z.string(),
-  partial: z.literal(false),
-  verdict: z.enum(["pass", "needs_changes", "blocked"]),
-  reviewers: z.object({
-    implementation: FactoryArtifactRefSchema,
-    quality: FactoryArtifactRefSchema,
-  }),
-  blockingFindings: FactoryArtifactRefSchema.optional(),
 });
 
 export async function reviewImplementationCandidate(input: {
@@ -317,7 +299,7 @@ async function runLeased(
       verdict: evidence.verdict,
       review: manifest,
       ...(blockingRef ? { blockingFindings: blockingRef } : {}),
-      reviewCeiling: 1,
+      reviewCeiling: ctx.identity.reviewCeiling,
     },
   };
   writeFactoryActionResult(actionDir, event);
@@ -505,7 +487,9 @@ function validateRecoveredReview(
   if (!candidate || candidate.type !== "implementation.candidate.produced")
     throw new Error("Recovered implementation review has no candidate");
   const path = verifyFactoryArtifactRef(event.data.review, roots(ctx));
-  const manifest = ReviewEvidenceSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+  const manifest = FactoryImplementationReviewEvidenceSchema.parse(
+    JSON.parse(readFileSync(path, "utf8")),
+  );
   if (
     manifest.phaseRunId !== ctx.runId ||
     manifest.attempt !== event.data.attempt ||

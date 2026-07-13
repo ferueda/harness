@@ -3,6 +3,10 @@ import type { FactoryWorkItem } from "../factory-schemas.ts";
 export function renderFactoryImplementationPrompt(input: {
   workItem: FactoryWorkItem;
   planPath?: string;
+  revision?: {
+    blockingFindings: unknown;
+    priorCommit: string;
+  };
 }): string {
   return [
     "# Factory implementation action",
@@ -11,6 +15,19 @@ export function renderFactoryImplementationPrompt(input: {
     input.planPath
       ? `Follow the reviewed plan at: ${input.planPath}`
       : "No plan: keep to the direct request.",
+    ...(input.revision
+      ? [
+          "",
+          "## Revision authority",
+          "",
+          `Revise the prior candidate commit: ${input.revision.priorCommit}`,
+          "Address every blocking finding below. Keep valid prior work unless a finding requires changing it.",
+          "",
+          "```json",
+          JSON.stringify(input.revision.blockingFindings, null, 2),
+          "```",
+        ]
+      : []),
     "",
     "## Work-item authority",
     "",

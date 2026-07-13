@@ -17,8 +17,9 @@ Wait for process exit; do not poll or start a second action. The command
 persists progress heartbeats in the action run (`--verbose` also emits them to
 stderr), writes a terminal event/state, and prints durable evidence plus the
 next reaction. Planning is shipped as separately invoked candidate, review,
-and publication commands. Implementation is a separately invoked candidate and
-one full review; repeat only the exact printed command. Routed
+and publication commands. Implementation is separately invoked candidate,
+review, and (when needed) same-session revision; repeat only the exact printed
+command. Routed
 triage can return a wait reaction without a command. The invocation never
 executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
 
@@ -116,6 +117,7 @@ Minimal shape:
       }
     },
     "implementation": {
+      "maxReviewIterations": 3,
       "roles": {
         "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
@@ -278,12 +280,18 @@ index. Inspect `candidate-evidence.json`, the diff, workspace facts, and
 
 Run the exact command printed in `next` again. That invocation runs only
 `reviewImplementationCandidate`: the fixed implementation and quality
-reviewers, read-only, once, with review ceiling 1. Do not run a separate
-`harness run change-review`. Pass promotes the exact reviewed candidate and
-finishes with a clean branch/index/worktree. Any non-pass stops for a human and
-does not advance the branch. `--rerun` is allowed only after human/failed state
-and creates a fresh phase/profile/session/input snapshot; it is not a revision
-loop. Same-session review-driven revisions remain future PR 4 work.
+reviewers, read-only, once, against the cumulative original-base diff. Do not
+run a separate `harness run change-review`. Pass promotes the exact reviewed
+candidate and finishes with a clean branch/index/worktree. A `needs_changes`
+verdict below the persisted `maxReviewIterations` ceiling prints a later
+`produceImplementationCandidate` command; it does not run it. That producer
+reopens the same phase, verifies `review-evidence.json` and
+`blocking-findings.json`, resumes the effective implementer session, retains
+the original base, and publishes a new immutable attempt ref. Inspect those
+files plus each `candidate-evidence.json`, diff, `action-result.json`, and
+`context/phase-run.json` before intervening. Blocked or exhausted review waits
+for a human. `--rerun` is allowed only after human/failed state and creates a
+fresh phase/profile/session/input snapshot; it is not a revision path.
 
 Linear implementation start/restart requires `--apply`. Repeat an explicit
 apply command to repair a failed start or terminal/comment projection; Harness

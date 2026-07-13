@@ -21,6 +21,11 @@ import {
   FactoryImplementationCandidateEvidenceSchema,
   FactoryImplementationSessionSchema,
 } from "./factory-implementation-review-evidence.ts";
+import {
+  FactoryImplementationRevisionError,
+  loadFactoryImplementationRevision,
+  matchesFactoryImplementationRevisionWorkspace,
+} from "./factory-implementation-revision.ts";
 import type { FactoryImplementationRunContext } from "./factory-implementation-run-context.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
@@ -68,7 +73,6 @@ const StagedSchema = z.object({
   ]),
 });
 type Staged = z.infer<typeof StagedSchema>;
-
 export async function produceImplementationCandidate(input: {
   ctx: FactoryImplementationRunContext;
   factoryStateRoot: string;
@@ -106,6 +110,19 @@ async function runLeased(input: {
     factoryActionKey({ ...reaction, phaseRunId: ctx.runId }),
   );
   mkdirSync(actionDir, { recursive: true });
+  let revision: ReturnType<typeof loadFactoryImplementationRevision> | undefined;
+  if (reaction.attempt > 1) {
+    try {
+      revision = loadFactoryImplementationRevision(input);
+    } catch (error) {
+      return fail(
+        input,
+        actionDir,
+        message(error),
+        error instanceof FactoryImplementationRevisionError ? error.failureKind : "terminal",
+      );
+    }
+  }
   if (existsSync(factoryActionResultPath(actionDir))) return appendRecovered(input, actionDir);
   const stagedPath = join(actionDir, "provider-result.json");
   let staged: Staged;
@@ -132,7 +149,15 @@ async function runLeased(input: {
         "human-required",
       );
     }
-    if (
+    if (revision) {
+      if (!matchesFactoryImplementationRevisionWorkspace({ ctx, facts: before, revision }))
+        return fail(
+          input,
+          actionDir,
+          "Implementation workspace no longer matches the prior immutable candidate",
+          "human-required",
+        );
+    } else if (
       before.head !== ctx.identity.baseSha ||
       before.branchRef !== ctx.identity.branchRef ||
       before.status.trim() ||
@@ -150,7 +175,18 @@ async function runLeased(input: {
       ctx.identity.input.mode === "planned"
         ? verifyFactoryArtifactRef(ctx.identity.input.planCandidate, roots(ctx))
         : undefined;
-    const prompt = renderFactoryImplementationPrompt({ workItem: ctx.workItem, planPath });
+    const prompt = renderFactoryImplementationPrompt({
+      workItem: ctx.workItem,
+      planPath,
+      ...(revision
+        ? {
+            revision: {
+              blockingFindings: revision.blockingFindings,
+              priorCommit: revision.priorCommit,
+            },
+          }
+        : {}),
+    });
     writeFileSync(join(actionDir, "implementer.prompt.md"), prompt);
     const profile = ctx.identity.actions.produceImplementationCandidate;
     const provider = input.agentProviderFactory({
@@ -180,6 +216,7 @@ async function runLeased(input: {
               modelReasoningEffort: profile.reasoningEffort,
             }
           : {}),
+        ...(revision ? { session: revision.session } : {}),
         workspaceGuard: "record",
         maxRuntimeMs: input.maxRuntimeMs,
         logPath: streamPath,
@@ -193,8 +230,9 @@ async function runLeased(input: {
         const session = completed.session
           ? FactoryImplementationSessionSchema.safeParse(completed.session)
           : undefined;
-        result = session?.success
-          ? { ok: true, session: session.data, raw: completed.raw }
+        const effectiveSession = session?.success ? session.data : revision?.session;
+        result = effectiveSession
+          ? { ok: true, session: effectiveSession, raw: completed.raw }
           : {
               ok: false,
               error: "Implementer session was not captured or valid",
@@ -279,6 +317,8 @@ async function runLeased(input: {
       reviewBase: ctx.identity.baseSha,
       timestamp: staged.timestamp,
     });
+    if (revision && head.treeSha === revision.priorTree)
+      return fail(input, actionDir, "Implementation revision produced no new tree", "terminal");
     writeDurableFactoryFile(join(actionDir, "candidate.diff.patch"), head.diffPatch, true);
     const diff = ref(ctx, join(actionDir, "candidate.diff.patch"));
     const raw = ref(ctx, join(actionDir, "implementer.raw.json"));
