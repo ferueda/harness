@@ -26,7 +26,7 @@ import {
   resolveFactoryRoleAgent,
   resolveFactoryRoleAgentFromSnapshot,
   resolveFactoryStoreSettingsFromSnapshot,
-  factoryTriageExecutionProfile,
+  factoryActionExecutionProfile,
   resolveHarnessOptions,
 } from "../lib/config.ts";
 const TEST_HARNESS_ENTRYPOINT = "/opt/harness/dist/bin/harness.js";
@@ -175,14 +175,14 @@ test("resolveFactoryRoleAgent resolves absent factory through defaultAgent then 
 });
 
 test("factory triage execution profile freezes invocation-effective defaults", () => {
-  expect(factoryTriageExecutionProfile({ agent: "codex" })).toEqual({
+  expect(factoryActionExecutionProfile({ agent: "codex" })).toEqual({
     provider: "codex",
     model: "gpt-5.6-sol",
     sandbox: "read-only",
     approvalPolicy: "never",
     reasoningEffort: "high",
   });
-  expect(factoryTriageExecutionProfile({ agent: "cursor" })).toEqual({
+  expect(factoryActionExecutionProfile({ agent: "cursor" })).toEqual({
     provider: "cursor",
     model: "grok-4.5",
   });

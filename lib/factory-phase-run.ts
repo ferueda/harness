@@ -20,22 +20,37 @@ export const FactoryActionExecutionProfileSchema = z.discriminatedUnion("provide
 ]);
 export type FactoryActionExecutionProfile = z.infer<typeof FactoryActionExecutionProfileSchema>;
 
-export const FactoryPhaseRunIdentitySchema = z
-  .object({
-    version: z.literal(1),
-    phaseRunId: FactoryPhaseRunIdSchema,
+const FactoryPhaseRunBaseSchema = z.object({
+  version: z.literal(1),
+  phaseRunId: FactoryPhaseRunIdSchema,
+  workItemKey: z.string().min(1),
+  workspace: z.string().min(1),
+  projectId: z.string().min(1),
+  factoryStateRoot: z.string().min(1),
+});
+
+export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
+  FactoryPhaseRunBaseSchema.extend({
     phase: z.literal("triage"),
-    workItemKey: z.string().min(1),
-    workspace: z.string().min(1),
-    projectId: z.string().min(1),
-    factoryStateRoot: z.string().min(1),
     actions: z
       .object({
         triageWorkItem: FactoryActionExecutionProfileSchema,
       })
       .strict(),
-  })
-  .strict();
+  }).strict(),
+  FactoryPhaseRunBaseSchema.extend({
+    phase: z.literal("planning"),
+    reviewCeiling: z.number().int().positive(),
+    outputPlan: z.string().min(1),
+    publicationMode: z.enum(["local", "pull-request"]),
+    actions: z
+      .object({
+        producePlanCandidate: FactoryActionExecutionProfileSchema,
+        reviewPlanCandidate: FactoryActionExecutionProfileSchema,
+      })
+      .strict(),
+  }).strict(),
+]);
 export type FactoryPhaseRunIdentity = z.infer<typeof FactoryPhaseRunIdentitySchema>;
 
 export function writeFactoryPhaseRunIdentity(

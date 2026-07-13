@@ -81,7 +81,8 @@ Factory station lifecycle and run artifacts live under the durable store,
 `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/`; target
 repositories keep workspace-local inbox files and committed material.
 Harness-owned schemas resolve from the harness checkout `schemas/` directory.
-Planning and implementation actions are not shipped yet. Default
+Manual planning candidate, review, and publication actions are shipped;
+implementation actions remain unavailable. Default
 `harness runs prune` targets review runs; factory
 run cleanup currently needs
 `--runs-dir <store>/projects/<repo-id>/runs/factory` or manual deletion until prune
@@ -111,8 +112,9 @@ Linear list, fetch, create, and Linear-backed station input use
 `harness factory linear fetch`, `harness factory linear create`,
 `harness factory triage --linear-issue TEAM-123`. Create is a constrained
 intake write (no `--apply`); adding `--apply` to Linear triage projects its
-guarded start and terminal status/comment updates. Planning, publication, and
-implementation commands are unavailable.
+guarded start and terminal status/comment updates. Linear-backed planning also
+requires live status validation; each mutation needs that invocation's
+`--apply`. Implementation commands are unavailable.
 
 Do not write secrets into docs, plans, generated artifacts, committed
 `harness.json`, or checked-in config.

@@ -105,7 +105,7 @@ Current CLI shape:
 const run = program.command("run").description("Run a harness workflow");
 addReviewCommand(run, {
   name: "change-review",
-  description: "Run implementation, code-quality, and simplify reviewers",
+  description: "Run implementation and code-quality reviewers",
   workflow: runChangeReview,
 });
 addPlanReviewCommand(run);
@@ -129,11 +129,10 @@ Current workflow pattern:
 
 ```ts
 // workflows/change-review.workflow.ts:7-24
-export const CHANGE_REVIEW_STEPS = ["implementation", "quality", "simplify"] as const;
+export const CHANGE_REVIEW_STEPS = ["implementation", "quality"] as const;
 const STEP_AGENTS = {
   implementation: "review-implementation",
   quality: "code-quality-review",
-  simplify: "simplify",
 } satisfies Record<ChangeReviewStepId, ReviewAgentName>;
 ```
 
@@ -180,7 +179,7 @@ Test conventions:
 | Zod schemas           | `zod`                                                                                        | Define structured factory triage output and parse untrusted JSON safely.   |
 | Tests                 | `vitest`                                                                                     | Add isolated tests around routing, CLI, and workflow artifacts.            |
 | Plan validation       | `review-spec` or `harness run plan-review --plan dev/plans/260704-factory-intake-routing.md` | Check this plan against code reality before executing large phases.        |
-| Final review          | `change-review-workflow`                                                                     | Run implementation, quality, and simplify review after code changes.       |
+| Final review          | `change-review-workflow`                                                                     | Run implementation and quality review after code changes.                  |
 | Handoff if partial    | `handoff-work`                                                                               | Preserve context if another agent continues.                               |
 
 ## Design decisions

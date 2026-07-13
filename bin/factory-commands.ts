@@ -5,6 +5,7 @@ import { stdin as processStdin } from "node:process";
 import type { Readable } from "node:stream";
 import { formatFactoryActionOutput, withManualCommand } from "./factory-action-output.ts";
 import { factoryTriageCliOutput } from "./factory-triage-cli.ts";
+import { addFactoryPlanningStationCommand } from "./factory-planning-cli.ts";
 import {
   assertFactoryPathContained,
   createFactoryArtifactRef,
@@ -27,7 +28,7 @@ import {
 } from "../lib/factory-state-machine.ts";
 import { errorMessage } from "../lib/agent-invoke.ts";
 import {
-  factoryTriageExecutionProfile,
+  factoryActionExecutionProfile,
   loadFactoryConfigSnapshot,
   resolveFactoryLinearSettings,
   resolveFactoryLinearSettingsFromSnapshot,
@@ -144,7 +145,7 @@ export function addFactoryCommands(parent: Command, options: FactoryCommandOptio
   addFactoryStatusCommand(factory);
   addFactoryLinearCommand(factory);
   addFactoryTriageStationCommand(factory, options);
-  addFactoryPlanningStationCommand(factory);
+  addFactoryPlanningStationCommand(factory, options.defaultMaxRuntimeMs);
   addFactoryImplementationStationCommand(factory);
 }
 
@@ -394,13 +395,6 @@ async function readStreamToString(stream: Readable): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function addFactoryPlanningStationCommand(parent: Command): void {
-  const planning = parent.command("planning").description("Manage factory planning station");
-  addUnavailableFactoryPhaseCommand(planning, "run", "planning", true);
-  addUnavailableFactoryPhaseCommand(planning, "publish", "planning publication");
-  addUnavailableFactoryPhaseCommand(planning, "mark-plan-merged", "planning publication");
-}
-
 function addFactoryImplementationStationCommand(parent: Command): void {
   const implementation = parent
     .command("implementation")
@@ -515,7 +509,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
           }
           return createFactoryRunContext({
             ...common,
-            executionProfile: factoryTriageExecutionProfile(
+            executionProfile: factoryActionExecutionProfile(
               resolveFactoryRoleAgentFromSnapshot(configSnapshot, {
                 station: "triage",
                 role: "triager",

@@ -10,9 +10,10 @@ logs are not parsed or migrated and data is never deleted automatically.
 
 Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
-prints the next reaction, then exits. PR 1 has no executable downstream Factory
-command, and terminal route evidence may omit one. The CLI never invokes the
-next handler. An already-waiting state invokes no handler.
+prints the next reaction, then exits. Planning is shipped as manually stepped
+candidate, review, and publication commands; implementation commands remain
+unavailable. The CLI never invokes the next handler. An already-waiting state
+invokes no handler.
 
 Run only one Factory phase command at a time for a work item. Concurrent phase
 commands for the same work item are unsupported and may fail.
@@ -186,8 +187,9 @@ Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
 `statuses` when operator tools like `linear-cli` or `factory linear list`
 should target those board states by key; factory stations do not require them.
 
-The schema currently requires the downstream status names shown above, but PR 1
-does not expose planning or implementation commands that use them.
+The schema requires the downstream status names shown above. Planning uses its
+configured statuses for explicit Linear boundary projections; implementation
+commands remain unavailable.
 
 ### Durable Store Overrides
 
@@ -322,7 +324,7 @@ harness factory triage --workspace /path/to/repo --linear-issue ENG-123 --apply
 Routes:
 
 - `ready-to-implement`: small and scoped enough for direct implementation.
-- `ready-to-plan`: planning is required, but its executable action ships after PR 1.
+- `ready-to-plan`: planning is required; start it with `harness factory planning run`.
 - `needs-info`: requires human answers before rerun.
 - `wait-to-implement`: valid but parked until `reconsiderWhen`.
 
@@ -350,13 +352,21 @@ Triage does not mutate tracker state, labels, branches, or source files unless
 `--apply` is used with `--linear-issue`. Apply mode mutates Linear status and
 comments only; it does not mutate source files.
 
-## Unshipped phases
+## Planning
 
-Planning and implementation commands, including plan publication and merge
-recording, are intentionally unavailable in PR 1. They do not fall back to the
-old lifecycle. Their dedicated follow-up PRs will consume the action kernel.
-Until then, triage can return a wait reaction without an executable downstream
-Factory command. Terminal route evidence may omit a command.
+`harness factory planning run` executes one pending action and exits with
+`next`; repeat the printed command to alternate candidate and fixed one-step
+plan review actions. Revisions resume the original planner session and receive
+only the latest `must_fix` findings. `--rerun` starts a fresh phase only after
+needs-human or failure. Item files publish approved plans locally; Linear
+starts and reruns require `--apply`, then wait for explicit `planning publish`
+and `mark-plan-merged`. Factory validates and appends the planning request
+before projecting Linear to Planning; a failed projection leaves that one
+request pending for the next explicit `--apply` invocation and never reaches
+the provider. Later human, failure, and publication waits may persist Factory
+truth without `--apply` and repair their Linear projection later. `--apply`
+authorizes only that invocation's projection. Implementation actions remain
+unavailable.
 
 ## Local Inbox
 

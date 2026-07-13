@@ -61,7 +61,12 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
     type: z.literal("planning.requested"),
     phaseRunId: FactoryPhaseRunIdSchema,
-    data: RequestData.extend({ reviewCeiling: z.number().int().positive() }),
+    data: RequestData.extend({
+      intent: z.enum(["start", "restart"]),
+      reviewCeiling: z.number().int().positive(),
+      publicationMode: z.enum(["local", "pull-request"]),
+      outputPlan: z.string().min(1),
+    }),
   }),
   Base.extend({
     type: z.literal("planning.candidate.produced"),

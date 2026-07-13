@@ -32,7 +32,7 @@ import type {
   AgentSessionRef,
 } from "./agents.ts";
 import { DEFAULT_AGENT_MODELS } from "./agents.ts";
-import type { FactoryRoleAgent } from "./config.ts";
+import { factoryActionExecutionProfile, type FactoryRoleAgent } from "./config.ts";
 import { buildRunId } from "./context.ts";
 import { parseLinearIssueIdentifier } from "./factory-linear-adapter.ts";
 import { renderFactoryPlanningSummary } from "./factory-planning-handoff.ts";
@@ -40,6 +40,7 @@ import { FactoryPlanningError, type FactoryPlanningOutput } from "./factory-plan
 import {
   FactoryWorkItemMetadataSchema,
   deriveFactoryWorkItemPlanSlug,
+  parseFactoryWorkItem,
   type FactoryStage,
   type FactoryWorkItem,
   type FactoryWorkItemMetadata,
@@ -56,6 +57,8 @@ import {
   type FactoryExecutionProvenance,
   type FactoryStoreMeta,
 } from "./factory-store.ts";
+import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
+import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 
 export type DraftValidationReason =
   | "missing"
@@ -192,6 +195,7 @@ export type FactoryPlanningRunContextOptions = {
   plannerRole: FactoryPlanningAgentRole;
   reviewerRole: FactoryPlanningAgentRole;
   outputPlan?: string;
+  publicationMode?: "local" | "pull-request";
   maxReviewIterations: number;
   maxRuntimeMs: number;
   dryRun?: boolean;
@@ -376,6 +380,32 @@ function createFactoryPlanningRunContextInternal(
     mkdirSync(join(runDir, "context"));
     mkdirSync(join(runDir, "planning"));
     writeJson(join(runDir, "context/work-item.json"), options.workItem);
+    if (options.factoryStore) {
+      writeFactoryPhaseRunIdentity(runDir, {
+        version: 1,
+        phaseRunId: runId,
+        phase: "planning",
+        workItemKey: deriveFactoryWorkItemKey(options.workItem),
+        workspace,
+        projectId: options.factoryStore.projectId,
+        factoryStateRoot: resolve(options.factoryStore.factoryStateRoot),
+        reviewCeiling: options.maxReviewIterations,
+        outputPlan: relative(
+          workspace,
+          resolveOutputPlan({
+            workspace,
+            outputPlan: options.outputPlan,
+            startedAt,
+            workItem: options.workItem,
+          }),
+        ),
+        publicationMode: options.publicationMode ?? "local",
+        actions: {
+          producePlanCandidate: factoryActionExecutionProfile(options.plannerRole),
+          reviewPlanCandidate: factoryActionExecutionProfile(options.reviewerRole),
+        },
+      });
+    }
   } catch (error) {
     cleanupOrphanedFactoryPlanningRunDir(runDir);
     throw asFactoryPlanningError(error);
@@ -551,6 +581,101 @@ function createFactoryPlanningRunContextInternal(
       hooks,
     });
   }
+}
+
+export type OpenFactoryPlanningRunContextOptions = {
+  workspace: string;
+  runsDir: string;
+  phaseRunId: string;
+  workItem: FactoryWorkItem;
+  factoryStore: FactoryStoreMeta;
+  eventSink?: WorkflowEventSink;
+};
+
+/** Reopen immutable planning policy without allocating or consulting config. */
+export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunContextOptions) {
+  const runDir = join(resolve(options.runsDir), options.phaseRunId);
+  const identity = readFactoryPhaseRunIdentity(runDir);
+  if (
+    identity.phase !== "planning" ||
+    identity.phaseRunId !== options.phaseRunId ||
+    identity.workItemKey !== deriveFactoryWorkItemKey(options.workItem) ||
+    identity.workspace !== resolve(options.workspace) ||
+    identity.projectId !== options.factoryStore.projectId ||
+    identity.factoryStateRoot !== resolve(options.factoryStore.factoryStateRoot)
+  )
+    throw new FactoryPlanningError(
+      `Factory planning phase-run identity conflicts with ${options.phaseRunId}`,
+    );
+  const persisted = parseFactoryWorkItem(
+    JSON.parse(readFileSync(join(runDir, "context/work-item.json"), "utf8")),
+  );
+  if (deriveFactoryWorkItemKey(persisted) !== identity.workItemKey)
+    throw new FactoryPlanningError(`Factory planning input conflicts with ${options.phaseRunId}`);
+  const eventSink = options.eventSink
+    ? createCompositeEventSink(createFileEventSink(runDir), options.eventSink)
+    : createFileEventSink(runDir);
+  let preparedScratch: ScratchIdentity | undefined;
+  return {
+    runId: identity.phaseRunId,
+    runDir,
+    workspace: identity.workspace,
+    workItem: persisted,
+    factoryStore: options.factoryStore,
+    identity,
+    eventSink,
+    preparePlannerScratch(): { scratchRunDir: string; draftPath: string } {
+      const scratchRunDir = join(
+        identity.workspace,
+        ".harness/factory-drafts",
+        identity.phaseRunId,
+      );
+      ensureScratchDirectory(
+        join(identity.workspace, ".harness"),
+        identity.workspace,
+        runDir,
+        scratchRunDir,
+      );
+      ensureScratchDirectory(
+        join(identity.workspace, ".harness", "factory-drafts"),
+        identity.workspace,
+        runDir,
+        scratchRunDir,
+      );
+      if (!existsSync(scratchRunDir))
+        createExclusiveScratchRunDir(scratchRunDir, identity.workspace, runDir);
+      preparedScratch = validatePreparedScratch({
+        workspace: identity.workspace,
+        scratchRunDir,
+        runDir,
+        ...(preparedScratch ? { expected: preparedScratch } : {}),
+      });
+      const draftPath = join(scratchRunDir, "draft.md");
+      try {
+        const draft = lstatSync(draftPath);
+        if (draft.isSymbolicLink()) throw new DraftValidationError("symlinked");
+        if (!draft.isFile()) throw new DraftValidationError("non-regular");
+      } catch (error) {
+        if (!isNodeError(error, "ENOENT")) throw error;
+      }
+      return { scratchRunDir, draftPath };
+    },
+    readPlannerDraft(): Buffer {
+      if (!preparedScratch) throw new DraftValidationError("parent-unsafe");
+      const scratchRunDir = join(
+        identity.workspace,
+        ".harness/factory-drafts",
+        identity.phaseRunId,
+      );
+      return readValidatedScratchDraft({
+        workspace: identity.workspace,
+        scratchRunDir,
+        draftPath: join(scratchRunDir, "draft.md"),
+        runDir,
+        expected: preparedScratch,
+      });
+    },
+  };
 }
 
 function buildMeta(input: {

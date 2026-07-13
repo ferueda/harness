@@ -325,6 +325,7 @@ function assertRecoveredMetaIdentity(value: FactoryRunMeta, ctx: FactoryRunConte
   const valueStore = value.factoryStore;
   const contextStore = ctx.factoryStore;
   const identity = readFactoryPhaseRunIdentity(ctx.runDir);
+  if (identity.phase !== "triage") throw new Error(`Factory phase is not triage: ${ctx.runId}`);
   const profile = identity.actions.triageWorkItem;
   if (
     value.runId !== ctx.runId ||

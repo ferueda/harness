@@ -16,8 +16,9 @@ it.
 Wait for process exit; do not poll or start a second action. The command
 persists progress heartbeats in the action run (`--verbose` also emits them to
 stderr), writes a terminal event/state, and prints durable evidence plus the
-next reaction. PR 1 has no executable downstream command; routed triage can
-therefore return a wait reaction without a command. The invocation never
+next reaction. Planning is shipped as separately invoked candidate, review,
+and publication commands; implementation commands remain unavailable. Routed
+triage can return a wait reaction without a command. The invocation never
 executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
 
 Operate the current local harness factory one work item at a time.
@@ -143,8 +144,9 @@ Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
 `factory.linear.statuses` when operator list/move tools need those board
 states; stations do not require them.
 
-The schema currently requires the downstream status names shown above, but PR 1
-does not expose planning or implementation commands that use them.
+The schema requires the downstream status names shown above. Planning uses its
+configured statuses for explicit Linear boundary projections; implementation
+commands remain unavailable.
 
 - `station`: the current lifecycle step, `triage`.
 - `role`: the current station job, `triager`.
@@ -239,19 +241,25 @@ Routes:
 - `wait-to-implement`
 
 Read the run `summary.md`, `factory-triage.json`, and `factory-route.md` before
-acting on the reaction. No route has an executable downstream Factory command
-in PR 1.
+acting on the reaction.
 
 Live triage appends `work_item.imported`, `triage.requested`, and one terminal
 action event in the durable factory store. Dry-run does not mutate lifecycle
 state. The strict state projection and pure next-reaction function own machine
 progress; Linear status/comments remain human board projections.
 
-## Unshipped phases
+## Planning
 
-Planning and implementation commands are intentionally unavailable in PR 1.
-Wait for their dedicated action-coordinator PRs; do not invoke legacy station
-flows or infer progress from tracker state.
+Run `harness factory planning run` once per printed reaction. Stop on human,
+failed, plan-merge, or approved waits. Review-driven revisions stay in the
+phase and resume the saved planner session; use `--rerun` only after human or
+failed waits. Item files materialize locally after review pass. Linear issues
+require `--apply` for planning start and rerun, then explicit `planning publish`
+and `mark-plan-merged`. The durable planning request precedes its Linear
+projection; if projection fails, repeat that command with `--apply` to repair
+the same request before provider work. Pass `--apply` on each later command
+that should project a wait boundary. Never infer action progress from Linear
+status or comments. Implementation commands remain unavailable.
 
 ## Artifacts
 

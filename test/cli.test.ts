@@ -261,6 +261,24 @@ test("harness factory help exits cleanly", () => {
   expect(result.stdout).toMatch(/planning/);
   expect(result.stdout).not.toMatch(/dispatch/);
 });
+test("harness factory planning help exposes only manual actions", () => {
+  const result = runHarness(["factory", "planning", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness factory planning/);
+  expect(result.stdout).toMatch(/run/);
+  expect(result.stdout).toMatch(/publish/);
+  expect(result.stdout).toMatch(/mark-plan-merged/);
+  expect(result.stdout).not.toMatch(/loop|dry-run|implement/);
+});
+test("harness factory planning run help documents one-action controls", () => {
+  const result = runHarness(["factory", "planning", "run", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/exactly one pending planning action/);
+  expect(result.stdout).toMatch(/--rerun/);
+  expect(result.stdout).toMatch(/--apply/);
+  expect(result.stdout).toMatch(/--output-plan/);
+  expect(result.stdout).not.toMatch(/--dry-run/);
+});
 test("harness factory linear help exits cleanly", () => {
   const result = runHarness(["factory", "linear", "--help"]);
   expect(result.status).toBe(0);
@@ -1784,10 +1802,10 @@ test("harness factory triage rejects invalid item JSON", () => {
 
 test("harness factory planning requires one input source", () => {
   const workspace = createPlainWorkspace();
-  const result = runHarness(["factory", "planning", "--workspace", workspace, "--dry-run"]);
+  const result = runHarness(["factory", "planning", "run", "--workspace", workspace]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory planning is not available/);
+  expect(result.stderr).toMatch(/one of --item-file or --linear-issue is required/);
 });
 
 test("harness factory planning rejects multiple input sources before role config resolution", () => {
@@ -1817,17 +1835,17 @@ test("harness factory planning rejects multiple input sources before role config
   const result = runHarness([
     "factory",
     "planning",
+    "run",
     "--workspace",
     workspace,
     "--item-file",
     "item.json",
     "--linear-issue",
     "ENG-123",
-    "--dry-run",
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory planning is not available/);
+  expect(result.stderr).toMatch(/mutually exclusive/);
   expect(result.stderr).not.toMatch(/sandboxMode applies only when role agent is codex/);
 });
 
@@ -1858,6 +1876,7 @@ test("harness factory planning apply rejects item-file mode before role config r
   const result = runHarness([
     "factory",
     "planning",
+    "run",
     "--workspace",
     workspace,
     "--item-file",
@@ -1866,7 +1885,7 @@ test("harness factory planning apply rejects item-file mode before role config r
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory planning is not available/);
+  expect(result.stderr).toMatch(/--apply requires --linear-issue/);
   expect(result.stderr).not.toMatch(/sandboxMode applies only when role agent is codex/);
 });
 
@@ -1876,6 +1895,7 @@ test("harness factory planning apply rejects dry-run before Linear config resolu
   const result = runHarness([
     "factory",
     "planning",
+    "run",
     "--workspace",
     workspace,
     "--linear-issue",
@@ -1884,30 +1904,30 @@ test("harness factory planning apply rejects dry-run before Linear config resolu
     "--dry-run",
   ]);
 
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory planning is not available/);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toMatch(/unknown option '--dry-run'/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
 test("harness factory planning apply requires Linear issue before role config resolution", () => {
   const workspace = createPlainWorkspace();
 
-  const result = runHarness(["factory", "planning", "--workspace", workspace, "--apply"]);
+  const result = runHarness(["factory", "planning", "run", "--workspace", workspace, "--apply"]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory planning is not available/);
+  expect(result.stderr).toMatch(/one of --item-file or --linear-issue is required/);
   expect(result.stderr).not.toMatch(/factory\.linear is required/);
 });
 
 test("harness factory planning with Linear input requires Linear config", () => {
   const workspace = createPlainWorkspace();
   const result = runHarness(
-    ["factory", "planning", "--linear-issue", "ENG-123", "--workspace", workspace, "--dry-run"],
+    ["factory", "planning", "run", "--linear-issue", "ENG-123", "--workspace", workspace],
     { env: { LINEAR_API_KEY: "test-key" } },
   );
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory planning is not available/);
+  expect(result.stderr).toMatch(/factory\.linear is required/);
 });
 
 test("harness factory planning rejects invalid factory role config", () => {
@@ -1937,15 +1957,15 @@ test("harness factory planning rejects invalid factory role config", () => {
   const result = runHarness([
     "factory",
     "planning",
+    "run",
     "--workspace",
     workspace,
     "--item-file",
     "item.json",
-    "--dry-run",
   ]);
 
   expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/Factory planning is not available/);
+  expect(result.stderr).toMatch(/sandboxMode applies only when role agent is codex/);
 });
 
 test("harness factory triage rejects invalid factory role config", () => {

@@ -195,8 +195,8 @@ export function resolveFactoryRoleAgentFromSnapshot(
   };
 }
 
-/** Freeze the invocation-effective PR 1 triage policy under its handler key. */
-export function factoryTriageExecutionProfile(
+/** Freeze an invocation-effective Factory role under its handler key. */
+export function factoryActionExecutionProfile(
   role: FactoryRoleAgent,
 ): FactoryActionExecutionProfile {
   if (role.agent === "cursor") {
@@ -224,6 +224,15 @@ export function resolveFactoryPlanningSettings(
   return {
     workspace,
     maxReviewIterations: config.factory?.planning?.maxReviewIterations ?? 3,
+  };
+}
+
+export function resolveFactoryPlanningSettingsFromSnapshot(
+  snapshot: FactoryConfigSnapshot,
+): FactoryPlanningSettings & { workspace: string } {
+  return {
+    workspace: snapshot.workspace,
+    maxReviewIterations: snapshot.config.factory?.planning?.maxReviewIterations ?? 3,
   };
 }
 

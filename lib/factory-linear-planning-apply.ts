@@ -186,12 +186,13 @@ export function assertLinearPlanningApplyAllowed(
     settings.statuses.needsInfo,
     settings.statuses.needsPlanReview,
     settings.statuses.planningFailed,
+    settings.statuses.planning,
   ].map(normalizeStatus);
   // The station input gate is the authoritative filter for needsInfo:
   // only planner-question markers may reach this adapter apply step.
   if (allowed.includes(normalizeStatus(statusName))) return;
   throw new Error(
-    `Linear issue is in ${statusName}; planning --apply only accepts ${settings.statuses.needsPlan}, ${settings.statuses.needsInfo}, ${settings.statuses.needsPlanReview}, or ${settings.statuses.planningFailed}.`,
+    `Linear issue is in ${statusName}; planning --apply only accepts ${settings.statuses.needsPlan}, ${settings.statuses.needsInfo}, ${settings.statuses.needsPlanReview}, ${settings.statuses.planningFailed}, or ${settings.statuses.planning}.`,
   );
 }
 

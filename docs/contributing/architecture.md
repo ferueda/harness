@@ -124,9 +124,9 @@ an atomically published projection protected by per-work-item locks. Current
 triage writes `work_item.imported`, `triage.requested`,
 `triage.work_item.completed`, or `factory.action.failed`.
 
-Planning, publication, and implementation action handlers are intentionally
-unavailable in PR 1. Their later PRs will consume the same action kernel; no
-current CLI path falls back to the removed lifecycle.
+Planning candidate, review, and publication actions use this kernel through
+manually stepped CLI commands. Implementation action handlers remain
+unavailable; no current CLI path falls back to the removed lifecycle.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `lib/factory-status.ts`
 composes that inbox data with durable-store, lock, and legacy-state inspection
@@ -167,9 +167,10 @@ human or external status.
 station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
-Planning, publication, and implementation commands are unavailable until their
-follow-up PRs. A terminal triage can therefore yield a wait reaction with no
-executable downstream Factory command; its route command may be absent.
+Planning candidate/review and explicit plan publication commands consume the
+same action kernel, one handler per invocation. Candidate revisions reuse the
+snapshotted planner profile and original session. Implementation commands
+remain unavailable.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation and quality. The quality reviewer covers behavior-preserving
@@ -253,15 +254,15 @@ Factory triage artifacts include:
 
 Artifact refs in action events use store-relative `/` paths plus SHA-256
 content hashes. The CLI validates terminal evidence before recovery or Linear
-projection. PR 1 has no executable downstream Factory command; route evidence
-and wait reactions may omit a command.
+projection. Planning reactions may name the next manually invoked planning
+command. Implementation waits have no executable downstream command.
 
 `--dry-run` writes placeholder triage and route artifacts but does not invoke a
 provider, does not write run `events.jsonl`, and does not write lifecycle
 events in the durable factory store.
 
-Planning and implementation run artifacts are not part of the shipped PR 1
-surface.
+Planning run artifacts are part of the shipped manually stepped surface.
+Implementation run artifacts are not shipped.
 
 ## Factory inbox lifecycle
 

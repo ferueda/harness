@@ -557,9 +557,10 @@ test("Linear planning apply helpers map statuses and render concise comments", (
     assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Plan Needs Review"),
   ).not.toThrow();
   expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Planning Failed")).not.toThrow();
-  for (const status of ["Backlog", "Ready to Implement", "Planning"]) {
+  expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, "Planning")).not.toThrow();
+  for (const status of ["Backlog", "Ready to Implement"]) {
     expect(() => assertLinearPlanningApplyAllowed(LINEAR_SETTINGS, status)).toThrow(
-      /only accepts Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed/,
+      /only accepts .*Planning Failed, or Planning/,
     );
   }
 
@@ -2126,6 +2127,41 @@ test("Linear adapter applies planning started status from allowed entry states",
   }
 });
 
+test("Linear adapter treats an already-Planning start projection as idempotent", async () => {
+  const updates: Array<{ id: string; input: { stateId: string } }> = [];
+  const adapter = createLinearFactoryAdapterForClient({
+    client: fakeClient({
+      issues: async () => ({
+        nodes: [
+          {
+            ...ISSUE,
+            state: Promise.resolve({ id: "state-Planning", name: "Planning" }),
+          },
+        ],
+      }),
+      updateIssue: async (id, input) => {
+        updates.push({ id, input });
+        return { success: true };
+      },
+    }),
+    settings: LINEAR_SETTINGS,
+  });
+
+  const result = await adapter.applyPlanningStarted({
+    issueRef: "ENG-123",
+    runId: "run-1",
+    runDir: ".harness/runs/factory/run-1",
+  });
+
+  expect(updates).toEqual([]);
+  expect(result).toMatchObject({
+    issueIdentifier: "ENG-123",
+    stage: "start",
+    fromStatus: "Planning",
+    targetStatus: "Planning",
+  });
+});
+
 test("Linear adapter rejects planning apply from disallowed statuses before mutation", async () => {
   const updates: Array<{ id: string; input: { stateId: string } }> = [];
   const adapter = createLinearFactoryAdapterForClient({
@@ -2152,9 +2188,7 @@ test("Linear adapter rejects planning apply from disallowed statuses before muta
       runId: "run-1",
       runDir: ".harness/runs/factory/run-1",
     }),
-  ).rejects.toThrow(
-    /only accepts Needs Plan, Needs Clarification, Plan Needs Review, or Planning Failed/,
-  );
+  ).rejects.toThrow(/only accepts .*Planning Failed, or Planning/);
   expect(updates).toEqual([]);
 });
 

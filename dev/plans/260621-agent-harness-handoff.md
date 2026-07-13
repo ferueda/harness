@@ -20,7 +20,7 @@ North star: durable orchestration (checkpointed steps, retries, triggers). **Inn
 
 ## Shipped (summary)
 
-Live today: `harness run change-review` (implementation → quality → simplify), Cursor/Codex SDK reviewers, `events.jsonl` + `*.stream.jsonl`, handoff stdin, partial `--steps`, `harness init` + target shim, run prune, schema-aware JSON parse, install + skills install. Ad-hoc Cursor delegation: `skills/cursor-cli/` (standalone; not harness init).
+Live today: `harness run change-review` (implementation → quality, including scoped simplification), Cursor/Codex SDK reviewers, `events.jsonl` + `*.stream.jsonl`, handoff stdin, partial `--steps`, `harness init` + target shim, run prune, schema-aware JSON parse, install + skills install. Ad-hoc Cursor delegation: `skills/cursor-cli/` (standalone; not harness init).
 
 Shipped work index: `dev/plans/README.md` (PR links; finished plans removed from tree).
 
@@ -134,7 +134,7 @@ README.md
 |------|------------------|
 | Workflow reference | `workflows/change-review.workflow.ts` |
 | Review agents | SDK providers; ad-hoc `cursor-cli` skill outside harness |
-| Review instructions | `review-implementation`, `code-quality-review`, `simplify-review` |
+| Review instructions | `review-implementation`, `code-quality-review` (includes scoped simplification) |
 | Chat coordinator | `change-review-workflow` |
 | Handoff | `handoff-work` — `--handoff`, `--handoff-stdin` |
 | Post-review triage | `change-review-workflow` (After Results) |
