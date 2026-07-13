@@ -2,7 +2,7 @@
 
 ## Active queue
 
-No approved implementation plans are currently active.
+- [FER-78 — Publish reviewed Factory work through human-merged pull requests](FER-78.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-78/add-explicit-factory-implementation-pr-and-merge-closure)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
