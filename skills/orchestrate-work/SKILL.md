@@ -155,8 +155,9 @@ Implement [bounded goal] in this isolated worktree.
 Authority: [request/plan/spec]
 Baseline: [verified branch or commit]
 Boundaries: [material constraints and non-goals]
-Ownership: you own implementation and verification; the parent owns scope,
-decision feedback, review triage, and acceptance. [Publication authority.]
+Ownership: you own implementation, commits, verification, and requested review
+work; the parent owns scope, decision feedback, review triage, and acceptance.
+[Publication authority.]
 
 Callback: read the parent task ID from this prompt's outer
 <codex_delegation>/<source_thread_id>. Send checkpoints with
