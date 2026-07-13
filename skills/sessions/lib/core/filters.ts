@@ -13,6 +13,7 @@ export function applySessionFilters(
   const filtered = sessions.filter((session) => {
     if (excludeAutomation && session.isAutomation) return false;
     if (excludeSubagent && session.isSubagent) return false;
+    if (filters.sessionId !== undefined && session.sessionId !== filters.sessionId) return false;
     if (filters.workspaceKey && session.workspaceKey !== filters.workspaceKey) return false;
     if (
       filters.workspacePathPrefix &&
