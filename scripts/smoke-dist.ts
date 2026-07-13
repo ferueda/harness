@@ -163,6 +163,15 @@ const factoryImplementationRunHelp = runHarness(["factory", "implementation", "r
 if (!factoryImplementationRunHelp.includes("harness factory implementation run")) {
   throw new Error("Expected factory implementation run help to include command usage");
 }
+if (!factoryImplementationRunHelp.includes("--rerun")) {
+  throw new Error("Expected factory implementation run help to include --rerun");
+}
+if (!factoryImplementationRunHelp.includes("--max-runtime-ms")) {
+  throw new Error("Expected factory implementation run help to include --max-runtime-ms");
+}
+if (factoryImplementationRunHelp.includes("--dry-run")) {
+  throw new Error("Factory implementation run must not expose legacy --dry-run");
+}
 for (const [name, help] of [
   ["factory status", factoryStatusHelp],
   ["factory linear fetch", factoryLinearFetchHelp],

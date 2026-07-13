@@ -1,14 +1,15 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   factoryImplementationExecutionLeaseFilename,
+  canonicalFactoryImplementationWorkspace,
   isFactoryImplementationExecutionLeaseFilename,
   withFactoryImplementationExecutionLease,
 } from "../lib/factory-implementation-policy.ts";
 import { acquireFactoryWorkItemLock, releaseFactoryWorkItemLock } from "../lib/factory-locks.ts";
-import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 
 const workItem = {
   id: "linear:ENG-12",
@@ -20,7 +21,7 @@ const workItem = {
 };
 
 test("implementation execution leases retain async work and fail fast on contention", async () => {
-  const root = mkdtempSync(join(tmpdir(), "harness-implementation-lease-"));
+  const root = createWorkspace();
   let release!: () => void;
   const held = withFactoryImplementationExecutionLease({
     factoryStateRoot: root,
@@ -40,8 +41,9 @@ test("implementation execution leases retain async work and fail fast on content
   await held;
 });
 
-test("implementation execution leases are independent per work item", async () => {
-  const root = mkdtempSync(join(tmpdir(), "harness-implementation-lease-"));
+test("implementation execution leases are independent per canonical worktree", async () => {
+  const root = createWorkspace();
+  const other = createWorkspace();
   let release!: () => void;
   const held = withFactoryImplementationExecutionLease({
     factoryStateRoot: root,
@@ -53,7 +55,7 @@ test("implementation execution leases are independent per work item", async () =
   await expect(
     withFactoryImplementationExecutionLease({
       factoryStateRoot: root,
-      workspace: root,
+      workspace: other,
       workItem: {
         ...workItem,
         id: "linear:ENG-13",
@@ -67,7 +69,7 @@ test("implementation execution leases are independent per work item", async () =
 });
 
 test("implementation execution lease releases after callback failure", async () => {
-  const root = mkdtempSync(join(tmpdir(), "harness-implementation-lease-"));
+  const root = createWorkspace();
   await expect(
     withFactoryImplementationExecutionLease({
       factoryStateRoot: root,
@@ -90,15 +92,16 @@ test("implementation execution lease releases after callback failure", async () 
 });
 
 test("execution lease filename has a stable inspectable suffix", () => {
-  const filename = factoryImplementationExecutionLeaseFilename("linear:ENG-12");
+  const filename = factoryImplementationExecutionLeaseFilename(process.cwd());
   expect(isFactoryImplementationExecutionLeaseFilename(filename)).toBe(true);
   expect(isFactoryImplementationExecutionLeaseFilename(`${filename}.other`)).toBe(false);
 });
 
 test("execution lease recovers a dead same-host owner regardless of age", async () => {
-  const root = mkdtempSync(join(tmpdir(), "harness-implementation-lease-"));
-  const workItemKey = deriveFactoryWorkItemKey(workItem);
-  const filename = factoryImplementationExecutionLeaseFilename(workItemKey);
+  const root = createWorkspace();
+  const canonical = canonicalFactoryImplementationWorkspace(root);
+  const workItemKey = `workspace:${canonical}`;
+  const filename = factoryImplementationExecutionLeaseFilename(canonical);
   const oldOwner = acquireFactoryWorkItemLock({
     factoryStateRoot: root,
     workItemKey,
@@ -125,9 +128,10 @@ test("execution lease recovers a dead same-host owner regardless of age", async 
 });
 
 test("execution lease never expires a remote owner by age", async () => {
-  const root = mkdtempSync(join(tmpdir(), "harness-implementation-lease-"));
-  const workItemKey = deriveFactoryWorkItemKey(workItem);
-  const filename = factoryImplementationExecutionLeaseFilename(workItemKey);
+  const root = createWorkspace();
+  const canonical = canonicalFactoryImplementationWorkspace(root);
+  const workItemKey = `workspace:${canonical}`;
+  const filename = factoryImplementationExecutionLeaseFilename(canonical);
   const remoteOwner = acquireFactoryWorkItemLock({
     factoryStateRoot: root,
     workItemKey,
@@ -155,3 +159,9 @@ test("execution lease never expires a remote owner by age", async () => {
     owner: remoteOwner,
   });
 });
+
+function createWorkspace(): string {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-lease-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  return workspace;
+}

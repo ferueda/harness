@@ -17,7 +17,9 @@ test("createFactoryReviewHead succeeds with populated ignored .harness and omits
     workspace,
     runDir,
     runId: "run-fer-56",
+    attempt: 1,
     reviewBase,
+    timestamp: "2026-07-12T12:00:00.000Z",
   });
 
   expect(result.reviewCommitSha).toMatch(/^[0-9a-f]{40}$/);
@@ -44,7 +46,9 @@ test("createFactoryReviewHead fails closed when .harness is not ignored", () => 
       workspace,
       runDir,
       runId: "run-fer-56-unignored",
+      attempt: 1,
       reviewBase,
+      timestamp: "2026-07-12T12:00:00.000Z",
     }),
   ).toThrow(/must not include \.harness\//);
 

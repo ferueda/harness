@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest";
 import {
   applyLinearImplementationCompleted,
+  applyLinearImplementationAttention,
   applyLinearImplementationFailed,
   applyLinearImplementationStarted,
   linearImplementationCompletedMarker,
@@ -98,7 +99,7 @@ test("implementation start projects first and retry attempts to Implementing", a
       issueRef: "ENG-123",
       runId: "run-first",
       runDir: ".harness/runs/factory/run-first",
-      attempt: "first",
+      intent: "start",
     },
   );
   expect(first.updateIssue).toHaveBeenCalledWith("issue-1", { stateId: "state-Implementing" });
@@ -113,9 +114,39 @@ test("implementation start projects first and retry attempts to Implementing", a
     issueRef: "ENG-123",
     runId: "run-retry",
     runDir: ".harness/runs/factory/run-retry",
-    attempt: "retry",
+    intent: "restart",
   });
   expect(retry.updateIssue).toHaveBeenCalledWith("issue-1", { stateId: "state-Implementing" });
+});
+
+test("implementation restart accepts already Implementing without another status mutation", async () => {
+  const state = harness("Implementing");
+  const result = await applyLinearImplementationStarted(state.deps, state.client, LINEAR_SETTINGS, {
+    issueRef: "ENG-123",
+    runId: "run-repair",
+    runDir: ".harness/runs/factory/run-repair",
+    intent: "restart",
+  });
+  expect(state.updateIssue).not.toHaveBeenCalled();
+  expect(result).toMatchObject({
+    statusMutationCompleted: false,
+    statusPostconditionVerified: true,
+  });
+});
+
+test("implementation attention remains Implementing and deduplicates its comment", async () => {
+  const state = harness("Implementing");
+  const input = {
+    issueRef: "ENG-123",
+    runId: "run-attention",
+    runDir: ".harness/runs/factory/run-attention",
+    verdict: "needs_changes" as const,
+    candidateCommit: "a".repeat(40),
+  };
+  await applyLinearImplementationAttention(state.deps, state.client, LINEAR_SETTINGS, input);
+  await applyLinearImplementationAttention(state.deps, state.client, LINEAR_SETTINGS, input);
+  expect(state.updateIssue).not.toHaveBeenCalled();
+  expect(state.createComment).toHaveBeenCalledTimes(1);
 });
 
 test("implementation start fails closed when fresh state changed", async () => {
@@ -130,7 +161,7 @@ test("implementation start fails closed when fresh state changed", async () => {
       issueRef: "ENG-123",
       runId: "run-stale",
       runDir: ".harness/runs/factory/run-stale",
-      attempt: "first",
+      intent: "start",
     }),
   ).rejects.toThrow(/requires Ready to Implement/);
   expect(state.updateIssue).not.toHaveBeenCalled();
@@ -145,7 +176,7 @@ test("implementation start rejects a same-identifier response with another immut
       issueRef: "ENG-123",
       runId: "run-wrong-id",
       runDir: ".harness/runs/factory/run-wrong-id",
-      attempt: "first",
+      intent: "start",
     }),
   ).rejects.toThrow(/identity changed/);
   expect(state.updateIssue).not.toHaveBeenCalled();
@@ -164,7 +195,7 @@ test("implementation start revalidates the status map immediately before mutatio
       issueRef: "ENG-123",
       runId: "run-status-map-drift",
       runDir: ".harness/runs/factory/run-status-map-drift",
-      attempt: "first",
+      intent: "start",
     }),
   ).rejects.toThrow("configured status map changed");
   expect(state.updateIssue).not.toHaveBeenCalled();
@@ -178,7 +209,7 @@ test("implementation start treats success false as a failed mutation", async () 
       issueRef: "ENG-123",
       runId: "run-failed-mutation",
       runDir: ".harness/runs/factory/run-failed-mutation",
-      attempt: "first",
+      intent: "start",
     }),
   ).rejects.toThrow(/implementation start mutation failed/);
 });
@@ -191,7 +222,7 @@ test("implementation retry start treats success false as a failed mutation", asy
       issueRef: "ENG-123",
       runId: "run-retry-failed-mutation",
       runDir: ".harness/runs/factory/run-retry-failed-mutation",
-      attempt: "retry",
+      intent: "restart",
     }),
   ).rejects.toThrow(/implementation start mutation failed/);
   expect(state.createComment).not.toHaveBeenCalled();
@@ -205,7 +236,7 @@ test("implementation start preserves thrown mutation failures", async () => {
       issueRef: "ENG-123",
       runId: "run-thrown-mutation",
       runDir: ".harness/runs/factory/run-thrown-mutation",
-      attempt: "first",
+      intent: "start",
     }),
   ).rejects.toThrow("network unavailable");
 });
@@ -218,7 +249,7 @@ test("implementation start requires a verified post-write state", async () => {
       issueRef: "ENG-123",
       runId: "run-unconfirmed",
       runDir: ".harness/runs/factory/run-unconfirmed",
-      attempt: "first",
+      intent: "start",
     }),
   ).rejects.toThrow(/requires Implementing/);
 });
@@ -404,7 +435,7 @@ test("implementation apply precondition failures perform zero mutations", async 
       issueRef: "ENG-123",
       runId: "run-out-of-scope",
       runDir: ".harness/runs/factory/run-out-of-scope",
-      attempt: "first",
+      intent: "start",
     }),
   ).rejects.toThrow("outside configured project");
   expect(state.updateIssue).not.toHaveBeenCalled();
