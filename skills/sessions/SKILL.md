@@ -59,8 +59,11 @@ Session index cache defaults to `~/.sessions/index` (migrated automatically from
 
 1. Refresh the provider index before analysis. Use the provider you will query:
    `sessions cursor reindex` or `sessions codex reindex`.
-2. Start narrow. Choose `--days`, `--workspace`, `--query`, or repeatable
-   `--turn-query` before scanning transcript evidence.
+   Codex reindex may shrink duplicate evidence rows when rollout message
+   representations are corrected; this is a fidelity correction and needs no
+   migration.
+2. Start narrow. Choose `--days`, `--workspace`, exact `--session-id`, fuzzy
+   `--query`, or repeatable `--turn-query` before scanning transcript evidence.
 3. Use `--turn-query` for user-turn text. Starter terms by goal:
    [references/turn-queries.md](references/turn-queries.md).
 4. Use `--extract-only` for investigation so index metadata does not bury the
@@ -81,10 +84,14 @@ Session index cache defaults to `~/.sessions/index` (migrated automatically from
   `matchedQueries` records the exact terms that hit.
 - Broad scan: omit `--turn-query` to get grouped `patterns`; use this when you
   do not yet know the terms to search.
-- Metadata filter: use `--query` for title, id, workspace, or first user query;
-  it does not search all transcript turns.
-- Diagnostics: add `--include-automation` only when worker/subagent sessions
-  are part of the question.
+- Exact target: use `--session-id <id>`; it is exact equality and composes with
+  `--days` and `--workspace`.
+- Metadata discovery: `--query` fuzzily matches title, id, workspace, or first
+  user query; it does not search all transcript turns. Use a returned id with
+  `--session-id` for exact targeting.
+- Diagnostics: `--include-automation` includes automation sessions only and
+  `--include-subagents` includes subagent sessions only. Defaults exclude both;
+  pass both flags for a session classified as both.
 
 ## Command Patterns
 
@@ -133,11 +140,32 @@ Small table preview:
 sessions analyze --provider cursor --include-turns --extract-only --turn-query "review" --evidence-limit 5
 ```
 
-`--query` filters sessions by indexed metadata: title, id, workspace, or first
-user query. `--turn-query` searches user-turn transcript text.
+Exact executor lookup:
 
-Running `--include-turns` without `--days`, `--workspace`, `--query`, or
-`--turn-query` scans all matching cached transcripts and prints a warning.
+```bash
+sessions codex reindex
+# Discover the stored workspace and canonical id; child work can need both flags.
+sessions codex list --include-automation --include-subagents --query "executor"
+# `--workspace` is a literal path prefix; use the stored path exactly.
+sessions analyze --provider codex --include-turns --extract-only \
+  --session-id <id> --workspace /path/to/repo --include-automation --include-subagents
+```
+
+`--turn-query` evidence contains user turns. Use `show` or `export` to inspect
+assistant and tool turns. Full `show` remains the default; bounded inspection
+keeps canonical indexes:
+
+```bash
+sessions codex show <id> --turn 12 --context 2 --max-tool-chars 1000
+```
+
+`--query` filters sessions by indexed metadata: title, id, workspace, or first
+user query. It is discovery, not exact-id targeting. `--turn-query` searches
+user-turn transcript text.
+
+Running `--include-turns` without `--days`, `--workspace`, `--session-id`,
+`--query`, or `--turn-query` scans all matching cached transcripts and prints a
+warning.
 
 ## Recommendations
 

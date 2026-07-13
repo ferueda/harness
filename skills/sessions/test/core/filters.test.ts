@@ -46,6 +46,53 @@ test("filters subagents by default", () => {
   ).toEqual(["real", "subagent"]);
 });
 
+test("includes automation and subagents independently", () => {
+  const sessions = [
+    session({ sessionId: "real" }),
+    session({ sessionId: "automation", isAutomation: true }),
+    session({ sessionId: "subagent", isSubagent: true }),
+    session({ sessionId: "both", isAutomation: true, isSubagent: true }),
+  ];
+
+  expect(
+    applySessionFilters(sessions, { excludeAutomation: false }).map((item) => item.sessionId),
+  ).toEqual(["real", "automation"]);
+  expect(
+    applySessionFilters(sessions, { excludeSubagent: false }).map((item) => item.sessionId),
+  ).toEqual(["real", "subagent"]);
+  expect(
+    applySessionFilters(sessions, {
+      excludeAutomation: false,
+      excludeSubagent: false,
+    }).map((item) => item.sessionId),
+  ).toEqual(["real", "automation", "subagent", "both"]);
+});
+
+test("filters an exact session id with other filters", () => {
+  const now = new Date("2026-06-26T00:00:00.000Z");
+  const sessions = [
+    session({
+      sessionId: "target-session",
+      workspacePath: "/repo/target",
+      updatedAtMs: new Date("2026-06-25T00:00:00.000Z").getTime(),
+    }),
+    session({
+      sessionId: "target-session-copy",
+      workspacePath: "/repo/target",
+      updatedAtMs: new Date("2026-06-25T00:00:00.000Z").getTime(),
+    }),
+  ];
+
+  expect(
+    applySessionFilters(
+      sessions,
+      { sessionId: "target-session", workspacePathPrefix: "/repo/target", days: 7 },
+      now,
+    ).map((item) => item.sessionId),
+  ).toEqual(["target-session"]);
+  expect(applySessionFilters(sessions, { sessionId: "target" }, now)).toEqual([]);
+});
+
 test("query matches id, title, workspace, and first user query", () => {
   const sessions = [
     session({

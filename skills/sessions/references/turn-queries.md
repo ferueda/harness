@@ -9,8 +9,17 @@ Recommended `--turn-query` terms for exploration and research. Repeat flags use 
 1. Start with one category below (2–5 terms), not the whole list.
 2. Zero matches → try adjacent terms in the same category, or a broad scan without `--turn-query` and read `patterns`.
 3. Prefer short exact phrases. No fuzzy or semantic search.
-4. Combine with `--days`, `--workspace`, and `--extract-only` before opening full transcripts.
+4. Reindex first, then discover the stored workspace and canonical id with
+   `sessions <provider> list`. Combine `--days`, literal `--workspace` path
+   prefixes, exact `--session-id`, and `--extract-only` before opening full
+   transcripts. Add `--include-subagents` for child work and
+   `--include-automation` when it is also automation-classified.
 5. Label interpretation separately from match counts.
+
+`--query` is fuzzy metadata discovery, including partial ids; do not use it for
+exact targeting. Search user evidence with `--turn-query`; inspect assistant or
+tool context with `sessions <provider> show <id> --turn <index> --context <n>`
+or `export`.
 
 ```bash
 sessions analyze --provider codex --include-turns --extract-only \
