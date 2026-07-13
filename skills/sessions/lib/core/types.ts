@@ -73,6 +73,7 @@ export type Transcript = {
 
 export type SessionFilters = {
   limit?: number;
+  sessionId?: string;
   days?: number;
   workspacePathPrefix?: string;
   workspaceKey?: string;

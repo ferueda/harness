@@ -625,13 +625,110 @@ test("sessions analyze include-turns can include automation sessions", async () 
     ],
     env.homeDir,
   );
+  const withAutomationAndSubagents = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--format",
+      "json",
+      "--include-automation",
+      "--include-subagents",
+      "--min-support",
+      "1",
+    ],
+    env.homeDir,
+  );
 
   expect(defaultOutput.evidence.scannedUserTurns).toBe(1);
-  expect(withAutomation.evidence.scannedUserTurns).toBe(2);
-  expect(withAutomation.evidence.excludedFragments).toBeGreaterThan(0);
+  expect(withAutomation.evidence.scannedUserTurns).toBe(1);
+  expect(withAutomationAndSubagents.evidence.scannedUserTurns).toBe(2);
+  expect(withAutomationAndSubagents.evidence.excludedFragments).toBeGreaterThan(0);
   expect(
-    withAutomation.evidence.patterns.map((pattern: { bucket: string }) => pattern.bucket),
+    withAutomationAndSubagents.evidence.patterns.map(
+      (pattern: { bucket: string }) => pattern.bucket,
+    ),
   ).not.toContain("noise");
+});
+
+test("sessions list supports exact session ids and independent inclusion flags", () => {
+  const env = makeSessionEnv();
+  writeCursorCache(env, {
+    provider: "cursor",
+    schemaVersion: 1,
+    lastReindexAt: "2026-06-26T00:00:00.000Z",
+    transcriptsFound: 4,
+    indexedSessions: 4,
+    skipped: 0,
+    skippedUnparseable: 0,
+    sessions: [
+      session({ sessionId: "real" }),
+      session({ sessionId: "automation", isAutomation: true }),
+      session({ sessionId: "subagent", isSubagent: true }),
+      session({ sessionId: "both", isAutomation: true, isSubagent: true }),
+    ],
+  });
+
+  const exact = runSessions(["cursor", "list", "--session-id", "real"], env.homeDir);
+  const partial = runSessions(["cursor", "list", "--session-id", "rea"], env.homeDir);
+  const automation = runSessions(["cursor", "list", "--include-automation"], env.homeDir);
+  const subagents = runSessions(["cursor", "list", "--include-subagents"], env.homeDir);
+
+  expect(exact.stdout).toContain("real");
+  expect(partial.stdout).toContain("No sessions found");
+  expect(automation.stdout).toMatch(/automation\s+yes/);
+  expect(automation.stdout).not.toContain("subagent");
+  expect(subagents.stdout).toContain("subagent");
+  expect(subagents.stdout).not.toMatch(/automation\s+yes/);
+});
+
+test("sessions analyze filters transcript evidence by exact session id", async () => {
+  const env = makeSessionEnv();
+  writeTranscript(env, "Users-alice-dev-my-repo", "multi", "cursor-multi-user.jsonl");
+  await buildCursorIndex(env);
+
+  const exact = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--extract-only",
+      "--format",
+      "json",
+      "--session-id",
+      "multi",
+      "--workspace",
+      "/Users/alice/dev/my-repo",
+      "--days",
+      "30",
+      "--turn-query",
+      "handoff",
+    ],
+    env.homeDir,
+  );
+  const partial = runEvidenceJson(
+    [
+      "analyze",
+      "--provider",
+      "cursor",
+      "--include-turns",
+      "--extract-only",
+      "--format",
+      "json",
+      "--session-id",
+      "mul",
+      "--turn-query",
+      "handoff",
+    ],
+    env.homeDir,
+  );
+
+  expect(exact.evidence.scannedSessions).toBe(1);
+  expect(exact.evidence.matches).toHaveLength(1);
+  expect(partial.evidence.scannedSessions).toBe(0);
+  expect(partial.evidence.matches).toEqual([]);
 });
 
 test("sessions analyze rejects turn filters without include-turns", () => {
@@ -718,6 +815,24 @@ test("sessions codex commands browse indexed Codex sessions", () => {
   const show = runSessions(["codex", "show", "real"], env.homeDir);
   expect(show.status).toBe(0);
   expect(show.stdout).toContain("Please verify the Codex provider works.");
+  expect(show.stdout).not.toContain("## turn ");
+
+  const boundedShow = runSessions(
+    ["codex", "show", "real", "--turn", "1", "--context", "1"],
+    env.homeDir,
+  );
+  expect(boundedShow.status).toBe(0);
+  expect(boundedShow.stdout).toContain("## turn 0: user");
+  expect(boundedShow.stdout).toContain("## turn 1: assistant");
+  expect(boundedShow.stdout).toContain("## turn 2: user");
+
+  const missingTurn = runSessions(["codex", "show", "real", "--context", "1"], env.homeDir);
+  expect(missingTurn.status).toBe(2);
+  expect(missingTurn.stderr).toContain("--context requires --turn");
+
+  const outOfRange = runSessions(["codex", "show", "real", "--turn", "3"], env.homeDir);
+  expect(outOfRange.status).toBe(1);
+  expect(outOfRange.stderr).toContain("Turn 3 is out of range for session real");
 
   const exported = runSessions(["codex", "export", "real", "--format", "json"], env.homeDir);
   expect(exported.status).toBe(0);

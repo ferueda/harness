@@ -54,9 +54,11 @@ type AnalyzeOptions = {
   extractOnly: boolean;
   days?: number;
   workspace?: string;
+  sessionId?: string;
   query?: string;
   turnQuery: string[];
   includeAutomation: boolean;
+  includeSubagents: boolean;
   evidenceLimit: number;
   patternLimit: number;
   minSupport: number;
@@ -77,12 +79,16 @@ type ListOptions = {
   limit: number;
   days?: number;
   workspace?: string;
+  sessionId?: string;
   query?: string;
   includeAutomation: boolean;
+  includeSubagents: boolean;
 };
 
 type ShowOptions = {
   maxToolChars: number;
+  turn?: number;
+  context?: number;
 };
 
 type ExportOptions = {
@@ -97,6 +103,14 @@ function positiveInteger(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new InvalidArgumentError("must be a positive integer");
+  }
+  return parsed;
+}
+
+function nonNegativeInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new InvalidArgumentError("must be a non-negative integer");
   }
   return parsed;
 }
@@ -140,6 +154,7 @@ function buildProgram(): Command {
       positiveInteger,
     )
     .option("--workspace <path-or-key>", "workspace path prefix or key for transcript evidence")
+    .option("--session-id <id>", "exact session id for transcript evidence")
     .option(
       "--query <text>",
       "filter transcript evidence sessions by title, id, workspace, or first query",
@@ -151,6 +166,7 @@ function buildProgram(): Command {
       [],
     )
     .option("--include-automation", "include automation sessions in transcript evidence", false)
+    .option("--include-subagents", "include subagent sessions in transcript evidence", false)
     .option(
       "--evidence-limit <n>",
       "maximum examples/artifacts per evidence pattern and table match rows",
@@ -260,8 +276,10 @@ function registerProviderCommands(
     .option("--limit <n>", "maximum rows", positiveInteger, 25)
     .option("--days <n>", "only sessions updated in the last N days", positiveInteger)
     .option("--workspace <path-or-key>", "workspace path prefix or key")
+    .option("--session-id <id>", "exact session id")
     .option("--query <text>", "search title, session id, workspace, or first query")
     .option("--include-automation", "include automation sessions", false)
+    .option("--include-subagents", "include subagent sessions", false)
     .action((options: ListOptions) => {
       const sessions = sessionProvider.list(toFilters(options));
       console.log(renderSessionTable(sessions, providerId));
@@ -272,9 +290,20 @@ function registerProviderCommands(
     .description(`Render a ${label} session transcript`)
     .argument("<sessionId>", "session id")
     .option("--max-tool-chars <n>", "maximum chars per long turn", positiveInteger, 2_000)
-    .action((sessionId: string, options: ShowOptions) => {
+    .option("--turn <canonical-index>", "show one canonical transcript turn", nonNegativeInteger)
+    .option("--context <n>", "include N neighboring turns with --turn", nonNegativeInteger)
+    .action((sessionId: string, options: ShowOptions, command: Command) => {
+      if (options.context !== undefined && options.turn === undefined) {
+        command.error("error: --context requires --turn");
+      }
       const transcript = sessionProvider.getTranscript(sessionId);
-      console.log(renderTranscriptMarkdown(transcript, { maxToolChars: options.maxToolChars }));
+      console.log(
+        renderTranscriptMarkdown(transcript, {
+          maxToolChars: options.maxToolChars,
+          turn: options.turn,
+          context: options.context,
+        }),
+      );
     });
 
   provider
@@ -306,6 +335,7 @@ function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void
   if (
     options.days !== undefined ||
     options.workspace !== undefined ||
+    options.sessionId !== undefined ||
     options.query !== undefined ||
     options.turnQuery.length > 0 ||
     options.extractOnly ||
@@ -321,16 +351,17 @@ function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void
 function warnIfUnboundedEvidenceScan(options: AnalyzeOptions): void {
   if (hasEvidenceNarrowingFilters(options)) return;
   console.error(
-    "warning: --include-turns without --days, --workspace, --query, or --turn-query scans all matching cached transcripts",
+    "warning: --include-turns without --days, --workspace, --session-id, --query, or --turn-query scans all matching cached transcripts",
   );
 }
 
 function hasEvidenceNarrowingFilters(
-  options: Pick<AnalyzeOptions, "days" | "workspace" | "query" | "turnQuery">,
+  options: Pick<AnalyzeOptions, "days" | "workspace" | "sessionId" | "query" | "turnQuery">,
 ): boolean {
   return (
     options.days !== undefined ||
     options.workspace !== undefined ||
+    options.sessionId !== undefined ||
     options.query !== undefined ||
     options.turnQuery.length > 0
   );
@@ -356,8 +387,10 @@ function toSessionFilters(
   options: {
     days?: number;
     workspace?: string;
+    sessionId?: string;
     query?: string;
     includeAutomation: boolean;
+    includeSubagents: boolean;
   },
   extra: Pick<SessionFilters, "limit"> = {},
 ): SessionFilters {
@@ -365,11 +398,12 @@ function toSessionFilters(
   return {
     ...extra,
     days: options.days,
+    sessionId: options.sessionId,
     workspaceKey: workspace && !workspace.startsWith("/") ? workspace : undefined,
     workspacePathPrefix: workspace?.startsWith("/") ? workspace : undefined,
     query: options.query,
     excludeAutomation: !options.includeAutomation,
-    excludeSubagent: !options.includeAutomation,
+    excludeSubagent: !options.includeSubagents,
   };
 }
 
