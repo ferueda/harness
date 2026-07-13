@@ -41,6 +41,9 @@ test("renderTranscriptMarkdown rejects an out-of-range turn", () => {
   expect(() =>
     renderTranscriptMarkdown(transcript({ sessionId: "show-session" }), { turn: 2 }),
   ).toThrow("Turn 2 is out of range for session show-session");
+  expect(() =>
+    renderTranscriptMarkdown(transcript({ sessionId: "show-session" }), { turn: -1 }),
+  ).toThrow("Turn -1 is out of range for session show-session");
 });
 
 test("exportTranscript supports markdown, json, and jsonl", () => {

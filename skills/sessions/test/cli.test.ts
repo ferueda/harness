@@ -752,6 +752,18 @@ test("sessions analyze rejects turn-query without include-turns", () => {
   expect(result.stderr).toContain("transcript evidence options require --include-turns");
 });
 
+test("sessions analyze rejects subagent inclusion without include-turns", () => {
+  const env = makeSessionEnv();
+
+  const result = runSessions(
+    ["analyze", "--provider", "cursor", "--include-subagents"],
+    env.homeDir,
+  );
+
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("transcript evidence options require --include-turns");
+});
+
 test("sessions analyze rejects extract-only without include-turns", () => {
   const env = makeSessionEnv();
 

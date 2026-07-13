@@ -29,7 +29,7 @@ export function renderTranscriptMarkdown(
   }
 
   const selectedTurn = options.turn;
-  if (selectedTurn >= transcript.turns.length) {
+  if (selectedTurn < 0 || selectedTurn >= transcript.turns.length) {
     throw new Error(
       `Turn ${selectedTurn} is out of range for session ${transcript.session.sessionId}; valid indices are 0-${Math.max(0, transcript.turns.length - 1)}`,
     );

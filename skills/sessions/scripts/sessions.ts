@@ -340,6 +340,7 @@ function validateAnalyzeOptions(options: AnalyzeOptions, command: Command): void
     options.turnQuery.length > 0 ||
     options.extractOnly ||
     options.includeAutomation ||
+    options.includeSubagents ||
     command.getOptionValueSource("evidenceLimit") === "cli" ||
     command.getOptionValueSource("patternLimit") === "cli" ||
     command.getOptionValueSource("minSupport") === "cli"
