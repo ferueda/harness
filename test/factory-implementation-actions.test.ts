@@ -146,6 +146,113 @@ test("revision resumes the effective session with complete blockers and promotes
   expect(candidates[1]!.data.effectiveSession).toMatchObject({ id: "session-1" });
 });
 
+test("Linear needs_changes attention retries before one scheduled revision producer", async () => {
+  const fixture = directFixture();
+  fixture.workItem.metadata = { linearStatus: "Ready to Implement" };
+  const firstProvider = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "first\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  const started = vi.fn(async () => ({
+    issueIdentifier: "ENG-123",
+    runId: "run",
+    runDir: "run",
+    stage: "started" as const,
+    targetStatus: "Implementing",
+  }));
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    reviewCeiling: 3,
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({ applyImplementationStarted: started }),
+    agentProviderFactory: () => ({ name: "cursor", run: firstProvider }),
+  });
+  fixture.workItem.metadata = { linearStatus: "Implementing" };
+  const attentionFailure = vi.fn(async () => {
+    throw new Error("attention projection unavailable");
+  });
+  await expect(
+    runOneFactoryImplementationAction({
+      ...coordinatorInput(fixture),
+      reviewCeiling: 3,
+      linearIssue: "ENG-123",
+      issueRef: "ENG-123",
+      linearStatuses: LINEAR_SETTINGS.statuses,
+      applyAdapter: fakeLinearAdapter({ applyImplementationAttention: attentionFailure }),
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: (async (ctx: { runDir?: string }) => {
+        writeBlockingReviews(ctx.runDir!);
+        return fullReviewMeta("needs_changes");
+      }) as never,
+    }),
+  ).rejects.toThrow("attention projection unavailable");
+  const before = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
+  expect(before.filter((event) => event.type === "implementation.review.completed")).toHaveLength(
+    1,
+  );
+
+  const retryProvider = vi.fn<Agent["run"]>();
+  await expect(
+    runOneFactoryImplementationAction({
+      ...coordinatorInput(fixture),
+      reviewCeiling: 3,
+      linearIssue: "ENG-123",
+      issueRef: "ENG-123",
+      linearStatuses: LINEAR_SETTINGS.statuses,
+      applyAdapter: fakeLinearAdapter({ applyImplementationAttention: attentionFailure }),
+      agentProviderFactory: () => ({ name: "cursor", run: retryProvider }),
+    }),
+  ).rejects.toThrow("attention projection unavailable");
+  expect(retryProvider).not.toHaveBeenCalled();
+  expect(attentionFailure).toHaveBeenCalledTimes(2);
+
+  const repairedAttention = vi.fn(async () => ({
+    issueIdentifier: "ENG-123",
+    runId: "run",
+    runDir: "run",
+    stage: "completed" as const,
+    targetStatus: "Implementing",
+  }));
+  const revisionProvider = vi.fn<Agent["run"]>(async (input) => {
+    expect(input.session).toMatchObject({ provider: "cursor", id: "session-1" });
+    expect(input.prompt).toContain("Correctness");
+    expect(input.prompt).toContain("Clarity");
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "second\n");
+    return { ok: true, raw: {} };
+  });
+  const repaired = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    reviewCeiling: 3,
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({ applyImplementationAttention: repairedAttention }),
+    agentProviderFactory: () => ({ name: "cursor", run: revisionProvider }),
+  });
+  expect(repaired.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 2 });
+  expect(repaired.linearApplied).toBe(true);
+  expect(repairedAttention).toHaveBeenCalledWith(
+    expect.objectContaining({ verdict: "needs_changes" }),
+  );
+  expect(firstProvider).toHaveBeenCalledTimes(1);
+  expect(revisionProvider).toHaveBeenCalledTimes(1);
+  expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key)).toHaveLength(
+    before.length + 1,
+  );
+  expect(
+    readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
+      (event) => event.type === "implementation.requested",
+    ),
+  ).toHaveLength(1);
+  expect(
+    readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
+      (event) => event.type === "implementation.review.completed",
+    ),
+  ).toHaveLength(1);
+});
+
 test("tampered revision blockers are terminal before a second provider call", async () => {
   const fixture = directFixture();
   const first = await runOneFactoryImplementationAction({

@@ -271,6 +271,26 @@ export async function runOneFactoryImplementationAction(input: {
     eventSink: input.eventSink,
   });
   let linearApplied = false;
+  // The persisted review authorizes this revision; repair its projection before provider work.
+  if (
+    input.applyAdapter &&
+    reaction.handler === "produceImplementationCandidate" &&
+    state?.phase === "implementation" &&
+    state.status === "needs-revision" &&
+    latest?.type === "implementation.review.completed" &&
+    latest.data.verdict === "needs_changes" &&
+    latest.data.attempt + 1 === reaction.attempt &&
+    reaction.causationEventId === latest.id
+  ) {
+    await input.applyAdapter.applyImplementationAttention({
+      issueRef: input.issueRef!,
+      runId: phaseRunId,
+      runDir: ctx.runDir,
+      verdict: latest.data.verdict,
+      candidateCommit: readReviewCandidateCommit(events, latest),
+    });
+    linearApplied = true;
+  }
   if (input.linearIssue && pendingImplementationStart(state, latest)) {
     if (!input.applyAdapter)
       throw new Error("Pending Linear implementation start requires --apply");
@@ -511,6 +531,22 @@ function readCandidateCommit(events: FactoryLifecycleEvent[], phaseRunId: string
   );
   if (!candidate || candidate.type !== "implementation.candidate.produced")
     throw new Error("Implementation review has no candidate commit");
+  return candidate.data.commit;
+}
+
+function readReviewCandidateCommit(
+  events: FactoryLifecycleEvent[],
+  review: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>,
+): string {
+  const candidate = events.find((event) => event.id === review.data.causationEventId);
+  if (
+    !candidate ||
+    candidate.type !== "implementation.candidate.produced" ||
+    candidate.phaseRunId !== review.phaseRunId ||
+    candidate.workItemKey !== review.workItemKey ||
+    candidate.data.attempt !== review.data.attempt
+  )
+    throw new Error("Implementation review has no matching candidate commit");
   return candidate.data.commit;
 }
 
