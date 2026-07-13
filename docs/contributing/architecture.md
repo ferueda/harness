@@ -124,13 +124,13 @@ metadata is input only; fetch never derives Factory state.
 `lib/factory-state-machine.ts` own the strict action event contract, expected-
 cursor append, and rebuildable state/reaction projection. Durable-store
 `factory/events/*.jsonl` is canonical machine state; `factory/state/*.json` is
-an atomically published projection protected by per-work-item locks. Current
-triage writes `work_item.imported`, `triage.requested`,
-`triage.work_item.completed`, or `factory.action.failed`.
+an atomically published projection protected by per-work-item locks. Triage,
+planning, and implementation append strict request and terminal action events;
+`factory.action.failed` records action failure.
 
-Planning candidate, review, and publication actions use this kernel through
-manually stepped CLI commands. Implementation action handlers remain
-unavailable; no current CLI path falls back to the removed lifecycle.
+Planning candidate/review/publication and implementation candidate/review
+actions use this kernel through manually stepped CLI commands. No current CLI
+path falls back to the removed lifecycle.
 
 `lib/factory-inbox.ts` owns local factory inbox inspection. `lib/factory-status.ts`
 composes that inbox data with durable-store, lock, and legacy-state inspection
@@ -158,7 +158,8 @@ metadata; fetch does not derive Factory state.
 `harness factory triage --linear-issue TEAM-123` uses the same adapter as an
 input source before running the station. List, fetch, and default Linear-backed
 triage do not mutate Linear. Create is the only non-station Linear
-issue-creation path; other Linear writes stay on explicit triage `--apply`.
+issue-creation path; other Linear writes stay on explicit phase-command
+`--apply` boundaries.
 `harness factory triage --linear-issue TEAM-123 --apply` additionally moves the
 issue to `Triaging`, then to the terminal triage status, and writes a marker
 comment.
@@ -208,9 +209,9 @@ failure aggregation, and export metadata.
 adapters under `providers/cursor/` and `providers/codex/` implement invocation.
 Workflows should stay provider-agnostic. Provider runs default to enforced
 workspace guarding, which records before/after git status and rejects tracked
-workspace mutations. Future writer stations may opt into `record` mode so
-provider raw artifacts still capture workspace changes while the station owns
-validation.
+workspace mutations. Planning and implementation producer actions use `record`
+mode so provider raw artifacts capture workspace changes while Harness owns
+their validation and publication.
 
 ## Review artifact lifecycle
 
@@ -268,7 +269,8 @@ provider, does not write run `events.jsonl`, and does not write lifecycle
 events in the durable factory store.
 
 Planning run artifacts are part of the shipped manually stepped surface.
-Implementation run artifacts are not shipped.
+Implementation candidate, review, and revision artifacts are also shipped and
+live in the same durable Factory run boundary.
 
 ## Factory inbox lifecycle
 
@@ -306,9 +308,8 @@ adapter.
 
 ## What is not in this map yet
 
-Active runtime roadmap items such as planning and implementation actions,
-`steps.json`, graders, tracker mutation beyond explicit Linear triage apply,
-GitHub/Jira adapters, hosted trigger inboxes, and Inngest are future work.
-Linear-backed triage input and its explicit status/comment projection via
-`--apply` are current. Future items should be added to this map only after they
-describe current behavior in the repo.
+Standalone review resumability, `steps.json`, deterministic graders,
+GitHub/Jira adapters, hosted trigger inboxes, and Inngest remain future work.
+Linear-backed triage, planning, and implementation input/projections via
+explicit `--apply` are current. Future items should be added to this map only
+after they describe current behavior in the repo.

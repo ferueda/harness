@@ -28,7 +28,8 @@ to stderr. Heartbeats are telemetry, not lifecycle events.
 
 Use this guide when operating or changing the current factory flow. The factory
 is local and explicit today: one command handles one work item. Future tracker
-or event backends should call the same station code instead of replacing it.
+or event backends should call the same typed action coordinator instead of
+replacing its state or transition logic.
 
 ## Command Model
 
@@ -87,11 +88,7 @@ Local work items are JSON files shaped as `FactoryWorkItem`:
   "source": "file",
   "title": "Fix export crash",
   "body": "Export crashes when the output directory is missing.",
-  "labels": ["bug"],
-  "metadata": {
-    "factoryRoute": "ready-to-plan",
-    "factoryNextAction": "create-plan"
-  }
+  "labels": ["bug"]
 }
 ```
 
@@ -136,10 +133,10 @@ The workspace remains the sandbox: it owns source, tests, `harness.json`, the
 shim, inbox, and committed `dev/plans/*.md`. Old Factory lifecycle state is
 rejected with archive/reset guidance; it is never parsed or migrated.
 
-New Factory state is projected only from the strict action event log. Triage
-uses `work_item.imported`, `triage.requested`,
-`triage.work_item.completed`, and `factory.action.failed`. Legacy station event
-names and `factoryStage` fields are not transition inputs.
+New Factory state is projected only from the strict action event log. Triage,
+planning, and implementation append their request, candidate, review, and
+publication events; `factory.action.failed` records action failure. Legacy
+station event names and `factoryStage` fields are not transition inputs.
 
 ## Station Config
 
@@ -163,7 +160,15 @@ Factory station roles use `harness.json`:
         "triager": { "agent": "cursor", "model": "grok-4.5" }
       }
     },
+    "planning": {
+      "maxReviewIterations": 3,
+      "roles": {
+        "planner": { "agent": "codex", "model": "gpt-5.6-sol" },
+        "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
+      }
+    },
     "implementation": {
+      "maxReviewIterations": 3,
       "roles": {
         "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
@@ -211,8 +216,10 @@ committed plans; workspace-local `.harness/factory` lifecycle files are legacy.
 
 Vocabulary:
 
-- `station`: the current lifecycle step, `triage`.
-- `role`: a job inside a station, currently `triager`.
+- `phase`: the current lifecycle slice: `triage`, `planning`, or `implementation`.
+- `role`: configured responsibility such as `triager`, `planner`, `reviewer`, or
+  `implementer`.
+- `handler`: one action selected by the persisted Factory reaction.
 - `agent`: backend identity such as `cursor` or `codex`.
 
 Keep factory config role-based. Do not add per-role CLI flag sprawl.
@@ -279,10 +286,9 @@ Linear team and project serve different purposes:
 - `projectId` scopes the target repo. Use it when multiple repo projects share
   one Linear team.
 
-When `projectId` is configured, Linear-backed list, fetch, triage input, and
-triage apply reject issues outside that project before running
-station work or mutating Linear. Local `--item-file` inputs are not revalidated
-against Linear.
+When `projectId` is configured, list, fetch, and every Linear-backed Factory
+phase reject issues outside that project before running action work or mutating
+Linear. Local `--item-file` inputs are not revalidated against Linear.
 
 The triage station can also fetch Linear directly:
 
