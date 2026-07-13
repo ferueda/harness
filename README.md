@@ -257,9 +257,10 @@ harness skills install planning-workflow --workspace /path/to/repo
 Skill lookup order is target repo `.agents/skills/`, then user
 `~/.agents/skills/`, then packaged harness `skills/`.
 
-Manual-only skills include `architect` for repo-grounded solution design and
-`audit` for codebase surveys. `architect` returns an inline architecture memo
-and does not write plan files or other artifacts.
+Manual-only skills include `architect` for repo-grounded solution design,
+`audit` for codebase surveys, and `orchestrate-work` for delegating scoped work
+to an isolated Codex executor with decision checkpoints. `architect` returns an
+inline architecture memo and does not write plan files or other artifacts.
 
 The `sessions` skill owns local transcript extraction. See
 [skills/sessions/SKILL.md](skills/sessions/SKILL.md) and
