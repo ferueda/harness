@@ -132,8 +132,8 @@ does not use `--apply` and does not write factory lifecycle or run artifacts.
 Factory triage can use `--linear-issue`; `--apply` is explicit and projects the
 triage start and terminal result to Linear. Optional `--dry-run` prepares
 triage artifacts without a provider and does not initialize Factory state.
-Harness adapters for GitHub, Jira, and Inngest remain future layers. Linking
-factory PRs to Linear issues via branch/title naming is current operator
+GitHub/Jira tracker adapters and an Inngest host adapter remain future layers.
+Linking factory PRs to Linear issues via branch/title naming is current operator
 practice (see Linear PR linking in
 [docs/contributing/factory.md](docs/contributing/factory.md)). For the full
 operator model, read that same doc.
@@ -180,6 +180,13 @@ ownership and mutability, read
           "agent": "cursor",
           "model": "grok-4.5"
         }
+      }
+    },
+    "planning": {
+      "maxReviewIterations": 3,
+      "roles": {
+        "planner": { "agent": "codex", "model": "gpt-5.6-sol" },
+        "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
       }
     },
     "implementation": {

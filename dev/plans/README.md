@@ -2,11 +2,7 @@
 
 ## Active queue
 
-| File                                                                               | Status        | Summary                                            |
-| ---------------------------------------------------------------------------------- | ------------- | -------------------------------------------------- |
-| [260711-factory-action-state-machine.md](./260711-factory-action-state-machine.md) | `in_progress` | Manually stepped Factory actions; PR 4 implementation revisions |
-
-Implementation timeout policy remains tracked in [FER-67](https://linear.app/ferueda/issue/FER-67/remove-fixed-30-minute-cap-from-factory-implementation-runs) and is folded into PR 3 of the active Factory action-state-machine plan.
+No active implementation plans.
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
@@ -61,6 +57,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Manually stepped Factory planning             | [#129](https://github.com/ferueda/harness/pull/129)                                                      |
 | —     | Planning/implementation/review authority      | [#130](https://github.com/ferueda/harness/pull/130)                                                      |
 | —     | Factory implementation candidate and review   | [#135](https://github.com/ferueda/harness/pull/135)                                                      |
+| —     | Factory implementation revisions              | [#143](https://github.com/ferueda/harness/pull/143)                                                      |
 
 ---
 
