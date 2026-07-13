@@ -141,11 +141,11 @@ Exact executor lookup:
 
 ```bash
 sessions codex reindex
-# Discover the stored workspace and canonical id; add --include-subagents for child work.
-sessions codex list --include-subagents --query "executor"
+# Discover the stored workspace and canonical id; child work can need both flags.
+sessions codex list --include-automation --include-subagents --query "executor"
 # `--workspace` is a literal path prefix; use the stored path exactly.
 sessions analyze --provider codex --include-turns --extract-only \
-  --session-id <id> --workspace /path/to/repo --include-subagents
+  --session-id <id> --workspace /path/to/repo --include-automation --include-subagents
 ```
 
 `--turn-query` evidence contains user turns. Use `show` or `export` to inspect

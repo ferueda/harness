@@ -12,7 +12,8 @@ Recommended `--turn-query` terms for exploration and research. Repeat flags use 
 4. Reindex first, then discover the stored workspace and canonical id with
    `sessions <provider> list`. Combine `--days`, literal `--workspace` path
    prefixes, exact `--session-id`, and `--extract-only` before opening full
-   transcripts. Add `--include-subagents` when child work is in scope.
+   transcripts. Add `--include-subagents` for child work and
+   `--include-automation` when it is also automation-classified.
 5. Label interpretation separately from match counts.
 
 `--query` is fuzzy metadata discovery, including partial ids; do not use it for
