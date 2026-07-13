@@ -2,6 +2,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { createCodexSessionProvider } from "../../lib/codex/provider.ts";
 import { buildCodexIndex } from "../../lib/codex/index.ts";
+import { extractSessionEvidence } from "../../lib/core/evidence.ts";
 import { makeSessionEnv, writeCodexRollout, writeCodexStateDb } from "../helpers.ts";
 
 test("CodexSessionProvider lists, reads transcripts, and iterates user turns", async () => {
@@ -95,6 +96,34 @@ test("CodexSessionProvider normalizes instructions-only first user context for e
     text: "Please verify the instructions-only cleanup.",
     rawText: expect.stringContaining("<INSTRUCTIONS>"),
   });
+});
+
+test("CodexSessionProvider emits one evidence match for paired PR3 and PR4 messages", async () => {
+  const env = makeSessionEnv();
+  writeCodexRollout(env, "sessions/paired.jsonl", "codex-paired-pr-evidence.jsonl");
+  writeCodexStateDb(env, [{ id: "paired", rolloutPath: "sessions/paired.jsonl" }]);
+  const snapshot = await buildCodexIndex(env);
+  const provider = createCodexSessionProvider(env);
+
+  const report = await extractSessionEvidence(provider.iterUserTurns(), {
+    provider: "codex",
+    turnQueries: ["pr3", "pr4"],
+    includePatterns: false,
+  });
+
+  expect(snapshot.sessions[0]).toMatchObject({
+    rolloutPath: `${env.codexHome}/sessions/paired.jsonl`,
+    turnCount: 2,
+    userTurnCount: 1,
+  });
+  expect(report.matches).toEqual([
+    expect.objectContaining({
+      sessionId: "paired",
+      turnIndex: 0,
+      text: "Review PR3 and PR4 rollout evidence.",
+      matchedQueries: ["pr3", "pr4"],
+    }),
+  ]);
 });
 
 test("CodexSessionProvider reports unreadable rollout guidance", async () => {
