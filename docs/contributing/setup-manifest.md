@@ -113,7 +113,8 @@ Linear list, fetch, create, and Linear-backed station input use
 intake write (no `--apply`); adding `--apply` to Linear triage projects its
 guarded start and terminal status/comment updates. Linear-backed planning also
 requires live status validation; each mutation needs that invocation's
-`--apply`. Implementation commands are unavailable.
+`--apply`. Linear-backed implementation start, review continuation, and repair
+commands also require explicit `--apply` authorization.
 
 Do not write secrets into docs, plans, generated artifacts, committed
 `harness.json`, or checked-in config.

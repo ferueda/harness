@@ -1,14 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { FactoryRoleAgent } from "./config.ts";
 import { factoryActionExecutionProfile } from "./config.ts";
 import { buildRunId } from "./context.ts";
-import {
-  createFactoryArtifactRef,
-  verifyFactoryArtifactRef,
-  type FactoryArtifactRef,
-} from "./factory-artifact-ref.ts";
+import { verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
 import {
   readFactoryPhaseRunIdentity,
@@ -47,6 +43,17 @@ export function createFactoryImplementationRunContext(input: {
 }) {
   const workspace = canonicalWorkspace(input.workspace);
   const gitIdentity = assertImplementationStartGit(workspace);
+  const authoritativeWorkItemPath = verifyFactoryArtifactRef(
+    input.implementationInput.workItem,
+    roots(input.factoryStore, workspace),
+  );
+  const authoritativeWorkItem = parseFactoryWorkItem(
+    JSON.parse(readFileSync(authoritativeWorkItemPath, "utf8")),
+  );
+  if (deriveFactoryWorkItemKey(authoritativeWorkItem) !== deriveFactoryWorkItemKey(input.workItem))
+    throw new FactoryImplementationRunError(
+      "Immutable implementation work item conflicts with input key",
+    );
   validateInputAuthority(
     input.implementationInput,
     input.factoryStore,
@@ -57,18 +64,16 @@ export function createFactoryImplementationRunContext(input: {
   const runDir = join(resolve(input.runsDir), runId);
   try {
     mkdirSync(join(runDir, "context"), { recursive: true });
-    writeJson(join(runDir, "context/work-item.json"), input.workItem);
+    writeJson(join(runDir, "context/work-item.json"), authoritativeWorkItem);
     writeJson(join(runDir, "context/implementation-input.json"), input.implementationInput);
-    const workItemRef = ref(input.factoryStore, join(runDir, "context/work-item.json"));
     const snapshot: FactoryImplementationInputSnapshot = {
       ...input.implementationInput,
-      workItem: workItemRef,
     };
     writeFactoryPhaseRunIdentity(runDir, {
       version: 1,
       phaseRunId: runId,
       phase: "implementation",
-      workItemKey: deriveFactoryWorkItemKey(input.workItem),
+      workItemKey: deriveFactoryWorkItemKey(authoritativeWorkItem),
       workspace,
       projectId: input.factoryStore.projectId,
       factoryStateRoot: resolve(input.factoryStore.factoryStateRoot),
@@ -203,14 +208,6 @@ function verifyInputSnapshot(
 
 function roots(store: FactoryStoreMeta, workspace: string) {
   return { "factory-store": store.projectRoot, repository: workspace } as const;
-}
-
-function ref(store: FactoryStoreMeta, path: string): FactoryArtifactRef {
-  return createFactoryArtifactRef({
-    base: "factory-store",
-    root: store.projectRoot,
-    path: relative(store.projectRoot, path),
-  });
 }
 
 function canonicalWorkspace(workspace: string): string {

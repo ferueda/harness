@@ -26,7 +26,7 @@ export type LinearImplementationCompletedInput = LinearImplementationApplyInput 
 export type LinearImplementationFailedInput = LinearImplementationApplyInput & { error: string };
 export type LinearImplementationAttentionInput = LinearImplementationApplyInput & {
   verdict: "needs_changes" | "blocked" | "human_required";
-  candidateCommit: string;
+  candidateCommit?: string;
 };
 
 export type LinearImplementationUpdatePlan = {
@@ -234,7 +234,7 @@ export async function applyLinearImplementationAttention(
     "Factory implementation needs human attention.",
     "",
     `Verdict: ${input.verdict}`,
-    `Candidate: \`${input.candidateCommit}\``,
+    ...(input.candidateCommit ? [`Candidate: \`${input.candidateCommit}\``] : []),
     `Run: \`${input.runDir}\``,
     "",
   ].join("\n");

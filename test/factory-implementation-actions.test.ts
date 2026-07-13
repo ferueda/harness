@@ -132,7 +132,7 @@ test("candidate recovery rejects a divergent create-only attempt ref", async () 
   ).rejects.toThrow(/candidate ref conflicts/);
 });
 
-test("malformed staged provider evidence becomes a terminal action failure", async () => {
+test("malformed staged provider evidence becomes a human-required action failure", async () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
   const requested = appendRequest(fixture, ctx);
@@ -151,7 +151,7 @@ test("malformed staged provider evidence becomes a terminal action failure", asy
   expect(providerRun).not.toHaveBeenCalled();
   expect(result.event).toMatchObject({
     type: "factory.action.failed",
-    data: { failureKind: "terminal" },
+    data: { failureKind: "human-required" },
   });
 });
 
@@ -172,6 +172,30 @@ test("post-provider Git probe failure records human-required without rerunning p
     agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
   });
   expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+});
+
+test("implementer ref mutation becomes human-required", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+        git(fixture.workspace, ["tag", "implementer-mutated-ref"]);
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+      },
+    }),
+  });
   expect(result.event).toMatchObject({
     type: "factory.action.failed",
     data: { failureKind: "human-required" },
@@ -251,6 +275,7 @@ test("planned input requires reviewed plan bytes committed at the implementation
       implementationInput: {
         mode: "planned",
         importedEventId: "import:item-1",
+        workItem: fixture.workItemRef,
         candidateEventId: "planning.candidate:1",
         reviewEventId: "planning.review:1",
         planCandidate,
@@ -266,6 +291,14 @@ test("planned input requires reviewed plan bytes committed at the implementation
   });
   writeFileSync(candidatePath, "# Tampered\n");
   expect(create).toThrow(/hash mismatch/);
+});
+
+test("phase snapshots the immutable requested work item instead of changed same-key input", () => {
+  const fixture = directFixture();
+  fixture.workItem.body = "Changed after triage";
+  const ctx = createPhase(fixture);
+  expect(ctx.workItem.body).toBe("Change tracked.txt");
+  expect(ctx.identity.input.workItem).toEqual(fixture.workItemRef);
 });
 
 test("non-pass review preserves the branch and publishes all reviewer blockers", async () => {
@@ -461,6 +494,27 @@ test("review rejects staged-only index drift before invoking reviewers", async (
   });
   expect(reviewRunner).not.toHaveBeenCalled();
   expect(reviewed.event.type).toBe("factory.action.failed");
+});
+
+test("reviewer ref mutation becomes human-required", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  const reviewed = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
+      writePassReviews(reviewCtx.runDir!);
+      git(fixture.workspace, ["tag", "reviewer-mutated-ref"]);
+      return fullReviewMeta("pass");
+    }) as never,
+  });
+  expect(reviewed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
 });
 
 test("retryable reviewer failure runs the same review action again", async () => {
@@ -675,6 +729,67 @@ test("Linear terminal repair invokes no handler and appends no duplicate event",
   expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key)).toHaveLength(before);
 });
 
+test("Linear human-required failure projects and repairs attention without another handler", async () => {
+  const fixture = directFixture();
+  fixture.workItem.metadata = { linearStatus: "Ready to Implement" };
+  const providerRun = vi.fn<Agent["run"]>(async () => ({
+    ok: false,
+    error: "operator canceled",
+    exitCode: 130,
+    aborted: true,
+  }));
+  const attentionFailure = vi.fn(async () => {
+    throw new Error("attention projection unavailable");
+  });
+  await expect(
+    runOneFactoryImplementationAction({
+      ...coordinatorInput(fixture),
+      linearIssue: "ENG-123",
+      issueRef: "ENG-123",
+      linearStatuses: LINEAR_SETTINGS.statuses,
+      applyAdapter: fakeLinearAdapter({
+        applyImplementationStarted: async () => ({
+          issueIdentifier: "ENG-123",
+          runId: "run",
+          runDir: "run",
+          stage: "started",
+          targetStatus: "Implementing",
+        }),
+        applyImplementationAttention: attentionFailure,
+      }),
+      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+    }),
+  ).rejects.toThrow("attention projection unavailable");
+  expect(attentionFailure).toHaveBeenCalledWith(
+    expect.objectContaining({ verdict: "human_required" }),
+  );
+  const before = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).length;
+  fixture.workItem.metadata = { linearStatus: "Implementing" };
+  const repairedAttention = vi.fn(async () => ({
+    issueIdentifier: "ENG-123",
+    runId: "run",
+    runDir: "run",
+    stage: "completed" as const,
+    targetStatus: "Implementing",
+  }));
+  const repaired = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    workItem: fixture.workItem,
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({ applyImplementationAttention: repairedAttention }),
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+  expect(repaired.action).toBeUndefined();
+  expect(repaired.linearApplied).toBe(true);
+  expect(repairedAttention).toHaveBeenCalledWith(
+    expect.objectContaining({ verdict: "human_required" }),
+  );
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key)).toHaveLength(before);
+});
+
 function directFixture() {
   const workspace = mkdtempSync(join(tmpdir(), "factory-implementation-workspace-"));
   git(workspace, ["init", "-b", "main"]);
@@ -708,6 +823,13 @@ function directFixture() {
   const key = deriveFactoryWorkItemKey(workItem);
   const evidencePath = join(projectRoot, "input", "readiness.json");
   mkdirSync(join(projectRoot, "input"), { recursive: true });
+  const workItemPath = join(projectRoot, "input", "work-item.json");
+  writeFileSync(workItemPath, `${JSON.stringify(workItem, null, 2)}\n`);
+  const workItemRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: projectRoot,
+    path: relative(projectRoot, workItemPath),
+  });
   writeFileSync(evidencePath, '{"route":"ready-to-implement"}\n');
   const evidence = createFactoryArtifactRef({
     base: "factory-store",
@@ -730,7 +852,7 @@ function directFixture() {
     workItemKey: key,
     occurredAt: new Date().toISOString(),
     phaseRunId: "run-1",
-    data: { expectedPredecessor: imported.id, inputRefs: [evidence], intent: "start" },
+    data: { expectedPredecessor: imported.id, inputRefs: [workItemRef], intent: "start" },
   };
   appendFactoryActionEvent({
     factoryStateRoot,
@@ -770,6 +892,7 @@ function directFixture() {
     store,
     factoryStateRoot,
     workItem,
+    workItemRef,
     key,
     baseSha: git(workspace, ["rev-parse", "HEAD"]).trim(),
   };
@@ -791,6 +914,7 @@ function createPhase(fixture: ReturnType<typeof directFixture>) {
     implementationInput: {
       mode: "direct",
       importedEventId: events[0]!.id,
+      workItem: fixture.workItemRef,
       readinessEventId: events.at(-1)!.id,
       readiness: (
         events.at(-1) as Extract<FactoryLifecycleEvent, { type: "triage.work_item.completed" }>

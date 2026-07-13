@@ -150,8 +150,8 @@ states; stations do not require them.
 The schema requires the downstream status names shown above. Planning and
 implementation use configured statuses for explicit Linear boundary projections.
 
-- `station`: the current lifecycle step, `triage`.
-- `role`: the current station job, `triager`.
+- `station`: the current lifecycle step, `triage`, `planning`, or `implementation`.
+- `role`: the configured station job, including implementation `implementer` and `reviewer`.
 - `agent`: backend identity such as `cursor` or `codex`.
 
 ## Linear List, Fetch, And Create
@@ -317,5 +317,5 @@ Stop before proceeding if the task requires:
 - batch-moving every inbox item
 - mutating GitHub, Jira, or Inngest
 - mutating Linear outside documented `harness factory linear create` or explicit
-  `harness factory triage --linear-issue ... --apply`
+  `harness factory <triage|planning|implementation> ... --linear-issue ... --apply`
 - committing `.harness/runs/*`

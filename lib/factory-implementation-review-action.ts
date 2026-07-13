@@ -18,6 +18,7 @@ import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import { withFactoryImplementationExecutionLease } from "./factory-implementation-policy.ts";
 import {
+  FactoryImplementationCandidateEvidenceSchema,
   validateImplementationReviewEvidence,
   type ImplementationReviewEvidence,
 } from "./factory-implementation-review-evidence.ts";
@@ -38,6 +39,7 @@ import { run as runChangeReview } from "../workflows/change-review.workflow.ts";
 
 type ReviewRunner = typeof runChangeReview;
 class BranchDriftError extends Error {}
+class GitProbeError extends Error {}
 const StagedReviewSchema = z.object({
   version: z.literal(1),
   action: z.object({
@@ -47,24 +49,9 @@ const StagedReviewSchema = z.object({
     causationEventId: z.string(),
   }),
   reviewRunDir: z.string(),
+  refsBefore: z.string(),
+  refsAfter: z.string(),
   meta: z.unknown(),
-});
-const CandidateEvidenceSchema = z.object({
-  version: z.literal(1),
-  phaseRunId: z.string(),
-  attempt: z.number().int().positive(),
-  base: z.string(),
-  ref: z.string(),
-  commit: z.string(),
-  tree: z.string(),
-  status: z.string(),
-  effectiveSession: z.object({ provider: z.string(), id: z.string() }),
-  artifacts: z.object({
-    raw: FactoryArtifactRefSchema,
-    stream: FactoryArtifactRefSchema,
-    diff: FactoryArtifactRefSchema,
-    handoff: FactoryArtifactRefSchema,
-  }),
 });
 const ReviewEvidenceSchema = z.object({
   version: z.literal(1),
@@ -115,7 +102,7 @@ async function runLeased(
   );
   mkdirSync(actionDir, { recursive: true });
   if (existsSync(factoryActionResultPath(actionDir))) return appendRecovered(input, actionDir);
-  let candidateEvidence: z.infer<typeof CandidateEvidenceSchema>;
+  let candidateEvidence: z.infer<typeof FactoryImplementationCandidateEvidenceSchema>;
   try {
     candidateEvidence = validateCandidate(ctx, candidate);
   } catch (error) {
@@ -123,7 +110,9 @@ async function runLeased(
       input,
       actionDir,
       message(error),
-      error instanceof BranchDriftError ? "human-required" : "terminal",
+      error instanceof BranchDriftError || error instanceof GitProbeError
+        ? "human-required"
+        : "terminal",
     );
   }
   const stagedPath = join(actionDir, "review-result.json");
@@ -188,13 +177,17 @@ async function runLeased(
       stepId: reaction.handler,
     });
     let meta: unknown;
+    let refsBefore: string;
+    let refsAfter: string;
     try {
+      refsBefore = allRefs(ctx.workspace);
       meta = await (input.reviewRunner ?? runChangeReview)(reviewCtx);
+      refsAfter = allRefs(ctx.workspace);
     } catch (error) {
       finish("failed", message(error));
       return fail(input, actionDir, message(error), "human-required");
     }
-    finish("completed");
+    finish(isFailedReviewMeta(meta) ? "failed" : "completed");
     staged = {
       version: 1,
       action: {
@@ -204,13 +197,17 @@ async function runLeased(
         causationEventId: reaction.causationEventId,
       },
       reviewRunDir: reviewCtx.runDir,
+      refsBefore,
+      refsAfter,
       meta,
     };
     writeDurableFactoryFile(stagedPath, `${JSON.stringify(staged, null, 2)}\n`, true);
   }
-  let evidence: ImplementationReviewEvidence;
+  if (staged.refsBefore !== staged.refsAfter)
+    return fail(input, actionDir, "Reviewers mutated Git refs", "human-required");
+  let postTree: ReturnType<typeof readFactoryWorkspaceTree>;
   try {
-    const postTree = readFactoryWorkspaceTree({
+    postTree = readFactoryWorkspaceTree({
       workspace: ctx.workspace,
       runDir: actionDir,
       baseSha: ctx.identity.baseSha,
@@ -235,13 +232,23 @@ async function runLeased(
         "Review changed the implementation index or workspace status",
         "human-required",
       );
-    if (isFailedReviewMeta(staged.meta))
-      return fail(
-        input,
-        actionDir,
-        "One or more implementation reviewers failed",
-        input.signal?.aborted ? "human-required" : "retryable",
-      );
+  } catch (error) {
+    return fail(
+      input,
+      actionDir,
+      `Failed to verify workspace after review: ${message(error)}`,
+      "human-required",
+    );
+  }
+  if (isFailedReviewMeta(staged.meta))
+    return fail(
+      input,
+      actionDir,
+      "One or more implementation reviewers failed",
+      input.signal?.aborted ? "human-required" : "retryable",
+    );
+  let evidence: ImplementationReviewEvidence;
+  try {
     evidence = validateImplementationReviewEvidence({
       meta: staged.meta,
       implementationPath: join(staged.reviewRunDir, "implementation-review.json"),
@@ -320,7 +327,7 @@ async function runLeased(
 function validateCandidate(
   ctx: FactoryImplementationRunContext,
   candidate: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
-): z.infer<typeof CandidateEvidenceSchema> {
+): z.infer<typeof FactoryImplementationCandidateEvidenceSchema> {
   const branchRef = git(ctx.workspace, ["symbolic-ref", "-q", "HEAD"]).trim();
   if (branchRef !== ctx.identity.branchRef)
     throw new BranchDriftError("Implementation symbolic branch changed before review");
@@ -328,7 +335,9 @@ function validateCandidate(
   if (branchSha !== ctx.identity.baseSha && branchSha !== candidate.data.commit)
     throw new BranchDriftError("Implementation branch base changed before review");
   const manifestPath = verifyFactoryArtifactRef(candidate.data.candidate, roots(ctx));
-  const manifest = CandidateEvidenceSchema.parse(JSON.parse(readFileSync(manifestPath, "utf8")));
+  const manifest = FactoryImplementationCandidateEvidenceSchema.parse(
+    JSON.parse(readFileSync(manifestPath, "utf8")),
+  );
   if (
     manifest.phaseRunId !== ctx.runId ||
     manifest.attempt !== candidate.data.attempt ||
@@ -537,11 +546,19 @@ function ref(ctx: FactoryImplementationRunContext, path: string) {
 }
 
 function git(workspace: string, args: string[]) {
-  return execFileSync("git", args, {
-    cwd: workspace,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  try {
+    return execFileSync("git", args, {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    throw new GitProbeError(message(error), { cause: error });
+  }
+}
+
+function allRefs(workspace: string): string {
+  return git(workspace, ["for-each-ref", "--format=%(refname) %(objectname)"]);
 }
 
 function message(error: unknown): string {

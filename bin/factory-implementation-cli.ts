@@ -339,6 +339,19 @@ export async function runOneFactoryImplementationAction(input: {
   } else if (
     input.applyAdapter &&
     handled.event.type === "factory.action.failed" &&
+    handled.event.data.failureKind === "human-required"
+  ) {
+    await input.applyAdapter.applyImplementationAttention({
+      issueRef: input.issueRef!,
+      runId: phaseRunId,
+      runDir: ctx.runDir,
+      verdict: "human_required",
+      ...optionalCandidateCommit(eventsFor(input, key), phaseRunId),
+    });
+    linearApplied = true;
+  } else if (
+    input.applyAdapter &&
+    handled.event.type === "factory.action.failed" &&
     handled.event.data.failureKind === "terminal"
   ) {
     await input.applyAdapter.applyImplementationFailed({
@@ -386,6 +399,20 @@ async function repairTerminalProjection(input: {
       reviewBase: identity.baseSha,
       reviewHead: `refs/harness/factory/${input.state.phaseRunId}/${input.state.attempt}`,
       reviewCommitSha: candidateCommit,
+    });
+    return true;
+  }
+  if (
+    input.state.status === "needs-human" &&
+    input.latest?.type === "factory.action.failed" &&
+    input.latest.data.failureKind === "human-required"
+  ) {
+    await input.adapter.applyImplementationAttention({
+      issueRef: input.issueRef,
+      runId: input.state.phaseRunId,
+      runDir: input.runDir,
+      verdict: "human_required",
+      ...optionalCandidateCommit(input.events, input.state.phaseRunId),
     });
     return true;
   }
@@ -480,6 +507,16 @@ function readCandidateCommit(events: FactoryLifecycleEvent[], phaseRunId: string
   if (!candidate || candidate.type !== "implementation.candidate.produced")
     throw new Error("Implementation review has no candidate commit");
   return candidate.data.commit;
+}
+
+function optionalCandidateCommit(events: FactoryLifecycleEvent[], phaseRunId: string) {
+  const candidate = events.findLast(
+    (event) =>
+      event.type === "implementation.candidate.produced" && event.phaseRunId === phaseRunId,
+  );
+  return candidate?.type === "implementation.candidate.produced"
+    ? { candidateCommit: candidate.data.commit }
+    : {};
 }
 
 function implementationCommand(input: {

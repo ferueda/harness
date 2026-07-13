@@ -5,7 +5,6 @@ import { z } from "zod";
 import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import {
   createFactoryArtifactRef,
-  FactoryArtifactRefSchema,
   verifyFactoryArtifactRef,
   type FactoryArtifactRef,
 } from "./factory-artifact-ref.ts";
@@ -18,6 +17,7 @@ import {
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import { withFactoryImplementationExecutionLease } from "./factory-implementation-policy.ts";
+import { FactoryImplementationCandidateEvidenceSchema } from "./factory-implementation-review-evidence.ts";
 import type { FactoryImplementationRunContext } from "./factory-implementation-run-context.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
@@ -61,23 +61,6 @@ const StagedSchema = z.object({
   ]),
 });
 type Staged = z.infer<typeof StagedSchema>;
-const CandidateEvidenceSchema = z.object({
-  version: z.literal(1),
-  phaseRunId: z.string(),
-  attempt: z.number().int().positive(),
-  base: z.string(),
-  ref: z.string(),
-  commit: z.string(),
-  tree: z.string(),
-  status: z.string(),
-  effectiveSession: SessionSchema,
-  artifacts: z.object({
-    raw: FactoryArtifactRefSchema,
-    stream: FactoryArtifactRefSchema,
-    diff: FactoryArtifactRefSchema,
-    handoff: FactoryArtifactRefSchema,
-  }),
-});
 
 export async function produceImplementationCandidate(input: {
   ctx: FactoryImplementationRunContext;
@@ -120,7 +103,12 @@ async function runLeased(input: {
   if (existsSync(stagedPath)) {
     const parsed = readStaged(stagedPath);
     if (!parsed)
-      return fail(input, actionDir, "Invalid staged implementation provider result", "terminal");
+      return fail(
+        input,
+        actionDir,
+        "Invalid staged implementation provider result",
+        "human-required",
+      );
     staged = parsed;
     assertStagedIdentity(ctx, reaction, staged);
   } else {
@@ -132,7 +120,7 @@ async function runLeased(input: {
         input,
         actionDir,
         `Failed to inspect implementation workspace: ${message(error)}`,
-        "terminal",
+        "human-required",
       );
     }
     if (
@@ -421,7 +409,9 @@ function validateRecoveredCandidate(
   event: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
 ): void {
   const manifestPath = verifyFactoryArtifactRef(event.data.candidate, roots(ctx));
-  const manifest = CandidateEvidenceSchema.parse(JSON.parse(readFileSync(manifestPath, "utf8")));
+  const manifest = FactoryImplementationCandidateEvidenceSchema.parse(
+    JSON.parse(readFileSync(manifestPath, "utf8")),
+  );
   const expectedRef = `refs/harness/factory/${ctx.runId}/${event.data.attempt}`;
   if (
     manifest.phaseRunId !== ctx.runId ||
@@ -479,12 +469,7 @@ function facts(workspace: string) {
     head: git(workspace, ["rev-parse", "HEAD"]).trim(),
     branchRef: git(workspace, ["symbolic-ref", "-q", "HEAD"]).trim(),
     status: git(workspace, ["status", "--porcelain=v1", "--untracked-files=all"]),
-    refs: git(workspace, [
-      "for-each-ref",
-      "--format=%(refname) %(objectname)",
-      "refs/heads",
-      "refs/harness",
-    ]),
+    refs: git(workspace, ["for-each-ref", "--format=%(refname) %(objectname)"]),
     indexClean: gitStatus(workspace, ["diff", "--cached", "--quiet"]),
   };
 }

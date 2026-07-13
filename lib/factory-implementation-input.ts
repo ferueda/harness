@@ -12,12 +12,14 @@ export type FactoryImplementationInput =
   | {
       mode: "direct";
       importedEventId: string;
+      workItem: FactoryArtifactRef;
       readinessEventId: string;
       readiness: FactoryArtifactRef;
     }
   | {
       mode: "planned";
       importedEventId: string;
+      workItem: FactoryArtifactRef;
       candidateEventId: string;
       reviewEventId: string;
       planCandidate: FactoryArtifactRef;
@@ -51,9 +53,16 @@ export function resolveFactoryImplementationInput(
       throw new FactoryImplementationInputError(
         "Direct implementation readiness evidence is missing",
       );
+    const request = events.findLast(
+      (event) => event.type === "triage.requested" && event.id === direct.data.causationEventId,
+    );
+    const workItem = request?.type === "triage.requested" ? request.data.inputRefs[0] : undefined;
+    if (!workItem)
+      throw new FactoryImplementationInputError("Direct implementation work-item input is missing");
     return {
       mode: "direct",
       importedEventId: imported.id,
+      workItem,
       readinessEventId: direct.id,
       readiness,
     };
@@ -87,12 +96,15 @@ export function resolveFactoryImplementationInput(
   const base = {
     mode: "planned" as const,
     importedEventId: imported.id,
+    workItem: request.data.inputRefs[0],
     candidateEventId: candidate.id,
     reviewEventId: review.id,
     planCandidate: candidate.data.candidate,
     outputPlan: request.data.outputPlan,
     publicationMode: request.data.publicationMode,
   };
+  if (!base.workItem)
+    throw new FactoryImplementationInputError("Planned implementation work-item input is missing");
   if (request.data.publicationMode === "local") return base;
   const merged = events.findLast(
     (event) => event.type === "plan_pr.merged" && event.phaseRunId === phaseRunId,

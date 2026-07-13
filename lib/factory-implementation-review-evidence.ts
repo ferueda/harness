@@ -1,6 +1,26 @@
 import { readFileSync } from "node:fs";
+import { z } from "zod";
 import { aggregateVerdict } from "./aggregate.ts";
+import { FactoryArtifactRefSchema } from "./factory-artifact-ref.ts";
 import { ReviewOutputSchema, type ReviewOutput } from "./schemas.ts";
+
+export const FactoryImplementationCandidateEvidenceSchema = z.object({
+  version: z.literal(1),
+  phaseRunId: z.string(),
+  attempt: z.number().int().positive(),
+  base: z.string(),
+  ref: z.string(),
+  commit: z.string(),
+  tree: z.string(),
+  status: z.string(),
+  effectiveSession: z.object({ provider: z.enum(["cursor", "codex"]), id: z.string().min(1) }),
+  artifacts: z.object({
+    raw: FactoryArtifactRefSchema,
+    stream: FactoryArtifactRefSchema,
+    diff: FactoryArtifactRefSchema,
+    handoff: FactoryArtifactRefSchema,
+  }),
+});
 
 export type ImplementationReviewEvidence = {
   verdict: "pass" | "needs_changes" | "blocked";
