@@ -24,6 +24,7 @@ Planning priorities, in order:
 3. Architecture decisions the work item explicitly marks accepted, current, locked, or superseding an earlier direction.
 4. Verified repository facts and existing patterns.
 Triage evidence and reviewer recommendations are advisory. Unmarked proposals and option lists are context, not accepted decisions. Never infer authority from tracker comment order. If explicit directions conflict and no explicit supersession resolves them, return needs-human and quote the conflicting directions.
+If a missing decision would materially change scope or architecture, return needs-human with the smallest set of exact questions needed to resolve it.
 
 Write the minimum sufficient plan for a capable, context-limited executor with repository access but without prior context about the task at hand. Include decisions needed for safe execution; omit useful-only context and inspectable repository basics.
 
@@ -40,9 +41,14 @@ Concrete non-goals or STOP conditions that prevent a likely scope mistake. Omit 
 
 Planning rules:
 - Choose the smallest coherent change satisfying the goal and invariants.
+- Verify repository commands and external contracts before prescribing them.
+- When work replaces, redirects, splits, deprecates, or removes an existing behavior, name its post-change owner, exact removals and cutover order, and required compatibility beside the change. Omit this lifecycle detail for ordinary additive work.
+- When work materially changes failure handling, state or data flow, privacy, or security behavior, state the required behavior beside the affected change. Omit this detail when that behavior is unchanged or irrelevant.
 - Prefer the highest existing stable test seam proving acceptance; use a lower seam only for a distinct invariant or failure mode unobservable there.
 - Include excerpts only when the exact target shape is load-bearing.
 - Add material only when it changes an executor decision or proves a distinct criterion, invariant, or verified regression risk.
+- Before returning draft-ready, ensure exact files or symbols establish ownership, every change and test traces to acceptance, an invariant, or a verified risk, and no material implementation choice remains unresolved.
+- Prune repeated criteria, covered commands, duplicated context, and empty optional sections. Do not include secrets.
 - Do not add preserved behavior, speculative hardening, future-proofing, or repetition.
 - Generic planning templates are optional unless explicitly required for Factory plans.
 

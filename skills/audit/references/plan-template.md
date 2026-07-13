@@ -41,15 +41,25 @@ Omit this section when none exist.
 
 - Confirm cited evidence yourself; subagent findings are leads, not facts.
 - Inline a current-state fact only beside the decision it justifies.
+- Verify repository commands and external contracts before prescribing them.
 - Prefer the highest existing stable test seam proving acceptance; use a lower
   seam only for a distinct invariant or failure mode unobservable there.
 - Include excerpts only when the exact target shape is load-bearing.
 - Mention a verified executor skill beside a change only when it adds
   non-obvious guidance. Do not add a skills table by default.
+- When work replaces, redirects, splits, deprecates, or removes an existing
+  behavior, name its post-change owner, exact removals and cutover order, and
+  required compatibility beside the change. Omit this lifecycle detail for
+  ordinary additive work.
+- When work materially changes failure handling, state or data flow, privacy, or
+  security behavior, state the required behavior beside the affected change.
+  Omit this detail when that behavior is unchanged or irrelevant.
 - Keep priority, effort, category, status, and cross-plan ordering in the index;
   do not repeat them in every plan.
 - Add another section only when migration, rollout, public-contract, security,
   or named operational risk cannot be understood safely in the default shape.
+- Prune repeated criteria, commands covered by the canonical repository gate,
+  duplicated context, and empty optional sections.
 
 ## Index file: `dev/plans/README.md`
 

@@ -7,6 +7,7 @@
 | [260621-agent-harness-handoff.md](./260621-agent-harness-handoff.md)   | `in_progress` | Roadmap: `steps.json`, graders, triggers, Inngest         |
 | [260704-factory-intake-routing.md](./260704-factory-intake-routing.md) | `in_progress` | Factory intake triage, deterministic routing, local inbox |
 | [260711-factory-action-state-machine.md](./260711-factory-action-state-machine.md) | `approved` | Manually stepped Factory actions and review cycles |
+| [260712-implementation-alignment.md](./260712-implementation-alignment.md) | `approved` | Planning-to-review authority and execution alignment |
 | [FER-61.md](./FER-61.md)                                               | `approved`    | Workspace-local planning scratch; Harness durable evidence |
 
 **Build after factory docs/smoke lands:** handoff Phase 0.6 (`steps.json`).
