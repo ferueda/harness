@@ -49,6 +49,24 @@ test("parseCodexRolloutText preserves source-only and same-source messages", () 
   ]);
 });
 
+test("parseCodexRolloutText preserves same-source repeats after a canonical pair", () => {
+  const parsed = parseCodexRolloutText(`
+{"type":"event_msg","payload":{"type":"user_message","message":"Event then response twice."}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Event then response twice."}]}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Event then response twice."}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Response then event twice."}]}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Response then event twice."}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Response then event twice."}}
+`);
+
+  expect(parsed.turns.map((turn) => [turn.role, turn.text])).toEqual([
+    ["user", "Event then response twice."],
+    ["user", "Event then response twice."],
+    ["assistant", "Response then event twice."],
+    ["assistant", "Response then event twice."],
+  ]);
+});
+
 test("parseCodexRolloutText keeps retained and skipped interruptions with rollout provenance", () => {
   const parsed = parseCodexRolloutText(`
 {"type":"event_msg","payload":{"type":"user_message","message":"Keep the tool boundary."}}

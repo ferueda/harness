@@ -57,8 +57,8 @@ export function parseCodexRolloutText(text: string): ParsedCodexRollout {
     if (previousCandidate && isDuplicateMessage(previousCandidate, parsedTurn)) {
       if (parsedTurn.messageSource === "event_msg") {
         parsedTurns[previousIndex] = parsedTurn;
-        previousCandidate = parsedTurn;
       }
+      previousCandidate = parsedTurn;
       continue;
     }
 
