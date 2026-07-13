@@ -10,10 +10,10 @@
 - **Prerequisite**: minimum-sufficient Factory planning shipped in PRs #123
   and #125. PR #130 is the planning, implementation, and review authority
   baseline for the remaining work.
-- **Review note**: final automated plan review
-  `20260712-041215-6cb58a` was triaged. Later human decisions deliberately
-  replace its compatibility and synchronous-loop assumptions; do not run
-  another plan review.
+- **Review note**: the overall review `20260712-041215-6cb58a` and scoped PR 3
+  review `20260713-021014-ecd300` were triaged into this plan. The accepted
+  manual-action architecture remains unchanged; do not run another plan review
+  before implementation.
 
 ## Goal
 
@@ -283,6 +283,7 @@ inside one phase run, not to a human restart.
 | implementation review `needs_changes` below ceiling | producer, attempt + 1, caused by review       |
 | implementation review `pass`                        | complete                                      |
 | implementation review blocked/exhausted             | wait for human                                |
+| implementation human/failure wait + `--rerun`       | `implementation.requested` in a new phase run |
 | retryable action failure                            | same handler/attempt with retry scheduling    |
 | human-required failure                              | wait for human                                |
 | terminal failure                                    | failed                                        |
@@ -326,6 +327,18 @@ a human/terminal/publication boundary produced by their one action. Those wait
 boundaries may persist Factory truth without `--apply` and repair their Linear
 projection on a later explicit `--apply` invocation.
 
+A Linear-backed implementation start or `--rerun` requires `--apply`. Append
+one `implementation.requested` before projecting Ready to Implement or
+Implementation Failed to Implementing; an already-Implementing human restart
+is an idempotent start projection. Provider work cannot begin until that
+projection succeeds. A retry repairs the same pending request and never appends
+another request or invokes a second handler. Active continuations require live
+Implementing. Candidate and review actions do not change the status. Review
+pass adds the idempotent reviewed-candidate comment; non-pass adds an idempotent
+attention comment while remaining Implementing; terminal failure projects
+Implementation Failed. A later explicit `--apply` repairs a missing terminal
+projection without rerunning its handler.
+
 Remove status/comment-to-Factory-stage bootstrap. Linear validates a new phase
 entry and receives projections; the Factory log exclusively owns active run,
 handler, attempt, session, and next reaction.
@@ -349,9 +362,10 @@ from structured facts, never arbitrary error-message matching:
   outcomes.
 
 Do not add a claim store or distributed lock. Rekey the existing local
-implementation execution lease from work item to canonical workspace and
-acquire it inside `produceImplementationCandidate`. It is only a
-single-machine safety guard. Future scheduled implementation uses dedicated
+implementation execution lease from work item to canonical workspace. Hold it
+for the complete producer critical section and for the complete review critical
+section, including their terminal action append. It is only a single-machine
+safety guard. Future scheduled implementation uses dedicated
 checkouts/worktrees.
 
 ### Configuration decision: roles resolve to immutable action profiles
@@ -394,49 +408,118 @@ and their tests as the source of truth for PR 1 and PR 2 behavior.
 
 ## PR 3 — Manually stepped implementation candidate and one review
 
-Introduce trusted implementation evidence and aggregate review without a
-revision path yet.
+Ship the first complete implementation vertical slice: one invocation produces
+an immutable candidate, a later invocation reviews it, pass completes, and
+non-pass waits for a human. Review-driven same-session revision remains PR 4;
+`--rerun` is a fresh human restart, not that revision path.
 
 Changes:
 
-- Add implementation reviewer role configuration through the existing role
-  resolver.
-- Add `lib/factory-implementation-candidate-action.ts`,
-  `factory-implementation-review-action.ts`, and
-  `factory-implementation-review-evidence.ts`.
-- Make the producer create an immutable
-  `refs/harness/factory/<run>/<attempt>` commit without moving HEAD/index and
-  record original base, ref, commit SHA, tree SHA, cumulative diff, workspace
-  status, handoff, and effective session.
-- Validate work-item/run/store/workspace identity, artifact digests, ref to
-  commit, recorded tree, and base ancestry. Review the commit SHA, not a mutable
-  ref or working tree.
-- Run the full default two-reviewer `change-review` workflow (`implementation`
-  plus `quality`, with scoped simplification owned by `quality`) once as one
-  handler and append one aggregate review event. Do not run partial steps,
-  embed the outer remediation loop, or append per-reviewer Factory events.
-- Replace the implementation workflow with a one-action coordinator. PR 3
-  persists a review ceiling of 1, so pass completes and non-pass waits for a
-  human; each candidate and review still requires a separate command.
-- Resolve an omitted `--max-runtime-ms` from the current reaction: a producer
-  action uses internal value `0` and installs no absolute timer; a reviewer
-  action retains the positive shared review default. An explicit positive value
-  overrides the current action. Preserve external cancellation and the positive
-  shared default for triage and planning. Provider silence remains evidence,
-  not a failure signal; add no heartbeat or inactivity subsystem.
-- Rekey and internalize the existing workspace execution lease as specified
-  above.
-- Update run-meta/CLI/Linear projection and the operator skill. The skill must
-  show candidate command, review command, evidence inspection, exact next
-  output, synchronous/heartbeat behavior, attention/failure handling, and that
-  no separate `harness run change-review` is now required.
+- Extend `lib/schemas.ts` and `lib/config.ts` with
+  `factory.implementation.roles.reviewer`; keep role fallback and validation
+  identical to the existing role resolver. Extend
+  `FactoryPhaseRunIdentitySchema` with an implementation branch containing the
+  implementer and reviewer profiles, review ceiling 1, original base HEAD, and
+  a strict direct/planned input snapshot. Extend `implementation.requested`
+  with `intent: start | restart`. Direct input is the immutable imported work
+  item plus its durable `ready-to-implement` triage result. Planned input is the
+  immutable imported work item plus the exact reviewed planning candidate and
+  its output path; pull-request mode also records the matching `plan_pr.merged`
+  URL/commit. Put those refs in the request and phase context. Never derive
+  readiness, mode, retry, or progress from `factoryStage`, route metadata,
+  Linear comments, or status.
+- Gate phase creation before provider work. Require a clean workspace and
+  snapshot its HEAD once as the original base. For planned input, require the
+  plan bytes at that base/output path to equal the reviewed candidate. In
+  pull-request mode, also require the recorded merge commit to exist, contain
+  those bytes, and be an ancestor of the base. A local operator therefore
+  commits the reviewed local plan; a pull-request operator pulls the recorded
+  merge before implementation. Reopen validates the persisted base and input
+  refs instead of adopting current Git/config state. `--rerun` is valid only
+  from implementation `needs-human` or `failed`; it creates a new phase with
+  current source/config, a fresh producer session, and the same readiness gates.
+- Make the clean cutover explicit instead of adding parallel versions. Replace
+  the legacy allocator/meta/dry-run contract in
+  `lib/factory-implementation-run-context.ts` with separate create/open action
+  context APIs. Replace metadata-derived logic in
+  `lib/factory-implementation-input.ts` with the event-derived input contract.
+  Replace `bin/factory-implementation-cli.ts` legacy output with the one-action
+  coordinator and shared `bin/factory-action-output.ts` contract, wired from
+  `bin/factory-commands.ts`. Adapt `lib/factory-review-head.ts`,
+  `factory-implementation-policy.ts`, `factory-linear-implementation-apply.ts`,
+  and `lib/prompts/factory-implementation.ts`; remove obsolete exports, tests,
+  standalone-review guidance, and unused station compatibility. There is no
+  implementation workflow left to wrap or replace.
+- Add `lib/factory-implementation-candidate-action.ts`. Under the canonical
+  workspace lease, revalidate clean status and original HEAD, run the
+  snapshotted implementer with the accepted work item/plan authority, and keep
+  the provider schema-free. After provider return, durably stage action
+  identity, completion/session, raw/stream refs, and before/after workspace
+  facts. A successful changed tree is published through a temporary index as a
+  commit parented to the original base and a create-only
+  `refs/harness/factory/<phase-run>/<attempt>` ref without moving HEAD or the
+  real index. Then write immutable candidate evidence containing the base, ref,
+  commit, tree, cumulative diff, workspace status, handoff, effective session,
+  and artifact digests; write the atomic action result; append with CAS; release
+  the lease. Matching staged evidence/ref is recoverable. A divergent ref or
+  evidence conflict is terminal. Workspace changes without a valid staged
+  provider completion are human-required and never trigger blind provider
+  re-execution.
+- Add `lib/factory-implementation-review-action.ts` and
+  `factory-implementation-review-evidence.ts`. Validate action/work-item/run/
+  store/workspace identity, all artifact digests, original-base ancestry, the
+  candidate ref/commit/tree, and that the live workspace tree still equals the
+  candidate through a temporary index. Hold the same workspace lease across
+  that check, the review, the post-review tree check, action result, and append.
+  Run `change-review` with original base and the immutable commit SHA, the fixed
+  full `implementation` + `quality` set, the snapshotted reviewer profile, the
+  accepted work item as handoff authority, and the reviewed plan as plan
+  authority when present. Do not pass partial steps or invoke its outer
+  remediation loop.
+- Publish one immutable `review-evidence.json` manifest with candidate
+  base/commit/tree, `partial: false`, refs to both schema-validated reviewer
+  outputs, and the verdict recomputed through existing aggregation. For
+  `needs_changes`, publish every `must_fix` finding with stable
+  reviewer-prefixed IDs in `blocking-findings.json`. The lifecycle event
+  references the manifest, both reviewer outputs, and optional blocking digest;
+  it never appends per-reviewer events. Missing/partial/mismatched evidence or a
+  verdict contract violation is terminal; a failed reviewer produces
+  `factory.action.failed`, not `implementation.review.completed`. Stage the
+  completed review-run identity/result before final evidence so restart can
+  validate and finalize one existing run without invoking reviewers again.
+- Implement `harness factory implementation run` as the implementation-specific
+  one-action coordinator. Create/repair a request only when appropriate,
+  otherwise reopen its phase, compute one reaction, invoke exactly its named
+  handler, recompute `next`, and exit. Review ceiling 1 makes pass complete and
+  all non-pass verdicts wait for human; it never runs a revision in the same
+  command. Use the Linear start/continuation/terminal repair contract above and
+  retain one always-on action-start record plus persisted/optional verbose
+  workflow telemetry.
+- Resolve an omitted `--max-runtime-ms` from the current reaction: producer uses
+  internal `0`; reviewer uses the positive shared review default; an explicit
+  positive value overrides only that invocation. In `lib/agent-signals.ts`, `0`
+  creates no timer while external cancellation and cleanup remain active.
+  Triage, planning, and reviews retain their positive defaults. Add no
+  heartbeat/inactivity abort or provider-specific timeout branch.
+- Update `README.md`, `docs/contributing/{architecture,factory,script-command-surface,setup-manifest}.md`,
+  `scripts/smoke-dist.ts`, and `skills/factory-operator/SKILL.md` for only the
+  shipped PR 3 surface: clean/committed-plan gate, candidate command, review
+  command, exact next output, evidence inspection, synchronous/heartbeat
+  behavior, Linear apply/repair boundaries, human restart, pass/failure stops,
+  and no separate `harness run change-review`. Leave automatic review-driven
+  implementation revisions labeled as PR 4 work.
 
-Focused tests prove one handler per invocation, immutable commit/tree/ref
-integrity, tamper rejection, review by SHA, one aggregate review invocation,
-pass-only completion, no hidden revision, uncapped default plus positive timeout
-override and cancellation, checkout contention, process restart, and Linear
-remaining Implementing through internal actions. Then run `pnpm check` and
-change-review.
+Verify through one coordinator sequence that runs candidate and pass review in
+separate invocations with one handler each. Add focused direct/planned input and
+committed-plan gates; dirty-base/no-provider; same-workspace contention with
+distinct-workspace independence; provider-stage/ref/action-result recovery with
+no second provider call; create-only ref/tamper rejection; pre/post-review
+workspace drift; full aggregate evidence and all blocking findings; failed or
+partial reviewer rejection; Linear request/projection/terminal repair; human
+`--rerun`; and fake-timer coverage for zero, positive, and external cancellation.
+Use CLI help/distribution smoke for the public surface. Rely on PR 1/2 tests for
+generic CAS, artifact-ref, and one-action behavior instead of duplicating those
+matrices. Run `pnpm check` and the change-review workflow.
 
 ## PR 4 — Manually stepped implementation revisions and final docs
 
