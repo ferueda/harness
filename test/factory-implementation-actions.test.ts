@@ -1165,7 +1165,7 @@ test("Linear start repair reuses one request and invokes the producer only after
     }),
   });
   expect(providerRun).toHaveBeenCalledTimes(1);
-  expect(repaired.next).toMatchObject({ command: expect.stringContaining("'--apply'") });
+  expect(repaired.next).toMatchObject({ command: expect.stringContaining("--apply") });
   expect(
     readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
       (event) => event.type === "implementation.requested",

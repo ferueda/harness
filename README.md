@@ -86,6 +86,7 @@ Route one local work item through factory triage:
 
 ```bash
 harness factory status --workspace /path/to/repo
+harness factory inspect --workspace /path/to/repo --linear-issue TEAM-123
 harness factory linear list --status intake --workspace /path/to/repo
 harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example intake" --body "Details"
@@ -96,6 +97,16 @@ harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 The item file is JSON with `id`, `source`, `title`, and `body`. `status` is
 read-only. Station commands process one explicit item and do not move inbox
 files.
+
+`factory inspect` is the per-work-item read-only view; `factory status` remains
+the repository/store/lock health view. Inspect accepts exactly one
+`--linear-issue TEAM-123` or `--item-file work-item.json`. Linear inspection is
+store-only, needs no API key, and normalizes the durable key without fetching
+Linear. It prints deterministic JSON with the work-item key, repository and
+Factory project roots, reduced durable state, the verbatim latest lifecycle
+event, and the current reaction. Missing history returns `null` for state,
+latest event, and reaction. Mechanical reactions include the exact next
+station command; human, plan-merge, failed, complete, and stale waits do not.
 
 Factory station artifacts are written under
 `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/`

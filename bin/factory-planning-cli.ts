@@ -1,7 +1,8 @@
 import type { Command } from "commander";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { formatFactoryActionOutput, withManualCommand } from "./factory-action-output.ts";
+import { formatFactoryActionOutput } from "./factory-action-output.ts";
+import { decorateFactoryReaction } from "./factory-manual-command.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import {
   appendFactoryActionEvent,
@@ -282,7 +283,11 @@ export async function runOneFactoryPlanningAction(input: {
         });
         linearApplied = true;
       }
-      return { phaseRunId: state.phaseRunId, next: reaction!, linearApplied };
+      return {
+        phaseRunId: state.phaseRunId,
+        next: decorateFactoryReaction(reaction!, state, planningCommandProvenance(input))!,
+        linearApplied,
+      };
     }
     if (input.linearIssue && !input.applyAdapter)
       throw new Error("Linear planning start and --rerun require --apply");
@@ -416,10 +421,11 @@ export async function runOneFactoryPlanningAction(input: {
   return {
     phaseRunId,
     action: { handler: reaction.handler, attempt: reaction.attempt, eventId: handled.event.id },
-    next: withManualCommand(
+    next: decorateFactoryReaction(
       decideNextFactoryAction(handled.state, handled.event),
-      planningCommand(input),
-    ),
+      handled.state,
+      planningCommandProvenance(input),
+    )!,
     linearApplied,
   };
 }
@@ -464,20 +470,23 @@ async function applyTerminalPlanningProjection(input: {
   });
 }
 
-function planningCommand(input: {
+function planningCommandProvenance(input: {
   workspace: string;
   itemFile?: string;
   linearIssue?: string;
+  issueRef?: string;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
-}): string {
-  const args = ["harness", "factory", "planning", "run", "--workspace", input.workspace];
-  if (input.itemFile) args.push("--item-file", input.itemFile);
-  if (input.linearIssue) args.push("--linear-issue", input.linearIssue);
-  if (input.factoryStoreRoot) args.push("--factory-store-root", input.factoryStoreRoot);
-  if (input.factoryStoreProjectId)
-    args.push("--factory-store-project-id", input.factoryStoreProjectId);
-  return args.map(shellArg).join(" ");
+}) {
+  return {
+    workspace: input.workspace,
+    ...(input.itemFile ? { itemFile: input.itemFile } : {}),
+    ...((input.linearIssue ?? input.issueRef)
+      ? { linearIssue: input.linearIssue ?? input.issueRef }
+      : {}),
+    ...(input.factoryStoreRoot ? { factoryStoreRoot: input.factoryStoreRoot } : {}),
+    ...(input.factoryStoreProjectId ? { factoryStoreProjectId: input.factoryStoreProjectId } : {}),
+  };
 }
 
 export async function recordPlanningPublication(
@@ -618,15 +627,22 @@ export async function recordPlanningPublication(
       formatFactoryActionOutput({
         phase: "planning",
         phaseRunId: state.phaseRunId,
-        next: decideNextFactoryAction(appended.state, appended.event),
+        next: decorateFactoryReaction(
+          decideNextFactoryAction(appended.state, appended.event),
+          appended.state,
+          {
+            workspace,
+            linearIssue: options.linearIssue,
+            ...(options.factoryStoreRoot ? { factoryStoreRoot: options.factoryStoreRoot } : {}),
+            ...(options.factoryStoreProjectId
+              ? { factoryStoreProjectId: options.factoryStoreProjectId }
+              : {}),
+          },
+        )!,
         linearApplied,
       }),
       null,
       2,
     ),
   );
-}
-
-function shellArg(value: string): string {
-  return /^[A-Za-z0-9_./:@=-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
 }

@@ -15,6 +15,7 @@ Current public CLI surfaces:
 
 - `harness init`
 - `harness factory status`
+- `harness factory inspect`
 - `harness factory linear list`
 - `harness factory linear fetch`
 - `harness factory linear create`
@@ -90,6 +91,13 @@ store applies only to factory continuity and factory-owned evidence.
 ## Major source areas
 
 `bin/harness.ts` defines the CLI and routes commands into runtime helpers.
+
+`lib/factory-inspect.ts` is the reusable Harness-owned read boundary for one
+canonical work-item key. It reads canonical lifecycle JSONL in an explicit
+non-mutating mode, reduces state with the Factory state machine, selects the
+latest event, and computes the existing pure reaction. `bin/factory-manual-command.ts`
+adds selector-aware manual commands to that reaction and to station output;
+it does not alter state or events.
 
 `lib/config.ts` resolves the workspace, reads `harness.json`, defaults base to
 `main`, defaults the provider to Cursor, resolves provider config, and writes
@@ -263,6 +271,13 @@ Artifact refs in action events use store-relative `/` paths plus SHA-256
 content hashes. The CLI validates terminal evidence before recovery or Linear
 projection. Planning reactions may name the next manually invoked planning
 command. Implementation waits have no executable downstream command.
+
+`harness factory inspect` reports the same durable state boundary without
+acquiring a lifecycle lock or reading the rebuildable state projection. Its
+stable output contains `workItemKey`, `artifactRoots`, reduced `state`, the
+verbatim `latestEvent`, and `reaction`; missing history is represented by three
+`null` values. It never fetches Linear, runs a provider, crawls evidence, or
+appends lifecycle state.
 
 `--dry-run` writes placeholder triage and route artifacts but does not invoke a
 provider, does not write run `events.jsonl`, and does not write lifecycle

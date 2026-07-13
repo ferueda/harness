@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { join } from "node:path";
-import { formatFactoryActionOutput, withManualCommand } from "./factory-action-output.ts";
+import { formatFactoryActionOutput } from "./factory-action-output.ts";
+import { decorateFactoryReaction } from "./factory-manual-command.ts";
 import type { Agent, AgentProviderOptions } from "../lib/agents.ts";
 import {
   loadFactoryConfigSnapshot,
@@ -220,7 +221,11 @@ export async function runOneFactoryImplementationAction(input: {
           events,
         });
       }
-      return { phaseRunId: state.phaseRunId, next: reaction!, linearApplied };
+      return {
+        phaseRunId: state.phaseRunId,
+        next: decorateFactoryReaction(reaction!, state, implementationCommandProvenance(input))!,
+        linearApplied,
+      };
     }
     if (input.linearIssue && !input.applyAdapter)
       throw new Error("Linear implementation start and --rerun require --apply");
@@ -390,10 +395,11 @@ export async function runOneFactoryImplementationAction(input: {
   return {
     phaseRunId,
     action: { handler: reaction.handler, attempt: reaction.attempt, eventId: handled.event.id },
-    next: withManualCommand(
+    next: decorateFactoryReaction(
       decideNextFactoryAction(handled.state, handled.event),
-      implementationCommand(input),
-    ),
+      handled.state,
+      implementationCommandProvenance(input),
+    )!,
     linearApplied,
   };
 }
@@ -560,24 +566,21 @@ function optionalCandidateCommit(events: FactoryLifecycleEvent[], phaseRunId: st
     : {};
 }
 
-function implementationCommand(input: {
+function implementationCommandProvenance(input: {
   workspace: string;
   itemFile?: string;
   linearIssue?: string;
+  issueRef?: string;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
-  applyAdapter?: LinearFactoryAdapter;
-}): string {
-  const args = ["harness", "factory", "implementation", "run", "--workspace", input.workspace];
-  if (input.itemFile) args.push("--item-file", input.itemFile);
-  if (input.linearIssue) args.push("--linear-issue", input.linearIssue);
-  if (input.applyAdapter) args.push("--apply");
-  if (input.factoryStoreRoot) args.push("--factory-store-root", input.factoryStoreRoot);
-  if (input.factoryStoreProjectId)
-    args.push("--factory-store-project-id", input.factoryStoreProjectId);
-  return args.map(shellArg).join(" ");
-}
-
-function shellArg(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}) {
+  return {
+    workspace: input.workspace,
+    ...(input.itemFile ? { itemFile: input.itemFile } : {}),
+    ...((input.linearIssue ?? input.issueRef)
+      ? { linearIssue: input.linearIssue ?? input.issueRef }
+      : {}),
+    ...(input.factoryStoreRoot ? { factoryStoreRoot: input.factoryStoreRoot } : {}),
+    ...(input.factoryStoreProjectId ? { factoryStoreProjectId: input.factoryStoreProjectId } : {}),
+  };
 }
