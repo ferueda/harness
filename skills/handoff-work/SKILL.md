@@ -1,57 +1,37 @@
 ---
 name: handoff-work
 description: >
-  Hand off work in progress or finished to another agent for continuation or review. Produce a
-  structured summary with enough background context, what was worked on, how, why, files touched,
-  and what remains. Trigger when the user says "hand off this work", "prepare a handoff",
-  "document what was done for the next agent", or ending a session another agent should pick up.
+  Use when the user asks to hand off work, prepare a handoff, document work for another agent, or
+  when another agent or session will continue or review the work.
 ---
 
 # Handoff Work
 
-Produce a handoff document so another agent can continue where you left off or review what was done — whether the work is finished or still in progress.
+Produce navigational context so another agent can continue or review work.
 
-The handoff must stand alone: the next agent should not need to replay this session or re-read the entire diff to understand the goal, constraints, and current state.
+A handoff follows repository guidance and the original task or accepted plan
+as its authority. Point to inspectable sources. Repeat only session-only or
+otherwise load-bearing constraints and decisions. The next agent inspects those
+sources and changed code.
 
-## When to Use
+## Required core
 
-- Ending a work session (done or not) and another agent will continue or review
-- Work is partial — context needs to transfer before the next agent picks up
-- Before requesting `review-implementation` or `code-quality-review` on recent changes
-- The user says "hand off this work", "prepare a handoff", or "document what was done"
+- **Status** — `complete`, `in_progress`, or `blocked`.
+- **Authority and goal** — point to the authoritative request, accepted plan, or
+  spec and state the intended outcome concisely.
+- **Current state** — summarize what is complete, pending, or blocked without
+  reproducing inspectable source content.
+- **Verification** — list commands and results; when a relevant check was not
+  run or is unavailable, name the exact check and reason.
 
-## Handoff Focus
+## Add only when relevant
 
-Give the next agent enough context to continue or review without re-discovering background from scratch.
-
-### Context (required)
-
-Set the scene so the next agent understands the work in its broader setting:
-
-- **Goal** — what problem is being solved or what outcome is expected
-- **Source artifacts** — plan/spec/issue links or paths, acceptance criteria, relevant user requests
-- **Starting point** — relevant baseline behavior or state before this work began
-- **Constraints** — technical limits, conventions, deadlines, or non-negotiables that shaped decisions
-- **Scope boundaries** — what is in scope, explicitly out of scope, and what was intentionally deferred
-
-### Work done (required)
-
-- **What was worked on** — progress made so far, decisions taken, behavior added or changed; call out what is done vs still pending
-- **How it was done** — approach, patterns followed, key implementation choices
-- **Why it was done** — intent, constraints, tradeoffs, deviations from the original plan
-- **Files referenced** — paths touched, created, or deleted; call out the most important ones first and how they relate to each other
-
-### Continuation (required when work is not complete)
-
-- **Status** — `complete`, `in_progress`, or `blocked`
-- **Next steps** — what the next agent should do first
-- **Open items** — blockers, unanswered questions, or follow-ups
-
-### Also include when relevant
-
-- Verification run (commands, pass/fail)
-- Assumptions the next agent should not re-litigate
-- Risks, edge cases, or areas that need extra scrutiny on review
+- **Material adaptations** — accepted deviations or decisions needed to explain
+  the current state, with concise rationale.
+- **Important files** — entry points needed for continuation and why they matter.
+- **Next steps** — the first continuation action when work is incomplete or
+  ordering matters.
+- **Open items** — blockers, unanswered decisions, risks, or review focus.
 
 ## Output
 
@@ -62,30 +42,17 @@ Use this structure:
 
 **Status:** in_progress | complete | blocked
 
-### Context
-[Goal, source artifacts, starting point, constraints, and scope boundaries — enough background
-for the next agent to understand why this work exists and what "done" looks like]
+### Authority and goal
+[Authoritative source pointer and concise intended outcome]
 
-### What was worked on
-[Progress so far — what is done and what is still pending]
-
-### How it was done
-[Approach, patterns, key implementation choices]
-
-### Why it was done
-[Intent, constraints, tradeoffs, deviations from plan]
-
-### Files referenced
-- `path/to/file` — [brief note on what changed, why it matters, and how it connects to other touched files]
+### Current state
+[What is complete, pending, or blocked]
 
 ### Verification
-[Commands run and results, or "not run" with reason]
+[Commands and results, or exact unavailable checks and reasons]
 
-### Next steps
-[What the next agent should do first to continue or finish]
-
-### Open items
-[Blockers, unanswered questions, risks to review, or follow-ups]
+<!-- Include only relevant optional sections: Material adaptations, Important files, Next steps, Open items. -->
 ```
 
-Keep it factual and specific. Prefer file paths, concrete behavior, and decision rationale over vague summaries. If the next agent would need to ask "what was the goal?" or "why was it done this way?", the handoff is missing context.
+Return the handoff inline. Create a repository artifact only when the user
+explicitly requests one.

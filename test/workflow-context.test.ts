@@ -62,20 +62,19 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
     "needs_changes",
     "blocked",
     "must_fix",
-    "YAGNI",
     "one-call-site abstractions",
   ]) {
     expect(SPEC_REVIEW_PROMPT).toContain(keyword);
   }
-  expect(SPEC_REVIEW_PROMPT).toContain("For intent-source gaps");
+  expect(SPEC_REVIEW_PROMPT).toContain("Intent source gate");
   expect(SPEC_REVIEW_PROMPT).toContain("docs-architecture");
-  expect(SPEC_REVIEW_PROMPT).toContain("confirmed intent");
-  expect(SPEC_REVIEW_PROMPT).toContain("first step to create a minimal intent source");
   expect(SPEC_REVIEW_PROMPT).toContain("minimum sufficient executable plan");
-  expect(SPEC_REVIEW_PROMPT).toContain("Unsupported work is a scope defect");
+  expect(SPEC_REVIEW_PROMPT).toContain("Unsupported work already proposed by the plan");
   expect(SPEC_REVIEW_PROMPT).toContain("Review content, not template completeness");
   expect(SPEC_REVIEW_PROMPT).toContain("highest existing stable seam proving acceptance");
-  expect(SPEC_REVIEW_PROMPT).toContain("Do not recommend optional hardening");
+  expect(SPEC_REVIEW_PROMPT).toContain("A finding may use `must_fix: true` only for");
+  expect(SPEC_REVIEW_PROMPT).toContain("Reviewer-proposed optional hardening");
+  expect(SPEC_REVIEW_PROMPT).toContain("smallest exact missing evidence or human question");
   expect(SPEC_REVIEW_PROMPT).toContain('verdict: "needs_changes"` only when at least one finding');
   expect(SPEC_REVIEW_PROMPT).toContain("Blocked is exempt");
 
@@ -84,14 +83,21 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(reviewSpecSkill).toContain("Intent Source Gate");
   expect(reviewSpecSkill).toContain("Narrow bug fixes");
   expect(reviewSpecSkill).toContain("docs-architecture");
-  expect(reviewSpecSkill).toContain("confirmed intent");
-  expect(reviewSpecSkill).toContain("first step to create a minimal intent source");
-  expect(reviewSpecSkill).toContain("Unsupported work is a scope defect");
+  expect(reviewSpecSkill).toContain("Unsupported work already proposed by the plan");
   expect(reviewSpecSkill).toContain("Plan Contract");
-  expect(reviewSpecSkill).toContain("Review decisions, not ceremony");
   expect(reviewSpecSkill).toContain("highest existing stable seam proving acceptance");
-  expect(reviewSpecSkill).toContain("needs_changes` requires at least one");
-  expect(reviewSpecSkill).toContain("Do not invent work");
+  expect(reviewSpecSkill).toContain("Finding Contract");
+  expect(reviewSpecSkill).toContain("work-item authority");
+  expect(reviewSpecSkill).toContain("unmarked proposals, comments, and metadata");
+  expect(reviewSpecSkill).toContain("post-change owner, exact removals and cutover order");
+  expect(reviewSpecSkill).toContain("failure handling, state or data flow, privacy, or security");
+  expect(reviewSpecSkill).toContain("Reviewer-proposed optional hardening");
+  expect(reviewSpecSkill).toContain("original source request and accepted task decisions");
+  expect(reviewSpecSkill).toContain("smallest exact missing");
+  expect(reviewSpecSkill).toContain("`title`, `severity`, `location`");
+  expect(reviewSpecSkill).toContain("**Must fix**: Yes | No");
+  expect(reviewSpecSkill).toContain("**Verdict**: Pass | Needs changes | Blocked");
+  expect(reviewSpecSkill).not.toContain("**Category**");
 });
 
 test("cleanupOrphanedRunDir removes incomplete run directories", () => {

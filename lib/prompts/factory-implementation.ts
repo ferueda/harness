@@ -60,6 +60,8 @@ export function renderFactoryImplementationPrompt(input: FactoryImplementationPr
     "",
     details,
     "",
+    renderExecutionAlignment(input.implementationInput),
+    "",
     "## Station Boundaries",
     "",
     input.linearApplyRequested
@@ -71,6 +73,26 @@ export function renderFactoryImplementationPrompt(input: FactoryImplementationPr
     "- The implementer agent must not run git commit, branch, checkout, push, update-ref, or other ref-mutating git commands. The harness command owns the internal review ref after the provider returns.",
     "- The implementer agent must not append or mutate lifecycle state; the harness command owns lifecycle writes before/after provider invocation.",
     "",
+  ].join("\n");
+}
+
+function renderExecutionAlignment(input: FactoryImplementationInput): string {
+  const taskAuthority =
+    input.mode === "planned"
+      ? "2. The approved plan at the absolute plan path."
+      : "2. The resolved source request under Direct Implementation.";
+
+  return [
+    "## Execution Alignment",
+    "",
+    "Implementation authority, in order:",
+    "1. Repository invariants and documented project intent.",
+    taskAuthority,
+    "3. Verified current repository facts as the implementation baseline.",
+    "Historical branches and superseded implementations are context only.",
+    "Before editing, reconcile any named post-change ownership, removals, cutover order, and required compatibility.",
+    "Success means the accepted outcome is complete, relevant non-destructive repository validation has run, unavailable validation is reported, and the final diff is reconciled against the accepted decisions.",
+    "If a material conflict invalidates the approach or completion requires material scope expansion, stop and report the conflict or exact decision needed.",
   ].join("\n");
 }
 

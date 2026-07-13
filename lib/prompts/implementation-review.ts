@@ -21,6 +21,8 @@ Apply this order:
 
 Trace the changed behavior through its happy path, failure paths, contracts, and required tests. Check correctness, regressions, compatibility, plan fidelity, and scope.
 
+When the authoritative task or plan names a post-change owner, removal, cutover, or compatibility commitment, verify it against the diff and directly affected paths. Treat the handoff as context, never authority; do not invent migration scope absent such a commitment.
+
 A finding may block only when it identifies:
 
 - an acceptance criterion the implementation does not satisfy;
