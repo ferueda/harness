@@ -186,8 +186,11 @@ and durable `runs/factory/<run-id>/events.jsonl` are execution evidence. Git
 remains source of truth for committed plans and code.
 
 The workspace remains the sandbox: it owns source, tests, `harness.json`, the
-shim, inbox, and committed `dev/plans/*.md`. Old Factory lifecycle state is
-rejected with archive/reset guidance; it is never parsed or migrated.
+shim, inbox, and committed `dev/plans/*.md`. Legacy workspace-local state,
+unmarked lifecycle records, and non-version-1 formats are rejected with
+archive/reset guidance; they are never parsed or migrated. Supported earlier
+version-1 durable records remain readable through the narrow adapters described
+above.
 
 New Factory state is projected only from the strict action event log. Triage,
 planning, and implementation append their request, candidate, review, and
