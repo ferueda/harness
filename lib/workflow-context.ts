@@ -96,6 +96,8 @@ type StreamArtifact = {
   format: AgentStreamFormat;
   bytes?: number;
   error?: string;
+  agentMessageCount?: number;
+  finalAgentMessageId?: string;
 };
 type StreamArtifacts = Partial<Record<ReviewStage, StreamArtifact>>;
 
@@ -569,6 +571,12 @@ function recordStreamArtifact(
     format: streamLog?.format ?? streamFormatForProvider(provider),
     ...(bytes !== undefined ? { bytes } : {}),
     ...(streamLog?.error ? { error: streamLog.error } : {}),
+    ...(streamLog?.agentMessageCount !== undefined
+      ? { agentMessageCount: streamLog.agentMessageCount }
+      : {}),
+    ...(streamLog?.finalAgentMessageId
+      ? { finalAgentMessageId: streamLog.finalAgentMessageId }
+      : {}),
   };
 }
 

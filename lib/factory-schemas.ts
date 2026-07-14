@@ -129,33 +129,20 @@ export const FactoryTriageOutputSchema = z
       .min(1),
     questions: z.array(z.string().min(1)),
     reconsiderWhen: z.string().min(1).nullable(),
-    suggestedNext: z
-      .object({
-        action: z.enum(FACTORY_NEXT_ACTIONS),
-        command: z.string().min(1).nullable(),
-        artifact: z.string().min(1).nullable(),
-      })
-      .strict(),
   })
   .strict()
   .superRefine((output, ctx) => {
-    if (output.route === "ready-to-implement") {
-      requireAction(output, ctx, "implement-directly");
+    if (output.route === "ready-to-implement" || output.route === "wait-to-implement") {
       if (output.questions.length > 0) {
         ctx.addIssue({
           code: "custom",
           path: ["questions"],
-          message: "ready-to-implement must use questions: []",
+          message: `${output.route} must use questions: []`,
         });
       }
     }
 
-    if (output.route === "ready-to-plan") {
-      requireAction(output, ctx, "create-plan");
-    }
-
     if (output.route === "needs-info") {
-      requireAction(output, ctx, "ask-human");
       if (output.questions.length === 0) {
         ctx.addIssue({
           code: "custom",
@@ -166,7 +153,6 @@ export const FactoryTriageOutputSchema = z
     }
 
     if (output.route === "wait-to-implement") {
-      requireAction(output, ctx, "park");
       if (output.reconsiderWhen === null) {
         ctx.addIssue({
           code: "custom",
@@ -174,6 +160,12 @@ export const FactoryTriageOutputSchema = z
           message: "wait-to-implement requires reconsiderWhen",
         });
       }
+    } else if (output.reconsiderWhen !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reconsiderWhen"],
+        message: `${output.route} must use reconsiderWhen: null`,
+      });
     }
   });
 
@@ -226,17 +218,4 @@ export function parseFactoryWorkItemMetadata(value: unknown): FactoryWorkItemMet
 
 export function deriveFactoryWorkItemPlanSlug(workItem: FactoryWorkItem): string {
   return workItem.title || workItem.id;
-}
-
-function requireAction(
-  output: FactoryTriageOutput,
-  ctx: z.RefinementCtx,
-  expected: FactoryTriageOutput["suggestedNext"]["action"],
-): void {
-  if (output.suggestedNext.action === expected) return;
-  ctx.addIssue({
-    code: "custom",
-    path: ["suggestedNext", "action"],
-    message: `${output.route} requires suggestedNext.action=${expected}`,
-  });
 }

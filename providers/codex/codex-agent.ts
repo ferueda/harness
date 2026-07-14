@@ -152,10 +152,12 @@ async function invokeCodexAgent(
       });
     }
 
+    const acceptedTurn = addCodexFinalMessageTelemetry(turn);
+
     return guardWorkspace({
       ok: true,
       structuredOutput: parsed.value,
-      raw: turn,
+      raw: acceptedTurn,
       session: createAgentSessionRef("codex", thread.id),
       usage: turn.usage ?? undefined,
     });
@@ -239,18 +241,46 @@ async function runCodexTurnStreamed(
       type: "stream.error",
       error: errorArtifact(error),
     });
-    const streamLog = {
-      ...(await writer.close()),
-      status: "error",
-      error: errorMessage(error),
-    } satisfies AgentStreamLogSummary;
+    const streamLog = addCodexMessageTelemetry(
+      {
+        ...(await writer.close()),
+        status: "error",
+        error: errorMessage(error),
+      },
+      items,
+    );
     onStreamLog(streamLog);
     throw error;
   }
 
-  const streamLog = await writer.close();
+  const streamLog = addCodexMessageTelemetry(await writer.close(), items);
   onStreamLog(streamLog);
   return { items, finalResponse, usage, streamLog };
+}
+
+function addCodexMessageTelemetry(
+  streamLog: AgentStreamLogSummary,
+  items: ThreadItem[],
+): AgentStreamLogSummary {
+  const agentMessages = items.filter((item) => item.type === "agent_message");
+  return {
+    ...streamLog,
+    agentMessageCount: agentMessages.length,
+  };
+}
+
+function addCodexFinalMessageTelemetry(turn: CodexTurn): CodexTurn {
+  if (!turn.streamLog) return turn;
+  const finalAgentMessage = turn.items.findLast((item) => item.type === "agent_message");
+  if (!finalAgentMessage) return turn;
+
+  return {
+    ...turn,
+    streamLog: {
+      ...turn.streamLog,
+      finalAgentMessageId: finalAgentMessage.id,
+    },
+  };
 }
 
 function updateCodexTurnFromEvent(

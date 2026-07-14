@@ -1,5 +1,5 @@
 // Harness JSON Schema subset — not a full JSON Schema validator.
-// Supports: type, enum, required, properties, additionalProperties, items, minLength.
+// Supports: type, enum, required, properties, additionalProperties, items, minLength, minItems.
 
 import { readFileSync } from "node:fs";
 
@@ -13,6 +13,7 @@ export type JsonSchema = {
   additionalProperties?: boolean | JsonSchema;
   items?: JsonSchema;
   minLength?: number;
+  minItems?: number;
 };
 
 export function loadSchema(options: {
@@ -90,6 +91,9 @@ export function validateJsonSchema(
 
   if (schema.type === "array" || (types && types.includes("array"))) {
     if (!Array.isArray(value)) return `${path}: expected array`;
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      return `${path}: expected array length >= ${schema.minItems}`;
+    }
     if (schema.items) {
       for (let index = 0; index < value.length; index += 1) {
         const childError = validateJsonSchema(value[index], schema.items, `${path}[${index}]`);
