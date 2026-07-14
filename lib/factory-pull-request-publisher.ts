@@ -32,25 +32,30 @@ export function publishFactoryPullRequest(
   }).trim();
   if (local !== input.headSha)
     throw new Error(`Local publication head ${local} does not match reviewed ${input.headSha}`);
-  const origin = runner("git", ["remote", "get-url", "origin"], {
-    cwd: input.workspace,
-  }).trim();
-  const repository = githubRepositoryFromOrigin(origin);
+  const fetchUrl = oneRemoteUrl(input.workspace, ["remote", "get-url", "--all", "origin"], runner);
+  const pushUrl = oneRemoteUrl(
+    input.workspace,
+    ["remote", "get-url", "--push", "--all", "origin"],
+    runner,
+  );
+  const repository = githubRepositoryFromOrigin(fetchUrl);
+  if (githubRepositoryFromOrigin(pushUrl).toLowerCase() !== repository.toLowerCase())
+    throw new Error("Factory origin fetch and push URLs target different GitHub repositories");
 
-  const remote = remoteHead(input.workspace, headBranch, runner);
+  const remote = remoteHead(input.workspace, pushUrl, headBranch, runner);
   if (remote && remote !== input.headSha)
     throw new Error(`Remote publication branch diverges from reviewed head ${input.headSha}`);
   // Validate any durable GitHub identity before the first external mutation.
   const existing = findPullRequest(input, headBranch, repository, runner);
   if (!remote) {
     try {
-      runner("git", ["push", "origin", `${input.headSha}:refs/heads/${headBranch}`], {
+      runner("git", ["push", pushUrl, `${input.headSha}:refs/heads/${headBranch}`], {
         cwd: input.workspace,
       });
     } catch (error) {
-      if (remoteHead(input.workspace, headBranch, runner) !== input.headSha) throw error;
+      if (remoteHead(input.workspace, pushUrl, headBranch, runner) !== input.headSha) throw error;
     }
-    if (remoteHead(input.workspace, headBranch, runner) !== input.headSha)
+    if (remoteHead(input.workspace, pushUrl, headBranch, runner) !== input.headSha)
       throw new Error("Remote publication branch was not created at the reviewed head");
   }
 
@@ -89,16 +94,31 @@ export function publishFactoryPullRequest(
 
 function remoteHead(
   workspace: string,
+  remote: string,
   branch: string,
   runner: FactoryCommandRunner,
 ): string | undefined {
-  const output = runner("git", ["ls-remote", "--heads", "origin", `refs/heads/${branch}`], {
+  const output = runner("git", ["ls-remote", "--heads", remote, `refs/heads/${branch}`], {
     cwd: workspace,
   }).trim();
   if (!output) return undefined;
   const lines = output.split("\n").filter(Boolean);
   if (lines.length !== 1) throw new Error(`Remote returned multiple refs for ${branch}`);
   return lines[0]!.split(/\s+/)[0];
+}
+
+function oneRemoteUrl(
+  workspace: string,
+  args: readonly string[],
+  runner: FactoryCommandRunner,
+): string {
+  const urls = runner("git", args, { cwd: workspace })
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (urls.length !== 1)
+    throw new Error("Factory origin must resolve exactly one fetch URL and one push URL");
+  return urls[0]!;
 }
 
 function findPullRequest(

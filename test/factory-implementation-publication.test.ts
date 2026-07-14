@@ -24,8 +24,12 @@ test("publishes the exact reviewed implementation once and closes only with a co
   const runner: FactoryCommandRunner = (command, args, options) => {
     if (command === "git" && args[0] === "remote" && args[1] === "get-url")
       return "git@github.com:owner/repo.git\n";
-    if (command === "git")
-      return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+    if (command === "git") {
+      const localArgs = [...args];
+      if (localArgs[0] === "ls-remote") localArgs[2] = "origin";
+      if (localArgs[0] === "push") localArgs[1] = "origin";
+      return execFileSync("git", localArgs, { cwd: options.cwd, encoding: "utf8" });
+    }
     if (args[1] === "list") return JSON.stringify(pullRequests);
     if (args[1] === "create") {
       creates();

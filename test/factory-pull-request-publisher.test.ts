@@ -151,6 +151,40 @@ test("rejects an unsupported origin before any external mutation", () => {
   expect(gh).not.toHaveBeenCalled();
 });
 
+test("rejects a mismatched origin push URL before any external mutation", () => {
+  const fixture = repository();
+  const pushes = vi.fn<() => void>();
+  const gh = vi.fn<() => void>();
+  const runner: FactoryCommandRunner = (command, args, options) => {
+    if (command === "gh") {
+      gh();
+      return "[]";
+    }
+    if (args[0] === "remote" && args[1] === "get-url")
+      return args.includes("--push")
+        ? "git@github.com:other/repo.git\n"
+        : "git@github.com:owner/repo.git\n";
+    if (args[0] === "push") pushes();
+    return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+  };
+
+  expect(() =>
+    publishFactoryPullRequest(
+      {
+        workspace: fixture.workspace,
+        baseRef: "main",
+        headBranch: "feature",
+        headSha: fixture.head,
+        title: "Reviewed change",
+        body: "Reviewed body",
+      },
+      runner,
+    ),
+  ).toThrow(/fetch and push URLs target different/);
+  expect(pushes).not.toHaveBeenCalled();
+  expect(gh).not.toHaveBeenCalled();
+});
+
 test("recovers a PR created when gh loses its response", () => {
   const fixture = repository();
   let pullRequests: unknown[] = [];
@@ -215,5 +249,8 @@ function git(workspace: string, args: string[]): string {
 
 function runGit(args: readonly string[], workspace: string): string {
   if (args[0] === "remote" && args[1] === "get-url") return "git@github.com:owner/repo.git\n";
-  return execFileSync("git", [...args], { cwd: workspace, encoding: "utf8" });
+  const localArgs = [...args];
+  if (localArgs[0] === "ls-remote") localArgs[2] = "origin";
+  if (localArgs[0] === "push") localArgs[1] = "origin";
+  return execFileSync("git", localArgs, { cwd: workspace, encoding: "utf8" });
 }
