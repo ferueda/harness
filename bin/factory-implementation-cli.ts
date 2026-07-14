@@ -13,7 +13,10 @@ import {
   type FactoryRoleAgent,
 } from "../lib/config.ts";
 import { produceImplementationCandidate } from "../lib/factory-implementation-candidate-action.ts";
-import { validateFactoryImplementationRestartGuidance } from "../lib/factory-implementation-guidance.ts";
+import {
+  assertFactoryImplementationRestartGuidanceBinding,
+  validateFactoryImplementationRestartGuidance,
+} from "../lib/factory-implementation-guidance.ts";
 import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
 import {
@@ -410,12 +413,9 @@ export async function runOneFactoryImplementationAction(input: {
     factoryStore: input.factoryStore,
     eventSink: input.eventSink,
   });
-  assertRestartGuidanceBinding({
-    ctx,
-    events,
-    latest,
-    suppliedGuidance: input.restartGuidance,
-  });
+  assertFactoryImplementationRestartGuidanceBinding({ ctx, events: eventsFor(input, key) });
+  if (input.restartGuidance !== undefined && input.restartGuidance !== ctx.restartGuidance)
+    throw new Error("Supplied implementation restart guidance conflicts with durable guidance");
   let linearApplied = false;
   // The persisted review authorizes this revision; repair its projection before provider work.
   if (
@@ -642,35 +642,6 @@ function implementationInputRefs(
       ? [identity.input.workItem, identity.input.readiness]
       : [identity.input.workItem, identity.input.planCandidate];
   return identity.restartGuidance ? [...inputRefs, identity.restartGuidance] : inputRefs;
-}
-
-function assertRestartGuidanceBinding(input: {
-  ctx: ReturnType<typeof openFactoryImplementationRunContext>;
-  events: FactoryLifecycleEvent[];
-  latest: FactoryLifecycleEvent | undefined;
-  suppliedGuidance?: string;
-}): void {
-  const request =
-    input.latest?.type === "implementation.requested" && input.latest.phaseRunId === input.ctx.runId
-      ? input.latest
-      : input.events.findLast(
-          (event) =>
-            event.type === "implementation.requested" && event.phaseRunId === input.ctx.runId,
-        );
-  if (!request || request.type !== "implementation.requested")
-    throw new Error("Factory implementation phase has no matching request");
-  if (!sameArtifactRef(request.data.restartGuidance, input.ctx.identity.restartGuidance))
-    throw new Error("Factory implementation restart guidance conflicts with its request");
-  if (input.suppliedGuidance !== undefined && input.suppliedGuidance !== input.ctx.restartGuidance)
-    throw new Error("Supplied implementation restart guidance conflicts with durable guidance");
-}
-
-function sameArtifactRef(
-  left: { base: string; path: string; sha256: string } | undefined,
-  right: { base: string; path: string; sha256: string } | undefined,
-): boolean {
-  if (!left || !right) return left === right;
-  return left.base === right.base && left.path === right.path && left.sha256 === right.sha256;
 }
 
 function readRestartGuidanceFile(path: string): string {

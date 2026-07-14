@@ -24,8 +24,10 @@ import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
 import { createFactoryReviewHead, FactoryReviewHeadError } from "../lib/factory-review-head.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
-import { decideNextFactoryAction } from "../lib/factory-state-machine.ts";
-import type { reduceFactoryLifecycleEvents } from "../lib/factory-state-machine.ts";
+import {
+  decideNextFactoryAction,
+  reduceFactoryLifecycleEvents,
+} from "../lib/factory-state-machine.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import type { FactoryStoreMeta } from "../lib/factory-store.ts";
 import { fakeLinearAdapter, LINEAR_SETTINGS } from "./factory-linear-test-helpers.ts";
@@ -1046,6 +1048,84 @@ test("phase creation bounds restart guidance size", () => {
   ).toThrow(/exceeds 32768 bytes/);
 });
 
+test("candidate action rejects phase guidance not bound to its durable request", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture, "cursor", "Clarify the abandoned candidate.\n");
+  const requested = appendRequest(fixture, ctx);
+  const providerRun = vi.fn<Agent["run"]>();
+  await expect(
+    produceImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(requested),
+      maxRuntimeMs: 0,
+      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+    }),
+  ).rejects.toThrow(/restart guidance conflicts with its request/);
+  expect(providerRun).not.toHaveBeenCalled();
+});
+
+test("failed implementation restart rejects guidance", () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const failed: FactoryLifecycleEvent = {
+    version: 1,
+    id: `factory.action.failed:${factoryActionKey({
+      phaseRunId: ctx.runId,
+      handler: "produceImplementationCandidate",
+      attempt: 1,
+      causationEventId: requested.event.id,
+    })}`,
+    type: "factory.action.failed",
+    workItemKey: fixture.key,
+    occurredAt: new Date().toISOString(),
+    phaseRunId: ctx.runId,
+    data: {
+      handler: "produceImplementationCandidate",
+      handlerVersion: 1,
+      attempt: 1,
+      causationEventId: requested.event.id,
+      execution: { workspaceRef: fixture.store.repo.id, runRef: fixture.workItemRef },
+      evidence: [fixture.workItemRef],
+      phase: "implementation",
+      failureKind: "terminal",
+      message: "terminal fixture",
+    },
+  };
+  appendFactoryActionEvent({
+    factoryStateRoot: fixture.factoryStateRoot,
+    event: failed,
+    expectedLastEventId: requested.event.id,
+  });
+  const restartGuidance = {
+    base: "factory-store" as const,
+    path: "runs/factory/failed-restart/context/restart-guidance.md",
+    sha256: "f".repeat(64),
+  };
+  expect(() =>
+    appendFactoryActionEvent({
+      factoryStateRoot: fixture.factoryStateRoot,
+      event: {
+        version: 1,
+        id: "implementation.requested:failed-restart",
+        type: "implementation.requested",
+        workItemKey: fixture.key,
+        occurredAt: new Date().toISOString(),
+        phaseRunId: "failed-restart",
+        data: {
+          expectedPredecessor: failed.id,
+          inputRefs: [fixture.workItemRef, restartGuidance],
+          reviewCeiling: 1,
+          intent: "restart",
+          restartGuidance,
+        },
+      },
+      expectedLastEventId: failed.id,
+    }),
+  ).toThrow(/Invalid Factory transition/);
+});
+
 test("phase rejects an implementation identity missing baseRef", () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
@@ -1527,6 +1607,33 @@ test("--rerun creates a fresh attempt-one phase and fresh profile after a human 
     }) as never,
   });
   git(fixture.workspace, ["restore", "--staged", "--worktree", "."]);
+  const humanWait = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1)!;
+  const unauthorizedGuidance = {
+    base: "factory-store" as const,
+    path: "runs/factory/unauthorized/context/restart-guidance.md",
+    sha256: "f".repeat(64),
+  };
+  expect(() =>
+    appendFactoryActionEvent({
+      factoryStateRoot: fixture.factoryStateRoot,
+      event: {
+        version: 1,
+        id: "implementation.requested:unauthorized-human-restart",
+        type: "implementation.requested",
+        workItemKey: fixture.key,
+        occurredAt: new Date().toISOString(),
+        phaseRunId: "unauthorized-human-restart",
+        data: {
+          expectedPredecessor: humanWait.id,
+          inputRefs: [fixture.workItemRef, unauthorizedGuidance],
+          reviewCeiling: 1,
+          intent: "restart",
+          restartGuidance: unauthorizedGuidance,
+        },
+      },
+      expectedLastEventId: humanWait.id,
+    }),
+  ).toThrow(/Invalid Factory transition/);
   const providerRun = vi.fn<Agent["run"]>(async (runInput) => {
     expect(runInput.session).toBeUndefined();
     writeFileSync(join(fixture.workspace, "tracked.txt"), "fresh rerun\n");
@@ -1577,6 +1684,27 @@ test("--rerun abandons an unreviewed candidate and starts a fresh attempt-one ph
   );
   if (!firstCandidate) throw new Error("first candidate missing");
   const firstCandidateRef = `refs/harness/factory/${firstCandidate.phaseRunId}/1`;
+
+  expect(() =>
+    appendFactoryActionEvent({
+      factoryStateRoot: fixture.factoryStateRoot,
+      event: {
+        version: 1,
+        id: "implementation.requested:missing-guidance",
+        type: "implementation.requested",
+        workItemKey: fixture.key,
+        occurredAt: new Date().toISOString(),
+        phaseRunId: "missing-guidance",
+        data: {
+          expectedPredecessor: firstCandidate.id,
+          inputRefs: [fixture.workItemRef],
+          reviewCeiling: 1,
+          intent: "restart",
+        },
+      },
+      expectedLastEventId: firstCandidate.id,
+    }),
+  ).toThrow(/Invalid Factory transition/);
 
   git(fixture.workspace, ["restore", "--staged", "--worktree", "."]);
   const restartGuidance =
@@ -1731,6 +1859,86 @@ test("pre-review restart repair reuses durable guidance before provider work", a
     (event) => event.type === "implementation.requested" && event.data.intent === "restart",
   );
   expect(restartRequests).toHaveLength(1);
+});
+
+test("review action rejects durable guidance that conflicts with its phase", async () => {
+  const fixture = directFixture();
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "first candidate\n");
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "first-session" } };
+      },
+    }),
+  });
+  git(fixture.workspace, ["restore", "--staged", "--worktree", "."]);
+  const rerun = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    rerun: true,
+    restartGuidance: "Exercise the real entry path.\n",
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "replacement candidate\n");
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "replacement" } };
+      },
+    }),
+  });
+  const ctx = openFactoryImplementationRunContext({
+    workspace: fixture.workspace,
+    runsDir: fixture.store.factoryRunsDir,
+    phaseRunId: rerun.phaseRunId!,
+    workItem: fixture.workItem,
+    factoryStore: fixture.store,
+  });
+  const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
+  const request = events.find(
+    (event) => event.type === "implementation.requested" && event.phaseRunId === rerun.phaseRunId,
+  );
+  if (!request || request.type !== "implementation.requested" || !request.data.restartGuidance)
+    throw new Error("guided restart request missing");
+  const restartGuidance = request.data.restartGuidance;
+  const conflictingGuidance = { ...restartGuidance, sha256: "f".repeat(64) };
+  const changedEvents = events.map((event) =>
+    event.id === request.id
+      ? {
+          ...request,
+          data: {
+            ...request.data,
+            inputRefs: request.data.inputRefs.map((ref) =>
+              ref.path === restartGuidance.path ? conflictingGuidance : ref,
+            ),
+            restartGuidance: conflictingGuidance,
+          },
+        }
+      : event,
+  );
+  writeFileSync(
+    actionLifecycleEventPath(fixture.factoryStateRoot, fixture.key),
+    `${changedEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
+  );
+  const changed = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
+  const state = reduceFactoryLifecycleEvents(changed);
+  const candidate = changed.findLast(
+    (event) =>
+      event.type === "implementation.candidate.produced" && event.phaseRunId === rerun.phaseRunId,
+  );
+  if (!candidate || candidate.type !== "implementation.candidate.produced")
+    throw new Error("replacement candidate missing");
+  const reviewRunner = vi.fn();
+  await expect(
+    reviewImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke({ event: candidate, state }),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: reviewRunner as never,
+    }),
+  ).rejects.toThrow(/restart guidance conflicts with its request/);
+  expect(reviewRunner).not.toHaveBeenCalled();
 });
 
 test("Linear start repair reuses one request and invokes the producer only after projection", async () => {

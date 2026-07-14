@@ -16,6 +16,7 @@ import {
 } from "./factory-action-result.ts";
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
+import { assertFactoryImplementationRestartGuidanceBinding } from "./factory-implementation-guidance.ts";
 import { withFactoryImplementationExecutionLease } from "./factory-implementation-policy.ts";
 import {
   FactoryImplementationCandidateEvidenceSchema,
@@ -558,6 +559,7 @@ function assertReaction(input: Parameters<typeof produceImplementationCandidate>
   );
   const state = reduceFactoryLifecycleEvents(events);
   const latest = events.at(-1);
+  assertFactoryImplementationRestartGuidanceBinding({ ctx: input.ctx, events });
   if (
     !state ||
     !latest ||
