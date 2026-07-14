@@ -226,7 +226,7 @@ export function detectLegacyFactoryState(workspace: string): LegacyFactoryState 
     stateCount,
     ignored: true,
     warnings: hasLegacyState
-      ? ["Legacy workspace-local factory lifecycle state is ignored in v1; the durable store wins."]
+      ? ["Legacy workspace-local factory lifecycle state is ignored; the durable store wins."]
       : [],
   };
 }

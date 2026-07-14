@@ -33,7 +33,7 @@ export function factoryStatus(input: {
     ...legacyFactoryState.warnings,
     ...(legacyFactoryState.eventCount + legacyFactoryState.stateCount > 0 && !hasDurableState
       ? [
-          "Durable factory store is empty for this project; legacy workspace-local lifecycle is ignored in v1.",
+          "Durable factory store is empty for this project; legacy workspace-local lifecycle is ignored.",
         ]
       : []),
   ];
