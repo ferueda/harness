@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { z } from "zod";
-import type { Agent, AgentProviderName, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
+import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import {
   createFactoryArtifactRef,
   verifyFactoryArtifactRef,
@@ -26,7 +26,10 @@ import {
   loadFactoryImplementationRevision,
   matchesFactoryImplementationRevisionWorkspace,
 } from "./factory-implementation-revision.ts";
-import { sameFactoryImplementationRefs } from "./factory-implementation-git-refs.ts";
+import {
+  readFactoryImplementationGitAuthority,
+  sameFactoryImplementationGitAuthority,
+} from "./factory-implementation-git-refs.ts";
 import type { FactoryImplementationRunContext } from "./factory-implementation-run-context.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
@@ -47,6 +50,8 @@ import { renderFactoryImplementationPrompt } from "./prompts/factory-implementat
 const FactsSchema = z.object({
   head: z.string().regex(/^[0-9a-f]{40}$/),
   branchRef: z.string().min(1),
+  branchTip: z.string().regex(/^[0-9a-f]{40}$/),
+  phaseRefs: z.string(),
   status: z.string(),
   refs: z.string(),
   indexClean: z.boolean(),
@@ -146,7 +151,7 @@ async function runLeased(input: {
   } else {
     let before: z.infer<typeof FactsSchema>;
     try {
-      before = facts(ctx.workspace);
+      before = facts(ctx.workspace, ctx);
       if (
         revision &&
         !matchesFactoryImplementationRevisionWorkspace({ ctx, facts: before, revision })
@@ -277,7 +282,7 @@ async function runLeased(input: {
     let after: z.infer<typeof FactsSchema>;
     let afterTree: string;
     try {
-      after = facts(ctx.workspace);
+      after = facts(ctx.workspace, ctx);
       afterTree = readFactoryWorkspaceTree({
         workspace: ctx.workspace,
         runDir: actionDir,
@@ -311,11 +316,7 @@ async function runLeased(input: {
   }
 
   if (!staged.result.ok) {
-    const unchanged = sameFacts(
-      staged.before,
-      staged.after,
-      ctx.identity.actions.produceImplementationCandidate.provider,
-    );
+    const unchanged = sameFacts(staged.before, staged.after);
     return fail(
       input,
       actionDir,
@@ -326,7 +327,7 @@ async function runLeased(input: {
     );
   }
   try {
-    if (!matchesStagedSuccessWorkspace(ctx, staged))
+    if (!matchesStagedSuccessWorkspace(ctx, reaction.attempt, staged))
       return fail(
         input,
         actionDir,
@@ -344,12 +345,9 @@ async function runLeased(input: {
   if (
     staged.after.head !== ctx.identity.baseSha ||
     staged.after.branchRef !== ctx.identity.branchRef ||
+    staged.after.branchTip !== ctx.identity.baseSha ||
     !staged.after.indexClean ||
-    !sameFactoryImplementationRefs(
-      staged.before.refs,
-      staged.after.refs,
-      ctx.identity.actions.produceImplementationCandidate.provider,
-    )
+    !sameFactoryImplementationGitAuthority(staged.before, staged.after)
   )
     return fail(
       input,
@@ -581,40 +579,45 @@ function assertStagedIdentity(
     throw new Error("Staged implementation provider result conflicts with action identity");
 }
 
-function facts(workspace: string) {
+function facts(workspace: string, ctx: FactoryImplementationRunContext) {
   return {
-    head: git(workspace, ["rev-parse", "HEAD"]).trim(),
-    branchRef: git(workspace, ["symbolic-ref", "-q", "HEAD"]).trim(),
+    ...readFactoryImplementationGitAuthority({
+      workspace,
+      branchRef: ctx.identity.branchRef,
+      phaseRunId: ctx.runId,
+    }),
     status: git(workspace, ["status", "--porcelain=v1", "--untracked-files=all"]),
     refs: git(workspace, ["for-each-ref", "--format=%(refname) %(objectname)"]),
     indexClean: gitStatus(workspace, ["diff", "--cached", "--quiet"]),
   };
 }
 
-function sameFacts(
-  left: z.infer<typeof FactsSchema>,
-  right: z.infer<typeof FactsSchema>,
-  provider: AgentProviderName,
-) {
+function sameFacts(left: z.infer<typeof FactsSchema>, right: z.infer<typeof FactsSchema>) {
   return (
     left.head === right.head &&
     left.branchRef === right.branchRef &&
     left.status === right.status &&
     left.indexClean === right.indexClean &&
-    sameFactoryImplementationRefs(left.refs, right.refs, provider)
+    sameFactoryImplementationGitAuthority(left, right)
   );
 }
 
 function matchesStagedSuccessWorkspace(
   ctx: FactoryImplementationRunContext,
+  attempt: number,
   staged: Staged,
 ): boolean {
-  const live = facts(ctx.workspace);
+  const live = facts(ctx.workspace, ctx);
   if (
     live.head !== staged.after.head ||
     live.branchRef !== staged.after.branchRef ||
     live.status !== staged.after.status ||
-    live.indexClean !== staged.after.indexClean
+    live.indexClean !== staged.after.indexClean ||
+    live.branchTip !== staged.after.branchTip ||
+    !phaseRefsMatchBeforeCandidatePublication(staged.after.phaseRefs, live.phaseRefs, {
+      phaseRunId: ctx.runId,
+      attempt,
+    })
   )
     return false;
   return (
@@ -624,6 +627,20 @@ function matchesStagedSuccessWorkspace(
       baseSha: ctx.identity.baseSha,
     }).tree === staged.afterTree
   );
+}
+
+function phaseRefsMatchBeforeCandidatePublication(
+  expected: string,
+  live: string,
+  candidate: { phaseRunId: string; attempt: number },
+): boolean {
+  if (live === expected) return true;
+  const candidateRef = `refs/harness/factory/${candidate.phaseRunId}/${candidate.attempt} `;
+  const withoutCandidate = live
+    .split("\n")
+    .filter((line) => !line.startsWith(candidateRef))
+    .join("\n");
+  return withoutCandidate === expected;
 }
 
 function git(workspace: string, args: string[]): string {

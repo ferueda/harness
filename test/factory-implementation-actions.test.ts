@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { expect, test, vi } from "vitest";
 import { runOneFactoryImplementationAction } from "../bin/factory-implementation-cli.ts";
 import type { Agent, AgentRunInput } from "../lib/agents.ts";
@@ -546,7 +546,7 @@ test("post-provider Git probe failure records human-required without rerunning p
   });
 });
 
-test("implementer ref mutation becomes human-required", async () => {
+test("unrelated tag movement remains diagnostic during implementation", async () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
   const requested = appendRequest(fixture, ctx);
@@ -564,15 +564,13 @@ test("implementer ref mutation becomes human-required", async () => {
       },
     }),
   });
-  expect(result.event).toMatchObject({
-    type: "factory.action.failed",
-    data: { failureKind: "human-required" },
-  });
+  expect(result.event.type).toBe("implementation.candidate.produced");
 });
 
-test("Codex private ref churn preserves a valid implementation candidate", async () => {
+test("shared-repository ambient refs preserve a valid implementation candidate and raw evidence", async () => {
   const fixture = directFixture();
-  const ctx = createPhase(fixture, "codex");
+  const sibling = sharedWorktree(fixture.workspace);
+  const ctx = createPhase(fixture);
   const requested = appendRequest(fixture, ctx);
   const reaction = invoke(requested);
   const result = await produceImplementationCandidate({
@@ -581,15 +579,12 @@ test("Codex private ref churn preserves a valid implementation candidate", async
     reaction,
     maxRuntimeMs: 0,
     agentProviderFactory: () => ({
-      name: "codex",
+      name: "cursor",
       run: async () => {
         writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
-        git(fixture.workspace, [
-          "update-ref",
-          "refs/codex/turn-diffs/candidate/base",
-          fixture.baseSha,
-        ]);
-        return { ok: true, raw: {}, session: { provider: "codex", id: "session-1" } };
+        git(sibling, ["commit", "--allow-empty", "-m", "ambient branch movement"]);
+        git(sibling, ["update-ref", "refs/private/ambient", fixture.baseSha]);
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
       },
     }),
   });
@@ -597,12 +592,42 @@ test("Codex private ref churn preserves a valid implementation candidate", async
   const staged = JSON.parse(
     readFileSync(join(actionPath(ctx, reaction), "provider-result.json"), "utf8"),
   ) as { before: { refs: string }; after: { refs: string } };
-  expect(staged.before.refs).not.toContain("refs/codex/turn-diffs/candidate/base");
-  expect(staged.after.refs).toContain("refs/codex/turn-diffs/candidate/base");
+  expect(staged.before.refs).not.toContain("refs/private/ambient");
+  expect(staged.after.refs).toContain("refs/private/ambient");
+  expect(staged.before.refs).not.toBe(staged.after.refs);
 });
 
-test("Cursor cannot mutate the Codex private ref namespace", async () => {
+test("implementer current phase ref movement becomes human-required", async () => {
   const fixture = directFixture();
+  const sibling = sharedWorktree(fixture.workspace);
+  const ctx = createPhase(fixture);
+  const phaseRef = `refs/harness/factory/${ctx.runId}/prior`;
+  git(sibling, ["update-ref", phaseRef, fixture.baseSha]);
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+        git(sibling, ["commit", "--allow-empty", "-m", "phase ref target"]);
+        git(sibling, ["update-ref", phaseRef, git(sibling, ["rev-parse", "HEAD"]).trim()]);
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+      },
+    }),
+  });
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+});
+
+test("implementer current branch movement becomes human-required", async () => {
+  const fixture = directFixture();
+  const sibling = sharedWorktree(fixture.workspace);
   const ctx = createPhase(fixture);
   const requested = appendRequest(fixture, ctx);
   const result = await produceImplementationCandidate({
@@ -614,9 +639,11 @@ test("Cursor cannot mutate the Codex private ref namespace", async () => {
       name: "cursor",
       run: async () => {
         writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
-        git(fixture.workspace, [
+        git(sibling, ["commit", "--allow-empty", "-m", "branch ref target"]);
+        git(sibling, [
           "update-ref",
-          "refs/codex/turn-diffs/cursor/base",
+          ctx.identity.branchRef,
+          git(sibling, ["rev-parse", "HEAD"]).trim(),
           fixture.baseSha,
         ]);
         return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
@@ -629,9 +656,10 @@ test("Cursor cannot mutate the Codex private ref namespace", async () => {
   });
 });
 
-test("Codex cannot mutate an adjacent ref namespace", async () => {
+test("ambient private ref churn keeps an otherwise unchanged provider failure retryable", async () => {
   const fixture = directFixture();
-  const ctx = createPhase(fixture, "codex");
+  const sibling = sharedWorktree(fixture.workspace);
+  const ctx = createPhase(fixture);
   const requested = appendRequest(fixture, ctx);
   const result = await produceImplementationCandidate({
     ctx,
@@ -639,37 +667,9 @@ test("Codex cannot mutate an adjacent ref namespace", async () => {
     reaction: invoke(requested),
     maxRuntimeMs: 0,
     agentProviderFactory: () => ({
-      name: "codex",
+      name: "cursor",
       run: async () => {
-        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
-        git(fixture.workspace, ["update-ref", "refs/codex-review/candidate", fixture.baseSha]);
-        return { ok: true, raw: {}, session: { provider: "codex", id: "session-1" } };
-      },
-    }),
-  });
-  expect(result.event).toMatchObject({
-    type: "factory.action.failed",
-    data: { failureKind: "human-required" },
-  });
-});
-
-test("Codex private ref churn keeps an otherwise unchanged provider failure retryable", async () => {
-  const fixture = directFixture();
-  const ctx = createPhase(fixture, "codex");
-  const requested = appendRequest(fixture, ctx);
-  const result = await produceImplementationCandidate({
-    ctx,
-    factoryStateRoot: fixture.factoryStateRoot,
-    reaction: invoke(requested),
-    maxRuntimeMs: 0,
-    agentProviderFactory: () => ({
-      name: "codex",
-      run: async () => {
-        git(fixture.workspace, [
-          "update-ref",
-          "refs/codex/turn-diffs/failure/base",
-          fixture.baseSha,
-        ]);
+        git(sibling, ["update-ref", "refs/private/failure", fixture.baseSha]);
         return { ok: false, error: "temporary", exitCode: 1 };
       },
     }),
@@ -1107,26 +1107,74 @@ test("review rejects staged-only index drift before invoking reviewers", async (
   expect(reviewed.event.type).toBe("factory.action.failed");
 });
 
-test("reviewer ref mutation becomes human-required", async () => {
+test("shared-repository ambient refs remain diagnostic during review", async () => {
   const fixture = directFixture();
+  const sibling = sharedWorktree(fixture.workspace);
   const { ctx, candidate } = await produceCandidate(fixture);
+  const reaction = invoke(candidate);
   const reviewed = await reviewImplementationCandidate({
     ctx,
     factoryStateRoot: fixture.factoryStateRoot,
-    reaction: invoke(candidate),
+    reaction,
     maxRuntimeMs: 1_000,
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: (async (reviewCtx: { runDir?: string }) => {
       writePassReviews(reviewCtx.runDir!);
-      git(fixture.workspace, ["tag", "reviewer-mutated-ref"]);
+      git(sibling, ["commit", "--allow-empty", "-m", "ambient review movement"]);
+      git(sibling, ["update-ref", "refs/private/reviewer", fixture.baseSha]);
       return fullReviewMeta("pass");
     }) as never,
   });
-  expect(reviewed.event).toMatchObject({
-    type: "factory.action.failed",
-    data: { failureKind: "human-required" },
-  });
+  expect(reviewed.event.type).toBe("implementation.review.completed");
+  const staged = JSON.parse(
+    readFileSync(join(actionPath(ctx, reaction), "review-result.json"), "utf8"),
+  ) as { refsBefore: string; refsAfter: string };
+  expect(staged.refsBefore).not.toContain("refs/private/reviewer");
+  expect(staged.refsAfter).toContain("refs/private/reviewer");
+  expect(staged.refsBefore).not.toBe(staged.refsAfter);
 });
+
+test.each(["current branch", "current phase ref"] as const)(
+  "reviewer %s movement becomes human-required",
+  async (kind) => {
+    const fixture = directFixture();
+    const sibling = sharedWorktree(fixture.workspace);
+    const { ctx, candidate } = await produceCandidate(fixture);
+    if (candidate.event.type !== "implementation.candidate.produced") throw new Error("candidate");
+    const candidateCommit = candidate.event.data.commit;
+    const reviewed = await reviewImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(candidate),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: (async (reviewCtx: { runDir?: string }) => {
+        writePassReviews(reviewCtx.runDir!);
+        if (kind === "current branch") {
+          git(sibling, ["commit", "--allow-empty", "-m", "review branch target"]);
+          git(sibling, [
+            "update-ref",
+            ctx.identity.branchRef,
+            git(sibling, ["rev-parse", "HEAD"]).trim(),
+            fixture.baseSha,
+          ]);
+        } else {
+          git(sibling, [
+            "update-ref",
+            `refs/harness/factory/${ctx.runId}/1`,
+            fixture.baseSha,
+            candidateCommit,
+          ]);
+        }
+        return fullReviewMeta("pass");
+      }) as never,
+    });
+    expect(reviewed.event).toMatchObject({
+      type: "factory.action.failed",
+      data: { failureKind: "human-required" },
+    });
+  },
+);
 
 test("retryable reviewer failure runs the same review action again", async () => {
   const fixture = directFixture();
@@ -1505,6 +1553,16 @@ function directFixture() {
     key,
     baseSha: git(workspace, ["rev-parse", "HEAD"]).trim(),
   };
+}
+
+function sharedWorktree(workspace: string): string {
+  const root = mkdtempSync(join(tmpdir(), "factory-implementation-sibling-"));
+  const sibling = join(root, "worktree");
+  git(workspace, ["worktree", "add", "-b", "ambient", sibling, "HEAD"]);
+  const commonDir = (target: string) =>
+    realpathSync(resolve(target, git(target, ["rev-parse", "--git-common-dir"]).trim()));
+  expect(commonDir(sibling)).toBe(commonDir(workspace));
+  return sibling;
 }
 
 function removeLastLifecycleEvent(fixture: ReturnType<typeof directFixture>): void {

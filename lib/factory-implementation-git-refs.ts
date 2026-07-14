@@ -1,17 +1,45 @@
-import type { AgentProviderName } from "./agents.ts";
+import { execFileSync } from "node:child_process";
 
-export function sameFactoryImplementationRefs(
-  before: string,
-  after: string,
-  provider: AgentProviderName,
-): boolean {
-  return comparableRefs(before, provider) === comparableRefs(after, provider);
+export type FactoryImplementationGitAuthority = {
+  head: string;
+  branchRef: string;
+  branchTip: string;
+  phaseRefs: string;
+};
+
+export function readFactoryImplementationGitAuthority(input: {
+  workspace: string;
+  branchRef: string;
+  phaseRunId: string;
+}): FactoryImplementationGitAuthority {
+  return {
+    head: git(input.workspace, ["rev-parse", "--verify", "HEAD"]).trim(),
+    branchRef: git(input.workspace, ["symbolic-ref", "-q", "HEAD"]).trim(),
+    branchTip: git(input.workspace, ["rev-parse", "--verify", input.branchRef]).trim(),
+    phaseRefs: git(input.workspace, [
+      "for-each-ref",
+      "--format=%(refname) %(objectname)",
+      `refs/harness/factory/${input.phaseRunId}/`,
+    ]),
+  };
 }
 
-function comparableRefs(refs: string, provider: AgentProviderName): string {
-  if (provider !== "codex") return refs;
-  return refs
-    .split("\n")
-    .filter((line) => !line.startsWith("refs/codex/"))
-    .join("\n");
+export function sameFactoryImplementationGitAuthority(
+  before: FactoryImplementationGitAuthority,
+  after: FactoryImplementationGitAuthority,
+): boolean {
+  return (
+    before.head === after.head &&
+    before.branchRef === after.branchRef &&
+    before.branchTip === after.branchTip &&
+    before.phaseRefs === after.phaseRefs
+  );
+}
+
+function git(workspace: string, args: string[]): string {
+  return execFileSync("git", args, {
+    cwd: workspace,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }

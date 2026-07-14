@@ -12,6 +12,11 @@ import {
 } from "./factory-action-result.ts";
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
+import {
+  readFactoryImplementationGitAuthority,
+  sameFactoryImplementationGitAuthority,
+  type FactoryImplementationGitAuthority,
+} from "./factory-implementation-git-refs.ts";
 import { withFactoryImplementationExecutionLease } from "./factory-implementation-policy.ts";
 import {
   FactoryImplementationCandidateEvidenceSchema,
@@ -48,6 +53,18 @@ const StagedReviewSchema = z.object({
   reviewRunDir: z.string(),
   refsBefore: z.string(),
   refsAfter: z.string(),
+  authorityBefore: z.object({
+    head: z.string().regex(/^[0-9a-f]{40}$/),
+    branchRef: z.string().min(1),
+    branchTip: z.string().regex(/^[0-9a-f]{40}$/),
+    phaseRefs: z.string(),
+  }),
+  authorityAfter: z.object({
+    head: z.string().regex(/^[0-9a-f]{40}$/),
+    branchRef: z.string().min(1),
+    branchTip: z.string().regex(/^[0-9a-f]{40}$/),
+    phaseRefs: z.string(),
+  }),
   meta: z.unknown(),
 });
 
@@ -161,10 +178,14 @@ async function runLeased(
     let meta: unknown;
     let refsBefore: string;
     let refsAfter: string;
+    let authorityBefore: FactoryImplementationGitAuthority;
+    let authorityAfter: FactoryImplementationGitAuthority;
     try {
       refsBefore = allRefs(ctx.workspace);
+      authorityBefore = implementationAuthority(ctx);
       meta = await (input.reviewRunner ?? runChangeReview)(reviewCtx);
       refsAfter = allRefs(ctx.workspace);
+      authorityAfter = implementationAuthority(ctx);
     } catch (error) {
       finish("failed", message(error));
       return fail(input, actionDir, message(error), "human-required");
@@ -181,13 +202,16 @@ async function runLeased(
       reviewRunDir: reviewCtx.runDir,
       refsBefore,
       refsAfter,
+      authorityBefore,
+      authorityAfter,
       meta,
     };
     writeDurableFactoryFile(stagedPath, `${JSON.stringify(staged, null, 2)}\n`, true);
   }
-  if (staged.refsBefore !== staged.refsAfter)
-    return fail(input, actionDir, "Reviewers mutated Git refs", "human-required");
+  if (!sameFactoryImplementationGitAuthority(staged.authorityBefore, staged.authorityAfter))
+    return fail(input, actionDir, "Reviewers mutated Factory Git authority", "human-required");
   let postTree: ReturnType<typeof readFactoryWorkspaceTree>;
+  let promotedRecovery = false;
   try {
     postTree = readFactoryWorkspaceTree({
       workspace: ctx.workspace,
@@ -201,7 +225,7 @@ async function runLeased(
         "Review workspace changed from the immutable candidate tree",
         "human-required",
       );
-    const promotedRecovery =
+    promotedRecovery =
       recoveringStagedReview &&
       git(ctx.workspace, ["rev-parse", ctx.identity.branchRef]).trim() === candidate.data.commit;
     if (
@@ -270,6 +294,13 @@ async function runLeased(
   );
   if (evidence.verdict === "pass") {
     try {
+      if (!matchesLiveReviewAuthority(ctx, staged.authorityAfter, candidate, promotedRecovery))
+        return fail(
+          input,
+          actionDir,
+          "Factory Git authority changed before candidate promotion",
+          "human-required",
+        );
       promoteFactoryCandidate({
         workspace: ctx.workspace,
         runDir: actionDir,
@@ -280,6 +311,13 @@ async function runLeased(
     } catch (error) {
       return fail(input, actionDir, message(error), "human-required");
     }
+  } else if (!matchesLiveReviewAuthority(ctx, staged.authorityAfter, candidate, false)) {
+    return fail(
+      input,
+      actionDir,
+      "Factory Git authority changed before review publication",
+      "human-required",
+    );
   }
   const manifest = ref(ctx, manifestPath);
   const event: FactoryActionEvent = {
@@ -514,6 +552,32 @@ function realIndexMatchesBase(ctx: FactoryImplementationRunContext): boolean {
   return (
     git(ctx.workspace, ["write-tree"]).trim() ===
     git(ctx.workspace, ["rev-parse", `${ctx.identity.baseSha}^{tree}`]).trim()
+  );
+}
+
+function implementationAuthority(
+  ctx: FactoryImplementationRunContext,
+): FactoryImplementationGitAuthority {
+  return readFactoryImplementationGitAuthority({
+    workspace: ctx.workspace,
+    branchRef: ctx.identity.branchRef,
+    phaseRunId: ctx.runId,
+  });
+}
+
+function matchesLiveReviewAuthority(
+  ctx: FactoryImplementationRunContext,
+  expected: FactoryImplementationGitAuthority,
+  candidate: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
+  promotedRecovery: boolean,
+): boolean {
+  const live = implementationAuthority(ctx);
+  if (!promotedRecovery) return sameFactoryImplementationGitAuthority(expected, live);
+  return (
+    live.head === candidate.data.commit &&
+    live.branchRef === expected.branchRef &&
+    live.branchTip === candidate.data.commit &&
+    live.phaseRefs === expected.phaseRefs
   );
 }
 
