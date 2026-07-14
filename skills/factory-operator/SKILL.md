@@ -269,8 +269,10 @@ failed, plan-publication, plan-merge, or approved waits. Invoke `planning
 publish` only after explicit publication authorization; planner sessions stay
 credential-free. Stop and report the PR. Opening or delivering a PR never
 authorizes merge. Only after a human merges that recorded PR, fetch the merge
-commit and run `mark-plan-merged --url <url> --commit <sha>`. A non-pass review
-preserves the plan candidate and waits. Write a bounded response file, then run
+commit and run `mark-plan-merged --url <url> --commit <sha>`. Before the first
+review, only `revise` is allowed. A non-pass review or non-retryable action
+failure that retains a valid plan candidate waits for the same explicit
+continuation. Write a bounded response file, then run
 `planning continue --decision revise|re-review --response-file <absolute-path>`.
 Choose `revise` for plan-byte changes and `re-review` for accepted evidence or
 clarification that leaves the candidate unchanged. The continuation command
@@ -309,7 +311,9 @@ session receives no GitHub credentials. Stop at `awaiting-pr-merge` and report
 the PR. Do not merge it. Only after a human explicitly merges that recorded PR,
 fetch the merge commit and run `implementation mark-pr-merged --url <url>
 --commit <sha>`. A non-pass review preserves the exact candidate and waits for
-an explicit continuation. Create an absolute, nonblank UTF-8 response file of
+an explicit continuation. Before the first review, only `revise` is allowed;
+a non-retryable action failure that retains a valid candidate uses the same
+continuation boundary. Create an absolute, nonblank UTF-8 response file of
 at most 32 KiB, then choose one path:
 
 ```bash

@@ -2,7 +2,10 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { z } from "zod";
 import type { AgentSessionRef } from "./agents.ts";
-import { loadFactoryContinuationForReaction } from "./factory-continuation.ts";
+import {
+  readFactoryContinuationResponse,
+  resolveFactoryContinuationForReaction,
+} from "./factory-continuation.ts";
 import { verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import {
   FactoryImplementationBlockingFindingsSchema,
@@ -29,10 +32,16 @@ export type FactoryImplementationRevision = {
 
 export class FactoryImplementationRevisionError extends Error {
   readonly failureKind: "human-required" | "terminal";
+  readonly retainedCandidateEventId?: string;
 
-  constructor(message: string, failureKind: "human-required" | "terminal" = "terminal") {
+  constructor(
+    message: string,
+    failureKind: "human-required" | "terminal" = "terminal",
+    retainedCandidateEventId?: string,
+  ) {
     super(message);
     this.failureKind = failureKind;
+    this.retainedCandidateEventId = retainedCandidateEventId;
   }
 }
 
@@ -45,9 +54,9 @@ export function loadFactoryImplementationRevision(input: {
   const workItemKey = deriveFactoryWorkItemKey(ctx.workItem);
   const events = readFactoryActionEvents(input.factoryStateRoot, workItemKey);
   const roots = factoryRoots(ctx);
-  let continuation: ReturnType<typeof loadFactoryContinuationForReaction>;
+  let continuation: ReturnType<typeof resolveFactoryContinuationForReaction>;
   try {
-    continuation = loadFactoryContinuationForReaction({
+    continuation = resolveFactoryContinuationForReaction({
       events,
       causationEventId: reaction.causationEventId,
       phase: "implementation",
@@ -69,55 +78,71 @@ export function loadFactoryImplementationRevision(input: {
     throw new FactoryImplementationRevisionError(
       "Implementation revision has no matching prior candidate",
     );
-  const candidateEvidence = FactoryImplementationCandidateEvidenceSchema.parse(
-    JSON.parse(readFileSync(verifyFactoryArtifactRef(candidate.data.candidate, roots), "utf8")),
-  );
-  const profile = ctx.identity.actions.produceImplementationCandidate;
-  if (
-    candidateEvidence.phaseRunId !== ctx.runId ||
-    candidateEvidence.attempt !== candidate.data.attempt ||
-    candidateEvidence.base !== ctx.identity.baseSha ||
-    candidateEvidence.ref !== `refs/harness/factory/${ctx.runId}/${candidate.data.attempt}` ||
-    candidateEvidence.commit !== candidate.data.commit ||
-    candidateEvidence.tree !== candidate.data.tree ||
-    candidateEvidence.effectiveSession.provider !== candidate.data.effectiveSession.provider ||
-    candidateEvidence.effectiveSession.id !== candidate.data.effectiveSession.id ||
-    candidateEvidence.effectiveSession.provider !== profile.provider
-  )
-    throw new FactoryImplementationRevisionError(
-      "Implementation revision candidate evidence conflicts with lifecycle identity",
+  let candidateEvidence: z.infer<typeof FactoryImplementationCandidateEvidenceSchema>;
+  try {
+    candidateEvidence = FactoryImplementationCandidateEvidenceSchema.parse(
+      JSON.parse(readFileSync(verifyFactoryArtifactRef(candidate.data.candidate, roots), "utf8")),
+    );
+    const profile = ctx.identity.actions.produceImplementationCandidate;
+    if (
+      candidateEvidence.phaseRunId !== ctx.runId ||
+      candidateEvidence.attempt !== candidate.data.attempt ||
+      candidateEvidence.base !== ctx.identity.baseSha ||
+      candidateEvidence.ref !== `refs/harness/factory/${ctx.runId}/${candidate.data.attempt}` ||
+      candidateEvidence.commit !== candidate.data.commit ||
+      candidateEvidence.tree !== candidate.data.tree ||
+      candidateEvidence.effectiveSession.provider !== candidate.data.effectiveSession.provider ||
+      candidateEvidence.effectiveSession.id !== candidate.data.effectiveSession.id ||
       candidateEvidence.effectiveSession.provider !== profile.provider
-        ? "human-required"
-        : "terminal",
-    );
-  for (const artifact of Object.values(candidateEvidence.artifacts))
-    verifyFactoryArtifactRef(artifact, roots);
-  if (
-    git(ctx.workspace, ["rev-parse", candidateEvidence.ref]).trim() !== candidateEvidence.commit ||
-    git(ctx.workspace, ["rev-parse", `${candidateEvidence.commit}^`]).trim() !==
-      ctx.identity.baseSha ||
-    git(ctx.workspace, ["rev-parse", `${candidateEvidence.commit}^{tree}`]).trim() !==
-      candidateEvidence.tree
-  )
+    )
+      throw new FactoryImplementationRevisionError(
+        "Implementation revision candidate evidence conflicts with lifecycle identity",
+        candidateEvidence.effectiveSession.provider !== profile.provider
+          ? "human-required"
+          : "terminal",
+      );
+    for (const artifact of Object.values(candidateEvidence.artifacts))
+      verifyFactoryArtifactRef(artifact, roots);
+    if (
+      git(ctx.workspace, ["rev-parse", candidateEvidence.ref]).trim() !==
+        candidateEvidence.commit ||
+      git(ctx.workspace, ["rev-parse", `${candidateEvidence.commit}^`]).trim() !==
+        ctx.identity.baseSha ||
+      git(ctx.workspace, ["rev-parse", `${candidateEvidence.commit}^{tree}`]).trim() !==
+        candidateEvidence.tree
+    )
+      throw new FactoryImplementationRevisionError(
+        "Implementation revision prior candidate Git evidence conflicts",
+      );
+  } catch (error) {
+    if (error instanceof FactoryImplementationRevisionError) throw error;
+    throw new FactoryImplementationRevisionError(message(error));
+  }
+  try {
+    const operatorResponse = readFactoryContinuationResponse(continuation.event, roots);
+    if (continuation.review && continuation.review.type !== "implementation.review.completed")
+      throw new FactoryImplementationRevisionError(
+        "Implementation continuation review has the wrong phase",
+      );
+    const blockingFindings = continuation.review
+      ? loadBlockingFindings({ ctx, candidate, review: continuation.review, roots })
+      : [];
+    return {
+      blockingFindings,
+      candidateEventId: candidate.id,
+      operatorResponse,
+      priorCommit: candidateEvidence.commit,
+      priorTree: candidateEvidence.tree,
+      priorStatus: candidateEvidence.status,
+      session: candidateEvidence.effectiveSession,
+    };
+  } catch (error) {
     throw new FactoryImplementationRevisionError(
-      "Implementation revision prior candidate Git evidence conflicts",
+      message(error),
+      error instanceof FactoryImplementationRevisionError ? error.failureKind : "terminal",
+      candidate.id,
     );
-  if (continuation.review && continuation.review.type !== "implementation.review.completed")
-    throw new FactoryImplementationRevisionError(
-      "Implementation continuation review has the wrong phase",
-    );
-  const blockingFindings = continuation.review
-    ? loadBlockingFindings({ ctx, candidate, review: continuation.review, roots })
-    : [];
-  return {
-    blockingFindings,
-    candidateEventId: candidate.id,
-    operatorResponse: continuation.response,
-    priorCommit: candidateEvidence.commit,
-    priorTree: candidateEvidence.tree,
-    priorStatus: candidateEvidence.status,
-    session: candidateEvidence.effectiveSession,
-  };
+  }
 }
 
 function loadBlockingFindings(input: {

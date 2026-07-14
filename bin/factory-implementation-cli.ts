@@ -297,6 +297,18 @@ async function runImplementationContinuationCommand(options: {
     lifecycleReadMode: "none",
     factoryStateRoot: store.factoryStateRoot,
   });
+  const events = readFactoryActionEvents(
+    store.factoryStateRoot,
+    deriveFactoryWorkItemKey(resolved.workItem),
+  );
+  if (options.linearIssue)
+    assertLiveImplementationStatus(
+      resolved.workItem,
+      reduceFactoryLifecycleEvents(events),
+      events.at(-1),
+      false,
+      linearSettings!.statuses,
+    );
   const result = recordFactoryContinuation({
     phase: "implementation",
     decision: options.decision as FactoryContinuationDecision,

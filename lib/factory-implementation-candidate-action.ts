@@ -128,6 +128,9 @@ async function runLeased(input: {
         actionDir,
         message(error),
         error instanceof FactoryImplementationRevisionError ? error.failureKind : "terminal",
+        error instanceof FactoryImplementationRevisionError
+          ? error.retainedCandidateEventId
+          : undefined,
       );
     }
   }

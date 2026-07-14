@@ -127,7 +127,7 @@ export function recordFactoryContinuation(input: {
   };
 }
 
-export function loadFactoryContinuationForReaction(input: {
+type FactoryContinuationReactionInput = {
   events: readonly FactoryLifecycleEvent[];
   causationEventId: string;
   phase: "planning" | "implementation";
@@ -136,7 +136,9 @@ export function loadFactoryContinuationForReaction(input: {
   phaseRunId: string;
   workItemKey: string;
   roots: { "factory-store": string; repository: string };
-}) {
+};
+
+export function resolveFactoryContinuationForReaction(input: FactoryContinuationReactionInput) {
   const byId = new Map(input.events.map((event) => [event.id, event]));
   const seen = new Set<string>();
   let id = input.causationEventId;
@@ -180,7 +182,6 @@ export function loadFactoryContinuationForReaction(input: {
         event,
         candidate,
         review,
-        response: readFileSync(verifyFactoryArtifactRef(event.data.response, input.roots), "utf8"),
       };
     }
     if (
@@ -195,4 +196,21 @@ export function loadFactoryContinuationForReaction(input: {
       return undefined;
     id = event.data.causationEventId;
   }
+}
+
+export function loadFactoryContinuationForReaction(input: FactoryContinuationReactionInput) {
+  const continuation = resolveFactoryContinuationForReaction(input);
+  return continuation
+    ? {
+        ...continuation,
+        response: readFactoryContinuationResponse(continuation.event, input.roots),
+      }
+    : undefined;
+}
+
+export function readFactoryContinuationResponse(
+  event: Extract<FactoryLifecycleEvent, { type: "factory.continuation.recorded" }>,
+  roots: FactoryContinuationReactionInput["roots"],
+): string {
+  return readFileSync(verifyFactoryArtifactRef(event.data.response, roots), "utf8");
 }

@@ -426,8 +426,10 @@ comments only; it does not mutate source files.
 
 `harness factory planning run` executes one pending action and exits with
 `next`; repeat the printed command to alternate candidate and fixed one-step
-plan review actions. A non-pass review preserves the immutable plan candidate
-and waits for `planning continue`. Choose `revise` to resume the original
+plan review actions. Before the first review, `revise` is the only continuation
+choice and replaces the candidate through the original producer session. A
+non-pass review, or a non-retryable action failure that retains a valid
+candidate, waits for `planning continue`. Choose `revise` to resume the original
 planner session from that candidate, or `re-review` to run the reviewer again
 against the same bytes without invoking the planner. The required absolute
 response file must be nonblank UTF-8 of at most 32 KiB; Harness copies and
@@ -463,11 +465,14 @@ deterministic commit parented to the persisted base, and publishes a
 create-only `refs/harness/factory/<phase-run>/<attempt>` ref. HEAD and the real
 index do not move.
 
-Run the exact printed command again. The review invocation verifies the
+Before the first review, `revise` is the only continuation choice and replaces
+the candidate through the original implementer session. Run the exact printed
+command again to review instead. The review invocation verifies the
 candidate evidence and live tree, then runs the fixed full implementation and
 quality reviewers once. Reviewers are read-only and review the cumulative
 original-base-to-candidate diff. A non-pass result preserves the candidate and
-waits at `awaiting-continuation`; it never schedules a producer by itself.
+waits at `awaiting-continuation`; a non-retryable action failure with a valid
+retained candidate uses the same wait. Neither schedules a producer by itself.
 Record the operator decision explicitly:
 
 ```bash

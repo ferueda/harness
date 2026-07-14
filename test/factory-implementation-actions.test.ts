@@ -3,7 +3,10 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { expect, test, vi } from "vitest";
-import { runOneFactoryImplementationAction } from "../bin/factory-implementation-cli.ts";
+import {
+  assertLiveImplementationStatus,
+  runOneFactoryImplementationAction,
+} from "../bin/factory-implementation-cli.ts";
 import type { Agent, AgentRunInput } from "../lib/agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
@@ -23,8 +26,10 @@ import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 import { createFactoryReviewHead, FactoryReviewHeadError } from "../lib/factory-review-head.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
-import { decideNextFactoryAction } from "../lib/factory-state-machine.ts";
-import type { reduceFactoryLifecycleEvents } from "../lib/factory-state-machine.ts";
+import {
+  decideNextFactoryAction,
+  reduceFactoryLifecycleEvents,
+} from "../lib/factory-state-machine.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import type { FactoryStoreMeta } from "../lib/factory-store.ts";
 import { fakeLinearAdapter, LINEAR_SETTINGS } from "./factory-linear-test-helpers.ts";
@@ -502,7 +507,104 @@ test("tampered revision blockers are terminal before a second provider call", as
   });
   expect(providerRun).not.toHaveBeenCalled();
   expect(result.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 2 });
-  expect(result.next).toEqual({ kind: "wait", reason: "failed" });
+  expect(result.next).toEqual({ kind: "wait", reason: "human" });
+  expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1)).toMatchObject({
+    type: "factory.action.failed",
+    data: { retainedCandidateEventId: expect.any(String) },
+  });
+});
+
+test("tampered revision response retains a valid implementation candidate", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  if (candidate.event.type !== "implementation.candidate.produced") throw new Error("candidate");
+  const continued = continueImplementation(
+    fixture,
+    "revise",
+    "Correct the implementation without abandoning the candidate.",
+  );
+  if (continued.event.type !== "factory.continuation.recorded") throw new Error("continuation");
+  const responsePath = verifyFactoryArtifactRef(continued.event.data.response, {
+    "factory-store": fixture.store.projectRoot,
+    repository: fixture.workspace,
+  });
+  writeFileSync(responsePath, "Tampered response.\n");
+  const provider = vi.fn<Agent["run"]>();
+
+  const failed = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor", run: provider }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal", retainedCandidateEventId: candidate.event.id },
+  });
+  expect(failed.state).toMatchObject({
+    status: "awaiting-continuation",
+    candidateEventId: candidate.event.id,
+  });
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test("tampered revision evidence clears reusable implementation identity", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  if (candidate.event.type !== "implementation.candidate.produced") throw new Error("candidate");
+  const continued = continueImplementation(fixture, "revise", "Correct the implementation.");
+  const candidatePath = verifyFactoryArtifactRef(candidate.event.data.candidate, {
+    "factory-store": fixture.store.projectRoot,
+    repository: fixture.workspace,
+  });
+  writeFileSync(candidatePath, "{}\n");
+  const provider = vi.fn<Agent["run"]>();
+
+  const failed = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor", run: provider }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+  expect(failed.event.data).not.toHaveProperty("retainedCandidateEventId");
+  expect(failed.state).toMatchObject({ status: "failed" });
+  expect(failed.state).not.toHaveProperty("candidateEventId");
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test("implementation continuation accepts only the active Linear status", async () => {
+  const fixture = directFixture();
+  await produceCandidate(fixture);
+  const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
+  const state = reduceFactoryLifecycleEvents(events);
+  const latest = events.at(-1);
+
+  expect(() =>
+    assertLiveImplementationStatus(
+      { ...fixture.workItem, metadata: { linearStatus: "Implementing" } },
+      state,
+      latest,
+      false,
+      LINEAR_SETTINGS.statuses,
+    ),
+  ).not.toThrow();
+  expect(() =>
+    assertLiveImplementationStatus(
+      { ...fixture.workItem, metadata: { linearStatus: "Ready for Review" } },
+      state,
+      latest,
+      false,
+      LINEAR_SETTINGS.statuses,
+    ),
+  ).toThrow(/not valid for Factory implementation/);
 });
 
 test("revision workspace drift waits for a human before resuming the provider", async () => {

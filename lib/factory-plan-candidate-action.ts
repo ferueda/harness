@@ -13,7 +13,10 @@ import {
   readFactoryActionResult,
   writeFactoryActionResult,
 } from "./factory-action-result.ts";
-import { loadFactoryContinuationForReaction } from "./factory-continuation.ts";
+import {
+  readFactoryContinuationResponse,
+  resolveFactoryContinuationForReaction,
+} from "./factory-continuation.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import type { openFactoryPlanningRunContext } from "./factory-planning-run-context.ts";
@@ -72,7 +75,14 @@ export async function producePlanCandidate(input: {
       previous = revisionContext(ctx, input.factoryStateRoot, reaction);
     } catch (error) {
       if (error instanceof CandidateInputValidationError) {
-        const terminal = buildFailure(ctx, reaction, actionDir, error.message, "terminal");
+        const terminal = buildFailure(
+          ctx,
+          reaction,
+          actionDir,
+          error.message,
+          "terminal",
+          error.retainedCandidateEventId,
+        );
         writeFactoryActionResult(actionDir, terminal);
         return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
       }
@@ -333,7 +343,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-class CandidateInputValidationError extends Error {}
+class CandidateInputValidationError extends Error {
+  readonly retainedCandidateEventId?: string;
+
+  constructor(message: string, retainedCandidateEventId?: string) {
+    super(message);
+    this.retainedCandidateEventId = retainedCandidateEventId;
+  }
+}
 
 function captureProviderSuccess(
   ctx: PlanningContext,
@@ -598,7 +615,8 @@ function revisionContext(
     }
   | undefined {
   const events = readFactoryActionEvents(root, deriveFactoryWorkItemKey(ctx.workItem));
-  const continuation = loadFactoryContinuationForReaction({
+  const roots = { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace };
+  const continuation = resolveFactoryContinuationForReaction({
     events,
     causationEventId: reaction.causationEventId,
     phase: "planning",
@@ -606,7 +624,7 @@ function revisionContext(
     attempt: reaction.attempt,
     phaseRunId: ctx.runId,
     workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
-    roots: { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace },
+    roots,
   });
   if (!continuation) {
     if (reaction.attempt === 1) return undefined;
@@ -619,8 +637,14 @@ function revisionContext(
     throw new Error("Planning revision continuation is invalid");
   const event = continuation.candidate;
   const session = event.data.effectiveSession;
-  if (session.provider !== "cursor" && session.provider !== "codex")
-    throw new Error("Planning candidate has an invalid provider session");
+  let path: string;
+  try {
+    if (session.provider !== "cursor" && session.provider !== "codex")
+      throw new Error("Planning candidate has an invalid provider session");
+    path = verifyFactoryArtifactRef(event.data.candidate, roots);
+  } catch (error) {
+    throw new CandidateInputValidationError(errorMessage(error));
+  }
   try {
     let blocking: unknown[] = [];
     if (continuation.review) {
@@ -634,25 +658,19 @@ function revisionContext(
       if (continuation.review.data.blockingFindings)
         blocking = JSON.parse(
           readFileSync(
-            verifyFactoryArtifactRef(continuation.review.data.blockingFindings, {
-              "factory-store": ctx.factoryStore.projectRoot,
-              repository: ctx.workspace,
-            }),
+            verifyFactoryArtifactRef(continuation.review.data.blockingFindings, roots),
             "utf8",
           ),
         );
     }
     return {
-      path: verifyFactoryArtifactRef(event.data.candidate, {
-        "factory-store": ctx.factoryStore.projectRoot,
-        repository: ctx.workspace,
-      }),
+      path,
       session: { provider: session.provider, id: session.id },
-      operatorResponse: continuation.response,
+      operatorResponse: readFactoryContinuationResponse(continuation.event, roots),
       blocking,
       candidateEventId: event.id,
     };
   } catch (error) {
-    throw new CandidateInputValidationError(errorMessage(error));
+    throw new CandidateInputValidationError(errorMessage(error), event.id);
   }
 }

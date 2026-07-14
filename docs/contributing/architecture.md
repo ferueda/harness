@@ -21,9 +21,11 @@ Current public CLI surfaces:
 - `harness factory linear create`
 - `harness factory triage`
 - `harness factory planning run`
+- `harness factory planning continue`
 - `harness factory planning publish`
 - `harness factory planning mark-plan-merged`
 - `harness factory implementation run`
+- `harness factory implementation continue`
 - `harness factory implementation publish`
 - `harness factory implementation mark-pr-merged`
 - `harness run change-review`

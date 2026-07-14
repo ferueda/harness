@@ -325,6 +325,78 @@ test("tampered continuation response cannot trigger a re-review", async () => {
   expect(reviewer).not.toHaveBeenCalled();
 });
 
+test("tampered revision response retains a valid plan candidate", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  if (candidate.event.type !== "planning.candidate.produced") throw new Error("candidate");
+  const continued = continuePlanning(
+    fixture.ctx,
+    fixture.factoryStateRoot,
+    "revise",
+    "Correct the plan without abandoning the accepted candidate.",
+  );
+  if (continued.event.type !== "factory.continuation.recorded") throw new Error("continuation");
+  const responsePath = verifyFactoryArtifactRef(continued.event.data.response, {
+    "factory-store": fixture.ctx.factoryStore.projectRoot,
+    repository: fixture.ctx.workspace,
+  });
+  writeFileSync(responsePath, "Tampered response.\n");
+  const provider = vi.fn<Agent["run"]>();
+
+  const failed = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: provider }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal", retainedCandidateEventId: candidate.event.id },
+  });
+  expect(failed.state).toMatchObject({
+    status: "awaiting-continuation",
+    candidateEventId: candidate.event.id,
+  });
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test("tampered revision candidate clears reusable plan identity", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  if (candidate.event.type !== "planning.candidate.produced") throw new Error("candidate");
+  const continued = continuePlanning(
+    fixture.ctx,
+    fixture.factoryStateRoot,
+    "revise",
+    "Correct the plan.",
+  );
+  const candidatePath = verifyFactoryArtifactRef(candidate.event.data.candidate, {
+    "factory-store": fixture.ctx.factoryStore.projectRoot,
+    repository: fixture.ctx.workspace,
+  });
+  writeFileSync(candidatePath, "# Tampered candidate\n");
+  const provider = vi.fn<Agent["run"]>();
+
+  const failed = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: provider }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+  expect(failed.event.data).not.toHaveProperty("retainedCandidateEventId");
+  expect(failed.state).toMatchObject({ status: "failed" });
+  expect(failed.state).not.toHaveProperty("candidateEventId");
+  expect(provider).not.toHaveBeenCalled();
+});
+
 test("tampered plan candidate clears reusable identity for a clean rerun", async () => {
   const fixture = planningActionFixture();
   const candidate = await produceTestCandidate(fixture);
