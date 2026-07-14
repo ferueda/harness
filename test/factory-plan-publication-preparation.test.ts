@@ -21,7 +21,6 @@ test("materializes one deterministic plan commit from the persisted base", () =>
   const index = git(fixture.workspace, ["show", `${first.headSha}:dev/plans/README.md`]);
   expect(index.indexOf("[Plan item](item.md)")).toBeLessThan(index.indexOf("[Zulu](zulu.md)"));
 
-  git(fixture.workspace, ["switch", "main"]);
   const retry = preparePlanPublication(input);
   expect(retry.headSha).toBe(first.headSha);
 });
@@ -32,6 +31,25 @@ test("rejects an empty conflicting plan already present at the persisted base", 
   expect(() => preparePlanPublication(publicationInput(fixture))).toThrow(
     /Plan path already contains different bytes/,
   );
+});
+
+test("rejects the plan index as an output path", () => {
+  const fixture = planningFixture();
+
+  expect(() =>
+    preparePlanPublication({
+      ...publicationInput(fixture),
+      outputPlan: "dev/plans/README.md",
+    }),
+  ).toThrow(/conflicts with the plan index/);
+  expect(git(fixture.workspace, ["symbolic-ref", "-q", "HEAD"]).trim()).toBe("refs/heads/main");
+  expect(() =>
+    git(fixture.workspace, [
+      "show-ref",
+      "--verify",
+      "refs/heads/harness/factory/plan/planning-run",
+    ]),
+  ).toThrow();
 });
 
 function planningFixture(existingPlan?: string) {

@@ -245,9 +245,10 @@ Factory station roles use `harness.json`:
 }
 ```
 
-Optional terminal keys `done`, `canceled`, and `duplicate` may be added under
-`statuses` when operator tools like `linear-cli` or `factory linear list`
-should target those board states by key; factory stations do not require them.
+`done` is required for implementation merge completion. Optional terminal keys
+`canceled` and `duplicate` may be added under `statuses` when operator tools
+like `linear-cli` or `factory linear list` should target those board states by
+key.
 
 The schema requires the downstream status names shown above. Planning and
 implementation use configured statuses for explicit Linear boundary projections.

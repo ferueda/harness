@@ -483,10 +483,11 @@ test("publication apply appends once and repairs its Linear projection on retry"
   const applyPlanningPublished = vi.fn(async () => undefined);
   let remote = "";
   let pullRequest: unknown[] = [];
+  let failCreate = true;
   const commandRunner = (command: string, args: readonly string[]) => {
     if (command === "git" && args[0] === "rev-parse")
       return execFileSync("git", [...args], { cwd: workspace, encoding: "utf8" });
-    if (command === "git" && args[0] === "remote") return "git@example.test:repo.git\n";
+    if (command === "git" && args[0] === "remote") return "git@example.test:owner/repo.git\n";
     if (command === "git" && args[0] === "ls-remote")
       return remote
         ? `${remote}\trefs/heads/${String(args.at(-1)).replace("refs/heads/", "")}\n`
@@ -497,6 +498,10 @@ test("publication apply appends once and repairs its Linear projection on retry"
     }
     if (command === "gh" && args[1] === "list") return JSON.stringify(pullRequest);
     if (command === "gh" && args[1] === "create") {
+      if (failCreate) {
+        failCreate = false;
+        throw new Error("GitHub unavailable");
+      }
       const branch = String(args[args.indexOf("--head") + 1]);
       pullRequest = [
         {
@@ -519,6 +524,7 @@ test("publication apply appends once and repairs its Linear projection on retry"
     applyAdapter: { applyPlanningPublished } as never,
     commandRunner,
   };
+  await expect(publishPlanPullRequest(options)).rejects.toThrow("GitHub unavailable");
   await publishPlanPullRequest(options);
   await publishPlanPullRequest(options);
   expect(applyPlanningPublished).toHaveBeenCalledTimes(2);

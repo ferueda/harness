@@ -11,13 +11,15 @@ import {
 test("pushes an absent exact head, creates one PR, and reuses both on retry", () => {
   const fixture = repository();
   let pullRequests: unknown[] = [];
+  const repositories: string[] = [];
   const creates = vi.fn<() => void>();
   const pushes = vi.fn<() => void>();
   const runner: FactoryCommandRunner = (command, args, options) => {
     if (command === "git") {
       if (args[0] === "push") pushes();
-      return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+      return runGit(args, options.cwd);
     }
+    repositories.push(String(args[args.indexOf("--repo") + 1]));
     if (args[1] === "list") return JSON.stringify(pullRequests);
     if (args[1] === "create") {
       creates();
@@ -46,6 +48,7 @@ test("pushes an absent exact head, creates one PR, and reuses both on retry", ()
   expect(publishFactoryPullRequest(input, runner).url).toContain("/pull/1");
   expect(pushes).toHaveBeenCalledTimes(1);
   expect(creates).toHaveBeenCalledTimes(1);
+  expect(new Set(repositories)).toEqual(new Set(["owner/repo"]));
 });
 
 test("rejects a divergent remote head before GitHub mutation", () => {
@@ -62,7 +65,7 @@ test("rejects a divergent remote head before GitHub mutation", () => {
       gh();
       return "[]";
     }
-    return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+    return runGit(args, options.cwd);
   };
 
   expect(() =>
@@ -87,7 +90,7 @@ test("rejects a conflicting existing PR before pushing an absent branch", () => 
   const runner: FactoryCommandRunner = (command, args, options) => {
     if (command === "git") {
       if (args[0] === "push") pushes();
-      return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+      return runGit(args, options.cwd);
     }
     if (args[1] === "list")
       return JSON.stringify([
@@ -117,13 +120,43 @@ test("rejects a conflicting existing PR before pushing an absent branch", () => 
   expect(pushes).not.toHaveBeenCalled();
 });
 
+test("rejects an unsupported origin before any external mutation", () => {
+  const fixture = repository();
+  const pushes = vi.fn<() => void>();
+  const gh = vi.fn<() => void>();
+  const runner: FactoryCommandRunner = (command, args, options) => {
+    if (command === "gh") {
+      gh();
+      return "[]";
+    }
+    if (args[0] === "remote" && args[1] === "get-url") return "/tmp/local-origin.git\n";
+    if (args[0] === "push") pushes();
+    return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+  };
+
+  expect(() =>
+    publishFactoryPullRequest(
+      {
+        workspace: fixture.workspace,
+        baseRef: "main",
+        headBranch: "feature",
+        headSha: fixture.head,
+        title: "Reviewed change",
+        body: "Reviewed body",
+      },
+      runner,
+    ),
+  ).toThrow(/Unsupported GitHub origin/);
+  expect(pushes).not.toHaveBeenCalled();
+  expect(gh).not.toHaveBeenCalled();
+});
+
 test("recovers a PR created when gh loses its response", () => {
   const fixture = repository();
   let pullRequests: unknown[] = [];
   const creates = vi.fn<() => void>();
   const runner: FactoryCommandRunner = (command, args, options) => {
-    if (command === "git")
-      return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+    if (command === "git") return runGit(args, options.cwd);
     if (args[1] === "list") return JSON.stringify(pullRequests);
     if (args[1] === "create") {
       creates();
@@ -178,4 +211,9 @@ function repository(): { workspace: string; head: string } {
 
 function git(workspace: string, args: string[]): string {
   return execFileSync("git", args, { cwd: workspace, encoding: "utf8" });
+}
+
+function runGit(args: readonly string[], workspace: string): string {
+  if (args[0] === "remote" && args[1] === "get-url") return "git@github.com:owner/repo.git\n";
+  return execFileSync("git", [...args], { cwd: workspace, encoding: "utf8" });
 }

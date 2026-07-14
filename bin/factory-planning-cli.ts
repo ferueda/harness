@@ -499,7 +499,6 @@ export async function recordPlanningPublication(
     workspace?: string;
     linearIssue: string;
     url?: string;
-    plan?: string;
     commit?: string;
     apply?: boolean;
     factoryStoreRoot?: string;

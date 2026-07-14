@@ -32,13 +32,16 @@ export function publishFactoryPullRequest(
   }).trim();
   if (local !== input.headSha)
     throw new Error(`Local publication head ${local} does not match reviewed ${input.headSha}`);
-  runner("git", ["remote", "get-url", "origin"], { cwd: input.workspace });
+  const origin = runner("git", ["remote", "get-url", "origin"], {
+    cwd: input.workspace,
+  }).trim();
+  const repository = githubRepositoryFromOrigin(origin);
 
   const remote = remoteHead(input.workspace, headBranch, runner);
   if (remote && remote !== input.headSha)
     throw new Error(`Remote publication branch diverges from reviewed head ${input.headSha}`);
   // Validate any durable GitHub identity before the first external mutation.
-  const existing = findPullRequest(input, headBranch, runner);
+  const existing = findPullRequest(input, headBranch, repository, runner);
   if (!remote) {
     try {
       runner("git", ["push", "origin", `${input.headSha}:refs/heads/${headBranch}`], {
@@ -53,7 +56,7 @@ export function publishFactoryPullRequest(
 
   if (existing) return existing;
   // Recover a PR created concurrently after the preflight query.
-  const concurrent = findPullRequest(input, headBranch, runner);
+  const concurrent = findPullRequest(input, headBranch, repository, runner);
   if (concurrent) return concurrent;
   try {
     runner(
@@ -69,15 +72,17 @@ export function publishFactoryPullRequest(
         input.title,
         "--body",
         input.body,
+        "--repo",
+        repository,
       ],
       { cwd: input.workspace },
     );
   } catch (error) {
-    const recovered = findPullRequest(input, headBranch, runner);
+    const recovered = findPullRequest(input, headBranch, repository, runner);
     if (recovered) return recovered;
     throw error;
   }
-  const created = findPullRequest(input, headBranch, runner);
+  const created = findPullRequest(input, headBranch, repository, runner);
   if (!created) throw new Error("GitHub did not report the created pull request");
   return created;
 }
@@ -99,6 +104,7 @@ function remoteHead(
 function findPullRequest(
   input: PublishFactoryPullRequestInput,
   headBranch: string,
+  repository: string,
   runner: FactoryCommandRunner,
 ): FactoryPullRequest | undefined {
   const raw = runner(
@@ -112,6 +118,8 @@ function findPullRequest(
       headBranch,
       "--json",
       "url,baseRefName,headRefName,headRefOid",
+      "--repo",
+      repository,
     ],
     { cwd: input.workspace },
   );
@@ -124,6 +132,33 @@ function findPullRequest(
   if (pr.baseRefName !== base || pr.headRefName !== headBranch || pr.headRefOid !== input.headSha)
     throw new Error("Existing pull request conflicts with reviewed publication identity");
   return pr;
+}
+
+function githubRepositoryFromOrigin(origin: string): string {
+  let host: string;
+  let path: string;
+  try {
+    const url = new URL(origin);
+    host = url.hostname;
+    path = url.pathname;
+  } catch {
+    const match = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(origin);
+    if (!match) throw new Error(`Unsupported GitHub origin URL: ${origin}`);
+    host = match[1]!;
+    path = match[2]!;
+  }
+  const parts = path
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.git$/, "")
+    .split("/");
+  if (
+    !/^[A-Za-z0-9.-]+$/.test(host) ||
+    parts.length !== 2 ||
+    parts.some((part) => !/^[A-Za-z0-9_.-]+$/.test(part))
+  )
+    throw new Error(`Unsupported GitHub origin URL: ${origin}`);
+  const slug = `${parts[0]}/${parts[1]}`;
+  return host.toLowerCase() === "github.com" ? slug : `${host}/${slug}`;
 }
 
 function parsePullRequest(value: unknown): FactoryPullRequest {

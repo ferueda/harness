@@ -26,7 +26,12 @@ export function preparePlanPublication(input: {
   outputPlan: string;
   candidate: FactoryArtifactRef;
 }): PreparedPlanPublication {
-  if (git(input.workspace, ["symbolic-ref", "-q", "HEAD"]).trim() !== input.branchRef)
+  const readmePath = "dev/plans/README.md";
+  if (input.outputPlan === readmePath)
+    throw new Error("Plan output path conflicts with the plan index");
+  const headBranch = `refs/heads/harness/factory/plan/${input.phaseRunId}`;
+  const currentBranch = git(input.workspace, ["symbolic-ref", "-q", "HEAD"]).trim();
+  if (currentBranch !== input.branchRef && currentBranch !== headBranch)
     throw new Error(`Plan publication requires persisted branch ${input.branchRef}`);
   if (git(input.workspace, ["status", "--porcelain=v1", "--untracked-files=all"]).trim())
     throw new Error("Plan publication requires a clean workspace");
@@ -38,7 +43,6 @@ export function preparePlanPublication(input: {
   const existingPlan = tryShow(input.workspace, input.baseSha, input.outputPlan);
   if (existingPlan !== undefined && !planBytes.equals(Buffer.from(existingPlan)))
     throw new Error(`Plan path already contains different bytes: ${input.outputPlan}`);
-  const readmePath = "dev/plans/README.md";
   const readme = git(input.workspace, ["show", `${input.baseSha}:${readmePath}`]);
   const nextReadme = updateActiveQueue(readme, input.outputPlan, input.workItem);
   const temporary = mkdtempSync(join(tmpdir(), "harness-plan-publication-"));
@@ -80,12 +84,12 @@ export function preparePlanPublication(input: {
         GIT_COMMITTER_DATE: baseDate,
       },
     ).trim();
-    const headBranch = `refs/heads/harness/factory/plan/${input.phaseRunId}`;
     const existing = tryResolve(input.workspace, headBranch);
     if (existing && existing !== commit)
       throw new Error("Deterministic planning publication branch has a conflicting commit");
     if (!existing) git(input.workspace, ["update-ref", headBranch, commit]);
-    git(input.workspace, ["switch", headBranch.replace(/^refs\/heads\//, "")]);
+    if (currentBranch !== headBranch)
+      git(input.workspace, ["switch", headBranch.replace(/^refs\/heads\//, "")]);
     git(input.workspace, ["reset", "--hard", commit]);
     return {
       baseRef: input.baseRef,

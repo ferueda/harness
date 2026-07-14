@@ -147,9 +147,9 @@ Minimal shape:
 }
 ```
 
-Optional terminal keys (`done`, `canceled`, `duplicate`) may be added under
-`factory.linear.statuses` when operator list/move tools need those board
-states; stations do not require them.
+`done` is required for implementation merge completion. Optional terminal keys
+(`canceled`, `duplicate`) may be added under `factory.linear.statuses` when
+operator list/move tools need those board states.
 
 The schema requires the downstream status names shown above. Planning and
 implementation use configured statuses for explicit Linear boundary projections.

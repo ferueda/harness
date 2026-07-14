@@ -22,6 +22,8 @@ test("publishes the exact reviewed implementation once and closes only with a co
   let pullRequests: unknown[] = [];
   const creates = vi.fn<() => void>();
   const runner: FactoryCommandRunner = (command, args, options) => {
+    if (command === "git" && args[0] === "remote" && args[1] === "get-url")
+      return "git@github.com:owner/repo.git\n";
     if (command === "git")
       return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
     if (args[1] === "list") return JSON.stringify(pullRequests);
