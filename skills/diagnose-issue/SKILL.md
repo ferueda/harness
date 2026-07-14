@@ -122,6 +122,7 @@ Use this format unless the user asked for something narrower:
 | Next | When |
 |------|------|
 | `shape-requirements` **gate** | **Ambiguous** status or multiple directions need a product/priority pick |
+| `architect` (manual-only) | **Confirmed** or **Likely** and the user explicitly requests solution design before planning. Pass status, mechanism, evidence, constraints, and candidate directions as hypotheses. |
 | `create-plan` | **Confirmed** or **Likely** with a recommended direction |
 | `review-spec` | Definition will become a written plan needing codebase validation |
 | Stop | **Not Found** or **Invalidated** — report evidence; reshape only if the goal was wrong |
