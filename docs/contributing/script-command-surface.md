@@ -102,7 +102,9 @@ through `lint-staged`, then run `pnpm typecheck`.
 
 Hooks are commit hygiene, not the definition of done. They do not run
 `pnpm check`, tests, smoke-dist, provider calls, network work, DB work, or
-visual checks. Run `pnpm check` before handoff. CI runs `pnpm check:ci`; it does
+visual checks. Run `pnpm check` before handoff. CI runs `pnpm check:ci` for
+pushes and pull requests outside the approved `dev/plans/**/*.md`-only class.
+Plan-only pull requests run plan formatting and docs contracts instead. CI does
 not depend on local Git hooks.
 
 Use [Setup Manifest](./setup-manifest.md) for hook activation and generated

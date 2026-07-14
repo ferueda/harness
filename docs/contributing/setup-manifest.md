@@ -46,8 +46,10 @@ the hook. The standalone sessions skill installer uses `--ignore-workspace` so
 to be refreshed without reinstalling dependencies, run `pnpm exec
 simple-git-hooks`.
 
-Hooks do not replace `pnpm check` before handoff, and CI uses `pnpm check:ci`
-instead of local Git hooks.
+Hooks do not replace `pnpm check` before handoff. CI uses `pnpm check:ci` for
+pushes and non-plan-only pull requests; pull requests changing only
+`dev/plans/**/*.md` run plan formatting and docs contracts instead. CI does not
+depend on local Git hooks.
 
 ## Generated artifacts and ownership
 
