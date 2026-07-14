@@ -154,10 +154,10 @@ triage artifacts without a provider and does not initialize Factory state.
 General GitHub/Jira tracker adapters and an Inngest host adapter remain future
 layers. Factory plan and implementation publication use local Git credentials
 and authenticated `gh` only after explicit command invocation.
-Linking factory PRs to Linear issues via branch/title naming is current operator
-practice (see Linear PR linking in
-[docs/contributing/factory.md](docs/contributing/factory.md)). For the full
-operator model, read that same doc.
+Agent operators should use
+[the Factory skill](skills/factory-operator/SKILL.md); generated help owns exact
+flags. Contributors changing internals should read the
+[Factory contributor guide](docs/contributing/factory.md).
 
 For review handoff, step-selection, and failure-triage workflow guidance,
 read [skills/change-review-workflow/SKILL.md](skills/change-review-workflow/SKILL.md).
