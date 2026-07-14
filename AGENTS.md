@@ -39,6 +39,7 @@ Keep this repo standalone. No references, examples, paths, fixtures, or docs tie
 - contributor index -> `docs/contributing/index.md`
 - harness-engineering guide -> `docs/contributing/harness-engineering.md`
 - architecture map -> `docs/contributing/architecture.md`
+- testing guide -> `docs/contributing/testing.md`
 
 ## Planning workflow
 

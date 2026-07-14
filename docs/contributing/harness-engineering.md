@@ -25,6 +25,10 @@ Current command detail is intentionally high level here. The present final gate
 is `pnpm check` / `make check`; command ownership and mutability live in
 [Script and command surface](./script-command-surface.md).
 
+Testing strategy, proof-layer selection, authoring guidance, and smoke policy
+live in [Testing](./testing.md). Keep this guide focused on the broader
+engineering loop rather than duplicating the testing taxonomy.
+
 ## Continuous improvement loop
 
 Use the same loop for features, fixes, docs, and harness work:
