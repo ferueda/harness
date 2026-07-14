@@ -1,30 +1,27 @@
-# Keep Factory self-host implementation stable across Codex ref churn
+# Keep Factory self-host implementation stable across ambient ref churn
 
 ## Goal
 
-Fix the FER-82 false positive proven by the FER-78 dogfood run: a Codex producer
-may rotate its private `refs/codex/**` bookkeeping without mutating repository
-authority. Preserve raw Git evidence and all branch, tag, Harness-ref, HEAD,
-and index guards. Keep one strict durable schema; stale dogfood records from
-older controller shapes remain archive/reset inputs rather than a permanent
-compatibility contract.
+Fix the FER-82 false positive proven by dogfood: another worktree sharing the
+Git common directory may move unrelated refs without mutating this action's
+authority. Preserve raw global Git evidence while enforcing the current branch,
+current phase-owned Harness refs, HEAD, workspace, and index guards. Keep one
+strict durable schema; stale dogfood records from older controller shapes remain
+archive/reset inputs rather than a permanent compatibility contract.
 
 ## Changes
 
-1. **`lib/factory-implementation-candidate-action.ts` and a small Git-ref comparison helper — distinguish provider bookkeeping from repository refs.**
-   - Canonicalize `git for-each-ref` output only for comparison. When the
-     snapshotted producer provider is Codex, omit the exact `refs/codex/`
-     namespace; do not omit `refs/codex-review`, branches, tags,
-     `refs/harness/**`, or any other ref. Cursor receives no ignored namespace.
-   - Keep the unfiltered before/after strings in staged provider evidence. Use
-     the same provider-aware comparison for successful mutation enforcement
-     and failed-provider unchanged classification so the failure kind cannot
-     disagree with the final guard.
-   - Extend `test/factory-implementation-actions.test.ts` with Codex-owned churn
-     that produces a candidate, Cursor execution with `refs/codex/**` churn
-     that remains human-required, Codex execution with adjacent
-     `refs/codex-review` churn that remains human-required, and the existing
-     real-ref rejection seam.
+1. **Factory implementation actions and a small Git-ref snapshot helper — enforce action-owned authority.**
+   - Hard-compare resolved and symbolic HEAD, the persisted current branch tip,
+     and exact refname-to-OID state below the current phase's
+     `refs/harness/factory/<phaseRunId>/` namespace before and after producers
+     and reviewers, then revalidate before candidate publication or promotion.
+   - Keep unfiltered global before/after ref strings in staged action evidence
+     as diagnostics only. Shared global snapshots cannot attribute unrelated
+     branch, tag, or private-ref movement to the active worktree.
+   - Cover producer and reviewer execution in worktrees sharing one Git common
+     directory: unrelated movement passes; current branch and current
+     phase-owned ref movement remains human-required.
 
 2. **`docs/contributing/factory.md` and `skills/factory-operator/SKILL.md` — state the manual self-host controller boundary.**
    - One active phase must use one stable Harness controller checkout/version.
@@ -52,4 +49,6 @@ compatibility contract.
   runtime/version manager.
 - Do not resume or rewrite the failed FER-78 action; prove the corrected
   behavior with isolated fixtures and a fresh live smoke.
-- No ref namespace beyond provider-matched `refs/codex/**` becomes mutable.
+- Unrelated global refs are diagnostic because their writes cannot be attributed
+  from a repository-global snapshot; current branch and phase-owned refs remain
+  exact hard gates.

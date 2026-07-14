@@ -12,6 +12,12 @@ import {
 } from "./factory-action-result.ts";
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
+import {
+  FactoryImplementationGitAuthoritySchema,
+  readFactoryImplementationGitAuthority,
+  sameFactoryImplementationGitAuthority,
+  type FactoryImplementationGitAuthority,
+} from "./factory-implementation-git-refs.ts";
 import { withFactoryImplementationExecutionLease } from "./factory-implementation-policy.ts";
 import {
   FactoryImplementationCandidateEvidenceSchema,
@@ -48,6 +54,8 @@ const StagedReviewSchema = z.object({
   reviewRunDir: z.string(),
   refsBefore: z.string(),
   refsAfter: z.string(),
+  authorityBefore: FactoryImplementationGitAuthoritySchema,
+  authorityAfter: FactoryImplementationGitAuthoritySchema,
   meta: z.unknown(),
 });
 
@@ -83,7 +91,8 @@ async function runLeased(
     factoryActionKey({ ...reaction, phaseRunId: ctx.runId }),
   );
   mkdirSync(actionDir, { recursive: true });
-  if (existsSync(factoryActionResultPath(actionDir))) return appendRecovered(input, actionDir);
+  if (existsSync(factoryActionResultPath(actionDir)))
+    return appendRecovered(input, actionDir, candidate);
   let candidateEvidence: z.infer<typeof FactoryImplementationCandidateEvidenceSchema>;
   try {
     candidateEvidence = validateCandidate(ctx, candidate);
@@ -101,22 +110,11 @@ async function runLeased(
   const recoveringStagedReview = existsSync(stagedPath);
   let staged: z.infer<typeof StagedReviewSchema>;
   if (recoveringStagedReview) {
-    let parsed;
-    try {
-      parsed = StagedReviewSchema.safeParse(JSON.parse(readFileSync(stagedPath, "utf8")));
-    } catch {
+    const recovered = readStagedReview(stagedPath);
+    if (!recovered)
       return fail(input, actionDir, "Invalid staged change-review result", "terminal");
-    }
-    if (!parsed.success)
-      return fail(input, actionDir, "Invalid staged change-review result", "terminal");
-    staged = parsed.data;
-    if (
-      staged.action.phaseRunId !== ctx.runId ||
-      staged.action.handler !== reaction.handler ||
-      staged.action.attempt !== reaction.attempt ||
-      staged.action.causationEventId !== reaction.causationEventId
-    )
-      throw new Error("Staged change-review result conflicts with action identity");
+    staged = recovered;
+    assertStagedReviewIdentity(ctx, reaction, staged);
     assertReviewRunContained(actionDir, staged.reviewRunDir);
   } else {
     const profile = ctx.identity.actions.reviewImplementationCandidate;
@@ -161,10 +159,14 @@ async function runLeased(
     let meta: unknown;
     let refsBefore: string;
     let refsAfter: string;
+    let authorityBefore: FactoryImplementationGitAuthority;
+    let authorityAfter: FactoryImplementationGitAuthority;
     try {
       refsBefore = allRefs(ctx.workspace);
+      authorityBefore = implementationAuthority(ctx);
       meta = await (input.reviewRunner ?? runChangeReview)(reviewCtx);
       refsAfter = allRefs(ctx.workspace);
+      authorityAfter = implementationAuthority(ctx);
     } catch (error) {
       finish("failed", message(error));
       return fail(input, actionDir, message(error), "human-required");
@@ -181,13 +183,16 @@ async function runLeased(
       reviewRunDir: reviewCtx.runDir,
       refsBefore,
       refsAfter,
+      authorityBefore,
+      authorityAfter,
       meta,
     };
     writeDurableFactoryFile(stagedPath, `${JSON.stringify(staged, null, 2)}\n`, true);
   }
-  if (staged.refsBefore !== staged.refsAfter)
-    return fail(input, actionDir, "Reviewers mutated Git refs", "human-required");
+  if (!sameFactoryImplementationGitAuthority(staged.authorityBefore, staged.authorityAfter))
+    return fail(input, actionDir, "Reviewers mutated Factory Git authority", "human-required");
   let postTree: ReturnType<typeof readFactoryWorkspaceTree>;
+  let promotedRecovery = false;
   try {
     postTree = readFactoryWorkspaceTree({
       workspace: ctx.workspace,
@@ -201,7 +206,7 @@ async function runLeased(
         "Review workspace changed from the immutable candidate tree",
         "human-required",
       );
-    const promotedRecovery =
+    promotedRecovery =
       recoveringStagedReview &&
       git(ctx.workspace, ["rev-parse", ctx.identity.branchRef]).trim() === candidate.data.commit;
     if (
@@ -270,6 +275,13 @@ async function runLeased(
   );
   if (evidence.verdict === "pass") {
     try {
+      if (!matchesLiveReviewAuthority(ctx, staged.authorityAfter, candidate, promotedRecovery))
+        return fail(
+          input,
+          actionDir,
+          "Factory Git authority changed before candidate promotion",
+          "human-required",
+        );
       promoteFactoryCandidate({
         workspace: ctx.workspace,
         runDir: actionDir,
@@ -280,6 +292,13 @@ async function runLeased(
     } catch (error) {
       return fail(input, actionDir, message(error), "human-required");
     }
+  } else if (!matchesLiveReviewAuthority(ctx, staged.authorityAfter, candidate, false)) {
+    return fail(
+      input,
+      actionDir,
+      "Factory Git authority changed before review publication",
+      "human-required",
+    );
   }
   const manifest = ref(ctx, manifestPath);
   const event: FactoryActionEvent = {
@@ -303,7 +322,7 @@ async function runLeased(
     },
   };
   writeFactoryActionResult(actionDir, event);
-  return appendRecovered(input, actionDir);
+  return appendRecovered(input, actionDir, candidate);
 }
 
 function validateCandidate(
@@ -409,6 +428,7 @@ function fail(
 function appendRecovered(
   input: Parameters<typeof reviewImplementationCandidate>[0],
   actionDir: string,
+  candidate?: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
 ) {
   const event = readFactoryActionResult(actionDir);
   if (
@@ -421,25 +441,29 @@ function appendRecovered(
   )
     throw new Error("Recovered implementation review result conflicts with phase identity");
   for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots(input.ctx));
-  if (event.type === "implementation.review.completed") validateRecoveredReview(input, event);
-  if (event.type === "implementation.review.completed" && event.data.verdict === "pass") {
-    const candidate = readFactoryActionEvents(
-      input.factoryStateRoot,
-      deriveFactoryWorkItemKey(input.ctx.workItem),
-    ).findLast(
-      (candidateEvent) =>
-        candidateEvent.type === "implementation.candidate.produced" &&
-        candidateEvent.phaseRunId === input.ctx.runId,
-    );
-    if (!candidate || candidate.type !== "implementation.candidate.produced")
-      throw new Error("Recovered implementation pass has no candidate");
-    promoteFactoryCandidate({
-      workspace: input.ctx.workspace,
-      runDir: actionDir,
-      branchRef: input.ctx.identity.branchRef,
-      baseSha: input.ctx.identity.baseSha,
-      candidateSha: candidate.data.commit,
-    });
+  if (event.type === "implementation.review.completed") {
+    const staged = readStagedReview(join(actionDir, "review-result.json"));
+    if (!staged) throw new Error("Recovered review has no valid staged reviewer result");
+    assertStagedReviewIdentity(input.ctx, input.reaction, staged);
+    assertReviewRunContained(actionDir, staged.reviewRunDir);
+    if (!candidate || candidate.phaseRunId !== input.ctx.runId)
+      throw new Error("Recovered implementation review has no causative candidate");
+    validateCandidate(input.ctx, candidate);
+    const promotedRecovery =
+      event.data.verdict === "pass" &&
+      git(input.ctx.workspace, ["rev-parse", input.ctx.identity.branchRef]).trim() ===
+        candidate.data.commit;
+    if (!matchesLiveReviewAuthority(input.ctx, staged.authorityAfter, candidate, promotedRecovery))
+      throw new Error("Factory Git authority changed before review recovery");
+    validateRecoveredReview(input, event);
+    if (event.data.verdict === "pass")
+      promoteFactoryCandidate({
+        workspace: input.ctx.workspace,
+        runDir: actionDir,
+        branchRef: input.ctx.identity.branchRef,
+        baseSha: input.ctx.identity.baseSha,
+        candidateSha: candidate.data.commit,
+      });
   }
   return appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
@@ -510,10 +534,59 @@ function validateRecoveredReview(
   if (manifest.blockingFindings) verifyFactoryArtifactRef(manifest.blockingFindings, roots(ctx));
 }
 
+function readStagedReview(path: string): z.infer<typeof StagedReviewSchema> | undefined {
+  try {
+    const parsed = StagedReviewSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function assertStagedReviewIdentity(
+  ctx: FactoryImplementationRunContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  staged: z.infer<typeof StagedReviewSchema>,
+): void {
+  if (
+    staged.action.phaseRunId !== ctx.runId ||
+    staged.action.handler !== reaction.handler ||
+    staged.action.attempt !== reaction.attempt ||
+    staged.action.causationEventId !== reaction.causationEventId
+  )
+    throw new Error("Staged change-review result conflicts with action identity");
+}
+
 function realIndexMatchesBase(ctx: FactoryImplementationRunContext): boolean {
   return (
     git(ctx.workspace, ["write-tree"]).trim() ===
     git(ctx.workspace, ["rev-parse", `${ctx.identity.baseSha}^{tree}`]).trim()
+  );
+}
+
+function implementationAuthority(
+  ctx: FactoryImplementationRunContext,
+): FactoryImplementationGitAuthority {
+  return readFactoryImplementationGitAuthority({
+    workspace: ctx.workspace,
+    branchRef: ctx.identity.branchRef,
+    phaseRunId: ctx.runId,
+  });
+}
+
+function matchesLiveReviewAuthority(
+  ctx: FactoryImplementationRunContext,
+  expected: FactoryImplementationGitAuthority,
+  candidate: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
+  promotedRecovery: boolean,
+): boolean {
+  const live = implementationAuthority(ctx);
+  if (!promotedRecovery) return sameFactoryImplementationGitAuthority(expected, live);
+  return (
+    live.head === candidate.data.commit &&
+    live.branchRef === expected.branchRef &&
+    live.branchTip === candidate.data.commit &&
+    live.phaseRefs === expected.phaseRefs
   );
 }
 
