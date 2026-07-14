@@ -404,9 +404,12 @@ Triage artifacts under the durable factory `runs/factory/<run-id>/` include:
 - `context/phase-run.json` with immutable work-item, workspace, store, project,
   phase, and phase-run identity
 - `factory-triage.prompt.md`
-- `factory-triage.raw.json`
-- `factory-triage.json`
-- `factory-route.json`
+- `factory-triage.stream.jsonl`: raw provider telemetry; may contain provisional or
+  schema-shaped progress messages
+- `factory-triage.raw.json`: complete provider result, including stream summary
+- `factory-triage.json`: canonical, validated triage decision; only this artifact
+  drives routing
+- `factory-route.json`: canonical deterministic reaction to the validated decision
 - `factory-route.md`
 - `summary.md`
 - `meta.json`

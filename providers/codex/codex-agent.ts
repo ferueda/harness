@@ -239,18 +239,35 @@ async function runCodexTurnStreamed(
       type: "stream.error",
       error: errorArtifact(error),
     });
-    const streamLog = {
-      ...(await writer.close()),
-      status: "error",
-      error: errorMessage(error),
-    } satisfies AgentStreamLogSummary;
+    const streamLog = addCodexMessageTelemetry(
+      {
+        ...(await writer.close()),
+        status: "error",
+        error: errorMessage(error),
+      },
+      items,
+    );
     onStreamLog(streamLog);
     throw error;
   }
 
-  const streamLog = await writer.close();
+  const streamLog = addCodexMessageTelemetry(await writer.close(), items);
   onStreamLog(streamLog);
   return { items, finalResponse, usage, streamLog };
+}
+
+function addCodexMessageTelemetry(
+  streamLog: AgentStreamLogSummary,
+  items: ThreadItem[],
+): AgentStreamLogSummary {
+  const agentMessages = items.filter((item) => item.type === "agent_message");
+  const finalAgentMessage = agentMessages.at(-1);
+
+  return {
+    ...streamLog,
+    agentMessageCount: agentMessages.length,
+    ...(finalAgentMessage ? { finalAgentMessageId: finalAgentMessage.id } : {}),
+  };
 }
 
 function updateCodexTurnFromEvent(

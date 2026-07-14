@@ -21,7 +21,7 @@ Success criteria:
 Constraints:
 
 - Read only. Do not mutate files, labels, issues, branches, pull requests, or tracker state.
-- Inspect first, then return exactly one final JSON object matching the provided schema. Do not emit interim or placeholder objects matching the schema.
+- Inspect first, then return the final decision as JSON matching the provided schema. Only the final response is authoritative.
 - For non-tracker evidence, evidence.path contains only a repository-relative file path. Put line numbers or ranges in evidence.summary.
 - When evidence genuinely sits between routes, choose the more cautious route.
 

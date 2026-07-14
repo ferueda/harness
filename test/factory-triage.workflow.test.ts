@@ -151,7 +151,7 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   expect(prompt).toContain("strong chance a coding agent can complete it correctly in one pass");
   expect(prompt).toContain("operational or verification-only work");
   expect(prompt).toContain("not already shipped, duplicated, or actively being implemented");
-  expect(prompt).toContain("Do not emit interim or placeholder objects matching the schema");
+  expect(prompt).toContain("Only the final response is authoritative");
   expect(prompt).toContain("Put line numbers or ranges in evidence.summary");
   expect(prompt).not.toContain("suggestedNext");
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("create-plan");

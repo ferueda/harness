@@ -403,11 +403,29 @@ test("createCodexAgent streams Codex thread events to logPath", async () => {
   });
 });
 
-test("createCodexAgent uses completed agent_message as streamed final response", async () => {
+test("createCodexAgent uses the last completed agent_message as the streamed final response", async () => {
   const workspace = createGitWorkspace();
   const logPath = join(workspace, ".harness", "codex.stream.jsonl");
   const { codexFactory } = createFakeCodex({
-    finalResponse: '{"verdict":"from-stream"}',
+    streamEvents: [
+      {
+        type: "item.completed",
+        item: { id: "message-progress", type: "agent_message", text: '{"verdict":"progress"}' },
+      },
+      {
+        type: "item.completed",
+        item: { id: "message-final", type: "agent_message", text: '{"verdict":"final"}' },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          cached_input_tokens: 0,
+          output_tokens: 2,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ],
   });
 
   const result = await createCodexAgent({ codexFactory }).run({
@@ -419,7 +437,18 @@ test("createCodexAgent uses completed agent_message as streamed final response",
 
   expect(result.ok).toBe(true);
   if (!result.ok) return;
-  expect(result.structuredOutput).toEqual({ verdict: "from-stream" });
+  expect(result.structuredOutput).toEqual({ verdict: "final" });
+  expect(result.raw).toMatchObject({
+    items: [
+      { id: "message-progress", text: '{"verdict":"progress"}' },
+      { id: "message-final", text: '{"verdict":"final"}' },
+    ],
+    streamLog: {
+      agentMessageCount: 2,
+      finalAgentMessageId: "message-final",
+    },
+  });
+  expect(readJsonLines(logPath)).toHaveLength(3);
 });
 
 test("createCodexAgent returns streamed turn failures with stream log metadata", async () => {

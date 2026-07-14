@@ -11,6 +11,8 @@ export type AgentStreamLogSummary = {
   provider: AgentStreamProvider;
   format: AgentStreamFormat;
   error?: string;
+  agentMessageCount?: number;
+  finalAgentMessageId?: string;
 };
 
 export type AgentStreamWriter = {
