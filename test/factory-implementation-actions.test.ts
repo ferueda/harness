@@ -822,6 +822,76 @@ test("successful review action-result recovers unchanged without rerunning revie
   expect(reviewRunner).toHaveBeenCalledTimes(1);
 });
 
+test("successful needs_changes action-result recovers unchanged without rerunning reviewers", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  const reaction = invoke(candidate);
+  const reviewRunner = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    writeBlockingReviews(reviewCtx.runDir!);
+    return fullReviewMeta("needs_changes");
+  });
+  await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  removeLastLifecycleEvent(fixture);
+  const recovered = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  expect(recovered.event).toMatchObject({
+    type: "implementation.review.completed",
+    data: { verdict: "needs_changes" },
+  });
+  expect(reviewRunner).toHaveBeenCalledTimes(1);
+});
+
+test("needs_changes action-result recovery rejects an externally promoted candidate", async () => {
+  const fixture = directFixture();
+  const sibling = sharedWorktree(fixture.workspace);
+  const { ctx, candidate } = await produceCandidate(fixture);
+  if (candidate.event.type !== "implementation.candidate.produced") throw new Error("candidate");
+  const reaction = invoke(candidate);
+  const reviewRunner = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    writeBlockingReviews(reviewCtx.runDir!);
+    return fullReviewMeta("needs_changes");
+  });
+  await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  removeLastLifecycleEvent(fixture);
+  git(sibling, [
+    "update-ref",
+    ctx.identity.branchRef,
+    candidate.event.data.commit,
+    fixture.baseSha,
+  ]);
+  await expect(
+    reviewImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction,
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: reviewRunner as never,
+    }),
+  ).rejects.toThrow(/authority changed/);
+  expect(reviewRunner).toHaveBeenCalledTimes(1);
+});
+
 test.each(["current branch", "other current phase ref"] as const)(
   "successful review action-result recovery rejects %s drift without rerunning reviewers",
   async (kind) => {

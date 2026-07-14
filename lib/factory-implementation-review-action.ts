@@ -450,8 +450,9 @@ function appendRecovered(
       throw new Error("Recovered implementation review has no causative candidate");
     validateCandidate(input.ctx, candidate);
     const promotedRecovery =
+      event.data.verdict === "pass" &&
       git(input.ctx.workspace, ["rev-parse", input.ctx.identity.branchRef]).trim() ===
-      candidate.data.commit;
+        candidate.data.commit;
     if (!matchesLiveReviewAuthority(input.ctx, staged.authorityAfter, candidate, promotedRecovery))
       throw new Error("Factory Git authority changed before review recovery");
     validateRecoveredReview(input, event);
