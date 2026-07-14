@@ -33,7 +33,7 @@
   "dependencies": {
     "@cursor/sdk": "1.0.23",
     "@linear/sdk": "88.1.0",
-    "@openai/codex-sdk": "0.144.3",
+    "@openai/codex-sdk": "0.144.4",
     "commander": "15.0.0",
     "zod": "4.4.3"
   },
