@@ -13,13 +13,13 @@ loops.
   documentation boundaries, and hard invariants.
 - [Harness-engineering guide](./harness-engineering.md) - workflow-quality
   decisions and durable improvement habits.
-- [Architecture map](./architecture.md) - CLI, config, workflow, provider,
-  artifact, skill, and automation navigation.
-- [Factory operation](./factory.md) - current local factory station commands,
-  role config, artifacts, and future tracker/orchestrator boundaries.
+- [Architecture map](./architecture.md) - runtime paths, ownership boundaries,
+  subsystem locations, artifacts, and extension seams.
+- [Factory contributor guide](./factory.md) - Factory's domain model, lifecycle
+  invariants, code ownership, projections, and host boundary.
 - [Script and command surface](./script-command-surface.md) - command
   ownership, mutability, generated-help policy, and inventory rules.
 - [Setup manifest](./setup-manifest.md) - local requirements, install/update
   behavior, generated artifacts, provider auth, and repo-boundary rules.
-- [Testing](./testing.md) - proof layers, test placement, verification commands,
-  drift checks, and hook boundaries.
+- [Testing](./testing.md) - testing principles, proof-layer selection, authoring
+  guidance, smoke policy, verification commands, and drift checks.

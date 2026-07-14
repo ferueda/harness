@@ -4,10 +4,10 @@ Contributor and agent reference for command ownership, mutability, and where to
 inspect generated help. Use this page to understand who owns each command
 surface; use generated help for exact flags and target text.
 
-See [Architecture](./architecture.md) for runtime flow and artifact lifecycle,
-[Harness engineering](./harness-engineering.md) for the workflow-quality loop,
-[Factory operation](./factory.md) for station operation, and
-[Setup Manifest](./setup-manifest.md) for generated artifacts and auth.
+Use [Architecture](./architecture.md) for runtime flow and artifacts and the
+[Factory contributor guide](./factory.md) for Factory ownership and invariants.
+Use [Harness engineering](./harness-engineering.md) for the workflow-quality
+loop and [Setup Manifest](./setup-manifest.md) for generated artifacts and auth.
 
 ## Command ownership
 

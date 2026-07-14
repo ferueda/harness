@@ -586,9 +586,13 @@ test("readme stays a concise entrypoint", () => {
   expect(readme).not.toMatch(/^### [a-z0-9]+(?:-[a-z0-9]+)+$/m);
 });
 
-test("factory operator guide stays linked from entrypoints", () => {
+test("factory contributor and operator guidance stay linked from entrypoints", () => {
   expect(existsSync(join(REPO_ROOT, "docs/contributing/factory.md"))).toBe(true);
+  const factoryGuide = readRepoFile("docs/contributing/factory.md");
+  expect(factoryGuide).toContain("# Factory Contributor Guide");
+  expect(factoryGuide).toContain("../../skills/factory-operator/SKILL.md");
   expect(readRepoFile("README.md")).toContain("docs/contributing/factory.md");
+  expect(readRepoFile("README.md")).toContain("skills/factory-operator/SKILL.md");
   expect(readRepoFile("docs/contributing/index.md")).toContain("./factory.md");
   expect(readRepoFile("docs/contributing/architecture.md")).toContain("./factory.md");
   expect(readRepoFile("docs/contributing/script-command-surface.md")).toContain("./factory.md");
