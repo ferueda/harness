@@ -102,9 +102,9 @@ routine CI or deterministic regression coverage.
 During iteration, run the narrowest relevant path, for example:
 
 ```bash
-pnpm test -- test/factory-implementation-actions.test.ts
-pnpm test -- providers/codex/codex-agent.test.ts
-pnpm test -- test/docs-contracts.test.ts
+pnpm exec vitest run test/factory-implementation-actions.test.ts
+pnpm exec vitest run providers/codex/codex-agent.test.ts
+pnpm exec vitest run test/docs-contracts.test.ts
 ```
 
 - `pnpm test` runs the Vitest suite.

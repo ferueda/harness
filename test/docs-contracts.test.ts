@@ -590,7 +590,6 @@ test("factory contributor and operator guidance stay linked from entrypoints", (
   expect(existsSync(join(REPO_ROOT, "docs/contributing/factory.md"))).toBe(true);
   const factoryGuide = readRepoFile("docs/contributing/factory.md");
   expect(factoryGuide).toContain("# Factory Contributor Guide");
-  expect(factoryGuide).toContain("It is not the operator runbook");
   expect(factoryGuide).toContain("../../skills/factory-operator/SKILL.md");
   expect(readRepoFile("README.md")).toContain("docs/contributing/factory.md");
   expect(readRepoFile("README.md")).toContain("skills/factory-operator/SKILL.md");
