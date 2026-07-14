@@ -260,19 +260,19 @@ test("orchestrated work fixes authority, sandbox, verification, and callback inv
     "utf8",
   );
   const prose = normalizedProse(skill);
-  const creationIndex = skill.indexOf("codex_app__create_thread");
-  const baselineProofIndex = skill.indexOf("Require the first before-edit checkpoint");
-  const executorCallbackValidationIndex = skill.indexOf(
+  const creationIndex = prose.indexOf("codex_app__create_thread");
+  const baselineProofIndex = prose.indexOf("Require the first before-edit checkpoint");
+  const executorCallbackValidationIndex = prose.indexOf(
     "Before the executor sends its first checkpoint",
   );
-  const orchestratorReplyValidationIndex = skill.indexOf(
+  const orchestratorReplyValidationIndex = prose.indexOf(
     "Before replying, the orchestrator inspects",
   );
-  const orchestratorReplyIndex = skill.indexOf(
-    "It replies to\n   the verified executor steering route",
+  const orchestratorReplyIndex = prose.indexOf(
+    "It replies to the verified executor steering route",
   );
-  const callbackTemplateValidationIndex = skill.indexOf("Before the first checkpoint, inspect the");
-  const callbackTemplateSendIndex = skill.indexOf("Then send checkpoints with that profile");
+  const callbackTemplateValidationIndex = prose.indexOf("Before the first checkpoint, inspect the");
+  const callbackTemplateSendIndex = prose.indexOf("Then send checkpoints with that profile");
 
   expect(skill).toContain("name: orchestrate-work");
   expect(skill).toContain("disable-model-invocation: true");

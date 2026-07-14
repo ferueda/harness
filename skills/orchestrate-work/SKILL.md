@@ -50,7 +50,7 @@ Before delegation, record two complete, independently owned profiles:
   the orchestrator profile when the user requests no executor override.
 
 Invocation of this skill opts into the parent-matching default. A user override
-changes only the executor profile. Validate each complete model/effort pair
+changes only the executor profile. Validate each complete model/thinking pair
 against the live tool schema before using it. If a partial override cannot be
 safely combined with the default, pause for clarification instead of guessing.
 
