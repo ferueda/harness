@@ -175,7 +175,6 @@ test.each([
         evidence: [{ kind: "tracker", path: "linear:ENG-37", summary: "Missing detail" }],
         questions: ["Which target?"],
         reconsiderWhen: null,
-        suggestedNext: { action: "ask-human", command: null, artifact: null },
       }),
     );
     const started = vi.fn(async () => ({
@@ -254,7 +253,6 @@ test("new triage action invokes one handler and returns the next reaction", asyn
       evidence: [{ kind: "repo-state", path: null, summary: "Needs design" }],
       questions: [],
       reconsiderWhen: null,
-      suggestedNext: { action: "create-plan", command: null, artifact: null },
     }),
   );
   const runTriage = vi.fn(async () => ({
@@ -297,7 +295,6 @@ test.each(["missing", "malformed"] as const)(
         evidence: [{ kind: "tracker", path: null, summary: "Missing detail" }],
         questions: ["Which target?"],
         reconsiderWhen: null,
-        suggestedNext: { action: "ask-human", command: null, artifact: null },
       }),
     );
     if (failure === "missing") unlinkSync(join(ctx.runDir, "factory-route.json"));
@@ -349,7 +346,6 @@ test("continues from an imported-only crash without replacing the import", async
       evidence: [{ kind: "tracker", path: null, summary: "Missing detail" }],
       questions: ["Which target?"],
       reconsiderWhen: null,
-      suggestedNext: { action: "ask-human", command: null, artifact: null },
     }),
   );
   const runTriage = vi.fn(async () => meta(ctx));
@@ -475,7 +471,6 @@ test("the handler rejects an injected command in a recovered PR 1 result", async
       evidence: [{ kind: "tracker", path: null, summary: "Needs design" }],
       questions: [],
       reconsiderWhen: null,
-      suggestedNext: { action: "create-plan", command: null, artifact: null },
     }),
   );
   mkdirSync(join(runDir, "context"), { recursive: true });
@@ -678,7 +673,6 @@ async function assertCompletedProviderMetaRecovery(
       evidence: [{ kind: "tracker", path: null, summary: "Needs clarification" }],
       questions: ["Which target?"],
       reconsiderWhen: null,
-      suggestedNext: { action: "ask-human", command: null, artifact: null },
     }),
   );
   writeFactoryPhaseRunIdentity(runDir, {
@@ -1095,7 +1089,6 @@ test("retries the same triage action and phase run after a retryable failure", a
       evidence: [{ kind: "tracker", path: null, summary: "Need clarification" }],
       questions: ["Which target?"],
       reconsiderWhen: null,
-      suggestedNext: { action: "ask-human", command: null, artifact: null },
     }),
   );
   const successfulRun = vi.fn(async () => meta(ctx));

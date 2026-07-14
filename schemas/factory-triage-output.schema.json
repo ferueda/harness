@@ -9,8 +9,7 @@
     "rationale",
     "evidence",
     "questions",
-    "reconsiderWhen",
-    "suggestedNext"
+    "reconsiderWhen"
   ],
   "properties": {
     "route": {
@@ -57,25 +56,6 @@
     "reconsiderWhen": {
       "type": ["string", "null"],
       "minLength": 1
-    },
-    "suggestedNext": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["action", "command", "artifact"],
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["implement-directly", "create-plan", "ask-human", "park"]
-        },
-        "command": {
-          "type": ["string", "null"],
-          "minLength": 1
-        },
-        "artifact": {
-          "type": ["string", "null"],
-          "minLength": 1
-        }
-      }
     }
   }
 }

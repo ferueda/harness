@@ -163,15 +163,7 @@ const TRIAGE_READY_TO_PLAN = {
   evidence: [{ kind: "tracker", path: null, summary: "Issue asks for a larger workflow." }],
   questions: [],
   reconsiderWhen: null,
-  suggestedNext: { action: "create-plan", command: null, artifact: null },
 } satisfies FactoryTriageOutput;
-
-const NEXT_ACTION_BY_ROUTE = {
-  "ready-to-implement": "implement-directly",
-  "ready-to-plan": "create-plan",
-  "needs-info": "ask-human",
-  "wait-to-implement": "park",
-} satisfies Record<FactoryRoute, FactoryTriageOutput["suggestedNext"]["action"]>;
 
 function triageOutput(
   route: FactoryRoute,
@@ -184,7 +176,6 @@ function triageOutput(
     evidence: [{ kind: "tracker", path: null, summary: "Issue metadata supports this route." }],
     questions: [],
     reconsiderWhen: null,
-    suggestedNext: { action: NEXT_ACTION_BY_ROUTE[route], command: null, artifact: null },
     ...extra,
   };
 }

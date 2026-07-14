@@ -39,11 +39,6 @@ const TRIAGE_OUTPUT = {
   ],
   questions: [],
   reconsiderWhen: null,
-  suggestedNext: {
-    action: "create-plan",
-    command: "ignored by deterministic router",
-    artifact: null,
-  },
 } satisfies FactoryTriageOutput;
 
 test("factory triage dry-run writes placeholder artifacts without calling provider", async () => {
@@ -153,9 +148,12 @@ test("factory triage live run writes artifacts and workflow events", async () =>
     "Work item JSON",
   );
   const prompt = readFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "utf8");
-  expect(prompt).toContain("Include blocking questions only for needs-info");
-  expect(prompt).toContain("ready-to-implement must use questions: []");
-  expect(prompt).toContain("ready-to-plan may include non-blocking planning questions");
+  expect(prompt).toContain("strong chance a coding agent can complete it correctly in one pass");
+  expect(prompt).toContain("operational or verification-only work");
+  expect(prompt).toContain("not already shipped, duplicated, or actively being implemented");
+  expect(prompt).toContain("Do not emit interim or placeholder objects matching the schema");
+  expect(prompt).toContain("Put line numbers or ranges in evidence.summary");
+  expect(prompt).not.toContain("suggestedNext");
   expect(readFileSync(join(ctx.runDir, "factory-route.md"), "utf8")).toContain("create-plan");
   expect(JSON.parse(readFileSync(join(ctx.runDir, "meta.json"), "utf8"))).toMatchObject({
     status: "completed",
@@ -263,9 +261,9 @@ test("factory triage invalid provider output writes failed metadata and preserve
             ok: true,
             structuredOutput: {
               ...TRIAGE_OUTPUT,
-              suggestedNext: { action: "implement-directly", command: null, artifact: null },
+              evidence: [],
             },
-            raw: { finalResponse: "route/action mismatch" },
+            raw: { finalResponse: "missing required evidence" },
           };
         },
       };
@@ -280,7 +278,7 @@ test("factory triage invalid provider output writes failed metadata and preserve
     "Work item JSON",
   );
   expect(readFileSync(join(ctx.runDir, "factory-triage.raw.json"), "utf8")).toContain(
-    "route/action mismatch",
+    "missing required evidence",
   );
   expect(existsSync(join(ctx.runDir, "factory-triage.json"))).toBe(false);
 });

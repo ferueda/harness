@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { FactoryTriageOutputSchema } from "../lib/factory-schemas.ts";
+import { FactoryTriageOutputSchema, parseFactoryTriageOutput } from "../lib/factory-schemas.ts";
 import { assertCodexStrictSchema, loadSchema, schemaAccepts } from "../lib/schema-validation.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -17,7 +17,6 @@ const VALID_READY_TO_PLAN = {
   ],
   questions: [],
   reconsiderWhen: null,
-  suggestedNext: { action: "create-plan", command: null, artifact: null },
 };
 
 test("factory triage JSON schema file defines expected root shape", () => {
@@ -30,10 +29,9 @@ test("factory triage JSON schema file defines expected root shape", () => {
       "evidence",
       "questions",
       "reconsiderWhen",
-      "suggestedNext",
     ]),
   );
-  expect(FACTORY_SCHEMA.required).toHaveLength(7);
+  expect(FACTORY_SCHEMA.required).toHaveLength(6);
   expect(FACTORY_SCHEMA.additionalProperties).toBe(false);
   expect(FACTORY_SCHEMA.properties?.route?.enum).toEqual([
     "ready-to-implement",
@@ -41,12 +39,7 @@ test("factory triage JSON schema file defines expected root shape", () => {
     "needs-info",
     "wait-to-implement",
   ]);
-  expect(FACTORY_SCHEMA.properties?.suggestedNext?.properties?.action?.enum).toEqual([
-    "implement-directly",
-    "create-plan",
-    "ask-human",
-    "park",
-  ]);
+  expect(FACTORY_SCHEMA.properties?.suggestedNext).toBeUndefined();
 });
 
 test("valid ready-to-plan payload passes JSON schema and Zod", () => {
@@ -66,30 +59,23 @@ test("invalid route enum fails JSON schema and Zod", () => {
   expect(FactoryTriageOutputSchema.safeParse(payload).success).toBe(false);
 });
 
-test("JSON schema can accept cross-field mismatch that Zod rejects", () => {
+test("factory triage contracts reject model-owned next actions", () => {
   const payload = {
     ...VALID_READY_TO_PLAN,
-    suggestedNext: { action: "implement-directly", command: null, artifact: null },
+    suggestedNext: { action: "create-plan", command: null, artifact: null },
   };
-  expect(schemaAccepts(FACTORY_SCHEMA, payload)).toBe(true);
+  expect(schemaAccepts(FACTORY_SCHEMA, payload)).toBe(false);
   expect(FactoryTriageOutputSchema.safeParse(payload).success).toBe(false);
+  expect(() => parseFactoryTriageOutput(payload)).toThrow(/Invalid factory triage output/);
 });
 
-test("legacy omitted nullable fields fail JSON schema and Zod", () => {
+test("required nullable fields fail when omitted", () => {
   for (const payload of [
     omit(VALID_READY_TO_PLAN, "questions"),
     omit(VALID_READY_TO_PLAN, "reconsiderWhen"),
     {
       ...VALID_READY_TO_PLAN,
       evidence: [omit(VALID_READY_TO_PLAN.evidence[0], "path")],
-    },
-    {
-      ...VALID_READY_TO_PLAN,
-      suggestedNext: omit(VALID_READY_TO_PLAN.suggestedNext, "command"),
-    },
-    {
-      ...VALID_READY_TO_PLAN,
-      suggestedNext: omit(VALID_READY_TO_PLAN.suggestedNext, "artifact"),
     },
   ]) {
     expect(schemaAccepts(FACTORY_SCHEMA, payload)).toBe(false);
@@ -101,14 +87,6 @@ test("nullable string fields reject empty-string absence markers", () => {
   for (const payload of [
     { ...VALID_READY_TO_PLAN, evidence: [{ ...VALID_READY_TO_PLAN.evidence[0], path: "" }] },
     { ...VALID_READY_TO_PLAN, reconsiderWhen: "" },
-    {
-      ...VALID_READY_TO_PLAN,
-      suggestedNext: { ...VALID_READY_TO_PLAN.suggestedNext, command: "" },
-    },
-    {
-      ...VALID_READY_TO_PLAN,
-      suggestedNext: { ...VALID_READY_TO_PLAN.suggestedNext, artifact: "" },
-    },
   ]) {
     expect(schemaAccepts(FACTORY_SCHEMA, payload)).toBe(false);
     expect(FactoryTriageOutputSchema.safeParse(payload).success).toBe(false);
@@ -119,7 +97,6 @@ test("wait-to-implement requires non-null reconsiderWhen in Zod", () => {
   const nullPayload = {
     ...VALID_READY_TO_PLAN,
     route: "wait-to-implement",
-    suggestedNext: { action: "park", command: null, artifact: null },
     reconsiderWhen: null,
   };
   const validPayload = {
