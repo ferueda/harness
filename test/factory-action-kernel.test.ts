@@ -163,6 +163,84 @@ describe("Factory action lifecycle kernel", () => {
     ).toThrow(/included in input refs/);
   });
 
+  test("replays a materialized pre-guidance implementation restart", () => {
+    const initialRequest: FactoryLifecycleEvent = {
+      version: 1,
+      id: "implementation-request-1",
+      type: "implementation.requested",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T03:00:00.000Z",
+      phaseRunId: "implementation-run-1",
+      data: {
+        expectedPredecessor: "triage-complete",
+        inputRefs: [inputRef],
+        reviewCeiling: 1,
+        intent: "start",
+      },
+    };
+    const initialCandidate: FactoryLifecycleEvent = {
+      version: 1,
+      id: "implementation-candidate-1",
+      type: "implementation.candidate.produced",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T04:00:00.000Z",
+      phaseRunId: "implementation-run-1",
+      data: {
+        handler: "produceImplementationCandidate",
+        handlerVersion: 1,
+        attempt: 1,
+        causationEventId: initialRequest.id,
+        execution: { workspaceRef: "repo", runRef: inputRef },
+        evidence: [inputRef],
+        commit: "candidate-1",
+        tree: "tree-1",
+        candidate: inputRef,
+        effectiveSession: { provider: "codex", id: "session-1" },
+      },
+    };
+    const restart: FactoryLifecycleEvent = {
+      version: 1,
+      id: "implementation-request-2",
+      type: "implementation.requested",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T05:00:00.000Z",
+      phaseRunId: "implementation-run-2",
+      data: {
+        expectedPredecessor: initialCandidate.id,
+        inputRefs: [inputRef],
+        reviewCeiling: 1,
+        intent: "restart",
+      },
+    };
+    const replacementCandidate: FactoryLifecycleEvent = {
+      ...initialCandidate,
+      id: "implementation-candidate-2",
+      occurredAt: "2026-07-11T06:00:00.000Z",
+      phaseRunId: "implementation-run-2",
+      data: {
+        ...initialCandidate.data,
+        causationEventId: restart.id,
+        commit: "candidate-2",
+        tree: "tree-2",
+        effectiveSession: { provider: "codex", id: "session-2" },
+      },
+    };
+    const events = [
+      ...completedTriageEvents("ready-to-implement"),
+      initialRequest,
+      initialCandidate,
+      restart,
+    ];
+
+    expect(() => reduceFactoryLifecycleEvents(events)).toThrow(/Invalid Factory transition/);
+    expect(reduceFactoryLifecycleEvents([...events, replacementCandidate])).toMatchObject({
+      phase: "implementation",
+      status: "awaiting-review",
+      phaseRunId: "implementation-run-2",
+      reviewedHead: "candidate-2",
+    });
+  });
+
   test("requires a new phase-run ID for planning and implementation requests", () => {
     expect(() =>
       reduceFactoryLifecycleEvents([
