@@ -2,6 +2,7 @@
 
 ## Active queue
 
+- [Make Factory lifecycle semantics an explicit store-version contract](260714-factory-store-contract-v2.md) — approved; implementation in progress.
 - [FER-82 — Keep Factory self-host actions stable](260713-factory-self-host-safety.md) — approved; implementation in progress. [Linear](https://linear.app/ferueda/issue/FER-82/fix-factory-provider-ref-false-positives-and-self-host-bootstrap)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.

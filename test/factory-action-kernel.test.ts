@@ -20,6 +20,7 @@ import {
 import { readFactoryActionResult, writeFactoryActionResult } from "../lib/factory-action-result.ts";
 import { factoryActionKey, FactoryPhaseRunIdSchema } from "../lib/factory-action-contract.ts";
 import {
+  actionLifecycleEventPath,
   FactoryLifecycleConflictError,
   appendFactoryActionEvent,
   readFactoryActionEvents,
@@ -32,7 +33,11 @@ import {
   FactoryPhaseRunIdentitySchema,
   writeFactoryPhaseRunIdentity,
 } from "../lib/factory-phase-run.ts";
-import { ensureFactoryStoreFormat, FactoryStoreFormatError } from "../lib/factory-store-format.ts";
+import {
+  ensureFactoryStoreFormat,
+  FACTORY_STORE_FORMAT,
+  FactoryStoreFormatError,
+} from "../lib/factory-store-format.ts";
 import {
   decideNextFactoryAction,
   FactoryLifecycleStateSchema,
@@ -651,6 +656,18 @@ describe("Factory store and artifact boundaries", () => {
     expect(() => ensureFactoryStoreFormat(store)).toThrow(FactoryStoreFormatError);
     expect(() => ensureFactoryStoreFormat(store)).toThrow(/Archive or reset/);
   });
+  test("rejects an earlier marked store before parsing its events", () => {
+    const store = root();
+    writeFileSync(
+      join(store, "store-format.json"),
+      `${JSON.stringify({ format: "harness-factory", version: 1 })}\n`,
+    );
+    mkdirSync(join(store, "events"));
+    writeFileSync(actionLifecycleEventPath(store, "item-1"), "not-json\n");
+
+    expect(() => readFactoryActionEvents(store, "item-1")).toThrow(FactoryStoreFormatError);
+    expect(() => readFactoryActionEvents(store, "item-1")).toThrow(/Archive or reset/);
+  });
   test("recovers an orphaned Harness format-marker temp", () => {
     const store = root();
     writeFileSync(
@@ -698,7 +715,7 @@ describe("Factory store and artifact boundaries", () => {
       expect(results).toEqual(Array.from({ length: 8 }, () => ({ code: 0, stderr: "" })));
       expect(JSON.parse(readFileSync(join(store, "store-format.json"), "utf8"))).toEqual({
         format: "harness-factory",
-        version: 1,
+        version: FACTORY_STORE_FORMAT,
       });
     }
   });

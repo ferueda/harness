@@ -91,6 +91,10 @@ have been checked for secrets.
 - Keep changes scoped and reviewable.
 - Include verification commands in handoffs and PR descriptions.
 - Update the closest source-of-truth doc when workflow behavior changes.
+- Preserve replay semantics for the current Factory store version. When a
+  lifecycle event, transition, or phase identity change makes persisted state
+  incompatible, bump `FACTORY_STORE_FORMAT` and require explicit archive/reset;
+  do not reinterpret old events or add an implicit migration path.
 - Avoid introducing new patterns without documenting when to use them.
 - Prefer boring, explicit commands over hidden agent memory.
 - Keep durable examples generic to this repo and target repositories.

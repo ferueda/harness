@@ -1365,8 +1365,8 @@ test("harness factory status reports stale locks and ignored legacy state withou
   });
   expect(output.warnings).toEqual(
     expect.arrayContaining([
-      "Legacy workspace-local factory lifecycle state is ignored in v1; the durable store wins.",
-      "Durable factory store is empty for this project; legacy workspace-local lifecycle is ignored in v1.",
+      "Legacy workspace-local factory lifecycle state is ignored; the durable store wins.",
+      "Durable factory store is empty for this project; legacy workspace-local lifecycle is ignored.",
     ]),
   );
   expect(readFileSync(legacyEventPath, "utf8")).toBe('{"legacy":true}\n');
