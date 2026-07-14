@@ -62,6 +62,7 @@
         "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
         "implementing": "Implementing",
+        "readyForReview": "Ready for Review",
         "implementationFailed": "Implementation Failed",
         "triaging": "Triaging",
         "planning": "Planning",

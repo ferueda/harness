@@ -209,6 +209,7 @@ test.each([
       attempt: 1,
       publicationMode: "local",
       outputPlan: "dev/plans/fixture.md",
+      reviewedPlan: artifactRef("planning/candidate"),
     },
     reaction: {
       kind: "invoke",
@@ -244,6 +245,7 @@ test.each([
       phaseRunId: "implementation-run",
       reviewCeiling: 2,
       attempt: 1,
+      reviewedHead: "a".repeat(40),
     },
     reaction: {
       kind: "invoke",
@@ -303,7 +305,7 @@ test.each([
     reaction: { kind: "wait", reason: "failed" },
   },
   {
-    name: "terminal completion",
+    name: "awaiting implementation publication",
     build: (key: string) => {
       const imported = importedEvent(key);
       const triage = triageRequested(key, imported.id);
@@ -321,10 +323,60 @@ test.each([
     },
     state: {
       phase: "implementation",
+      status: "awaiting-pr-publication",
+      phaseRunId: "implementation-run",
+      reviewCeiling: 2,
+      attempt: 1,
+      reviewedHead: "a".repeat(40),
+    },
+    reaction: { kind: "wait", reason: "pr-publication" },
+  },
+  {
+    name: "implementation complete after human merge acknowledgement",
+    build: (key: string) => {
+      const imported = importedEvent(key);
+      const triage = triageRequested(key, imported.id);
+      const completed = triageCompleted(key, triage.id, "ready-to-implement");
+      const requested = implementationRequested(key, completed.id);
+      const candidate = implementationCandidate(key, requested.id);
+      const review = implementationReview(key, candidate.id, "pass");
+      return [
+        imported,
+        triage,
+        completed,
+        requested,
+        candidate,
+        review,
+        FactoryLifecycleEventSchema.parse({
+          version: 1,
+          id: "implementation_pr.opened:implementation-run",
+          type: "implementation_pr.opened",
+          workItemKey: key,
+          occurredAt: at(6),
+          phaseRunId: "implementation-run",
+          data: { url: "https://example.test/pull/1", head: "a".repeat(40) },
+        }),
+        FactoryLifecycleEventSchema.parse({
+          version: 1,
+          id: "implementation_pr.merged:implementation-run",
+          type: "implementation_pr.merged",
+          workItemKey: key,
+          occurredAt: at(7),
+          phaseRunId: "implementation-run",
+          data: { url: "https://example.test/pull/1", commit: "b".repeat(40) },
+        }),
+      ];
+    },
+    state: {
+      phase: "implementation",
       status: "complete",
       phaseRunId: "implementation-run",
       reviewCeiling: 2,
       attempt: 1,
+      reviewedHead: "a".repeat(40),
+      implementationPrUrl: "https://example.test/pull/1",
+      implementationPrHead: "a".repeat(40),
+      implementationMergeCommit: "b".repeat(40),
     },
     reaction: { kind: "wait", reason: "complete" },
   },
@@ -561,7 +613,7 @@ function implementationCandidate(workItemKey: string, predecessor: string): Fact
     at: 4,
     label: "implementation-candidate",
     data: {
-      commit: "fixture-commit",
+      commit: "a".repeat(40),
       tree: "fixture-tree",
       candidate: artifactRef("implementation/candidate"),
       effectiveSession: { provider: "fixture", id: "implementation-session" },

@@ -1,9 +1,12 @@
 import type { Command } from "commander";
-import { existsSync, readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, relative } from "node:path";
 import { formatFactoryActionOutput } from "./factory-action-output.ts";
 import { decorateFactoryReaction } from "./factory-manual-command.ts";
-import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import {
+  markPlanPullRequestMerged,
+  publishPlanPullRequest,
+} from "../lib/factory-plan-publication.ts";
 import {
   appendFactoryActionEvent,
   readFactoryActionEvents,
@@ -81,21 +84,20 @@ export function addFactoryPlanningStationCommand(
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(runPlanningCommand);
   for (const [name, description, merged] of [
-    ["publish", "Record the reviewed plan pull request", false],
+    ["publish", "Publish the reviewed plan pull request", false],
     ["mark-plan-merged", "Record the reviewed plan merge", true],
   ] as const) {
     const command = planning
       .command(name)
       .description(description)
       .requiredOption("--linear-issue <issue>")
-      .requiredOption("--url <url>")
       .option("--apply", "apply Linear projection", false)
       .option("--workspace <path>", "target repo")
       .option("--factory-store-root <path>", "durable factory store root")
       .option("--factory-store-project-id <id>", "durable factory store project id");
     (merged
-      ? command.requiredOption("--commit <sha>")
-      : command.requiredOption("--plan <path>")
+      ? command.requiredOption("--url <url>").requiredOption("--commit <sha>")
+      : command
     ).action((options) => recordPlanningPublication(options, merged ? "merged" : "opened"));
   }
 }
@@ -154,6 +156,7 @@ async function runPlanningCommand(options: PlanningOptions): Promise<void> {
       itemFile: options.itemFile,
       linearIssue: options.linearIssue,
       outputPlan: options.outputPlan,
+      baseRef: snapshot.config.base ?? "main",
       rerun: options.rerun,
       reviewCeiling: resolveFactoryPlanningSettingsFromSnapshot(snapshot).maxReviewIterations,
       plannerRole: resolveFactoryRoleAgentFromSnapshot(snapshot, {
@@ -239,6 +242,7 @@ export async function runOneFactoryPlanningAction(input: {
   itemFile?: string;
   linearIssue?: string;
   outputPlan?: string;
+  baseRef?: string;
   rerun: boolean;
   reviewCeiling: number;
   plannerRole: FactoryRoleAgent;
@@ -299,6 +303,7 @@ export async function runOneFactoryPlanningAction(input: {
       reviewerRole: input.reviewerRole,
       outputPlan: input.outputPlan,
       publicationMode: input.linearIssue ? "pull-request" : "local",
+      baseRef: input.baseRef ?? "main",
       maxReviewIterations: input.reviewCeiling,
       maxRuntimeMs: input.maxRuntimeMs,
       agentProviderFactory,
@@ -493,8 +498,7 @@ export async function recordPlanningPublication(
   options: {
     workspace?: string;
     linearIssue: string;
-    url: string;
-    plan?: string;
+    url?: string;
     commit?: string;
     apply?: boolean;
     factoryStoreRoot?: string;
@@ -527,109 +531,38 @@ export async function recordPlanningPublication(
     lifecycleReadMode: "none",
     factoryStateRoot: store.factoryStateRoot,
   });
-  const key = deriveFactoryWorkItemKey(work.workItem);
-  const events = readFactoryActionEvents(store.factoryStateRoot, key);
-  const latest = events.at(-1);
-  const state = reduceFactoryLifecycleEvents(events);
-  const recorded =
-    (kind === "opened" && latest?.type === "plan_pr.opened") ||
-    (kind === "merged" && latest?.type === "plan_pr.merged");
-  if (
-    !latest ||
-    !state ||
-    state.phase !== "planning" ||
-    (!recorded && state.status !== "awaiting-plan-merge")
-  )
-    throw new Error("Planning publication requires an approved pull-request planning candidate");
-  const candidate = events.findLast(
-    (event) =>
-      event.type === "planning.candidate.produced" && event.phaseRunId === state.phaseRunId,
-  );
-  if (!candidate || candidate.type !== "planning.candidate.produced")
-    throw new Error("Planning publication has no reviewed candidate");
   const factoryStore = factoryStoreMetadata(store);
-  const candidatePath = verifyFactoryArtifactRef(candidate.data.candidate, {
-    "factory-store": factoryStore.projectRoot,
-    repository: workspace,
-  });
-  if (kind === "opened") {
-    const supplied = resolve(workspace, options.plan!);
-    if (!existsSync(supplied) || !readFileSync(supplied).equals(readFileSync(candidatePath)))
-      throw new Error("Published plan does not match the reviewed immutable candidate");
-  }
-  const event: FactoryLifecycleEvent =
+  const adapter = options.apply
+    ? linearAdapterFactory({ apiKey: process.env.LINEAR_API_KEY ?? "", settings })
+    : undefined;
+  const result =
     kind === "opened"
-      ? {
-          version: 1,
-          id: `plan_pr.opened:${state.phaseRunId}`,
-          type: "plan_pr.opened",
-          workItemKey: key,
-          occurredAt: new Date().toISOString(),
-          phaseRunId: state.phaseRunId,
-          data: { url: options.url, plan: candidate.data.candidate },
-        }
-      : {
-          version: 1,
-          id: `plan_pr.merged:${state.phaseRunId}`,
-          type: "plan_pr.merged",
-          workItemKey: key,
-          occurredAt: new Date().toISOString(),
-          phaseRunId: state.phaseRunId,
-          data: { url: options.url, commit: options.commit! },
-        };
-  if (
-    recorded &&
-    (latest.type !== event.type ||
-      latest.data.url !== event.data.url ||
-      (kind === "merged" &&
-        (latest.type !== "plan_pr.merged" || latest.data.commit !== options.commit)))
-  )
-    throw new Error("Planning publication retry conflicts with durable lifecycle truth");
-  const appended = recorded
-    ? { event: latest, state }
-    : appendFactoryActionEvent({
-        factoryStateRoot: store.factoryStateRoot,
-        event,
-        expectedLastEventId: latest.id,
-      });
-  let linearApplied = false;
-  if (options.apply) {
-    const adapter = linearAdapterFactory({
-      apiKey: process.env.LINEAR_API_KEY ?? "",
-      settings,
-    });
-    const opened = events.findLast(
-      (candidateEvent) =>
-        candidateEvent.type === "plan_pr.opened" && candidateEvent.phaseRunId === state.phaseRunId,
-    );
-    const projection = {
-      issueRef: options.linearIssue,
-      runId: state.phaseRunId,
-      runDir: join(factoryStore.projectRoot, "runs/factory", state.phaseRunId),
-      approvedPlanPath: options.plan ?? state.outputPlan,
-      approvedPlanPrUrl: options.url,
-    };
-    if (kind === "opened") await adapter.applyPlanningPublished(projection);
-    else {
-      if (!opened || opened.type !== "plan_pr.opened")
-        throw new Error("Planning merge has no durable publication event");
-      await adapter.applyPlanningMerged({
-        ...projection,
-        approvedPlanPath: state.outputPlan,
-        approvedPlanPrUrl: opened.data.url,
-        approvedPlanCommit: options.commit!,
-      });
-    }
-    linearApplied = true;
-  }
+      ? await publishPlanPullRequest({
+          workspace,
+          factoryStateRoot: store.factoryStateRoot,
+          factoryStore,
+          workItem: work.workItem,
+          issueRef: options.linearIssue,
+          ...(adapter ? { applyAdapter: adapter } : {}),
+        })
+      : await markPlanPullRequestMerged({
+          workspace,
+          factoryStateRoot: store.factoryStateRoot,
+          factoryStore,
+          workItem: work.workItem,
+          issueRef: options.linearIssue,
+          url: options.url!,
+          commit: options.commit!,
+          ...(adapter ? { applyAdapter: adapter } : {}),
+        });
   console.log(
     JSON.stringify(
       formatFactoryActionOutput({
         phase: "planning",
-        phaseRunId: state.phaseRunId,
+        phaseRunId: result.phaseRunId,
         next: decorateFactoryReaction(
-          decideNextFactoryAction(appended.state, appended.event),
-          appended.state,
+          decideNextFactoryAction(result.state, result.event),
+          result.state,
           {
             workspace,
             linearIssue: options.linearIssue,
@@ -639,7 +572,7 @@ export async function recordPlanningPublication(
               : {}),
           },
         )!,
-        linearApplied,
+        linearApplied: result.linearApplied,
       }),
       null,
       2,

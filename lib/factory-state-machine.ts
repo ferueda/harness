@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { FactoryHandler, FactoryPhase } from "./factory-action-contract.ts";
 import { FactoryPhaseRunIdSchema } from "./factory-action-contract.ts";
+import { FactoryArtifactRefSchema } from "./factory-artifact-ref.ts";
 import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 
 const Common = z
@@ -21,6 +22,15 @@ const ReviewState = PhaseState.extend({
 const PlanningState = ReviewState.extend({
   publicationMode: z.enum(["local", "pull-request"]),
   outputPlan: z.string().min(1),
+  reviewedPlan: FactoryArtifactRefSchema.optional(),
+  planPrHead: z
+    .string()
+    .regex(/^[0-9a-f]{40}$/)
+    .optional(),
+  planMergeCommit: z
+    .string()
+    .regex(/^[0-9a-f]{40}$/)
+    .optional(),
 });
 export const FactoryLifecycleStateSchema = z.union([
   Common.extend({ phase: z.literal("idle"), status: z.literal("idle") }),
@@ -52,6 +62,7 @@ export const FactoryLifecycleStateSchema = z.union([
       "awaiting-review",
       "needs-revision",
       "needs-human",
+      "awaiting-plan-publication",
       "awaiting-plan-merge",
       "approved",
       "failed",
@@ -59,11 +70,23 @@ export const FactoryLifecycleStateSchema = z.union([
   }),
   ReviewState.extend({
     phase: z.literal("implementation"),
+    reviewedHead: z.string().min(1).optional(),
+    implementationPrUrl: z.url().optional(),
+    implementationPrHead: z
+      .string()
+      .regex(/^[0-9a-f]{40}$/)
+      .optional(),
+    implementationMergeCommit: z
+      .string()
+      .regex(/^[0-9a-f]{40}$/)
+      .optional(),
     status: z.enum([
       "awaiting-candidate",
       "awaiting-review",
       "needs-revision",
       "needs-human",
+      "awaiting-pr-publication",
+      "awaiting-pr-merge",
       "complete",
       "failed",
     ]),
@@ -84,7 +107,16 @@ export type FactoryReaction =
     }
   | {
       kind: "wait";
-      reason: "phase-command" | "human" | "plan-merge" | "complete" | "failed" | "stale-event";
+      reason:
+        | "phase-command"
+        | "human"
+        | "plan-publication"
+        | "plan-merge"
+        | "pr-publication"
+        | "pr-merge"
+        | "complete"
+        | "failed"
+        | "stale-event";
       command?: string;
     };
 
@@ -160,6 +192,7 @@ function reduce(
         attempt: event.data.attempt,
         publicationMode: current!.phase === "planning" ? current!.publicationMode : "local",
         outputPlan: current!.phase === "planning" ? current!.outputPlan : "dev/plans/plan.md",
+        reviewedPlan: event.data.candidate,
       };
     case "planning.input.required":
       return {
@@ -180,7 +213,7 @@ function reduce(
           event.data.verdict === "pass"
             ? current!.phase === "planning" && current!.publicationMode === "local"
               ? "approved"
-              : "awaiting-plan-merge"
+              : "awaiting-plan-publication"
             : event.data.verdict === "needs_changes" &&
                 event.data.attempt < event.data.reviewCeiling
               ? "needs-revision"
@@ -191,6 +224,7 @@ function reduce(
         attempt: event.data.attempt,
         publicationMode: current!.phase === "planning" ? current!.publicationMode : "local",
         outputPlan: current!.phase === "planning" ? current!.outputPlan : "dev/plans/plan.md",
+        reviewedPlan: current!.phase === "planning" ? current!.reviewedPlan : undefined,
       };
     case "plan_pr.opened":
       return {
@@ -202,7 +236,9 @@ function reduce(
         attempt: current!.phase === "planning" ? current!.attempt : 1,
         publicationMode: current!.phase === "planning" ? current!.publicationMode : "pull-request",
         outputPlan: current!.phase === "planning" ? current!.outputPlan : "dev/plans/plan.md",
+        reviewedPlan: current!.phase === "planning" ? current!.reviewedPlan : event.data.plan,
         planPrUrl: event.data.url,
+        planPrHead: event.data.head,
       };
     case "plan_pr.merged":
       return {
@@ -214,7 +250,10 @@ function reduce(
         attempt: current!.phase === "planning" ? current!.attempt : 1,
         publicationMode: current!.phase === "planning" ? current!.publicationMode : "pull-request",
         outputPlan: current!.phase === "planning" ? current!.outputPlan : "dev/plans/plan.md",
+        reviewedPlan: current!.phase === "planning" ? current!.reviewedPlan : undefined,
         planPrUrl: event.data.url,
+        planPrHead: current!.phase === "planning" ? current!.planPrHead : undefined,
+        planMergeCommit: event.data.commit,
       };
     case "implementation.requested":
       return {
@@ -233,6 +272,7 @@ function reduce(
         phaseRunId: event.phaseRunId,
         reviewCeiling: current!.phase === "implementation" ? current!.reviewCeiling : 1,
         attempt: event.data.attempt,
+        reviewedHead: event.data.commit,
       };
     case "implementation.review.completed":
       return {
@@ -240,7 +280,7 @@ function reduce(
         phase: "implementation",
         status:
           event.data.verdict === "pass"
-            ? "complete"
+            ? "awaiting-pr-publication"
             : event.data.verdict === "needs_changes" &&
                 event.data.attempt < event.data.reviewCeiling
               ? "needs-revision"
@@ -249,6 +289,33 @@ function reduce(
         reviewCeiling:
           current!.phase === "implementation" ? current!.reviewCeiling : event.data.reviewCeiling,
         attempt: event.data.attempt,
+        reviewedHead: current!.phase === "implementation" ? current!.reviewedHead : undefined,
+      };
+    case "implementation_pr.opened":
+      return {
+        ...base,
+        phase: "implementation",
+        status: "awaiting-pr-merge",
+        phaseRunId: event.phaseRunId,
+        reviewCeiling: current!.phase === "implementation" ? current!.reviewCeiling : 1,
+        attempt: current!.phase === "implementation" ? current!.attempt : 1,
+        reviewedHead: current!.phase === "implementation" ? current!.reviewedHead : event.data.head,
+        implementationPrUrl: event.data.url,
+        implementationPrHead: event.data.head,
+      };
+    case "implementation_pr.merged":
+      return {
+        ...base,
+        phase: "implementation",
+        status: "complete",
+        phaseRunId: event.phaseRunId,
+        reviewCeiling: current!.phase === "implementation" ? current!.reviewCeiling : 1,
+        attempt: current!.phase === "implementation" ? current!.attempt : 1,
+        reviewedHead: current!.phase === "implementation" ? current!.reviewedHead : undefined,
+        implementationPrUrl: event.data.url,
+        implementationPrHead:
+          current!.phase === "implementation" ? current!.implementationPrHead : undefined,
+        implementationMergeCommit: event.data.commit,
       };
     case "factory.action.failed":
       if (!current) throw new Error("factory.action.failed requires an active Factory phase");
@@ -280,6 +347,10 @@ function reduce(
             attempt: event.data.attempt,
             publicationMode: current.publicationMode,
             outputPlan: current.outputPlan,
+            reviewedPlan: current.reviewedPlan,
+            planPrUrl: current.planPrUrl,
+            planPrHead: current.planPrHead,
+            planMergeCommit: current.planMergeCommit,
           };
         const failedState = {
           ...base,
@@ -290,6 +361,10 @@ function reduce(
           phaseRunId: event.phaseRunId,
           reviewCeiling: current.reviewCeiling,
           attempt: event.data.attempt,
+          reviewedHead: current.reviewedHead,
+          implementationPrUrl: current.implementationPrUrl,
+          implementationPrHead: current.implementationPrHead,
+          implementationMergeCommit: current.implementationMergeCommit,
         };
         return failedState;
       }
@@ -401,8 +476,9 @@ function validateFactoryTransition(
       case "plan_pr.opened":
         return (
           current.phase === "planning" &&
-          current.status === "awaiting-plan-merge" &&
-          current.planPrUrl === undefined
+          current.status === "awaiting-plan-publication" &&
+          current.planPrUrl === undefined &&
+          JSON.stringify(current.reviewedPlan) === JSON.stringify(event.data.plan)
         );
       case "plan_pr.merged":
         return (
@@ -441,6 +517,19 @@ function validateFactoryTransition(
           event.data.reviewCeiling === current.reviewCeiling &&
           (event.data.verdict !== "needs_changes" || event.data.blockingFindings !== undefined) &&
           event.data.handler === "reviewImplementationCandidate"
+        );
+      case "implementation_pr.opened":
+        return (
+          current.phase === "implementation" &&
+          current.status === "awaiting-pr-publication" &&
+          current.reviewedHead === event.data.head &&
+          current.implementationPrUrl === undefined
+        );
+      case "implementation_pr.merged":
+        return (
+          current.phase === "implementation" &&
+          current.status === "awaiting-pr-merge" &&
+          current.implementationPrUrl === event.data.url
         );
       case "factory.action.failed":
         if (event.data.phase !== current.phase) return false;
@@ -560,6 +649,12 @@ export function decideNextFactoryAction(
     return { kind: "wait", reason: "human" };
   if (state.phase === "planning" && state.status === "awaiting-plan-merge")
     return { kind: "wait", reason: "plan-merge" };
+  if (state.phase === "planning" && state.status === "awaiting-plan-publication")
+    return { kind: "wait", reason: "plan-publication" };
+  if (state.phase === "implementation" && state.status === "awaiting-pr-publication")
+    return { kind: "wait", reason: "pr-publication" };
+  if (state.phase === "implementation" && state.status === "awaiting-pr-merge")
+    return { kind: "wait", reason: "pr-merge" };
   if (state.status === "complete") return { kind: "wait", reason: "complete" };
   return {
     kind: "wait",

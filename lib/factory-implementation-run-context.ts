@@ -40,6 +40,7 @@ export function createFactoryImplementationRunContext(input: {
   reviewCeiling: number;
   implementerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
+  baseRef?: string;
   eventSink?: WorkflowEventSink;
 }) {
   const workspace = canonicalWorkspace(input.workspace);
@@ -79,6 +80,7 @@ export function createFactoryImplementationRunContext(input: {
       projectId: input.factoryStore.projectId,
       factoryStateRoot: resolve(input.factoryStore.factoryStateRoot),
       reviewCeiling: input.reviewCeiling,
+      baseRef: input.baseRef ?? "main",
       branchRef: gitIdentity.branchRef,
       baseSha: gitIdentity.baseSha,
       input: snapshot,

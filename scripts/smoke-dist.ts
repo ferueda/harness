@@ -171,6 +171,9 @@ const factoryPlanningPublishHelp = runHarness(["factory", "planning", "publish",
 if (!factoryPlanningPublishHelp.includes("harness factory planning publish")) {
   throw new Error("Expected factory planning publish help to include command usage");
 }
+if (factoryPlanningPublishHelp.includes("--url") || factoryPlanningPublishHelp.includes("--plan")) {
+  throw new Error("Factory planning publish must derive its PR URL and plan path");
+}
 const factoryPlanningMergedHelp = runHarness(["factory", "planning", "mark-plan-merged", "--help"]);
 if (!factoryPlanningMergedHelp.includes("harness factory planning mark-plan-merged")) {
   throw new Error("Expected factory planning mark-plan-merged help to include command usage");
@@ -191,6 +194,30 @@ if (!factoryImplementationRunHelp.includes("--max-runtime-ms")) {
 }
 if (factoryImplementationRunHelp.includes("--dry-run")) {
   throw new Error("Factory implementation run must not expose legacy --dry-run");
+}
+const factoryImplementationPublishHelp = runHarness([
+  "factory",
+  "implementation",
+  "publish",
+  "--help",
+]);
+if (!factoryImplementationPublishHelp.includes("harness factory implementation publish")) {
+  throw new Error("Expected factory implementation publish help to include command usage");
+}
+if (
+  factoryImplementationPublishHelp.includes("--url") ||
+  factoryImplementationPublishHelp.includes("--commit")
+) {
+  throw new Error("Factory implementation publish must derive its reviewed head and PR identity");
+}
+const factoryImplementationMergedHelp = runHarness([
+  "factory",
+  "implementation",
+  "mark-pr-merged",
+  "--help",
+]);
+if (!factoryImplementationMergedHelp.includes("harness factory implementation mark-pr-merged")) {
+  throw new Error("Expected factory implementation mark-pr-merged help to include command usage");
 }
 for (const [name, help] of [
   ["factory status", factoryStatusHelp],

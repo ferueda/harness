@@ -17,12 +17,6 @@ export type LinearImplementationStartedInput = LinearImplementationApplyInput & 
   intent: "start" | "restart";
 };
 
-export type LinearImplementationCompletedInput = LinearImplementationApplyInput & {
-  reviewBase: string;
-  reviewHead: string;
-  reviewCommitSha: string;
-};
-
 export type LinearImplementationFailedInput = LinearImplementationApplyInput & { error: string };
 export type LinearImplementationAttentionInput = LinearImplementationApplyInput & {
   verdict: "needs_changes" | "blocked" | "human_required";
@@ -122,50 +116,6 @@ export async function applyLinearImplementationStarted(
   };
 }
 
-export async function applyLinearImplementationCompleted(
-  deps: LinearImplementationApplyDeps,
-  client: LinearClientLike,
-  settings: FactoryLinearSettings,
-  input: LinearImplementationCompletedInput,
-): Promise<LinearImplementationUpdatePlan> {
-  const statuses = requiredStatuses(settings);
-  await deps.validateStatusMap(client, settings);
-  const issue = await deps.fetchIssue(client, settings, input.issueRef);
-  const state = await deps.resolveOptional(issue.state);
-  await deps.assertIssueInConfiguredScope(issue, settings);
-  assertState(state?.name, statuses.implementing, "implementation completion");
-  const fresh = await assertFreshState(deps, client, settings, issue, statuses.implementing);
-  const commentMarker = linearImplementationCompletedMarker(input.runId);
-  const commentBody = renderLinearImplementationCompletedComment(input);
-  const progress: LinearImplementationUpdatePlan = {
-    ...update(input, issue, "completed", state?.name, statuses.implementing),
-    commentMarker,
-    commentBody,
-    statusMutationCompleted: false,
-    statusPostconditionVerified: true,
-    commentPresent: false,
-  };
-  try {
-    if (!(await deps.issueHasCommentMarker(fresh, commentMarker))) {
-      const commentIssue = await assertFreshState(
-        deps,
-        client,
-        settings,
-        issue,
-        statuses.implementing,
-      );
-      await deps.createComment(
-        client,
-        { issueId: commentIssue.id, body: commentBody },
-        "implementation completion comment",
-      );
-    }
-    return { ...progress, commentPresent: true };
-  } catch (error) {
-    throw new LinearImplementationTerminalApplyError(error, progress);
-  }
-}
-
 export async function applyLinearImplementationFailed(
   deps: LinearImplementationApplyDeps,
   client: LinearClientLike,
@@ -254,10 +204,6 @@ export async function applyLinearImplementationAttention(
   };
 }
 
-export function linearImplementationCompletedMarker(runId: string): string {
-  return `<!-- harness-factory:implementation:${runId} -->`;
-}
-
 export function linearImplementationFailedMarker(runId: string): string {
   return `<!-- harness-factory:implementation-failed:${runId} -->`;
 }
@@ -317,24 +263,6 @@ function update(
     fromStatus,
     targetStatus,
   };
-}
-
-function renderLinearImplementationCompletedComment(
-  input: LinearImplementationCompletedInput,
-): string {
-  return [
-    linearImplementationCompletedMarker(input.runId),
-    "",
-    "Factory implementation review passed.",
-    "",
-    "Status: complete",
-    `Run: \`${input.runDir}\``,
-    `Review base: \`${input.reviewBase}\``,
-    `Review head: \`${input.reviewHead}\``,
-    `Review commit: \`${input.reviewCommitSha}\``,
-    "The persisted branch now points at this exact reviewed candidate.",
-    "",
-  ].join("\n");
 }
 
 function renderLinearImplementationFailedComment(

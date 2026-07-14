@@ -491,7 +491,7 @@ describe("Factory action lifecycle kernel", () => {
     ).toThrow(/Invalid Factory transition/);
   });
 
-  test("emits an explicit plan-merge reaction after planning approval", () => {
+  test("emits an explicit plan-publication reaction after planning approval", () => {
     const events: FactoryLifecycleEvent[] = [
       imported(),
       {
@@ -588,7 +588,7 @@ describe("Factory action lifecycle kernel", () => {
     expect(state).toBeDefined();
     expect(decideNextFactoryAction(state!, events.at(-1)!)).toEqual({
       kind: "wait",
-      reason: "plan-merge",
+      reason: "plan-publication",
     });
   });
 });

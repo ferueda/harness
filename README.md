@@ -106,7 +106,7 @@ Linear. It prints deterministic JSON with the work-item key, repository and
 Factory project roots, reduced durable state, the verbatim latest lifecycle
 event, and the current reaction. Missing history returns `null` for state,
 latest event, and reaction. Mechanical reactions include the exact next
-station command; human, plan-merge, failed, complete, and stale waits do not.
+station command; human, publication, merge, failed, complete, and stale waits do not.
 
 Factory station artifacts are written under
 `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/`
@@ -120,6 +120,9 @@ Planning candidate/review actions are manually stepped with
 ```bash
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 # Run the exact printed command again to review the immutable candidate.
+harness factory implementation publish --workspace /path/to/repo --item-file work-item.json
+# Stop and report the PR. Only after the human merges that PR:
+harness factory implementation mark-pr-merged --workspace /path/to/repo --item-file work-item.json --url <pr-url> --commit <merge-sha>
 ```
 
 Implementation starts only from accepted direct input or an approved plan
@@ -130,7 +133,10 @@ below the persisted `factory.implementation.maxReviewIterations` ceiling
 (default 3) prints, but does not run, a same-session revision command. That
 revision keeps the original base, consumes every digested blocking finding, and
 publishes a distinct immutable attempt ref. Pass advances the persisted branch
-to that exact latest candidate and leaves the index/worktree clean.
+to that exact latest candidate, leaves the index/worktree clean, and waits for
+explicit PR publication. Publication pushes that exact branch and finds or
+creates its PR; it never merges. Merge acknowledgement requires the recorded
+URL and a local descendant commit.
 Blocked/exhausted verdicts wait for a human; `--rerun` starts a fresh phase
 after human/failed state. The CLI prints but never automatically executes a
 follow-up action.
@@ -143,7 +149,9 @@ does not use `--apply` and does not write factory lifecycle or run artifacts.
 Factory triage can use `--linear-issue`; `--apply` is explicit and projects the
 triage start and terminal result to Linear. Optional `--dry-run` prepares
 triage artifacts without a provider and does not initialize Factory state.
-GitHub/Jira tracker adapters and an Inngest host adapter remain future layers.
+General GitHub/Jira tracker adapters and an Inngest host adapter remain future
+layers. Factory plan and implementation publication use local Git credentials
+and authenticated `gh` only after explicit command invocation.
 Linking factory PRs to Linear issues via branch/title naming is current operator
 practice (see Linear PR linking in
 [docs/contributing/factory.md](docs/contributing/factory.md)). For the full

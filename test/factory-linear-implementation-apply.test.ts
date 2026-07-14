@@ -1,10 +1,8 @@
 import { expect, test, vi } from "vitest";
 import {
-  applyLinearImplementationCompleted,
   applyLinearImplementationAttention,
   applyLinearImplementationFailed,
   applyLinearImplementationStarted,
-  linearImplementationCompletedMarker,
   linearImplementationFailedMarker,
   LinearImplementationTerminalApplyError,
   type LinearImplementationApplyDeps,
@@ -266,31 +264,6 @@ test("implementation start requires a verified post-write state", async () => {
   ).rejects.toThrow(/requires Implementing/);
 });
 
-test("implementation completion writes one marker-deduped handoff comment", async () => {
-  const state = harness("Implementing");
-  const input = {
-    issueRef: "ENG-123",
-    runId: "run-complete",
-    runDir: ".harness/runs/factory/run-complete",
-    reviewBase: "base-sha",
-    reviewHead: "refs/harness/review",
-    reviewCommitSha: "review-sha",
-  };
-
-  const result = await applyLinearImplementationCompleted(
-    state.deps,
-    state.client,
-    LINEAR_SETTINGS,
-    input,
-  );
-  await applyLinearImplementationCompleted(state.deps, state.client, LINEAR_SETTINGS, input);
-
-  expect(state.updateIssue).not.toHaveBeenCalled();
-  expect(state.createComment).toHaveBeenCalledTimes(1);
-  expect(result.commentMarker).toBe(linearImplementationCompletedMarker("run-complete"));
-  expect(result.commentBody).toContain("Review commit: `review-sha`");
-});
-
 test("implementation failure projects status and writes a retry comment", async () => {
   const state = harness("Implementing");
   const result = await applyLinearImplementationFailed(state.deps, state.client, LINEAR_SETTINGS, {
@@ -325,26 +298,6 @@ test("implementation failure repairs its comment after status projection", async
   });
 });
 
-test.each(["Ready to Implement", "Implementation Failed", "Planning"])(
-  "implementation completion rejects terminal entry %s before mutation",
-  async (entry) => {
-    const state = harness(entry);
-
-    await expect(
-      applyLinearImplementationCompleted(state.deps, state.client, LINEAR_SETTINGS, {
-        issueRef: "ENG-123",
-        runId: "run-invalid-complete",
-        runDir: ".harness/runs/factory/run-invalid-complete",
-        reviewBase: "base",
-        reviewHead: "head",
-        reviewCommitSha: "commit",
-      }),
-    ).rejects.toThrow(/completion requires Implementing/);
-    expect(state.updateIssue).not.toHaveBeenCalled();
-    expect(state.createComment).not.toHaveBeenCalled();
-  },
-);
-
 test.each(["Ready to Implement", "Planning", undefined])(
   "implementation failure rejects terminal entry %s before mutation",
   async (entry) => {
@@ -362,53 +315,6 @@ test.each(["Ready to Implement", "Planning", undefined])(
     expect(state.createComment).not.toHaveBeenCalled();
   },
 );
-
-test("implementation completion checks resolved-false and thrown comment failures", async () => {
-  const resolved = harness("Implementing", { commentSuccess: false });
-  await expect(
-    applyLinearImplementationCompleted(resolved.deps, resolved.client, LINEAR_SETTINGS, {
-      issueRef: "ENG-123",
-      runId: "run-comment-false",
-      runDir: ".harness/runs/factory/run-comment-false",
-      reviewBase: "base",
-      reviewHead: "head",
-      reviewCommitSha: "commit",
-    }),
-  ).rejects.toThrow(/completion comment mutation failed/);
-
-  const thrown = harness("Implementing", { commentError: new Error("comment network failure") });
-  await expect(
-    applyLinearImplementationCompleted(thrown.deps, thrown.client, LINEAR_SETTINGS, {
-      issueRef: "ENG-123",
-      runId: "run-comment-thrown",
-      runDir: ".harness/runs/factory/run-comment-thrown",
-      reviewBase: "base",
-      reviewHead: "head",
-      reviewCommitSha: "commit",
-    }),
-  ).rejects.toThrow("comment network failure");
-});
-
-test("implementation completion revalidates the status map immediately before commenting", async () => {
-  const state = harness("Implementing");
-  let validations = 0;
-  state.deps.validateStatusMap = async () => {
-    validations += 1;
-    if (validations === 3) throw new Error("configured status map changed before comment");
-  };
-
-  await expect(
-    applyLinearImplementationCompleted(state.deps, state.client, LINEAR_SETTINGS, {
-      issueRef: "ENG-123",
-      runId: "run-comment-status-drift",
-      runDir: ".harness/runs/factory/run-comment-status-drift",
-      reviewBase: "base",
-      reviewHead: "head",
-      reviewCommitSha: "commit",
-    }),
-  ).rejects.toThrow("configured status map changed before comment");
-  expect(state.createComment).not.toHaveBeenCalled();
-});
 
 test("implementation failure requires a verified failed state before commenting", async () => {
   const state = harness("Implementing", { applyUpdate: false });

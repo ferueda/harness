@@ -15,6 +15,10 @@ import { produceImplementationCandidate } from "../lib/factory-implementation-ca
 import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
 import {
+  markImplementationPullRequestMerged,
+  publishImplementationPullRequest,
+} from "../lib/factory-implementation-publication.ts";
+import {
   createFactoryImplementationRunContext,
   openFactoryImplementationRunContext,
 } from "../lib/factory-implementation-run-context.ts";
@@ -64,9 +68,10 @@ export function addFactoryImplementationStationCommand(
   parent: Command,
   positiveNumber: (value: string) => number,
 ): void {
-  parent
+  const implementation = parent
     .command("implementation")
-    .description("Manage factory implementation station")
+    .description("Manage factory implementation station");
+  implementation
     .command("run", { isDefault: true })
     .description("Run exactly one pending implementation action")
     .option("--workspace <path>", "target repo")
@@ -79,6 +84,99 @@ export function addFactoryImplementationStationCommand(
     .option("--rerun", "restart after human/failed state", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(runImplementationCommand);
+  implementation
+    .command("publish")
+    .description("Publish the reviewed implementation pull request")
+    .option("--workspace <path>", "target repo")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier")
+    .option("--factory-store-root <path>", "durable factory store root")
+    .option("--factory-store-project-id <id>", "durable factory store project id")
+    .option("--apply", "apply Linear projection", false)
+    .action((options) => runImplementationPublicationCommand(options, "opened"));
+  implementation
+    .command("mark-pr-merged")
+    .description("Record the human-merged implementation pull request")
+    .option("--workspace <path>", "target repo")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier")
+    .requiredOption("--url <url>", "recorded pull request URL")
+    .requiredOption("--commit <sha>", "local merge commit")
+    .option("--factory-store-root <path>", "durable factory store root")
+    .option("--factory-store-project-id <id>", "durable factory store project id")
+    .option("--apply", "apply Linear projection", false)
+    .action((options) => runImplementationPublicationCommand(options, "merged"));
+}
+
+export async function runImplementationPublicationCommand(
+  options: Options & { url?: string; commit?: string },
+  kind: "opened" | "merged",
+): Promise<void> {
+  validateFactoryWorkItemInput({ itemFile: options.itemFile, linearIssue: options.linearIssue });
+  if (options.apply && !options.linearIssue) throw new Error("--apply requires --linear-issue");
+  const workspace = resolveHarnessWorkspace(options.workspace, process.cwd());
+  const snapshot = loadFactoryConfigSnapshot(workspace);
+  const settings = options.linearIssue
+    ? resolveFactoryLinearSettingsFromSnapshot(snapshot)
+    : undefined;
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: options.factoryStoreRoot,
+    factoryStoreProjectId: options.factoryStoreProjectId,
+    env: process.env,
+    configSnapshot: snapshot,
+  });
+  const work = await resolveFactoryWorkItemInput({
+    workspace,
+    itemFile: options.itemFile,
+    linearIssue: options.linearIssue,
+    linearSettings: settings,
+    env: process.env,
+    linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
+    lifecycleReadMode: "none",
+    factoryStateRoot: store.factoryStateRoot,
+  });
+  const adapter = options.apply
+    ? createLinearFactoryAdapter({ apiKey: process.env.LINEAR_API_KEY ?? "", settings: settings! })
+    : undefined;
+  const common = {
+    workspace,
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStore: factoryStoreMetadata(store),
+    workItem: work.workItem,
+    ...(options.linearIssue ? { issueRef: options.linearIssue } : {}),
+    ...(adapter ? { applyAdapter: adapter } : {}),
+  };
+  const result =
+    kind === "opened"
+      ? await publishImplementationPullRequest(common)
+      : await markImplementationPullRequestMerged({
+          ...common,
+          url: options.url!,
+          commit: options.commit!,
+        });
+  console.log(
+    JSON.stringify(
+      formatFactoryActionOutput({
+        phase: "implementation",
+        phaseRunId: result.phaseRunId,
+        next: decorateFactoryReaction(
+          decideNextFactoryAction(result.state, result.event),
+          result.state,
+          implementationCommandProvenance({
+            workspace,
+            itemFile: options.itemFile,
+            linearIssue: options.linearIssue,
+            factoryStoreRoot: options.factoryStoreRoot,
+            factoryStoreProjectId: options.factoryStoreProjectId,
+          }),
+        )!,
+        linearApplied: result.linearApplied,
+      }),
+      null,
+      2,
+    ),
+  );
 }
 
 async function runImplementationCommand(options: Options): Promise<void> {
@@ -135,6 +233,7 @@ async function runImplementationCommand(options: Options): Promise<void> {
         station: "implementation",
         role: "reviewer",
       }),
+      baseRef: snapshot.config.base ?? "main",
       reviewCeiling: implementationSettings.maxReviewIterations,
       applyAdapter: adapter,
       linearStatuses: linearSettings?.statuses,
@@ -165,10 +264,13 @@ export async function runOneFactoryImplementationAction(input: {
   implementerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
   reviewCeiling: number;
+  baseRef?: string;
   applyAdapter?: LinearFactoryAdapter;
   linearStatuses?: {
     readyToImplement: string;
     implementing: string;
+    readyForReview: string;
+    done: string;
     implementationFailed: string;
   };
   issueRef?: string;
@@ -236,6 +338,7 @@ export async function runOneFactoryImplementationAction(input: {
       workItem: input.workItem,
       factoryStore: input.factoryStore,
       implementationInput,
+      baseRef: input.baseRef ?? "main",
       reviewCeiling: input.reviewCeiling,
       implementerRole: input.implementerRole,
       reviewerRole: input.reviewerRole,
@@ -342,20 +445,6 @@ export async function runOneFactoryImplementationAction(input: {
   if (
     input.applyAdapter &&
     handled.event.type === "implementation.review.completed" &&
-    handled.event.data.verdict === "pass"
-  ) {
-    await input.applyAdapter.applyImplementationCompleted({
-      issueRef: input.issueRef!,
-      runId: phaseRunId,
-      runDir: ctx.runDir,
-      reviewBase: ctx.identity.baseSha,
-      reviewHead: `refs/harness/factory/${phaseRunId}/${handled.event.data.attempt}`,
-      reviewCommitSha: readCandidateCommit(eventsFor(input, key), phaseRunId),
-    });
-    linearApplied = true;
-  } else if (
-    input.applyAdapter &&
-    handled.event.type === "implementation.review.completed" &&
     handled.event.data.verdict !== "pass"
   ) {
     await input.applyAdapter.applyImplementationAttention({
@@ -416,24 +505,6 @@ async function repairTerminalProjection(input: {
   events: FactoryLifecycleEvent[];
 }): Promise<boolean> {
   if (
-    input.state.status === "complete" &&
-    input.latest?.type === "implementation.review.completed"
-  ) {
-    const candidateCommit = readCandidateCommit(input.events, input.state.phaseRunId);
-    const identity = readFactoryPhaseRunIdentity(input.runDir);
-    if (identity.phase !== "implementation")
-      throw new Error("Implementation phase identity missing");
-    await input.adapter.applyImplementationCompleted({
-      issueRef: input.issueRef,
-      runId: input.state.phaseRunId,
-      runDir: input.runDir,
-      reviewBase: identity.baseSha,
-      reviewHead: `refs/harness/factory/${input.state.phaseRunId}/${input.state.attempt}`,
-      reviewCommitSha: candidateCommit,
-    });
-    return true;
-  }
-  if (
     input.state.status === "needs-human" &&
     input.latest?.type === "factory.action.failed" &&
     input.latest.data.failureKind === "human-required"
@@ -479,7 +550,13 @@ export function assertLiveImplementationStatus(
   state: ReturnType<typeof reduceFactoryLifecycleEvents>,
   latest: FactoryLifecycleEvent | undefined,
   rerun: boolean,
-  statuses: { readyToImplement: string; implementing: string; implementationFailed: string },
+  statuses: {
+    readyToImplement: string;
+    implementing: string;
+    readyForReview: string;
+    done: string;
+    implementationFailed: string;
+  },
 ): void {
   const status = workItem.metadata?.linearStatus;
   const pending = latest?.type === "implementation.requested" && state?.phase === "implementation";
@@ -490,7 +567,11 @@ export function assertLiveImplementationStatus(
     : state?.phase === "implementation" && !rerun
       ? state.status === "failed"
         ? [statuses.implementing, statuses.implementationFailed]
-        : [statuses.implementing]
+        : state.status === "awaiting-pr-merge"
+          ? [statuses.readyForReview]
+          : state.status === "complete"
+            ? [statuses.done]
+            : [statuses.implementing]
       : rerun
         ? [statuses.implementationFailed, statuses.implementing]
         : [statuses.readyToImplement];

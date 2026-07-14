@@ -82,16 +82,34 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
     reviewCeiling: z.number().int().positive(),
     outputPlan: z.string().min(1),
     publicationMode: z.enum(["local", "pull-request"]),
+    baseRef: z.string().min(1).optional(),
+    baseSha: z
+      .string()
+      .regex(/^[0-9a-f]{40}$/)
+      .optional(),
+    branchRef: z
+      .string()
+      .regex(/^refs\/heads\/.+/)
+      .optional(),
     actions: z
       .object({
         producePlanCandidate: FactoryActionExecutionProfileSchema,
         reviewPlanCandidate: FactoryActionExecutionProfileSchema,
       })
       .strict(),
-  }).strict(),
+  })
+    .strict()
+    .superRefine((value, ctx) => {
+      if (
+        value.publicationMode === "pull-request" &&
+        (!value.baseRef || !value.baseSha || !value.branchRef)
+      )
+        ctx.addIssue({ code: "custom", message: "pull-request planning requires Git identity" });
+    }),
   FactoryPhaseRunBaseSchema.extend({
     phase: z.literal("implementation"),
     reviewCeiling: z.number().int().positive(),
+    baseRef: z.string().min(1),
     branchRef: z.string().regex(/^refs\/heads\/.+/),
     baseSha: z.string().regex(/^[0-9a-f]{40}$/),
     input: FactoryImplementationInputSnapshotSchema,
