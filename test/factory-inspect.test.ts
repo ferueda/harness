@@ -22,6 +22,24 @@ import { FactoryLifecycleStateSchema } from "../lib/factory-state-machine.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 const ref = { base: "factory-store" as const, path: "inputs/item.json", sha256: "0".repeat(64) };
+const planningCandidateEventId = `planning.candidate.produced:${factoryActionKey({
+  phaseRunId: "planning-run",
+  handler: "producePlanCandidate",
+  attempt: 1,
+  causationEventId: "planning.requested:planning-run",
+})}`;
+const implementationCandidateEventId = `implementation.candidate.produced:${factoryActionKey({
+  phaseRunId: "implementation-run",
+  handler: "produceImplementationCandidate",
+  attempt: 1,
+  causationEventId: "implementation.requested:implementation-run",
+})}`;
+const implementationReviewEventId = `implementation.review.completed:${factoryActionKey({
+  phaseRunId: "implementation-run",
+  handler: "reviewImplementationCandidate",
+  attempt: 1,
+  causationEventId: implementationCandidateEventId,
+})}`;
 
 test("inspects null history without initializing or writing the store", () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-inspect-workspace-"));
@@ -207,6 +225,7 @@ test.each([
       phaseRunId: "planning-run",
       candidateAttempt: 1,
       reviewRound: 0,
+      candidateEventId: planningCandidateEventId,
       publicationMode: "local",
       outputPlan: "dev/plans/fixture.md",
       reviewedPlan: artifactRef("planning/candidate"),
@@ -247,6 +266,8 @@ test.each([
       phaseRunId: "implementation-run",
       candidateAttempt: 1,
       reviewRound: 1,
+      candidateEventId: implementationCandidateEventId,
+      reviewEventId: implementationReviewEventId,
       reviewedHead: "a".repeat(40),
     },
     reaction: {
@@ -329,6 +350,8 @@ test.each([
       phaseRunId: "implementation-run",
       candidateAttempt: 1,
       reviewRound: 1,
+      candidateEventId: implementationCandidateEventId,
+      reviewEventId: implementationReviewEventId,
       reviewedHead: "a".repeat(40),
     },
     reaction: { kind: "wait", reason: "pr-publication" },
@@ -375,6 +398,8 @@ test.each([
       phaseRunId: "implementation-run",
       candidateAttempt: 1,
       reviewRound: 1,
+      candidateEventId: implementationCandidateEventId,
+      reviewEventId: implementationReviewEventId,
       reviewedHead: "a".repeat(40),
       implementationPrUrl: "https://example.test/pull/1",
       implementationPrHead: "a".repeat(40),
@@ -410,7 +435,7 @@ test.each([
     factoryStateRoot: fixture.factoryStateRoot,
     factoryStoreProjectRoot: fixture.projectRoot,
   });
-  expect(direct).toMatchObject({
+  expect(direct).toEqual({
     workItemKey: "file:fixture",
     artifactRoots: { repository: fixture.workspace, "factory-store": fixture.projectRoot },
     state: expectedState,
@@ -421,7 +446,7 @@ test.each([
   const first = execInspect(fixture.workspace, fixture.storeRoot, ["--item-file", "item.json"]);
   const second = execInspect(fixture.workspace, fixture.storeRoot, ["--item-file", "item.json"]);
   expect(first).toBe(second);
-  expect(JSON.parse(first)).toMatchObject({
+  expect(JSON.parse(first)).toEqual({
     workItemKey: "file:fixture",
     artifactRoots: { repository: fixture.workspace, "factory-store": fixture.projectRoot },
     state: expectedState,

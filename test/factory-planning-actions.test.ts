@@ -325,6 +325,34 @@ test("tampered continuation response cannot trigger a re-review", async () => {
   expect(reviewer).not.toHaveBeenCalled();
 });
 
+test("tampered plan candidate clears reusable identity for a clean rerun", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  if (candidate.event.type !== "planning.candidate.produced") throw new Error("candidate");
+  const candidatePath = verifyFactoryArtifactRef(candidate.event.data.candidate, {
+    "factory-store": fixture.ctx.factoryStore.projectRoot,
+    repository: fixture.ctx.workspace,
+  });
+  writeFileSync(candidatePath, "# Tampered\n");
+  const reviewer = vi.fn<Agent["run"]>();
+
+  const failed = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: reviewer }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+  expect(failed.state).toMatchObject({ status: "failed" });
+  expect(failed.state).not.toHaveProperty("candidateEventId");
+  expect(reviewer).not.toHaveBeenCalled();
+});
+
 test("first candidate recovery publishes staged draft bytes without rerunning the provider", async () => {
   const fixture = planningActionFixture();
   const reaction = invoke(fixture.start);

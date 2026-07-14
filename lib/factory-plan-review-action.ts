@@ -93,12 +93,13 @@ export async function reviewPlanCandidate(input: {
       try {
         raw = JSON.parse(readFileSync(resultPath, "utf8"));
       } catch (error) {
-        return failAction(input, actionDir, errorMessage(error), "terminal");
+        return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
       }
       if (hasConflictingStagedIdentity(raw, ctx, reaction))
         throw new Error("Staged review outcome conflicts with action identity");
       const parsed = StagedReviewOutcomeSchema.safeParse(raw);
-      if (!parsed.success) return failAction(input, actionDir, parsed.error.message, "terminal");
+      if (!parsed.success)
+        return failAction(input, actionDir, parsed.error.message, "terminal", candidate.id);
       staged = parsed.data;
       assertStagedIdentity(ctx, reaction, staged);
     } else {
@@ -111,7 +112,7 @@ export async function reviewPlanCandidate(input: {
             ? priorPlanningReviewJson(ctx, candidate, continuation.review)
             : undefined;
       } catch (error) {
-        return failAction(input, actionDir, errorMessage(error), "terminal");
+        return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
       }
       const reviewCtx = createWorkflowContext({
         workspace: ctx.workspace,
@@ -179,7 +180,7 @@ export async function reviewPlanCandidate(input: {
         meta = await (input.reviewRunner ?? runPlanReview)(reviewCtx);
       } catch (error) {
         finishTelemetry("failed", errorMessage(error));
-        return failAction(input, actionDir, errorMessage(error), "human-required");
+        return failAction(input, actionDir, errorMessage(error), "human-required", candidate.id);
       }
       staged = buildStagedReviewOutcome({
         ctx,
@@ -197,7 +198,7 @@ export async function reviewPlanCandidate(input: {
       writeDurableFactoryFile(reviewPath, staged.completion.review.bytes, true);
     }
     if (staged.completion.status === "invalid") {
-      return failAction(input, actionDir, staged.completion.message, "terminal");
+      return failAction(input, actionDir, staged.completion.message, "terminal", candidate.id);
     }
     if (staged.completion.status === "failed") {
       return failAction(
@@ -205,10 +206,17 @@ export async function reviewPlanCandidate(input: {
         actionDir,
         staged.completion.message,
         classifyReviewFailure(staged.completion),
+        candidate.id,
       );
     }
     if (staged.completion.review.kind !== "present") {
-      return failAction(input, actionDir, staged.completion.review.message, "terminal");
+      return failAction(
+        input,
+        actionDir,
+        staged.completion.review.message,
+        "terminal",
+        candidate.id,
+      );
     }
     let review: z.infer<typeof ReviewOutputSchema>;
     try {
@@ -229,7 +237,7 @@ export async function reviewPlanCandidate(input: {
     try {
       reviewRef = ref(ctx, reviewPath);
     } catch (error) {
-      return failAction(input, actionDir, errorMessage(error), "terminal");
+      return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
     }
     const verdict = review.verdict;
     let blockingRef;
@@ -257,7 +265,7 @@ export async function reviewPlanCandidate(input: {
       try {
         blockingRef = ref(ctx, path);
       } catch (error) {
-        return failAction(input, actionDir, errorMessage(error), "terminal");
+        return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
       }
     }
     if (verdict === "pass" && ctx.identity.publicationMode === "local") {
@@ -265,7 +273,7 @@ export async function reviewPlanCandidate(input: {
         materialize(candidatePath, resolve(ctx.workspace, ctx.identity.outputPlan));
       } catch (error) {
         if (error instanceof MaterializationConflictError)
-          return failAction(input, actionDir, error.message, "terminal");
+          return failAction(input, actionDir, error.message, "terminal", candidate.id);
         throw error;
       }
     }
@@ -552,11 +560,8 @@ function failAction(
   actionDir: string,
   message: string,
   failureKind: "retryable" | "human-required" | "terminal",
+  retainedCandidateEventId?: string,
 ): { event: FactoryLifecycleEvent; state: FactoryLifecycleState } {
-  const state = reduceFactoryLifecycleEvents(
-    readFactoryActionEvents(input.factoryStateRoot, deriveFactoryWorkItemKey(input.ctx.workItem)),
-  );
-  const retainedCandidateEventId = state?.phase === "planning" ? state.candidateEventId : undefined;
   const terminal = buildFailure(
     input.ctx,
     input.reaction,
