@@ -273,9 +273,10 @@ Factory triage artifacts include:
 - `context/work-item.json`
 - `context/phase-run.json`
 - `factory-triage.prompt.md`
-- `factory-triage.raw.json`
-- `factory-triage.json`
-- `factory-route.json`
+- `factory-triage.stream.jsonl` (raw provider telemetry; progress may be provisional)
+- `factory-triage.raw.json` (complete provider result and stream summary)
+- `factory-triage.json` (canonical validated decision)
+- `factory-route.json` (canonical deterministic reaction)
 - `factory-route.md`
 - `summary.md`
 - `meta.json`

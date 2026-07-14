@@ -1,5 +1,14 @@
 import { expect, test } from "vitest";
-import { assertCodexStrictSchema } from "./schema-validation.ts";
+import { assertCodexStrictSchema, validateJsonSchema } from "./schema-validation.ts";
+
+test("validateJsonSchema enforces minItems", () => {
+  const schema = { type: "array", minItems: 1 } as const;
+
+  expect(validateJsonSchema([], schema, "$.evidence")).toBe(
+    "$.evidence: expected array length >= 1",
+  );
+  expect(validateJsonSchema(["tracker"], schema, "$.evidence")).toBeUndefined();
+});
 
 test("assertCodexStrictSchema rejects object properties omitted from required", () => {
   expect(() =>

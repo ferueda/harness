@@ -714,6 +714,8 @@ test("workflow context includes stream artifacts for failed reviewers", async ()
                 status: "written",
                 provider: "codex",
                 format: "codex-thread-event",
+                agentMessageCount: 2,
+                finalAgentMessageId: "message-final",
               },
             },
           };
@@ -735,6 +737,8 @@ test("workflow context includes stream artifacts for failed reviewers", async ()
       status: "written",
       provider: "codex",
       format: "codex-thread-event",
+      agentMessageCount: 2,
+      finalAgentMessageId: "message-final",
     },
   });
 });

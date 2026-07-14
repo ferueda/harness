@@ -13,7 +13,6 @@ export const DRY_RUN_FACTORY_TRIAGE = {
   evidence: [{ kind: "repo-state", path: null, summary: "(dry-run placeholder)" }],
   questions: ["(dry-run placeholder)"],
   reconsiderWhen: null,
-  suggestedNext: { action: "ask-human", command: null, artifact: null },
 } satisfies FactoryTriageOutput;
 
 const ROUTE_PLANS = {
