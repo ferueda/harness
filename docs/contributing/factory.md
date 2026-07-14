@@ -2,7 +2,7 @@
 
 ## Factory action store
 
-Factory action state uses a clean version-1 store rooted at the configured
+Factory action state uses a clean version-2 store rooted at the configured
 durable `factory` directory. `store-format.json` is required. Harness creates
 it only for an empty directory. A non-empty unmarked directory or a marker
 with another version is rejected with archive/reset guidance; old lifecycle

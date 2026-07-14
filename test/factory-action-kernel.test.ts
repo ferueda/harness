@@ -20,6 +20,7 @@ import {
 import { readFactoryActionResult, writeFactoryActionResult } from "../lib/factory-action-result.ts";
 import { factoryActionKey, FactoryPhaseRunIdSchema } from "../lib/factory-action-contract.ts";
 import {
+  actionLifecycleEventPath,
   FactoryLifecycleConflictError,
   appendFactoryActionEvent,
   readFactoryActionEvents,
@@ -32,7 +33,11 @@ import {
   FactoryPhaseRunIdentitySchema,
   writeFactoryPhaseRunIdentity,
 } from "../lib/factory-phase-run.ts";
-import { ensureFactoryStoreFormat, FactoryStoreFormatError } from "../lib/factory-store-format.ts";
+import {
+  ensureFactoryStoreFormat,
+  FACTORY_STORE_FORMAT,
+  FactoryStoreFormatError,
+} from "../lib/factory-store-format.ts";
 import {
   decideNextFactoryAction,
   FactoryLifecycleStateSchema,
@@ -161,84 +166,6 @@ describe("Factory action lifecycle kernel", () => {
         data: { ...request.data, inputRefs: [inputRef] },
       }),
     ).toThrow(/included in input refs/);
-  });
-
-  test("replays a materialized pre-guidance implementation restart", () => {
-    const initialRequest: FactoryLifecycleEvent = {
-      version: 1,
-      id: "implementation-request-1",
-      type: "implementation.requested",
-      workItemKey: "item-1",
-      occurredAt: "2026-07-11T03:00:00.000Z",
-      phaseRunId: "implementation-run-1",
-      data: {
-        expectedPredecessor: "triage-complete",
-        inputRefs: [inputRef],
-        reviewCeiling: 1,
-        intent: "start",
-      },
-    };
-    const initialCandidate: FactoryLifecycleEvent = {
-      version: 1,
-      id: "implementation-candidate-1",
-      type: "implementation.candidate.produced",
-      workItemKey: "item-1",
-      occurredAt: "2026-07-11T04:00:00.000Z",
-      phaseRunId: "implementation-run-1",
-      data: {
-        handler: "produceImplementationCandidate",
-        handlerVersion: 1,
-        attempt: 1,
-        causationEventId: initialRequest.id,
-        execution: { workspaceRef: "repo", runRef: inputRef },
-        evidence: [inputRef],
-        commit: "candidate-1",
-        tree: "tree-1",
-        candidate: inputRef,
-        effectiveSession: { provider: "codex", id: "session-1" },
-      },
-    };
-    const restart: FactoryLifecycleEvent = {
-      version: 1,
-      id: "implementation-request-2",
-      type: "implementation.requested",
-      workItemKey: "item-1",
-      occurredAt: "2026-07-11T05:00:00.000Z",
-      phaseRunId: "implementation-run-2",
-      data: {
-        expectedPredecessor: initialCandidate.id,
-        inputRefs: [inputRef],
-        reviewCeiling: 1,
-        intent: "restart",
-      },
-    };
-    const replacementCandidate: FactoryLifecycleEvent = {
-      ...initialCandidate,
-      id: "implementation-candidate-2",
-      occurredAt: "2026-07-11T06:00:00.000Z",
-      phaseRunId: "implementation-run-2",
-      data: {
-        ...initialCandidate.data,
-        causationEventId: restart.id,
-        commit: "candidate-2",
-        tree: "tree-2",
-        effectiveSession: { provider: "codex", id: "session-2" },
-      },
-    };
-    const events = [
-      ...completedTriageEvents("ready-to-implement"),
-      initialRequest,
-      initialCandidate,
-      restart,
-    ];
-
-    expect(() => reduceFactoryLifecycleEvents(events)).toThrow(/Invalid Factory transition/);
-    expect(reduceFactoryLifecycleEvents([...events, replacementCandidate])).toMatchObject({
-      phase: "implementation",
-      status: "awaiting-review",
-      phaseRunId: "implementation-run-2",
-      reviewedHead: "candidate-2",
-    });
   });
 
   test("requires a new phase-run ID for planning and implementation requests", () => {
@@ -729,6 +656,18 @@ describe("Factory store and artifact boundaries", () => {
     expect(() => ensureFactoryStoreFormat(store)).toThrow(FactoryStoreFormatError);
     expect(() => ensureFactoryStoreFormat(store)).toThrow(/Archive or reset/);
   });
+  test("rejects an earlier marked store before parsing its events", () => {
+    const store = root();
+    writeFileSync(
+      join(store, "store-format.json"),
+      `${JSON.stringify({ format: "harness-factory", version: 1 })}\n`,
+    );
+    mkdirSync(join(store, "events"));
+    writeFileSync(actionLifecycleEventPath(store, "item-1"), "not-json\n");
+
+    expect(() => readFactoryActionEvents(store, "item-1")).toThrow(FactoryStoreFormatError);
+    expect(() => readFactoryActionEvents(store, "item-1")).toThrow(/Archive or reset/);
+  });
   test("recovers an orphaned Harness format-marker temp", () => {
     const store = root();
     writeFileSync(
@@ -776,7 +715,7 @@ describe("Factory store and artifact boundaries", () => {
       expect(results).toEqual(Array.from({ length: 8 }, () => ({ code: 0, stderr: "" })));
       expect(JSON.parse(readFileSync(join(store, "store-format.json"), "utf8"))).toEqual({
         format: "harness-factory",
-        version: 1,
+        version: FACTORY_STORE_FORMAT,
       });
     }
   });

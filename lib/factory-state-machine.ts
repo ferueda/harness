@@ -124,21 +124,13 @@ export function reduceFactoryLifecycleEvents(
   events: readonly FactoryLifecycleEvent[],
 ): FactoryLifecycleState | undefined {
   let state: FactoryLifecycleState | undefined;
-  for (const [index, event] of events.entries()) {
-    state = reduce(state, event, {
-      allowMaterializedUnguidedRestartReplay: isMaterializedUnguidedRestart(
-        event,
-        events[index + 1],
-      ),
-    });
-  }
+  for (const event of events) state = reduce(state, event);
   return state;
 }
 
 function reduce(
   current: FactoryLifecycleState | undefined,
   event: FactoryLifecycleEvent,
-  options: { allowMaterializedUnguidedRestartReplay: boolean },
 ): FactoryLifecycleState {
   const base = {
     projectionVersion: 1 as const,
@@ -148,7 +140,7 @@ function reduce(
   };
   if (current && current.workItemKey !== event.workItemKey)
     throw new Error("Factory event work-item mismatch");
-  validateFactoryTransition(current, event, options);
+  validateFactoryTransition(current, event);
   switch (event.type) {
     case "work_item.imported":
       return { ...base, phase: "idle", status: "idle" };
@@ -406,7 +398,6 @@ function reduce(
 function validateFactoryTransition(
   current: FactoryLifecycleState | undefined,
   event: FactoryLifecycleEvent,
-  options: { allowMaterializedUnguidedRestartReplay: boolean },
 ): void {
   if (event.type === "work_item.imported") {
     if (current) throw new Error("work_item.imported must be the first Factory event");
@@ -507,11 +498,7 @@ function validateFactoryTransition(
           );
         if (current.phase !== "implementation" || event.phaseRunId === current.phaseRunId)
           return false;
-        if (current.status === "awaiting-review")
-          return (
-            event.data.restartGuidance !== undefined ||
-            options.allowMaterializedUnguidedRestartReplay
-          );
+        if (current.status === "awaiting-review") return event.data.restartGuidance !== undefined;
         return (
           (current.status === "needs-human" || current.status === "failed") &&
           event.data.restartGuidance === undefined
@@ -582,27 +569,6 @@ function validateFactoryTransition(
     throw new Error(
       `Invalid Factory transition: ${current.phase}/${current.status} -> ${event.type}`,
     );
-}
-
-function isMaterializedUnguidedRestart(
-  event: FactoryLifecycleEvent,
-  next: FactoryLifecycleEvent | undefined,
-): boolean {
-  if (
-    event.type !== "implementation.requested" ||
-    event.data.intent !== "restart" ||
-    event.data.restartGuidance !== undefined
-  )
-    return false;
-  // Completed pre-guidance restarts remain replayable; a new request alone still fails closed.
-  return (
-    next?.type === "implementation.candidate.produced" &&
-    next.workItemKey === event.workItemKey &&
-    next.phaseRunId === event.phaseRunId &&
-    next.data.handler === "produceImplementationCandidate" &&
-    next.data.attempt === 1 &&
-    next.data.causationEventId === event.id
-  );
 }
 
 export function decideNextFactoryAction(

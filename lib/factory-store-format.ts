@@ -4,7 +4,7 @@ import { z } from "zod";
 import { formatZodError } from "./schemas.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
-export const FACTORY_STORE_FORMAT = 1 as const;
+export const FACTORY_STORE_FORMAT = 2 as const;
 export const FACTORY_STORE_FORMAT_FILE = "store-format.json";
 
 const FactoryStoreFormatSchema = z
@@ -44,7 +44,7 @@ export function ensureFactoryStoreFormat(factoryStateRoot: string): void {
   try {
     writeDurableFactoryFile(
       marker,
-      `${JSON.stringify({ format: "harness-factory", version: 1 })}\n`,
+      `${JSON.stringify({ format: "harness-factory", version: FACTORY_STORE_FORMAT })}\n`,
       true,
     );
   } catch (error) {
