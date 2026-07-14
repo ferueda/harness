@@ -11,7 +11,7 @@ import {
   writeFactoryActionResult,
 } from "./factory-action-result.ts";
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
-import { loadFactoryContinuationForReaction } from "./factory-continuation.ts";
+import { loadFactoryContinuationForReview } from "./factory-continuation.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import {
   FactoryImplementationGitAuthoritySchema,
@@ -141,8 +141,9 @@ async function runLeased(
     let priorReview;
     try {
       priorReview =
-        continuation?.review?.type === "implementation.review.completed"
-          ? readPriorImplementationReview(ctx, candidate, continuation.review)
+        continuation?.candidate.type === "implementation.candidate.produced" &&
+        continuation.review?.type === "implementation.review.completed"
+          ? readPriorImplementationReview(ctx, continuation.candidate, continuation.review)
           : undefined;
     } catch (error) {
       return fail(input, actionDir, message(error), "terminal", candidate.id);
@@ -159,6 +160,7 @@ async function runLeased(
         ...(continuation
           ? {
               continuation: {
+                decision: continuation.event.data.decision,
                 response: continuation.response,
                 ...(priorReview ? { priorReview } : {}),
               },
@@ -542,12 +544,11 @@ function assertReaction(input: Parameters<typeof reviewImplementationCandidate>[
     JSON.stringify(decideNextFactoryAction(state, latest)) !== JSON.stringify(input.reaction)
   )
     throw new Error("reviewImplementationCandidate reaction conflicts with durable Factory state");
-  const continuation = loadFactoryContinuationForReaction({
+  const continuation = loadFactoryContinuationForReview({
     events,
-    causationEventId: input.reaction.causationEventId,
     phase: "implementation",
-    handler: "reviewImplementationCandidate",
-    attempt: input.reaction.attempt,
+    reaction: input.reaction,
+    candidate,
     phaseRunId: input.ctx.runId,
     workItemKey: deriveFactoryWorkItemKey(input.ctx.workItem),
     roots: roots(input.ctx),

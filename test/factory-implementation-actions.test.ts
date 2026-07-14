@@ -137,6 +137,11 @@ test("revision resumes the effective session with complete blockers and promotes
     ...coordinatorInput(fixture),
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: (async (ctx: { runDir?: string }) => {
+      const handoff = readFileSync(join(ctx.runDir!, "context/handoff.md"), "utf8");
+      expect(handoff).toContain("selected revise");
+      expect(handoff).toContain("Apply both accepted blockers");
+      expect(handoff).toContain("Prior implementation review");
+      expect(handoff).toContain("Prior quality review");
       writePassReviews(ctx.runDir!);
       return fullReviewMeta("pass");
     }) as never,

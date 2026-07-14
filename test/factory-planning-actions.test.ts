@@ -66,6 +66,13 @@ test("candidate and review actions step separately and revisions resume the plan
   const reviewRunner = async (reviewCtx: { runDir?: string }) => {
     reviewCount += 1;
     mkdirSync(reviewCtx.runDir!, { recursive: true });
+    if (reviewCount === 2) {
+      const handoff = readFileSync(join(reviewCtx.runDir!, "context/handoff.md"), "utf8");
+      expect(handoff).toContain("selected revise");
+      expect(handoff).toContain("Apply the plan blocker.");
+      expect(handoff).toContain("# Prior review result");
+      expect(handoff).toContain('"title": "Blocker"');
+    }
     writeFileSync(
       join(reviewCtx.runDir!, "spec-review.json"),
       JSON.stringify(

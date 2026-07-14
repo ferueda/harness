@@ -50,6 +50,7 @@ test("review handoff supplies the accepted re-review response", () => {
     phaseRunId: "phase-1",
     candidateCommit: "a".repeat(40),
     continuation: {
+      decision: "re-review",
       response: "The live entry-path smoke passed.",
       priorReview: {
         implementation: { verdict: "blocked", summary: "tool unavailable", findings: [] },

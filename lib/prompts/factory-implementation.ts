@@ -57,6 +57,7 @@ export function renderFactoryImplementationReviewHandoff(input: {
   phaseRunId: string;
   candidateCommit: string;
   continuation?: {
+    decision: "revise" | "re-review";
     response: string;
     priorReview?: { implementation: unknown; quality: unknown };
   };
@@ -77,7 +78,7 @@ export function renderFactoryImplementationReviewHandoff(input: {
           "",
           "## Accepted operator response",
           "",
-          "The operator selected re-review for this exact candidate. Treat this response as accepted clarification and evidence within the original task scope.",
+          `The operator selected ${input.continuation.decision} for the continuation governing this review. Treat this response as accepted clarification and evidence within the original task scope.`,
           "",
           input.continuation.response,
           ...(input.continuation.priorReview

@@ -8,7 +8,7 @@ import {
   readFactoryActionResult,
   writeFactoryActionResult,
 } from "./factory-action-result.ts";
-import { loadFactoryContinuationForReaction } from "./factory-continuation.ts";
+import { loadFactoryContinuationForReview } from "./factory-continuation.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
@@ -57,12 +57,11 @@ export async function reviewPlanCandidate(input: {
     JSON.stringify(decideNextFactoryAction(state, latest)) !== JSON.stringify(reaction)
   )
     throw new Error("reviewPlanCandidate reaction conflicts with durable Factory state");
-  const continuation = loadFactoryContinuationForReaction({
+  const continuation = loadFactoryContinuationForReview({
     events,
-    causationEventId: reaction.causationEventId,
     phase: "planning",
-    handler: "reviewPlanCandidate",
-    attempt: reaction.attempt,
+    reaction,
+    candidate,
     phaseRunId: ctx.runId,
     workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
     roots: { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace },
@@ -108,8 +107,9 @@ export async function reviewPlanCandidate(input: {
       let priorReviewJson: string | undefined;
       try {
         priorReviewJson =
-          continuation?.review?.type === "planning.review.completed"
-            ? priorPlanningReviewJson(ctx, candidate, continuation.review)
+          continuation?.candidate.type === "planning.candidate.produced" &&
+          continuation.review?.type === "planning.review.completed"
+            ? priorPlanningReviewJson(ctx, continuation.candidate, continuation.review)
             : undefined;
       } catch (error) {
         return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
@@ -131,7 +131,7 @@ export async function reviewPlanCandidate(input: {
                 "",
                 "# Accepted operator response",
                 "",
-                "The operator selected re-review for this exact plan candidate. Treat this response as accepted clarification and evidence within the original task scope.",
+                `The operator selected ${continuation.event.data.decision} for the continuation governing this review. Treat this response as accepted clarification and evidence within the original task scope.`,
                 "",
                 continuation.response,
                 ...(priorReviewJson

@@ -208,6 +208,46 @@ export function loadFactoryContinuationForReaction(input: FactoryContinuationRea
     : undefined;
 }
 
+export function loadFactoryContinuationForReview(input: {
+  events: readonly FactoryLifecycleEvent[];
+  phase: "planning" | "implementation";
+  reaction: { causationEventId: string; attempt: number };
+  candidate: Extract<
+    FactoryLifecycleEvent,
+    { type: "planning.candidate.produced" | "implementation.candidate.produced" }
+  >;
+  phaseRunId: string;
+  workItemKey: string;
+  roots: FactoryContinuationReactionInput["roots"];
+}) {
+  const reviewHandler =
+    input.phase === "planning" ? "reviewPlanCandidate" : "reviewImplementationCandidate";
+  const producerHandler =
+    input.phase === "planning" ? "producePlanCandidate" : "produceImplementationCandidate";
+  return (
+    loadFactoryContinuationForReaction({
+      events: input.events,
+      causationEventId: input.reaction.causationEventId,
+      phase: input.phase,
+      handler: reviewHandler,
+      attempt: input.reaction.attempt,
+      phaseRunId: input.phaseRunId,
+      workItemKey: input.workItemKey,
+      roots: input.roots,
+    }) ??
+    loadFactoryContinuationForReaction({
+      events: input.events,
+      causationEventId: input.candidate.data.causationEventId,
+      phase: input.phase,
+      handler: producerHandler,
+      attempt: input.candidate.data.attempt,
+      phaseRunId: input.phaseRunId,
+      workItemKey: input.workItemKey,
+      roots: input.roots,
+    })
+  );
+}
+
 export function readFactoryContinuationResponse(
   event: Extract<FactoryLifecycleEvent, { type: "factory.continuation.recorded" }>,
   roots: FactoryContinuationReactionInput["roots"],
