@@ -92,6 +92,20 @@ const imported = (
 });
 
 describe("Factory action lifecycle kernel", () => {
+  test("rejects plan publication without an immutable head", () => {
+    expect(() =>
+      FactoryLifecycleEventSchema.parse({
+        version: 1,
+        id: "plan_pr.opened:planning-run",
+        type: "plan_pr.opened",
+        workItemKey: "item-1",
+        occurredAt: "2026-07-11T06:00:00.000Z",
+        phaseRunId: "planning-run",
+        data: { url: "https://example.test/pr/1", plan: inputRef },
+      }),
+    ).toThrow(/head/i);
+  });
+
   test("requires request inputs and action evidence", () => {
     expect(() =>
       FactoryLifecycleEventSchema.parse({

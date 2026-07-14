@@ -2,7 +2,7 @@
 
 ## Active queue
 
-- [FER-78 — Publish reviewed Factory work through human-merged pull requests](FER-78.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-78/add-explicit-factory-implementation-pr-and-merge-closure)
+- [FER-82 — Keep Factory self-host actions stable](260713-factory-self-host-safety.md) — approved; implementation in progress. [Linear](https://linear.app/ferueda/issue/FER-82/fix-factory-provider-ref-false-positives-and-self-host-bootstrap)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
@@ -59,6 +59,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Factory implementation candidate and review   | [#135](https://github.com/ferueda/harness/pull/135)                                                      |
 | —     | Factory implementation revisions              | [#143](https://github.com/ferueda/harness/pull/143)                                                      |
 | —     | Read-only Factory work-item inspection        | [#146](https://github.com/ferueda/harness/pull/146)                                                      |
+| —     | Factory pull-request publication              | [#149](https://github.com/ferueda/harness/pull/149)                                                      |
 
 ---
 

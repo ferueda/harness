@@ -25,6 +25,13 @@ executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
 
 Operate the current local harness factory one work item at a time.
 
+Use the same fixed Harness controller checkout for every command in one active
+phase. When dogfooding Harness itself, invoke the controller from a separate
+fixed checkout (or its shim) and pass the mutable implementation checkout as
+`--workspace`. Do not let changes in the target replace the running CLI between
+manual actions. Upgrade the controller only after the phase closes or before a
+new phase starts.
+
 ## Waiting For Station Runs
 
 Factory triage commands

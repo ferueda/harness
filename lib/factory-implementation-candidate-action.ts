@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { z } from "zod";
-import type { Agent, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
+import type { Agent, AgentProviderName, AgentProviderOptions, AgentSessionRef } from "./agents.ts";
 import {
   createFactoryArtifactRef,
   verifyFactoryArtifactRef,
@@ -26,6 +26,7 @@ import {
   loadFactoryImplementationRevision,
   matchesFactoryImplementationRevisionWorkspace,
 } from "./factory-implementation-revision.ts";
+import { sameFactoryImplementationRefs } from "./factory-implementation-git-refs.ts";
 import type { FactoryImplementationRunContext } from "./factory-implementation-run-context.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
@@ -310,7 +311,11 @@ async function runLeased(input: {
   }
 
   if (!staged.result.ok) {
-    const unchanged = sameFacts(staged.before, staged.after);
+    const unchanged = sameFacts(
+      staged.before,
+      staged.after,
+      ctx.identity.actions.produceImplementationCandidate.provider,
+    );
     return fail(
       input,
       actionDir,
@@ -340,7 +345,11 @@ async function runLeased(input: {
     staged.after.head !== ctx.identity.baseSha ||
     staged.after.branchRef !== ctx.identity.branchRef ||
     !staged.after.indexClean ||
-    staged.after.refs !== staged.before.refs
+    !sameFactoryImplementationRefs(
+      staged.before.refs,
+      staged.after.refs,
+      ctx.identity.actions.produceImplementationCandidate.provider,
+    )
   )
     return fail(
       input,
@@ -582,8 +591,18 @@ function facts(workspace: string) {
   };
 }
 
-function sameFacts(left: z.infer<typeof FactsSchema>, right: z.infer<typeof FactsSchema>) {
-  return JSON.stringify(left) === JSON.stringify(right);
+function sameFacts(
+  left: z.infer<typeof FactsSchema>,
+  right: z.infer<typeof FactsSchema>,
+  provider: AgentProviderName,
+) {
+  return (
+    left.head === right.head &&
+    left.branchRef === right.branchRef &&
+    left.status === right.status &&
+    left.indexClean === right.indexClean &&
+    sameFactoryImplementationRefs(left.refs, right.refs, provider)
+  );
 }
 
 function matchesStagedSuccessWorkspace(

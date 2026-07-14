@@ -19,6 +19,13 @@ already-waiting state invokes no handler.
 Run only one Factory phase command at a time for a work item. Concurrent phase
 commands for the same work item are unsupported and may fail.
 
+Use one stable Harness controller checkout for every manual invocation in an
+active phase. The target workspace may change; the controller must not. When
+Harness dogfoods itself, run the controller from a separate fixed checkout (or
+the shim that points to that checkout) and treat the implementation checkout
+as the mutable target. Upgrade the controller only between phases or after the
+active phase is explicitly closed.
+
 Triage is the first action slice: `triage.requested` invokes
 `triageWorkItem`; the terminal `triage.work_item.completed` event records the
 route and durable evidence refs. Progress is always emitted to stderr after
