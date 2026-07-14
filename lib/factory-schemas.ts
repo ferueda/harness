@@ -132,12 +132,12 @@ export const FactoryTriageOutputSchema = z
   })
   .strict()
   .superRefine((output, ctx) => {
-    if (output.route === "ready-to-implement") {
+    if (output.route === "ready-to-implement" || output.route === "wait-to-implement") {
       if (output.questions.length > 0) {
         ctx.addIssue({
           code: "custom",
           path: ["questions"],
-          message: "ready-to-implement must use questions: []",
+          message: `${output.route} must use questions: []`,
         });
       }
     }
@@ -160,6 +160,12 @@ export const FactoryTriageOutputSchema = z
           message: "wait-to-implement requires reconsiderWhen",
         });
       }
+    } else if (output.reconsiderWhen !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reconsiderWhen"],
+        message: `${output.route} must use reconsiderWhen: null`,
+      });
     }
   });
 

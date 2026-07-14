@@ -117,6 +117,22 @@ test("wait-to-implement requires non-null reconsiderWhen in Zod", () => {
   expect(FactoryTriageOutputSchema.safeParse(validPayload).success).toBe(true);
 });
 
+test("Zod rejects follow-up fields that conflict with the selected route", () => {
+  const waitWithQuestions = {
+    ...VALID_READY_TO_PLAN,
+    route: "wait-to-implement",
+    questions: ["Should this be clarified instead?"],
+    reconsiderWhen: "Roadmap priority changes.",
+  };
+  const readyWithReconsiderWhen = {
+    ...VALID_READY_TO_PLAN,
+    reconsiderWhen: "After the next release.",
+  };
+
+  expect(FactoryTriageOutputSchema.safeParse(waitWithQuestions).success).toBe(false);
+  expect(FactoryTriageOutputSchema.safeParse(readyWithReconsiderWhen).success).toBe(false);
+});
+
 function omit<T extends Record<string, unknown>, K extends keyof T>(value: T, key: K): Omit<T, K> {
   const copy = { ...value };
   delete copy[key];
