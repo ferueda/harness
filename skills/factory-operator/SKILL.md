@@ -22,6 +22,14 @@ the exact printed command. Routed
 triage can return a wait reaction without a command. The invocation never
 executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
 
+Factory has no built-in review-round ceiling. Honor an explicitly supplied
+caller policy by reading the durable `reviewRound` before recording or
+scheduling another continuation. A limit of three means three completed review
+rounds total, not three revisions. Retryable action failures and repeated CLI
+invocations do not increment it. At the limit, stop and report the remaining
+findings; do not append another continuation. Do not invent a limit when none
+was supplied.
+
 Operate the current local harness factory one work item at a time.
 
 Use the same fixed Harness controller checkout for every command in one active

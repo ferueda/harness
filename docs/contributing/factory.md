@@ -16,6 +16,14 @@ candidate action followed by a full review action and an explicit continuation
 choice when a human response is required. The CLI never invokes the next handler. An
 already-waiting state invokes no handler.
 
+Factory does not enforce a review-round ceiling. A caller may cap automated
+continuation by reading the durable `reviewRound`; a limit of three means three
+completed review rounds total, not three revisions. Retryable action failures
+and repeated CLI invocations do not increment it. Reaching a caller limit stops
+that caller from recording or scheduling another continuation. It does not
+invalidate the retained candidate or prevent a later explicitly authorized
+human continuation.
+
 Run only one Factory phase command at a time for a work item. Concurrent phase
 commands for the same work item are unsupported and may fail.
 

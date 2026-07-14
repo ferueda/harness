@@ -201,7 +201,11 @@ bytes, binds them to the candidate and optional review, appends the decision,
 and invokes no handler. Future Inngest execution consumes that same event and
 reaction contract rather than copying CLI semantics. Fresh `--rerun` is only
 for a failure with no reusable candidate. Inngest remains a future consumer of
-these reactions.
+these reactions. A future host may cap automated review rounds in its own
+configuration, but it must compare that policy with Factory's durable
+`reviewRound` instead of maintaining a second workflow counter. Reaching the
+host limit stops host scheduling; it does not alter Factory state or prevent a
+later explicitly authorized human continuation.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation and quality. The quality reviewer covers behavior-preserving

@@ -49,9 +49,11 @@ valid candidate and starts a fresh session.
    the automatic ceiling transitions from `lib/schemas.ts`, `lib/config.ts`,
    root `harness.json`, run contexts, events, commands, examples, and tests.
    Keep the tracked repository config parseable by the new strict schema.
-   Manual continuation is the loop bound: without a new explicit response
-   event, neither CLI nor a future scheduler has work to run. Do not replace the
-   ceiling with another counter, policy engine, or hidden auto-loop.
+   Explicit continuation is Factory's built-in loop bound: without a new
+   response event, neither CLI nor a future scheduler has work to run. A caller
+   may impose an automation ceiling from the durable review round; that policy
+   stops the caller and does not become a second Factory counter. Do not replace
+   the removed ceiling with another Factory policy engine or hidden auto-loop.
 
 3. Add a small shared continuation artifact module and `planning continue` /
    `implementation continue` command paths in `bin/factory-commands.ts`,
