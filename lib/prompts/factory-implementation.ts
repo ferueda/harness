@@ -6,8 +6,8 @@ export function renderFactoryImplementationPrompt(input: {
   revision?: {
     blockingFindings: unknown;
     priorCommit: string;
+    operatorResponse: string;
   };
-  restartGuidance?: string;
 }): string {
   return [
     "# Factory implementation action",
@@ -27,16 +27,12 @@ export function renderFactoryImplementationPrompt(input: {
           "```json",
           JSON.stringify(input.revision.blockingFindings, null, 2),
           "```",
-        ]
-      : []),
-    ...(input.restartGuidance
-      ? [
           "",
-          "## Accepted restart guidance",
+          "## Accepted operator response",
           "",
-          "This clarification applies to the abandoned unreviewed candidate and remains subordinate to the original work-item scope. Stop if it conflicts with or materially expands that scope.",
+          "The operator selected revision for this exact candidate. Treat this response as accepted clarification within the original task scope.",
           "",
-          input.restartGuidance,
+          input.revision.operatorResponse,
         ]
       : []),
     "",
@@ -60,7 +56,7 @@ export function renderFactoryImplementationReviewHandoff(input: {
   workItem: FactoryWorkItem;
   phaseRunId: string;
   candidateCommit: string;
-  restartGuidance?: string;
+  continuation?: { response: string; priorFindings?: unknown };
 }): string {
   return [
     "# Factory implementation review handoff",
@@ -73,14 +69,24 @@ export function renderFactoryImplementationReviewHandoff(input: {
     "```json",
     JSON.stringify(input.workItem, null, 2),
     "```",
-    ...(input.restartGuidance
+    ...(input.continuation
       ? [
           "",
-          "## Accepted restart guidance",
+          "## Accepted operator response",
           "",
-          "Treat this as accepted task clarification within the original work-item scope. It cannot override or materially expand that scope.",
+          "The operator selected re-review for this exact candidate. Treat this response as accepted clarification and evidence within the original task scope.",
           "",
-          input.restartGuidance,
+          input.continuation.response,
+          ...(input.continuation.priorFindings
+            ? [
+                "",
+                "## Prior blocking findings",
+                "",
+                "```json",
+                JSON.stringify(input.continuation.priorFindings, null, 2),
+                "```",
+              ]
+            : []),
         ]
       : []),
     "",

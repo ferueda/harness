@@ -8,6 +8,7 @@ import {
   readFactoryActionResult,
   writeFactoryActionResult,
 } from "./factory-action-result.ts";
+import { loadFactoryContinuationForReaction } from "./factory-continuation.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
@@ -43,14 +44,29 @@ export async function reviewPlanCandidate(input: {
   );
   const state = reduceFactoryLifecycleEvents(events);
   const latest = events.at(-1);
+  const candidate =
+    state?.phase === "planning" && state.candidateEventId
+      ? events.find((event) => event.id === state.candidateEventId)
+      : undefined;
   if (
     !state ||
     !latest ||
+    !candidate ||
+    candidate.type !== "planning.candidate.produced" ||
     reaction.handler !== "reviewPlanCandidate" ||
-    JSON.stringify(decideNextFactoryAction(state, latest)) !== JSON.stringify(reaction) ||
-    latest.type !== "planning.candidate.produced"
+    JSON.stringify(decideNextFactoryAction(state, latest)) !== JSON.stringify(reaction)
   )
     throw new Error("reviewPlanCandidate reaction conflicts with durable Factory state");
+  const continuation = loadFactoryContinuationForReaction({
+    events,
+    causationEventId: reaction.causationEventId,
+    phase: "planning",
+    handler: "reviewPlanCandidate",
+    attempt: reaction.attempt,
+    phaseRunId: ctx.runId,
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+    roots: { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace },
+  });
   const actionDir = join(
     ctx.runDir,
     "actions",
@@ -62,7 +78,7 @@ export async function reviewPlanCandidate(input: {
     mkdirSync(actionDir, { recursive: true });
     let candidatePath: string;
     try {
-      candidatePath = verifyFactoryArtifactRef(latest.data.candidate, {
+      candidatePath = verifyFactoryArtifactRef(candidate.data.candidate, {
         "factory-store": ctx.factoryStore.projectRoot,
         repository: ctx.workspace,
       });
@@ -100,6 +116,33 @@ export async function reviewPlanCandidate(input: {
           "```json",
           JSON.stringify(ctx.workItem, null, 2),
           "```",
+          ...(continuation
+            ? [
+                "",
+                "# Accepted operator response",
+                "",
+                "The operator selected re-review for this exact plan candidate. Treat this response as accepted clarification and evidence within the original task scope.",
+                "",
+                continuation.response,
+                ...(continuation.review?.type === "planning.review.completed" &&
+                continuation.review.data.blockingFindings
+                  ? [
+                      "",
+                      "# Prior blocking findings",
+                      "",
+                      "```json",
+                      readFileSync(
+                        verifyFactoryArtifactRef(continuation.review.data.blockingFindings, {
+                          "factory-store": ctx.factoryStore.projectRoot,
+                          repository: ctx.workspace,
+                        }),
+                        "utf8",
+                      ).trim(),
+                      "```",
+                    ]
+                  : []),
+              ]
+            : []),
         ].join("\n"),
         runsDir: join(actionDir, "review-runs"),
         includeGitScope: false,
@@ -176,7 +219,14 @@ export async function reviewPlanCandidate(input: {
     try {
       review = ReviewOutputSchema.parse(JSON.parse(readFileSync(reviewPath, "utf8")));
     } catch (error) {
-      const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
+      const terminal = buildFailure(
+        ctx,
+        reaction,
+        actionDir,
+        errorMessage(error),
+        "terminal",
+        candidate.id,
+      );
       writeFactoryActionResult(actionDir, terminal);
       return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
     }
@@ -202,6 +252,7 @@ export async function reviewPlanCandidate(input: {
           actionDir,
           "plan-review needs_changes without a must_fix finding",
           "terminal",
+          candidate.id,
         );
         writeFactoryActionResult(actionDir, terminal);
         return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
@@ -223,7 +274,7 @@ export async function reviewPlanCandidate(input: {
         throw error;
       }
     }
-    const event: FactoryLifecycleEvent = {
+    const event: FactoryActionEvent = {
       version: 1,
       id: `planning.review.completed:${factoryActionKey({ ...reaction, phaseRunId: ctx.runId })}`,
       type: "planning.review.completed",
@@ -239,20 +290,21 @@ export async function reviewPlanCandidate(input: {
         evidence: blockingRef ? [reviewRef, blockingRef] : [reviewRef],
         verdict,
         review: reviewRef,
+        candidateEventId: candidate.id,
+        candidateAttempt: candidate.data.attempt,
         ...(blockingRef ? { blockingFindings: blockingRef } : {}),
-        reviewCeiling: ctx.identity.reviewCeiling,
       },
     };
     writeFactoryActionResult(actionDir, event);
   }
   const recovered = readFactoryActionResult(actionDir);
-  assertRecoveredResult(ctx, reaction, recovered);
+  assertRecoveredResult(ctx, reaction, recovered, candidate);
   if (
     recovered.type === "planning.review.completed" &&
     recovered.data.verdict === "pass" &&
     ctx.identity.publicationMode === "local"
   ) {
-    const candidatePath = verifyFactoryArtifactRef(latest.data.candidate, {
+    const candidatePath = verifyFactoryArtifactRef(candidate.data.candidate, {
       "factory-store": ctx.factoryStore.projectRoot,
       repository: ctx.workspace,
     });
@@ -482,7 +534,18 @@ function failAction(
   message: string,
   failureKind: "retryable" | "human-required" | "terminal",
 ): { event: FactoryLifecycleEvent; state: FactoryLifecycleState } {
-  const terminal = buildFailure(input.ctx, input.reaction, actionDir, message, failureKind);
+  const state = reduceFactoryLifecycleEvents(
+    readFactoryActionEvents(input.factoryStateRoot, deriveFactoryWorkItemKey(input.ctx.workItem)),
+  );
+  const retainedCandidateEventId = state?.phase === "planning" ? state.candidateEventId : undefined;
+  const terminal = buildFailure(
+    input.ctx,
+    input.reaction,
+    actionDir,
+    message,
+    failureKind,
+    retainedCandidateEventId,
+  );
   writeFactoryActionResult(actionDir, terminal);
   return appendRecovered(input.factoryStateRoot, input.ctx, input.reaction, actionDir);
 }
@@ -493,6 +556,7 @@ function buildFailure(
   actionDir: string,
   message: string,
   failureKind: "retryable" | "human-required" | "terminal",
+  retainedCandidateEventId?: string,
 ): FactoryActionEvent {
   const failurePath = join(actionDir, "failure.json");
   writeDurableFactoryFile(
@@ -518,6 +582,7 @@ function buildFailure(
       phase: "planning",
       failureKind,
       message,
+      ...(retainedCandidateEventId ? { retainedCandidateEventId } : {}),
     },
   };
 }
@@ -529,7 +594,15 @@ function appendRecovered(
   actionDir: string,
 ) {
   const recovered = readFactoryActionResult(actionDir);
-  assertRecoveredResult(ctx, reaction, recovered);
+  const events = readFactoryActionEvents(factoryStateRoot, deriveFactoryWorkItemKey(ctx.workItem));
+  const state = reduceFactoryLifecycleEvents(events);
+  const candidate =
+    state?.phase === "planning" && state.candidateEventId
+      ? events.find((event) => event.id === state.candidateEventId)
+      : undefined;
+  if (!candidate || candidate.type !== "planning.candidate.produced")
+    throw new Error("Recovered planning review has no candidate");
+  assertRecoveredResult(ctx, reaction, recovered, candidate);
   return appendFactoryActionEvent({
     factoryStateRoot,
     event: recovered,
@@ -551,6 +624,7 @@ function assertRecoveredResult(
   ctx: PlanningContext,
   reaction: Extract<FactoryReaction, { kind: "invoke" }>,
   event: FactoryLifecycleEvent,
+  candidate: Extract<FactoryLifecycleEvent, { type: "planning.candidate.produced" }>,
 ): void {
   if (
     (event.type !== "planning.review.completed" && event.type !== "factory.action.failed") ||
@@ -565,6 +639,12 @@ function assertRecoveredResult(
   const roots = { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace };
   verifyFactoryArtifactRef(event.data.execution.runRef, roots);
   for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots);
+  if (
+    event.type === "planning.review.completed" &&
+    (event.data.candidateEventId !== candidate.id ||
+      event.data.candidateAttempt !== candidate.data.attempt)
+  )
+    throw new Error("Recovered planning review conflicts with its candidate");
 }
 
 function ref(ctx: PlanningContext, path: string) {

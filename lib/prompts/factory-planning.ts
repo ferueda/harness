@@ -8,6 +8,7 @@ export type FactoryPlanningRevisionPromptInput = {
   draftPath: string;
   currentDate: string;
   reviewFindingsJson: string;
+  operatorResponse: string;
 };
 
 const PLANNING_RULES = `Return only structured JSON matching schemas/factory-planning-output.schema.json.
@@ -112,6 +113,12 @@ Latest blocking review findings:
 
 \`\`\`json
 ${input.reviewFindingsJson}
+\`\`\`
+
+Accepted operator response:
+
+\`\`\`text
+${input.operatorResponse}
 \`\`\`
 `;
 }

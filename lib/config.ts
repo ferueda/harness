@@ -84,14 +84,6 @@ export type FactoryRoleAgent = {
   modelReasoningEffort?: AgentReasoningEffort;
 };
 
-export type FactoryPlanningSettings = {
-  maxReviewIterations: number;
-};
-
-export type FactoryImplementationSettings = {
-  maxReviewIterations: number;
-};
-
 export type FactoryLinearSettings = FactoryLinearConfig;
 export type FactoryStoreSettings = FactoryStoreConfig;
 
@@ -216,36 +208,6 @@ export function factoryActionExecutionProfile(
     sandbox: role.sandboxMode ?? "read-only",
     approvalPolicy: role.approvalPolicy ?? "never",
     reasoningEffort: role.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
-  };
-}
-
-export function resolveFactoryPlanningSettings(
-  options: { workspace?: string },
-  cwd = process.cwd(),
-): FactoryPlanningSettings & { workspace: string } {
-  const workspace = resolveHarnessWorkspace(options.workspace, cwd);
-  const config = readHarnessConfig(workspace);
-  return {
-    workspace,
-    maxReviewIterations: config.factory?.planning?.maxReviewIterations ?? 3,
-  };
-}
-
-export function resolveFactoryPlanningSettingsFromSnapshot(
-  snapshot: FactoryConfigSnapshot,
-): FactoryPlanningSettings & { workspace: string } {
-  return {
-    workspace: snapshot.workspace,
-    maxReviewIterations: snapshot.config.factory?.planning?.maxReviewIterations ?? 3,
-  };
-}
-
-export function resolveFactoryImplementationSettingsFromSnapshot(
-  snapshot: FactoryConfigSnapshot,
-): FactoryImplementationSettings & { workspace: string } {
-  return {
-    workspace: snapshot.workspace,
-    maxReviewIterations: snapshot.config.factory?.implementation?.maxReviewIterations ?? 3,
   };
 }
 

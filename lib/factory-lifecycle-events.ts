@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FactoryArtifactRefSchema, type FactoryArtifactRef } from "./factory-artifact-ref.ts";
+import { FactoryArtifactRefSchema } from "./factory-artifact-ref.ts";
 import {
   FactoryFailureKindSchema,
   FactoryHandlerSchema,
@@ -38,6 +38,7 @@ const ActionData = z
   .strict();
 const Session = z.object({ provider: z.string().min(1), id: z.string().min(1) }).strict();
 const ReviewVerdict = z.enum(["pass", "needs_changes", "blocked", "human_required"]);
+export const FactoryContinuationDecisionSchema = z.enum(["revise", "re-review"]);
 
 export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
@@ -63,7 +64,6 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
     phaseRunId: FactoryPhaseRunIdSchema,
     data: RequestData.extend({
       intent: z.enum(["start", "restart"]),
-      reviewCeiling: z.number().int().positive(),
       publicationMode: z.enum(["local", "pull-request"]),
       outputPlan: z.string().min(1),
     }),
@@ -82,10 +82,11 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
     type: z.literal("planning.review.completed"),
     phaseRunId: FactoryPhaseRunIdSchema,
     data: ActionData.extend({
+      candidateEventId: z.string().min(1),
+      candidateAttempt: z.number().int().positive(),
       verdict: ReviewVerdict,
       review: FactoryArtifactRefSchema,
       blockingFindings: FactoryArtifactRefSchema.optional(),
-      reviewCeiling: z.number().int().positive(),
     }),
   }),
   Base.extend({
@@ -108,22 +109,7 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
     type: z.literal("implementation.requested"),
     phaseRunId: FactoryPhaseRunIdSchema,
     data: RequestData.extend({
-      reviewCeiling: z.number().int().positive(),
       intent: z.enum(["start", "restart"]),
-      restartGuidance: FactoryArtifactRefSchema.optional(),
-    }).superRefine((value, ctx) => {
-      const restartGuidance = value.restartGuidance;
-      if (!restartGuidance) return;
-      if (value.intent !== "restart")
-        ctx.addIssue({
-          code: "custom",
-          message: "implementation restart guidance requires restart intent",
-        });
-      if (!value.inputRefs.some((ref) => sameArtifactRef(ref, restartGuidance)))
-        ctx.addIssue({
-          code: "custom",
-          message: "implementation restart guidance must be included in input refs",
-        });
     }),
   }),
   Base.extend({
@@ -140,11 +126,26 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
     type: z.literal("implementation.review.completed"),
     phaseRunId: FactoryPhaseRunIdSchema,
     data: ActionData.extend({
+      candidateEventId: z.string().min(1),
+      candidateAttempt: z.number().int().positive(),
       verdict: ReviewVerdict,
       review: FactoryArtifactRefSchema,
       blockingFindings: FactoryArtifactRefSchema.optional(),
-      reviewCeiling: z.number().int().positive(),
     }),
+  }),
+  Base.extend({
+    type: z.literal("factory.continuation.recorded"),
+    phaseRunId: FactoryPhaseRunIdSchema,
+    data: z
+      .object({
+        expectedPredecessor: z.string().min(1),
+        phase: z.enum(["planning", "implementation"]),
+        decision: FactoryContinuationDecisionSchema,
+        candidateEventId: z.string().min(1),
+        reviewEventId: z.string().min(1).optional(),
+        response: FactoryArtifactRefSchema,
+      })
+      .strict(),
   }),
   Base.extend({
     type: z.literal("implementation_pr.opened"),
@@ -163,13 +164,10 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
       phase: FactoryPhaseSchema,
       failureKind: FactoryFailureKindSchema,
       message: z.string().min(1),
+      retainedCandidateEventId: z.string().min(1).optional(),
     }),
   }),
 ]);
-
-function sameArtifactRef(left: FactoryArtifactRef, right: FactoryArtifactRef): boolean {
-  return left.base === right.base && left.path === right.path && left.sha256 === right.sha256;
-}
 
 export type FactoryLifecycleEvent = z.infer<typeof FactoryLifecycleEventSchema>;
 export type FactoryActionEvent = Extract<

@@ -4,6 +4,11 @@ import { formatFactoryActionOutput } from "./factory-action-output.ts";
 import { decorateFactoryReaction } from "./factory-manual-command.ts";
 import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import {
+  readFactoryContinuationResponseFile,
+  recordFactoryContinuation,
+  type FactoryContinuationDecision,
+} from "../lib/factory-continuation.ts";
+import {
   markPlanPullRequestMerged,
   publishPlanPullRequest,
 } from "../lib/factory-plan-publication.ts";
@@ -36,7 +41,6 @@ import {
 import {
   loadFactoryConfigSnapshot,
   resolveFactoryLinearSettingsFromSnapshot,
-  resolveFactoryPlanningSettingsFromSnapshot,
   resolveFactoryRoleAgentFromSnapshot,
   resolveHarnessWorkspace,
   type FactoryLinearSettings,
@@ -83,6 +87,17 @@ export function addFactoryPlanningStationCommand(
     .option("--rerun", "restart planning after human/failed state", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(runPlanningCommand);
+  planning
+    .command("continue")
+    .description("Record an explicit planning candidate continuation")
+    .option("--workspace <path>", "target repo")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier")
+    .requiredOption("--decision <decision>", "continuation decision: revise or re-review")
+    .requiredOption("--response-file <path>", "absolute operator response file")
+    .option("--factory-store-root <path>", "durable factory store root")
+    .option("--factory-store-project-id <id>", "durable factory store project id")
+    .action(runPlanningContinuationCommand);
   for (const [name, description, merged] of [
     ["publish", "Publish the reviewed plan pull request", false],
     ["mark-plan-merged", "Record the reviewed plan merge", true],
@@ -158,7 +173,6 @@ async function runPlanningCommand(options: PlanningOptions): Promise<void> {
       outputPlan: options.outputPlan,
       baseRef: snapshot.config.base ?? "main",
       rerun: options.rerun,
-      reviewCeiling: resolveFactoryPlanningSettingsFromSnapshot(snapshot).maxReviewIterations,
       plannerRole: resolveFactoryRoleAgentFromSnapshot(snapshot, {
         station: "planning",
         role: "planner",
@@ -187,6 +201,82 @@ async function runPlanningCommand(options: PlanningOptions): Promise<void> {
     process.off("SIGINT", onRunAbort);
     process.off("SIGTERM", onRunAbort);
   }
+}
+
+async function runPlanningContinuationCommand(options: {
+  workspace?: string;
+  itemFile?: string;
+  linearIssue?: string;
+  decision: string;
+  responseFile: string;
+  factoryStoreRoot?: string;
+  factoryStoreProjectId?: string;
+}): Promise<void> {
+  validateFactoryWorkItemInput({ itemFile: options.itemFile, linearIssue: options.linearIssue });
+  const workspace = resolveHarnessWorkspace(options.workspace, process.cwd());
+  const snapshot = loadFactoryConfigSnapshot(workspace);
+  const linearSettings = options.linearIssue
+    ? resolveFactoryLinearSettingsFromSnapshot(snapshot)
+    : undefined;
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: options.factoryStoreRoot,
+    factoryStoreProjectId: options.factoryStoreProjectId,
+    env: process.env,
+    configSnapshot: snapshot,
+  });
+  const resolved = await resolveFactoryWorkItemInput({
+    workspace,
+    itemFile: options.itemFile,
+    linearIssue: options.linearIssue,
+    linearSettings,
+    env: process.env,
+    linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
+    lifecycleReadMode: "none",
+    factoryStateRoot: store.factoryStateRoot,
+  });
+  const events = readFactoryActionEvents(
+    store.factoryStateRoot,
+    deriveFactoryWorkItemKey(resolved.workItem),
+  );
+  if (options.linearIssue)
+    assertLivePlanningStatus(
+      resolved.workItem,
+      linearSettings!,
+      false,
+      reduceFactoryLifecycleEvents(events),
+      events.at(-1),
+    );
+  const result = recordFactoryContinuation({
+    phase: "planning",
+    decision: options.decision as FactoryContinuationDecision,
+    response: readFactoryContinuationResponseFile(options.responseFile),
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStore: factoryStoreMetadata(store),
+    workItem: resolved.workItem,
+  });
+  console.log(
+    JSON.stringify(
+      formatFactoryActionOutput({
+        phase: "planning",
+        phaseRunId: result.phaseRunId,
+        next: decorateFactoryReaction(
+          result.next,
+          result.state,
+          planningCommandProvenance({
+            workspace,
+            itemFile: options.itemFile,
+            linearIssue: options.linearIssue,
+            factoryStoreRoot: options.factoryStoreRoot,
+            factoryStoreProjectId: options.factoryStoreProjectId,
+          }),
+        )!,
+        linearApplied: false,
+      }),
+      null,
+      2,
+    ),
+  );
 }
 
 export function assertLivePlanningStatus(
@@ -244,7 +334,6 @@ export async function runOneFactoryPlanningAction(input: {
   outputPlan?: string;
   baseRef?: string;
   rerun: boolean;
-  reviewCeiling: number;
   plannerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
   maxRuntimeMs: number;
@@ -304,7 +393,6 @@ export async function runOneFactoryPlanningAction(input: {
       outputPlan: input.outputPlan,
       publicationMode: input.linearIssue ? "pull-request" : "local",
       baseRef: input.baseRef ?? "main",
-      maxReviewIterations: input.reviewCeiling,
       maxRuntimeMs: input.maxRuntimeMs,
       agentProviderFactory,
       factoryStore: input.factoryStore,
@@ -348,7 +436,6 @@ export async function runOneFactoryPlanningAction(input: {
           }),
         ],
         intent: input.rerun ? "restart" : "start",
-        reviewCeiling: identity.reviewCeiling,
         publicationMode: identity.publicationMode,
         outputPlan: identity.outputPlan,
       },
@@ -442,7 +529,7 @@ function isPendingPlanningStartProjection(
   return (
     state?.phase === "planning" &&
     state.status === "awaiting-candidate" &&
-    state.attempt === 1 &&
+    state.candidateAttempt === 0 &&
     latest?.type === "planning.requested"
   );
 }

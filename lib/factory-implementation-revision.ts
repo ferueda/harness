@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { z } from "zod";
 import type { AgentSessionRef } from "./agents.ts";
+import { loadFactoryContinuationForReaction } from "./factory-continuation.ts";
 import { verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import {
   FactoryImplementationBlockingFindingsSchema,
@@ -17,7 +18,9 @@ import { readFactoryWorkspaceTree } from "./factory-review-head.ts";
 import type { FactoryReaction } from "./factory-state-machine.ts";
 
 export type FactoryImplementationRevision = {
-  blockingFindings: z.infer<typeof FactoryImplementationBlockingFindingsSchema>;
+  blockingFindings: z.infer<typeof FactoryImplementationBlockingFindingsSchema> | [];
+  candidateEventId: string;
+  operatorResponse: string;
   priorCommit: string;
   priorTree: string;
   priorStatus: string;
@@ -41,57 +44,30 @@ export function loadFactoryImplementationRevision(input: {
   const { ctx, reaction } = input;
   const workItemKey = deriveFactoryWorkItemKey(ctx.workItem);
   const events = readFactoryActionEvents(input.factoryStateRoot, workItemKey);
-  const review = resolveOriginatingReview({ events, ctx, reaction, workItemKey });
-  if (
-    !review ||
-    review.type !== "implementation.review.completed" ||
-    review.phaseRunId !== ctx.runId ||
-    review.workItemKey !== workItemKey ||
-    review.data.verdict !== "needs_changes" ||
-    review.data.attempt !== reaction.attempt - 1 ||
-    review.data.reviewCeiling !== ctx.identity.reviewCeiling ||
-    !review.data.blockingFindings
-  )
-    throw new FactoryImplementationRevisionError(
-      "Implementation revision causation conflicts with durable review evidence",
-    );
   const roots = factoryRoots(ctx);
-  const candidate = events.find((event) => event.id === review.data.causationEventId);
-  if (
-    !candidate ||
-    candidate.type !== "implementation.candidate.produced" ||
-    candidate.phaseRunId !== ctx.runId ||
-    candidate.workItemKey !== workItemKey ||
-    candidate.data.attempt !== review.data.attempt
-  )
+  let continuation: ReturnType<typeof loadFactoryContinuationForReaction>;
+  try {
+    continuation = loadFactoryContinuationForReaction({
+      events,
+      causationEventId: reaction.causationEventId,
+      phase: "implementation",
+      handler: "produceImplementationCandidate",
+      attempt: reaction.attempt,
+      phaseRunId: ctx.runId,
+      workItemKey,
+      roots,
+    });
+  } catch (error) {
+    throw new FactoryImplementationRevisionError(message(error));
+  }
+  if (!continuation || continuation.event.data.decision !== "revise")
+    throw new FactoryImplementationRevisionError(
+      "Implementation revision has no accepted continuation",
+    );
+  const candidate = continuation.candidate;
+  if (candidate.type !== "implementation.candidate.produced")
     throw new FactoryImplementationRevisionError(
       "Implementation revision has no matching prior candidate",
-    );
-  const manifest = FactoryImplementationReviewEvidenceSchema.parse(
-    JSON.parse(readFileSync(verifyFactoryArtifactRef(review.data.review, roots), "utf8")),
-  );
-  if (
-    manifest.phaseRunId !== ctx.runId ||
-    manifest.attempt !== review.data.attempt ||
-    manifest.base !== ctx.identity.baseSha ||
-    manifest.commit !== candidate.data.commit ||
-    manifest.tree !== candidate.data.tree ||
-    manifest.verdict !== "needs_changes" ||
-    JSON.stringify(manifest.blockingFindings) !== JSON.stringify(review.data.blockingFindings)
-  )
-    throw new FactoryImplementationRevisionError(
-      "Implementation revision review manifest conflicts with lifecycle evidence",
-    );
-  const blockingFindings = FactoryImplementationBlockingFindingsSchema.parse(
-    JSON.parse(readFileSync(verifyFactoryArtifactRef(review.data.blockingFindings, roots), "utf8")),
-  );
-  const expectedBlocking = collectImplementationBlockingFindings({
-    implementationPath: verifyFactoryArtifactRef(manifest.reviewers.implementation, roots),
-    qualityPath: verifyFactoryArtifactRef(manifest.reviewers.quality, roots),
-  });
-  if (JSON.stringify(blockingFindings) !== JSON.stringify(expectedBlocking))
-    throw new FactoryImplementationRevisionError(
-      "Implementation revision blocking findings conflict with aggregate review",
     );
   const candidateEvidence = FactoryImplementationCandidateEvidenceSchema.parse(
     JSON.parse(readFileSync(verifyFactoryArtifactRef(candidate.data.candidate, roots), "utf8")),
@@ -126,8 +102,17 @@ export function loadFactoryImplementationRevision(input: {
     throw new FactoryImplementationRevisionError(
       "Implementation revision prior candidate Git evidence conflicts",
     );
+  if (continuation.review && continuation.review.type !== "implementation.review.completed")
+    throw new FactoryImplementationRevisionError(
+      "Implementation continuation review has the wrong phase",
+    );
+  const blockingFindings = continuation.review
+    ? loadBlockingFindings({ ctx, candidate, review: continuation.review, roots })
+    : [];
   return {
     blockingFindings,
+    candidateEventId: candidate.id,
+    operatorResponse: continuation.response,
     priorCommit: candidateEvidence.commit,
     priorTree: candidateEvidence.tree,
     priorStatus: candidateEvidence.status,
@@ -135,43 +120,57 @@ export function loadFactoryImplementationRevision(input: {
   };
 }
 
-function resolveOriginatingReview(input: {
-  events: readonly FactoryLifecycleEvent[];
+function loadBlockingFindings(input: {
   ctx: FactoryImplementationRunContext;
-  reaction: Extract<FactoryReaction, { kind: "invoke" }>;
-  workItemKey: string;
-}): Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }> {
-  // A retry keeps its attempt, so walk only validated retryable producer failures
-  // back to the needs_changes review that originally authorized that revision.
-  const byId = new Map(input.events.map((event) => [event.id, event]));
-  const seen = new Set<string>();
-  let causationEventId = input.reaction.causationEventId;
-  while (true) {
-    if (seen.has(causationEventId))
-      throw new FactoryImplementationRevisionError(
-        "Implementation revision retry causation is cyclic",
-      );
-    seen.add(causationEventId);
-    const event = byId.get(causationEventId);
-    if (!event)
-      throw new FactoryImplementationRevisionError(
-        "Implementation revision retry causation event is missing",
-      );
-    if (event.type === "implementation.review.completed") return event;
-    if (
-      event.type !== "factory.action.failed" ||
-      event.phaseRunId !== input.ctx.runId ||
-      event.workItemKey !== input.workItemKey ||
-      event.data.phase !== "implementation" ||
-      event.data.handler !== "produceImplementationCandidate" ||
-      event.data.failureKind !== "retryable" ||
-      event.data.attempt !== input.reaction.attempt
-    )
-      throw new FactoryImplementationRevisionError(
-        "Implementation revision retry causation conflicts with durable failure evidence",
-      );
-    causationEventId = event.data.causationEventId;
-  }
+  candidate: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>;
+  review: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>;
+  roots: ReturnType<typeof factoryRoots>;
+}): z.infer<typeof FactoryImplementationBlockingFindingsSchema> | [] {
+  if (input.review.type !== "implementation.review.completed")
+    throw new FactoryImplementationRevisionError("Implementation continuation review is invalid");
+  if (
+    input.review.data.candidateEventId !== input.candidate.id ||
+    input.review.data.candidateAttempt !== input.candidate.data.attempt
+  )
+    throw new FactoryImplementationRevisionError(
+      "Implementation continuation review conflicts with its candidate",
+    );
+  const manifest = FactoryImplementationReviewEvidenceSchema.parse(
+    JSON.parse(
+      readFileSync(verifyFactoryArtifactRef(input.review.data.review, input.roots), "utf8"),
+    ),
+  );
+  if (
+    manifest.phaseRunId !== input.ctx.runId ||
+    manifest.reviewRound !== input.review.data.attempt ||
+    manifest.candidateAttempt !== input.candidate.data.attempt ||
+    manifest.base !== input.ctx.identity.baseSha ||
+    manifest.commit !== input.candidate.data.commit ||
+    manifest.tree !== input.candidate.data.tree ||
+    manifest.verdict !== input.review.data.verdict ||
+    JSON.stringify(manifest.blockingFindings) !== JSON.stringify(input.review.data.blockingFindings)
+  )
+    throw new FactoryImplementationRevisionError(
+      "Implementation revision review manifest conflicts with lifecycle evidence",
+    );
+  if (!input.review.data.blockingFindings) return [];
+  const blocking = FactoryImplementationBlockingFindingsSchema.parse(
+    JSON.parse(
+      readFileSync(
+        verifyFactoryArtifactRef(input.review.data.blockingFindings, input.roots),
+        "utf8",
+      ),
+    ),
+  );
+  const expected = collectImplementationBlockingFindings({
+    implementationPath: verifyFactoryArtifactRef(manifest.reviewers.implementation, input.roots),
+    qualityPath: verifyFactoryArtifactRef(manifest.reviewers.quality, input.roots),
+  });
+  if (JSON.stringify(blocking) !== JSON.stringify(expected))
+    throw new FactoryImplementationRevisionError(
+      "Implementation revision blocking findings conflict with aggregate review",
+    );
+  return blocking;
 }
 
 export function matchesFactoryImplementationRevisionWorkspace(input: {
@@ -204,4 +203,8 @@ function git(workspace: string, args: string[]): string {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
