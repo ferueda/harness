@@ -47,6 +47,13 @@ test("valid ready-to-plan payload passes JSON schema and Zod", () => {
   expect(FactoryTriageOutputSchema.safeParse(VALID_READY_TO_PLAN).success).toBe(true);
 });
 
+test("empty evidence fails JSON schema and Zod", () => {
+  const payload = { ...VALID_READY_TO_PLAN, evidence: [] };
+
+  expect(schemaAccepts(FACTORY_SCHEMA, payload)).toBe(false);
+  expect(FactoryTriageOutputSchema.safeParse(payload).success).toBe(false);
+});
+
 test("extra top-level property fails JSON schema and Zod", () => {
   const payload = { ...VALID_READY_TO_PLAN, applyLabel: "ready-to-plan" };
   expect(schemaAccepts(FACTORY_SCHEMA, payload)).toBe(false);
