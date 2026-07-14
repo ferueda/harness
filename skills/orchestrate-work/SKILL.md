@@ -43,40 +43,88 @@ Confirm that project discovery, task creation, task inspection, and task
 messaging are available. Report `blocked` when the host cannot provide this
 minimum channel.
 
+Before delegation, record two complete, independently owned profiles:
+
+- **Orchestrator profile:** the parent task's effective `model` and `thinking`.
+- **Executor profile:** the complete supported pair requested by the user, or
+  the orchestrator profile when the user requests no executor override.
+
+Invocation of this skill opts into the parent-matching default. A user override
+changes only the executor profile. Validate each complete model/effort pair
+against the live tool schema before using it. If a partial override cannot be
+safely combined with the default, pause for clarification instead of guessing.
+
 1. Use `codex_app__list_projects`; select the project matching the repository.
    Report `blocked` if project identity is missing or ambiguous.
-2. Resolve the expected branch and exact commit from the authoritative
-   repository state. Use `codex_app__create_thread` with the matching project, a
-   fresh worktree, the completed canonical delegation block, and the
-   `handoff-work` handoff. Omit a starting state unless the user explicitly
-   names an existing Git state. Omit model and reasoning overrides unless the
-   user explicitly requests them.
-3. Record the returned executor task ID. If creation returns only a queued
-   client ID, resolve the actual task through verified task results before
-   steering it. Use `codex_app__set_thread_title` for a useful title, then
+2. Inspect the live `codex_app__create_thread` schema before constructing the
+   request. Resolve the expected branch and exact commit from the authoritative
+   repository state. The current minimal repository-project shape for a fresh
+   worktree is:
+
+   ```ts
+   {
+     prompt: "[completed delegation and handoff]",
+     target: {
+       type: "project",
+       projectId: "[discovered project ID]",
+       environment: { type: "worktree" }
+     },
+     model: "[executor model]",
+     thinking: "[executor thinking]"
+   }
+   ```
+
+   Keep `projectId` and `environment` under `target`. Pass only the resolved
+   executor profile for model settings; do not add other model/reasoning fields.
+   Omit `startingState` unless the user explicitly names an existing Git state.
+   Include the orchestrator callback profile in the initial prompt.
+
+3. Create once. An argument-validation rejection means no task was created:
+   correct the same request from the live schema and resubmit it. Do not record
+   a task or blindly make an additional request. For an ambiguous transport
+   result, first use `codex_app__list_threads` and read plausible candidates to
+   discover an existing matching project, prompt, and creation window; retry
+   creation only when that search proves no matching task exists.
+4. Record the returned executor task ID. If creation returns only a queued
+   `clientThreadId`, resolve the actual task through `codex_app__list_threads` or
+   `codex_app__read_thread` before steering it. Use
+   `codex_app__set_thread_title` for a useful title, then inspect through
    `codex_app__read_thread` or `codex_app__list_threads` to verify the intended
-   project and worktree.
-4. Require the first before-edit checkpoint to report its actual branch and
-   `git rev-parse HEAD`. Pause on any mismatch with the expected baseline rather
-   than changing Git state implicitly.
-5. Prove both callback directions. A Codex-created executor receives the prompt
+   project and fresh worktree.
+5. Require the first before-edit checkpoint to report the actual worktree path,
+   branch or detached-HEAD state, and exact `git rev-parse HEAD` before any
+   mutation. Pause on any mismatch with the expected baseline rather than
+   changing Git state implicitly.
+6. Prove both callback directions. A Codex-created executor receives the prompt
    inside a `<codex_delegation>` envelope; its verified `<source_thread_id>` is
    the parent task ID. The executor sends its first checkpoint there with
-   `codex_app__send_message_to_thread`; the orchestrator replies to the verified
-   executor task ID. If the parent ID is absent, obtain it from verified Codex
-   task metadata before continuing.
+   `codex_app__send_message_to_thread` and the orchestrator profile; the
+   orchestrator replies to the verified executor task ID with the executor
+   profile. If the parent ID is absent, obtain it from verified Codex task
+   metadata before continuing.
 
 Keep the two directions distinct:
 
-| Direction                | Verified destination                                       |
-| ------------------------ | ---------------------------------------------------------- |
-| Executor to orchestrator | Parent ID from the executor's delegation envelope          |
-| Orchestrator to executor | Executor ID returned by task creation, listing, or reading |
+| Direction                | Verified destination                               |
+| ------------------------ | -------------------------------------------------- |
+| Executor to orchestrator | Parent ID from the executor's delegation envelope  |
+| Orchestrator to executor | Executor route returned by task listing or reading |
 
 A callback displayed in the parent carries the executor's ID as its source.
-That confirms the sender; it is not the parent ID. Use a `hostId` only when a
-Codex result verifies it and the destination requires it. Do not infer it from
-`source_host_id`.
+That confirms the sender; it is not the parent ID. The `{ threadId, hostId }`
+returned by `codex_app__list_threads`, or by a successful
+`codex_app__read_thread`, is the authoritative steering route. Prefer omitting
+`hostId` for a verified same-host/local task when the messaging schema permits
+it. When required, use the routing `hostId` returned by `list_threads`. Never
+reuse `source_host_id`, a delegation-envelope value, or a host identifier
+returned only by `set_thread_title` unless `list_threads` independently confirms
+it as the route.
+
+Successful delivery of the first parent-to-executor message requires a
+successful send result addressed to the verified executor route plus either the
+message appearing in `read_thread` or the executor acknowledging its contents in
+the next checkpoint. A tool invocation alone without a successful result is not
+delivery proof.
 
 **Done when:** the host channel, project, worktree, branch, exact commit, and both
 callback routes are verified.
@@ -121,14 +169,22 @@ Avoid concurrent edits in that worktree.
 
 Reply with one bounded direction: proceed, correct, pause, or stop. State the
 accepted constraint and the proof expected at the next checkpoint. Send it to
-the verified executor ID with `codex_app__send_message_to_thread`. Let the
-executor own the implementation details that remain inside the accepted
-boundary. Keep the executor paused and ask the user when the decision requires
-new authority.
+the verified executor route with `codex_app__send_message_to_thread` and the
+executor profile after inspecting the live messaging schema and validating that
+complete pair. If messaging reports `No AppServerManager registered`, re-resolve
+the executor through `codex_app__list_threads`, then retry the message at most
+once with its verified routing `hostId`, or with `hostId` omitted when allowed.
+Do not recreate the task. Let the executor own the implementation details that
+remain inside the accepted boundary. Keep the executor paused and ask the user
+when the decision requires new authority.
 
 Monitor at checkpoints or when expected progress stops; avoid polling unchanged
-state. Preserve the same model and reasoning settings on follow-up messages
-unless the user explicitly changes them.
+state. Apply the destination profile at every boundary: executor profile for
+parent-to-executor steering, orchestrator profile for executor-to-parent
+checkpoints and consultations. Never derive callback settings from the sender's
+profile. If the orchestrator intentionally changes its profile while the
+executor is active, include the updated callback profile in the next steering
+message.
 
 **Done when:** the executor has an actionable direction tied to accepted user
 authority and the next proof is explicit.
@@ -163,6 +219,9 @@ Implement [bounded goal] in this isolated worktree.
 Authority: [request/plan/spec]
 Repository/worktree: [repository and fresh isolated worktree requirement]
 Baseline: [verified branch at exact commit]
+Profiles: executor callbacks to the parent use [orchestrator model and thinking];
+parent steering uses [executor model and thinking]. Apply the destination's
+complete profile explicitly; never copy the sender's profile.
 Sandbox: write only inside this worktree and branch; treat other repositories
 and worktrees as read-only. Perform external mutations only under Publication.
 Boundaries: [material constraints and non-goals]
@@ -175,12 +234,14 @@ Publication: [none, commit, push, or pull request; merge requires separate autho
 
 Callback: read the parent task ID from this prompt's outer
 <codex_delegation>/<source_thread_id>. Send checkpoints with
-codex_app__send_message_to_thread. If it is absent, stop rather than guessing.
+codex_app__send_message_to_thread using the orchestrator profile above. If it is
+absent, stop rather than guessing.
 
 Checkpoints:
 
-- Before edits: prove the clean worktree, actual branch and exact HEAD, authority
-  reconciliation, proposed file surface, existing seams, removals, and conflicts.
+- Before edits: before any mutation, prove the clean actual worktree path,
+  branch or detached-HEAD state, exact HEAD, authority reconciliation, proposed
+  file surface, existing seams, removals, and conflicts.
 - Coherent implementation: report diff/stat, behavior working, focused
   verification, adaptations, risks, and remaining gates.
 - Review, when requested: follow change-review-workflow; report the current tip,
