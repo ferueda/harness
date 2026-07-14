@@ -91,12 +91,18 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
     type: z.literal("plan_pr.opened"),
     phaseRunId: FactoryPhaseRunIdSchema,
-    data: z.object({ url: z.url(), plan: FactoryArtifactRefSchema }).strict(),
+    data: z
+      .object({
+        url: z.url(),
+        head: z.string().regex(/^[0-9a-f]{40}$/),
+        plan: FactoryArtifactRefSchema,
+      })
+      .strict(),
   }),
   Base.extend({
     type: z.literal("plan_pr.merged"),
     phaseRunId: FactoryPhaseRunIdSchema,
-    data: z.object({ url: z.url(), commit: z.string().min(1) }).strict(),
+    data: z.object({ url: z.url(), commit: z.string().regex(/^[0-9a-f]{40}$/) }).strict(),
   }),
   Base.extend({
     type: z.literal("implementation.requested"),
@@ -125,6 +131,16 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
       blockingFindings: FactoryArtifactRefSchema.optional(),
       reviewCeiling: z.number().int().positive(),
     }),
+  }),
+  Base.extend({
+    type: z.literal("implementation_pr.opened"),
+    phaseRunId: FactoryPhaseRunIdSchema,
+    data: z.object({ url: z.url(), head: z.string().regex(/^[0-9a-f]{40}$/) }).strict(),
+  }),
+  Base.extend({
+    type: z.literal("implementation_pr.merged"),
+    phaseRunId: FactoryPhaseRunIdSchema,
+    data: z.object({ url: z.url(), commit: z.string().regex(/^[0-9a-f]{40}$/) }).strict(),
   }),
   Base.extend({
     type: z.literal("factory.action.failed"),

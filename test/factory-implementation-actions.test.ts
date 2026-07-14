@@ -59,7 +59,7 @@ test("candidate and pass review run in separate commands and promote the exact r
     reviewRunner: reviewRunner as never,
   });
   expect(second.action?.handler).toBe("reviewImplementationCandidate");
-  expect(second.next).toEqual({ kind: "wait", reason: "complete" });
+  expect(second.next).toEqual({ kind: "wait", reason: "pr-publication" });
   expect(reviewRunner).toHaveBeenCalledTimes(1);
   const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
   const candidate = events.find((event) => event.type === "implementation.candidate.produced");
@@ -130,7 +130,7 @@ test("revision resumes the effective session with complete blockers and promotes
       return fullReviewMeta("pass");
     }) as never,
   });
-  expect(pass.next).toEqual({ kind: "wait", reason: "complete" });
+  expect(pass.next).toEqual({ kind: "wait", reason: "pr-publication" });
   const candidates = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
     (
       event,
@@ -608,7 +608,7 @@ test("staged passing review recovers after branch promotion without rerunning re
   rmSync(join(actionDir, "action-result.json"), { recursive: true });
   const recovered = await reviewImplementationCandidate(action);
   expect(reviewRunner).toHaveBeenCalledTimes(1);
-  expect(recovered.state).toMatchObject({ status: "complete" });
+  expect(recovered.state).toMatchObject({ status: "awaiting-pr-publication" });
 });
 
 test("phase creation rejects dirty and detached workspaces before provider work", () => {
@@ -1027,7 +1027,13 @@ test("retryable reviewer failure runs the same review action again", async () =>
     reviewRunner: reviewRunner as never,
   });
   expect(reviewRunner).toHaveBeenCalledTimes(2);
-  expect(second.state).toMatchObject({ status: "complete" });
+  expect(second.state).toMatchObject({
+    status: "awaiting-pr-publication",
+    reviewedHead:
+      candidate.event.type === "implementation.candidate.produced"
+        ? candidate.event.data.commit
+        : undefined,
+  });
 });
 
 test("candidate evidence digest tampering fails before reviewer invocation", async () => {
@@ -1076,7 +1082,7 @@ test("staged pass recovers while branch is still at base without rerunning revie
   rmSync(manifestPath, { recursive: true });
   const recovered = await reviewImplementationCandidate(action);
   expect(reviewRunner).toHaveBeenCalledTimes(1);
-  expect(recovered.state).toMatchObject({ status: "complete" });
+  expect(recovered.state).toMatchObject({ status: "awaiting-pr-publication" });
 });
 
 test("--rerun creates a fresh attempt-one phase and fresh profile after a human wait", async () => {
@@ -1173,7 +1179,7 @@ test("Linear start repair reuses one request and invokes the producer only after
   ).toHaveLength(1);
 });
 
-test("Linear terminal repair invokes no handler and appends no duplicate event", async () => {
+test("passing review waits for PR publication without terminal projection", async () => {
   const fixture = directFixture();
   const { ctx, candidate } = await produceCandidate(fixture);
   await reviewImplementationCandidate({
@@ -1189,24 +1195,16 @@ test("Linear terminal repair invokes no handler and appends no duplicate event",
   });
   fixture.workItem.metadata = { linearStatus: "Implementing" };
   const before = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).length;
-  const completed = vi.fn(async () => ({
-    issueIdentifier: "ENG-123",
-    runId: ctx.runId,
-    runDir: ctx.runDir,
-    stage: "completed" as const,
-    targetStatus: "Implementing",
-  }));
   const result = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
     linearIssue: "ENG-123",
     issueRef: "ENG-123",
     linearStatuses: LINEAR_SETTINGS.statuses,
-    applyAdapter: fakeLinearAdapter({ applyImplementationCompleted: completed }),
+    applyAdapter: fakeLinearAdapter(),
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
   });
   expect(result.action).toBeUndefined();
-  expect(result.linearApplied).toBe(true);
-  expect(completed).toHaveBeenCalledTimes(1);
+  expect(result.linearApplied).toBe(false);
   expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key)).toHaveLength(before);
 });
 

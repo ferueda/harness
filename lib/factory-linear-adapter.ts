@@ -28,16 +28,20 @@ import {
   type LinearPlanningUpdatePlan,
 } from "./factory-linear-planning-apply.ts";
 import {
-  applyLinearImplementationCompleted,
   applyLinearImplementationAttention,
   applyLinearImplementationFailed,
   applyLinearImplementationStarted,
-  type LinearImplementationCompletedInput,
   type LinearImplementationAttentionInput,
   type LinearImplementationFailedInput,
   type LinearImplementationStartedInput,
   type LinearImplementationUpdatePlan,
 } from "./factory-linear-implementation-apply.ts";
+import {
+  applyLinearImplementationMerged,
+  applyLinearImplementationPublished,
+  type LinearImplementationMergeInput,
+  type LinearImplementationPublicationInput,
+} from "./factory-linear-implementation-handoff.ts";
 import type {
   LinearClientLike,
   LinearCommentLike,
@@ -95,9 +99,8 @@ export type LinearFactoryAdapter = {
   applyImplementationStarted: (
     input: LinearImplementationStartedInput,
   ) => Promise<LinearImplementationUpdatePlan>;
-  applyImplementationCompleted: (
-    input: LinearImplementationCompletedInput,
-  ) => Promise<LinearImplementationUpdatePlan>;
+  applyImplementationPublished: (input: LinearImplementationPublicationInput) => Promise<unknown>;
+  applyImplementationMerged: (input: LinearImplementationMergeInput) => Promise<unknown>;
   applyImplementationAttention: (
     input: LinearImplementationAttentionInput,
   ) => Promise<LinearImplementationUpdatePlan>;
@@ -215,8 +218,15 @@ export function createLinearFactoryAdapterForClient(input: {
         input.settings,
         applyInput,
       ),
-    applyImplementationCompleted: (applyInput) =>
-      applyLinearImplementationCompleted(
+    applyImplementationPublished: (applyInput) =>
+      applyLinearImplementationPublished(
+        LINEAR_IMPLEMENTATION_APPLY_DEPS,
+        input.client,
+        input.settings,
+        applyInput,
+      ),
+    applyImplementationMerged: (applyInput) =>
+      applyLinearImplementationMerged(
         LINEAR_IMPLEMENTATION_APPLY_DEPS,
         input.client,
         input.settings,
@@ -693,6 +703,8 @@ function assertDistinctImplementationStatuses(settings: FactoryLinearSettings): 
     ["readyToImplement", settings.statuses.readyToImplement],
     ["implementing", settings.statuses.implementing],
     ["implementationFailed", settings.statuses.implementationFailed],
+    ["readyForReview", settings.statuses.readyForReview],
+    ["done", settings.statuses.done],
   ] as const;
   const seen = new Map<string, string>();
   for (const [key, value] of entries) {

@@ -39,6 +39,7 @@ const LINEAR_SETTINGS = {
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
     implementing: "Implementing",
+    readyForReview: "Ready for Review",
     implementationFailed: "Implementation Failed",
     triaging: "Triaging",
     planning: "Planning",
@@ -1013,7 +1014,7 @@ test("Linear adapter rejects list when an optional terminal status key is unset"
       ...LINEAR_SETTINGS.statuses,
       done: undefined,
     },
-  } as FactoryLinearSettings;
+  } as unknown as FactoryLinearSettings;
 
   await expect(
     listLinearWorkItemsByStatus(
@@ -1035,7 +1036,6 @@ test("Linear adapter rejects list when an optional terminal status key is unset"
 
 test("Linear adapter validates and lists without optional terminal statuses", async () => {
   const {
-    done: _done,
     canceled: _canceled,
     duplicate: _duplicate,
     ...requiredStatuses
@@ -1100,13 +1100,12 @@ test("Linear adapter skips undefined optional terminal values during status-map 
     ...LINEAR_SETTINGS,
     statuses: {
       ...LINEAR_SETTINGS.statuses,
-      done: undefined,
       canceled: undefined,
       duplicate: undefined,
     },
   } as FactoryLinearSettings;
   const requiredNames = Object.values(LINEAR_SETTINGS.statuses).filter(
-    (name) => !["Done", "Canceled", "Duplicate"].includes(name),
+    (name) => !["Canceled", "Duplicate"].includes(name),
   );
   const teamWithoutTerminals = {
     ...TEAM,
@@ -1466,6 +1465,8 @@ test("Linear adapter validates configured statuses against team states", async (
 test.each([
   ["implementing", "Ready to Implement", /implementing must differ from.*readyToImplement/],
   ["implementationFailed", "Implementing", /implementationFailed must differ from.*implementing/],
+  ["readyForReview", "Implementing", /readyForReview must differ from.*implementing/],
+  ["done", "Ready for Review", /done must differ from.*readyForReview/],
   [
     "implementationFailed",
     " ready TO implement ",

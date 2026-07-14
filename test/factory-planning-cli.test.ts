@@ -1,13 +1,14 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import { formatFactoryActionOutput } from "../bin/factory-action-output.ts";
 import {
   assertLivePlanningStatus,
-  recordPlanningPublication,
   runOneFactoryPlanningAction,
 } from "../bin/factory-planning-cli.ts";
+import { publishPlanPullRequest } from "../lib/factory-plan-publication.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import type { AgentRunInput } from "../lib/agents.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
@@ -37,9 +38,14 @@ test("planning uses the shared one-action output contract", () => {
 
 test.each([
   { mode: "local" as const, linearIssue: undefined, expectedWait: "phase-command" },
-  { mode: "pull-request" as const, linearIssue: "ENG-123", expectedWait: "plan-merge" },
+  {
+    mode: "pull-request" as const,
+    linearIssue: "ENG-123",
+    expectedWait: "plan-publication",
+  },
 ])("coordinator runs one planning handler per invocation in $mode mode", async (testCase) => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-cli-workspace-"));
+  initializeGit(workspace);
   const store = createStore();
   const calls: AgentRunInput[] = [];
   const providerFactory = () => ({
@@ -427,8 +433,18 @@ test("coordinator propagates its abort signal to the planning provider", async (
 
 test("publication apply appends once and repairs its Linear projection on retry", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-publication-workspace-"));
+  initializeGit(workspace);
+  mkdirSync(join(workspace, "dev/plans"), { recursive: true });
+  writeFileSync(
+    join(workspace, "dev/plans/README.md"),
+    "# Plans & handoffs\n\n## Active queue\n\n## Shipped (git history only)\n",
+  );
+  execFileSync("git", ["add", "dev/plans/README.md"], { cwd: workspace });
+  execFileSync("git", ["commit", "-m", "add plan index"], { cwd: workspace, stdio: "ignore" });
   const storeRoot = mkdtempSync(join(tmpdir(), "factory-planning-publication-store-"));
   writeFileSync(join(workspace, "harness.json"), JSON.stringify(linearConfig()), "utf8");
+  execFileSync("git", ["add", "harness.json"], { cwd: workspace });
+  execFileSync("git", ["commit", "-m", "add config"], { cwd: workspace, stdio: "ignore" });
   const resolved = resolveFactoryStore({
     workspace,
     factoryStoreRoot: storeRoot,
@@ -464,35 +480,47 @@ test("publication apply appends once and repairs its Linear projection on retry"
   };
   await runOneFactoryPlanningAction(coordinator);
   await runOneFactoryPlanningAction(coordinator);
-  const candidateEvent = readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-123").find(
-    (event) => event.type === "planning.candidate.produced",
-  );
-  if (!candidateEvent || candidateEvent.type !== "planning.candidate.produced")
-    throw new Error("candidate event missing");
-  const candidatePath = join(store.projectRoot, candidateEvent.data.candidate.path);
-  const publishedPlan = join(workspace, "published.md");
-  writeFileSync(publishedPlan, readFileSync(candidatePath));
   const applyPlanningPublished = vi.fn(async () => undefined);
-  const deps = {
-    resolveWorkItemInput: vi.fn(async () => ({ source: "linear" as const, workItem })),
-    linearAdapterFactory: vi.fn(() => ({ applyPlanningPublished }) as never),
+  let remote = "";
+  let pullRequest: unknown[] = [];
+  const commandRunner = (command: string, args: readonly string[]) => {
+    if (command === "git" && args[0] === "rev-parse")
+      return execFileSync("git", [...args], { cwd: workspace, encoding: "utf8" });
+    if (command === "git" && args[0] === "remote") return "git@example.test:repo.git\n";
+    if (command === "git" && args[0] === "ls-remote")
+      return remote
+        ? `${remote}\trefs/heads/${String(args.at(-1)).replace("refs/heads/", "")}\n`
+        : "";
+    if (command === "git" && args[0] === "push") {
+      remote = String(args[2]).split(":")[0]!;
+      return "";
+    }
+    if (command === "gh" && args[1] === "list") return JSON.stringify(pullRequest);
+    if (command === "gh" && args[1] === "create") {
+      const branch = String(args[args.indexOf("--head") + 1]);
+      pullRequest = [
+        {
+          url: "https://example.test/pr/1",
+          baseRefName: "main",
+          headRefName: branch,
+          headRefOid: remote,
+        },
+      ];
+      return "https://example.test/pr/1\n";
+    }
+    throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
   };
   const options = {
     workspace,
-    linearIssue: "ENG-123",
-    url: "https://example.test/pr/1",
-    plan: "published.md",
-    apply: true,
-    factoryStoreRoot: storeRoot,
-    factoryStoreProjectId: "repo",
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStore: store,
+    workItem,
+    issueRef: "ENG-123",
+    applyAdapter: { applyPlanningPublished } as never,
+    commandRunner,
   };
-  const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
-  try {
-    await recordPlanningPublication(options, "opened", deps);
-    await recordPlanningPublication(options, "opened", deps);
-  } finally {
-    output.mockRestore();
-  }
+  await publishPlanPullRequest(options);
+  await publishPlanPullRequest(options);
   expect(applyPlanningPublished).toHaveBeenCalledTimes(2);
   const events = readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-123");
   expect(events.filter((event) => event.type === "plan_pr.opened")).toHaveLength(1);
@@ -505,6 +533,7 @@ function coordinatorInput(
     Parameters<typeof runOneFactoryPlanningAction>[0]["agentProviderFactory"]
   >,
 ) {
+  initializeGit(workspace);
   return {
     factoryStateRoot: store.factoryStateRoot,
     factoryStore: store,
@@ -519,6 +548,19 @@ function coordinatorInput(
     maxRuntimeMs: 1_000,
     agentProviderFactory,
   };
+}
+
+function initializeGit(workspace: string): void {
+  if (existsSync(join(workspace, ".git"))) return;
+  execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: workspace });
+  writeFileSync(join(workspace, ".gitignore"), ".harness/\n");
+  execFileSync("git", ["add", ".gitignore"], { cwd: workspace });
+  execFileSync("git", ["commit", "-m", "base"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
 }
 
 function createStore(): FactoryStoreMeta {
@@ -647,6 +689,8 @@ function linearConfig() {
           needsPlanReview: "Plan Needs Review",
           readyToImplement: "Ready to Implement",
           implementing: "Implementing",
+          readyForReview: "Ready for Review",
+          done: "Done",
           implementationFailed: "Implementation Failed",
           triaging: "Triaging",
           planning: "Planning",

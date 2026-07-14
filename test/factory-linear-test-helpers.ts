@@ -12,6 +12,7 @@ export const LINEAR_SETTINGS = {
     needsPlan: "Needs Plan",
     readyToImplement: "Ready to Implement",
     implementing: "Implementing",
+    readyForReview: "Ready for Review",
     implementationFailed: "Implementation Failed",
     triaging: "Triaging",
     planning: "Planning",
@@ -86,8 +87,11 @@ export function fakeLinearAdapter(
     applyImplementationStarted: async () => {
       throw new Error("applyImplementationStarted should not run");
     },
-    applyImplementationCompleted: async () => {
-      throw new Error("applyImplementationCompleted should not run");
+    applyImplementationPublished: async () => {
+      throw new Error("applyImplementationPublished should not run");
+    },
+    applyImplementationMerged: async () => {
+      throw new Error("applyImplementationMerged should not run");
     },
     applyImplementationAttention: async () => {
       throw new Error("applyImplementationAttention should not run");

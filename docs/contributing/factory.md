@@ -232,7 +232,9 @@ Factory station roles use `harness.json`:
         "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
         "implementing": "Implementing",
+        "readyForReview": "Ready for Review",
         "implementationFailed": "Implementation Failed",
+        "done": "Done",
         "triaging": "Triaging",
         "planning": "Planning",
         "triageFailed": "Triage Failed",
@@ -420,7 +422,10 @@ plan review actions. Revisions resume the original planner session and receive
 only the latest `must_fix` findings. `--rerun` starts a fresh phase only after
 needs-human or failure. Item files publish approved plans locally; Linear
 starts and reruns require `--apply`, then wait for explicit `planning publish`
-and `mark-plan-merged`. Factory validates and appends the planning request
+and `mark-plan-merged`. Publish derives the reviewed plan and deterministic
+branch; it accepts no PR URL or plan path. It pushes the exact commit, finds or
+creates the PR, and records `plan_pr.opened`. Merge acknowledgement requires a
+local commit containing that head before recording `plan_pr.merged`. Factory validates and appends the planning request
 before projecting Linear to Planning; a failed projection leaves that one
 request pending for the next explicit `--apply` invocation and never reaches
 the provider. Later human, failure, and publication waits may persist Factory
@@ -452,16 +457,26 @@ are read-only and review the cumulative original-base-to-candidate diff. A
 exits. Its later invocation reopens the phase, verifies the complete digested
 blockers and prior candidate, resumes the effective implementer session, and
 publishes a new tree/ref still parented to the original base. Pass CAS-advances
-only the exact reviewed candidate and leaves a clean worktree. Blocked or
+only the exact reviewed candidate, leaves a clean worktree, and enters
+`awaiting-pr-publication`. `implementation publish` pushes that unchanged
+branch, finds or creates its PR, and records `implementation_pr.opened`.
+`awaiting-pr-merge` is a hard human gate: stop and report the PR. Opening or
+delivering a PR never authorizes merge. After a human merge is available
+locally, `implementation mark-pr-merged --url <url> --commit <sha>` requires the
+reviewed head as an ancestor, records `implementation_pr.merged`, and completes
+the phase. Neither command runs providers, reviewers, polling, or merge. Blocked or
 exhausted review waits for a human; no non-pass advances the branch. There is no
 separate accept command or standalone post-candidate `harness run change-review`
 step. Use `--rerun` only from human/failed state; it starts a fresh phase.
 
 Linear starts and reruns require `--apply`. A failed start projection repairs
 the same durable request on the next explicit apply without provider work.
-Candidate/review keep Implementing; pass adds a deduplicated reviewed-candidate
-comment, non-pass adds an attention comment, and terminal failure projects
-Implementation Failed. A later explicit apply repairs a missing projection.
+Candidate/review keep Implementing. Publication `--apply` moves Implementing to
+Ready for Review and writes one PR comment. Merge acknowledgement `--apply`
+repairs a missing publication projection first, then moves Ready for Review to
+Done and writes one completion comment. Non-pass adds an attention comment;
+terminal failure projects Implementation Failed. Retries deduplicate lifecycle
+facts and comments.
 
 ## Local Inbox
 
@@ -508,7 +523,8 @@ Stop and re-check scope if the work requires:
 
 - reviving `harness factory dispatch`
 - moving every inbox item in a batch
-- mutating GitHub, Jira, or Inngest from current station commands
+- mutating GitHub outside explicitly authorized plan/implementation publication,
+  or mutating Jira or Inngest from current station commands
 - mutating Linear outside documented `harness factory linear create` or explicit
   `harness factory triage --linear-issue ... --apply`
 - committing `.harness/runs/*`

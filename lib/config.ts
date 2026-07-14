@@ -390,7 +390,9 @@ function formatHarnessConfigError(error: ZodError): string {
         issue.expected === "string" &&
         issue.input === undefined &&
         (issue.path.join(".") === "factory.linear.statuses.implementing" ||
-          issue.path.join(".") === "factory.linear.statuses.implementationFailed"),
+          issue.path.join(".") === "factory.linear.statuses.implementationFailed" ||
+          issue.path.join(".") === "factory.linear.statuses.readyForReview" ||
+          issue.path.join(".") === "factory.linear.statuses.done"),
     )
     .map((issue) => issue.path.join("."));
   if (
@@ -401,13 +403,15 @@ function formatHarnessConfigError(error: ZodError): string {
         issue.expected === "string" &&
         issue.input === undefined &&
         (issue.path.join(".") === "factory.linear.statuses.implementing" ||
-          issue.path.join(".") === "factory.linear.statuses.implementationFailed"),
+          issue.path.join(".") === "factory.linear.statuses.implementationFailed" ||
+          issue.path.join(".") === "factory.linear.statuses.readyForReview" ||
+          issue.path.join(".") === "factory.linear.statuses.done"),
     )
   ) {
     const paths = [...new Set(missingImplementationStatuses)].sort();
     return [
       `Missing required Linear implementation status mapping${paths.length === 1 ? "" : "s"}: ${paths.join(", ")}.`,
-      "Create or confirm the Implementing and Implementation Failed team states, add both mappings to harness.json, then rerun.",
+      "Create or confirm the Implementing, Ready for Review, Implementation Failed, and Done team states, add the mappings to harness.json, then rerun.",
     ].join(" ");
   }
   return formatZodError(error);

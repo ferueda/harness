@@ -20,6 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { dirname, basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -196,6 +197,7 @@ export type FactoryPlanningRunContextOptions = {
   reviewerRole: FactoryPlanningAgentRole;
   outputPlan?: string;
   publicationMode?: "local" | "pull-request";
+  baseRef?: string;
   maxReviewIterations: number;
   maxRuntimeMs: number;
   dryRun?: boolean;
@@ -381,6 +383,11 @@ function createFactoryPlanningRunContextInternal(
     mkdirSync(join(runDir, "planning"));
     writeJson(join(runDir, "context/work-item.json"), options.workItem);
     if (options.factoryStore) {
+      const publicationMode = options.publicationMode ?? "local";
+      const gitIdentity =
+        publicationMode === "pull-request"
+          ? assertPlanningPublicationGit(workspace, options.baseRef ?? "main", true)
+          : undefined;
       writeFactoryPhaseRunIdentity(runDir, {
         version: 1,
         phaseRunId: runId,
@@ -399,7 +406,8 @@ function createFactoryPlanningRunContextInternal(
             workItem: options.workItem,
           }),
         ),
-        publicationMode: options.publicationMode ?? "local",
+        publicationMode,
+        ...gitIdentity,
         actions: {
           producePlanCandidate: factoryActionExecutionProfile(options.plannerRole),
           reviewPlanCandidate: factoryActionExecutionProfile(options.reviewerRole),
@@ -607,6 +615,15 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
     throw new FactoryPlanningError(
       `Factory planning phase-run identity conflicts with ${options.phaseRunId}`,
     );
+  if (identity.publicationMode === "pull-request") {
+    const current = assertPlanningPublicationGit(identity.workspace, identity.baseRef!, false);
+    if (
+      current.baseSha !== identity.baseSha ||
+      current.branchRef !== identity.branchRef ||
+      current.baseRef !== identity.baseRef
+    )
+      throw new FactoryPlanningError("Factory planning Git identity changed since phase start");
+  }
   const persisted = parseFactoryWorkItem(
     JSON.parse(readFileSync(join(runDir, "context/work-item.json"), "utf8")),
   );
@@ -676,6 +693,40 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
       });
     },
   };
+}
+
+function assertPlanningPublicationGit(
+  workspace: string,
+  baseRef: string,
+  requireClean: boolean,
+): { baseRef: string; baseSha: string; branchRef: string } {
+  try {
+    const branchRef = execFileSync("git", ["symbolic-ref", "-q", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    if (!branchRef.startsWith("refs/heads/"))
+      throw new FactoryPlanningError("Pull-request planning requires an attached branch");
+    const status = execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    if (requireClean && status)
+      throw new FactoryPlanningError("Pull-request planning requires a clean workspace");
+    const baseSha = execFileSync("git", ["rev-parse", "--verify", `${baseRef}^{commit}`], {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    return { baseRef, baseSha, branchRef };
+  } catch (error) {
+    if (error instanceof FactoryPlanningError) throw error;
+    throw new FactoryPlanningError(`Unable to snapshot planning Git identity for ${baseRef}`, {
+      cause: error,
+    });
+  }
 }
 
 function buildMeta(input: {

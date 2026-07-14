@@ -61,6 +61,7 @@ const LINEAR_STATUSES = {
   needsPlan: "Needs Plan",
   readyToImplement: "Ready to Implement",
   implementing: "Implementing",
+  readyForReview: "Ready for Review",
   implementationFailed: "Implementation Failed",
   triaging: "Triaging",
   planning: "Planning",
@@ -375,9 +376,9 @@ test("resolveFactoryLinearSettings keeps projectId optional", () => {
   });
 });
 
-test("resolveFactoryLinearSettings allows omitting optional terminal statuses", () => {
+test("resolveFactoryLinearSettings allows omitting canceled and duplicate statuses", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
-  const { done: _done, canceled: _canceled, duplicate: _duplicate, ...required } = LINEAR_STATUSES;
+  const { canceled: _canceled, duplicate: _duplicate, ...required } = LINEAR_STATUSES;
   writeHarnessJson(workspace, {
     factory: {
       linear: {
@@ -406,6 +407,8 @@ test("resolveFactoryLinearSettings reports the implementation status migration",
   const {
     implementing: _implementing,
     implementationFailed: _implementationFailed,
+    readyForReview: _readyForReview,
+    done: _done,
     ...legacyStatuses
   } = LINEAR_STATUSES;
   writeHarnessJson(workspace, {
@@ -418,13 +421,15 @@ test("resolveFactoryLinearSettings reports the implementation status migration",
   });
 
   expect(() => resolveFactoryLinearSettings({ workspace }, "/")).toThrow(
-    /Missing required Linear implementation status mappings: factory\.linear\.statuses\.implementationFailed, factory\.linear\.statuses\.implementing.*add both mappings to harness\.json/,
+    /Missing required Linear implementation status mappings: factory\.linear\.statuses\.done, factory\.linear\.statuses\.implementationFailed, factory\.linear\.statuses\.implementing, factory\.linear\.statuses\.readyForReview.*add the mappings to harness\.json/,
   );
 });
 
 test.each([
   ["implementing", /factory\.linear\.statuses\.implementing/],
   ["implementationFailed", /factory\.linear\.statuses\.implementationFailed/],
+  ["readyForReview", /factory\.linear\.statuses\.readyForReview/],
+  ["done", /factory\.linear\.statuses\.done/],
 ] as const)("resolveFactoryLinearSettings reports a missing %s mapping", (key, expected) => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-config-"));
   const statuses = { ...LINEAR_STATUSES };

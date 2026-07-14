@@ -21,7 +21,11 @@ Current public CLI surfaces:
 - `harness factory linear create`
 - `harness factory triage`
 - `harness factory planning run`
+- `harness factory planning publish`
+- `harness factory planning mark-plan-merged`
 - `harness factory implementation run`
+- `harness factory implementation publish`
+- `harness factory implementation mark-pr-merged`
 - `harness run change-review`
 - `harness run plan-review`
 - `harness runs prune`
@@ -50,6 +54,10 @@ Prompt templates live under `lib/prompts/`. Review prompts are loaded through
 `lib/workflow-context.ts`; Factory actions use immutable phase contexts and the
 durable action kernel. Implementation candidates materialize through a
 temporary Git index and are reviewed by recorded commit SHA.
+Phase-specific publication handlers share a bounded Git/`gh` publisher. Git
+commits remain artifact truth; Factory opened/merged events remain lifecycle
+truth; GitHub and Linear are retryable human-facing projections. Publication
+may push/find-or-create one deterministic PR but cannot merge it.
 
 Runtime Zod validation lives in `lib/schemas.ts` for reviews and
 `lib/factory-schemas.ts` for factory intake and triage. `schemas/` owns
@@ -324,7 +332,8 @@ adapter.
 ## What is not in this map yet
 
 Standalone review resumability, `steps.json`, deterministic graders,
-GitHub/Jira adapters, hosted trigger inboxes, and Inngest remain future work.
+General GitHub/Jira adapters, hosted trigger inboxes, and Inngest remain future
+work. The bounded Factory pull-request publisher is current.
 Linear-backed triage, planning, and implementation input/projections via
 explicit `--apply` are current. Future items should be added to this map only
 after they describe current behavior in the repo.

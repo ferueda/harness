@@ -35,13 +35,14 @@ const FactoryLinearStatusesSchema = z
     needsPlanReview: z.string().min(1),
     readyToImplement: z.string().min(1),
     implementing: z.string().min(1),
+    readyForReview: z.string().min(1),
     implementationFailed: z.string().min(1),
     triaging: z.string().min(1),
     planning: z.string().min(1),
     triageFailed: z.string().min(1),
     planningFailed: z.string().min(1),
-    /** Optional terminal board statuses for operator moves / list filters. */
-    done: z.string().min(1).optional(),
+    /** Optional non-completion terminal board statuses for operator moves / list filters. */
+    done: z.string().min(1),
     canceled: z.string().min(1).optional(),
     duplicate: z.string().min(1).optional(),
   })

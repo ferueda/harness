@@ -134,7 +134,9 @@ Minimal shape:
         "needsPlanReview": "Plan Needs Review",
         "readyToImplement": "Ready to Implement",
         "implementing": "Implementing",
+        "readyForReview": "Ready for Review",
         "implementationFailed": "Implementation Failed",
+        "done": "Done",
         "triaging": "Triaging",
         "planning": "Planning",
         "triageFailed": "Triage Failed",
@@ -255,7 +257,11 @@ progress; Linear status/comments remain human board projections.
 ## Planning
 
 Run `harness factory planning run` once per printed reaction. Stop on human,
-failed, plan-merge, or approved waits. Review-driven revisions stay in the
+failed, plan-publication, plan-merge, or approved waits. Invoke `planning
+publish` only after explicit publication authorization; planner sessions stay
+credential-free. Stop and report the PR. Opening or delivering a PR never
+authorizes merge. Only after a human merges that recorded PR, fetch the merge
+commit and run `mark-plan-merged --url <url> --commit <sha>`. Review-driven revisions stay in the
 phase and resume the saved planner session; use `--rerun` only after human or
 failed waits. Item files materialize locally after review pass. Linear issues
 require `--apply` for planning start and rerun, then explicit `planning publish`
@@ -282,7 +288,13 @@ Run the exact command printed in `next` again. That invocation runs only
 `reviewImplementationCandidate`: the fixed implementation and quality
 reviewers, read-only, once, against the cumulative original-base diff. Do not
 run a separate `harness run change-review`. Pass promotes the exact reviewed
-candidate and finishes with a clean branch/index/worktree. A `needs_changes`
+candidate, finishes clean, and waits at `awaiting-pr-publication`. Invoke
+`implementation publish` only with explicit phase publication authority. It
+pushes the exact reviewed branch and finds or creates one PR; the implementer
+session receives no GitHub credentials. Stop at `awaiting-pr-merge` and report
+the PR. Do not merge it. Only after a human explicitly merges that recorded PR,
+fetch the merge commit and run `implementation mark-pr-merged --url <url>
+--commit <sha>`. A `needs_changes`
 verdict below the persisted `maxReviewIterations` ceiling prints a later
 `produceImplementationCandidate` command; it does not run it. That producer
 reopens the same phase, verifies `review-evidence.json` and
@@ -296,9 +308,9 @@ fresh phase/profile/session/input snapshot; it is not a revision path.
 Linear implementation start/restart requires `--apply`. Repeat an explicit
 apply command to repair a failed start or terminal/comment projection; Harness
 reuses durable state and never appends a duplicate request or reruns the prior
-handler. Candidate/review remain Implementing, pass adds the reviewed-candidate
-comment, non-pass adds an attention comment, and terminal failure moves to
-Implementation Failed.
+handler. Candidate/review remain Implementing. Publication `--apply` moves to
+Ready for Review; merge acknowledgement `--apply` moves to Done. Non-pass adds
+an attention comment, and terminal failure moves to Implementation Failed.
 
 ## Artifacts
 
@@ -323,7 +335,8 @@ Stop before proceeding if the task requires:
 
 - running or restoring `harness factory dispatch`
 - batch-moving every inbox item
-- mutating GitHub, Jira, or Inngest
+- mutating GitHub except through an explicitly authorized phase publication
+  command; mutating Jira or Inngest
 - mutating Linear outside documented `harness factory linear create` or explicit
   `harness factory <triage|planning|implementation> ... --linear-issue ... --apply`
 - committing `.harness/runs/*`

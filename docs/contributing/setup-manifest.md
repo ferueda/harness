@@ -9,13 +9,14 @@ artifact lifecycle, and directory ownership.
 
 ## Local requirements
 
-| Requirement                            | Needed for                                            | Notes                                                                         |
-| -------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Node 24 or newer                       | Source CLI, tests, build, skill CLIs                  | The source checkout runs TypeScript directly through Node type stripping.     |
-| `pnpm` on `PATH`                       | Install, package scripts, gates, skill-local installs | The harness installer and sessions skill installer both use pnpm.             |
-| POSIX shell with `bash`                | `install`, generated shims, target-repo shim          | Shims use `#!/usr/bin/env bash` and `set -euo pipefail`.                      |
-| Git checkout of this harness repo      | Source install and development                        | The checkout can live anywhere; use generic paths such as `/path/to/harness`. |
-| Optional PATH entry for installed shim | Interactive `harness ...` command                     | See Install and update for the default shim path.                             |
+| Requirement                                   | Needed for                                            | Notes                                                                                                    |
+| --------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Node 24 or newer                              | Source CLI, tests, build, skill CLIs                  | The source checkout runs TypeScript directly through Node type stripping.                                |
+| `pnpm` on `PATH`                              | Install, package scripts, gates, skill-local installs | The harness installer and sessions skill installer both use pnpm.                                        |
+| POSIX shell with `bash`                       | `install`, generated shims, target-repo shim          | Shims use `#!/usr/bin/env bash` and `set -euo pipefail`.                                                 |
+| Git checkout of this harness repo             | Source install and development                        | The checkout can live anywhere; use generic paths such as `/path/to/harness`.                            |
+| Git remote credentials and authenticated `gh` | Explicit Factory plan/implementation publication      | Publication may push one deterministic branch and find or create its PR. Merge remains human-controlled. |
+| Optional PATH entry for installed shim        | Interactive `harness ...` command                     | See Install and update for the default shim path.                                                        |
 
 ## Install and update
 
