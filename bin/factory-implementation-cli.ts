@@ -81,7 +81,7 @@ export function addFactoryImplementationStationCommand(
     .option("--factory-store-root <path>", "durable factory store root")
     .option("--factory-store-project-id <id>", "durable factory store project id")
     .option("--apply", "apply Linear boundary projections", false)
-    .option("--rerun", "restart after human/failed state", false)
+    .option("--rerun", "restart before review or after human/failed state", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(runImplementationCommand);
   implementation
@@ -300,16 +300,23 @@ export async function runOneFactoryImplementationAction(input: {
     state?.phase === "implementation" &&
     state.status === "awaiting-candidate" &&
     latest?.type === "implementation.requested";
+  const restartBeforeReview =
+    input.rerun && state?.phase === "implementation" && state.status === "awaiting-review";
   if (
     input.rerun &&
     !pendingRequest &&
     !(
       state?.phase === "implementation" &&
-      (state.status === "needs-human" || state.status === "failed")
+      (state.status === "needs-human" ||
+        state.status === "failed" ||
+        state.status === "awaiting-review")
     )
   )
-    throw new Error("implementation --rerun is allowed only from needs-human or failed");
-  const active = reaction?.kind === "invoke" && reaction.phase === "implementation";
+    throw new Error(
+      "implementation --rerun is allowed only before review or from needs-human or failed",
+    );
+  const active =
+    !restartBeforeReview && reaction?.kind === "invoke" && reaction.phase === "implementation";
   if (!active) {
     if (state?.phase === "implementation" && !input.rerun) {
       let linearApplied = false;

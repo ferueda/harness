@@ -1526,6 +1526,59 @@ test("--rerun creates a fresh attempt-one phase and fresh profile after a human 
   expect(requests[1]).toMatchObject({ data: { intent: "restart" } });
 });
 
+test("--rerun abandons an unreviewed candidate and starts a fresh attempt-one phase", async () => {
+  const fixture = directFixture();
+  const firstProvider = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "first candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "first-session" } };
+  });
+  const first = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    agentProviderFactory: () => ({ name: "cursor", run: firstProvider }),
+  });
+  expect(first.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 1 });
+  const firstCandidate = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).find(
+    (
+      event,
+    ): event is Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }> =>
+      event.type === "implementation.candidate.produced",
+  );
+  if (!firstCandidate) throw new Error("first candidate missing");
+  const firstCandidateRef = `refs/harness/factory/${firstCandidate.phaseRunId}/1`;
+
+  git(fixture.workspace, ["restore", "--staged", "--worktree", "."]);
+  const secondProvider = vi.fn<Agent["run"]>(async (input) => {
+    expect(input.session).toBeUndefined();
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "replacement candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "replacement-session" } };
+  });
+  const reviewRunner = vi.fn();
+  const rerun = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    rerun: true,
+    agentProviderFactory: () => ({ name: "cursor", run: secondProvider }),
+    reviewRunner: reviewRunner as never,
+  });
+
+  expect(rerun.phaseRunId).not.toBe(first.phaseRunId);
+  expect(rerun.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 1 });
+  expect(firstProvider).toHaveBeenCalledTimes(1);
+  expect(secondProvider).toHaveBeenCalledTimes(1);
+  expect(reviewRunner).not.toHaveBeenCalled();
+  expect(git(fixture.workspace, ["rev-parse", firstCandidateRef]).trim()).toBe(
+    firstCandidate.data.commit,
+  );
+  const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
+  expect(events.filter((event) => event.type === "implementation.requested")).toHaveLength(2);
+  expect(events.filter((event) => event.type === "implementation.candidate.produced")).toHaveLength(
+    2,
+  );
+  expect(events.at(-2)).toMatchObject({
+    type: "implementation.requested",
+    data: { intent: "restart", expectedPredecessor: firstCandidate.id },
+  });
+});
+
 test("Linear start repair reuses one request and invokes the producer only after projection", async () => {
   const fixture = directFixture();
   fixture.workItem.metadata = { linearStatus: "Ready to Implement" };

@@ -309,8 +309,10 @@ reopens the same phase, verifies `review-evidence.json` and
 the original base, and publishes a new immutable attempt ref. Inspect those
 files plus each `candidate-evidence.json`, diff, `action-result.json`, and
 `context/phase-run.json` before intervening. Blocked or exhausted review waits
-for a human. `--rerun` is allowed only after human/failed state and creates a
-fresh phase/profile/session/input snapshot; it is not a revision path.
+for a human. Before review, `--rerun` may intentionally abandon the produced
+candidate and start a fresh phase; its immutable ref and evidence remain. It is
+otherwise allowed only after human/failed state. Every rerun creates a fresh
+phase/profile/session/input snapshot; it is not a revision path.
 
 Linear implementation start/restart requires `--apply`. Repeat an explicit
 apply command to repair a failed start or terminal/comment projection; Harness
