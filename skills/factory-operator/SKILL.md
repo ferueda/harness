@@ -10,8 +10,7 @@ description: Operate the manually stepped harness Factory flow through status, L
 The new Factory action store requires `store-format.json` version 1. Harness
 initializes an empty state directory. It rejects old, unmarked, or differently
 versioned state with archive/reset instructions and never migrates or deletes
-it. It may read explicitly supported earlier version-1 records without
-rewriting them.
+it.
 
 `harness factory triage ...` blocks until its one `triageWorkItem` action ends.
 Wait for process exit; do not poll or start a second action. The command

@@ -20,10 +20,7 @@ import {
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
-import {
-  FactoryPhaseRunIdentitySchema,
-  readFactoryPhaseRunIdentity,
-} from "../lib/factory-phase-run.ts";
+import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
 import { createFactoryReviewHead, FactoryReviewHeadError } from "../lib/factory-review-head.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { decideNextFactoryAction } from "../lib/factory-state-machine.ts";
@@ -800,23 +797,24 @@ test("phase reopen ignores same-key tampering of its audit work-item copy", () =
   expect(reopened.workItem).toMatchObject({ title: "Implement item", body: "Change tracked.txt" });
 });
 
-test("phase reopens the exact v1 implementation identity missing baseRef", () => {
+test("phase rejects an implementation identity missing baseRef", () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
   const identityPath = join(ctx.runDir, "context/phase-run.json");
-  const legacy = JSON.parse(readFileSync(identityPath, "utf8")) as Record<string, unknown>;
-  delete legacy.baseRef;
-  expect(() => FactoryPhaseRunIdentitySchema.parse(legacy)).toThrow();
-  writeFileSync(identityPath, `${JSON.stringify(legacy, null, 2)}\n`);
+  const current = JSON.parse(readFileSync(identityPath, "utf8")) as Record<string, unknown>;
+  const { baseRef, ...missingBaseRef } = current;
+  expect(baseRef).toBe("main");
+  writeFileSync(identityPath, `${JSON.stringify(missingBaseRef, null, 2)}\n`);
 
-  const reopened = openFactoryImplementationRunContext({
-    workspace: fixture.workspace,
-    runsDir: fixture.store.factoryRunsDir,
-    phaseRunId: ctx.runId,
-    workItem: fixture.workItem,
-    factoryStore: fixture.store,
-  });
-  expect(reopened.identity).toMatchObject({ phase: "implementation", baseRef: "main" });
+  expect(() =>
+    openFactoryImplementationRunContext({
+      workspace: fixture.workspace,
+      runsDir: fixture.store.factoryRunsDir,
+      phaseRunId: ctx.runId,
+      workItem: fixture.workItem,
+      factoryStore: fixture.store,
+    }),
+  ).toThrow();
 });
 
 test("uncertain candidate materialization failure becomes human-required", async () => {

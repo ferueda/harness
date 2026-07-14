@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,15 +8,11 @@ import {
   assertLivePlanningStatus,
   runOneFactoryPlanningAction,
 } from "../bin/factory-planning-cli.ts";
-import {
-  markPlanPullRequestMerged,
-  publishPlanPullRequest,
-} from "../lib/factory-plan-publication.ts";
+import { publishPlanPullRequest } from "../lib/factory-plan-publication.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import type { AgentRunInput } from "../lib/agents.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import {
-  actionLifecycleEventPath,
   appendFactoryActionEvent,
   readFactoryActionEvents,
 } from "../lib/factory-lifecycle-kernel.ts";
@@ -534,66 +530,6 @@ test("publication apply appends once and repairs its Linear projection on retry"
   expect(applyPlanningPublished).toHaveBeenCalledTimes(2);
   const events = readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-123");
   expect(events.filter((event) => event.type === "plan_pr.opened")).toHaveLength(1);
-});
-
-test("legacy headless plan publication rejects merge acknowledgement before Git ancestry", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-legacy-publication-"));
-  initializeGit(workspace);
-  const store = createStore();
-  const workItem = {
-    id: "linear:ENG-123",
-    source: "linear" as const,
-    title: "Plan",
-    body: "Ship it",
-    labels: [],
-  };
-  const calls: AgentRunInput[] = [];
-  const coordinator = {
-    factoryStateRoot: store.factoryStateRoot,
-    factoryStore: store,
-    workspace,
-    workItem,
-    linearIssue: "ENG-123",
-    issueRef: "ENG-123",
-    applyAdapter: { applyPlanningStarted: vi.fn(async () => undefined) } as never,
-    outputPlan: "dev/plans/item.md",
-    rerun: false,
-    reviewCeiling: 1,
-    plannerRole: { agent: "cursor" as const, model: "planner" },
-    reviewerRole: { agent: "cursor" as const, model: "reviewer" },
-    maxRuntimeMs: 1_000,
-    agentProviderFactory: passingProvider(calls),
-  };
-  await runOneFactoryPlanningAction(coordinator);
-  const reviewed = await runOneFactoryPlanningAction(coordinator);
-  const candidate = readFactoryActionEvents(store.factoryStateRoot, workItem.id).findLast(
-    (event) => event.type === "planning.candidate.produced",
-  );
-  if (!candidate || candidate.type !== "planning.candidate.produced")
-    throw new Error("candidate missing");
-  appendFileSync(
-    actionLifecycleEventPath(store.factoryStateRoot, workItem.id),
-    `${JSON.stringify({
-      version: 1,
-      id: `plan_pr.opened:${reviewed.phaseRunId}`,
-      type: "plan_pr.opened",
-      workItemKey: workItem.id,
-      occurredAt: new Date().toISOString(),
-      phaseRunId: reviewed.phaseRunId,
-      data: { url: "https://example.test/pr/legacy", plan: candidate.data.candidate },
-    })}\n`,
-  );
-
-  await expect(
-    markPlanPullRequestMerged({
-      workspace,
-      factoryStateRoot: store.factoryStateRoot,
-      factoryStore: store,
-      workItem,
-      url: "https://example.test/pr/legacy",
-      commit: "not-a-local-commit",
-    }),
-  ).rejects.toThrow(/recorded publication head/);
 });
 
 function coordinatorInput(

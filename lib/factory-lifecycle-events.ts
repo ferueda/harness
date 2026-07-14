@@ -38,23 +38,6 @@ const ActionData = z
   .strict();
 const Session = z.object({ provider: z.string().min(1), id: z.string().min(1) }).strict();
 const ReviewVerdict = z.enum(["pass", "needs_changes", "blocked", "human_required"]);
-const PlanPullRequestOpenedDataSchema = z
-  .object({
-    url: z.url(),
-    head: z
-      .string()
-      .regex(/^[0-9a-f]{40}$/)
-      .optional(),
-    plan: FactoryArtifactRefSchema,
-  })
-  .strict();
-const CurrentPlanPullRequestOpenedEventSchema = Base.extend({
-  type: z.literal("plan_pr.opened"),
-  phaseRunId: FactoryPhaseRunIdSchema,
-  data: PlanPullRequestOpenedDataSchema.extend({
-    head: z.string().regex(/^[0-9a-f]{40}$/),
-  }),
-});
 
 export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
@@ -108,7 +91,13 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
     type: z.literal("plan_pr.opened"),
     phaseRunId: FactoryPhaseRunIdSchema,
-    data: PlanPullRequestOpenedDataSchema,
+    data: z
+      .object({
+        url: z.url(),
+        head: z.string().regex(/^[0-9a-f]{40}$/),
+        plan: FactoryArtifactRefSchema,
+      })
+      .strict(),
   }),
   Base.extend({
     type: z.literal("plan_pr.merged"),
@@ -181,13 +170,6 @@ export type FactoryActionEvent = Extract<
 
 export function parseFactoryLifecycleEvent(value: unknown): FactoryLifecycleEvent {
   return FactoryLifecycleEventSchema.parse(value);
-}
-
-/** Current writes stay strict while the reader accepts the known historical v1 shape. */
-export function parseFactoryLifecycleEventForAppend(value: unknown): FactoryLifecycleEvent {
-  const event = parseFactoryLifecycleEvent(value);
-  if (event.type === "plan_pr.opened") CurrentPlanPullRequestOpenedEventSchema.parse(value);
-  return event;
 }
 
 export function parseFactoryActionEvent(value: unknown): FactoryActionEvent {

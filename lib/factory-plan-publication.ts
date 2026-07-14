@@ -128,8 +128,6 @@ export async function markPlanPullRequestMerged(input: {
   );
   if (!opened || opened.type !== "plan_pr.opened") throw new Error("Plan merge has no publication");
   if (opened.data.url !== input.url) throw new Error("Plan merge URL does not match publication");
-  if (!opened.data.head)
-    throw new Error("Plan merge requires a recorded publication head; legacy event has none");
   const resolved = resolveLocalCommit(input.workspace, input.commit);
   assertCommitAncestor(input.workspace, opened.data.head, resolved);
   const existing = events.findLast(

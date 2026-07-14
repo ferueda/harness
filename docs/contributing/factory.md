@@ -6,9 +6,7 @@ Factory action state uses a clean version-1 store rooted at the configured
 durable `factory` directory. `store-format.json` is required. Harness creates
 it only for an empty directory. A non-empty unmarked directory or a marker
 with another version is rejected with archive/reset guidance; old lifecycle
-logs are not migrated and data is never deleted automatically. Within a
-marked version-1 store, the reader accepts only explicitly supported earlier
-version-1 record shapes and never rewrites them.
+logs are not parsed or migrated and data is never deleted automatically.
 
 Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
@@ -186,11 +184,8 @@ and durable `runs/factory/<run-id>/events.jsonl` are execution evidence. Git
 remains source of truth for committed plans and code.
 
 The workspace remains the sandbox: it owns source, tests, `harness.json`, the
-shim, inbox, and committed `dev/plans/*.md`. Legacy workspace-local state,
-unmarked lifecycle records, and non-version-1 formats are rejected with
-archive/reset guidance; they are never parsed or migrated. Supported earlier
-version-1 durable records remain readable through the narrow adapters described
-above.
+shim, inbox, and committed `dev/plans/*.md`. Old Factory lifecycle state is
+rejected with archive/reset guidance; it is never parsed or migrated.
 
 New Factory state is projected only from the strict action event log. Triage,
 planning, and implementation append their request, candidate, review, and

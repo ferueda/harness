@@ -68,21 +68,6 @@ export type FactoryImplementationInputSnapshot = z.infer<
   typeof FactoryImplementationInputSnapshotSchema
 >;
 
-const FactoryImplementationPhaseRunIdentitySchema = FactoryPhaseRunBaseSchema.extend({
-  phase: z.literal("implementation"),
-  reviewCeiling: z.number().int().positive(),
-  baseRef: z.string().min(1),
-  branchRef: z.string().regex(/^refs\/heads\/.+/),
-  baseSha: z.string().regex(/^[0-9a-f]{40}$/),
-  input: FactoryImplementationInputSnapshotSchema,
-  actions: z
-    .object({
-      produceImplementationCandidate: FactoryActionExecutionProfileSchema,
-      reviewImplementationCandidate: FactoryActionExecutionProfileSchema,
-    })
-    .strict(),
-}).strict();
-
 export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
   FactoryPhaseRunBaseSchema.extend({
     phase: z.literal("triage"),
@@ -121,14 +106,20 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
       )
         ctx.addIssue({ code: "custom", message: "pull-request planning requires Git identity" });
     }),
-  FactoryImplementationPhaseRunIdentitySchema,
-]);
-const FactoryPhaseRunIdentityReadSchema = z.union([
-  FactoryPhaseRunIdentitySchema,
-  FactoryImplementationPhaseRunIdentitySchema.omit({ baseRef: true }).transform((identity) => ({
-    ...identity,
-    baseRef: "main",
-  })),
+  FactoryPhaseRunBaseSchema.extend({
+    phase: z.literal("implementation"),
+    reviewCeiling: z.number().int().positive(),
+    baseRef: z.string().min(1),
+    branchRef: z.string().regex(/^refs\/heads\/.+/),
+    baseSha: z.string().regex(/^[0-9a-f]{40}$/),
+    input: FactoryImplementationInputSnapshotSchema,
+    actions: z
+      .object({
+        produceImplementationCandidate: FactoryActionExecutionProfileSchema,
+        reviewImplementationCandidate: FactoryActionExecutionProfileSchema,
+      })
+      .strict(),
+  }).strict(),
 ]);
 export type FactoryPhaseRunIdentity = z.infer<typeof FactoryPhaseRunIdentitySchema>;
 
@@ -145,7 +136,7 @@ export function writeFactoryPhaseRunIdentity(
 }
 
 export function readFactoryPhaseRunIdentity(runDir: string): FactoryPhaseRunIdentity {
-  return FactoryPhaseRunIdentityReadSchema.parse(
+  return FactoryPhaseRunIdentitySchema.parse(
     JSON.parse(readFileSync(join(runDir, "context/phase-run.json"), "utf8")),
   );
 }
