@@ -34,7 +34,8 @@ test("implementation review prompt keeps blockers tied to the original task", ()
   expect(IMPLEMENTATION_REVIEW_PROMPT).toContain(
     "verify it against the diff and directly affected paths",
   );
-  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("handoff as context, never authority");
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("handoff as context except for sections");
+  expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("accepted task clarification");
   expect(IMPLEMENTATION_REVIEW_PROMPT).toContain("do not invent migration scope");
   expect(QUALITY_REVIEW_PROMPT).not.toContain("{{PLAN_REF}}");
 });

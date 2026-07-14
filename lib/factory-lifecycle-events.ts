@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FactoryArtifactRefSchema } from "./factory-artifact-ref.ts";
+import { FactoryArtifactRefSchema, type FactoryArtifactRef } from "./factory-artifact-ref.ts";
 import {
   FactoryFailureKindSchema,
   FactoryHandlerSchema,
@@ -110,6 +110,20 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
     data: RequestData.extend({
       reviewCeiling: z.number().int().positive(),
       intent: z.enum(["start", "restart"]),
+      restartGuidance: FactoryArtifactRefSchema.optional(),
+    }).superRefine((value, ctx) => {
+      const restartGuidance = value.restartGuidance;
+      if (!restartGuidance) return;
+      if (value.intent !== "restart")
+        ctx.addIssue({
+          code: "custom",
+          message: "implementation restart guidance requires restart intent",
+        });
+      if (!value.inputRefs.some((ref) => sameArtifactRef(ref, restartGuidance)))
+        ctx.addIssue({
+          code: "custom",
+          message: "implementation restart guidance must be included in input refs",
+        });
     }),
   }),
   Base.extend({
@@ -152,6 +166,10 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
     }),
   }),
 ]);
+
+function sameArtifactRef(left: FactoryArtifactRef, right: FactoryArtifactRef): boolean {
+  return left.base === right.base && left.path === right.path && left.sha256 === right.sha256;
+}
 
 export type FactoryLifecycleEvent = z.infer<typeof FactoryLifecycleEventSchema>;
 export type FactoryActionEvent = Extract<

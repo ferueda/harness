@@ -496,12 +496,12 @@ function validateFactoryTransition(
               current.route === "ready-to-implement") ||
               (current.phase === "planning" && current.status === "approved"))
           );
+        if (current.phase !== "implementation" || event.phaseRunId === current.phaseRunId)
+          return false;
+        if (current.status === "awaiting-review") return event.data.restartGuidance !== undefined;
         return (
-          current.phase === "implementation" &&
-          (current.status === "needs-human" ||
-            current.status === "failed" ||
-            current.status === "awaiting-review") &&
-          event.phaseRunId !== current.phaseRunId
+          (current.status === "needs-human" || current.status === "failed") &&
+          event.data.restartGuidance === undefined
         );
       case "implementation.candidate.produced":
         return (

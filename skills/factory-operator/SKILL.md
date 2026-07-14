@@ -310,14 +310,29 @@ the original base, and publishes a new immutable attempt ref. Inspect those
 files plus each `candidate-evidence.json`, diff, `action-result.json`, and
 `context/phase-run.json` before intervening. Blocked or exhausted review waits
 for a human. Before review, `--rerun` may intentionally abandon the produced
-candidate and start a fresh phase; its immutable ref and evidence remain. It is
-otherwise allowed only after human/failed state. Every rerun creates a fresh
-phase/profile/session/input snapshot; it is not a revision path.
+candidate only with accepted bounded clarification:
+
+```bash
+harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply --rerun --rerun-guidance-file /absolute/path/restart-guidance.md
+```
+
+The UTF-8 file must be nonblank and at most 32 KiB. Keep it outside the target
+workspace. Harness copies the exact bytes into
+`context/restart-guidance.md`, binds its hash to the durable restart request,
+and gives the same clarification to the fresh producer and all later
+reviewers/revisions in that phase. Guidance may clarify acceptance or
+verification but cannot override or materially expand the work item; retriage
+a scope change instead. The abandoned ref and evidence remain immutable. Rerun
+after human/failed state uses no guidance and rejects the guidance option.
+Every rerun creates a fresh phase/profile/session/input snapshot; it is not a
+revision path.
 
 Linear implementation start/restart requires `--apply`. Repeat an explicit
-apply command to repair a failed start or terminal/comment projection; Harness
-reuses durable state and never appends a duplicate request or reruns the prior
-handler. Candidate/review remain Implementing. Publication `--apply` moves to
+apply command to repair a failed start or terminal/comment projection; after a
+guided restart request is durable, omitted guidance reuses the persisted
+artifact and supplied guidance must match it exactly. Harness reuses durable
+state and never appends a duplicate request or reruns the prior handler.
+Candidate/review remain Implementing. Publication `--apply` moves to
 Ready for Review; merge acknowledgement `--apply` moves to Done. Non-pass adds
 an attention comment, and terminal failure moves to Implementation Failed.
 

@@ -126,6 +126,43 @@ describe("Factory action lifecycle kernel", () => {
       }),
     ).toThrow(/Too small/);
   });
+
+  test("binds implementation restart guidance to restart input refs", () => {
+    const restartGuidance = {
+      base: "factory-store" as const,
+      path: "runs/factory/restart/context/restart-guidance.md",
+      sha256: "1".repeat(64),
+    };
+    const request = {
+      version: 1,
+      id: "implementation-request",
+      type: "implementation.requested",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T03:00:00.000Z",
+      phaseRunId: "implementation-run",
+      data: {
+        expectedPredecessor: "triage-complete",
+        inputRefs: [inputRef, restartGuidance],
+        reviewCeiling: 1,
+        intent: "restart",
+        restartGuidance,
+      },
+    };
+    expect(FactoryLifecycleEventSchema.parse(request)).toMatchObject(request);
+    expect(() =>
+      FactoryLifecycleEventSchema.parse({
+        ...request,
+        data: { ...request.data, intent: "start" },
+      }),
+    ).toThrow(/requires restart intent/);
+    expect(() =>
+      FactoryLifecycleEventSchema.parse({
+        ...request,
+        data: { ...request.data, inputRefs: [inputRef] },
+      }),
+    ).toThrow(/included in input refs/);
+  });
+
   test("requires a new phase-run ID for planning and implementation requests", () => {
     expect(() =>
       reduceFactoryLifecycleEvents([

@@ -12,6 +12,7 @@ import {
 } from "./factory-action-result.ts";
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
+import { assertFactoryImplementationRestartGuidanceBinding } from "./factory-implementation-guidance.ts";
 import {
   FactoryImplementationGitAuthoritySchema,
   readFactoryImplementationGitAuthority,
@@ -131,6 +132,7 @@ async function runLeased(
         workItem: ctx.workItem,
         phaseRunId: ctx.runId,
         candidateCommit: candidate.data.commit,
+        restartGuidance: ctx.restartGuidance,
       }),
       ...(planPath ? { planPath } : {}),
       agentProvider: profile.provider,
@@ -479,6 +481,7 @@ function assertReaction(input: Parameters<typeof reviewImplementationCandidate>[
   );
   const state = reduceFactoryLifecycleEvents(events);
   const latest = events.at(-1);
+  assertFactoryImplementationRestartGuidanceBinding({ ctx: input.ctx, events });
   const candidate = events.findLast(
     (event) =>
       event.type === "implementation.candidate.produced" && event.phaseRunId === input.ctx.runId,
