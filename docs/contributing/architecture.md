@@ -192,8 +192,9 @@ Planning and implementation candidate/review commands consume the same action
 kernel, one handler per invocation. Review-driven revisions reuse the
 snapshotted producer profile and original session, retain the original base,
 and publish a new immutable attempt ref. The next producer reaction is guidance
-for a later manual invocation; `--rerun` instead creates a fresh phase after a
-human or failed wait. Inngest is only a future consumer of these pure reactions.
+for a later manual invocation; `--rerun` instead creates a fresh phase before
+review or after a human or failed wait. Inngest is only a future consumer of
+these pure reactions.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation and quality. The quality reviewer covers behavior-preserving

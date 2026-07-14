@@ -475,7 +475,9 @@ reviewed head as an ancestor, records `implementation_pr.merged`, and completes
 the phase. Neither command runs providers, reviewers, polling, or merge. Blocked or
 exhausted review waits for a human; no non-pass advances the branch. There is no
 separate accept command or standalone post-candidate `harness run change-review`
-step. Use `--rerun` only from human/failed state; it starts a fresh phase.
+step. Before review, `--rerun` may intentionally abandon the produced candidate
+and start a fresh phase; the old candidate ref and evidence remain immutable.
+It is otherwise available only from human/failed state.
 
 Linear starts and reruns require `--apply`. A failed start projection repairs
 the same durable request on the next explicit apply without provider work.

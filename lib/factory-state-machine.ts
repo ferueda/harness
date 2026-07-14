@@ -498,7 +498,9 @@ function validateFactoryTransition(
           );
         return (
           current.phase === "implementation" &&
-          (current.status === "needs-human" || current.status === "failed") &&
+          (current.status === "needs-human" ||
+            current.status === "failed" ||
+            current.status === "awaiting-review") &&
           event.phaseRunId !== current.phaseRunId
         );
       case "implementation.candidate.produced":
