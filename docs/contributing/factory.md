@@ -526,7 +526,9 @@ Stop and re-check scope if the work requires:
 - moving every inbox item in a batch
 - mutating GitHub outside explicitly authorized plan/implementation publication,
   or mutating Jira or Inngest from current station commands
-- mutating Linear outside documented `harness factory linear create` or explicit
-  `harness factory triage --linear-issue ... --apply`
+- mutating Linear outside documented `harness factory linear create` or an
+  explicitly authorized `--linear-issue ... --apply` invocation of Factory
+  triage, planning run/publication/merge acknowledgement, or implementation
+  run/publication/merge acknowledgement
 - committing `.harness/runs/*`
 - overwriting an existing final plan
