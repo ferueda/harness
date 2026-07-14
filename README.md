@@ -120,6 +120,9 @@ Planning candidate/review actions are manually stepped with
 ```bash
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 # Run the exact printed command again to review the immutable candidate.
+# If review waits for a human, record an explicit choice; this invokes no handler.
+harness factory implementation continue --workspace /path/to/repo --item-file work-item.json --decision re-review --response-file /absolute/path/response.md
+# Run the printed implementation command later to perform only the selected action.
 harness factory implementation publish --workspace /path/to/repo --item-file work-item.json
 # Stop and report the PR. Only after the human merges that PR:
 harness factory implementation mark-pr-merged --workspace /path/to/repo --item-file work-item.json --url <pr-url> --commit <merge-sha>
@@ -128,18 +131,17 @@ harness factory implementation mark-pr-merged --workspace /path/to/repo --item-f
 Implementation starts only from accepted direct input or an approved plan
 committed at the attached branch HEAD. The first invocation creates one
 immutable candidate commit without moving the branch; the next invocation runs
-the full implementation and quality review once. A `needs_changes` verdict
-below the persisted `factory.implementation.maxReviewIterations` ceiling
-(default 3) prints, but does not run, a same-session revision command. That
-revision keeps the original base, consumes every digested blocking finding, and
-publishes a distinct immutable attempt ref. Pass advances the persisted branch
-to that exact latest candidate, leaves the index/worktree clean, and waits for
+the full implementation and quality review once. A non-pass review preserves
+the exact candidate and waits for an explicit `continue` command. `revise`
+resumes the original producer session from that candidate and publishes a new
+immutable candidate ref; `re-review` runs reviewers again against the unchanged
+candidate without invoking the producer. The bounded response file is copied,
+hashed, and tied to the candidate and prior review. Pass advances the persisted
+branch to that exact candidate, leaves the index/worktree clean, and waits for
 explicit PR publication. Publication pushes that exact branch and finds or
 creates its PR; it never merges. Merge acknowledgement requires the recorded
-URL and a local descendant commit. Before-review reruns require
-`--rerun-guidance-file <path>`; Harness hashes its bounded clarification for
-the producer and reviews without expanding task scope. Human/failed reruns
-reject guidance; abandoned evidence remains. The CLI never follows up itself.
+URL and a local descendant commit. `--rerun` is only for a failed phase with no
+reusable candidate. The CLI never follows up itself.
 
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear list and fetch use `LINEAR_API_KEY` and
@@ -202,14 +204,12 @@ ownership and mutability, read
       }
     },
     "planning": {
-      "maxReviewIterations": 3,
       "roles": {
         "planner": { "agent": "codex", "model": "gpt-5.6-sol" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
       }
     },
     "implementation": {
-      "maxReviewIterations": 3,
       "roles": {
         "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }

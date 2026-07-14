@@ -30,7 +30,6 @@ function options(inputWorkspace: string, runsDir: string, testHooks = {}) {
     workItem: WORK_ITEM,
     plannerRole: { agent: "cursor" as const },
     reviewerRole: { agent: "cursor" as const },
-    maxReviewIterations: 1,
     maxRuntimeMs: 1_000,
     testHooks,
     agentProviderFactory(providerOptions: { provider: "cursor" | "codex" }) {

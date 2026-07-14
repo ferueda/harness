@@ -163,9 +163,19 @@ if (!factoryPlanningStationHelp.includes("publish")) {
 if (!factoryPlanningStationHelp.includes("mark-plan-merged")) {
   throw new Error("Expected factory planning help to include mark-plan-merged subcommand");
 }
+if (!factoryPlanningStationHelp.includes("continue")) {
+  throw new Error("Expected factory planning help to include continue subcommand");
+}
 const factoryPlanningRunHelp = runHarness(["factory", "planning", "run", "--help"]);
 if (!factoryPlanningRunHelp.includes("harness factory planning run")) {
   throw new Error("Expected factory planning run help to include command usage");
+}
+const factoryPlanningContinueHelp = runHarness(["factory", "planning", "continue", "--help"]);
+if (
+  !factoryPlanningContinueHelp.includes("--decision") ||
+  !factoryPlanningContinueHelp.includes("--response-file")
+) {
+  throw new Error("Expected factory planning continue help to require decision and response file");
 }
 const factoryPlanningPublishHelp = runHarness(["factory", "planning", "publish", "--help"]);
 if (!factoryPlanningPublishHelp.includes("harness factory planning publish")) {
@@ -182,6 +192,9 @@ const factoryImplementationHelp = runHarness(["factory", "implementation", "--he
 if (!factoryImplementationHelp.includes("harness factory implementation")) {
   throw new Error("Expected factory implementation help to include command usage");
 }
+if (!factoryImplementationHelp.includes("continue")) {
+  throw new Error("Expected factory implementation help to include continue subcommand");
+}
 const factoryImplementationRunHelp = runHarness(["factory", "implementation", "run", "--help"]);
 if (!factoryImplementationRunHelp.includes("harness factory implementation run")) {
   throw new Error("Expected factory implementation run help to include command usage");
@@ -194,6 +207,20 @@ if (!factoryImplementationRunHelp.includes("--max-runtime-ms")) {
 }
 if (factoryImplementationRunHelp.includes("--dry-run")) {
   throw new Error("Factory implementation run must not expose legacy --dry-run");
+}
+const factoryImplementationContinueHelp = runHarness([
+  "factory",
+  "implementation",
+  "continue",
+  "--help",
+]);
+if (
+  !factoryImplementationContinueHelp.includes("--decision") ||
+  !factoryImplementationContinueHelp.includes("--response-file")
+) {
+  throw new Error(
+    "Expected factory implementation continue help to require decision and response file",
+  );
 }
 const factoryImplementationPublishHelp = runHarness([
   "factory",

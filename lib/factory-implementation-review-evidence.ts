@@ -23,14 +23,14 @@ export const FactoryImplementationCandidateEvidenceSchema = z.object({
     raw: FactoryArtifactRefSchema,
     stream: FactoryArtifactRefSchema,
     diff: FactoryArtifactRefSchema,
-    handoff: FactoryArtifactRefSchema,
   }),
 });
 
 export const FactoryImplementationReviewEvidenceSchema = z.object({
   version: z.literal(1),
   phaseRunId: z.string(),
-  attempt: z.number().int().positive(),
+  reviewRound: z.number().int().positive(),
+  candidateAttempt: z.number().int().positive(),
   base: z.string(),
   commit: z.string(),
   tree: z.string(),

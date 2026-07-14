@@ -16,7 +16,6 @@ import {
 } from "./factory-action-result.ts";
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
-import { assertFactoryImplementationRestartGuidanceBinding } from "./factory-implementation-guidance.ts";
 import { withFactoryImplementationExecutionLease } from "./factory-implementation-policy.ts";
 import {
   FactoryImplementationCandidateEvidenceSchema,
@@ -129,6 +128,9 @@ async function runLeased(input: {
         actionDir,
         message(error),
         error instanceof FactoryImplementationRevisionError ? error.failureKind : "terminal",
+        error instanceof FactoryImplementationRevisionError
+          ? error.retainedCandidateEventId
+          : undefined,
       );
     }
   }
@@ -143,6 +145,7 @@ async function runLeased(input: {
         actionDir,
         "Invalid staged implementation provider result",
         "human-required",
+        revision?.candidateEventId,
       );
     staged = parsed;
     assertStagedIdentity(ctx, reaction, staged);
@@ -159,6 +162,7 @@ async function runLeased(input: {
           actionDir,
           "Implementation workspace no longer matches the prior immutable candidate",
           "human-required",
+          revision.candidateEventId,
         );
       if (
         !revision &&
@@ -181,6 +185,7 @@ async function runLeased(input: {
         actionDir,
         `Failed to inspect implementation workspace: ${message(error)}`,
         "human-required",
+        revision?.candidateEventId,
       );
     }
     const planPath =
@@ -190,11 +195,11 @@ async function runLeased(input: {
     const prompt = renderFactoryImplementationPrompt({
       workItem: ctx.workItem,
       planPath,
-      restartGuidance: ctx.restartGuidance,
       ...(revision
         ? {
             revision: {
               blockingFindings: revision.blockingFindings,
+              operatorResponse: revision.operatorResponse,
               priorCommit: revision.priorCommit,
             },
           }
@@ -294,6 +299,7 @@ async function runLeased(input: {
         actionDir,
         `Failed to inspect workspace after implementer completion: ${message(error)}`,
         "human-required",
+        revision?.candidateEventId,
       );
     }
     staged = {
@@ -323,6 +329,7 @@ async function runLeased(input: {
       staged.result.aborted || staged.result.malformed || !unchanged
         ? "human-required"
         : "retryable",
+      revision?.candidateEventId,
     );
   }
   try {
@@ -332,6 +339,7 @@ async function runLeased(input: {
         actionDir,
         "Implementation workspace changed after the staged provider result",
         "human-required",
+        revision?.candidateEventId,
       );
   } catch (error) {
     return fail(
@@ -339,6 +347,7 @@ async function runLeased(input: {
       actionDir,
       `Failed to inspect staged implementation workspace: ${message(error)}`,
       "human-required",
+      revision?.candidateEventId,
     );
   }
   if (!validStagedSuccessAuthority(ctx, staged))
@@ -347,6 +356,7 @@ async function runLeased(input: {
       actionDir,
       "Implementer mutated Git branch, refs, HEAD, or index",
       "human-required",
+      revision?.candidateEventId,
     );
   try {
     const head = (input.reviewHeadFactory ?? createFactoryReviewHead)({
@@ -358,17 +368,17 @@ async function runLeased(input: {
       timestamp: staged.timestamp,
     });
     if (revision && head.treeSha === revision.priorTree)
-      return fail(input, actionDir, "Implementation revision produced no new tree", "terminal");
+      return fail(
+        input,
+        actionDir,
+        "Implementation revision produced no new tree",
+        "human-required",
+        revision.candidateEventId,
+      );
     writeDurableFactoryFile(join(actionDir, "candidate.diff.patch"), head.diffPatch, true);
     const diff = ref(ctx, join(actionDir, "candidate.diff.patch"));
     const raw = ref(ctx, join(actionDir, "implementer.raw.json"));
     const stream = ref(ctx, join(actionDir, "implementer.stream.jsonl"));
-    const handoffPath = join(actionDir, "handoff.json");
-    writeDurableFactoryFile(
-      handoffPath,
-      `${JSON.stringify({ summary: "Immutable implementation candidate ready for full review" }, null, 2)}\n`,
-      true,
-    );
     const evidencePath = join(actionDir, "candidate-evidence.json");
     writeDurableFactoryFile(
       evidencePath,
@@ -383,7 +393,7 @@ async function runLeased(input: {
           tree: head.treeSha,
           status: staged.after.status,
           effectiveSession: staged.result.session,
-          artifacts: { raw, stream, diff, handoff: ref(ctx, handoffPath) },
+          artifacts: { raw, stream, diff },
         },
         null,
         2,
@@ -410,6 +420,7 @@ async function runLeased(input: {
       error instanceof FactoryReviewHeadError && error.kind === "invariant"
         ? "terminal"
         : "human-required",
+      revision?.candidateEventId,
     );
   }
 }
@@ -460,6 +471,7 @@ function fail(
   actionDir: string,
   error: string,
   failureKind: "retryable" | "human-required" | "terminal",
+  retainedCandidateEventId?: string,
 ) {
   const failurePath = join(actionDir, "failure.json");
   writeDurableFactoryFile(
@@ -485,6 +497,7 @@ function fail(
       phase: "implementation",
       failureKind,
       message: error,
+      ...(retainedCandidateEventId ? { retainedCandidateEventId } : {}),
     },
   };
   writeFactoryActionResult(actionDir, event);
@@ -559,7 +572,6 @@ function assertReaction(input: Parameters<typeof produceImplementationCandidate>
   );
   const state = reduceFactoryLifecycleEvents(events);
   const latest = events.at(-1);
-  assertFactoryImplementationRestartGuidanceBinding({ ctx: input.ctx, events });
   if (
     !state ||
     !latest ||

@@ -95,6 +95,9 @@ have been checked for secrets.
   lifecycle event, transition, or phase identity change makes persisted state
   incompatible, bump `FACTORY_STORE_FORMAT` and require explicit archive/reset;
   do not reinterpret old events or add an implicit migration path.
+- Preserve reusable Factory candidates across human waits. A producer revision
+  or same-candidate re-review must follow an explicit durable continuation, not
+  an automatic review loop or fresh-phase rerun.
 - Avoid introducing new patterns without documenting when to use them.
 - Prefer boring, explicit commands over hidden agent memory.
 - Keep durable examples generic to this repo and target repositories.

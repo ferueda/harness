@@ -4,7 +4,7 @@ import { z } from "zod";
 import { formatZodError } from "./schemas.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
-export const FACTORY_STORE_FORMAT = 2 as const;
+export const FACTORY_STORE_FORMAT = 3 as const;
 export const FACTORY_STORE_FORMAT_FILE = "store-format.json";
 
 const FactoryStoreFormatSchema = z

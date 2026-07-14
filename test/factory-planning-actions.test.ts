@@ -5,6 +5,7 @@ import { expect, test, vi } from "vitest";
 import type { Agent, AgentRunInput } from "../lib/agents.ts";
 import { verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
+import { recordFactoryContinuation } from "../lib/factory-continuation.ts";
 import { producePlanCandidate } from "../lib/factory-plan-candidate-action.ts";
 import { reviewPlanCandidate } from "../lib/factory-plan-review-action.ts";
 import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
@@ -65,6 +66,13 @@ test("candidate and review actions step separately and revisions resume the plan
   const reviewRunner = async (reviewCtx: { runDir?: string }) => {
     reviewCount += 1;
     mkdirSync(reviewCtx.runDir!, { recursive: true });
+    if (reviewCount === 2) {
+      const handoff = readFileSync(join(reviewCtx.runDir!, "context/handoff.md"), "utf8");
+      expect(handoff).toContain("selected revise");
+      expect(handoff).toContain("Apply the plan blocker.");
+      expect(handoff).toContain("# Prior review result");
+      expect(handoff).toContain('"title": "Blocker"');
+    }
     writeFileSync(
       join(reviewCtx.runDir!, "spec-review.json"),
       JSON.stringify(
@@ -82,6 +90,15 @@ test("candidate and review actions step separately and revisions resume the plan
                   rationale: "required",
                   must_fix: true,
                 },
+                {
+                  title: "Advisory context",
+                  severity: "Low",
+                  location: "verification",
+                  issue: "optional detail",
+                  recommendation: "consider it",
+                  rationale: "non-blocking",
+                  must_fix: false,
+                },
               ],
             }
           : { verdict: "pass", summary: "ok", findings: [] },
@@ -89,7 +106,7 @@ test("candidate and review actions step separately and revisions resume the plan
     );
     return { status: "completed", verdict: reviewCount === 1 ? "needs_changes" : "pass" };
   };
-  const reviewed = await reviewPlanCandidate({
+  await reviewPlanCandidate({
     ctx,
     factoryStateRoot,
     reaction: invoke(first),
@@ -98,16 +115,18 @@ test("candidate and review actions step separately and revisions resume the plan
     reviewRunner: reviewRunner as never,
   });
   expect(reviewCount).toBe(1);
+  const continued = continuePlanning(ctx, factoryStateRoot, "revise", "Apply the plan blocker.");
   const revised = await producePlanCandidate({
     ctx,
     factoryStateRoot,
-    reaction: invoke(reviewed),
+    reaction: invoke(continued),
     maxRuntimeMs: 1_000,
     agentProviderFactory: providerFactory,
   });
   expect(providerCalls).toHaveLength(2);
   expect(providerCalls[1]?.session).toEqual({ provider: "cursor", id: "planner-session" });
   expect(providerCalls[1]?.prompt).toContain("spec-001");
+  expect(providerCalls[1]?.prompt).toContain("Apply the plan blocker.");
   const approved = await reviewPlanCandidate({
     ctx,
     factoryStateRoot,
@@ -131,6 +150,98 @@ test("candidate and review actions step separately and revisions resume the plan
   expect(
     telemetry.filter((event) => event.type === "run:end" && event.stepId === "reviewPlanCandidate"),
   ).toHaveLength(2);
+});
+
+test("accepted evidence re-reviews the exact plan candidate without invoking the planner", async () => {
+  const fixture = planningActionFixture();
+  const plannerRun = vi.fn<Agent["run"]>(async (input: AgentRunInput) => {
+    writeFileSync(plannerDraftPath(input), "# Candidate\n");
+    return successfulPlannerResult();
+  });
+  const candidate = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(fixture.start),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: plannerRun }),
+  });
+  let reviewRound = 0;
+  let reReviewHandoff = "";
+  const reviewRunner = async (reviewCtx: { runDir?: string }) => {
+    reviewRound += 1;
+    mkdirSync(reviewCtx.runDir!, { recursive: true });
+    if (reviewRound === 2)
+      reReviewHandoff = readFileSync(join(reviewCtx.runDir!, "context/handoff.md"), "utf8");
+    writeFileSync(
+      join(reviewCtx.runDir!, "spec-review.json"),
+      JSON.stringify(
+        reviewRound === 1
+          ? {
+              verdict: "needs_changes",
+              summary: "proof required",
+              findings: [
+                {
+                  title: "External proof",
+                  severity: "High",
+                  location: "verification",
+                  issue: "proof missing",
+                  recommendation: "attach proof",
+                  rationale: "required",
+                  must_fix: true,
+                },
+                {
+                  title: "Advisory context",
+                  severity: "Low",
+                  location: "verification",
+                  issue: "optional detail",
+                  recommendation: "consider it",
+                  rationale: "non-blocking",
+                  must_fix: false,
+                },
+              ],
+            }
+          : { verdict: "pass", summary: "proof accepted", findings: [] },
+      ),
+    );
+    return { status: "completed", verdict: reviewRound === 1 ? "needs_changes" : "pass" };
+  };
+  const firstReview = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  expect(firstReview.state).toMatchObject({ status: "awaiting-continuation" });
+  const continued = continuePlanning(
+    fixture.ctx,
+    fixture.factoryStateRoot,
+    "re-review",
+    "The required external proof is attached and accepted.",
+  );
+  expect(continued.next).toMatchObject({
+    handler: "reviewPlanCandidate",
+    attempt: 2,
+    reason: "operator-re-review",
+  });
+
+  const approved = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+
+  expect(approved.state).toMatchObject({ status: "approved" });
+  expect(plannerRun).toHaveBeenCalledTimes(1);
+  expect(reviewRound).toBe(2);
+  expect(reReviewHandoff).toContain("The required external proof is attached and accepted.");
+  expect(reReviewHandoff).toContain("External proof");
+  expect(reReviewHandoff).toContain("Advisory context");
+  expect(candidateBytes(fixture.ctx, candidate.event)).toBe("# Candidate\n");
 });
 
 test("plan review receives the durable Factory work item as original-intent authority", async () => {
@@ -159,6 +270,166 @@ test("plan review receives the durable Factory work item as original-intent auth
     type: "planning.review.completed",
     data: { verdict: "pass" },
   });
+});
+
+test("tampered continuation response cannot trigger a re-review", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  const firstReview = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
+      mkdirSync(reviewCtx.runDir!, { recursive: true });
+      writeFileSync(
+        join(reviewCtx.runDir!, "spec-review.json"),
+        JSON.stringify({
+          verdict: "needs_changes",
+          summary: "proof required",
+          findings: [
+            {
+              title: "External proof",
+              severity: "High",
+              location: "verification",
+              issue: "proof missing",
+              recommendation: "attach proof",
+              rationale: "required",
+              must_fix: true,
+            },
+          ],
+        }),
+      );
+      return { status: "completed", verdict: "needs_changes" };
+    }) as never,
+  });
+  expect(firstReview.state).toMatchObject({ status: "awaiting-continuation" });
+  const continued = continuePlanning(
+    fixture.ctx,
+    fixture.factoryStateRoot,
+    "re-review",
+    "Accepted proof.",
+  );
+  if (continued.event.type !== "factory.continuation.recorded")
+    throw new Error("expected continuation");
+  const responsePath = verifyFactoryArtifactRef(continued.event.data.response, {
+    "factory-store": fixture.ctx.factoryStore.projectRoot,
+    repository: fixture.ctx.workspace,
+  });
+  writeFileSync(responsePath, "Tampered proof.\n");
+  const reviewer = vi.fn<Agent["run"]>();
+
+  await expect(
+    reviewPlanCandidate({
+      ctx: fixture.ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(continued),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: reviewer }),
+    }),
+  ).rejects.toThrow(/artifact hash mismatch/);
+  expect(reviewer).not.toHaveBeenCalled();
+});
+
+test("tampered revision response retains a valid plan candidate", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  if (candidate.event.type !== "planning.candidate.produced") throw new Error("candidate");
+  const continued = continuePlanning(
+    fixture.ctx,
+    fixture.factoryStateRoot,
+    "revise",
+    "Correct the plan without abandoning the accepted candidate.",
+  );
+  if (continued.event.type !== "factory.continuation.recorded") throw new Error("continuation");
+  const responsePath = verifyFactoryArtifactRef(continued.event.data.response, {
+    "factory-store": fixture.ctx.factoryStore.projectRoot,
+    repository: fixture.ctx.workspace,
+  });
+  writeFileSync(responsePath, "Tampered response.\n");
+  const provider = vi.fn<Agent["run"]>();
+
+  const failed = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: provider }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal", retainedCandidateEventId: candidate.event.id },
+  });
+  expect(failed.state).toMatchObject({
+    status: "awaiting-continuation",
+    candidateEventId: candidate.event.id,
+  });
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test("tampered revision candidate clears reusable plan identity", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  if (candidate.event.type !== "planning.candidate.produced") throw new Error("candidate");
+  const continued = continuePlanning(
+    fixture.ctx,
+    fixture.factoryStateRoot,
+    "revise",
+    "Correct the plan.",
+  );
+  const candidatePath = verifyFactoryArtifactRef(candidate.event.data.candidate, {
+    "factory-store": fixture.ctx.factoryStore.projectRoot,
+    repository: fixture.ctx.workspace,
+  });
+  writeFileSync(candidatePath, "# Tampered candidate\n");
+  const provider = vi.fn<Agent["run"]>();
+
+  const failed = await producePlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: provider }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+  expect(failed.event.data).not.toHaveProperty("retainedCandidateEventId");
+  expect(failed.state).toMatchObject({ status: "failed" });
+  expect(failed.state).not.toHaveProperty("candidateEventId");
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test("tampered plan candidate clears reusable identity for a clean rerun", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  if (candidate.event.type !== "planning.candidate.produced") throw new Error("candidate");
+  const candidatePath = verifyFactoryArtifactRef(candidate.event.data.candidate, {
+    "factory-store": fixture.ctx.factoryStore.projectRoot,
+    repository: fixture.ctx.workspace,
+  });
+  writeFileSync(candidatePath, "# Tampered\n");
+  const reviewer = vi.fn<Agent["run"]>();
+
+  const failed = await reviewPlanCandidate({
+    ctx: fixture.ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(candidate),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: reviewer }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+  expect(failed.state).toMatchObject({ status: "failed" });
+  expect(failed.state).not.toHaveProperty("candidateEventId");
+  expect(reviewer).not.toHaveBeenCalled();
 });
 
 test("first candidate recovery publishes staged draft bytes without rerunning the provider", async () => {
@@ -203,7 +474,7 @@ test("revision recovery publishes its staged draft instead of restoring the pred
       },
     }),
   });
-  const reviewed = await reviewPlanCandidate({
+  await reviewPlanCandidate({
     ctx: fixture.ctx,
     factoryStateRoot: fixture.factoryStateRoot,
     reaction: invoke(first),
@@ -232,7 +503,13 @@ test("revision recovery publishes its staged draft instead of restoring the pred
       return { status: "completed", verdict: "needs_changes" };
     }) as never,
   });
-  const reaction = invoke(reviewed);
+  const continued = continuePlanning(
+    fixture.ctx,
+    fixture.factoryStateRoot,
+    "revise",
+    "Apply the plan blocker.",
+  );
+  const reaction = invoke(continued);
   const actionDir = planningActionDir(fixture.ctx, reaction);
   mkdirSync(join(actionDir, "planner.json"), { recursive: true });
   const providerRun = vi.fn<Agent["run"]>(async (input: AgentRunInput) => {
@@ -634,7 +911,6 @@ function planningActionFixture() {
     plannerRole: { agent: "cursor", model: "planner" },
     reviewerRole: { agent: "cursor", model: "reviewer" },
     outputPlan: "dev/plans/item-1.md",
-    maxReviewIterations: 2,
     maxRuntimeMs: 1_000,
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     factoryStore: store,
@@ -672,7 +948,6 @@ function planningActionFixture() {
         },
       ],
       intent: "start",
-      reviewCeiling: 2,
       publicationMode: "local",
       outputPlan: "dev/plans/item-1.md",
     },
@@ -756,6 +1031,22 @@ function successfulPlannerResult(
 
 function unchangedWorkspace() {
   return { workspaceStatus: { before: "clean", after: "clean" } };
+}
+
+function continuePlanning(
+  ctx: ReturnType<typeof openFactoryPlanningRunContext>,
+  factoryStateRoot: string,
+  decision: "revise" | "re-review",
+  response: string,
+) {
+  return recordFactoryContinuation({
+    phase: "planning",
+    decision,
+    response,
+    factoryStateRoot,
+    factoryStore: ctx.factoryStore,
+    workItem: ctx.workItem,
+  });
 }
 
 function invoke(result: {

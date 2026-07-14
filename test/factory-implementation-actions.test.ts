@@ -3,12 +3,15 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { expect, test, vi } from "vitest";
-import { runOneFactoryImplementationAction } from "../bin/factory-implementation-cli.ts";
+import {
+  assertLiveImplementationStatus,
+  runOneFactoryImplementationAction,
+} from "../bin/factory-implementation-cli.ts";
 import type { Agent, AgentRunInput } from "../lib/agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
+import { recordFactoryContinuation } from "../lib/factory-continuation.ts";
 import { produceImplementationCandidate } from "../lib/factory-implementation-candidate-action.ts";
-import { MAX_FACTORY_IMPLEMENTATION_RESTART_GUIDANCE_BYTES } from "../lib/factory-implementation-guidance.ts";
 import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
 import {
   createFactoryImplementationRunContext,
@@ -21,7 +24,6 @@ import {
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
-import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
 import { createFactoryReviewHead, FactoryReviewHeadError } from "../lib/factory-review-head.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import {
@@ -81,14 +83,12 @@ test("revision resumes the effective session with complete blockers and promotes
   });
   const first = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({ name: "cursor", run: firstProvider }),
   });
   expect(first.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 1 });
 
   const needsChanges = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 99,
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: (async (ctx: { runDir?: string }) => {
       writeBlockingReviews(ctx.runDir!);
@@ -99,13 +99,22 @@ test("revision resumes the effective session with complete blockers and promotes
     handler: "reviewImplementationCandidate",
     attempt: 1,
   });
-  expect(needsChanges.next).toMatchObject({
+  expect(needsChanges.next).toEqual({ kind: "wait", reason: "human" });
+  expect(firstProvider).toHaveBeenCalledTimes(1);
+  const continued = recordFactoryContinuation({
+    phase: "implementation",
+    decision: "revise",
+    response: "Apply both accepted blockers without replacing valid prior work.",
+    factoryStateRoot: fixture.factoryStateRoot,
+    factoryStore: fixture.store,
+    workItem: fixture.workItem,
+  });
+  expect(continued.next).toMatchObject({
     kind: "invoke",
     handler: "produceImplementationCandidate",
     attempt: 2,
-    reason: "review-needs-changes",
+    reason: "operator-revise",
   });
-  expect(firstProvider).toHaveBeenCalledTimes(1);
   git(fixture.workspace, ["tag", "unrelated-operator-tag"]);
 
   const revisionProvider = vi.fn<Agent["run"]>(async (input) => {
@@ -113,12 +122,12 @@ test("revision resumes the effective session with complete blockers and promotes
     expect(input.prompt).toContain("Revision authority");
     expect(input.prompt).toContain("Correctness");
     expect(input.prompt).toContain("Clarity");
+    expect(input.prompt).toContain("Apply both accepted blockers");
     writeFileSync(join(fixture.workspace, "tracked.txt"), "second\n");
     return { ok: true, raw: {} };
   });
   const revision = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 1,
     agentProviderFactory: () => ({ name: "cursor", run: revisionProvider }),
   });
   expect(revision.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 2 });
@@ -126,9 +135,13 @@ test("revision resumes the effective session with complete blockers and promotes
 
   const pass = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 1,
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: (async (ctx: { runDir?: string }) => {
+      const handoff = readFileSync(join(ctx.runDir!, "context/handoff.md"), "utf8");
+      expect(handoff).toContain("selected revise");
+      expect(handoff).toContain("Apply both accepted blockers");
+      expect(handoff).toContain("Prior implementation review");
+      expect(handoff).toContain("Prior quality review");
       writePassReviews(ctx.runDir!);
       return fullReviewMeta("pass");
     }) as never,
@@ -149,6 +162,134 @@ test("revision resumes the effective session with complete blockers and promotes
   expect(candidates[1]!.data.effectiveSession).toMatchObject({ id: "session-1" });
 });
 
+test("accepted evidence re-reviews the exact candidate without invoking the producer", async () => {
+  const fixture = directFixture();
+  const providerRun = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (ctx: { runDir?: string }) => {
+      writeBlockingReviews(ctx.runDir!);
+      return fullReviewMeta("needs_changes");
+    }) as never,
+  });
+  const before = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
+  const candidate = before.find(
+    (
+      event,
+    ): event is Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }> =>
+      event.type === "implementation.candidate.produced",
+  );
+  if (!candidate) throw new Error("candidate missing");
+  const continued = continueImplementation(
+    fixture,
+    "re-review",
+    "The required live Desktop routing smoke passed; use the attached result as evidence.",
+  );
+  expect(continued.next).toMatchObject({
+    handler: "reviewImplementationCandidate",
+    attempt: 2,
+    reason: "operator-re-review",
+  });
+  expect(() =>
+    continueImplementation(fixture, "re-review", "Duplicate continuation must not be recorded."),
+  ).toThrow(/no candidate awaiting continuation/);
+  expect(
+    readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
+      (event) => event.type === "factory.continuation.recorded",
+    ),
+  ).toHaveLength(1);
+  const unexpectedProducer = vi.fn<Agent["run"]>();
+  const reviewRunner = vi.fn(async (ctx: { runDir?: string }) => {
+    const handoff = readFileSync(join(ctx.runDir!, "context/handoff.md"), "utf8");
+    expect(handoff).toContain(candidate.data.commit);
+    expect(handoff).toContain("live Desktop routing smoke passed");
+    expect(handoff).toContain("Correctness");
+    expect(handoff).toContain("Clarity");
+    writePassReviews(ctx.runDir!);
+    return fullReviewMeta("pass");
+  });
+  const result = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    agentProviderFactory: () => ({ name: "cursor", run: unexpectedProducer }),
+    reviewRunner: reviewRunner as never,
+  });
+  expect(result.action).toMatchObject({ handler: "reviewImplementationCandidate", attempt: 2 });
+  expect(result.next).toEqual({ kind: "wait", reason: "pr-publication" });
+  expect(unexpectedProducer).not.toHaveBeenCalled();
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  const after = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
+  expect(after.filter((event) => event.type === "implementation.candidate.produced")).toHaveLength(
+    1,
+  );
+  expect(after.filter((event) => event.type === "implementation.review.completed")).toHaveLength(2);
+  expect(git(fixture.workspace, ["rev-parse", "HEAD"]).trim()).toBe(candidate.data.commit);
+});
+
+test("rerun rejects an active phase that already has a reusable candidate", async () => {
+  const fixture = directFixture();
+  const providerRun = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+
+  await expect(
+    runOneFactoryImplementationAction({
+      ...coordinatorInput(fixture),
+      rerun: true,
+      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+    }),
+  ).rejects.toThrow(/without a reusable candidate/);
+  expect(providerRun).toHaveBeenCalledTimes(1);
+  expect(
+    readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
+      (event) => event.type === "implementation.requested",
+    ),
+  ).toHaveLength(1);
+});
+
+test("rerun starts a fresh phase only after failure without a candidate", async () => {
+  const fixture = directFixture();
+  let calls = 0;
+  const providerRun = vi.fn<Agent["run"]>(async () => {
+    calls += 1;
+    if (calls === 1) return { ok: false, error: "operator canceled", exitCode: 130, aborted: true };
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-2" } };
+  });
+  const failed = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+  expect(failed.next).toEqual({ kind: "wait", reason: "human" });
+
+  const restarted = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    rerun: true,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+
+  expect(restarted.phaseRunId).not.toBe(failed.phaseRunId);
+  expect(restarted.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 1 });
+  expect(providerRun).toHaveBeenCalledTimes(2);
+  const requests = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
+    (event) => event.type === "implementation.requested",
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests.at(-1)?.data.intent).toBe("restart");
+});
+
 test("Linear needs_changes attention retries before one scheduled revision producer", async () => {
   const fixture = directFixture();
   fixture.workItem.metadata = { linearStatus: "Ready to Implement" };
@@ -165,7 +306,6 @@ test("Linear needs_changes attention retries before one scheduled revision produ
   }));
   await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     linearIssue: "ENG-123",
     issueRef: "ENG-123",
     linearStatuses: LINEAR_SETTINGS.statuses,
@@ -179,7 +319,6 @@ test("Linear needs_changes attention retries before one scheduled revision produ
   await expect(
     runOneFactoryImplementationAction({
       ...coordinatorInput(fixture),
-      reviewCeiling: 3,
       linearIssue: "ENG-123",
       issueRef: "ENG-123",
       linearStatuses: LINEAR_SETTINGS.statuses,
@@ -200,7 +339,6 @@ test("Linear needs_changes attention retries before one scheduled revision produ
   await expect(
     runOneFactoryImplementationAction({
       ...coordinatorInput(fixture),
-      reviewCeiling: 3,
       linearIssue: "ENG-123",
       issueRef: "ENG-123",
       linearStatuses: LINEAR_SETTINGS.statuses,
@@ -210,6 +348,14 @@ test("Linear needs_changes attention retries before one scheduled revision produ
   ).rejects.toThrow("attention projection unavailable");
   expect(retryProvider).not.toHaveBeenCalled();
   expect(attentionFailure).toHaveBeenCalledTimes(2);
+  recordFactoryContinuation({
+    phase: "implementation",
+    decision: "revise",
+    response: "Apply the two accepted blocking findings.",
+    factoryStateRoot: fixture.factoryStateRoot,
+    factoryStore: fixture.store,
+    workItem: fixture.workItem,
+  });
 
   const repairedAttention = vi.fn(async () => ({
     issueIdentifier: "ENG-123",
@@ -227,7 +373,6 @@ test("Linear needs_changes attention retries before one scheduled revision produ
   });
   const repaired = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     linearIssue: "ENG-123",
     issueRef: "ENG-123",
     linearStatuses: LINEAR_SETTINGS.statuses,
@@ -242,7 +387,7 @@ test("Linear needs_changes attention retries before one scheduled revision produ
   expect(firstProvider).toHaveBeenCalledTimes(1);
   expect(revisionProvider).toHaveBeenCalledTimes(1);
   expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key)).toHaveLength(
-    before.length + 1,
+    before.length + 2,
   );
   expect(
     readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
@@ -256,11 +401,82 @@ test("Linear needs_changes attention retries before one scheduled revision produ
   ).toHaveLength(1);
 });
 
+test("Linear attention is repaired before a selected same-candidate re-review", async () => {
+  const fixture = directFixture();
+  fixture.workItem.metadata = { linearStatus: "Ready to Implement" };
+  const producer = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({
+      applyImplementationStarted: async () => ({
+        issueIdentifier: "ENG-123",
+        runId: "run",
+        runDir: "run",
+        stage: "started",
+        targetStatus: "Implementing",
+      }),
+    }),
+    agentProviderFactory: () => ({ name: "cursor", run: producer }),
+  });
+  fixture.workItem.metadata = { linearStatus: "Implementing" };
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: (async (ctx: { runDir?: string }) => {
+      writeBlockingReviews(ctx.runDir!);
+      return fullReviewMeta("needs_changes");
+    }) as never,
+  });
+  continueImplementation(fixture, "re-review", "The accepted live proof is now available.");
+  const ordering: string[] = [];
+  const reviewer = vi.fn(async (ctx: { runDir?: string }) => {
+    ordering.push("review");
+    writePassReviews(ctx.runDir!);
+    return fullReviewMeta("pass");
+  });
+  const unexpectedProducer = vi.fn<Agent["run"]>();
+
+  const completed = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({
+      applyImplementationAttention: async () => {
+        ordering.push("projection");
+        return {
+          issueIdentifier: "ENG-123",
+          runId: "run",
+          runDir: "run",
+          stage: "completed",
+          targetStatus: "Implementing",
+        };
+      },
+    }),
+    agentProviderFactory: () => ({ name: "cursor", run: unexpectedProducer }),
+    reviewRunner: reviewer as never,
+  });
+
+  expect(ordering).toEqual(["projection", "review"]);
+  expect(completed.action).toMatchObject({ handler: "reviewImplementationCandidate", attempt: 2 });
+  expect(completed.next).toEqual({ kind: "wait", reason: "pr-publication" });
+  expect(unexpectedProducer).not.toHaveBeenCalled();
+  expect(producer).toHaveBeenCalledTimes(1);
+});
+
 test("tampered revision blockers are terminal before a second provider call", async () => {
   const fixture = directFixture();
   const first = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({
       name: "cursor",
       run: async () => {
@@ -272,7 +488,6 @@ test("tampered revision blockers are terminal before a second provider call", as
   expect(first.action?.attempt).toBe(1);
   await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: (async (ctx: { runDir?: string }) => {
       writeBlockingReviews(ctx.runDir!);
@@ -282,6 +497,7 @@ test("tampered revision blockers are terminal before a second provider call", as
   const review = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1)!;
   if (review.type !== "implementation.review.completed" || !review.data.blockingFindings)
     throw new Error("review blockers missing");
+  continueImplementation(fixture, "revise", "Apply the accepted blocking findings.");
   writeFileSync(
     verifyFactoryArtifactRef(review.data.blockingFindings, {
       "factory-store": fixture.store.projectRoot,
@@ -292,19 +508,114 @@ test("tampered revision blockers are terminal before a second provider call", as
   const providerRun = vi.fn<Agent["run"]>();
   const result = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
   });
   expect(providerRun).not.toHaveBeenCalled();
   expect(result.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 2 });
-  expect(result.next).toEqual({ kind: "wait", reason: "failed" });
+  expect(result.next).toEqual({ kind: "wait", reason: "human" });
+  expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1)).toMatchObject({
+    type: "factory.action.failed",
+    data: { retainedCandidateEventId: expect.any(String) },
+  });
+});
+
+test("tampered revision response retains a valid implementation candidate", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  if (candidate.event.type !== "implementation.candidate.produced") throw new Error("candidate");
+  const continued = continueImplementation(
+    fixture,
+    "revise",
+    "Correct the implementation without abandoning the candidate.",
+  );
+  if (continued.event.type !== "factory.continuation.recorded") throw new Error("continuation");
+  const responsePath = verifyFactoryArtifactRef(continued.event.data.response, {
+    "factory-store": fixture.store.projectRoot,
+    repository: fixture.workspace,
+  });
+  writeFileSync(responsePath, "Tampered response.\n");
+  const provider = vi.fn<Agent["run"]>();
+
+  const failed = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor", run: provider }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal", retainedCandidateEventId: candidate.event.id },
+  });
+  expect(failed.state).toMatchObject({
+    status: "awaiting-continuation",
+    candidateEventId: candidate.event.id,
+  });
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test("tampered revision evidence clears reusable implementation identity", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  if (candidate.event.type !== "implementation.candidate.produced") throw new Error("candidate");
+  const continued = continueImplementation(fixture, "revise", "Correct the implementation.");
+  const candidatePath = verifyFactoryArtifactRef(candidate.event.data.candidate, {
+    "factory-store": fixture.store.projectRoot,
+    repository: fixture.workspace,
+  });
+  writeFileSync(candidatePath, "{}\n");
+  const provider = vi.fn<Agent["run"]>();
+
+  const failed = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor", run: provider }),
+  });
+
+  expect(failed.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal" },
+  });
+  expect(failed.event.data).not.toHaveProperty("retainedCandidateEventId");
+  expect(failed.state).toMatchObject({ status: "failed" });
+  expect(failed.state).not.toHaveProperty("candidateEventId");
+  expect(provider).not.toHaveBeenCalled();
+});
+
+test("implementation continuation accepts only the active Linear status", async () => {
+  const fixture = directFixture();
+  await produceCandidate(fixture);
+  const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
+  const state = reduceFactoryLifecycleEvents(events);
+  const latest = events.at(-1);
+
+  expect(() =>
+    assertLiveImplementationStatus(
+      { ...fixture.workItem, metadata: { linearStatus: "Implementing" } },
+      state,
+      latest,
+      false,
+      LINEAR_SETTINGS.statuses,
+    ),
+  ).not.toThrow();
+  expect(() =>
+    assertLiveImplementationStatus(
+      { ...fixture.workItem, metadata: { linearStatus: "Ready for Review" } },
+      state,
+      latest,
+      false,
+      LINEAR_SETTINGS.statuses,
+    ),
+  ).toThrow(/not valid for Factory implementation/);
 });
 
 test("revision workspace drift waits for a human before resuming the provider", async () => {
   const fixture = directFixture();
   await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({
       name: "cursor",
       run: async () => {
@@ -315,18 +626,17 @@ test("revision workspace drift waits for a human before resuming the provider", 
   });
   await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: (async (ctx: { runDir?: string }) => {
       writeBlockingReviews(ctx.runDir!);
       return fullReviewMeta("needs_changes");
     }) as never,
   });
+  continueImplementation(fixture, "revise", "Apply the accepted blocking findings.");
   writeFileSync(join(fixture.workspace, "tracked.txt"), "drift\n");
   const providerRun = vi.fn<Agent["run"]>();
   const result = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
   });
   expect(providerRun).not.toHaveBeenCalled();
@@ -337,7 +647,6 @@ test("retryable revision failure retries the same attempt with its original sess
   const fixture = directFixture();
   await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({
       name: "cursor",
       run: async () => {
@@ -348,13 +657,13 @@ test("retryable revision failure retries the same attempt with its original sess
   });
   await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: (async (ctx: { runDir?: string }) => {
       writeBlockingReviews(ctx.runDir!);
       return fullReviewMeta("needs_changes");
     }) as never,
   });
+  continueImplementation(fixture, "revise", "Apply the accepted blocking findings.");
   const failedProvider = vi.fn<Agent["run"]>(async (input) => {
     expect(input.session).toMatchObject({ id: "session-1" });
     expect(input.prompt).toContain("Correctness");
@@ -362,7 +671,6 @@ test("retryable revision failure retries the same attempt with its original sess
   });
   const failed = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({ name: "cursor", run: failedProvider }),
   });
   expect(failed.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 2 });
@@ -381,7 +689,6 @@ test("retryable revision failure retries the same attempt with its original sess
   });
   const retried = await runOneFactoryImplementationAction({
     ...coordinatorInput(fixture),
-    reviewCeiling: 3,
     agentProviderFactory: () => ({ name: "cursor", run: retriedProvider }),
   });
   expect(failedProvider).toHaveBeenCalledTimes(1);
@@ -980,7 +1287,6 @@ test("planned input requires reviewed plan bytes committed at the implementation
         outputPlan: "dev/plans/item.md",
         publicationMode: "local",
       },
-      reviewCeiling: 1,
       implementerRole: { agent: "cursor", model: "implementer" },
       reviewerRole: { agent: "cursor", model: "reviewer" },
     });
@@ -1015,115 +1321,6 @@ test("phase reopen ignores same-key tampering of its audit work-item copy", () =
     factoryStore: fixture.store,
   });
   expect(reopened.workItem).toMatchObject({ title: "Implement item", body: "Change tracked.txt" });
-});
-
-test("phase reopen rejects tampered restart guidance", () => {
-  const fixture = directFixture();
-  const ctx = createPhase(fixture, "cursor", "Keep the stable check name.\n");
-  if (!ctx.identity.restartGuidance) throw new Error("restart guidance missing");
-  const guidancePath = verifyFactoryArtifactRef(ctx.identity.restartGuidance, {
-    "factory-store": fixture.store.projectRoot,
-    repository: fixture.workspace,
-  });
-  writeFileSync(guidancePath, "Changed after the request.\n");
-  expect(() =>
-    openFactoryImplementationRunContext({
-      workspace: fixture.workspace,
-      runsDir: fixture.store.factoryRunsDir,
-      phaseRunId: ctx.runId,
-      workItem: fixture.workItem,
-      factoryStore: fixture.store,
-    }),
-  ).toThrow(/artifact hash mismatch/);
-});
-
-test("phase creation bounds restart guidance size", () => {
-  const fixture = directFixture();
-  expect(() =>
-    createPhase(
-      fixture,
-      "cursor",
-      "x".repeat(MAX_FACTORY_IMPLEMENTATION_RESTART_GUIDANCE_BYTES + 1),
-    ),
-  ).toThrow(/exceeds 32768 bytes/);
-});
-
-test("candidate action rejects phase guidance not bound to its durable request", async () => {
-  const fixture = directFixture();
-  const ctx = createPhase(fixture, "cursor", "Clarify the abandoned candidate.\n");
-  const requested = appendRequest(fixture, ctx);
-  const providerRun = vi.fn<Agent["run"]>();
-  await expect(
-    produceImplementationCandidate({
-      ctx,
-      factoryStateRoot: fixture.factoryStateRoot,
-      reaction: invoke(requested),
-      maxRuntimeMs: 0,
-      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
-    }),
-  ).rejects.toThrow(/restart guidance conflicts with its request/);
-  expect(providerRun).not.toHaveBeenCalled();
-});
-
-test("failed implementation restart rejects guidance", () => {
-  const fixture = directFixture();
-  const ctx = createPhase(fixture);
-  const requested = appendRequest(fixture, ctx);
-  const failed: FactoryLifecycleEvent = {
-    version: 1,
-    id: `factory.action.failed:${factoryActionKey({
-      phaseRunId: ctx.runId,
-      handler: "produceImplementationCandidate",
-      attempt: 1,
-      causationEventId: requested.event.id,
-    })}`,
-    type: "factory.action.failed",
-    workItemKey: fixture.key,
-    occurredAt: new Date().toISOString(),
-    phaseRunId: ctx.runId,
-    data: {
-      handler: "produceImplementationCandidate",
-      handlerVersion: 1,
-      attempt: 1,
-      causationEventId: requested.event.id,
-      execution: { workspaceRef: fixture.store.repo.id, runRef: fixture.workItemRef },
-      evidence: [fixture.workItemRef],
-      phase: "implementation",
-      failureKind: "terminal",
-      message: "terminal fixture",
-    },
-  };
-  appendFactoryActionEvent({
-    factoryStateRoot: fixture.factoryStateRoot,
-    event: failed,
-    expectedLastEventId: requested.event.id,
-  });
-  const restartGuidance = {
-    base: "factory-store" as const,
-    path: "runs/factory/failed-restart/context/restart-guidance.md",
-    sha256: "f".repeat(64),
-  };
-  expect(() =>
-    appendFactoryActionEvent({
-      factoryStateRoot: fixture.factoryStateRoot,
-      event: {
-        version: 1,
-        id: "implementation.requested:failed-restart",
-        type: "implementation.requested",
-        workItemKey: fixture.key,
-        occurredAt: new Date().toISOString(),
-        phaseRunId: "failed-restart",
-        data: {
-          expectedPredecessor: failed.id,
-          inputRefs: [fixture.workItemRef, restartGuidance],
-          reviewCeiling: 1,
-          intent: "restart",
-          restartGuidance,
-        },
-      },
-      expectedLastEventId: failed.id,
-    }),
-  ).toThrow(/Invalid Factory transition/);
 });
 
 test("phase rejects an implementation identity missing baseRef", () => {
@@ -1220,7 +1417,7 @@ test("wrong-provider implementer session becomes human-required without candidat
   expect(git(fixture.workspace, ["for-each-ref", "refs/harness"]).trim()).toBe("");
 });
 
-test("needs_changes at the persisted ceiling waits for a human and preserves all blockers", async () => {
+test("needs_changes waits for an explicit continuation and preserves all blockers", async () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
   const requested = appendRequest(fixture, ctx);
@@ -1248,7 +1445,7 @@ test("needs_changes at the persisted ceiling waits for a human and preserves all
       return fullReviewMeta("needs_changes");
     }) as never,
   });
-  expect(reviewed.state).toMatchObject({ status: "needs-human" });
+  expect(reviewed.state).toMatchObject({ status: "awaiting-continuation" });
   expect(git(fixture.workspace, ["rev-parse", "HEAD"]).trim()).toBe(fixture.baseSha);
   if (reviewed.event.type !== "implementation.review.completed") throw new Error("review");
   const blockingPath = verifyFactoryArtifactRef(reviewed.event.data.blockingFindings!, {
@@ -1276,11 +1473,34 @@ test("blocked implementation review waits for a human", async () => {
       return fullReviewMeta("blocked");
     }) as never,
   });
-  expect(reviewed.state).toMatchObject({ status: "needs-human" });
+  expect(reviewed.state).toMatchObject({ status: "awaiting-continuation" });
   expect(decideNextFactoryAction(reviewed.state, reviewed.event)).toEqual({
     kind: "wait",
     reason: "human",
   });
+  const continued = continueImplementation(
+    fixture,
+    "re-review",
+    "The blocked reviewer dependency is now available.",
+  );
+  const secondReview = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    const handoff = readFileSync(join(reviewCtx.runDir!, "context/handoff.md"), "utf8");
+    expect(handoff).toContain("Prior implementation review");
+    expect(handoff).toContain('"verdict": "blocked"');
+    expect(handoff).toContain("The blocked reviewer dependency is now available.");
+    writePassReviews(reviewCtx.runDir!);
+    return fullReviewMeta("pass");
+  });
+  const passed = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: secondReview as never,
+  });
+  expect(secondReview).toHaveBeenCalledOnce();
+  expect(passed.state).toMatchObject({ status: "awaiting-pr-publication" });
 });
 
 test("review recovery rejects tampered blocking findings", async () => {
@@ -1414,7 +1634,10 @@ test.each(["before", "during"] as const)(
     });
     expect(reviewed.event).toMatchObject({
       type: "factory.action.failed",
-      data: { failureKind: timing === "during" ? "human-required" : "terminal" },
+      data: {
+        failureKind: "human-required",
+        retainedCandidateEventId: expect.any(String),
+      },
     });
   },
 );
@@ -1525,6 +1748,14 @@ test("retryable reviewer failure runs the same review action again", async () =>
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: reviewRunner as never,
   });
+  expect(() =>
+    continueImplementation(fixture, "revise", "Do not bypass the pending review retry."),
+  ).toThrow(/no candidate awaiting continuation/);
+  expect(decideNextFactoryAction(first.state, first.event)).toMatchObject({
+    handler: "reviewImplementationCandidate",
+    attempt: 1,
+    scheduling: "retry",
+  });
   const second = await reviewImplementationCandidate({
     ctx,
     factoryStateRoot: fixture.factoryStateRoot,
@@ -1563,6 +1794,7 @@ test("candidate evidence digest tampering fails before reviewer invocation", asy
     type: "factory.action.failed",
     data: { failureKind: "terminal" },
   });
+  expect(reviewed.state).not.toHaveProperty("candidateEventId");
 });
 
 test("staged pass recovers while branch is still at base without rerunning reviewers", async () => {
@@ -1590,355 +1822,6 @@ test("staged pass recovers while branch is still at base without rerunning revie
   const recovered = await reviewImplementationCandidate(action);
   expect(reviewRunner).toHaveBeenCalledTimes(1);
   expect(recovered.state).toMatchObject({ status: "awaiting-pr-publication" });
-});
-
-test("--rerun creates a fresh attempt-one phase and fresh profile after a human wait", async () => {
-  const fixture = directFixture();
-  const { ctx, candidate } = await produceCandidate(fixture);
-  await reviewImplementationCandidate({
-    ctx,
-    factoryStateRoot: fixture.factoryStateRoot,
-    reaction: invoke(candidate),
-    maxRuntimeMs: 1_000,
-    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
-    reviewRunner: (async (reviewCtx: { runDir?: string }) => {
-      writeBlockingReviews(reviewCtx.runDir!);
-      return fullReviewMeta("needs_changes");
-    }) as never,
-  });
-  git(fixture.workspace, ["restore", "--staged", "--worktree", "."]);
-  const humanWait = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1)!;
-  const unauthorizedGuidance = {
-    base: "factory-store" as const,
-    path: "runs/factory/unauthorized/context/restart-guidance.md",
-    sha256: "f".repeat(64),
-  };
-  expect(() =>
-    appendFactoryActionEvent({
-      factoryStateRoot: fixture.factoryStateRoot,
-      event: {
-        version: 1,
-        id: "implementation.requested:unauthorized-human-restart",
-        type: "implementation.requested",
-        workItemKey: fixture.key,
-        occurredAt: new Date().toISOString(),
-        phaseRunId: "unauthorized-human-restart",
-        data: {
-          expectedPredecessor: humanWait.id,
-          inputRefs: [fixture.workItemRef, unauthorizedGuidance],
-          reviewCeiling: 1,
-          intent: "restart",
-          restartGuidance: unauthorizedGuidance,
-        },
-      },
-      expectedLastEventId: humanWait.id,
-    }),
-  ).toThrow(/Invalid Factory transition/);
-  const providerRun = vi.fn<Agent["run"]>(async (runInput) => {
-    expect(runInput.session).toBeUndefined();
-    writeFileSync(join(fixture.workspace, "tracked.txt"), "fresh rerun\n");
-    return { ok: true, raw: {}, session: { provider: "cursor", id: "fresh-session" } };
-  });
-  const rerun = await runOneFactoryImplementationAction({
-    ...coordinatorInput(fixture),
-    rerun: true,
-    implementerRole: { agent: "cursor", model: "fresh-implementer" },
-    reviewerRole: { agent: "cursor", model: "fresh-reviewer" },
-    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
-  });
-  expect(rerun.phaseRunId).not.toBe(ctx.runId);
-  expect(rerun.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 1 });
-  const identity = readFactoryPhaseRunIdentity(
-    join(fixture.store.factoryRunsDir, rerun.phaseRunId!),
-  );
-  expect(identity).toMatchObject({
-    phase: "implementation",
-    actions: {
-      produceImplementationCandidate: { model: "fresh-implementer" },
-      reviewImplementationCandidate: { model: "fresh-reviewer" },
-    },
-  });
-  const requests = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
-    (event) => event.type === "implementation.requested",
-  );
-  expect(requests).toHaveLength(2);
-  expect(requests[1]).toMatchObject({ data: { intent: "restart" } });
-});
-
-test("--rerun abandons an unreviewed candidate and starts a fresh attempt-one phase", async () => {
-  const fixture = directFixture();
-  const firstProvider = vi.fn<Agent["run"]>(async () => {
-    writeFileSync(join(fixture.workspace, "tracked.txt"), "first candidate\n");
-    return { ok: true, raw: {}, session: { provider: "cursor", id: "first-session" } };
-  });
-  const first = await runOneFactoryImplementationAction({
-    ...coordinatorInput(fixture),
-    agentProviderFactory: () => ({ name: "cursor", run: firstProvider }),
-  });
-  expect(first.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 1 });
-  const firstCandidate = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).find(
-    (
-      event,
-    ): event is Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }> =>
-      event.type === "implementation.candidate.produced",
-  );
-  if (!firstCandidate) throw new Error("first candidate missing");
-  const firstCandidateRef = `refs/harness/factory/${firstCandidate.phaseRunId}/1`;
-
-  expect(() =>
-    appendFactoryActionEvent({
-      factoryStateRoot: fixture.factoryStateRoot,
-      event: {
-        version: 1,
-        id: "implementation.requested:missing-guidance",
-        type: "implementation.requested",
-        workItemKey: fixture.key,
-        occurredAt: new Date().toISOString(),
-        phaseRunId: "missing-guidance",
-        data: {
-          expectedPredecessor: firstCandidate.id,
-          inputRefs: [fixture.workItemRef],
-          reviewCeiling: 1,
-          intent: "restart",
-        },
-      },
-      expectedLastEventId: firstCandidate.id,
-    }),
-  ).toThrow(/Invalid Factory transition/);
-
-  git(fixture.workspace, ["restore", "--staged", "--worktree", "."]);
-  const restartGuidance =
-    "Keep the stable check name and exercise the real Git/env/output entry path.\n";
-  const secondProvider = vi.fn<Agent["run"]>(async (input) => {
-    expect(input.session).toBeUndefined();
-    expect(input.prompt).toContain("## Accepted restart guidance");
-    expect(input.prompt).toContain(restartGuidance);
-    writeFileSync(join(fixture.workspace, "tracked.txt"), "replacement candidate\n");
-    return { ok: true, raw: {}, session: { provider: "cursor", id: "replacement-session" } };
-  });
-  const reviewRunner = vi.fn(async (reviewCtx: { runDir?: string }) => {
-    const handoff = readFileSync(join(reviewCtx.runDir!, "context/handoff.md"), "utf8");
-    expect(handoff).toContain("## Accepted restart guidance");
-    expect(handoff).toContain(restartGuidance);
-    writePassReviews(reviewCtx.runDir!);
-    return fullReviewMeta("pass");
-  });
-  await expect(
-    runOneFactoryImplementationAction({
-      ...coordinatorInput(fixture),
-      rerun: true,
-      agentProviderFactory: () => ({ name: "cursor", run: secondProvider }),
-    }),
-  ).rejects.toThrow(/requires --rerun-guidance-file/);
-  expect(secondProvider).not.toHaveBeenCalled();
-  const rerun = await runOneFactoryImplementationAction({
-    ...coordinatorInput(fixture),
-    rerun: true,
-    restartGuidance,
-    agentProviderFactory: () => ({ name: "cursor", run: secondProvider }),
-    reviewRunner: reviewRunner as never,
-  });
-
-  expect(rerun.phaseRunId).not.toBe(first.phaseRunId);
-  expect(rerun.action).toMatchObject({ handler: "produceImplementationCandidate", attempt: 1 });
-  expect(firstProvider).toHaveBeenCalledTimes(1);
-  expect(secondProvider).toHaveBeenCalledTimes(1);
-  expect(reviewRunner).not.toHaveBeenCalled();
-  expect(git(fixture.workspace, ["rev-parse", firstCandidateRef]).trim()).toBe(
-    firstCandidate.data.commit,
-  );
-  const identity = readFactoryPhaseRunIdentity(
-    join(fixture.store.factoryRunsDir, rerun.phaseRunId!),
-  );
-  if (identity.phase !== "implementation" || !identity.restartGuidance)
-    throw new Error("restart guidance identity missing");
-  const reopened = openFactoryImplementationRunContext({
-    workspace: fixture.workspace,
-    runsDir: fixture.store.factoryRunsDir,
-    phaseRunId: rerun.phaseRunId!,
-    workItem: fixture.workItem,
-    factoryStore: fixture.store,
-  });
-  expect(reopened.restartGuidance).toBe(restartGuidance);
-  const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
-  const requests = events.filter(
-    (event): event is Extract<FactoryLifecycleEvent, { type: "implementation.requested" }> =>
-      event.type === "implementation.requested",
-  );
-  expect(requests).toHaveLength(2);
-  expect(events.filter((event) => event.type === "implementation.candidate.produced")).toHaveLength(
-    2,
-  );
-  expect(requests[1]).toMatchObject({
-    type: "implementation.requested",
-    data: {
-      intent: "restart",
-      expectedPredecessor: firstCandidate.id,
-      restartGuidance: identity.restartGuidance,
-      inputRefs: expect.arrayContaining([identity.restartGuidance]),
-    },
-  });
-
-  const reviewed = await runOneFactoryImplementationAction({
-    ...coordinatorInput(fixture),
-    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
-    reviewRunner: reviewRunner as never,
-  });
-  expect(reviewed.next).toEqual({ kind: "wait", reason: "pr-publication" });
-  expect(reviewRunner).toHaveBeenCalledTimes(1);
-});
-
-test("pre-review restart repair reuses durable guidance before provider work", async () => {
-  const fixture = directFixture();
-  await runOneFactoryImplementationAction({
-    ...coordinatorInput(fixture),
-    agentProviderFactory: () => ({
-      name: "cursor",
-      run: async () => {
-        writeFileSync(join(fixture.workspace, "tracked.txt"), "first candidate\n");
-        return { ok: true, raw: {}, session: { provider: "cursor", id: "first-session" } };
-      },
-    }),
-  });
-  git(fixture.workspace, ["restore", "--staged", "--worktree", "."]);
-  fixture.workItem.metadata = { linearStatus: "Implementing" };
-  const guidance = "Exercise the real entry path before accepting the replacement.\n";
-  const providerRun = vi.fn<Agent["run"]>(async (runInput) => {
-    expect(runInput.prompt).toContain(guidance);
-    writeFileSync(join(fixture.workspace, "tracked.txt"), "replacement candidate\n");
-    return { ok: true, raw: {}, session: { provider: "cursor", id: "replacement" } };
-  });
-  const base = {
-    ...coordinatorInput(fixture),
-    rerun: true,
-    linearIssue: "ENG-123",
-    issueRef: "ENG-123",
-    linearStatuses: LINEAR_SETTINGS.statuses,
-    agentProviderFactory: () => ({ name: "cursor" as const, run: providerRun }),
-  };
-  await expect(
-    runOneFactoryImplementationAction({
-      ...base,
-      restartGuidance: guidance,
-      applyAdapter: fakeLinearAdapter({
-        applyImplementationStarted: async () => {
-          throw new Error("projection unavailable");
-        },
-      }),
-    }),
-  ).rejects.toThrow("projection unavailable");
-  expect(providerRun).not.toHaveBeenCalled();
-
-  await expect(
-    runOneFactoryImplementationAction({
-      ...base,
-      restartGuidance: "Different guidance.\n",
-      applyAdapter: fakeLinearAdapter(),
-    }),
-  ).rejects.toThrow(/conflicts with durable guidance/);
-  expect(providerRun).not.toHaveBeenCalled();
-
-  const repaired = await runOneFactoryImplementationAction({
-    ...base,
-    applyAdapter: fakeLinearAdapter({
-      applyImplementationStarted: async () => ({
-        issueIdentifier: "ENG-123",
-        runId: "run",
-        runDir: "run",
-        stage: "started" as const,
-        targetStatus: "Implementing",
-      }),
-    }),
-  });
-  expect(repaired.action).toMatchObject({
-    handler: "produceImplementationCandidate",
-    attempt: 1,
-  });
-  expect(providerRun).toHaveBeenCalledTimes(1);
-  const restartRequests = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).filter(
-    (event) => event.type === "implementation.requested" && event.data.intent === "restart",
-  );
-  expect(restartRequests).toHaveLength(1);
-});
-
-test("review action rejects durable guidance that conflicts with its phase", async () => {
-  const fixture = directFixture();
-  await runOneFactoryImplementationAction({
-    ...coordinatorInput(fixture),
-    agentProviderFactory: () => ({
-      name: "cursor",
-      run: async () => {
-        writeFileSync(join(fixture.workspace, "tracked.txt"), "first candidate\n");
-        return { ok: true, raw: {}, session: { provider: "cursor", id: "first-session" } };
-      },
-    }),
-  });
-  git(fixture.workspace, ["restore", "--staged", "--worktree", "."]);
-  const rerun = await runOneFactoryImplementationAction({
-    ...coordinatorInput(fixture),
-    rerun: true,
-    restartGuidance: "Exercise the real entry path.\n",
-    agentProviderFactory: () => ({
-      name: "cursor",
-      run: async () => {
-        writeFileSync(join(fixture.workspace, "tracked.txt"), "replacement candidate\n");
-        return { ok: true, raw: {}, session: { provider: "cursor", id: "replacement" } };
-      },
-    }),
-  });
-  const ctx = openFactoryImplementationRunContext({
-    workspace: fixture.workspace,
-    runsDir: fixture.store.factoryRunsDir,
-    phaseRunId: rerun.phaseRunId!,
-    workItem: fixture.workItem,
-    factoryStore: fixture.store,
-  });
-  const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
-  const request = events.find(
-    (event) => event.type === "implementation.requested" && event.phaseRunId === rerun.phaseRunId,
-  );
-  if (!request || request.type !== "implementation.requested" || !request.data.restartGuidance)
-    throw new Error("guided restart request missing");
-  const restartGuidance = request.data.restartGuidance;
-  const conflictingGuidance = { ...restartGuidance, sha256: "f".repeat(64) };
-  const changedEvents = events.map((event) =>
-    event.id === request.id
-      ? {
-          ...request,
-          data: {
-            ...request.data,
-            inputRefs: request.data.inputRefs.map((ref) =>
-              ref.path === restartGuidance.path ? conflictingGuidance : ref,
-            ),
-            restartGuidance: conflictingGuidance,
-          },
-        }
-      : event,
-  );
-  writeFileSync(
-    actionLifecycleEventPath(fixture.factoryStateRoot, fixture.key),
-    `${changedEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
-  );
-  const changed = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
-  const state = reduceFactoryLifecycleEvents(changed);
-  const candidate = changed.findLast(
-    (event) =>
-      event.type === "implementation.candidate.produced" && event.phaseRunId === rerun.phaseRunId,
-  );
-  if (!candidate || candidate.type !== "implementation.candidate.produced")
-    throw new Error("replacement candidate missing");
-  const reviewRunner = vi.fn();
-  await expect(
-    reviewImplementationCandidate({
-      ctx,
-      factoryStateRoot: fixture.factoryStateRoot,
-      reaction: invoke({ event: candidate, state }),
-      maxRuntimeMs: 1_000,
-      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
-      reviewRunner: reviewRunner as never,
-    }),
-  ).rejects.toThrow(/restart guidance conflicts with its request/);
-  expect(reviewRunner).not.toHaveBeenCalled();
 });
 
 test("Linear start repair reuses one request and invokes the producer only after projection", async () => {
@@ -2079,6 +1962,92 @@ test("Linear human-required failure projects and repairs attention without anoth
   expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key)).toHaveLength(before);
 });
 
+test("Linear retained-candidate terminal failure repairs attention before re-review", async () => {
+  const fixture = directFixture();
+  fixture.workItem.metadata = { linearStatus: "Ready to Implement" };
+  const producer = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({
+      applyImplementationStarted: async () => ({
+        issueIdentifier: "ENG-123",
+        runId: "run",
+        runDir: "run",
+        stage: "started",
+        targetStatus: "Implementing",
+      }),
+    }),
+    agentProviderFactory: () => ({ name: "cursor", run: producer }),
+  });
+  fixture.workItem.metadata = { linearStatus: "Implementing" };
+  const projectionFailure = vi.fn(async () => {
+    throw new Error("attention projection unavailable");
+  });
+  const invalidReview = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    mkdirSync(reviewCtx.runDir!, { recursive: true });
+    writeFileSync(join(reviewCtx.runDir!, "implementation-review.json"), "{}\n");
+    writeFileSync(join(reviewCtx.runDir!, "quality-review.json"), "{}\n");
+    return fullReviewMeta("pass");
+  });
+  await expect(
+    runOneFactoryImplementationAction({
+      ...coordinatorInput(fixture),
+      linearIssue: "ENG-123",
+      issueRef: "ENG-123",
+      linearStatuses: LINEAR_SETTINGS.statuses,
+      applyAdapter: fakeLinearAdapter({ applyImplementationAttention: projectionFailure }),
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: invalidReview as never,
+    }),
+  ).rejects.toThrow("attention projection unavailable");
+  expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1)).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal", retainedCandidateEventId: expect.any(String) },
+  });
+
+  const repairedAttention = vi.fn(async () => ({
+    issueIdentifier: "ENG-123",
+    runId: "run",
+    runDir: "run",
+    stage: "completed" as const,
+    targetStatus: "Implementing",
+  }));
+  continueImplementation(fixture, "re-review", "The review output failure has been resolved.");
+
+  const ordering: string[] = [];
+  const passReview = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    ordering.push("review");
+    writePassReviews(reviewCtx.runDir!);
+    return fullReviewMeta("pass");
+  });
+  const passed = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({
+      applyImplementationAttention: async () => {
+        ordering.push("projection");
+        return repairedAttention();
+      },
+    }),
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: passReview as never,
+  });
+  expect(ordering).toEqual(["projection", "review"]);
+  expect(passed.linearApplied).toBe(true);
+  expect(passed.next).toEqual({ kind: "wait", reason: "pr-publication" });
+  expect(producer).toHaveBeenCalledOnce();
+  expect(invalidReview).toHaveBeenCalledOnce();
+  expect(passReview).toHaveBeenCalledOnce();
+});
+
 function directFixture() {
   const workspace = mkdtempSync(join(tmpdir(), "factory-implementation-workspace-"));
   git(workspace, ["init", "-b", "main"]);
@@ -2206,7 +2175,6 @@ function removeLastLifecycleEvent(fixture: ReturnType<typeof directFixture>): vo
 function createPhase(
   fixture: ReturnType<typeof directFixture>,
   implementerAgent: "cursor" | "codex" = "cursor",
-  restartGuidance?: string,
 ) {
   const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
   return createFactoryImplementationRunContext({
@@ -2223,10 +2191,8 @@ function createPhase(
         events.at(-1) as Extract<FactoryLifecycleEvent, { type: "triage.work_item.completed" }>
       ).data.evidence[0]!,
     },
-    reviewCeiling: 1,
     implementerRole: { agent: implementerAgent, model: "implementer" },
     reviewerRole: { agent: "cursor", model: "reviewer" },
-    restartGuidance,
   });
 }
 
@@ -2248,7 +2214,6 @@ function appendRequest(
     data: {
       expectedPredecessor: current.id,
       inputRefs: [identity.input.workItem, identity.input.readiness],
-      reviewCeiling: 1,
       intent: "start",
     },
   };
@@ -2267,10 +2232,24 @@ function coordinatorInput(fixture: ReturnType<typeof directFixture>) {
     workItem: fixture.workItem,
     itemFile: "item.json",
     rerun: false,
-    reviewCeiling: 1,
     implementerRole: { agent: "cursor" as const, model: "implementer" },
     reviewerRole: { agent: "cursor" as const, model: "reviewer" },
   };
+}
+
+function continueImplementation(
+  fixture: ReturnType<typeof directFixture>,
+  decision: "revise" | "re-review",
+  response: string,
+) {
+  return recordFactoryContinuation({
+    phase: "implementation",
+    decision,
+    response,
+    factoryStateRoot: fixture.factoryStateRoot,
+    factoryStore: fixture.store,
+    workItem: fixture.workItem,
+  });
 }
 
 async function produceCandidate(fixture: ReturnType<typeof directFixture>) {

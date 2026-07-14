@@ -1,13 +1,13 @@
 ---
 name: factory-operator
-description: Operate the manually stepped harness Factory flow through status, Linear intake, triage, planning, implementation candidates, aggregate review, projection repair, and human restarts. Use for running or inspecting one Factory work item, its next reaction, durable evidence, Linear boundary, or stop condition.
+description: Operate the manually stepped harness Factory flow through status, Linear intake, triage, planning, implementation candidates, aggregate review, explicit human continuations, and projection repair. Use for running or inspecting one Factory work item, its next reaction, durable evidence, Linear boundary, or stop condition.
 ---
 
 # Factory Operator
 
 ## Manually stepped triage
 
-The Factory action store requires `store-format.json` version 2. Harness
+The Factory action store requires `store-format.json` version 3. Harness
 initializes an empty state directory. It rejects old, unmarked, or differently
 versioned state with archive/reset instructions and never migrates or deletes
 it.
@@ -16,12 +16,19 @@ it.
 Wait for process exit; do not poll or start a second action. The command
 persists progress heartbeats in the action run (`--verbose` also emits them to
 stderr), writes a terminal event/state, and prints durable evidence plus the
-next reaction. Planning is shipped as separately invoked candidate, review,
-and publication commands. Implementation is separately invoked candidate,
-review, and (when needed) same-session revision; repeat only the exact printed
-command. Routed
+next reaction. Planning and implementation are separately invoked candidate,
+review, continuation, revision/re-review, and publication commands; repeat only
+the exact printed command. Routed
 triage can return a wait reaction without a command. The invocation never
 executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
+
+Factory has no built-in review-round ceiling. Honor an explicitly supplied
+caller policy by reading the durable `reviewRound` before recording or
+scheduling another continuation. A limit of three means three completed review
+rounds total, not three revisions. Retryable action failures and repeated CLI
+invocations do not increment it. At the limit, stop and report the remaining
+findings; do not append another continuation. Do not invent a limit when none
+was supplied.
 
 Operate the current local harness factory one work item at a time.
 
@@ -99,8 +106,11 @@ harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --apply
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123 --rerun --apply
+harness factory planning run --workspace /path/to/repo --linear-issue TEAM-123 --apply
+harness factory planning continue --workspace /path/to/repo --linear-issue TEAM-123 --decision revise --response-file /absolute/path/response.md
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
 harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply
+harness factory implementation continue --workspace /path/to/repo --linear-issue TEAM-123 --decision re-review --response-file /absolute/path/response.md
 ```
 
 Live is the default. Use `--dry-run` only to verify command wiring and artifact
@@ -124,7 +134,6 @@ Minimal shape:
       }
     },
     "implementation": {
-      "maxReviewIterations": 3,
       "roles": {
         "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
@@ -268,9 +277,17 @@ failed, plan-publication, plan-merge, or approved waits. Invoke `planning
 publish` only after explicit publication authorization; planner sessions stay
 credential-free. Stop and report the PR. Opening or delivering a PR never
 authorizes merge. Only after a human merges that recorded PR, fetch the merge
-commit and run `mark-plan-merged --url <url> --commit <sha>`. Review-driven revisions stay in the
-phase and resume the saved planner session; use `--rerun` only after human or
-failed waits. Item files materialize locally after review pass. Linear issues
+commit and run `mark-plan-merged --url <url> --commit <sha>`. Before the first
+review, only `revise` is allowed. A non-pass review or non-retryable action
+failure that retains a valid plan candidate waits for the same explicit
+continuation. Write a bounded response file, then run
+`planning continue --decision revise|re-review --response-file <absolute-path>`.
+Choose `revise` for plan-byte changes and `re-review` for accepted evidence or
+clarification that leaves the candidate unchanged. The continuation command
+only appends the durable choice; run the printed planning command later for the
+selected handler. Revisions resume the saved planner session. Use `--rerun`
+only after a failure with no reusable candidate. Item files materialize locally
+after review pass. Linear issues
 require `--apply` for planning start and rerun, then explicit `planning publish`
 and `mark-plan-merged`. The durable planning request precedes its Linear
 projection; if projection fails, repeat that command with `--apply` to repair
@@ -301,38 +318,33 @@ pushes the exact reviewed branch and finds or creates one PR; the implementer
 session receives no GitHub credentials. Stop at `awaiting-pr-merge` and report
 the PR. Do not merge it. Only after a human explicitly merges that recorded PR,
 fetch the merge commit and run `implementation mark-pr-merged --url <url>
---commit <sha>`. A `needs_changes`
-verdict below the persisted `maxReviewIterations` ceiling prints a later
-`produceImplementationCandidate` command; it does not run it. That producer
-reopens the same phase, verifies `review-evidence.json` and
-`blocking-findings.json`, resumes the effective implementer session, retains
-the original base, and publishes a new immutable attempt ref. Inspect those
-files plus each `candidate-evidence.json`, diff, `action-result.json`, and
-`context/phase-run.json` before intervening. Blocked or exhausted review waits
-for a human. Before review, `--rerun` may intentionally abandon the produced
-candidate only with accepted bounded clarification:
+--commit <sha>`. A non-pass review preserves the exact candidate and waits for
+an explicit continuation. Before the first review, only `revise` is allowed;
+a non-retryable action failure that retains a valid candidate uses the same
+continuation boundary. Create an absolute, nonblank UTF-8 response file of
+at most 32 KiB, then choose one path:
 
 ```bash
-harness factory implementation run --workspace /path/to/repo --linear-issue TEAM-123 --apply --rerun --rerun-guidance-file /absolute/path/restart-guidance.md
+harness factory implementation continue --workspace /path/to/repo --linear-issue TEAM-123 --decision revise --response-file /absolute/path/response.md
+harness factory implementation continue --workspace /path/to/repo --linear-issue TEAM-123 --decision re-review --response-file /absolute/path/response.md
 ```
 
-The UTF-8 file must be nonblank and at most 32 KiB. Keep it outside the target
-workspace. Harness copies the exact bytes into
-`context/restart-guidance.md`, binds its hash to the durable restart request,
-and gives the same clarification to the fresh producer and all later
-reviewers/revisions in that phase. Guidance may clarify acceptance or
-verification but cannot override or materially expand the work item; retriage
-a scope change instead. The abandoned ref and evidence remain immutable. Rerun
-after human/failed state uses no guidance and rejects the guidance option.
-Every rerun creates a fresh phase/profile/session/input snapshot; it is not a
-revision path.
+`revise` verifies the prior candidate and complete blocker artifacts, resumes
+the effective implementer session, keeps the original base, and later publishes
+a distinct immutable candidate. `re-review` supplies accepted operator/live
+evidence to reviewers and later reviews the same commit/tree with zero producer
+calls. Harness copies and hashes the response and binds it to the exact
+candidate and optional review. `continue` invokes no handler and makes no Linear
+projection. The response may clarify the immutable work item or supply accepted
+evidence; it must not expand or override the work item. Inspect the response
+ref, review evidence, candidate evidence, and action results before running the
+printed normal command. Do not use `--rerun` to abandon or replace a candidate;
+it is only for a failed phase with no reusable candidate.
 
 Linear implementation start/restart requires `--apply`. Repeat an explicit
-apply command to repair a failed start or terminal/comment projection; after a
-guided restart request is durable, omitted guidance reuses the persisted
-artifact and supplied guidance must match it exactly. Harness reuses durable
+apply command to repair a failed start or terminal/comment projection. Harness reuses durable
 state and never appends a duplicate request or reruns the prior handler.
-Candidate/review remain Implementing. Publication `--apply` moves to
+Candidate/review/continuation remain Implementing. Publication `--apply` moves to
 Ready for Review; merge acknowledgement `--apply` moves to Done. Non-pass adds
 an attention comment, and terminal failure moves to Implementation Failed.
 

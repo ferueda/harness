@@ -22,6 +22,24 @@ import { FactoryLifecycleStateSchema } from "../lib/factory-state-machine.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 const ref = { base: "factory-store" as const, path: "inputs/item.json", sha256: "0".repeat(64) };
+const planningCandidateEventId = `planning.candidate.produced:${factoryActionKey({
+  phaseRunId: "planning-run",
+  handler: "producePlanCandidate",
+  attempt: 1,
+  causationEventId: "planning.requested:planning-run",
+})}`;
+const implementationCandidateEventId = `implementation.candidate.produced:${factoryActionKey({
+  phaseRunId: "implementation-run",
+  handler: "produceImplementationCandidate",
+  attempt: 1,
+  causationEventId: "implementation.requested:implementation-run",
+})}`;
+const implementationReviewEventId = `implementation.review.completed:${factoryActionKey({
+  phaseRunId: "implementation-run",
+  handler: "reviewImplementationCandidate",
+  attempt: 1,
+  causationEventId: implementationCandidateEventId,
+})}`;
 
 test("inspects null history without initializing or writing the store", () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-inspect-workspace-"));
@@ -138,8 +156,8 @@ test.each([
       phase: "planning",
       status: "approved",
       phaseRunId: "planning-run",
-      reviewCeiling: 2,
-      attempt: 1,
+      candidateAttempt: 1,
+      reviewRound: 1,
       publicationMode: "local",
       outputPlan: "dev/plans/item.md",
     }),
@@ -205,8 +223,9 @@ test.each([
       phase: "planning",
       status: "awaiting-review",
       phaseRunId: "planning-run",
-      reviewCeiling: 2,
-      attempt: 1,
+      candidateAttempt: 1,
+      reviewRound: 0,
+      candidateEventId: planningCandidateEventId,
       publicationMode: "local",
       outputPlan: "dev/plans/fixture.md",
       reviewedPlan: artifactRef("planning/candidate"),
@@ -230,21 +249,25 @@ test.each([
       const completed = triageCompleted(key, triage.id, "ready-to-implement");
       const requested = implementationRequested(key, completed.id);
       const candidate = implementationCandidate(key, requested.id);
+      const review = implementationReview(key, candidate.id, "needs_changes");
       return [
         imported,
         triage,
         completed,
         requested,
         candidate,
-        implementationReview(key, candidate.id, "needs_changes"),
+        review,
+        implementationContinuation(key, candidate, review),
       ];
     },
     state: {
       phase: "implementation",
-      status: "needs-revision",
+      status: "awaiting-candidate",
       phaseRunId: "implementation-run",
-      reviewCeiling: 2,
-      attempt: 1,
+      candidateAttempt: 1,
+      reviewRound: 1,
+      candidateEventId: implementationCandidateEventId,
+      reviewEventId: implementationReviewEventId,
       reviewedHead: "a".repeat(40),
     },
     reaction: {
@@ -252,9 +275,9 @@ test.each([
       phase: "implementation",
       handler: "produceImplementationCandidate",
       attempt: 2,
-      causationEventId: "implementation.review.completed:reviewImplementationCandidate:1",
+      causationEventId: "factory.continuation.recorded:fixture",
       scheduling: "immediate",
-      reason: "review-needs-changes",
+      reason: "operator-revise",
     },
     station: "implementation",
   },
@@ -269,8 +292,8 @@ test.each([
       phase: "planning",
       status: "needs-human",
       phaseRunId: "planning-run",
-      reviewCeiling: 2,
-      attempt: 1,
+      candidateAttempt: 0,
+      reviewRound: 0,
       publicationMode: "local",
       outputPlan: "dev/plans/fixture.md",
     },
@@ -325,8 +348,10 @@ test.each([
       phase: "implementation",
       status: "awaiting-pr-publication",
       phaseRunId: "implementation-run",
-      reviewCeiling: 2,
-      attempt: 1,
+      candidateAttempt: 1,
+      reviewRound: 1,
+      candidateEventId: implementationCandidateEventId,
+      reviewEventId: implementationReviewEventId,
       reviewedHead: "a".repeat(40),
     },
     reaction: { kind: "wait", reason: "pr-publication" },
@@ -371,8 +396,10 @@ test.each([
       phase: "implementation",
       status: "complete",
       phaseRunId: "implementation-run",
-      reviewCeiling: 2,
-      attempt: 1,
+      candidateAttempt: 1,
+      reviewRound: 1,
+      candidateEventId: implementationCandidateEventId,
+      reviewEventId: implementationReviewEventId,
       reviewedHead: "a".repeat(40),
       implementationPrUrl: "https://example.test/pull/1",
       implementationPrHead: "a".repeat(40),
@@ -547,7 +574,6 @@ function planningRequested(workItemKey: string, predecessor: string): FactoryLif
       expectedPredecessor: predecessor,
       inputRefs: [artifactRef("inputs/item")],
       intent: "start",
-      reviewCeiling: 2,
       publicationMode: "local",
       outputPlan: "dev/plans/fixture.md",
     },
@@ -596,7 +622,6 @@ function implementationRequested(workItemKey: string, predecessor: string): Fact
     data: {
       expectedPredecessor: predecessor,
       inputRefs: [artifactRef("inputs/item")],
-      reviewCeiling: 2,
       intent: "start",
     },
   });
@@ -636,12 +661,41 @@ function implementationReview(
     at: 5,
     label: `implementation-review-${verdict}`,
     data: {
+      candidateEventId: predecessor,
+      candidateAttempt: 1,
       verdict,
       review: artifactRef(`implementation/review-${verdict}`),
-      reviewCeiling: 2,
       ...(verdict === "needs_changes"
         ? { blockingFindings: artifactRef("implementation/blocking-findings") }
         : {}),
+    },
+  });
+}
+
+function implementationContinuation(
+  workItemKey: string,
+  candidate: FactoryLifecycleEvent,
+  review: FactoryLifecycleEvent,
+): FactoryLifecycleEvent {
+  if (
+    candidate.type !== "implementation.candidate.produced" ||
+    review.type !== "implementation.review.completed"
+  )
+    throw new Error("Fixture continuation requires an implementation candidate and review");
+  return FactoryLifecycleEventSchema.parse({
+    version: 1,
+    id: "factory.continuation.recorded:fixture",
+    type: "factory.continuation.recorded",
+    workItemKey,
+    occurredAt: at(6),
+    phaseRunId: "implementation-run",
+    data: {
+      expectedPredecessor: review.id,
+      phase: "implementation",
+      decision: "revise",
+      candidateEventId: candidate.id,
+      reviewEventId: review.id,
+      response: artifactRef("implementation/continuation-response"),
     },
   });
 }

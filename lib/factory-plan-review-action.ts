@@ -8,6 +8,7 @@ import {
   readFactoryActionResult,
   writeFactoryActionResult,
 } from "./factory-action-result.ts";
+import { loadFactoryContinuationForReview } from "./factory-continuation.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
@@ -43,14 +44,28 @@ export async function reviewPlanCandidate(input: {
   );
   const state = reduceFactoryLifecycleEvents(events);
   const latest = events.at(-1);
+  const candidate =
+    state?.phase === "planning" && state.candidateEventId
+      ? events.find((event) => event.id === state.candidateEventId)
+      : undefined;
   if (
     !state ||
     !latest ||
+    !candidate ||
+    candidate.type !== "planning.candidate.produced" ||
     reaction.handler !== "reviewPlanCandidate" ||
-    JSON.stringify(decideNextFactoryAction(state, latest)) !== JSON.stringify(reaction) ||
-    latest.type !== "planning.candidate.produced"
+    JSON.stringify(decideNextFactoryAction(state, latest)) !== JSON.stringify(reaction)
   )
     throw new Error("reviewPlanCandidate reaction conflicts with durable Factory state");
+  const continuation = loadFactoryContinuationForReview({
+    events,
+    phase: "planning",
+    reaction,
+    candidate,
+    phaseRunId: ctx.runId,
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+    roots: { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace },
+  });
   const actionDir = join(
     ctx.runDir,
     "actions",
@@ -62,7 +77,7 @@ export async function reviewPlanCandidate(input: {
     mkdirSync(actionDir, { recursive: true });
     let candidatePath: string;
     try {
-      candidatePath = verifyFactoryArtifactRef(latest.data.candidate, {
+      candidatePath = verifyFactoryArtifactRef(candidate.data.candidate, {
         "factory-store": ctx.factoryStore.projectRoot,
         repository: ctx.workspace,
       });
@@ -77,17 +92,28 @@ export async function reviewPlanCandidate(input: {
       try {
         raw = JSON.parse(readFileSync(resultPath, "utf8"));
       } catch (error) {
-        return failAction(input, actionDir, errorMessage(error), "terminal");
+        return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
       }
       if (hasConflictingStagedIdentity(raw, ctx, reaction))
         throw new Error("Staged review outcome conflicts with action identity");
       const parsed = StagedReviewOutcomeSchema.safeParse(raw);
-      if (!parsed.success) return failAction(input, actionDir, parsed.error.message, "terminal");
+      if (!parsed.success)
+        return failAction(input, actionDir, parsed.error.message, "terminal", candidate.id);
       staged = parsed.data;
       assertStagedIdentity(ctx, reaction, staged);
     } else {
       const profile = ctx.identity.actions.reviewPlanCandidate;
       let providerCompletion: ReviewProviderCompletion | undefined;
+      let priorReviewJson: string | undefined;
+      try {
+        priorReviewJson =
+          continuation?.candidate.type === "planning.candidate.produced" &&
+          continuation.review?.type === "planning.review.completed"
+            ? priorPlanningReviewJson(ctx, continuation.candidate, continuation.review)
+            : undefined;
+      } catch (error) {
+        return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
+      }
       const reviewCtx = createWorkflowContext({
         workspace: ctx.workspace,
         planPath: candidatePath,
@@ -100,6 +126,19 @@ export async function reviewPlanCandidate(input: {
           "```json",
           JSON.stringify(ctx.workItem, null, 2),
           "```",
+          ...(continuation
+            ? [
+                "",
+                "# Accepted operator response",
+                "",
+                `The operator selected ${continuation.event.data.decision} for the continuation governing this review. Treat this response as accepted clarification and evidence within the original task scope.`,
+                "",
+                continuation.response,
+                ...(priorReviewJson
+                  ? ["", "# Prior review result", "", "```json", priorReviewJson, "```"]
+                  : []),
+              ]
+            : []),
         ].join("\n"),
         runsDir: join(actionDir, "review-runs"),
         includeGitScope: false,
@@ -141,7 +180,7 @@ export async function reviewPlanCandidate(input: {
         meta = await (input.reviewRunner ?? runPlanReview)(reviewCtx);
       } catch (error) {
         finishTelemetry("failed", errorMessage(error));
-        return failAction(input, actionDir, errorMessage(error), "human-required");
+        return failAction(input, actionDir, errorMessage(error), "human-required", candidate.id);
       }
       staged = buildStagedReviewOutcome({
         ctx,
@@ -159,7 +198,7 @@ export async function reviewPlanCandidate(input: {
       writeDurableFactoryFile(reviewPath, staged.completion.review.bytes, true);
     }
     if (staged.completion.status === "invalid") {
-      return failAction(input, actionDir, staged.completion.message, "terminal");
+      return failAction(input, actionDir, staged.completion.message, "terminal", candidate.id);
     }
     if (staged.completion.status === "failed") {
       return failAction(
@@ -167,16 +206,30 @@ export async function reviewPlanCandidate(input: {
         actionDir,
         staged.completion.message,
         classifyReviewFailure(staged.completion),
+        candidate.id,
       );
     }
     if (staged.completion.review.kind !== "present") {
-      return failAction(input, actionDir, staged.completion.review.message, "terminal");
+      return failAction(
+        input,
+        actionDir,
+        staged.completion.review.message,
+        "terminal",
+        candidate.id,
+      );
     }
     let review: z.infer<typeof ReviewOutputSchema>;
     try {
       review = ReviewOutputSchema.parse(JSON.parse(readFileSync(reviewPath, "utf8")));
     } catch (error) {
-      const terminal = buildFailure(ctx, reaction, actionDir, errorMessage(error), "terminal");
+      const terminal = buildFailure(
+        ctx,
+        reaction,
+        actionDir,
+        errorMessage(error),
+        "terminal",
+        candidate.id,
+      );
       writeFactoryActionResult(actionDir, terminal);
       return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
     }
@@ -184,7 +237,7 @@ export async function reviewPlanCandidate(input: {
     try {
       reviewRef = ref(ctx, reviewPath);
     } catch (error) {
-      return failAction(input, actionDir, errorMessage(error), "terminal");
+      return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
     }
     const verdict = review.verdict;
     let blockingRef;
@@ -202,6 +255,7 @@ export async function reviewPlanCandidate(input: {
           actionDir,
           "plan-review needs_changes without a must_fix finding",
           "terminal",
+          candidate.id,
         );
         writeFactoryActionResult(actionDir, terminal);
         return appendRecovered(input.factoryStateRoot, ctx, reaction, actionDir);
@@ -211,7 +265,7 @@ export async function reviewPlanCandidate(input: {
       try {
         blockingRef = ref(ctx, path);
       } catch (error) {
-        return failAction(input, actionDir, errorMessage(error), "terminal");
+        return failAction(input, actionDir, errorMessage(error), "terminal", candidate.id);
       }
     }
     if (verdict === "pass" && ctx.identity.publicationMode === "local") {
@@ -219,11 +273,11 @@ export async function reviewPlanCandidate(input: {
         materialize(candidatePath, resolve(ctx.workspace, ctx.identity.outputPlan));
       } catch (error) {
         if (error instanceof MaterializationConflictError)
-          return failAction(input, actionDir, error.message, "terminal");
+          return failAction(input, actionDir, error.message, "terminal", candidate.id);
         throw error;
       }
     }
-    const event: FactoryLifecycleEvent = {
+    const event: FactoryActionEvent = {
       version: 1,
       id: `planning.review.completed:${factoryActionKey({ ...reaction, phaseRunId: ctx.runId })}`,
       type: "planning.review.completed",
@@ -239,20 +293,21 @@ export async function reviewPlanCandidate(input: {
         evidence: blockingRef ? [reviewRef, blockingRef] : [reviewRef],
         verdict,
         review: reviewRef,
+        candidateEventId: candidate.id,
+        candidateAttempt: candidate.data.attempt,
         ...(blockingRef ? { blockingFindings: blockingRef } : {}),
-        reviewCeiling: ctx.identity.reviewCeiling,
       },
     };
     writeFactoryActionResult(actionDir, event);
   }
   const recovered = readFactoryActionResult(actionDir);
-  assertRecoveredResult(ctx, reaction, recovered);
+  assertRecoveredResult(ctx, reaction, recovered, candidate);
   if (
     recovered.type === "planning.review.completed" &&
     recovered.data.verdict === "pass" &&
     ctx.identity.publicationMode === "local"
   ) {
-    const candidatePath = verifyFactoryArtifactRef(latest.data.candidate, {
+    const candidatePath = verifyFactoryArtifactRef(candidate.data.candidate, {
       "factory-store": ctx.factoryStore.projectRoot,
       repository: ctx.workspace,
     });
@@ -263,6 +318,30 @@ export async function reviewPlanCandidate(input: {
     event: recovered,
     expectedLastEventId: reaction.causationEventId,
   });
+}
+
+function priorPlanningReviewJson(
+  ctx: PlanningContext,
+  candidate: Extract<FactoryLifecycleEvent, { type: "planning.candidate.produced" }>,
+  review: Extract<FactoryLifecycleEvent, { type: "planning.review.completed" }>,
+): string {
+  if (
+    review.data.candidateEventId !== candidate.id ||
+    review.data.candidateAttempt !== candidate.data.attempt
+  )
+    throw new Error("Prior planning review conflicts with its candidate");
+  const output = ReviewOutputSchema.parse(
+    JSON.parse(
+      readFileSync(
+        verifyFactoryArtifactRef(review.data.review, {
+          "factory-store": ctx.factoryStore.projectRoot,
+          repository: ctx.workspace,
+        }),
+        "utf8",
+      ),
+    ),
+  );
+  return JSON.stringify(output, null, 2);
 }
 
 const WorkspaceStatusSchema = z.object({ before: z.string(), after: z.string() }).strict();
@@ -481,8 +560,16 @@ function failAction(
   actionDir: string,
   message: string,
   failureKind: "retryable" | "human-required" | "terminal",
+  retainedCandidateEventId?: string,
 ): { event: FactoryLifecycleEvent; state: FactoryLifecycleState } {
-  const terminal = buildFailure(input.ctx, input.reaction, actionDir, message, failureKind);
+  const terminal = buildFailure(
+    input.ctx,
+    input.reaction,
+    actionDir,
+    message,
+    failureKind,
+    retainedCandidateEventId,
+  );
   writeFactoryActionResult(actionDir, terminal);
   return appendRecovered(input.factoryStateRoot, input.ctx, input.reaction, actionDir);
 }
@@ -493,6 +580,7 @@ function buildFailure(
   actionDir: string,
   message: string,
   failureKind: "retryable" | "human-required" | "terminal",
+  retainedCandidateEventId?: string,
 ): FactoryActionEvent {
   const failurePath = join(actionDir, "failure.json");
   writeDurableFactoryFile(
@@ -518,6 +606,7 @@ function buildFailure(
       phase: "planning",
       failureKind,
       message,
+      ...(retainedCandidateEventId ? { retainedCandidateEventId } : {}),
     },
   };
 }
@@ -529,7 +618,15 @@ function appendRecovered(
   actionDir: string,
 ) {
   const recovered = readFactoryActionResult(actionDir);
-  assertRecoveredResult(ctx, reaction, recovered);
+  const events = readFactoryActionEvents(factoryStateRoot, deriveFactoryWorkItemKey(ctx.workItem));
+  const state = reduceFactoryLifecycleEvents(events);
+  const candidate =
+    state?.phase === "planning" && state.candidateEventId
+      ? events.find((event) => event.id === state.candidateEventId)
+      : undefined;
+  if (!candidate || candidate.type !== "planning.candidate.produced")
+    throw new Error("Recovered planning review has no candidate");
+  assertRecoveredResult(ctx, reaction, recovered, candidate);
   return appendFactoryActionEvent({
     factoryStateRoot,
     event: recovered,
@@ -551,6 +648,7 @@ function assertRecoveredResult(
   ctx: PlanningContext,
   reaction: Extract<FactoryReaction, { kind: "invoke" }>,
   event: FactoryLifecycleEvent,
+  candidate: Extract<FactoryLifecycleEvent, { type: "planning.candidate.produced" }>,
 ): void {
   if (
     (event.type !== "planning.review.completed" && event.type !== "factory.action.failed") ||
@@ -565,6 +663,12 @@ function assertRecoveredResult(
   const roots = { "factory-store": ctx.factoryStore.projectRoot, repository: ctx.workspace };
   verifyFactoryArtifactRef(event.data.execution.runRef, roots);
   for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots);
+  if (
+    event.type === "planning.review.completed" &&
+    (event.data.candidateEventId !== candidate.id ||
+      event.data.candidateAttempt !== candidate.data.attempt)
+  )
+    throw new Error("Recovered planning review conflicts with its candidate");
 }
 
 function ref(ctx: PlanningContext, path: string) {

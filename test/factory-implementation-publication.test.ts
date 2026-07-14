@@ -171,7 +171,6 @@ function implementationFixture() {
     workspace,
     projectId: "repo",
     factoryStateRoot,
-    reviewCeiling: 2,
     baseRef: "main",
     branchRef: "refs/heads/feature",
     baseSha,
@@ -277,7 +276,6 @@ function lifecycle(key: string, runId: string, head: string): FactoryLifecycleEv
       data: {
         expectedPredecessor: triageId,
         inputRefs: [ref],
-        reviewCeiling: 2,
         intent: "start",
       },
     },
@@ -315,9 +313,10 @@ function lifecycle(key: string, runId: string, head: string): FactoryLifecycleEv
         causationEventId: candidateId,
         execution,
         evidence: [ref],
+        candidateEventId: candidateId,
+        candidateAttempt: 1,
         verdict: "pass",
         review: ref,
-        reviewCeiling: 2,
       },
     },
   ];

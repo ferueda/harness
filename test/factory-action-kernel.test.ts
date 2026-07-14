@@ -132,40 +132,41 @@ describe("Factory action lifecycle kernel", () => {
     ).toThrow(/Too small/);
   });
 
-  test("binds implementation restart guidance to restart input refs", () => {
-    const restartGuidance = {
+  test("binds Factory continuation to one candidate and durable response", () => {
+    const response = {
       base: "factory-store" as const,
-      path: "runs/factory/restart/context/restart-guidance.md",
+      path: "runs/factory/implementation-run/continuations/response.md",
       sha256: "1".repeat(64),
     };
-    const request = {
+    const continuation = {
       version: 1,
-      id: "implementation-request",
-      type: "implementation.requested",
+      id: "factory.continuation.recorded:1",
+      type: "factory.continuation.recorded",
       workItemKey: "item-1",
       occurredAt: "2026-07-11T03:00:00.000Z",
       phaseRunId: "implementation-run",
       data: {
-        expectedPredecessor: "triage-complete",
-        inputRefs: [inputRef, restartGuidance],
-        reviewCeiling: 1,
-        intent: "restart",
-        restartGuidance,
+        expectedPredecessor: "implementation-review",
+        phase: "implementation",
+        decision: "re-review",
+        candidateEventId: "implementation-candidate",
+        reviewEventId: "implementation-review",
+        response,
       },
     };
-    expect(FactoryLifecycleEventSchema.parse(request)).toMatchObject(request);
+    expect(FactoryLifecycleEventSchema.parse(continuation)).toMatchObject(continuation);
     expect(() =>
       FactoryLifecycleEventSchema.parse({
-        ...request,
-        data: { ...request.data, intent: "start" },
+        ...continuation,
+        data: { ...continuation.data, candidateEventId: "" },
       }),
-    ).toThrow(/requires restart intent/);
+    ).toThrow(/Too small/);
     expect(() =>
       FactoryLifecycleEventSchema.parse({
-        ...request,
-        data: { ...request.data, inputRefs: [inputRef] },
+        ...continuation,
+        data: { ...continuation.data, response: undefined },
       }),
-    ).toThrow(/included in input refs/);
+    ).toThrow();
   });
 
   test("requires a new phase-run ID for planning and implementation requests", () => {
@@ -183,7 +184,6 @@ describe("Factory action lifecycle kernel", () => {
             expectedPredecessor: "triage-complete",
             inputRefs: [inputRef],
             intent: "start",
-            reviewCeiling: 1,
             publicationMode: "local",
             outputPlan: "dev/plans/item-1.md",
           },
@@ -203,7 +203,6 @@ describe("Factory action lifecycle kernel", () => {
           data: {
             expectedPredecessor: "triage-complete",
             inputRefs: [inputRef],
-            reviewCeiling: 1,
             intent: "start",
           },
         },
@@ -224,7 +223,6 @@ describe("Factory action lifecycle kernel", () => {
         ...common,
         phase: "planning",
         status: "complete",
-        reviewCeiling: 2,
         attempt: 1,
       }),
     ).toThrow();
@@ -233,7 +231,6 @@ describe("Factory action lifecycle kernel", () => {
         ...common,
         phase: "implementation",
         status: "awaiting-plan-merge",
-        reviewCeiling: 2,
         attempt: 1,
       }),
     ).toThrow();
@@ -259,7 +256,6 @@ describe("Factory action lifecycle kernel", () => {
         expectedPredecessor: "triage-complete",
         inputRefs: [inputRef],
         intent: "start",
-        reviewCeiling: 2,
         publicationMode: "local",
         outputPlan: "dev/plans/item-1.md",
       },
@@ -333,7 +329,12 @@ describe("Factory action lifecycle kernel", () => {
           data: { ...failure.data, handler: "producePlanCandidate" },
         },
       ]),
-    ).toMatchObject({ phase: "planning", status: "awaiting-candidate", attempt: 1 });
+    ).toMatchObject({
+      phase: "planning",
+      status: "awaiting-candidate",
+      candidateAttempt: 0,
+      reviewRound: 0,
+    });
   });
 
   test("rejects stale cursors and divergent duplicate ids", () => {
@@ -591,7 +592,6 @@ describe("Factory action lifecycle kernel", () => {
           expectedPredecessor: "triage-complete",
           inputRefs: [inputRef],
           intent: "start",
-          reviewCeiling: 2,
           publicationMode: "pull-request",
           outputPlan: "dev/plans/item-1.md",
         },
@@ -634,9 +634,10 @@ describe("Factory action lifecycle kernel", () => {
             runRef: { base: "factory-store", path: "runs/planning", sha256: "b".repeat(64) },
           },
           evidence: [inputRef],
+          candidateEventId: "candidate",
+          candidateAttempt: 1,
           verdict: "pass",
           review: { base: "factory-store", path: "reviews/result", sha256: "d".repeat(64) },
-          reviewCeiling: 2,
         },
       },
     ];
@@ -656,11 +657,11 @@ describe("Factory store and artifact boundaries", () => {
     expect(() => ensureFactoryStoreFormat(store)).toThrow(FactoryStoreFormatError);
     expect(() => ensureFactoryStoreFormat(store)).toThrow(/Archive or reset/);
   });
-  test("rejects an earlier marked store before parsing its events", () => {
+  test("rejects a version-2 store before parsing its events", () => {
     const store = root();
     writeFileSync(
       join(store, "store-format.json"),
-      `${JSON.stringify({ format: "harness-factory", version: 1 })}\n`,
+      `${JSON.stringify({ format: "harness-factory", version: 2 })}\n`,
     );
     mkdirSync(join(store, "events"));
     writeFileSync(actionLifecycleEventPath(store, "item-1"), "not-json\n");

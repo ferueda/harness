@@ -211,6 +211,16 @@ test("harness root help exits cleanly", () => {
   expect(result.stdout).toMatch(/runs/);
   expect(result.stdout).toMatch(/skills/);
 });
+test("harness factory continuation help requires a decision and response file", () => {
+  for (const phase of ["planning", "implementation"] as const) {
+    const result = runHarness(["factory", phase, "continue", "--help"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(new RegExp(`harness factory ${phase} continue`));
+    expect(result.stdout).toMatch(/--decision/);
+    expect(result.stdout).toMatch(/--response-file/);
+    expect(result.stdout).not.toMatch(/--apply|--rerun/);
+  }
+});
 test("harness models prints provider model defaults", () => {
   const result = runHarness(["models"]);
   expect(result.status).toBe(0);
@@ -267,6 +277,7 @@ test("harness factory planning help exposes only manual actions", () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness factory planning/);
   expect(result.stdout).toMatch(/run/);
+  expect(result.stdout).toMatch(/continue/);
   expect(result.stdout).toMatch(/publish/);
   expect(result.stdout).toMatch(/mark-plan-merged/);
   expect(result.stdout).not.toMatch(/loop|dry-run|implement/);

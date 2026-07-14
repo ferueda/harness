@@ -198,7 +198,6 @@ export type FactoryPlanningRunContextOptions = {
   outputPlan?: string;
   publicationMode?: "local" | "pull-request";
   baseRef?: string;
-  maxReviewIterations: number;
   maxRuntimeMs: number;
   dryRun?: boolean;
   signal?: AbortSignal;
@@ -246,7 +245,6 @@ export type FactoryPlanningRunContext = {
   plannerAgent: FactoryPlanningAgentMeta;
   reviewerAgent: FactoryPlanningAgentMeta;
   outputPlan?: string;
-  maxReviewIterations: number;
   maxRuntimeMs: number;
   dryRun?: boolean;
   signal?: AbortSignal;
@@ -317,9 +315,6 @@ function createFactoryPlanningRunContextInternal(
 ): FactoryPlanningRunContext {
   const workspace = resolve(options.workspace);
   assertWorkspace(workspace);
-  if (!Number.isInteger(options.maxReviewIterations) || options.maxReviewIterations < 1) {
-    throw new FactoryPlanningError("maxReviewIterations must be a positive integer");
-  }
 
   const startedAt = new Date();
   const scratchRoot = join(workspace, ".harness", "factory-drafts");
@@ -396,7 +391,6 @@ function createFactoryPlanningRunContextInternal(
         workspace,
         projectId: options.factoryStore.projectId,
         factoryStateRoot: resolve(options.factoryStore.factoryStateRoot),
-        reviewCeiling: options.maxReviewIterations,
         outputPlan: relative(
           workspace,
           resolveOutputPlan({
@@ -443,7 +437,6 @@ function createFactoryPlanningRunContextInternal(
     plannerAgent,
     reviewerAgent,
     outputPlan: options.outputPlan,
-    maxReviewIterations: options.maxReviewIterations,
     maxRuntimeMs: options.maxRuntimeMs,
     dryRun: options.dryRun,
     signal: options.signal,

@@ -79,7 +79,6 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
   }).strict(),
   FactoryPhaseRunBaseSchema.extend({
     phase: z.literal("planning"),
-    reviewCeiling: z.number().int().positive(),
     outputPlan: z.string().min(1),
     publicationMode: z.enum(["local", "pull-request"]),
     baseRef: z.string().min(1).optional(),
@@ -108,12 +107,10 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
     }),
   FactoryPhaseRunBaseSchema.extend({
     phase: z.literal("implementation"),
-    reviewCeiling: z.number().int().positive(),
     baseRef: z.string().min(1),
     branchRef: z.string().regex(/^refs\/heads\/.+/),
     baseSha: z.string().regex(/^[0-9a-f]{40}$/),
     input: FactoryImplementationInputSnapshotSchema,
-    restartGuidance: FactoryArtifactRefSchema.optional(),
     actions: z
       .object({
         produceImplementationCandidate: FactoryActionExecutionProfileSchema,

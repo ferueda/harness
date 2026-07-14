@@ -19,14 +19,18 @@ test("implementation prompt grants edits but forbids Git and Factory authority",
   expect(prompt).toContain("Do not mutate trackers");
 });
 
-test("restart guidance reaches the producer and remains subordinate to work-item scope", () => {
+test("accepted revision response reaches the producer with prior candidate identity", () => {
   const prompt = renderFactoryImplementationPrompt({
     workItem,
-    restartGuidance: "Preserve the stable check name and exercise the real entry path.\n",
+    revision: {
+      priorCommit: "a".repeat(40),
+      blockingFindings: [],
+      operatorResponse: "The live smoke passed; preserve the candidate and update only evidence.",
+    },
   });
-  expect(prompt).toContain("## Accepted restart guidance");
-  expect(prompt).toContain("Preserve the stable check name and exercise the real entry path.");
-  expect(prompt).toContain("subordinate to the original work-item scope");
+  expect(prompt).toContain("## Accepted operator response");
+  expect(prompt).toContain("a".repeat(40));
+  expect(prompt).toContain("The live smoke passed");
 });
 
 test("review handoff identifies the exact immutable candidate", () => {
@@ -40,14 +44,23 @@ test("review handoff identifies the exact immutable candidate", () => {
   expect(handoff).toContain("Ship implementation");
 });
 
-test("review handoff supplies the same accepted restart guidance", () => {
+test("review handoff supplies the accepted re-review response", () => {
   const handoff = renderFactoryImplementationReviewHandoff({
     workItem,
     phaseRunId: "phase-1",
     candidateCommit: "a".repeat(40),
-    restartGuidance: "Exercise the real entry path.\n",
+    continuation: {
+      decision: "re-review",
+      response: "The live entry-path smoke passed.",
+      priorReview: {
+        implementation: { verdict: "blocked", summary: "tool unavailable", findings: [] },
+        quality: { verdict: "pass", summary: "ok", findings: [] },
+      },
+    },
   });
-  expect(handoff).toContain("## Accepted restart guidance");
-  expect(handoff).toContain("Exercise the real entry path.");
-  expect(handoff).toContain("cannot override or materially expand");
+  expect(handoff).toContain("## Accepted operator response");
+  expect(handoff).toContain("The live entry-path smoke passed.");
+  expect(handoff).toContain("Prior implementation review");
+  expect(handoff).toContain("tool unavailable");
+  expect(handoff).toContain("Prior quality review");
 });

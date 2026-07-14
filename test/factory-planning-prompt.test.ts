@@ -95,6 +95,7 @@ test("factory revision receives blockers and requires pruning", () => {
     draftPath: "/tmp/draft.md",
     currentDate: "2026-07-11",
     reviewFindingsJson: '[{"id":"spec-002","must_fix":true}]',
+    operatorResponse: "Keep the accepted publication boundary.",
   });
 
   expect(prompt).toContain("latest blocking review findings");
@@ -103,4 +104,5 @@ test("factory revision receives blockers and requires pruning", () => {
   expect(prompt).toContain("latest blocking finding id");
   expect(prompt).toContain("remove obsolete, duplicated, speculative, or superseded material");
   expect(prompt).toContain('"spec-002"');
+  expect(prompt).toContain("Keep the accepted publication boundary.");
 });

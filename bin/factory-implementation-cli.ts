@@ -1,12 +1,10 @@
 import type { Command } from "commander";
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { formatFactoryActionOutput } from "./factory-action-output.ts";
 import { decorateFactoryReaction } from "./factory-manual-command.ts";
 import type { Agent, AgentProviderOptions } from "../lib/agents.ts";
 import {
   loadFactoryConfigSnapshot,
-  resolveFactoryImplementationSettingsFromSnapshot,
   resolveFactoryLinearSettingsFromSnapshot,
   resolveFactoryRoleAgentFromSnapshot,
   resolveHarnessWorkspace,
@@ -14,9 +12,10 @@ import {
 } from "../lib/config.ts";
 import { produceImplementationCandidate } from "../lib/factory-implementation-candidate-action.ts";
 import {
-  assertFactoryImplementationRestartGuidanceBinding,
-  validateFactoryImplementationRestartGuidance,
-} from "../lib/factory-implementation-guidance.ts";
+  readFactoryContinuationResponseFile,
+  recordFactoryContinuation,
+  type FactoryContinuationDecision,
+} from "../lib/factory-continuation.ts";
 import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
 import {
@@ -64,7 +63,6 @@ type Options = {
   maxRuntimeMs?: number;
   apply: boolean;
   rerun: boolean;
-  rerunGuidanceFile?: string;
   verbose: boolean;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
@@ -87,10 +85,20 @@ export function addFactoryImplementationStationCommand(
     .option("--factory-store-root <path>", "durable factory store root")
     .option("--factory-store-project-id <id>", "durable factory store project id")
     .option("--apply", "apply Linear boundary projections", false)
-    .option("--rerun", "restart before review or after human/failed state", false)
-    .option("--rerun-guidance-file <path>", "accepted clarification for a pre-review restart")
+    .option("--rerun", "restart after human/failed state without a reusable candidate", false)
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(runImplementationCommand);
+  implementation
+    .command("continue")
+    .description("Record an explicit implementation candidate continuation")
+    .option("--workspace <path>", "target repo")
+    .option("--item-file <path>", "factory work item JSON file")
+    .option("--linear-issue <issue>", "Linear issue identifier")
+    .requiredOption("--decision <decision>", "continuation decision: revise or re-review")
+    .requiredOption("--response-file <path>", "absolute operator response file")
+    .option("--factory-store-root <path>", "durable factory store root")
+    .option("--factory-store-project-id <id>", "durable factory store project id")
+    .action(runImplementationContinuationCommand);
   implementation
     .command("publish")
     .description("Publish the reviewed implementation pull request")
@@ -194,7 +202,6 @@ async function runImplementationCommand(options: Options): Promise<void> {
   const linearSettings = options.linearIssue
     ? resolveFactoryLinearSettingsFromSnapshot(snapshot)
     : undefined;
-  const implementationSettings = resolveFactoryImplementationSettingsFromSnapshot(snapshot);
   const store = resolveFactoryStore({
     workspace,
     factoryStoreRoot: options.factoryStoreRoot,
@@ -231,9 +238,6 @@ async function runImplementationCommand(options: Options): Promise<void> {
       itemFile: options.itemFile,
       linearIssue: options.linearIssue,
       rerun: options.rerun,
-      restartGuidance: options.rerunGuidanceFile
-        ? readRestartGuidanceFile(options.rerunGuidanceFile)
-        : undefined,
       explicitMaxRuntimeMs: options.maxRuntimeMs,
       implementerRole: resolveFactoryRoleAgentFromSnapshot(snapshot, {
         station: "implementation",
@@ -244,7 +248,6 @@ async function runImplementationCommand(options: Options): Promise<void> {
         role: "reviewer",
       }),
       baseRef: snapshot.config.base ?? "main",
-      reviewCeiling: implementationSettings.maxReviewIterations,
       applyAdapter: adapter,
       linearStatuses: linearSettings?.statuses,
       issueRef: options.linearIssue,
@@ -262,6 +265,82 @@ async function runImplementationCommand(options: Options): Promise<void> {
   }
 }
 
+async function runImplementationContinuationCommand(options: {
+  workspace?: string;
+  itemFile?: string;
+  linearIssue?: string;
+  decision: string;
+  responseFile: string;
+  factoryStoreRoot?: string;
+  factoryStoreProjectId?: string;
+}): Promise<void> {
+  validateFactoryWorkItemInput({ itemFile: options.itemFile, linearIssue: options.linearIssue });
+  const workspace = resolveHarnessWorkspace(options.workspace, process.cwd());
+  const snapshot = loadFactoryConfigSnapshot(workspace);
+  const linearSettings = options.linearIssue
+    ? resolveFactoryLinearSettingsFromSnapshot(snapshot)
+    : undefined;
+  const store = resolveFactoryStore({
+    workspace,
+    factoryStoreRoot: options.factoryStoreRoot,
+    factoryStoreProjectId: options.factoryStoreProjectId,
+    env: process.env,
+    configSnapshot: snapshot,
+  });
+  const resolved = await resolveFactoryWorkItemInput({
+    workspace,
+    itemFile: options.itemFile,
+    linearIssue: options.linearIssue,
+    linearSettings,
+    env: process.env,
+    linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
+    lifecycleReadMode: "none",
+    factoryStateRoot: store.factoryStateRoot,
+  });
+  const events = readFactoryActionEvents(
+    store.factoryStateRoot,
+    deriveFactoryWorkItemKey(resolved.workItem),
+  );
+  if (options.linearIssue)
+    assertLiveImplementationStatus(
+      resolved.workItem,
+      reduceFactoryLifecycleEvents(events),
+      events.at(-1),
+      false,
+      linearSettings!.statuses,
+    );
+  const result = recordFactoryContinuation({
+    phase: "implementation",
+    decision: options.decision as FactoryContinuationDecision,
+    response: readFactoryContinuationResponseFile(options.responseFile),
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStore: factoryStoreMetadata(store),
+    workItem: resolved.workItem,
+  });
+  console.log(
+    JSON.stringify(
+      formatFactoryActionOutput({
+        phase: "implementation",
+        phaseRunId: result.phaseRunId,
+        next: decorateFactoryReaction(
+          result.next,
+          result.state,
+          implementationCommandProvenance({
+            workspace,
+            itemFile: options.itemFile,
+            linearIssue: options.linearIssue,
+            factoryStoreRoot: options.factoryStoreRoot,
+            factoryStoreProjectId: options.factoryStoreProjectId,
+          }),
+        )!,
+        linearApplied: false,
+      }),
+      null,
+      2,
+    ),
+  );
+}
+
 export async function runOneFactoryImplementationAction(input: {
   factoryStateRoot: string;
   factoryStore: FactoryStoreMeta;
@@ -270,11 +349,9 @@ export async function runOneFactoryImplementationAction(input: {
   itemFile?: string;
   linearIssue?: string;
   rerun: boolean;
-  restartGuidance?: string;
   explicitMaxRuntimeMs?: number;
   implementerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
-  reviewCeiling: number;
   baseRef?: string;
   applyAdapter?: LinearFactoryAdapter;
   linearStatuses?: {
@@ -314,35 +391,19 @@ export async function runOneFactoryImplementationAction(input: {
       ? latest
       : undefined;
   const pendingRequest = Boolean(pendingRequestEvent);
-  const restartBeforeReview =
-    input.rerun && state?.phase === "implementation" && state.status === "awaiting-review";
-  if (input.restartGuidance !== undefined)
-    validateFactoryImplementationRestartGuidance(input.restartGuidance);
-  if (restartBeforeReview && input.restartGuidance === undefined)
-    throw new Error("implementation --rerun before review requires --rerun-guidance-file");
-  if (
-    input.restartGuidance !== undefined &&
-    !restartBeforeReview &&
-    !pendingRequestEvent?.data.restartGuidance
-  )
-    throw new Error(
-      "--rerun-guidance-file is allowed only for a pre-review restart or its pending repair",
-    );
   if (
     input.rerun &&
     !pendingRequest &&
     !(
       state?.phase === "implementation" &&
-      (state.status === "needs-human" ||
-        state.status === "failed" ||
-        state.status === "awaiting-review")
+      (state.status === "needs-human" || state.status === "failed") &&
+      !state.candidateEventId
     )
   )
     throw new Error(
-      "implementation --rerun is allowed only before review or from needs-human or failed",
+      "implementation --rerun is allowed only after a failure without a reusable candidate",
     );
-  const active =
-    !restartBeforeReview && reaction?.kind === "invoke" && reaction.phase === "implementation";
+  const active = reaction?.kind === "invoke" && reaction.phase === "implementation";
   if (!active) {
     if (state?.phase === "implementation" && !input.rerun) {
       let linearApplied = false;
@@ -372,10 +433,8 @@ export async function runOneFactoryImplementationAction(input: {
       factoryStore: input.factoryStore,
       implementationInput,
       baseRef: input.baseRef ?? "main",
-      reviewCeiling: input.reviewCeiling,
       implementerRole: input.implementerRole,
       reviewerRole: input.reviewerRole,
-      restartGuidance: restartBeforeReview ? input.restartGuidance : undefined,
       eventSink: input.eventSink,
     });
     const identity = readFactoryPhaseRunIdentity(created.runDir);
@@ -390,9 +449,7 @@ export async function runOneFactoryImplementationAction(input: {
       data: {
         expectedPredecessor: state?.lastEventId ?? null,
         inputRefs: implementationInputRefs(identity),
-        reviewCeiling: identity.reviewCeiling,
         intent: input.rerun ? "restart" : "start",
-        ...(identity.restartGuidance ? { restartGuidance: identity.restartGuidance } : {}),
       },
     };
     ({ event: latest, state } = appendFactoryActionEvent({
@@ -413,29 +470,48 @@ export async function runOneFactoryImplementationAction(input: {
     factoryStore: input.factoryStore,
     eventSink: input.eventSink,
   });
-  assertFactoryImplementationRestartGuidanceBinding({ ctx, events: eventsFor(input, key) });
-  if (input.restartGuidance !== undefined && input.restartGuidance !== ctx.restartGuidance)
-    throw new Error("Supplied implementation restart guidance conflicts with durable guidance");
   let linearApplied = false;
-  // The persisted review authorizes this revision; repair its projection before provider work.
+  // Repair the causative attention projection before either selected continuation action.
   if (
     input.applyAdapter &&
-    reaction.handler === "produceImplementationCandidate" &&
-    state?.phase === "implementation" &&
-    state.status === "needs-revision" &&
-    latest?.type === "implementation.review.completed" &&
-    latest.data.verdict === "needs_changes" &&
-    latest.data.attempt + 1 === reaction.attempt &&
-    reaction.causationEventId === latest.id
+    latest?.type === "factory.continuation.recorded" &&
+    latest.data.phase === "implementation"
   ) {
-    await input.applyAdapter.applyImplementationAttention({
-      issueRef: input.issueRef!,
-      runId: phaseRunId,
-      runDir: ctx.runDir,
-      verdict: latest.data.verdict,
-      candidateCommit: readReviewCandidateCommit(events, latest),
-    });
-    linearApplied = true;
+    if (latest.data.reviewEventId) {
+      const review = events.find(
+        (
+          event,
+        ): event is Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }> =>
+          event.id === latest.data.reviewEventId &&
+          event.type === "implementation.review.completed",
+      );
+      if (!review) throw new Error("Implementation continuation review is unavailable");
+      if (review.data.verdict === "pass")
+        throw new Error("Implementation continuation cannot follow a passing review");
+      await input.applyAdapter.applyImplementationAttention({
+        issueRef: input.issueRef!,
+        runId: phaseRunId,
+        runDir: ctx.runDir,
+        verdict: review.data.verdict,
+        candidateCommit: readReviewCandidateCommit(events, review),
+      });
+      linearApplied = true;
+    } else {
+      const predecessor = events.find((event) => event.id === latest.data.expectedPredecessor);
+      if (
+        predecessor?.type === "factory.action.failed" &&
+        predecessor.data.retainedCandidateEventId
+      ) {
+        await input.applyAdapter.applyImplementationAttention({
+          issueRef: input.issueRef!,
+          runId: phaseRunId,
+          runDir: ctx.runDir,
+          verdict: "human_required",
+          ...optionalCandidateCommit(events, phaseRunId),
+        });
+        linearApplied = true;
+      }
+    }
   }
   if (input.linearIssue && pendingImplementationStart(state, latest)) {
     if (!input.applyAdapter)
@@ -490,13 +566,14 @@ export async function runOneFactoryImplementationAction(input: {
       runId: phaseRunId,
       runDir: ctx.runDir,
       verdict: handled.event.data.verdict,
-      candidateCommit: readCandidateCommit(eventsFor(input, key), phaseRunId),
+      candidateCommit: readReviewCandidateCommit(eventsFor(input, key), handled.event),
     });
     linearApplied = true;
   } else if (
     input.applyAdapter &&
     handled.event.type === "factory.action.failed" &&
-    handled.event.data.failureKind === "human-required"
+    (handled.event.data.failureKind === "human-required" ||
+      handled.event.data.retainedCandidateEventId !== undefined)
   ) {
     await input.applyAdapter.applyImplementationAttention({
       issueRef: input.issueRef!,
@@ -557,17 +634,31 @@ async function repairTerminalProjection(input: {
     return true;
   }
   if (
-    input.state.status === "needs-human" &&
+    input.state.status === "awaiting-continuation" &&
     input.latest?.type === "implementation.review.completed" &&
     input.latest.data.verdict !== "pass"
   ) {
-    const candidateCommit = readCandidateCommit(input.events, input.state.phaseRunId);
+    const candidateCommit = readReviewCandidateCommit(input.events, input.latest);
     await input.adapter.applyImplementationAttention({
       issueRef: input.issueRef,
       runId: input.state.phaseRunId,
       runDir: input.runDir,
       verdict: input.latest.data.verdict,
       candidateCommit,
+    });
+    return true;
+  }
+  if (
+    input.state.status === "awaiting-continuation" &&
+    input.latest?.type === "factory.action.failed" &&
+    input.latest.data.retainedCandidateEventId
+  ) {
+    await input.adapter.applyImplementationAttention({
+      issueRef: input.issueRef,
+      runId: input.state.phaseRunId,
+      runDir: input.runDir,
+      verdict: "human_required",
+      ...optionalCandidateCommit(input.events, input.state.phaseRunId),
     });
     return true;
   }
@@ -629,7 +720,7 @@ function pendingImplementationStart(
   return (
     state?.phase === "implementation" &&
     state.status === "awaiting-candidate" &&
-    state.attempt === 1 &&
+    state.candidateAttempt === 0 &&
     latest?.type === "implementation.requested"
   );
 }
@@ -641,38 +732,24 @@ function implementationInputRefs(
     identity.input.mode === "direct"
       ? [identity.input.workItem, identity.input.readiness]
       : [identity.input.workItem, identity.input.planCandidate];
-  return identity.restartGuidance ? [...inputRefs, identity.restartGuidance] : inputRefs;
-}
-
-function readRestartGuidanceFile(path: string): string {
-  return validateFactoryImplementationRestartGuidance(readFileSync(resolve(path), "utf8"));
+  return inputRefs;
 }
 
 function eventsFor(input: { factoryStateRoot: string }, key: string) {
   return readFactoryActionEvents(input.factoryStateRoot, key);
 }
 
-function readCandidateCommit(events: FactoryLifecycleEvent[], phaseRunId: string): string {
-  const candidate = events.findLast(
-    (event) =>
-      event.type === "implementation.candidate.produced" && event.phaseRunId === phaseRunId,
-  );
-  if (!candidate || candidate.type !== "implementation.candidate.produced")
-    throw new Error("Implementation review has no candidate commit");
-  return candidate.data.commit;
-}
-
 function readReviewCandidateCommit(
   events: FactoryLifecycleEvent[],
   review: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>,
 ): string {
-  const candidate = events.find((event) => event.id === review.data.causationEventId);
+  const candidate = events.find((event) => event.id === review.data.candidateEventId);
   if (
     !candidate ||
     candidate.type !== "implementation.candidate.produced" ||
     candidate.phaseRunId !== review.phaseRunId ||
     candidate.workItemKey !== review.workItemKey ||
-    candidate.data.attempt !== review.data.attempt
+    candidate.data.attempt !== review.data.candidateAttempt
   )
     throw new Error("Implementation review has no matching candidate commit");
   return candidate.data.commit;

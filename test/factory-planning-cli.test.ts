@@ -11,6 +11,7 @@ import {
 import { publishPlanPullRequest } from "../lib/factory-plan-publication.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import type { AgentRunInput } from "../lib/agents.ts";
+import { recordFactoryContinuation } from "../lib/factory-continuation.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import {
   appendFactoryActionEvent,
@@ -93,7 +94,6 @@ test.each([
       : undefined,
     outputPlan: "dev/plans/item.md",
     rerun: false,
-    reviewCeiling: 2,
     plannerRole: { agent: "cursor" as const, model: "planner" },
     reviewerRole: { agent: "cursor" as const, model: "reviewer" },
     maxRuntimeMs: 1_000,
@@ -461,7 +461,51 @@ test("publication apply appends once and repairs its Linear projection on retry"
     labels: [],
   };
   const calls: AgentRunInput[] = [];
-  const providerFactory = passingProvider(calls);
+  let reviewCount = 0;
+  const providerFactory = () => ({
+    name: "cursor" as const,
+    async run(input: AgentRunInput) {
+      calls.push(input);
+      const draftPath = /Draft path:\s+```text\s+([^\n]+)/.exec(input.prompt)?.[1];
+      if (draftPath) {
+        writeFileSync(draftPath, "# Candidate\n", "utf8");
+        return {
+          ok: true as const,
+          structuredOutput: {
+            outcome: "draft-ready" as const,
+            summary: "ready",
+            humanQuestions: [],
+            findingDecisions: [],
+          },
+          raw: unchangedWorkspace(),
+          session: { provider: "cursor" as const, id: "planner-session" },
+        };
+      }
+      reviewCount += 1;
+      return {
+        ok: true as const,
+        structuredOutput:
+          reviewCount === 1
+            ? {
+                verdict: "needs_changes" as const,
+                summary: "proof required",
+                findings: [
+                  {
+                    title: "External proof",
+                    severity: "High" as const,
+                    location: "verification",
+                    issue: "proof missing",
+                    recommendation: "attach proof",
+                    rationale: "required",
+                    must_fix: true,
+                  },
+                ],
+              }
+            : { verdict: "pass" as const, summary: "approved", findings: [] },
+        raw: unchangedWorkspace(),
+      };
+    },
+  });
   const coordinator = {
     factoryStateRoot: store.factoryStateRoot,
     factoryStore: store,
@@ -472,7 +516,6 @@ test("publication apply appends once and repairs its Linear projection on retry"
     applyAdapter: { applyPlanningStarted: vi.fn(async () => undefined) } as never,
     outputPlan: "dev/plans/item.md",
     rerun: false,
-    reviewCeiling: 2,
     plannerRole: { agent: "cursor" as const, model: "planner" },
     reviewerRole: { agent: "cursor" as const, model: "reviewer" },
     maxRuntimeMs: 1_000,
@@ -480,6 +523,16 @@ test("publication apply appends once and repairs its Linear projection on retry"
   };
   await runOneFactoryPlanningAction(coordinator);
   await runOneFactoryPlanningAction(coordinator);
+  recordFactoryContinuation({
+    phase: "planning",
+    decision: "re-review",
+    response: "The accepted external proof is now available.",
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStore: store,
+    workItem,
+  });
+  await runOneFactoryPlanningAction(coordinator);
+  expect(reviewCount).toBe(2);
   const applyPlanningPublished = vi.fn(async () => undefined);
   let remote = "";
   let pullRequest: unknown[] = [];
@@ -548,7 +601,6 @@ function coordinatorInput(
     itemFile: "item.json",
     outputPlan: "dev/plans/item.md",
     rerun: false,
-    reviewCeiling: 2,
     plannerRole: { agent: "cursor" as const, model: "planner" },
     reviewerRole: { agent: "cursor" as const, model: "reviewer" },
     maxRuntimeMs: 1_000,
