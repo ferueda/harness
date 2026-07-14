@@ -27,6 +27,7 @@ import {
   matchesFactoryImplementationRevisionWorkspace,
 } from "./factory-implementation-revision.ts";
 import {
+  FactoryImplementationGitAuthoritySchema,
   readFactoryImplementationGitAuthority,
   sameFactoryImplementationGitAuthority,
 } from "./factory-implementation-git-refs.ts";
@@ -47,11 +48,7 @@ import {
 } from "./factory-state-machine.ts";
 import { renderFactoryImplementationPrompt } from "./prompts/factory-implementation.ts";
 
-const FactsSchema = z.object({
-  head: z.string().regex(/^[0-9a-f]{40}$/),
-  branchRef: z.string().min(1),
-  branchTip: z.string().regex(/^[0-9a-f]{40}$/),
-  phaseRefs: z.string(),
+const FactsSchema = FactoryImplementationGitAuthoritySchema.extend({
   status: z.string(),
   refs: z.string(),
   indexClean: z.boolean(),
@@ -342,13 +339,7 @@ async function runLeased(input: {
       "human-required",
     );
   }
-  if (
-    staged.after.head !== ctx.identity.baseSha ||
-    staged.after.branchRef !== ctx.identity.branchRef ||
-    staged.after.branchTip !== ctx.identity.baseSha ||
-    !staged.after.indexClean ||
-    !sameFactoryImplementationGitAuthority(staged.before, staged.after)
-  )
+  if (!validStagedSuccessAuthority(ctx, staged))
     return fail(
       input,
       actionDir,
@@ -510,8 +501,18 @@ function appendRecovered(input: Parameters<typeof runLeased>[0], actionDir: stri
   )
     throw new Error("Recovered implementation candidate result conflicts with phase identity");
   for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots(input.ctx));
-  if (event.type === "implementation.candidate.produced")
+  if (event.type === "implementation.candidate.produced") {
+    const staged = readStaged(join(actionDir, "provider-result.json"));
+    if (!staged || !staged.result.ok)
+      throw new Error("Recovered candidate has no successful staged provider result");
+    assertStagedIdentity(input.ctx, input.reaction, staged);
+    if (
+      !validStagedSuccessAuthority(input.ctx, staged) ||
+      !matchesStagedSuccessWorkspace(input.ctx, input.reaction.attempt, staged)
+    )
+      throw new Error("Factory Git authority or workspace changed before candidate recovery");
     validateRecoveredCandidate(input.ctx, event);
+  }
   return appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
     event,
@@ -602,6 +603,20 @@ function sameFacts(left: z.infer<typeof FactsSchema>, right: z.infer<typeof Fact
   );
 }
 
+function validStagedSuccessAuthority(
+  ctx: FactoryImplementationRunContext,
+  staged: Staged,
+): boolean {
+  return (
+    staged.result.ok &&
+    staged.after.head === ctx.identity.baseSha &&
+    staged.after.branchRef === ctx.identity.branchRef &&
+    staged.after.branchTip === ctx.identity.baseSha &&
+    staged.after.indexClean &&
+    sameFactoryImplementationGitAuthority(staged.before, staged.after)
+  );
+}
+
 function matchesStagedSuccessWorkspace(
   ctx: FactoryImplementationRunContext,
   attempt: number,
@@ -635,6 +650,7 @@ function phaseRefsMatchBeforeCandidatePublication(
   candidate: { phaseRunId: string; attempt: number },
 ): boolean {
   if (live === expected) return true;
+  // Create-only publication may finish before a crash; its exact ref is validated downstream.
   const candidateRef = `refs/harness/factory/${candidate.phaseRunId}/${candidate.attempt} `;
   const withoutCandidate = live
     .split("\n")

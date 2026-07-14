@@ -424,6 +424,78 @@ test("provider completion and candidate ref recover without a second provider ca
   expect(recovered.event.type).toBe("implementation.candidate.produced");
 });
 
+test("successful candidate action-result recovers unchanged without rerunning the provider", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const reaction = invoke(requested);
+  const providerRun = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+  removeLastLifecycleEvent(fixture);
+  const recovered = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+  expect(recovered.event.type).toBe("implementation.candidate.produced");
+  expect(providerRun).toHaveBeenCalledTimes(1);
+});
+
+test.each(["current branch", "other current phase ref"] as const)(
+  "successful candidate action-result recovery rejects %s drift without rerunning the provider",
+  async (kind) => {
+    const fixture = directFixture();
+    const sibling = sharedWorktree(fixture.workspace);
+    const ctx = createPhase(fixture);
+    const requested = appendRequest(fixture, ctx);
+    const reaction = invoke(requested);
+    const providerRun = vi.fn<Agent["run"]>(async () => {
+      writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+      return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+    });
+    await produceImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction,
+      maxRuntimeMs: 0,
+      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+    });
+    removeLastLifecycleEvent(fixture);
+    if (kind === "current branch") {
+      git(sibling, ["commit", "--allow-empty", "-m", "recovery branch drift"]);
+      git(sibling, [
+        "update-ref",
+        ctx.identity.branchRef,
+        git(sibling, ["rev-parse", "HEAD"]).trim(),
+        fixture.baseSha,
+      ]);
+    } else {
+      git(sibling, ["update-ref", `refs/harness/factory/${ctx.runId}/other`, fixture.baseSha]);
+    }
+    await expect(
+      produceImplementationCandidate({
+        ctx,
+        factoryStateRoot: fixture.factoryStateRoot,
+        reaction,
+        maxRuntimeMs: 0,
+        agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+      }),
+    ).rejects.toThrow(/authority or workspace changed/);
+    expect(providerRun).toHaveBeenCalledTimes(1);
+  },
+);
+
 test("staged candidate recovery rejects same-status workspace drift without rerunning the provider", async () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
@@ -720,6 +792,81 @@ test("staged passing review recovers after branch promotion without rerunning re
   expect(reviewRunner).toHaveBeenCalledTimes(1);
   expect(recovered.state).toMatchObject({ status: "awaiting-pr-publication" });
 });
+
+test("successful review action-result recovers unchanged without rerunning reviewers", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  const reaction = invoke(candidate);
+  const reviewRunner = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    writePassReviews(reviewCtx.runDir!);
+    return fullReviewMeta("pass");
+  });
+  await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  removeLastLifecycleEvent(fixture);
+  const recovered = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  expect(recovered.event.type).toBe("implementation.review.completed");
+  expect(reviewRunner).toHaveBeenCalledTimes(1);
+});
+
+test.each(["current branch", "other current phase ref"] as const)(
+  "successful review action-result recovery rejects %s drift without rerunning reviewers",
+  async (kind) => {
+    const fixture = directFixture();
+    const sibling = sharedWorktree(fixture.workspace);
+    const { ctx, candidate } = await produceCandidate(fixture);
+    if (candidate.event.type !== "implementation.candidate.produced") throw new Error("candidate");
+    const reaction = invoke(candidate);
+    const reviewRunner = vi.fn(async (reviewCtx: { runDir?: string }) => {
+      writePassReviews(reviewCtx.runDir!);
+      return fullReviewMeta("pass");
+    });
+    await reviewImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction,
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: reviewRunner as never,
+    });
+    removeLastLifecycleEvent(fixture);
+    if (kind === "current branch") {
+      git(sibling, ["commit", "--allow-empty", "-m", "review recovery branch drift"]);
+      git(sibling, [
+        "update-ref",
+        ctx.identity.branchRef,
+        git(sibling, ["rev-parse", "HEAD"]).trim(),
+        candidate.event.data.commit,
+      ]);
+    } else {
+      git(sibling, ["update-ref", `refs/harness/factory/${ctx.runId}/other`, fixture.baseSha]);
+    }
+    await expect(
+      reviewImplementationCandidate({
+        ctx,
+        factoryStateRoot: fixture.factoryStateRoot,
+        reaction,
+        maxRuntimeMs: 1_000,
+        agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+        reviewRunner: reviewRunner as never,
+      }),
+    ).rejects.toThrow(/branch base changed|authority changed/);
+    expect(reviewRunner).toHaveBeenCalledTimes(1);
+  },
+);
 
 test("phase creation rejects dirty and detached workspaces before provider work", () => {
   const dirty = directFixture();

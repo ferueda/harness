@@ -1,11 +1,16 @@
 import { execFileSync } from "node:child_process";
+import { z } from "zod";
 
-export type FactoryImplementationGitAuthority = {
-  head: string;
-  branchRef: string;
-  branchTip: string;
-  phaseRefs: string;
-};
+export const FactoryImplementationGitAuthoritySchema = z.object({
+  head: z.string().regex(/^[0-9a-f]{40}$/),
+  branchRef: z.string().min(1),
+  branchTip: z.string().regex(/^[0-9a-f]{40}$/),
+  phaseRefs: z.string(),
+});
+
+export type FactoryImplementationGitAuthority = z.infer<
+  typeof FactoryImplementationGitAuthoritySchema
+>;
 
 export function readFactoryImplementationGitAuthority(input: {
   workspace: string;

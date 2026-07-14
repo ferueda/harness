@@ -13,6 +13,7 @@ import {
 import { startFactoryActionTelemetry } from "./factory-action-telemetry.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import {
+  FactoryImplementationGitAuthoritySchema,
   readFactoryImplementationGitAuthority,
   sameFactoryImplementationGitAuthority,
   type FactoryImplementationGitAuthority,
@@ -53,18 +54,8 @@ const StagedReviewSchema = z.object({
   reviewRunDir: z.string(),
   refsBefore: z.string(),
   refsAfter: z.string(),
-  authorityBefore: z.object({
-    head: z.string().regex(/^[0-9a-f]{40}$/),
-    branchRef: z.string().min(1),
-    branchTip: z.string().regex(/^[0-9a-f]{40}$/),
-    phaseRefs: z.string(),
-  }),
-  authorityAfter: z.object({
-    head: z.string().regex(/^[0-9a-f]{40}$/),
-    branchRef: z.string().min(1),
-    branchTip: z.string().regex(/^[0-9a-f]{40}$/),
-    phaseRefs: z.string(),
-  }),
+  authorityBefore: FactoryImplementationGitAuthoritySchema,
+  authorityAfter: FactoryImplementationGitAuthoritySchema,
   meta: z.unknown(),
 });
 
@@ -100,7 +91,8 @@ async function runLeased(
     factoryActionKey({ ...reaction, phaseRunId: ctx.runId }),
   );
   mkdirSync(actionDir, { recursive: true });
-  if (existsSync(factoryActionResultPath(actionDir))) return appendRecovered(input, actionDir);
+  if (existsSync(factoryActionResultPath(actionDir)))
+    return appendRecovered(input, actionDir, candidate);
   let candidateEvidence: z.infer<typeof FactoryImplementationCandidateEvidenceSchema>;
   try {
     candidateEvidence = validateCandidate(ctx, candidate);
@@ -118,22 +110,11 @@ async function runLeased(
   const recoveringStagedReview = existsSync(stagedPath);
   let staged: z.infer<typeof StagedReviewSchema>;
   if (recoveringStagedReview) {
-    let parsed;
-    try {
-      parsed = StagedReviewSchema.safeParse(JSON.parse(readFileSync(stagedPath, "utf8")));
-    } catch {
+    const recovered = readStagedReview(stagedPath);
+    if (!recovered)
       return fail(input, actionDir, "Invalid staged change-review result", "terminal");
-    }
-    if (!parsed.success)
-      return fail(input, actionDir, "Invalid staged change-review result", "terminal");
-    staged = parsed.data;
-    if (
-      staged.action.phaseRunId !== ctx.runId ||
-      staged.action.handler !== reaction.handler ||
-      staged.action.attempt !== reaction.attempt ||
-      staged.action.causationEventId !== reaction.causationEventId
-    )
-      throw new Error("Staged change-review result conflicts with action identity");
+    staged = recovered;
+    assertStagedReviewIdentity(ctx, reaction, staged);
     assertReviewRunContained(actionDir, staged.reviewRunDir);
   } else {
     const profile = ctx.identity.actions.reviewImplementationCandidate;
@@ -341,7 +322,7 @@ async function runLeased(
     },
   };
   writeFactoryActionResult(actionDir, event);
-  return appendRecovered(input, actionDir);
+  return appendRecovered(input, actionDir, candidate);
 }
 
 function validateCandidate(
@@ -447,6 +428,7 @@ function fail(
 function appendRecovered(
   input: Parameters<typeof reviewImplementationCandidate>[0],
   actionDir: string,
+  candidate?: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
 ) {
   const event = readFactoryActionResult(actionDir);
   if (
@@ -459,25 +441,28 @@ function appendRecovered(
   )
     throw new Error("Recovered implementation review result conflicts with phase identity");
   for (const evidence of event.data.evidence) verifyFactoryArtifactRef(evidence, roots(input.ctx));
-  if (event.type === "implementation.review.completed") validateRecoveredReview(input, event);
-  if (event.type === "implementation.review.completed" && event.data.verdict === "pass") {
-    const candidate = readFactoryActionEvents(
-      input.factoryStateRoot,
-      deriveFactoryWorkItemKey(input.ctx.workItem),
-    ).findLast(
-      (candidateEvent) =>
-        candidateEvent.type === "implementation.candidate.produced" &&
-        candidateEvent.phaseRunId === input.ctx.runId,
-    );
-    if (!candidate || candidate.type !== "implementation.candidate.produced")
-      throw new Error("Recovered implementation pass has no candidate");
-    promoteFactoryCandidate({
-      workspace: input.ctx.workspace,
-      runDir: actionDir,
-      branchRef: input.ctx.identity.branchRef,
-      baseSha: input.ctx.identity.baseSha,
-      candidateSha: candidate.data.commit,
-    });
+  if (event.type === "implementation.review.completed") {
+    const staged = readStagedReview(join(actionDir, "review-result.json"));
+    if (!staged) throw new Error("Recovered review has no valid staged reviewer result");
+    assertStagedReviewIdentity(input.ctx, input.reaction, staged);
+    assertReviewRunContained(actionDir, staged.reviewRunDir);
+    if (!candidate || candidate.phaseRunId !== input.ctx.runId)
+      throw new Error("Recovered implementation review has no causative candidate");
+    validateCandidate(input.ctx, candidate);
+    const promotedRecovery =
+      git(input.ctx.workspace, ["rev-parse", input.ctx.identity.branchRef]).trim() ===
+      candidate.data.commit;
+    if (!matchesLiveReviewAuthority(input.ctx, staged.authorityAfter, candidate, promotedRecovery))
+      throw new Error("Factory Git authority changed before review recovery");
+    validateRecoveredReview(input, event);
+    if (event.data.verdict === "pass")
+      promoteFactoryCandidate({
+        workspace: input.ctx.workspace,
+        runDir: actionDir,
+        branchRef: input.ctx.identity.branchRef,
+        baseSha: input.ctx.identity.baseSha,
+        candidateSha: candidate.data.commit,
+      });
   }
   return appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
@@ -546,6 +531,29 @@ function validateRecoveredReview(
   verifyFactoryArtifactRef(manifest.reviewers.implementation, roots(ctx));
   verifyFactoryArtifactRef(manifest.reviewers.quality, roots(ctx));
   if (manifest.blockingFindings) verifyFactoryArtifactRef(manifest.blockingFindings, roots(ctx));
+}
+
+function readStagedReview(path: string): z.infer<typeof StagedReviewSchema> | undefined {
+  try {
+    const parsed = StagedReviewSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function assertStagedReviewIdentity(
+  ctx: FactoryImplementationRunContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  staged: z.infer<typeof StagedReviewSchema>,
+): void {
+  if (
+    staged.action.phaseRunId !== ctx.runId ||
+    staged.action.handler !== reaction.handler ||
+    staged.action.attempt !== reaction.attempt ||
+    staged.action.causationEventId !== reaction.causationEventId
+  )
+    throw new Error("Staged change-review result conflicts with action identity");
 }
 
 function realIndexMatchesBase(ctx: FactoryImplementationRunContext): boolean {
