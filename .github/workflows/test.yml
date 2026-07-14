@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.0.9
@@ -29,5 +31,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run checks
+      - name: Classify pull request changes
+        if: github.event_name == 'pull_request'
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/classify-plan-only.ts
+
+      - name: Run plan checks
+        if: github.event_name == 'pull_request' && steps.changes.outputs.plan_only == 'true'
+        run: pnpm exec oxfmt --check dev/plans && pnpm exec vitest run test/docs-contracts.test.ts
+
+      - name: Run full checks
+        if: github.event_name != 'pull_request' || steps.changes.outputs.plan_only != 'true'
         run: pnpm check:ci
