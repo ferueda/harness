@@ -56,7 +56,10 @@ export function renderFactoryImplementationReviewHandoff(input: {
   workItem: FactoryWorkItem;
   phaseRunId: string;
   candidateCommit: string;
-  continuation?: { response: string; priorFindings?: unknown };
+  continuation?: {
+    response: string;
+    priorReview?: { implementation: unknown; quality: unknown };
+  };
 }): string {
   return [
     "# Factory implementation review handoff",
@@ -77,13 +80,19 @@ export function renderFactoryImplementationReviewHandoff(input: {
           "The operator selected re-review for this exact candidate. Treat this response as accepted clarification and evidence within the original task scope.",
           "",
           input.continuation.response,
-          ...(input.continuation.priorFindings
+          ...(input.continuation.priorReview
             ? [
                 "",
-                "## Prior blocking findings",
+                "## Prior implementation review",
                 "",
                 "```json",
-                JSON.stringify(input.continuation.priorFindings, null, 2),
+                JSON.stringify(input.continuation.priorReview.implementation, null, 2),
+                "```",
+                "",
+                "## Prior quality review",
+                "",
+                "```json",
+                JSON.stringify(input.continuation.priorReview.quality, null, 2),
                 "```",
               ]
             : []),

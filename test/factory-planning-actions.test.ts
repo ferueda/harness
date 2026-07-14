@@ -83,6 +83,15 @@ test("candidate and review actions step separately and revisions resume the plan
                   rationale: "required",
                   must_fix: true,
                 },
+                {
+                  title: "Advisory context",
+                  severity: "Low",
+                  location: "verification",
+                  issue: "optional detail",
+                  recommendation: "consider it",
+                  rationale: "non-blocking",
+                  must_fix: false,
+                },
               ],
             }
           : { verdict: "pass", summary: "ok", findings: [] },
@@ -173,6 +182,15 @@ test("accepted evidence re-reviews the exact plan candidate without invoking the
                   rationale: "required",
                   must_fix: true,
                 },
+                {
+                  title: "Advisory context",
+                  severity: "Low",
+                  location: "verification",
+                  issue: "optional detail",
+                  recommendation: "consider it",
+                  rationale: "non-blocking",
+                  must_fix: false,
+                },
               ],
             }
           : { verdict: "pass", summary: "proof accepted", findings: [] },
@@ -214,7 +232,8 @@ test("accepted evidence re-reviews the exact plan candidate without invoking the
   expect(plannerRun).toHaveBeenCalledTimes(1);
   expect(reviewRound).toBe(2);
   expect(reReviewHandoff).toContain("The required external proof is attached and accepted.");
-  expect(reReviewHandoff).toContain("spec-001");
+  expect(reReviewHandoff).toContain("External proof");
+  expect(reReviewHandoff).toContain("Advisory context");
   expect(candidateBytes(fixture.ctx, candidate.event)).toBe("# Candidate\n");
 });
 

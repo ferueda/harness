@@ -385,9 +385,13 @@ function reduceFailure(
       status,
       candidateAttempt: current.candidateAttempt,
       reviewRound: current.reviewRound,
-      ...(current.candidateEventId ? { candidateEventId: current.candidateEventId } : {}),
-      ...(current.reviewEventId ? { reviewEventId: current.reviewEventId } : {}),
-      ...(current.reviewedPlan ? { reviewedPlan: current.reviewedPlan } : {}),
+      ...(event.data.failureKind === "retryable" || retained
+        ? {
+            ...(current.candidateEventId ? { candidateEventId: current.candidateEventId } : {}),
+            ...(current.reviewEventId ? { reviewEventId: current.reviewEventId } : {}),
+            ...(current.reviewedPlan ? { reviewedPlan: current.reviewedPlan } : {}),
+          }
+        : {}),
     };
   return {
     ...base,
@@ -396,9 +400,13 @@ function reduceFailure(
     status,
     candidateAttempt: current.candidateAttempt,
     reviewRound: current.reviewRound,
-    ...(current.candidateEventId ? { candidateEventId: current.candidateEventId } : {}),
-    ...(current.reviewEventId ? { reviewEventId: current.reviewEventId } : {}),
-    ...(current.reviewedHead ? { reviewedHead: current.reviewedHead } : {}),
+    ...(event.data.failureKind === "retryable" || retained
+      ? {
+          ...(current.candidateEventId ? { candidateEventId: current.candidateEventId } : {}),
+          ...(current.reviewEventId ? { reviewEventId: current.reviewEventId } : {}),
+          ...(current.reviewedHead ? { reviewedHead: current.reviewedHead } : {}),
+        }
+      : {}),
   };
 }
 
@@ -564,7 +572,11 @@ function continuationAllowed(
   )
     return false;
   if (current.status === "awaiting-review")
-    return event.data.decision === "revise" && event.data.reviewEventId === undefined;
+    return (
+      event.data.decision === "revise" &&
+      event.data.reviewEventId === undefined &&
+      current.lastEventId === current.candidateEventId
+    );
   if (current.status !== "awaiting-continuation") return false;
   return current.reviewEventId
     ? event.data.reviewEventId === current.reviewEventId

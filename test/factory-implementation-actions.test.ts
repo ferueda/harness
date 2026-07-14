@@ -201,7 +201,8 @@ test("accepted evidence re-reviews the exact candidate without invoking the prod
     const handoff = readFileSync(join(ctx.runDir!, "context/handoff.md"), "utf8");
     expect(handoff).toContain(candidate.data.commit);
     expect(handoff).toContain("live Desktop routing smoke passed");
-    expect(handoff).toContain("implementation-1");
+    expect(handoff).toContain("Correctness");
+    expect(handoff).toContain("Clarity");
     writePassReviews(ctx.runDir!);
     return fullReviewMeta("pass");
   });
@@ -1370,6 +1371,29 @@ test("blocked implementation review waits for a human", async () => {
     kind: "wait",
     reason: "human",
   });
+  const continued = continueImplementation(
+    fixture,
+    "re-review",
+    "The blocked reviewer dependency is now available.",
+  );
+  const secondReview = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    const handoff = readFileSync(join(reviewCtx.runDir!, "context/handoff.md"), "utf8");
+    expect(handoff).toContain("Prior implementation review");
+    expect(handoff).toContain('"verdict": "blocked"');
+    expect(handoff).toContain("The blocked reviewer dependency is now available.");
+    writePassReviews(reviewCtx.runDir!);
+    return fullReviewMeta("pass");
+  });
+  const passed = await reviewImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(continued),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: secondReview as never,
+  });
+  expect(secondReview).toHaveBeenCalledOnce();
+  expect(passed.state).toMatchObject({ status: "awaiting-pr-publication" });
 });
 
 test("review recovery rejects tampered blocking findings", async () => {
@@ -1503,7 +1527,10 @@ test.each(["before", "during"] as const)(
     });
     expect(reviewed.event).toMatchObject({
       type: "factory.action.failed",
-      data: { failureKind: timing === "during" ? "human-required" : "terminal" },
+      data: {
+        failureKind: "human-required",
+        retainedCandidateEventId: expect.any(String),
+      },
     });
   },
 );
@@ -1614,6 +1641,14 @@ test("retryable reviewer failure runs the same review action again", async () =>
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: reviewRunner as never,
   });
+  expect(() =>
+    continueImplementation(fixture, "revise", "Do not bypass the pending review retry."),
+  ).toThrow(/no candidate awaiting continuation/);
+  expect(decideNextFactoryAction(first.state, first.event)).toMatchObject({
+    handler: "reviewImplementationCandidate",
+    attempt: 1,
+    scheduling: "retry",
+  });
   const second = await reviewImplementationCandidate({
     ctx,
     factoryStateRoot: fixture.factoryStateRoot,
@@ -1652,6 +1687,7 @@ test("candidate evidence digest tampering fails before reviewer invocation", asy
     type: "factory.action.failed",
     data: { failureKind: "terminal" },
   });
+  expect(reviewed.state).not.toHaveProperty("candidateEventId");
 });
 
 test("staged pass recovers while branch is still at base without rerunning reviewers", async () => {
@@ -1817,6 +1853,92 @@ test("Linear human-required failure projects and repairs attention without anoth
   );
   expect(providerRun).toHaveBeenCalledTimes(1);
   expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key)).toHaveLength(before);
+});
+
+test("Linear retained-candidate terminal failure repairs attention before re-review", async () => {
+  const fixture = directFixture();
+  fixture.workItem.metadata = { linearStatus: "Ready to Implement" };
+  const producer = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "candidate\n");
+    return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+  });
+  await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({
+      applyImplementationStarted: async () => ({
+        issueIdentifier: "ENG-123",
+        runId: "run",
+        runDir: "run",
+        stage: "started",
+        targetStatus: "Implementing",
+      }),
+    }),
+    agentProviderFactory: () => ({ name: "cursor", run: producer }),
+  });
+  fixture.workItem.metadata = { linearStatus: "Implementing" };
+  const projectionFailure = vi.fn(async () => {
+    throw new Error("attention projection unavailable");
+  });
+  const invalidReview = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    mkdirSync(reviewCtx.runDir!, { recursive: true });
+    writeFileSync(join(reviewCtx.runDir!, "implementation-review.json"), "{}\n");
+    writeFileSync(join(reviewCtx.runDir!, "quality-review.json"), "{}\n");
+    return fullReviewMeta("pass");
+  });
+  await expect(
+    runOneFactoryImplementationAction({
+      ...coordinatorInput(fixture),
+      linearIssue: "ENG-123",
+      issueRef: "ENG-123",
+      linearStatuses: LINEAR_SETTINGS.statuses,
+      applyAdapter: fakeLinearAdapter({ applyImplementationAttention: projectionFailure }),
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: invalidReview as never,
+    }),
+  ).rejects.toThrow("attention projection unavailable");
+  expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1)).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal", retainedCandidateEventId: expect.any(String) },
+  });
+
+  const repairedAttention = vi.fn(async () => ({
+    issueIdentifier: "ENG-123",
+    runId: "run",
+    runDir: "run",
+    stage: "completed" as const,
+    targetStatus: "Implementing",
+  }));
+  continueImplementation(fixture, "re-review", "The review output failure has been resolved.");
+
+  const ordering: string[] = [];
+  const passReview = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    ordering.push("review");
+    writePassReviews(reviewCtx.runDir!);
+    return fullReviewMeta("pass");
+  });
+  const passed = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    linearStatuses: LINEAR_SETTINGS.statuses,
+    applyAdapter: fakeLinearAdapter({
+      applyImplementationAttention: async () => {
+        ordering.push("projection");
+        return repairedAttention();
+      },
+    }),
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: passReview as never,
+  });
+  expect(ordering).toEqual(["projection", "review"]);
+  expect(passed.linearApplied).toBe(true);
+  expect(passed.next).toEqual({ kind: "wait", reason: "pr-publication" });
+  expect(producer).toHaveBeenCalledOnce();
+  expect(invalidReview).toHaveBeenCalledOnce();
+  expect(passReview).toHaveBeenCalledOnce();
 });
 
 function directFixture() {

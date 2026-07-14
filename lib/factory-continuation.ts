@@ -58,6 +58,7 @@ export function recordFactoryContinuation(input: {
   const mayReviseBeforeReview =
     state?.status === "awaiting-review" &&
     state.reviewEventId === undefined &&
+    state.lastEventId === state.candidateEventId &&
     decision === "revise";
   const mayContinueAfterReview = state?.status === "awaiting-continuation";
   if (

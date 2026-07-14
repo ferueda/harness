@@ -51,10 +51,15 @@ test("review handoff supplies the accepted re-review response", () => {
     candidateCommit: "a".repeat(40),
     continuation: {
       response: "The live entry-path smoke passed.",
-      priorFindings: [{ id: "implementation-1" }],
+      priorReview: {
+        implementation: { verdict: "blocked", summary: "tool unavailable", findings: [] },
+        quality: { verdict: "pass", summary: "ok", findings: [] },
+      },
     },
   });
   expect(handoff).toContain("## Accepted operator response");
   expect(handoff).toContain("The live entry-path smoke passed.");
-  expect(handoff).toContain("implementation-1");
+  expect(handoff).toContain("Prior implementation review");
+  expect(handoff).toContain("tool unavailable");
+  expect(handoff).toContain("Prior quality review");
 });

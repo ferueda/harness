@@ -459,30 +459,47 @@ export async function runOneFactoryImplementationAction(input: {
     eventSink: input.eventSink,
   });
   let linearApplied = false;
-  // Repair the persisted non-pass review before either selected continuation action.
+  // Repair the causative attention projection before either selected continuation action.
   if (
     input.applyAdapter &&
     latest?.type === "factory.continuation.recorded" &&
-    latest.data.phase === "implementation" &&
-    latest.data.reviewEventId
+    latest.data.phase === "implementation"
   ) {
-    const review = events.find(
-      (
-        event,
-      ): event is Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }> =>
-        event.id === latest.data.reviewEventId && event.type === "implementation.review.completed",
-    );
-    if (!review) throw new Error("Implementation continuation review is unavailable");
-    if (review.data.verdict === "pass")
-      throw new Error("Implementation continuation cannot follow a passing review");
-    await input.applyAdapter.applyImplementationAttention({
-      issueRef: input.issueRef!,
-      runId: phaseRunId,
-      runDir: ctx.runDir,
-      verdict: review.data.verdict,
-      candidateCommit: readReviewCandidateCommit(events, review),
-    });
-    linearApplied = true;
+    if (latest.data.reviewEventId) {
+      const review = events.find(
+        (
+          event,
+        ): event is Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }> =>
+          event.id === latest.data.reviewEventId &&
+          event.type === "implementation.review.completed",
+      );
+      if (!review) throw new Error("Implementation continuation review is unavailable");
+      if (review.data.verdict === "pass")
+        throw new Error("Implementation continuation cannot follow a passing review");
+      await input.applyAdapter.applyImplementationAttention({
+        issueRef: input.issueRef!,
+        runId: phaseRunId,
+        runDir: ctx.runDir,
+        verdict: review.data.verdict,
+        candidateCommit: readReviewCandidateCommit(events, review),
+      });
+      linearApplied = true;
+    } else {
+      const predecessor = events.find((event) => event.id === latest.data.expectedPredecessor);
+      if (
+        predecessor?.type === "factory.action.failed" &&
+        predecessor.data.retainedCandidateEventId
+      ) {
+        await input.applyAdapter.applyImplementationAttention({
+          issueRef: input.issueRef!,
+          runId: phaseRunId,
+          runDir: ctx.runDir,
+          verdict: "human_required",
+          ...optionalCandidateCommit(events, phaseRunId),
+        });
+        linearApplied = true;
+      }
+    }
   }
   if (input.linearIssue && pendingImplementationStart(state, latest)) {
     if (!input.applyAdapter)
@@ -543,7 +560,8 @@ export async function runOneFactoryImplementationAction(input: {
   } else if (
     input.applyAdapter &&
     handled.event.type === "factory.action.failed" &&
-    handled.event.data.failureKind === "human-required"
+    (handled.event.data.failureKind === "human-required" ||
+      handled.event.data.retainedCandidateEventId !== undefined)
   ) {
     await input.applyAdapter.applyImplementationAttention({
       issueRef: input.issueRef!,
@@ -615,6 +633,20 @@ async function repairTerminalProjection(input: {
       runDir: input.runDir,
       verdict: input.latest.data.verdict,
       candidateCommit,
+    });
+    return true;
+  }
+  if (
+    input.state.status === "awaiting-continuation" &&
+    input.latest?.type === "factory.action.failed" &&
+    input.latest.data.retainedCandidateEventId
+  ) {
+    await input.adapter.applyImplementationAttention({
+      issueRef: input.issueRef,
+      runId: input.state.phaseRunId,
+      runDir: input.runDir,
+      verdict: "human_required",
+      ...optionalCandidateCommit(input.events, input.state.phaseRunId),
     });
     return true;
   }

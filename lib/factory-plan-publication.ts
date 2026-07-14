@@ -57,11 +57,16 @@ export async function publishPlanPullRequest(input: {
         event.phaseRunId === state.phaseRunId &&
         event.data.verdict === "pass",
     );
-    const candidate =
-      review?.type === "planning.review.completed"
-        ? events.find((event) => event.id === review.data.causationEventId)
-        : undefined;
-    if (!candidate || candidate.type !== "planning.candidate.produced")
+    if (!review || review.type !== "planning.review.completed")
+      throw new Error("Planning publication has no final passing review");
+    const candidate = events.find((event) => event.id === review.data.candidateEventId);
+    if (
+      !candidate ||
+      candidate.type !== "planning.candidate.produced" ||
+      candidate.phaseRunId !== state.phaseRunId ||
+      candidate.workItemKey !== key ||
+      candidate.data.attempt !== review.data.candidateAttempt
+    )
       throw new Error("Planning publication has no final reviewed candidate");
     const prepared = preparePlanPublication({
       workspace: input.workspace,

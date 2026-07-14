@@ -104,6 +104,15 @@ export async function reviewPlanCandidate(input: {
     } else {
       const profile = ctx.identity.actions.reviewPlanCandidate;
       let providerCompletion: ReviewProviderCompletion | undefined;
+      let priorReviewJson: string | undefined;
+      try {
+        priorReviewJson =
+          continuation?.review?.type === "planning.review.completed"
+            ? priorPlanningReviewJson(ctx, candidate, continuation.review)
+            : undefined;
+      } catch (error) {
+        return failAction(input, actionDir, errorMessage(error), "terminal");
+      }
       const reviewCtx = createWorkflowContext({
         workspace: ctx.workspace,
         planPath: candidatePath,
@@ -124,22 +133,8 @@ export async function reviewPlanCandidate(input: {
                 "The operator selected re-review for this exact plan candidate. Treat this response as accepted clarification and evidence within the original task scope.",
                 "",
                 continuation.response,
-                ...(continuation.review?.type === "planning.review.completed" &&
-                continuation.review.data.blockingFindings
-                  ? [
-                      "",
-                      "# Prior blocking findings",
-                      "",
-                      "```json",
-                      readFileSync(
-                        verifyFactoryArtifactRef(continuation.review.data.blockingFindings, {
-                          "factory-store": ctx.factoryStore.projectRoot,
-                          repository: ctx.workspace,
-                        }),
-                        "utf8",
-                      ).trim(),
-                      "```",
-                    ]
+                ...(priorReviewJson
+                  ? ["", "# Prior review result", "", "```json", priorReviewJson, "```"]
                   : []),
               ]
             : []),
@@ -315,6 +310,30 @@ export async function reviewPlanCandidate(input: {
     event: recovered,
     expectedLastEventId: reaction.causationEventId,
   });
+}
+
+function priorPlanningReviewJson(
+  ctx: PlanningContext,
+  candidate: Extract<FactoryLifecycleEvent, { type: "planning.candidate.produced" }>,
+  review: Extract<FactoryLifecycleEvent, { type: "planning.review.completed" }>,
+): string {
+  if (
+    review.data.candidateEventId !== candidate.id ||
+    review.data.candidateAttempt !== candidate.data.attempt
+  )
+    throw new Error("Prior planning review conflicts with its candidate");
+  const output = ReviewOutputSchema.parse(
+    JSON.parse(
+      readFileSync(
+        verifyFactoryArtifactRef(review.data.review, {
+          "factory-store": ctx.factoryStore.projectRoot,
+          repository: ctx.workspace,
+        }),
+        "utf8",
+      ),
+    ),
+  );
+  return JSON.stringify(output, null, 2);
 }
 
 const WorkspaceStatusSchema = z.object({ before: z.string(), after: z.string() }).strict();

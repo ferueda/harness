@@ -43,6 +43,7 @@ import { run as runChangeReview } from "../workflows/change-review.workflow.ts";
 
 type ReviewRunner = typeof runChangeReview;
 class BranchDriftError extends Error {}
+class CandidateWorkspaceError extends Error {}
 class GitProbeError extends Error {}
 const StagedReviewSchema = z.object({
   version: z.literal(1),
@@ -103,9 +104,16 @@ async function runLeased(
       input,
       actionDir,
       message(error),
-      error instanceof BranchDriftError || error instanceof GitProbeError
+      error instanceof BranchDriftError ||
+        error instanceof CandidateWorkspaceError ||
+        error instanceof GitProbeError
         ? "human-required"
         : "terminal",
+      error instanceof BranchDriftError ||
+        error instanceof CandidateWorkspaceError ||
+        error instanceof GitProbeError
+        ? candidate.id
+        : undefined,
     );
   }
   const stagedPath = join(actionDir, "review-result.json");
@@ -130,6 +138,15 @@ async function runLeased(
       ctx.identity.input.mode === "planned"
         ? verifyFactoryArtifactRef(ctx.identity.input.planCandidate, roots(ctx))
         : undefined;
+    let priorReview;
+    try {
+      priorReview =
+        continuation?.review?.type === "implementation.review.completed"
+          ? readPriorImplementationReview(ctx, candidate, continuation.review)
+          : undefined;
+    } catch (error) {
+      return fail(input, actionDir, message(error), "terminal", candidate.id);
+    }
     const reviewCtx = createWorkflowContext({
       workspace: ctx.workspace,
       baseRef: ctx.identity.baseSha,
@@ -143,20 +160,7 @@ async function runLeased(
           ? {
               continuation: {
                 response: continuation.response,
-                ...(continuation.review?.type === "implementation.review.completed" &&
-                continuation.review.data.blockingFindings
-                  ? {
-                      priorFindings: JSON.parse(
-                        readFileSync(
-                          verifyFactoryArtifactRef(
-                            continuation.review.data.blockingFindings,
-                            roots(ctx),
-                          ),
-                          "utf8",
-                        ),
-                      ),
-                    }
-                  : {}),
+                ...(priorReview ? { priorReview } : {}),
               },
             }
           : {}),
@@ -421,7 +425,7 @@ function validateCandidate(
     baseSha: ctx.identity.baseSha,
   });
   if (live.tree !== candidate.data.tree)
-    throw new Error("Live workspace tree does not match the candidate");
+    throw new CandidateWorkspaceError("Live workspace tree does not match the candidate");
   const baseTree = git(ctx.workspace, ["rev-parse", `${ctx.identity.baseSha}^{tree}`]).trim();
   const candidateTree = candidate.data.tree;
   const indexTree = git(ctx.workspace, ["write-tree"]).trim();
@@ -429,9 +433,11 @@ function validateCandidate(
     (branchSha === ctx.identity.baseSha && indexTree !== baseTree) ||
     (branchSha === candidate.data.commit && indexTree !== baseTree && indexTree !== candidateTree)
   )
-    throw new Error("Live implementation index does not match a recoverable candidate state");
+    throw new CandidateWorkspaceError(
+      "Live implementation index does not match a recoverable candidate state",
+    );
   if (branchSha === ctx.identity.baseSha && live.status !== manifest.status)
-    throw new Error("Live workspace status does not match candidate evidence");
+    throw new CandidateWorkspaceError("Live workspace status does not match candidate evidence");
   return manifest;
 }
 
@@ -580,6 +586,35 @@ function validateRecoveredReview(
   verifyFactoryArtifactRef(manifest.reviewers.implementation, roots(ctx));
   verifyFactoryArtifactRef(manifest.reviewers.quality, roots(ctx));
   if (manifest.blockingFindings) verifyFactoryArtifactRef(manifest.blockingFindings, roots(ctx));
+}
+
+function readPriorImplementationReview(
+  ctx: FactoryImplementationRunContext,
+  candidate: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
+  review: Extract<FactoryLifecycleEvent, { type: "implementation.review.completed" }>,
+) {
+  const manifest = FactoryImplementationReviewEvidenceSchema.parse(
+    JSON.parse(readFileSync(verifyFactoryArtifactRef(review.data.review, roots(ctx)), "utf8")),
+  );
+  if (
+    review.data.candidateEventId !== candidate.id ||
+    review.data.candidateAttempt !== candidate.data.attempt ||
+    manifest.phaseRunId !== ctx.runId ||
+    manifest.reviewRound !== review.data.attempt ||
+    manifest.candidateAttempt !== candidate.data.attempt ||
+    manifest.commit !== candidate.data.commit ||
+    manifest.tree !== candidate.data.tree ||
+    manifest.verdict !== review.data.verdict
+  )
+    throw new Error("Prior implementation review conflicts with its candidate");
+  return {
+    implementation: JSON.parse(
+      readFileSync(verifyFactoryArtifactRef(manifest.reviewers.implementation, roots(ctx)), "utf8"),
+    ),
+    quality: JSON.parse(
+      readFileSync(verifyFactoryArtifactRef(manifest.reviewers.quality, roots(ctx)), "utf8"),
+    ),
+  };
 }
 
 function readStagedReview(path: string): z.infer<typeof StagedReviewSchema> | undefined {
