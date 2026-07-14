@@ -37,6 +37,8 @@ export function publishFactoryPullRequest(
   const remote = remoteHead(input.workspace, headBranch, runner);
   if (remote && remote !== input.headSha)
     throw new Error(`Remote publication branch diverges from reviewed head ${input.headSha}`);
+  // Validate any durable GitHub identity before the first external mutation.
+  const existing = findPullRequest(input, headBranch, runner);
   if (!remote) {
     try {
       runner("git", ["push", "origin", `${input.headSha}:refs/heads/${headBranch}`], {
@@ -49,8 +51,10 @@ export function publishFactoryPullRequest(
       throw new Error("Remote publication branch was not created at the reviewed head");
   }
 
-  const existing = findPullRequest(input, headBranch, runner);
   if (existing) return existing;
+  // Recover a PR created concurrently after the preflight query.
+  const concurrent = findPullRequest(input, headBranch, runner);
+  if (concurrent) return concurrent;
   try {
     runner(
       "gh",

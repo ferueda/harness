@@ -36,7 +36,7 @@ export function preparePlanPublication(input: {
   });
   const planBytes = readFileSync(candidatePath);
   const existingPlan = tryShow(input.workspace, input.baseSha, input.outputPlan);
-  if (existingPlan && !planBytes.equals(Buffer.from(existingPlan)))
+  if (existingPlan !== undefined && !planBytes.equals(Buffer.from(existingPlan)))
     throw new Error(`Plan path already contains different bytes: ${input.outputPlan}`);
   const readmePath = "dev/plans/README.md";
   const readme = git(input.workspace, ["show", `${input.baseSha}:${readmePath}`]);

@@ -81,6 +81,81 @@ test("rejects a divergent remote head before GitHub mutation", () => {
   expect(gh).not.toHaveBeenCalled();
 });
 
+test("rejects a conflicting existing PR before pushing an absent branch", () => {
+  const fixture = repository();
+  const pushes = vi.fn<() => void>();
+  const runner: FactoryCommandRunner = (command, args, options) => {
+    if (command === "git") {
+      if (args[0] === "push") pushes();
+      return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+    }
+    if (args[1] === "list")
+      return JSON.stringify([
+        {
+          url: "https://example.test/repo/pull/1",
+          baseRefName: "release",
+          headRefName: "feature",
+          headRefOid: fixture.head,
+        },
+      ]);
+    throw new Error(`unexpected gh command ${args.join(" ")}`);
+  };
+
+  expect(() =>
+    publishFactoryPullRequest(
+      {
+        workspace: fixture.workspace,
+        baseRef: "main",
+        headBranch: "feature",
+        headSha: fixture.head,
+        title: "Reviewed change",
+        body: "Reviewed body",
+      },
+      runner,
+    ),
+  ).toThrow(/conflicts/);
+  expect(pushes).not.toHaveBeenCalled();
+});
+
+test("recovers a PR created when gh loses its response", () => {
+  const fixture = repository();
+  let pullRequests: unknown[] = [];
+  const creates = vi.fn<() => void>();
+  const runner: FactoryCommandRunner = (command, args, options) => {
+    if (command === "git")
+      return execFileSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+    if (args[1] === "list") return JSON.stringify(pullRequests);
+    if (args[1] === "create") {
+      creates();
+      pullRequests = [
+        {
+          url: "https://example.test/repo/pull/2",
+          baseRefName: "main",
+          headRefName: "feature",
+          headRefOid: fixture.head,
+        },
+      ];
+      throw new Error("response lost");
+    }
+    throw new Error(`unexpected gh command ${args.join(" ")}`);
+  };
+
+  expect(
+    publishFactoryPullRequest(
+      {
+        workspace: fixture.workspace,
+        baseRef: "main",
+        headBranch: "feature",
+        headSha: fixture.head,
+        title: "Reviewed change",
+        body: "Reviewed body",
+      },
+      runner,
+    ).url,
+  ).toBe("https://example.test/repo/pull/2");
+  expect(creates).toHaveBeenCalledOnce();
+});
+
 function repository(): { workspace: string; head: string } {
   const root = mkdtempSync(join(tmpdir(), "factory-pr-publisher-"));
   const workspace = join(root, "workspace");
