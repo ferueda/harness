@@ -194,11 +194,20 @@ warning.
 - Which requested information is missing from snippets and needs
   `sessions cursor show` or `sessions codex show`?
 - Did planning or review workflows route to the expected skills?
+- Was a skill's result correct and valuable, and which layer owns any failure?
 - Which skills have zero invokes over 90 days?
 
 ## Evaluation
 
-Workflow and skill audits: [references/audit-examples.md](references/audit-examples.md). Exploration turn queries: [references/turn-queries.md](references/turn-queries.md). Coordinator fixtures (e.g. `planning-workflow/references/routing.md`) define expected routing.
+- Periodic workflow and portfolio audits:
+  [references/audit-examples.md](references/audit-examples.md).
+- Deep, bounded audits of one skill's correctness and value:
+  [references/skill-effectiveness-audit.md](references/skill-effectiveness-audit.md).
+- Exploration turn queries:
+  [references/turn-queries.md](references/turn-queries.md).
+
+Coordinator fixtures (e.g. `planning-workflow/references/routing.md`) define
+expected routing.
 
 ## Reading Output
 
