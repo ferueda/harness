@@ -136,10 +136,10 @@ publishes a distinct immutable attempt ref. Pass advances the persisted branch
 to that exact latest candidate, leaves the index/worktree clean, and waits for
 explicit PR publication. Publication pushes that exact branch and finds or
 creates its PR; it never merges. Merge acknowledgement requires the recorded
-URL and a local descendant commit.
-Blocked/exhausted verdicts wait for a human. `--rerun` starts a fresh phase
-before review or after human/failed state; abandoned candidate evidence remains.
-The CLI prints but never automatically executes a follow-up action.
+URL and a local descendant commit. Before-review reruns require
+`--rerun-guidance-file <path>`; Harness hashes its bounded clarification for
+the producer and reviews without expanding task scope. Human/failed reruns
+reject guidance; abandoned evidence remains. The CLI never follows up itself.
 
 Factory station agent and model selection comes from `harness.json` role config
 under `factory.<station>.roles`. Linear list and fetch use `LINEAR_API_KEY` and

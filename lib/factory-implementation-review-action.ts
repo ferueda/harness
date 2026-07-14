@@ -131,6 +131,7 @@ async function runLeased(
         workItem: ctx.workItem,
         phaseRunId: ctx.runId,
         candidateCommit: candidate.data.commit,
+        restartGuidance: ctx.restartGuidance,
       }),
       ...(planPath ? { planPath } : {}),
       agentProvider: profile.provider,

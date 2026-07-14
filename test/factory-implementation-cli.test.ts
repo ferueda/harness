@@ -11,6 +11,7 @@ test("implementation run help exposes the manual action surface", () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toContain("Run exactly one pending implementation action");
   expect(result.stdout).toContain("--rerun");
+  expect(result.stdout).toContain("--rerun-guidance-file <path>");
   expect(result.stdout).not.toContain("--dry-run");
 });
 

@@ -1,5 +1,6 @@
 import type { Command } from "commander";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { formatFactoryActionOutput } from "./factory-action-output.ts";
 import { decorateFactoryReaction } from "./factory-manual-command.ts";
 import type { Agent, AgentProviderOptions } from "../lib/agents.ts";
@@ -12,6 +13,7 @@ import {
   type FactoryRoleAgent,
 } from "../lib/config.ts";
 import { produceImplementationCandidate } from "../lib/factory-implementation-candidate-action.ts";
+import { validateFactoryImplementationRestartGuidance } from "../lib/factory-implementation-guidance.ts";
 import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
 import {
@@ -59,6 +61,7 @@ type Options = {
   maxRuntimeMs?: number;
   apply: boolean;
   rerun: boolean;
+  rerunGuidanceFile?: string;
   verbose: boolean;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
@@ -82,6 +85,7 @@ export function addFactoryImplementationStationCommand(
     .option("--factory-store-project-id <id>", "durable factory store project id")
     .option("--apply", "apply Linear boundary projections", false)
     .option("--rerun", "restart before review or after human/failed state", false)
+    .option("--rerun-guidance-file <path>", "accepted clarification for a pre-review restart")
     .option("--verbose", "emit workflow events as JSONL to stderr", false)
     .action(runImplementationCommand);
   implementation
@@ -224,6 +228,9 @@ async function runImplementationCommand(options: Options): Promise<void> {
       itemFile: options.itemFile,
       linearIssue: options.linearIssue,
       rerun: options.rerun,
+      restartGuidance: options.rerunGuidanceFile
+        ? readRestartGuidanceFile(options.rerunGuidanceFile)
+        : undefined,
       explicitMaxRuntimeMs: options.maxRuntimeMs,
       implementerRole: resolveFactoryRoleAgentFromSnapshot(snapshot, {
         station: "implementation",
@@ -260,6 +267,7 @@ export async function runOneFactoryImplementationAction(input: {
   itemFile?: string;
   linearIssue?: string;
   rerun: boolean;
+  restartGuidance?: string;
   explicitMaxRuntimeMs?: number;
   implementerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
@@ -296,12 +304,27 @@ export async function runOneFactoryImplementationAction(input: {
       input.linearStatuses,
     );
   }
-  const pendingRequest =
+  const pendingRequestEvent =
     state?.phase === "implementation" &&
     state.status === "awaiting-candidate" &&
-    latest?.type === "implementation.requested";
+    latest?.type === "implementation.requested"
+      ? latest
+      : undefined;
+  const pendingRequest = Boolean(pendingRequestEvent);
   const restartBeforeReview =
     input.rerun && state?.phase === "implementation" && state.status === "awaiting-review";
+  if (input.restartGuidance !== undefined)
+    validateFactoryImplementationRestartGuidance(input.restartGuidance);
+  if (restartBeforeReview && input.restartGuidance === undefined)
+    throw new Error("implementation --rerun before review requires --rerun-guidance-file");
+  if (
+    input.restartGuidance !== undefined &&
+    !restartBeforeReview &&
+    !pendingRequestEvent?.data.restartGuidance
+  )
+    throw new Error(
+      "--rerun-guidance-file is allowed only for a pre-review restart or its pending repair",
+    );
   if (
     input.rerun &&
     !pendingRequest &&
@@ -349,6 +372,7 @@ export async function runOneFactoryImplementationAction(input: {
       reviewCeiling: input.reviewCeiling,
       implementerRole: input.implementerRole,
       reviewerRole: input.reviewerRole,
+      restartGuidance: restartBeforeReview ? input.restartGuidance : undefined,
       eventSink: input.eventSink,
     });
     const identity = readFactoryPhaseRunIdentity(created.runDir);
@@ -362,9 +386,10 @@ export async function runOneFactoryImplementationAction(input: {
       phaseRunId: created.runId,
       data: {
         expectedPredecessor: state?.lastEventId ?? null,
-        inputRefs: implementationInputRefs(identity.input),
+        inputRefs: implementationInputRefs(identity),
         reviewCeiling: identity.reviewCeiling,
         intent: input.rerun ? "restart" : "start",
+        ...(identity.restartGuidance ? { restartGuidance: identity.restartGuidance } : {}),
       },
     };
     ({ event: latest, state } = appendFactoryActionEvent({
@@ -384,6 +409,12 @@ export async function runOneFactoryImplementationAction(input: {
     workItem: input.workItem,
     factoryStore: input.factoryStore,
     eventSink: input.eventSink,
+  });
+  assertRestartGuidanceBinding({
+    ctx,
+    events,
+    latest,
+    suppliedGuidance: input.restartGuidance,
   });
   let linearApplied = false;
   // The persisted review authorizes this revision; repair its projection before provider work.
@@ -604,14 +635,46 @@ function pendingImplementationStart(
 }
 
 function implementationInputRefs(
-  input: Extract<
-    ReturnType<typeof readFactoryPhaseRunIdentity>,
-    { phase: "implementation" }
-  >["input"],
+  identity: Extract<ReturnType<typeof readFactoryPhaseRunIdentity>, { phase: "implementation" }>,
 ) {
-  return input.mode === "direct"
-    ? [input.workItem, input.readiness]
-    : [input.workItem, input.planCandidate];
+  const inputRefs =
+    identity.input.mode === "direct"
+      ? [identity.input.workItem, identity.input.readiness]
+      : [identity.input.workItem, identity.input.planCandidate];
+  return identity.restartGuidance ? [...inputRefs, identity.restartGuidance] : inputRefs;
+}
+
+function assertRestartGuidanceBinding(input: {
+  ctx: ReturnType<typeof openFactoryImplementationRunContext>;
+  events: FactoryLifecycleEvent[];
+  latest: FactoryLifecycleEvent | undefined;
+  suppliedGuidance?: string;
+}): void {
+  const request =
+    input.latest?.type === "implementation.requested" && input.latest.phaseRunId === input.ctx.runId
+      ? input.latest
+      : input.events.findLast(
+          (event) =>
+            event.type === "implementation.requested" && event.phaseRunId === input.ctx.runId,
+        );
+  if (!request || request.type !== "implementation.requested")
+    throw new Error("Factory implementation phase has no matching request");
+  if (!sameArtifactRef(request.data.restartGuidance, input.ctx.identity.restartGuidance))
+    throw new Error("Factory implementation restart guidance conflicts with its request");
+  if (input.suppliedGuidance !== undefined && input.suppliedGuidance !== input.ctx.restartGuidance)
+    throw new Error("Supplied implementation restart guidance conflicts with durable guidance");
+}
+
+function sameArtifactRef(
+  left: { base: string; path: string; sha256: string } | undefined,
+  right: { base: string; path: string; sha256: string } | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  return left.base === right.base && left.path === right.path && left.sha256 === right.sha256;
+}
+
+function readRestartGuidanceFile(path: string): string {
+  return validateFactoryImplementationRestartGuidance(readFileSync(resolve(path), "utf8"));
 }
 
 function eventsFor(input: { factoryStateRoot: string }, key: string) {

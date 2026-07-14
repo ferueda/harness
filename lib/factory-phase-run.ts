@@ -113,6 +113,7 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
     branchRef: z.string().regex(/^refs\/heads\/.+/),
     baseSha: z.string().regex(/^[0-9a-f]{40}$/),
     input: FactoryImplementationInputSnapshotSchema,
+    restartGuidance: FactoryArtifactRefSchema.optional(),
     actions: z
       .object({
         produceImplementationCandidate: FactoryActionExecutionProfileSchema,

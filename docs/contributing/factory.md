@@ -476,8 +476,19 @@ the phase. Neither command runs providers, reviewers, polling, or merge. Blocked
 exhausted review waits for a human; no non-pass advances the branch. There is no
 separate accept command or standalone post-candidate `harness run change-review`
 step. Before review, `--rerun` may intentionally abandon the produced candidate
-and start a fresh phase; the old candidate ref and evidence remain immutable.
-It is otherwise available only from human/failed state.
+and start a fresh phase, but it requires `--rerun-guidance-file <path>`. The
+UTF-8 file must be nonblank and at most 32 KiB. Harness copies its exact bytes
+to `context/restart-guidance.md`, hashes and binds that artifact to the restart
+request, and supplies it to the fresh producer and every reviewer/revision in
+the new phase. It is accepted clarification only: it cannot override or expand
+the immutable work item. The old candidate ref and evidence remain immutable.
+Rerun after human/failed state remains available without guidance and rejects
+the guidance option.
+
+Use an absolute guidance path outside the target workspace and keep it until
+the restart request is durable. If the Linear start projection fails afterward,
+repeat the apply command; supplied bytes must match the persisted artifact, and
+an omitted file reuses it. Harness never appends a second restart request.
 
 Linear starts and reruns require `--apply`. A failed start projection repairs
 the same durable request on the next explicit apply without provider work.

@@ -7,6 +7,7 @@ export function renderFactoryImplementationPrompt(input: {
     blockingFindings: unknown;
     priorCommit: string;
   };
+  restartGuidance?: string;
 }): string {
   return [
     "# Factory implementation action",
@@ -26,6 +27,16 @@ export function renderFactoryImplementationPrompt(input: {
           "```json",
           JSON.stringify(input.revision.blockingFindings, null, 2),
           "```",
+        ]
+      : []),
+    ...(input.restartGuidance
+      ? [
+          "",
+          "## Accepted restart guidance",
+          "",
+          "This clarification applies to the abandoned unreviewed candidate and remains subordinate to the original work-item scope. Stop if it conflicts with or materially expands that scope.",
+          "",
+          input.restartGuidance,
         ]
       : []),
     "",
@@ -49,6 +60,7 @@ export function renderFactoryImplementationReviewHandoff(input: {
   workItem: FactoryWorkItem;
   phaseRunId: string;
   candidateCommit: string;
+  restartGuidance?: string;
 }): string {
   return [
     "# Factory implementation review handoff",
@@ -61,6 +73,16 @@ export function renderFactoryImplementationReviewHandoff(input: {
     "```json",
     JSON.stringify(input.workItem, null, 2),
     "```",
+    ...(input.restartGuidance
+      ? [
+          "",
+          "## Accepted restart guidance",
+          "",
+          "Treat this as accepted task clarification within the original work-item scope. It cannot override or materially expand that scope.",
+          "",
+          input.restartGuidance,
+        ]
+      : []),
     "",
   ].join("\n");
 }

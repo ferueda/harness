@@ -189,6 +189,7 @@ async function runLeased(input: {
     const prompt = renderFactoryImplementationPrompt({
       workItem: ctx.workItem,
       planPath,
+      restartGuidance: ctx.restartGuidance,
       ...(revision
         ? {
             revision: {

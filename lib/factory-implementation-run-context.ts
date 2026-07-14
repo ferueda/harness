@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { FactoryRoleAgent } from "./config.ts";
 import { factoryActionExecutionProfile } from "./config.ts";
 import { buildRunId } from "./context.ts";
-import { verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
+import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
+import { validateFactoryImplementationRestartGuidance } from "./factory-implementation-guidance.ts";
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
 import {
   readFactoryPhaseRunIdentity,
@@ -40,9 +42,14 @@ export function createFactoryImplementationRunContext(input: {
   reviewCeiling: number;
   implementerRole: FactoryRoleAgent;
   reviewerRole: FactoryRoleAgent;
+  restartGuidance?: string;
   baseRef?: string;
   eventSink?: WorkflowEventSink;
 }) {
+  const restartGuidance =
+    input.restartGuidance === undefined
+      ? undefined
+      : validateFactoryImplementationRestartGuidance(input.restartGuidance);
   const workspace = canonicalWorkspace(input.workspace);
   const gitIdentity = assertImplementationStartGit(workspace);
   const authoritativeWorkItemPath = verifyFactoryArtifactRef(
@@ -68,6 +75,9 @@ export function createFactoryImplementationRunContext(input: {
     mkdirSync(join(runDir, "context"), { recursive: true });
     writeJson(join(runDir, "context/work-item.json"), authoritativeWorkItem);
     writeJson(join(runDir, "context/implementation-input.json"), input.implementationInput);
+    const restartGuidanceRef = restartGuidance
+      ? writeRestartGuidance(runDir, input.factoryStore, restartGuidance)
+      : undefined;
     const snapshot: FactoryImplementationInputSnapshot = {
       ...input.implementationInput,
     };
@@ -84,6 +94,7 @@ export function createFactoryImplementationRunContext(input: {
       branchRef: gitIdentity.branchRef,
       baseSha: gitIdentity.baseSha,
       input: snapshot,
+      ...(restartGuidanceRef ? { restartGuidance: restartGuidanceRef } : {}),
       actions: {
         produceImplementationCandidate: factoryActionExecutionProfile(input.implementerRole),
         reviewImplementationCandidate: factoryActionExecutionProfile(input.reviewerRole),
@@ -140,6 +151,12 @@ export function openFactoryImplementationRunContext(input: {
   if (deriveFactoryWorkItemKey(persisted) !== identity.workItemKey)
     throw new FactoryImplementationRunError("Factory implementation work-item input changed");
   verifyInputSnapshot(identity.input, input.factoryStore, workspace);
+  const restartGuidance = identity.restartGuidance
+    ? readFileSync(
+        verifyFactoryArtifactRef(identity.restartGuidance, roots(input.factoryStore, workspace)),
+        "utf8",
+      )
+    : undefined;
   const eventSink = input.eventSink
     ? createCompositeEventSink(createFileEventSink(runDir), input.eventSink)
     : createFileEventSink(runDir);
@@ -148,10 +165,21 @@ export function openFactoryImplementationRunContext(input: {
     runDir,
     workspace,
     workItem: persisted,
+    restartGuidance,
     factoryStore: input.factoryStore,
     identity,
     eventSink,
   };
+}
+
+function writeRestartGuidance(runDir: string, store: FactoryStoreMeta, guidance: string) {
+  const path = join(runDir, "context/restart-guidance.md");
+  writeDurableFactoryFile(path, guidance, true);
+  return createFactoryArtifactRef({
+    base: "factory-store",
+    root: store.projectRoot,
+    path: relative(store.projectRoot, path),
+  });
 }
 
 function assertImplementationStartGit(workspace: string): { branchRef: string; baseSha: string } {
