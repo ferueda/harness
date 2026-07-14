@@ -43,16 +43,18 @@ Confirm that project discovery, task creation, task inspection, and task
 messaging are available. Report `blocked` when the host cannot provide this
 minimum channel.
 
-Before delegation, record two complete, independently owned profiles:
+Treat each task's current `model` and `thinking` as destination-owned state. Do
+not copy a sender's settings to another task.
 
-- **Orchestrator profile:** the parent task's effective `model` and `thinking`.
-- **Executor profile:** the complete supported pair requested by the user, or
-  the orchestrator profile when the user requests no executor override.
+- **Default:** when the user requests no destination override, omit `model` and
+  `thinking` during creation and messaging. The tool keeps the destination's
+  configured or current settings.
+- **Optional destination override:** a complete `model` and `thinking` pair the
+  user explicitly requests for that destination.
 
-Invocation of this skill opts into the parent-matching default. A user override
-changes only the executor profile. Validate each complete model/thinking pair
-against the live tool schema before using it. If a partial override cannot be
-safely combined with the default, pause for clarification instead of guessing.
+Validate an explicit override against the destination tool's live schema before
+using it. A user override applies only to the named destination. If the request
+contains a partial pair, pause for clarification instead of guessing.
 
 1. Use `codex_app__list_projects`; select the project matching the repository.
    Report `blocked` if project identity is missing or ambiguous.
@@ -68,16 +70,16 @@ safely combined with the default, pause for clarification instead of guessing.
        type: "project",
        projectId: "[discovered project ID]",
        environment: { type: "worktree" }
-     },
-     model: "[executor model]",
-     thinking: "[executor thinking]"
+     }
    }
    ```
 
-   Keep `projectId` and `environment` under `target`. Pass only the resolved
-   executor profile for model settings; do not add other model/reasoning fields.
-   Omit `startingState` unless the user explicitly names an existing Git state.
-   Include the orchestrator callback profile in the initial prompt.
+   Keep `projectId` and `environment` under `target`. Omit `model` and `thinking`
+   unless the user explicitly requests a complete executor override; when one
+   exists, validate and add only those two fields. Do not add other profile
+   fields. Omit `startingState` unless the user explicitly names an existing Git
+   state. Include the same destination-owned messaging rule in the initial
+   prompt.
 
 3. Create once. An argument-validation rejection means no task was created:
    correct the same request from the live schema and resubmit it. Do not record
@@ -99,12 +101,13 @@ safely combined with the default, pause for clarification instead of guessing.
    inside a `<codex_delegation>` envelope; its verified `<source_thread_id>` is
    the parent task ID. Before the executor sends its first checkpoint, its
    initial prompt requires it to inspect its live
-   `codex_app__send_message_to_thread` schema and validate the complete
-   orchestrator profile. Before replying, the orchestrator inspects its own live
-   messaging schema and validates the complete executor profile. It replies to
-   the verified executor steering route, not an ID-only destination. If the
-   parent ID is absent, obtain it from verified Codex task metadata before
-   continuing.
+   `codex_app__send_message_to_thread` schema, then omit profile fields or
+   validate a complete user-requested parent override. Before the orchestrator
+   sends its first reply, it inspects its own live messaging schema, then omits
+   profile fields or validates a complete user-requested executor override. It
+   replies to the verified executor steering route, not an ID-only destination.
+   If the parent ID is absent, obtain it from verified Codex task metadata
+   before continuing.
 
 Keep the two directions distinct:
 
@@ -172,22 +175,23 @@ Avoid concurrent edits in that worktree.
 
 Reply with one bounded direction: proceed, correct, pause, or stop. State the
 accepted constraint and the proof expected at the next checkpoint. Send it to
-the verified executor route with `codex_app__send_message_to_thread` and the
-executor profile after inspecting the live messaging schema and validating that
-complete pair. If messaging reports `No AppServerManager registered`, re-resolve
-the executor through `codex_app__list_threads`, then retry the message at most
-once with its verified routing `hostId`, or with `hostId` omitted when allowed.
-Do not recreate the task. Let the executor own the implementation details that
-remain inside the accepted boundary. Keep the executor paused and ask the user
-when the decision requires new authority.
+the verified executor route with `codex_app__send_message_to_thread` after
+inspecting the live messaging schema. Omit `model` and `thinking` to preserve the
+executor's current settings unless the user explicitly requested a complete
+executor override; validate that override before sending it. If messaging
+reports `No AppServerManager registered`, re-resolve the executor through
+`codex_app__list_threads`, then retry the message at most once with its verified
+routing `hostId`, or with `hostId` omitted when allowed. Do not recreate the
+task. Let the executor own the implementation details that remain inside the
+accepted boundary. Keep the executor paused and ask the user when the decision
+requires new authority.
 
 Monitor at checkpoints or when expected progress stops; avoid polling unchanged
-state. Apply the destination profile at every boundary: executor profile for
-parent-to-executor steering, orchestrator profile for executor-to-parent
-checkpoints and consultations. Never derive callback settings from the sender's
-profile. If the orchestrator intentionally changes its profile while the
-executor is active, include the updated callback profile in the next steering
-message.
+state. Omission preserves each destination's current settings. Apply an explicit
+profile only to the destination named by the user; never derive or copy settings
+from the sender. If the user changes a destination override while work is
+active, validate and use the complete new pair on the next message to that
+destination.
 
 **Done when:** the executor has an actionable direction tied to accepted user
 authority and the next proof is explicit.
@@ -222,9 +226,9 @@ Implement [bounded goal] in this isolated worktree.
 Authority: [request/plan/spec]
 Repository/worktree: [repository and fresh isolated worktree requirement]
 Baseline: [verified branch at exact commit]
-Profiles: executor callbacks to the parent use [orchestrator model and thinking];
-parent steering uses [executor model and thinking]. Apply the destination's
-complete profile explicitly; never copy the sender's profile.
+Profiles: omit model and thinking by default so each destination keeps its
+current settings. For an explicit user-requested destination override, use
+[destination model and thinking]; never copy the sender's profile.
 Sandbox: write only inside this worktree and branch; treat other repositories
 and worktrees as read-only. Perform external mutations only under Publication.
 Boundaries: [material constraints and non-goals]
@@ -237,8 +241,9 @@ Publication: [none, commit, push, or pull request; merge requires separate autho
 
 Callback: read the parent task ID from this prompt's outer
 <codex_delegation>/<source_thread_id>. Before the first checkpoint, inspect the
-live codex_app__send_message_to_thread schema and validate the complete
-orchestrator profile above. Then send checkpoints with that profile. If the
+live codex_app__send_message_to_thread schema. Omit model and thinking unless the
+user explicitly requested a complete parent override; validate that override
+before sending it. Then send the checkpoint to the verified parent. If the
 parent ID is absent, stop rather than guessing.
 
 Checkpoints:

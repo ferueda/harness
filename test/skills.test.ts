@@ -266,13 +266,15 @@ test("orchestrated work fixes authority, sandbox, verification, and callback inv
     "Before the executor sends its first checkpoint",
   );
   const orchestratorReplyValidationIndex = prose.indexOf(
-    "Before replying, the orchestrator inspects",
+    "Before the orchestrator sends its first reply",
   );
   const orchestratorReplyIndex = prose.indexOf(
     "It replies to the verified executor steering route",
   );
   const callbackTemplateValidationIndex = prose.indexOf("Before the first checkpoint, inspect the");
-  const callbackTemplateSendIndex = prose.indexOf("Then send checkpoints with that profile");
+  const callbackTemplateSendIndex = prose.indexOf(
+    "Then send the checkpoint to the verified parent",
+  );
 
   expect(skill).toContain("name: orchestrate-work");
   expect(skill).toContain("disable-model-invocation: true");
@@ -281,8 +283,8 @@ test("orchestrated work fixes authority, sandbox, verification, and callback inv
   expect(skill).toContain("codex_app__create_thread");
   expect(skill).toContain("codex_app__send_message_to_thread");
   expect(skill).toContain('environment: { type: "worktree" }');
-  expect(skill).toContain('model: "[executor model]"');
-  expect(skill).toContain('thinking: "[executor thinking]"');
+  expect(skill).not.toContain('model: "[executor model]"');
+  expect(skill).not.toContain('thinking: "[executor thinking]"');
   expect(prose).toContain("Keep `projectId` and `environment` under `target`");
   expect(prose).toContain("Inspect the live `codex_app__create_thread` schema");
   expect(prose).toContain("An argument-validation rejection means no task was created");
@@ -296,13 +298,15 @@ test("orchestrated work fixes authority, sandbox, verification, and callback inv
   expect(prose).toContain("Successful delivery of the first parent-to-executor message");
   expect(prose).toContain("actual worktree path");
   expect(prose).toContain("branch or detached-HEAD state");
-  expect(skill).toContain("**Orchestrator profile:**");
-  expect(skill).toContain("**Executor profile:**");
-  expect(prose).toContain("Invocation of this skill opts into the parent-matching default");
-  expect(prose).toContain("A user override changes only the executor profile");
-  expect(prose).toContain("If a partial override cannot be safely combined");
-  expect(prose).toContain("Never derive callback settings from the sender's");
-  expect(prose).toContain("include the updated callback profile");
+  expect(prose).toContain("destination-owned state");
+  expect(prose).toContain(
+    "when the user requests no destination override, omit `model` and `thinking`",
+  );
+  expect(skill).toContain("**Optional destination override:**");
+  expect(prose).toContain("A user override applies only to the named destination");
+  expect(prose).toContain("If the request contains a partial pair");
+  expect(prose).toContain("never derive or copy settings from the sender");
+  expect(prose).toContain("validate and use the complete new pair");
   expect(prose).toContain("not an ID-only destination");
   expect(creationIndex).toBeGreaterThan(-1);
   expect(baselineProofIndex).toBeGreaterThan(creationIndex);
