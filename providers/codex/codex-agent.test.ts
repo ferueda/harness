@@ -455,7 +455,13 @@ test("createCodexAgent returns streamed turn failures with stream log metadata",
   const workspace = createGitWorkspace();
   const logPath = join(workspace, ".harness", "codex.stream.jsonl");
   const { codexFactory } = createFakeCodex({
-    streamEvents: [{ type: "turn.failed", error: { message: "model failed" } }],
+    streamEvents: [
+      {
+        type: "item.completed",
+        item: { id: "message-progress", type: "agent_message", text: '{"verdict":"progress"}' },
+      },
+      { type: "turn.failed", error: { message: "model failed" } },
+    ],
   });
 
   const result = await createCodexAgent({ codexFactory }).run({
@@ -468,14 +474,16 @@ test("createCodexAgent returns streamed turn failures with stream log metadata",
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.error).toContain("model failed");
-  expect(readJsonLines(logPath)).toHaveLength(2);
+  expect(readJsonLines(logPath)).toHaveLength(3);
   expect(result.raw).toMatchObject({
     streamLog: {
       path: logPath,
       status: "error",
       error: "Codex turn failed: model failed",
+      agentMessageCount: 1,
     },
   });
+  expect(result.raw).not.toHaveProperty("streamLog.finalAgentMessageId");
 });
 
 test("createCodexAgent supports non-review sandbox and approval modes", async () => {
@@ -937,8 +945,10 @@ test("createCodexAgent keeps partial stream logs on timeout", async () => {
     streamLog: {
       status: "written",
       path: logPath,
+      agentMessageCount: 1,
     },
   });
+  expect(result.raw).not.toHaveProperty("streamLog.finalAgentMessageId");
 });
 
 test("createCodexAgent keeps partial stream logs on external abort", async () => {
@@ -995,8 +1005,10 @@ test("createCodexAgent keeps partial stream logs on external abort", async () =>
     streamLog: {
       status: "written",
       path: logPath,
+      agentMessageCount: 1,
     },
   });
+  expect(result.raw).not.toHaveProperty("streamLog.finalAgentMessageId");
 });
 
 test("createCodexAgent does not return success when a turn resolves after external abort", async () => {

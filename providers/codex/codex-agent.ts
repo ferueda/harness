@@ -152,10 +152,12 @@ async function invokeCodexAgent(
       });
     }
 
+    const acceptedTurn = addCodexFinalMessageTelemetry(turn);
+
     return guardWorkspace({
       ok: true,
       structuredOutput: parsed.value,
-      raw: turn,
+      raw: acceptedTurn,
       session: createAgentSessionRef("codex", thread.id),
       usage: turn.usage ?? undefined,
     });
@@ -261,12 +263,23 @@ function addCodexMessageTelemetry(
   items: ThreadItem[],
 ): AgentStreamLogSummary {
   const agentMessages = items.filter((item) => item.type === "agent_message");
-  const finalAgentMessage = agentMessages.at(-1);
-
   return {
     ...streamLog,
     agentMessageCount: agentMessages.length,
-    ...(finalAgentMessage ? { finalAgentMessageId: finalAgentMessage.id } : {}),
+  };
+}
+
+function addCodexFinalMessageTelemetry(turn: CodexTurn): CodexTurn {
+  if (!turn.streamLog) return turn;
+  const finalAgentMessage = turn.items.findLast((item) => item.type === "agent_message");
+  if (!finalAgentMessage) return turn;
+
+  return {
+    ...turn,
+    streamLog: {
+      ...turn.streamLog,
+      finalAgentMessageId: finalAgentMessage.id,
+    },
   };
 }
 
