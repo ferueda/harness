@@ -39,6 +39,11 @@ Apply this authority order:
 3. Verified current behavior and constraints.
 4. Existing patterns and unaccepted proposals.
 
+When a current-session `diagnose-issue` result exists, use its status, mechanism,
+evidence, and constraints as the starting contract. Verify only gaps that could
+change the design. Treat its recommended direction as a hypothesis, not accepted
+architecture.
+
 Read `AGENTS.md`, repository guidance, and the relevant intent source before
 product, boundary, public API, provider, data, or documentation-architecture
 decisions. Inspect only the code paths, tests, callers, contracts, schemas,
