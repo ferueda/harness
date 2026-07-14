@@ -20,6 +20,7 @@ import {
 import { readFactoryActionResult, writeFactoryActionResult } from "../lib/factory-action-result.ts";
 import { factoryActionKey, FactoryPhaseRunIdSchema } from "../lib/factory-action-contract.ts";
 import {
+  actionLifecycleEventPath,
   FactoryLifecycleConflictError,
   appendFactoryActionEvent,
   readFactoryActionEvents,
@@ -32,6 +33,7 @@ import {
   FactoryPhaseRunIdentitySchema,
   writeFactoryPhaseRunIdentity,
 } from "../lib/factory-phase-run.ts";
+import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import { ensureFactoryStoreFormat, FactoryStoreFormatError } from "../lib/factory-store-format.ts";
 import {
   decideNextFactoryAction,
@@ -91,7 +93,155 @@ const imported = (
   data: { source: "file" },
 });
 
+function legacyPlanPublicationEvents(): FactoryLifecycleEvent[] {
+  const triage = completedTriageEvents("ready-to-plan");
+  const triageRequest = triage[1]!;
+  if (triageRequest.type !== "triage.requested") throw new Error("triage request missing");
+  const triageComplete = triage[2]!;
+  if (triageComplete.type !== "triage.work_item.completed")
+    throw new Error("triage completion missing");
+  triageComplete.id = `triage.work_item.completed:${factoryActionKey({
+    phaseRunId: triageComplete.phaseRunId,
+    handler: triageComplete.data.handler,
+    attempt: triageComplete.data.attempt,
+    causationEventId: triageComplete.data.causationEventId,
+  })}`;
+  const request: FactoryLifecycleEvent = {
+    version: 1,
+    id: "planning-request",
+    type: "planning.requested",
+    workItemKey: "item-1",
+    occurredAt: "2026-07-11T03:00:00.000Z",
+    phaseRunId: "planning-run",
+    data: {
+      expectedPredecessor: triageComplete.id,
+      inputRefs: [inputRef],
+      intent: "start",
+      reviewCeiling: 1,
+      publicationMode: "pull-request",
+      outputPlan: "dev/plans/item-1.md",
+    },
+  };
+  const candidateKey = factoryActionKey({
+    phaseRunId: "planning-run",
+    handler: "producePlanCandidate",
+    attempt: 1,
+    causationEventId: request.id,
+  });
+  const candidate: FactoryLifecycleEvent = {
+    version: 1,
+    id: `planning.candidate.produced:${candidateKey}`,
+    type: "planning.candidate.produced",
+    workItemKey: "item-1",
+    occurredAt: "2026-07-11T04:00:00.000Z",
+    phaseRunId: "planning-run",
+    data: {
+      handler: "producePlanCandidate",
+      handlerVersion: 1,
+      attempt: 1,
+      causationEventId: request.id,
+      execution: { workspaceRef: "repo", runRef: inputRef },
+      evidence: [inputRef],
+      candidate: inputRef,
+      effectiveSession: { provider: "cursor", id: "planner-session" },
+    },
+  };
+  const reviewKey = factoryActionKey({
+    phaseRunId: "planning-run",
+    handler: "reviewPlanCandidate",
+    attempt: 1,
+    causationEventId: candidate.id,
+  });
+  const review: FactoryLifecycleEvent = {
+    version: 1,
+    id: `planning.review.completed:${reviewKey}`,
+    type: "planning.review.completed",
+    workItemKey: "item-1",
+    occurredAt: "2026-07-11T05:00:00.000Z",
+    phaseRunId: "planning-run",
+    data: {
+      handler: "reviewPlanCandidate",
+      handlerVersion: 1,
+      attempt: 1,
+      causationEventId: candidate.id,
+      execution: { workspaceRef: "repo", runRef: inputRef },
+      evidence: [inputRef],
+      verdict: "pass",
+      review: inputRef,
+      reviewCeiling: 1,
+    },
+  };
+  return [
+    ...triage,
+    request,
+    candidate,
+    review,
+    {
+      version: 1,
+      id: "plan_pr.opened:planning-run",
+      type: "plan_pr.opened",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T06:00:00.000Z",
+      phaseRunId: "planning-run",
+      data: { url: "https://example.test/pr/1", plan: inputRef },
+    },
+    {
+      version: 1,
+      id: "plan_pr.merged:planning-run",
+      type: "plan_pr.merged",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T07:00:00.000Z",
+      phaseRunId: "planning-run",
+      data: { url: "https://example.test/pr/1", commit: "a".repeat(40) },
+    },
+  ];
+}
+
 describe("Factory action lifecycle kernel", () => {
+  test("reads the exact legacy headless plan publication without inventing its head", () => {
+    const store = root();
+    ensureFactoryStoreFormat(store);
+    mkdirSync(join(store, "events"), { recursive: true });
+    const events = legacyPlanPublicationEvents();
+    writeFileSync(
+      actionLifecycleEventPath(store, "item-1"),
+      `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+    );
+
+    const persisted = readFactoryActionEvents(store, "item-1");
+    expect(reduceFactoryLifecycleEvents(persisted)).toMatchObject({
+      phase: "planning",
+      status: "approved",
+      planPrUrl: "https://example.test/pr/1",
+      planPrHead: undefined,
+      planMergeCommit: "a".repeat(40),
+    });
+    expect(resolveFactoryImplementationInput(persisted)).toMatchObject({
+      mode: "planned",
+      publicationMode: "pull-request",
+      mergedUrl: "https://example.test/pr/1",
+      mergedCommit: "a".repeat(40),
+    });
+  });
+
+  test("rejects a newly appended headless plan publication", () => {
+    const store = root();
+    const events = legacyPlanPublicationEvents();
+    for (const event of events.slice(0, -2))
+      appendFactoryActionEvent({
+        factoryStateRoot: store,
+        event,
+        expectedLastEventId: events[events.indexOf(event) - 1]?.id ?? null,
+      });
+    expect(() =>
+      appendFactoryActionEvent({
+        factoryStateRoot: store,
+        event: events.at(-2)!,
+        expectedLastEventId: events.at(-3)!.id,
+      }),
+    ).toThrow(/head/i);
+  });
+
   test("requires request inputs and action evidence", () => {
     expect(() =>
       FactoryLifecycleEventSchema.parse({

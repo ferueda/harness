@@ -13,6 +13,7 @@ import { assertFactoryStoreFormat, ensureFactoryStoreFormat } from "./factory-st
 import {
   isFactoryActionEvent,
   parseFactoryLifecycleEvent,
+  parseFactoryLifecycleEventForAppend,
   type FactoryLifecycleEvent,
 } from "./factory-lifecycle-events.ts";
 import {
@@ -87,7 +88,7 @@ export function appendFactoryActionEvent(input: AppendFactoryActionEventInput): 
   event: FactoryLifecycleEvent;
   state: FactoryLifecycleState;
 } {
-  const event = parseFactoryLifecycleEvent(input.event);
+  const event = parseFactoryLifecycleEventForAppend(input.event);
   if (isFactoryActionEvent(event)) assertFactoryActionEventIdentity(event);
   const root = resolve(input.factoryStateRoot);
   ensureFactoryStoreFormat(root);

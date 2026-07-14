@@ -6,7 +6,9 @@ Factory action state uses a clean version-1 store rooted at the configured
 durable `factory` directory. `store-format.json` is required. Harness creates
 it only for an empty directory. A non-empty unmarked directory or a marker
 with another version is rejected with archive/reset guidance; old lifecycle
-logs are not parsed or migrated and data is never deleted automatically.
+logs are not migrated and data is never deleted automatically. Within a
+marked version-1 store, the reader accepts only explicitly supported earlier
+version-1 record shapes and never rewrites them.
 
 Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
@@ -18,6 +20,13 @@ already-waiting state invokes no handler.
 
 Run only one Factory phase command at a time for a work item. Concurrent phase
 commands for the same work item are unsupported and may fail.
+
+Use one stable Harness controller checkout for every manual invocation in an
+active phase. The target workspace may change; the controller must not. When
+Harness dogfoods itself, run the controller from a separate fixed checkout (or
+the shim that points to that checkout) and treat the implementation checkout
+as the mutable target. Upgrade the controller only between phases or after the
+active phase is explicitly closed.
 
 Triage is the first action slice: `triage.requested` invokes
 `triageWorkItem`; the terminal `triage.work_item.completed` event records the

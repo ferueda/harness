@@ -20,7 +20,10 @@ import {
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
-import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
+import {
+  FactoryPhaseRunIdentitySchema,
+  readFactoryPhaseRunIdentity,
+} from "../lib/factory-phase-run.ts";
 import { createFactoryReviewHead, FactoryReviewHeadError } from "../lib/factory-review-head.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import { decideNextFactoryAction } from "../lib/factory-state-machine.ts";
@@ -570,6 +573,116 @@ test("implementer ref mutation becomes human-required", async () => {
   });
 });
 
+test("Codex private ref churn preserves a valid implementation candidate", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture, "codex");
+  const requested = appendRequest(fixture, ctx);
+  const reaction = invoke(requested);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction,
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "codex",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+        git(fixture.workspace, [
+          "update-ref",
+          "refs/codex/turn-diffs/candidate/base",
+          fixture.baseSha,
+        ]);
+        return { ok: true, raw: {}, session: { provider: "codex", id: "session-1" } };
+      },
+    }),
+  });
+  expect(result.event.type).toBe("implementation.candidate.produced");
+  const staged = JSON.parse(
+    readFileSync(join(actionPath(ctx, reaction), "provider-result.json"), "utf8"),
+  ) as { before: { refs: string }; after: { refs: string } };
+  expect(staged.before.refs).not.toContain("refs/codex/turn-diffs/candidate/base");
+  expect(staged.after.refs).toContain("refs/codex/turn-diffs/candidate/base");
+});
+
+test("Cursor cannot mutate the Codex private ref namespace", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+        git(fixture.workspace, [
+          "update-ref",
+          "refs/codex/turn-diffs/cursor/base",
+          fixture.baseSha,
+        ]);
+        return { ok: true, raw: {}, session: { provider: "cursor", id: "session-1" } };
+      },
+    }),
+  });
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+});
+
+test("Codex cannot mutate an adjacent ref namespace", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture, "codex");
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "codex",
+      run: async () => {
+        writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+        git(fixture.workspace, ["update-ref", "refs/codex-review/candidate", fixture.baseSha]);
+        return { ok: true, raw: {}, session: { provider: "codex", id: "session-1" } };
+      },
+    }),
+  });
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "human-required" },
+  });
+});
+
+test("Codex private ref churn keeps an otherwise unchanged provider failure retryable", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture, "codex");
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "codex",
+      run: async () => {
+        git(fixture.workspace, [
+          "update-ref",
+          "refs/codex/turn-diffs/failure/base",
+          fixture.baseSha,
+        ]);
+        return { ok: false, error: "temporary", exitCode: 1 };
+      },
+    }),
+  });
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "retryable" },
+  });
+});
+
 test("staged passing review recovers after branch promotion without rerunning reviewers", async () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
@@ -685,6 +798,25 @@ test("phase reopen ignores same-key tampering of its audit work-item copy", () =
     factoryStore: fixture.store,
   });
   expect(reopened.workItem).toMatchObject({ title: "Implement item", body: "Change tracked.txt" });
+});
+
+test("phase reopens the exact v1 implementation identity missing baseRef", () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const identityPath = join(ctx.runDir, "context/phase-run.json");
+  const legacy = JSON.parse(readFileSync(identityPath, "utf8")) as Record<string, unknown>;
+  delete legacy.baseRef;
+  expect(() => FactoryPhaseRunIdentitySchema.parse(legacy)).toThrow();
+  writeFileSync(identityPath, `${JSON.stringify(legacy, null, 2)}\n`);
+
+  const reopened = openFactoryImplementationRunContext({
+    workspace: fixture.workspace,
+    runsDir: fixture.store.factoryRunsDir,
+    phaseRunId: ctx.runId,
+    workItem: fixture.workItem,
+    factoryStore: fixture.store,
+  });
+  expect(reopened.identity).toMatchObject({ phase: "implementation", baseRef: "main" });
 });
 
 test("uncertain candidate materialization failure becomes human-required", async () => {
@@ -1383,7 +1515,10 @@ function removeLastLifecycleEvent(fixture: ReturnType<typeof directFixture>): vo
   writeFileSync(path, `${lines.slice(0, -1).join("\n")}\n`);
 }
 
-function createPhase(fixture: ReturnType<typeof directFixture>) {
+function createPhase(
+  fixture: ReturnType<typeof directFixture>,
+  implementerAgent: "cursor" | "codex" = "cursor",
+) {
   const events = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key);
   return createFactoryImplementationRunContext({
     workspace: fixture.workspace,
@@ -1400,7 +1535,7 @@ function createPhase(fixture: ReturnType<typeof directFixture>) {
       ).data.evidence[0]!,
     },
     reviewCeiling: 1,
-    implementerRole: { agent: "cursor", model: "implementer" },
+    implementerRole: { agent: implementerAgent, model: "implementer" },
     reviewerRole: { agent: "cursor", model: "reviewer" },
   });
 }

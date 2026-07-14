@@ -10,7 +10,8 @@ description: Operate the manually stepped harness Factory flow through status, L
 The new Factory action store requires `store-format.json` version 1. Harness
 initializes an empty state directory. It rejects old, unmarked, or differently
 versioned state with archive/reset instructions and never migrates or deletes
-it.
+it. It may read explicitly supported earlier version-1 records without
+rewriting them.
 
 `harness factory triage ...` blocks until its one `triageWorkItem` action ends.
 Wait for process exit; do not poll or start a second action. The command
@@ -24,6 +25,13 @@ triage can return a wait reaction without a command. The invocation never
 executes a second handler. If `next.kind` is `wait`, stop and follow its reason.
 
 Operate the current local harness factory one work item at a time.
+
+Use the same fixed Harness controller checkout for every command in one active
+phase. When dogfooding Harness itself, invoke the controller from a separate
+fixed checkout (or its shim) and pass the mutable implementation checkout as
+`--workspace`. Do not let changes in the target replace the running CLI between
+manual actions. Upgrade the controller only after the phase closes or before a
+new phase starts.
 
 ## Waiting For Station Runs
 
