@@ -189,16 +189,17 @@ station-level triage command and uses `factory.triage.roles.triager` config for
 agent and model selection.
 
 Planning and implementation candidate/review commands consume the same action
-kernel, one handler per invocation. Review-driven revisions reuse the
-snapshotted producer profile and original session, retain the original base,
-and publish a new immutable attempt ref. The next producer reaction is guidance
-for a later manual invocation. A pre-review `--rerun` instead creates a fresh
-phase and requires accepted restart guidance. The CLI file is only transport:
-Harness copies its bounded bytes into the phase, binds the artifact ref to the
-existing `implementation.requested` restart event, and supplies the verified
-artifact to both producer and reviewers. Future Inngest execution can provide
-the same domain artifact without copying CLI semantics. Human/failed reruns do
-not add guidance. Inngest remains only a future consumer of these reactions.
+kernel, one handler per invocation. A non-pass review preserves the immutable
+candidate and waits for a durable `factory.continuation.recorded` decision.
+`revise` reuses the snapshotted producer profile and original session, retains
+the original base, and publishes a new immutable candidate attempt. `re-review`
+runs reviewers again against the exact candidate and increments only the review
+round. The CLI response file is transport: Harness copies and hashes its bounded
+bytes, binds them to the candidate and optional review, appends the decision,
+and invokes no handler. Future Inngest execution consumes that same event and
+reaction contract rather than copying CLI semantics. Fresh `--rerun` is only
+for a failure with no reusable candidate. Inngest remains a future consumer of
+these reactions.
 
 `workflows/change-review.workflow.ts` runs the default review set:
 implementation and quality. The quality reviewer covers behavior-preserving

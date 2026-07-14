@@ -2,7 +2,7 @@
 
 ## Factory action store
 
-Factory action state uses a clean version-2 store rooted at the configured
+Factory action state uses a clean version-3 store rooted at the configured
 durable `factory` directory. `store-format.json` is required. Harness creates
 it only for an empty directory. A non-empty unmarked directory or a marker
 with another version is rejected with archive/reset guidance; old lifecycle
@@ -12,8 +12,8 @@ Factory commands are synchronous and manually stepped. One invocation runs at
 most one action, waits for it to finish, persists its terminal event and state,
 prints the next reaction, then exits. Planning is shipped as manually stepped
 candidate, review, and publication commands. Implementation is shipped as one
-candidate action followed by a full review action and, when review requires it,
-later manual revision attempts. The CLI never invokes the next handler. An
+candidate action followed by a full review action and an explicit continuation
+choice when a human response is required. The CLI never invokes the next handler. An
 already-waiting state invokes no handler.
 
 Run only one Factory phase command at a time for a work item. Concurrent phase
@@ -50,7 +50,9 @@ harness factory linear fetch TEAM-123 --workspace /path/to/repo
 harness factory linear create --workspace /path/to/repo --title "Example" --body "Details"
 harness factory triage --workspace /path/to/repo --item-file work-item.json
 harness factory triage --workspace /path/to/repo --linear-issue TEAM-123
+harness factory planning continue --workspace /path/to/repo --item-file work-item.json --decision revise --response-file /absolute/path/response.md
 harness factory implementation run --workspace /path/to/repo --item-file work-item.json
+harness factory implementation continue --workspace /path/to/repo --item-file work-item.json --decision re-review --response-file /absolute/path/response.md
 ```
 
 There is no batch dispatch command. Run an explicit station for an explicit
@@ -188,8 +190,8 @@ shim, inbox, and committed `dev/plans/*.md`. Old Factory lifecycle state is
 rejected with archive/reset guidance; it is never parsed or migrated.
 
 New Factory state is projected only from the strict action event log. Triage,
-planning, and implementation append their request, candidate, review, and
-publication events; `factory.action.failed` records action failure. Legacy
+planning, and implementation append their request, candidate, review,
+continuation, and publication events; `factory.action.failed` records action failure. Legacy
 station event names and `factoryStage` fields are not transition inputs.
 
 ## Station Config
@@ -215,14 +217,12 @@ Factory station roles use `harness.json`:
       }
     },
     "planning": {
-      "maxReviewIterations": 3,
       "roles": {
         "planner": { "agent": "codex", "model": "gpt-5.6-sol" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
       }
     },
     "implementation": {
-      "maxReviewIterations": 3,
       "roles": {
         "implementer": { "agent": "codex", "model": "gpt-5.6-sol" },
         "reviewer": { "agent": "codex", "model": "gpt-5.6-sol" }
@@ -426,9 +426,16 @@ comments only; it does not mutate source files.
 
 `harness factory planning run` executes one pending action and exits with
 `next`; repeat the printed command to alternate candidate and fixed one-step
-plan review actions. Revisions resume the original planner session and receive
-only the latest `must_fix` findings. `--rerun` starts a fresh phase only after
-needs-human or failure. Item files publish approved plans locally; Linear
+plan review actions. A non-pass review preserves the immutable plan candidate
+and waits for `planning continue`. Choose `revise` to resume the original
+planner session from that candidate, or `re-review` to run the reviewer again
+against the same bytes without invoking the planner. The required absolute
+response file must be nonblank UTF-8 of at most 32 KiB; Harness copies and
+hashes it under the phase run and binds it to the exact candidate and optional
+review. Recording the continuation invokes no handler and makes no Linear
+projection. Run the printed `planning run` command later to execute exactly the
+chosen action. `--rerun` starts a fresh phase only after a failure with no
+reusable candidate. Item files publish approved plans locally; Linear
 starts and reruns require `--apply`, then wait for explicit `planning publish`
 and `mark-plan-merged`. Publish derives the reviewed plan and deterministic
 branch; it accepts no PR URL or plan path. It pushes the exact commit, finds or
@@ -458,14 +465,33 @@ index do not move.
 
 Run the exact printed command again. The review invocation verifies the
 candidate evidence and live tree, then runs the fixed full implementation and
-quality reviewers once with the phase's persisted
-`factory.implementation.maxReviewIterations` ceiling (default 3). Reviewers
-are read-only and review the cumulative original-base-to-candidate diff. A
-`needs_changes` verdict below the ceiling prints the next producer command and
-exits. Its later invocation reopens the phase, verifies the complete digested
-blockers and prior candidate, resumes the effective implementer session, and
-publishes a new tree/ref still parented to the original base. Pass CAS-advances
-only the exact reviewed candidate, leaves a clean worktree, and enters
+quality reviewers once. Reviewers are read-only and review the cumulative
+original-base-to-candidate diff. A non-pass result preserves the candidate and
+waits at `awaiting-continuation`; it never schedules a producer by itself.
+Record the operator decision explicitly:
+
+```bash
+harness factory implementation continue \
+  --workspace /path/to/repo \
+  --linear-issue TEAM-123 \
+  --decision revise \
+  --response-file /absolute/path/response.md
+```
+
+Use `revise` when code or plan bytes must change. Its later `implementation
+run` invocation verifies the prior candidate and complete digested findings,
+resumes the effective implementer session, retains the original base, and
+publishes a distinct immutable candidate. Use `re-review` when accepted
+operator or live evidence resolves the review without a source change. Its
+later invocation runs the reviewers against the exact existing commit/tree and
+does not invoke the implementer. Both choices use a nonblank absolute UTF-8
+response file of at most 32 KiB; Harness copies its exact bytes into the durable
+store and hashes and binds it to the candidate and optional review. `continue`
+itself invokes no provider/reviewer and performs no Linear projection.
+The response may supply accepted clarification or evidence within the immutable
+work item; it cannot expand or override that authority.
+
+Pass CAS-advances only the exact reviewed candidate, leaves a clean worktree, and enters
 `awaiting-pr-publication`. `implementation publish` pushes that unchanged
 branch, finds or creates its PR, and records `implementation_pr.opened`.
 `awaiting-pr-merge` is a hard human gate: stop and report the PR. Opening or
@@ -473,26 +499,15 @@ delivering a PR never authorizes merge. After a human merge is available
 locally, `implementation mark-pr-merged --url <url> --commit <sha>` requires the
 reviewed head as an ancestor, records `implementation_pr.merged`, and completes
 the phase. Neither command runs providers, reviewers, polling, or merge. Blocked or
-exhausted review waits for a human; no non-pass advances the branch. There is no
+failed review waits for a human; no non-pass advances the branch. There is no
 separate accept command or standalone post-candidate `harness run change-review`
-step. Before review, `--rerun` may intentionally abandon the produced candidate
-and start a fresh phase, but it requires `--rerun-guidance-file <path>`. The
-UTF-8 file must be nonblank and at most 32 KiB. Harness copies its exact bytes
-to `context/restart-guidance.md`, hashes and binds that artifact to the restart
-request, and supplies it to the fresh producer and every reviewer/revision in
-the new phase. It is accepted clarification only: it cannot override or expand
-the immutable work item. The old candidate ref and evidence remain immutable.
-Rerun after human/failed state remains available without guidance and rejects
-the guidance option.
-
-Use an absolute guidance path outside the target workspace and keep it until
-the restart request is durable. If the Linear start projection fails afterward,
-repeat the apply command; supplied bytes must match the persisted artifact, and
-an omitted file reuses it. Harness never appends a second restart request.
+step. `--rerun` may start a fresh phase only after human/failed state when no
+valid candidate is retained. It is not a continuation or candidate-abandonment
+mechanism.
 
 Linear starts and reruns require `--apply`. A failed start projection repairs
 the same durable request on the next explicit apply without provider work.
-Candidate/review keep Implementing. Publication `--apply` moves Implementing to
+Candidate, review, and continuation keep Implementing. Publication `--apply` moves Implementing to
 Ready for Review and writes one PR comment. Merge acknowledgement `--apply`
 repairs a missing publication projection first, then moves Ready for Review to
 Done and writes one completion comment. Non-pass adds an attention comment;
