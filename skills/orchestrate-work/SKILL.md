@@ -97,11 +97,14 @@ safely combined with the default, pause for clarification instead of guessing.
    changing Git state implicitly.
 6. Prove both callback directions. A Codex-created executor receives the prompt
    inside a `<codex_delegation>` envelope; its verified `<source_thread_id>` is
-   the parent task ID. The executor sends its first checkpoint there with
-   `codex_app__send_message_to_thread` and the orchestrator profile; the
-   orchestrator replies to the verified executor task ID with the executor
-   profile. If the parent ID is absent, obtain it from verified Codex task
-   metadata before continuing.
+   the parent task ID. Before the executor sends its first checkpoint, its
+   initial prompt requires it to inspect its live
+   `codex_app__send_message_to_thread` schema and validate the complete
+   orchestrator profile. Before replying, the orchestrator inspects its own live
+   messaging schema and validates the complete executor profile. It replies to
+   the verified executor steering route, not an ID-only destination. If the
+   parent ID is absent, obtain it from verified Codex task metadata before
+   continuing.
 
 Keep the two directions distinct:
 
@@ -233,9 +236,10 @@ Done: [checkable behavior, artifacts, clean state, and review requirement]
 Publication: [none, commit, push, or pull request; merge requires separate authority]
 
 Callback: read the parent task ID from this prompt's outer
-<codex_delegation>/<source_thread_id>. Send checkpoints with
-codex_app__send_message_to_thread using the orchestrator profile above. If it is
-absent, stop rather than guessing.
+<codex_delegation>/<source_thread_id>. Before the first checkpoint, inspect the
+live codex_app__send_message_to_thread schema and validate the complete
+orchestrator profile above. Then send checkpoints with that profile. If the
+parent ID is absent, stop rather than guessing.
 
 Checkpoints:
 

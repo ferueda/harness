@@ -262,6 +262,17 @@ test("orchestrated work fixes authority, sandbox, verification, and callback inv
   const prose = normalizedProse(skill);
   const creationIndex = skill.indexOf("codex_app__create_thread");
   const baselineProofIndex = skill.indexOf("Require the first before-edit checkpoint");
+  const executorCallbackValidationIndex = skill.indexOf(
+    "Before the executor sends its first checkpoint",
+  );
+  const orchestratorReplyValidationIndex = skill.indexOf(
+    "Before replying, the orchestrator inspects",
+  );
+  const orchestratorReplyIndex = skill.indexOf(
+    "It replies to\n   the verified executor steering route",
+  );
+  const callbackTemplateValidationIndex = skill.indexOf("Before the first checkpoint, inspect the");
+  const callbackTemplateSendIndex = skill.indexOf("Then send checkpoints with that profile");
 
   expect(skill).toContain("name: orchestrate-work");
   expect(skill).toContain("disable-model-invocation: true");
@@ -292,8 +303,14 @@ test("orchestrated work fixes authority, sandbox, verification, and callback inv
   expect(prose).toContain("If a partial override cannot be safely combined");
   expect(prose).toContain("Never derive callback settings from the sender's");
   expect(prose).toContain("include the updated callback profile");
+  expect(prose).toContain("not an ID-only destination");
   expect(creationIndex).toBeGreaterThan(-1);
   expect(baselineProofIndex).toBeGreaterThan(creationIndex);
+  expect(executorCallbackValidationIndex).toBeGreaterThan(baselineProofIndex);
+  expect(orchestratorReplyValidationIndex).toBeGreaterThan(executorCallbackValidationIndex);
+  expect(orchestratorReplyIndex).toBeGreaterThan(orchestratorReplyValidationIndex);
+  expect(callbackTemplateValidationIndex).toBeGreaterThan(orchestratorReplyIndex);
+  expect(callbackTemplateSendIndex).toBeGreaterThan(callbackTemplateValidationIndex);
   expect(prose).toContain("any new authority returns to the user");
   expect(skill).toContain("Sandbox: write only inside this worktree and branch");
   expect(skill).toContain("Verification: [exact commands/gates and evidence required]");
