@@ -19,13 +19,11 @@ result or an exact recoverable state.
 
 - The accepted request, plan, or spec defines authority. Steer within it; pause
   the executor and return to the user for new authority.
-- Preserve each destination's current settings by leaving optional profile
-  fields unset. Apply only explicit, schema-valid overrides to the named
-  destination.
+- Each destination owns its `model` and `thinking`. Omit both by default; apply
+  only explicit, schema-valid overrides to the named destination. Never copy
+  settings from the sender.
 - Publication is explicit: none, commit, push, pull request, or merge. Opening a
   pull request includes its required push. Merge requires user authority.
-- Use live tool schemas. Create once; after an ambiguous result, discover an
-  existing matching task before retrying creation.
 - Keep one writer: the executor owns its worktree, edits, commits, verification,
   and requested review mechanics. The parent inspects read-only.
 
@@ -33,20 +31,46 @@ result or an exact recoverable state.
 
 1. Fill the executor contract below. Use `handoff-work` for concise context and
    point to durable sources instead of copying them.
-2. Discover the repository project and current task-tool schemas. Create one
-   project-scoped isolated worktree from the verified exact baseline; require a
-   branch only when the accepted task selects one.
-3. Resolve the executor's actual task route through task discovery or reading.
-   Treat validation rejection as no creation. Treat an ambiguous transport
-   result as unknown until discovery proves whether creation succeeded.
-4. Require a before-edit checkpoint with actual worktree, branch or detached-HEAD
-   state, exact `HEAD`, cleanliness, intended file surface, existing seams, and
-   material conflicts. Pause on baseline mismatch.
-5. Verify both callback directions before mutation:
+2. Use `codex_app__list_projects`; select the project matching the repository.
+   Stop when project identity is missing or ambiguous.
+3. Inspect the live `codex_app__create_thread` schema, then create one isolated
+   worktree with the minimal project target:
+
+   ```ts
+   {
+     prompt: "[completed delegation and handoff]",
+     target: {
+       type: "project",
+       projectId: "[discovered project ID]",
+       environment: { type: "worktree" }
+     }
+   }
+   ```
+
+   Add only explicit, schema-valid destination overrides. Use a starting state
+   only when the accepted task selects one.
+4. Create once. A validation rejection created no task: correct the request from
+   the live schema and resubmit it. After an ambiguous result, use
+   `codex_app__list_threads` and `codex_app__read_thread` to match the project,
+   prompt, and creation window; retry only when discovery proves none exists.
+5. Record the executor task ID. Resolve a queued `clientThreadId` through list or
+   read before steering. Set a useful title with `codex_app__set_thread_title`,
+   then verify the intended project and fresh worktree.
+6. Require a before-edit checkpoint with actual worktree, branch or detached-HEAD
+   state, exact `git rev-parse HEAD`, cleanliness, intended file surface,
+   existing seams, and material conflicts. Pause on baseline mismatch.
+7. Verify both callback directions before mutation:
    - executor to parent: parent ID from the outer `<source_thread_id>`;
-   - parent to executor: executor route returned by task discovery or reading.
-6. Inspect the live messaging schema before first use. Prove delivery with a
-   successful send plus read-back or acknowledgement.
+   - parent to executor: `{ threadId, hostId }` route returned by
+     `codex_app__list_threads` or `codex_app__read_thread`.
+
+   A callback's source identifies the executor, not the parent. Omit `hostId` for
+   a verified local task when the live schema permits it; otherwise use the
+   discovered routing `hostId`. `source_host_id` and title-update output are not
+   steering routes.
+8. Require the executor to inspect `codex_app__send_message_to_thread` before its
+   first checkpoint; do the same before the first parent reply. Prove delivery
+   with a successful send plus read-back or acknowledgement.
 
 Bootstrap is complete only when repository identity, exact baseline, isolation,
 and both callback directions are verified. Otherwise report `blocked`.
@@ -110,9 +134,10 @@ Done: [checkable behavior, clean state, and current-head review requirement]
 Publication: [none, commit, push, pull request, or merge authority]
 
 Callback: read the parent ID from the outer
-<codex_delegation>/<source_thread_id>. Inspect the live messaging schema, preserve
-the parent's settings unless an explicit override names it, and prove the first
-delivery. Stop if the parent ID is absent.
+<codex_delegation>/<source_thread_id>. Inspect the live
+codex_app__send_message_to_thread schema, preserve the parent's settings unless
+an explicit override names it, and prove the first delivery. Stop if the parent
+ID is absent.
 
 Checkpoints:
 
