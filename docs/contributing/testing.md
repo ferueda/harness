@@ -113,11 +113,9 @@ pnpm exec vitest run test/docs-contracts.test.ts
 
 - `pnpm test` runs the Vitest suite.
 - `pnpm smoke:dist` proves built distribution wiring.
-- `pnpm smoke:factory` / `make smoke-factory` runs the explicit offline Factory
-  system journeys. The Grove part proves acquire, repository setup, one existing
-  Factory action, process restart/reacquire on the same path, preserved evidence,
-  and terminal release. It is not part of Vitest, watch mode, pre-commit, or
-  ordinary local `pnpm check`.
+- `pnpm smoke:factory` / `make smoke-factory` runs the offline Factory CLI and
+  Grove acquire/reopen/release journeys. It is not part of Vitest, watch mode,
+  pre-commit, or ordinary local `pnpm check`.
 - `pnpm check` / `make check` is the normal local handoff gate.
 - `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Factory
   system smoke after the ordinary checks.

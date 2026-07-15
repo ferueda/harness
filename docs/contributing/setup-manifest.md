@@ -48,19 +48,11 @@ before-edit checkpoint is acknowledged. Workspace hosts may run the same
 repository-owned command as an acquire hook. Factory does not install
 dependencies. Readiness does not replace the final `make check` gate.
 
-Hosted Factory workspace callers configure this command as Grove's idempotent
-`postAcquire` hook with hook failure set to fail. The command must be
-credential-free because acquisition only prepares local repository state;
-provider or publication credentials belong to the later Factory action. Harness
-uses `make setup-worktree`. A failed hook prevents Factory invocation, and a
-compatible reacquire reruns it on the same lease path.
-
-The Grove pool must live on a persistent worker filesystem. Its state and lease
-worktrees are host data, not target-repository files. Keep active planning and
-implementation leases through waits and failures. Release only with verified
-phase-matched terminal authority. A busy, missing, or quarantined lease requires
-operator repair or quarantine attention; do not delete the pool or allocate a
-replacement path for the same phase generation.
+Grove's idempotent `postAcquire` hook runs `make setup-worktree`; setup failure
+fails acquisition. Keep its pool on a persistent worker
+filesystem, retain leases through nonterminal states, and release only with
+phase-matched terminal authority. Repair or quarantine uncertain leases; do not
+delete the pool or replace the path for the same phase generation.
 
 ## Hook activation
 

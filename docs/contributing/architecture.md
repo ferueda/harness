@@ -29,7 +29,7 @@ CLI
 Factory phases:
 
 ```text
-manual CLI or future event host
+CLI
   -> durable work-item state and pure reaction
   -> one selected action handler
   -> producer or reviewer through provider/workflow boundaries
@@ -39,12 +39,11 @@ manual CLI or future event host
   -> optional Linear or GitHub projection
 ```
 
-Hosted workspace preparation is a separate step before that unchanged Factory
-boundary:
+Grove workspace preparation is separate from Factory:
 
 ```text
-host delivery
-  -> derive stable Factory workspace intent
+caller
+  -> derive stable lease intent
   -> Grove acquire or compatible reacquire
   -> repository-owned setup hook
   -> one existing Factory action with the canonical workspace path
@@ -67,7 +66,6 @@ workspace.
 | Grove                 | Persistent pool capacity, stable lease paths, checkout, serialized setup hooks, process-safe reset/release, quarantine, and repair     | Factory lifecycle, reactions, Git promotion, or publication authority |
 | Linear and GitHub     | Human-facing issue and pull-request projections                                                                                        | Factory transition truth                                              |
 | Workspace caller      | Stable phase generation, authoritative base commit, setup command, and verified terminal-event authority                               | Lease internals or Factory state interpretation                       |
-| Future event host     | Delivery, retries, waits, and scheduling from Factory reactions                                                                        | A second workflow state machine or policy copy                        |
 
 The target workspace remains the execution sandbox and Git materialization
 point. The durable store remains Factory's continuity boundary. Linear and
@@ -145,24 +143,13 @@ hashes. `summary.md` and `meta.json` are navigation aids; immutable referenced
 evidence and lifecycle events own recovery. Generated local state is ignored or
 user data and must not be committed.
 
-## Current extension model
+## Current execution model
 
-The CLI is the current host for manually stepped Factory actions. Linear-backed
-input and explicit projections, planning/implementation publication, and human
-merge acknowledgement are shipped. General tracker adapters and Inngest remain
-future hosts or projections.
-
-The Grove workspace adapter is shipped for host-side use, but no Inngest runner
-is. A caller can derive a lease before a Factory phase run ID exists, acquire an
-exact detached triage checkout or an attached planning/implementation branch,
-then pass the returned canonical path through the existing `--workspace`
-boundary. Factory remains the authority for later Git changes in that path.
-
-Future hosts should call the same Factory coordinator, persist only identifiers
-in delivery events, reread durable state on every retry, and schedule exactly
-the reaction selected by Factory. Future provider or PR-decision agents should
-enter through explicit action boundaries instead of adding provider logic to
-workflows or scheduling policy to adapters.
+The CLI manually steps Factory actions, Linear/GitHub projections, publication,
+and merge acknowledgement. The Grove adapter is a callable workspace boundary,
+not a runner: callers acquire a phase lease, pass its path through `--workspace`,
+and release it only after the matching terminal event. No scheduler or hosted
+operation runner ships today.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

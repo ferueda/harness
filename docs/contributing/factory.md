@@ -26,11 +26,9 @@ work item
   -> optional Linear or GitHub projection
 ```
 
-The current CLI is a manual host: one invocation reads durable state, executes
-at most one selected action, persists the result, prints the next reaction, and
-exits. A wait reaction invokes nothing. A future host such as Inngest should
-consume the same state and reaction contract rather than reimplementing the
-workflow.
+Each CLI invocation reads durable state, executes at most one selected action,
+persists the result, prints the next reaction, and exits. A wait reaction invokes
+nothing.
 
 Factory vocabulary:
 
@@ -45,8 +43,8 @@ Factory vocabulary:
 1. **The event log is machine truth.** Durable `factory/events/*.jsonl` is
    canonical. `factory/state/*.json` is an atomically published, rebuildable
    projection.
-2. **One reaction selects at most one action.** The CLI, an event host, and a
-   retry must all converge through the same reducer and reaction logic.
+2. **One reaction selects at most one action.** CLI retries converge through the
+   same reducer and reaction logic.
 3. **Action identity is stable.** Phase, attempt, handler, and causation identity
    bind staged provider output, immutable evidence, action result, and terminal
    event so crash recovery does not repeat completed provider work.
@@ -65,10 +63,8 @@ Factory vocabulary:
 8. **Providers stay bounded.** Producers may edit the target workspace under
    Harness validation. Reviewers are read-only. Provider sessions, models, and
    policies are snapshotted for the phase responsibility.
-9. **Hosted workspaces keep one stable lease.** Repository identity, canonical
-   work-item key, phase, and caller-owned phase generation derive the Grove
-   lease before a phase run ID exists. Revisions, re-reviews, retries, and
-   publication reuse that lease and exact path.
+9. **Grove workspaces keep one stable phase lease.** Revisions, retries, and
+   publication reuse its path.
 
 Run only one phase command for a work item at a time. When Harness dogfoods
 itself, use a dedicated clean detached controller checkout pinned to one SHA
@@ -87,7 +83,7 @@ Before the first review, only `revise` can replace a candidate. After a review,
 `revise` changes candidate bytes through the original producer session;
 `re-review` supplies accepted clarification or evidence and reviews the same
 candidate without invoking the producer. Recording a continuation invokes no
-handler. The next host invocation executes the selected reaction.
+handler. The next CLI invocation executes the selected reaction.
 
 Factory does not enforce a review-round ceiling. A caller may stop automated
 continuation by comparing its policy with durable `reviewRound`. That policy
@@ -141,27 +137,18 @@ Factory machine state.
 
 ## Grove workspace boundary
 
-`lib/factory-grove-workspace.ts` is the direct hosted workspace adapter. Grove
-owns persistent worktree slots, lease state, checkout, process-safe cleanup,
-quarantine, and repair. Factory handlers stay Grove-agnostic and continue to
-receive an explicit workspace.
+`lib/factory-grove-workspace.ts` owns Grove lease intent, acquisition, release,
+and bounded repair. Factory remains Grove-agnostic and receives a workspace
+path.
 
-The caller supplies a full authoritative base commit and a stable phase
-generation. Triage gets a detached short-lived lease. Planning and
-implementation get separate attached branches because implementation begins
-from its accepted post-plan baseline. A compatible ensure reruns the
-repository-owned setup command and returns the same canonical path without
-checking out, resetting, or rejecting Factory's later commits, branch switch,
-or dirty candidate bytes.
+The caller supplies the exact base commit and a stable phase generation. Triage
+uses a detached lease; planning and implementation use separate branches.
+Compatible reacquisition reruns repository setup and returns the same path while
+preserving Factory commits and candidate bytes.
 
-Active planning and implementation leases survive reviews, retries, human
-waits, failures, and open pull requests. Cleanup is not inferred by the
-adapter. The caller must pass a matching durable terminal event: terminal
-triage, acknowledged plan merge, or acknowledged implementation merge. Reset
-release is non-forced and targets the recorded base. Unsafe cleanup, identity
-conflicts, missing paths, and uncertain recovery are infrastructure-attention
-states; bounded repair can resume a matching acquire or cleanup, or quarantine
-the lease, but cannot force-destroy or silently replace it.
+Leases survive nonterminal waits and open pull requests. Release requires the
+matching terminal Factory event and performs a non-forced reset to the recorded
+base. Conflicts or uncertain cleanup require explicit repair or quarantine.
 
 ## Code ownership map
 
@@ -182,24 +169,11 @@ projection or publication adapters, and provider-specific behavior behind
 provider adapters. Do not add a second workflow counter, scheduler, handler
 registry, or tracker-derived state machine.
 
-## Host and extension boundary
-
-The manual CLI currently supplies invocation, waiting, and explicit human
-continuations. Inngest may later supply event delivery, retry scheduling,
-one-active-action coordination, and wakeups. Its events should carry identities,
-not another copy of workflow state. Every retry must reread Factory, reuse the
-same causation identity, and converge on existing staged or published results.
-
-Future PR review or merge agents should be separately authorized handlers after
-publication. They should call the same continuation and lifecycle boundaries;
-they must not invoke planners or implementers directly or embed policy inside
-the host runtime.
-
 ## Contributor checklist
 
 When changing Factory:
 
-- preserve one-action manual and hosted execution semantics;
+- preserve one-action execution semantics;
 - add focused lifecycle, recovery, Git-authority, or projection regressions at
   the smallest stable boundary;
 - verify generated help when command options change;
