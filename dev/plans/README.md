@@ -2,9 +2,7 @@
 
 ## Active queue
 
-- [Add deterministic full-chain Factory system smoke](FER-76.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-76/add-deterministic-full-chain-factory-system-smoke)
-- [Preserve Factory candidates through review continuations](260714-factory-review-continuations.md) — implementation plan under review.
-- [Resume only failed roles in Factory implementation review](FER-77.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-77/resume-only-failed-roles-in-factory-implementation-review)
+No active plans.
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
@@ -64,6 +62,9 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Factory pull-request publication              | [#149](https://github.com/ferueda/harness/pull/149)                                                      |
 | —     | Provider-neutral Factory Git authority        | [#152](https://github.com/ferueda/harness/pull/152)                                                      |
 | —     | Factory store contract version 2              | [#154](https://github.com/ferueda/harness/pull/154)                                                      |
+| —     | Explicit Factory review continuations         | [#160](https://github.com/ferueda/harness/pull/160)                                                      |
+| —     | Deterministic full-chain Factory smoke        | [#167](https://github.com/ferueda/harness/pull/167)                                                      |
+| —     | Failed-role-only Factory review recovery      | [#172](https://github.com/ferueda/harness/pull/172)                                                      |
 
 ---
 
