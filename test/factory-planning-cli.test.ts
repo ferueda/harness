@@ -221,6 +221,68 @@ test("active Linear planning continuations require Planning status", async () =>
   ).not.toThrow();
 });
 
+test("ready-to-plan triage accepts an already projected Planning start", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-recovery-"));
+  const store = createStore();
+  const workItem = {
+    id: "linear:ENG-106",
+    source: "linear" as const,
+    title: "Plan",
+    body: "",
+    labels: [],
+    metadata: { linearStatus: "Planning" },
+  };
+  appendTriageRoute(store, workItem.id, "ready-to-plan");
+  const events = readFactoryActionEvents(store.factoryStateRoot, workItem.id);
+  const state = reduceFactoryLifecycleEvents(events);
+  const latest = events.at(-1);
+  if (!state || !latest) throw new Error("ready-to-plan state missing");
+  const settings = linearConfig().factory.linear;
+
+  expect(() => assertLivePlanningStatus(workItem, settings, false, state, latest)).not.toThrow();
+
+  const applyPlanningStarted = vi.fn(async () => undefined);
+  const provider = vi.fn(passingProvider([])().run);
+  const result = await runOneFactoryPlanningAction({
+    ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+    workItem,
+    itemFile: undefined,
+    linearIssue: "ENG-106",
+    issueRef: "ENG-106",
+    applyAdapter: { applyPlanningStarted } as never,
+  });
+
+  expect(result.action).toMatchObject({ handler: "producePlanCandidate", attempt: 1 });
+  expect(applyPlanningStarted).toHaveBeenCalledTimes(1);
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect(
+    readFactoryActionEvents(store.factoryStateRoot, workItem.id).filter(
+      (event) => event.type === "planning.requested",
+    ),
+  ).toHaveLength(1);
+});
+
+test("Planning status does not bypass a non-planning triage route", () => {
+  const store = createStore();
+  const workItem = {
+    id: "linear:ENG-107",
+    source: "linear" as const,
+    title: "Plan",
+    body: "",
+    labels: [],
+    metadata: { linearStatus: "Planning" },
+  };
+  appendTriageRoute(store, workItem.id, "ready-to-implement");
+  const events = readFactoryActionEvents(store.factoryStateRoot, workItem.id);
+  const state = reduceFactoryLifecycleEvents(events);
+  const latest = events.at(-1);
+  if (!state || !latest) throw new Error("ready-to-implement state missing");
+
+  expect(() =>
+    assertLivePlanningStatus(workItem, linearConfig().factory.linear, false, state, latest),
+  ).toThrow("is not valid for Factory planning");
+});
+
 test("Linear planning start appends its request before projection and provider work", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-start-"));
   const store = createStore();

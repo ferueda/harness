@@ -296,11 +296,14 @@ export function assertLivePlanningStatus(
     state.phase === "planning" &&
     decideNextFactoryAction(state, latest).kind === "invoke",
   );
+  const readyToPlan =
+    state?.phase === "triage" && state.status === "routed" && state.route === "ready-to-plan";
   const entryStatuses = [
     settings.statuses.needsPlan,
     settings.statuses.needsInfo,
     settings.statuses.needsPlanReview,
     settings.statuses.planningFailed,
+    ...(readyToPlan ? [settings.statuses.planning] : []),
   ];
   const allowed = pendingStartProjection
     ? [...entryStatuses, settings.statuses.planning]
