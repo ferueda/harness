@@ -71,8 +71,9 @@ Factory vocabulary:
    publication reuse that lease and exact path.
 
 Run only one phase command for a work item at a time. When Harness dogfoods
-itself, keep the controller checkout fixed for the active phase and use a
-separate mutable target worktree.
+itself, use a dedicated clean detached controller checkout pinned to one SHA
+for the active phase and a separate mutable target worktree. The target's
+`main` may advance after the phase captures its base; the controller may not.
 
 ## Phase model
 
