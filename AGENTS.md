@@ -5,6 +5,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 ## Agent Protocol
 
 - Bugs: add regression test when it fits.
+- Factory lifecycle, continuation, publication, provider-protocol, or system-smoke changes: run `make smoke-factory` in addition to the normal handoff gate. Live protocol checks require explicit authority. Details: `docs/contributing/testing.md`.
 - Aim to keep files under ~700 LOC; guideline only (not a hard guardrail). Split/refactor when it improves clarity or testability.
 - Style: telegraph. Drop filler/grammar. Min tokens.
 - Add brief code comments for tricky or non-obvious logic.
