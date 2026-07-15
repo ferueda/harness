@@ -132,6 +132,9 @@ inspect`. Use the same store overrides planned for later actions.
 - Publish only after explicit authority. Stop at the recorded pull request and
   let the human decide whether to merge. After a human merge, verify the URL and
   merge commit before running merge acknowledgement.
+- After Factory records the implementation PR merge, the orchestrator that owns
+  the target environment cleans it up with provider-native tooling. Retain it
+  for earlier waits or failures; preserve Factory evidence.
 
 ## Retry and recovery rules
 
