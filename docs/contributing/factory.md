@@ -118,6 +118,11 @@ after explicit publication authority. It pushes the reviewed branch and finds
 or creates one pull request; it cannot merge. Merge acknowledgement verifies the
 recorded URL and local ancestry before completing the phase.
 
+PR-backed phases snapshot the target workspace's exact `HEAD` and attached
+branch at phase start. The configured base ref names the pull-request target; it
+is not re-resolved as execution authority. The caller must provision and verify
+the accepted baseline before starting the phase.
+
 The constrained `factory linear create` command is intake, not a phase action.
 Read-only list, fetch, status, and inspect surfaces do not derive or advance
 Factory machine state.

@@ -708,7 +708,8 @@ function assertPlanningPublicationGit(
     }).trim();
     if (requireClean && status)
       throw new FactoryPlanningError("Pull-request planning requires a clean workspace");
-    const baseSha = execFileSync("git", ["rev-parse", "--verify", `${baseRef}^{commit}`], {
+    // The worktree commit is phase authority; baseRef is only PR-target metadata.
+    const baseSha = execFileSync("git", ["rev-parse", "--verify", "HEAD^{commit}"], {
       cwd: workspace,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],

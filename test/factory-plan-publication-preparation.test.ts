@@ -18,6 +18,7 @@ test("materializes one deterministic plan commit from the persisted base", () =>
   expect(git(fixture.workspace, ["show", `${first.headSha}:dev/plans/item.md`])).toBe(
     "# Reviewed plan\n",
   );
+  expect(git(fixture.workspace, ["rev-parse", `${first.headSha}^`]).trim()).toBe(fixture.baseSha);
   const index = git(fixture.workspace, ["show", `${first.headSha}:dev/plans/README.md`]);
   expect(index.indexOf("[Plan item](item.md)")).toBeLessThan(index.indexOf("[Zulu](zulu.md)"));
 

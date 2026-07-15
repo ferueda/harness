@@ -1258,6 +1258,22 @@ test("phase creation rejects dirty and detached workspaces before provider work"
   expect(() => createPhase(detached)).toThrow(/attached branch/);
 });
 
+test("phase start snapshots workspace HEAD independently of the configured base ref", () => {
+  const fixture = directFixture();
+  git(fixture.workspace, ["switch", "-c", "codex/implementation"]);
+  git(fixture.workspace, ["commit", "--allow-empty", "-m", "accepted baseline"]);
+  const acceptedBase = git(fixture.workspace, ["rev-parse", "HEAD"]).trim();
+
+  const ctx = createPhase(fixture);
+
+  expect(ctx.identity).toMatchObject({
+    baseRef: "main",
+    baseSha: acceptedBase,
+    branchRef: "refs/heads/codex/implementation",
+  });
+  expect(git(fixture.workspace, ["rev-parse", "main"]).trim()).toBe(fixture.baseSha);
+});
+
 test("planned input requires reviewed plan bytes committed at the implementation base", () => {
   const fixture = directFixture();
   mkdirSync(join(fixture.workspace, "dev/plans"), { recursive: true });
