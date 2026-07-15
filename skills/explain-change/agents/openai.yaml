@@ -1,0 +1,4 @@
+interface:
+  display_name: "Explain Change"
+  short_description: "Explain diffs, impacts, contracts, and tradeoffs"
+  default_prompt: "Use $explain-change to walk me through this diff, including behavior, contract, boundary, and accepted tradeoff changes."
