@@ -121,7 +121,7 @@ test.each([
   expect(existsSync(join(workspace, "dev/plans/item.md"))).toBe(testCase.mode === "local");
 });
 
-test("planning review rejects target branch drift without invoking the reviewer", async () => {
+test("planning review rejects attached branch HEAD drift without invoking the reviewer", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-cli-workspace-"));
   initializeGit(workspace);
   execFileSync("git", ["switch", "-c", "codex/plan"], {
