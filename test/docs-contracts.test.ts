@@ -648,6 +648,24 @@ test("agent and Factory operator completion gates stay explicit", () => {
   expect(operator).toContain("Do not fabricate a revision or review finding");
 });
 
+test("fresh worktree readiness stays explicit and offline", () => {
+  const makefile = readRepoFile("Makefile");
+  expect(readMakeTarget(makefile, "setup-worktree")).toContain(
+    "SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline",
+  );
+
+  const agents = readRepoFile("AGENTS.md");
+  expect(agents).toContain("run `make setup-worktree` before source edits or provider work");
+  expect(agents).toContain("Stop and report the blocker if setup fails");
+
+  const setup = readRepoFile(SETUP_MANIFEST);
+  const setupProse = setup.replace(/\s+/g, " ");
+  expect(setup).toContain("## Isolated worktree readiness");
+  expect(setup).toContain("ordinary shared pnpm store");
+  expect(setupProse).toContain("Factory does not install dependencies");
+  expect(setupProse).toContain("does not replace the final `make check` gate");
+});
+
 test("factory lifecycle generated artifacts are documented", () => {
   const setup = readRepoFile(SETUP_MANIFEST);
   expect(setup).toContain("harness/store/projects/<repo-id>/factory/events/*.jsonl");

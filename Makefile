@@ -7,12 +7,15 @@ define RUN
 @VERBOSE="$(VERBOSE)" GATE_STEP_NAME="$(if $(2),$(2),$@)" GATE_STEP_RERUN="$(if $(3),$(3),VERBOSE=1 make $@)" GATE_STEP_COMMAND='$(1)' node scripts/run-gate-step.ts
 endef
 
-.PHONY: help ensure-node build lint typecheck test smoke-dist smoke-factory format check-format fix check check-v check-ci
+.PHONY: help ensure-node setup-worktree build lint typecheck test smoke-dist smoke-factory format check-format fix check check-v check-ci
 
 ensure-node: ## Ensure node and pnpm are available
 	@command -v node >/dev/null 2>&1 || { echo "node not found in PATH"; exit 1; }
 	@command -v pnpm >/dev/null 2>&1 || { echo "pnpm not found in PATH"; exit 1; }
 	@if [ "$(VERBOSE)" = "1" ]; then node -v; pnpm -v; fi
+
+setup-worktree: ensure-node ## Prepare a fresh isolated worktree from the shared offline cache
+	SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline
 
 build: ensure-node ## Build installable JavaScript into dist/
 	$(call RUN,pnpm run build)
