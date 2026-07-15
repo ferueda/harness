@@ -1,4 +1,0 @@
-interface:
-  display_name: "Cursor CLI"
-  short_description: "Delegate work to Cursor Agent via skill-local cursor-cli"
-  default_prompt: "Use $cursor-cli to delegate this task to a headless Cursor Agent."

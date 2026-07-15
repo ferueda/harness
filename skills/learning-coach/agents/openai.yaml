@@ -1,4 +1,0 @@
-interface:
-  display_name: "Learning Coach"
-  short_description: "Learn one topic over repeated sessions with markdown workspace files"
-  default_prompt: "Use $learning-coach to help me learn a topic — one question at a time, with MISSION, LEARNER, PLAN, LOG, and RESOURCES files."
