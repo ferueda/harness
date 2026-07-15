@@ -396,6 +396,13 @@ test("terminal Linear wait projection is repaired only with explicit apply", asy
   const first = await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
   expect(first.next).toMatchObject({ kind: "wait", reason: "human" });
   expect(applyPlanningCompleted).toHaveBeenCalledTimes(1);
+  expect(applyPlanningCompleted).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      status: "plan-needs-human",
+      humanQuestions: ["Which scope?"],
+    }),
+  );
+  const terminalEvents = readFactoryActionEvents(store.factoryStateRoot, base.workItem.id);
 
   const withoutApply = await runOneFactoryPlanningAction(base);
   expect(withoutApply.linearApplied).toBe(false);
@@ -403,7 +410,70 @@ test("terminal Linear wait projection is repaired only with explicit apply", asy
   const repaired = await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
   expect(repaired.linearApplied).toBe(true);
   expect(applyPlanningCompleted).toHaveBeenCalledTimes(2);
+  expect(applyPlanningCompleted).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      status: "plan-needs-human",
+      humanQuestions: ["Which scope?"],
+    }),
+  );
   expect(provider).toHaveBeenCalledTimes(1);
+  expect(readFactoryActionEvents(store.factoryStateRoot, base.workItem.id)).toEqual(terminalEvents);
+});
+
+test("terminal Linear wait repair rejects tampered questions before projection", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-wait-tampered-"));
+  const store = createStore();
+  const provider = vi.fn(async () => ({
+    ok: true as const,
+    structuredOutput: {
+      outcome: "needs-human" as const,
+      summary: "question",
+      humanQuestions: ["Which scope?"],
+      findingDecisions: [],
+    },
+    raw: unchangedWorkspace(),
+  }));
+  const base = {
+    ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+    workItem: {
+      id: "linear:ENG-106",
+      source: "linear" as const,
+      title: "Plan",
+      body: "",
+      labels: [],
+    },
+    itemFile: undefined,
+    linearIssue: "ENG-106",
+    issueRef: "ENG-106",
+  };
+  const failedProjection = vi.fn(async () => {
+    throw new Error("Linear unavailable");
+  });
+  await expect(
+    runOneFactoryPlanningAction({
+      ...base,
+      applyAdapter: {
+        applyPlanningStarted: vi.fn(async () => undefined),
+        applyPlanningCompleted: failedProjection,
+      } as never,
+    }),
+  ).rejects.toThrow("Linear unavailable");
+
+  const terminalEvents = readFactoryActionEvents(store.factoryStateRoot, base.workItem.id);
+  const terminal = terminalEvents.at(-1);
+  if (terminal?.type !== "planning.input.required") throw new Error("missing questions event");
+  writeFileSync(join(store.projectRoot, terminal.data.questions.path), '["Changed question?"]\n');
+
+  const repairedProjection = vi.fn(async () => undefined);
+  await expect(
+    runOneFactoryPlanningAction({
+      ...base,
+      applyAdapter: { applyPlanningCompleted: repairedProjection } as never,
+    }),
+  ).rejects.toThrow("Factory artifact hash mismatch");
+  expect(repairedProjection).not.toHaveBeenCalled();
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect(readFactoryActionEvents(store.factoryStateRoot, base.workItem.id)).toEqual(terminalEvents);
 });
 
 test("coordinator propagates its abort signal to the planning provider", async () => {
