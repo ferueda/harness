@@ -40,7 +40,7 @@ docs should link here. Exact command ownership lives in
 | CLI integration          | Argument parsing, command selection, structured output, and separate-process behavior   |
 | Repository self-contract | Packaged skills, command inventory, documentation structure, and private-path exclusion |
 | Distribution smoke       | Built package layout, installed entrypoint, generated shim, and basic public wiring     |
-| Factory system smoke     | One offline full-chain journey across separate source-CLI processes                     |
+| Factory system smoke     | Offline full-chain CLI journey plus Grove acquire/reopen/release journey                |
 | Optional live            | Explicitly authorized external integration proof                                        |
 
 Use fast module and contract tests by default. Add broader proof only when the
@@ -113,9 +113,9 @@ pnpm exec vitest run test/docs-contracts.test.ts
 
 - `pnpm test` runs the Vitest suite.
 - `pnpm smoke:dist` proves built distribution wiring.
-- `pnpm smoke:factory` / `make smoke-factory` runs the explicit offline Factory
-  system journey. It is not part of Vitest, watch mode, pre-commit, or ordinary
-  local `pnpm check`.
+- `pnpm smoke:factory` / `make smoke-factory` runs the offline Factory CLI and
+  Grove acquire/reopen/release journeys. It is not part of Vitest, watch mode,
+  pre-commit, or ordinary local `pnpm check`.
 - `pnpm check` / `make check` is the normal local handoff gate.
 - `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Factory
   system smoke after the ordinary checks.
