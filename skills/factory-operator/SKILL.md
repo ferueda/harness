@@ -110,6 +110,14 @@ inspect`. Use the same store overrides planned for later actions.
   approved plan committed at `HEAD`.
 - Invoke `implementation run` once to produce an immutable candidate. Harness
   must not move the branch or real index during production.
+- Before invoking reviewers, inspect the implementer evidence and run the target
+  repository's required final handoff gate from the target workspace. Provider
+  claims, focused checks, and Git hooks do not replace a green final gate.
+- If the gate finds a deterministic code failure, record a pre-review `revise`
+  continuation with the exact command and failure evidence, then resume the
+  saved implementer session. This does not consume a review round.
+- If infrastructure prevents the gate from running, stop and report the blocker.
+  Do not fabricate a revision or review finding for an environment failure.
 - Invoke the printed command again to run Factory's implementation and quality
   reviewers against that candidate. Do not run a separate standalone
   `change-review` for the Factory candidate.

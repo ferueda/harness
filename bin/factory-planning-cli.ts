@@ -1,8 +1,10 @@
 import type { Command } from "commander";
+import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { z } from "zod";
 import { formatFactoryActionOutput } from "./factory-action-output.ts";
 import { decorateFactoryReaction } from "./factory-manual-command.ts";
-import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import {
   readFactoryContinuationResponseFile,
   recordFactoryContinuation,
@@ -373,6 +375,8 @@ export async function runOneFactoryPlanningAction(input: {
           runDir: join(input.factoryStore.projectRoot, "runs/factory", state.phaseRunId),
           status: state.status,
           latest,
+          factoryStoreRoot: input.factoryStore.projectRoot,
+          workspace: input.workspace,
         });
         linearApplied = true;
       }
@@ -507,6 +511,8 @@ export async function runOneFactoryPlanningAction(input: {
       runDir: ctx.runDir,
       status: handled.state.status,
       latest: handled.event,
+      factoryStoreRoot: input.factoryStore.projectRoot,
+      workspace: input.workspace,
     });
     linearApplied = true;
   }
@@ -541,6 +547,8 @@ async function applyTerminalPlanningProjection(input: {
   runDir: string;
   status: "needs-human" | "failed";
   latest: FactoryLifecycleEvent | undefined;
+  factoryStoreRoot: string;
+  workspace: string;
 }): Promise<void> {
   if (input.status === "failed") {
     await input.adapter.applyPlanningFailed({
@@ -559,7 +567,27 @@ async function applyTerminalPlanningProjection(input: {
       input.latest?.type === "planning.input.required"
         ? "plan-needs-human"
         : "plan-review-unresolved",
+    ...(input.latest?.type === "planning.input.required"
+      ? {
+          humanQuestions: readAuthenticatedPlanningQuestions(input.latest, {
+            "factory-store": input.factoryStoreRoot,
+            repository: input.workspace,
+          }),
+        }
+      : {}),
   });
+}
+
+const PlanningQuestionsSchema = z.array(z.string().min(1)).min(1);
+
+function readAuthenticatedPlanningQuestions(
+  event: Extract<FactoryLifecycleEvent, { type: "planning.input.required" }>,
+  roots: { "factory-store": string; repository: string },
+): string[] {
+  if (event.data.questions.base !== "factory-store")
+    throw new Error("Planning questions artifact must be stored in the Factory store");
+  const path = verifyFactoryArtifactRef(event.data.questions, roots);
+  return PlanningQuestionsSchema.parse(JSON.parse(readFileSync(path, "utf8")));
 }
 
 function planningCommandProvenance(input: {

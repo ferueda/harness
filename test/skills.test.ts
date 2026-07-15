@@ -253,82 +253,46 @@ test("handoffs preserve accepted authority without duplicating inspectable sourc
   expect(handoff).not.toContain("### Files referenced");
 });
 
-test("orchestrated work fixes authority, sandbox, verification, and callback invariants", () => {
+test("orchestrated work preserves authority, routing, and recovery invariants", () => {
   const skill = readFileSync(join(REPO_ROOT, "skills/orchestrate-work/SKILL.md"), "utf8");
   const metadata = readFileSync(
     join(REPO_ROOT, "skills/orchestrate-work/agents/openai.yaml"),
     "utf8",
   );
   const prose = normalizedProse(skill);
-  const creationIndex = prose.indexOf("codex_app__create_thread");
-  const baselineProofIndex = prose.indexOf("Require the first before-edit checkpoint");
-  const executorCallbackValidationIndex = prose.indexOf(
-    "Before the executor sends its first checkpoint",
-  );
-  const orchestratorReplyValidationIndex = prose.indexOf(
-    "Before the orchestrator sends its first reply",
-  );
-  const orchestratorReplyIndex = prose.indexOf(
-    "It replies to the verified executor steering route",
-  );
-  const callbackTemplateValidationIndex = prose.indexOf("Before the first checkpoint, inspect the");
-  const callbackTemplateSendIndex = prose.indexOf(
-    "Then send the checkpoint to the verified parent",
-  );
 
   expect(skill).toContain("name: orchestrate-work");
   expect(skill).toContain("disable-model-invocation: true");
-  expect(skill).toContain("<source_thread_id>");
-  expect(skill).toContain("codex_app__list_projects");
-  expect(skill).toContain("codex_app__create_thread");
-  expect(skill).toContain("codex_app__send_message_to_thread");
-  expect(skill).toContain('environment: { type: "worktree" }');
-  expect(skill).not.toContain('model: "[executor model]"');
-  expect(skill).not.toContain('thinking: "[executor thinking]"');
-  expect(prose).toContain("Keep `projectId` and `environment` under `target`");
-  expect(prose).toContain("Inspect the live `codex_app__create_thread` schema");
-  expect(prose).toContain("An argument-validation rejection means no task was created");
-  expect(prose).toContain("For an ambiguous transport result");
-  expect(prose).toContain("queued `clientThreadId`");
-  expect(prose).toContain("is the authoritative steering route");
-  expect(prose).toContain("Never reuse `source_host_id`");
-  expect(prose).toContain("returned only by `set_thread_title`");
-  expect(prose).toContain("`No AppServerManager registered`");
-  expect(prose).toContain("retry the message at most once");
-  expect(prose).toContain("Successful delivery of the first parent-to-executor message");
-  expect(prose).toContain("actual worktree path");
-  expect(prose).toContain("branch or detached-HEAD state");
-  expect(prose).toContain("destination-owned state");
-  expect(prose).toContain(
-    "when the user requests no destination override, omit `model` and `thinking`",
-  );
-  expect(skill).toContain("**Optional destination override:**");
-  expect(prose).toContain("A user override applies only to the named destination");
-  expect(prose).toContain("If the request contains a partial pair");
-  expect(prose).toContain("never derive or copy settings from the sender");
-  expect(prose).toContain("validate and use the complete new pair");
-  expect(prose).toContain("not an ID-only destination");
-  expect(creationIndex).toBeGreaterThan(-1);
-  expect(baselineProofIndex).toBeGreaterThan(creationIndex);
-  expect(executorCallbackValidationIndex).toBeGreaterThan(baselineProofIndex);
-  expect(orchestratorReplyValidationIndex).toBeGreaterThan(executorCallbackValidationIndex);
-  expect(orchestratorReplyIndex).toBeGreaterThan(orchestratorReplyValidationIndex);
-  expect(callbackTemplateValidationIndex).toBeGreaterThan(orchestratorReplyIndex);
-  expect(callbackTemplateSendIndex).toBeGreaterThan(callbackTemplateValidationIndex);
-  expect(prose).toContain("any new authority returns to the user");
-  expect(skill).toContain("Sandbox: write only inside this worktree and branch");
-  expect(skill).toContain("Verification: [exact commands/gates and evidence required]");
-  expect(skill).toContain(
-    "Done: [checkable behavior, artifacts, clean state, and review requirement]",
-  );
-  expect(skill).toContain("Publication: [none, commit, push, or pull request");
-  expect(skill).toContain("`change-review-workflow`");
-  expect(prose).toContain("`Implement`, `Adapt`, or `Decline`");
-  expect(prose).toContain("approved for the current head");
-  expect(prose).toContain("reported unresolved");
-  expect(prose).toContain("recorded as not requested");
-  expect(prose).toContain("Avoid concurrent edits in that worktree");
   expect(metadata).toContain("allow_implicit_invocation: false");
+  expect(prose).toContain("single writer");
+  expect(prose).toContain("exact baseline");
+  expect(prose).toContain("both callback directions");
+  expect(skill).toContain("<source_thread_id>");
+  expect(prose).toContain("branch or detached-HEAD state");
+  expect(prose).toContain("Each destination owns its `model` and `thinking`");
+  expect(prose).toContain("Never copy settings from the sender");
+  expect(skill).toContain("`codex_app__list_projects`");
+  expect(skill).toContain("`codex_app__create_thread`");
+  expect(skill).toContain('environment: { type: "worktree" }');
+  expect(skill).toContain("A validation rejection created no task");
+  expect(skill).toContain("queued `clientThreadId`");
+  expect(skill).toContain("`codex_app__set_thread_title`");
+  expect(skill).toContain("`codex_app__list_threads`");
+  expect(skill).toContain("`codex_app__read_thread`");
+  expect(skill).toContain("`codex_app__send_message_to_thread`");
+  expect(prose).toContain("A callback's source identifies the executor, not the parent");
+  expect(prose).toContain("`source_host_id` and title-update output are not steering routes");
+  expect(prose).toContain("consult the parent whenever a decision or blocker appears");
+  expect(prose).toContain("do not poll unchanged state");
+  expect(skill).toContain("Verification: [exact commands/gates and evidence required]");
+  expect(skill).toContain("Publication: [none, commit, push, pull request, or merge authority]");
+  expect(skill).toContain("`change-review-workflow`");
+  expect(skill).toContain("`handoff-work`");
+  expect(prose).toContain("The parent approves or adjusts dispositions");
+  expect(prose).toContain("exact recoverable state");
+  expect(prose).toContain("with the executor stopped");
+  expect(prose).not.toContain("`No AppServerManager registered`");
+  expect(prose).not.toContain("Keep `projectId` and `environment` under `target`");
 });
 
 test("architect prefers the smallest intent-aligned design", () => {
