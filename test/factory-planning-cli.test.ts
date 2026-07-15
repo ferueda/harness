@@ -12,6 +12,7 @@ import { publishPlanPullRequest } from "../lib/factory-plan-publication.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import type { AgentRunInput } from "../lib/agents.ts";
 import { recordFactoryContinuation } from "../lib/factory-continuation.ts";
+import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import {
   appendFactoryActionEvent,
@@ -47,34 +48,31 @@ test.each([
 ])("coordinator runs one planning handler per invocation in $mode mode", async (testCase) => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-cli-workspace-"));
   initializeGit(workspace);
+  const originalMain = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspace,
+    encoding: "utf8",
+  }).trim();
+  let acceptedBase = originalMain;
+  if (testCase.mode === "pull-request") {
+    writeFileSync(join(workspace, "accepted.txt"), "accepted\n");
+    execFileSync("git", ["add", "accepted.txt"], { cwd: workspace });
+    execFileSync("git", ["commit", "-m", "accepted baseline"], {
+      cwd: workspace,
+      stdio: "ignore",
+    });
+    acceptedBase = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf8",
+    }).trim();
+    execFileSync("git", ["switch", "-c", "codex/plan"], {
+      cwd: workspace,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["update-ref", "refs/heads/main", originalMain], { cwd: workspace });
+  }
   const store = createStore();
   const calls: AgentRunInput[] = [];
-  const providerFactory = () => ({
-    name: "cursor" as const,
-    async run(input: AgentRunInput) {
-      calls.push(input);
-      const draftPath = /Draft path:\s+```text\s+([^\n]+)/.exec(input.prompt)?.[1];
-      if (draftPath) {
-        writeFileSync(draftPath, "# Candidate\n", "utf8");
-        return {
-          ok: true as const,
-          structuredOutput: {
-            outcome: "draft-ready",
-            summary: "ready",
-            humanQuestions: [],
-            findingDecisions: [],
-          },
-          raw: unchangedWorkspace(),
-          session: { provider: "cursor" as const, id: "planner-session" },
-        };
-      }
-      return {
-        ok: true as const,
-        structuredOutput: { verdict: "pass", summary: "approved", findings: [] },
-        raw: unchangedWorkspace(),
-      };
-    },
-  });
+  const providerFactory = passingProvider(calls);
   const input = {
     factoryStateRoot: store.factoryStateRoot,
     factoryStore: store,
@@ -104,6 +102,16 @@ test.each([
   expect(candidate.action).toMatchObject({ handler: "producePlanCandidate", attempt: 1 });
   expect(candidate.next).toMatchObject({ kind: "invoke", handler: "reviewPlanCandidate" });
   expect(calls).toHaveLength(1);
+  if (testCase.mode === "pull-request") {
+    expect(
+      readFactoryPhaseRunIdentity(join(store.factoryRunsDir, candidate.phaseRunId)),
+    ).toMatchObject({
+      baseRef: "main",
+      baseSha: acceptedBase,
+      branchRef: "refs/heads/codex/plan",
+    });
+    execFileSync("git", ["update-ref", "refs/heads/main", acceptedBase], { cwd: workspace });
+  }
 
   const reviewed = await runOneFactoryPlanningAction(input);
   expect(reviewed.phaseRunId).toBe(candidate.phaseRunId);
@@ -111,6 +119,42 @@ test.each([
   expect(reviewed.next).toMatchObject({ kind: "wait", reason: testCase.expectedWait });
   expect(calls).toHaveLength(2);
   expect(existsSync(join(workspace, "dev/plans/item.md"))).toBe(testCase.mode === "local");
+});
+
+test("planning review rejects attached branch HEAD drift without invoking the reviewer", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-cli-workspace-"));
+  initializeGit(workspace);
+  execFileSync("git", ["switch", "-c", "codex/plan"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  const store = createStore();
+  const calls: AgentRunInput[] = [];
+  const input = {
+    ...coordinatorInput(workspace, store, passingProvider(calls)),
+    workItem: {
+      id: "item-branch-drift",
+      source: "linear" as const,
+      title: "Plan item",
+      body: "Ship it",
+      labels: [],
+    },
+    itemFile: undefined,
+    linearIssue: "ENG-123",
+    issueRef: "ENG-123",
+    applyAdapter: { applyPlanningStarted: vi.fn(async () => undefined) } as never,
+  };
+
+  await runOneFactoryPlanningAction(input);
+  execFileSync("git", ["commit", "--allow-empty", "-m", "unexpected branch drift"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+
+  await expect(runOneFactoryPlanningAction(input)).rejects.toThrow(
+    /Git identity changed since phase start/,
+  );
+  expect(calls).toHaveLength(1);
 });
 
 test("coordinator rejects rerun while planning remains active", async () => {
