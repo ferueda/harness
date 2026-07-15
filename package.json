@@ -26,6 +26,7 @@
     "lint:fix": "oxlint -c .oxlintrc.json --fix bin lib providers scripts workflows test skills/sessions vitest.config.ts",
     "prepare": "simple-git-hooks",
     "smoke:dist": "node scripts/smoke-dist.ts",
+    "smoke:factory": "node scripts/smoke-factory.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -64,6 +64,14 @@ function readMakeTargets(): string[] {
   return [...targets].sort();
 }
 
+function readMakeTarget(makefile: string, target: string): string {
+  const lines = makefile.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.startsWith(`${target}:`));
+  if (start === -1) throw new Error(`Makefile is missing target: ${target}`);
+  const next = lines.findIndex((line, index) => index > start && /^[a-zA-Z_-]+:/.test(line));
+  return lines.slice(start, next === -1 ? undefined : next).join("\n");
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -319,6 +327,33 @@ test("testing taxonomy documents required proof layers", () => {
   expect(content).toContain("format/lint staged files");
   expect(content).toContain("pnpm typecheck");
   expect(content).toContain("do not replace `pnpm check`");
+});
+
+test("Factory smoke stays explicit locally and runs only in the full CI gate", () => {
+  const packageJson: unknown = JSON.parse(readRepoFile("package.json"));
+  expect(isObject(packageJson) && isObject(packageJson.scripts)).toBe(true);
+  if (!isObject(packageJson) || !isObject(packageJson.scripts)) return;
+  expect(packageJson.scripts["smoke:factory"]).toBe("node scripts/smoke-factory.ts");
+
+  const makefile = readRepoFile("Makefile");
+  expect(makefile).toMatch(/^smoke-factory: ensure-node ##/m);
+  const localCheck = readMakeTarget(makefile, "check");
+  expect(localCheck).toContain("$(MAKE) smoke-dist");
+  expect(localCheck).not.toContain("smoke-factory");
+  expect(makefile).toMatch(/^check-ci: check ##[^\n]*\n\t@\$\(MAKE\) smoke-factory$/m);
+
+  const workflow = readRepoFile(".github/workflows/test.yml");
+  expect(workflow).toContain("pnpm exec vitest run test/docs-contracts.test.ts");
+  expect(workflow).toContain("run: pnpm check:ci");
+  expect(workflow).toContain("steps.changes.outputs.plan_only == 'true'");
+  expect(workflow).toContain("steps.changes.outputs.plan_only != 'true'");
+
+  const testing = readRepoFile(TESTING_DOC);
+  for (const lane of ["Vitest", "Distribution smoke", "Factory system smoke", "Optional live"]) {
+    expect(testing).toContain(lane);
+  }
+  expect(testing).toContain("pnpm smoke:factory");
+  expect(testing).toContain("plan-only path bypasses the full gate and Factory smoke");
 });
 
 test("hook docs document activation and gate boundaries", () => {
