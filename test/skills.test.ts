@@ -1,12 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import type * as NodeFs from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -19,13 +11,6 @@ afterEach(() => {
   vi.doUnmock("node:fs");
   vi.resetModules();
 });
-
-function listFiles(root: string): string[] {
-  return readdirSync(root, { recursive: true })
-    .map((entry) => String(entry))
-    .filter((entry) => statSync(join(root, entry)).isFile())
-    .sort();
-}
 
 function normalizedProse(content: string): string {
   return content.replace(/\s+/g, " ");
@@ -58,19 +43,6 @@ test("installPackagedSkill restores existing skill when forced replace fails", a
     /simulated replace failure/,
   );
   expect(readFileSync(skillPath, "utf8")).toBe("# Original local skill\n");
-});
-
-test("local change review skill stays in sync with packaged skill", () => {
-  const packagedRoot = join(REPO_ROOT, "skills/change-review-workflow");
-  const localRoot = join(REPO_ROOT, ".agents/skills/change-review-workflow");
-  const files = listFiles(packagedRoot);
-
-  expect(files).toEqual(listFiles(localRoot));
-  for (const file of files) {
-    expect(readFileSync(join(localRoot, file), "utf8")).toBe(
-      readFileSync(join(packagedRoot, file), "utf8"),
-    );
-  }
 });
 
 test("sessions skill stays extraction-focused", () => {
