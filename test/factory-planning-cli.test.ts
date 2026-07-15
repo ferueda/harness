@@ -72,7 +72,7 @@ test.each([
   }
   const store = createStore();
   const calls: AgentRunInput[] = [];
-  const providerFactory = planningProviderFactory(calls);
+  const providerFactory = passingProvider(calls);
   const input = {
     factoryStateRoot: store.factoryStateRoot,
     factoryStore: store,
@@ -131,7 +131,7 @@ test("planning review rejects target branch drift without invoking the reviewer"
   const store = createStore();
   const calls: AgentRunInput[] = [];
   const input = {
-    ...coordinatorInput(workspace, store, planningProviderFactory(calls)),
+    ...coordinatorInput(workspace, store, passingProvider(calls)),
     workItem: {
       id: "item-branch-drift",
       source: "linear" as const,
@@ -732,35 +732,6 @@ function initializeGit(workspace: string): void {
   execFileSync("git", ["commit", "-m", "base"], {
     cwd: workspace,
     stdio: "ignore",
-  });
-}
-
-function planningProviderFactory(calls: AgentRunInput[]) {
-  return () => ({
-    name: "cursor" as const,
-    async run(input: AgentRunInput) {
-      calls.push(input);
-      const draftPath = /Draft path:\s+```text\s+([^\n]+)/.exec(input.prompt)?.[1];
-      if (draftPath) {
-        writeFileSync(draftPath, "# Candidate\n", "utf8");
-        return {
-          ok: true as const,
-          structuredOutput: {
-            outcome: "draft-ready" as const,
-            summary: "ready",
-            humanQuestions: [],
-            findingDecisions: [],
-          },
-          raw: unchangedWorkspace(),
-          session: { provider: "cursor" as const, id: "planner-session" },
-        };
-      }
-      return {
-        ok: true as const,
-        structuredOutput: { verdict: "pass" as const, summary: "approved", findings: [] },
-        raw: unchangedWorkspace(),
-      };
-    },
   });
 }
 
