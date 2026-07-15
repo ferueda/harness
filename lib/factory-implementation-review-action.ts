@@ -23,9 +23,19 @@ import { withFactoryImplementationExecutionLease } from "./factory-implementatio
 import {
   FactoryImplementationCandidateEvidenceSchema,
   FactoryImplementationReviewEvidenceSchema,
+  validateCumulativeImplementationReviewEvidence,
   validateImplementationReviewEvidence,
   type ImplementationReviewEvidence,
 } from "./factory-implementation-review-evidence.ts";
+import {
+  FACTORY_IMPLEMENTATION_REVIEW_ROLES,
+  authenticateFactoryImplementationReviewCheckpoint,
+  authenticateCausativeFactoryImplementationReviewCheckpoint,
+  authenticateStagedFactoryImplementationReviewRoles,
+  buildFactoryImplementationReviewCheckpoint,
+  type AuthenticatedFactoryImplementationReviewRoles,
+  type FactoryImplementationReviewCheckpointIdentity,
+} from "./factory-implementation-review-checkpoint.ts";
 import type { FactoryImplementationRunContext } from "./factory-implementation-run-context.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent, FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
@@ -84,7 +94,7 @@ async function runLeased(
   input: Parameters<typeof reviewImplementationCandidate>[0],
   authority: ReturnType<typeof assertReaction>,
 ) {
-  const { candidate, continuation } = authority;
+  const { candidate, continuation, latest } = authority;
   const { ctx, reaction } = input;
   const actionDir = join(
     ctx.runDir,
@@ -116,6 +126,25 @@ async function runLeased(
         : undefined,
     );
   }
+  const checkpointIdentity = reviewCheckpointIdentity(ctx, reaction, candidate);
+  let reusable: ReturnType<typeof loadReusableReviewRoles>;
+  try {
+    reusable = loadReusableReviewRoles({ ctx, reaction, latest, checkpointIdentity });
+  } catch (error) {
+    return fail(input, actionDir, message(error), "terminal", candidate.id);
+  }
+  let roles = reusable.roles;
+  let checkpointRef = reusable.ref;
+  const missingRoles = FACTORY_IMPLEMENTATION_REVIEW_ROLES.filter((role) => !roles[role]);
+  if (missingRoles.length === 0)
+    return fail(
+      input,
+      actionDir,
+      "Retry checkpoint unexpectedly contains the complete reviewer set",
+      "terminal",
+      candidate.id,
+      checkpointRef,
+    );
   const stagedPath = join(actionDir, "review-result.json");
   const recoveringStagedReview = existsSync(stagedPath);
   let staged: z.infer<typeof StagedReviewSchema>;
@@ -199,12 +228,12 @@ async function runLeased(
     try {
       refsBefore = allRefs(ctx.workspace);
       authorityBefore = implementationAuthority(ctx);
-      meta = await (input.reviewRunner ?? runChangeReview)(reviewCtx);
+      meta = await (input.reviewRunner ?? runChangeReview)(reviewCtx, { steps: missingRoles });
       refsAfter = allRefs(ctx.workspace);
       authorityAfter = implementationAuthority(ctx);
     } catch (error) {
       finish("failed", message(error));
-      return fail(input, actionDir, message(error), "human-required", candidate.id);
+      return fail(input, actionDir, message(error), "human-required", candidate.id, checkpointRef);
     }
     finish(isFailedReviewMeta(meta) ? "failed" : "completed");
     staged = {
@@ -271,26 +300,52 @@ async function runLeased(
       candidate.id,
     );
   }
-  if (isFailedReviewMeta(staged.meta))
+  try {
+    roles = {
+      ...roles,
+      ...authenticateStagedFactoryImplementationReviewRoles({
+        meta: staged.meta,
+        reviewRunDir: staged.reviewRunDir,
+        requestedRoles: missingRoles,
+        roots: roots(ctx),
+        createRef: (path) => ref(ctx, path),
+      }),
+    };
+    checkpointRef = writeReviewCheckpoint(ctx, actionDir, checkpointIdentity, roles);
+  } catch (error) {
+    return fail(input, actionDir, message(error), "terminal", candidate.id, checkpointRef);
+  }
+  const stillMissing = FACTORY_IMPLEMENTATION_REVIEW_ROLES.filter((role) => !roles[role]);
+  if (stillMissing.length > 0)
     return fail(
       input,
       actionDir,
       "One or more implementation reviewers failed",
       input.signal?.aborted ? "human-required" : "retryable",
       candidate.id,
+      checkpointRef,
     );
   let evidence: ImplementationReviewEvidence;
   try {
-    evidence = validateImplementationReviewEvidence({
-      meta: staged.meta,
-      implementationPath: join(staged.reviewRunDir, "implementation-review.json"),
-      qualityPath: join(staged.reviewRunDir, "quality-review.json"),
-    });
+    const implementation = roles.implementation;
+    const quality = roles.quality;
+    if (!implementation || !quality) throw new Error("Complete review checkpoint is missing roles");
+    evidence =
+      missingRoles.length === FACTORY_IMPLEMENTATION_REVIEW_ROLES.length
+        ? validateImplementationReviewEvidence({
+            meta: staged.meta,
+            implementationPath: verifyFactoryArtifactRef(implementation.output, roots(ctx)),
+            qualityPath: verifyFactoryArtifactRef(quality.output, roots(ctx)),
+          })
+        : validateCumulativeImplementationReviewEvidence({
+            implementation: implementation.review,
+            quality: quality.review,
+          });
   } catch (error) {
-    return fail(input, actionDir, message(error), "terminal", candidate.id);
+    return fail(input, actionDir, message(error), "terminal", candidate.id, checkpointRef);
   }
-  const implementationRef = ref(ctx, join(staged.reviewRunDir, "implementation-review.json"));
-  const qualityRef = ref(ctx, join(staged.reviewRunDir, "quality-review.json"));
+  const implementationRef = roles.implementation!.output;
+  const qualityRef = roles.quality!.output;
   let blockingRef;
   if (evidence.verdict === "needs_changes") {
     const path = join(actionDir, "blocking-findings.json");
@@ -362,7 +417,13 @@ async function runLeased(
       attempt: reaction.attempt,
       causationEventId: reaction.causationEventId,
       execution: { workspaceRef: ctx.factoryStore.repo.id, runRef: manifest },
-      evidence: [manifest, implementationRef, qualityRef, ...(blockingRef ? [blockingRef] : [])],
+      evidence: [
+        manifest,
+        implementationRef,
+        qualityRef,
+        ...(blockingRef ? [blockingRef] : []),
+        checkpointRef,
+      ],
       verdict: evidence.verdict,
       review: manifest,
       candidateEventId: candidate.id,
@@ -449,9 +510,14 @@ function fail(
   error: string,
   failureKind: "retryable" | "human-required" | "terminal",
   retainedCandidateEventId?: string,
+  checkpoint?: ReturnType<typeof ref>,
 ) {
   const path = join(actionDir, "failure.json");
-  writeDurableFactoryFile(path, `${JSON.stringify({ error, failureKind }, null, 2)}\n`, true);
+  writeDurableFactoryFile(
+    path,
+    `${JSON.stringify({ error, failureKind, ...(checkpoint ? { checkpoint } : {}) }, null, 2)}\n`,
+    true,
+  );
   const failure = ref(input.ctx, path);
   const event: FactoryActionEvent = {
     version: 1,
@@ -466,7 +532,7 @@ function fail(
       attempt: input.reaction.attempt,
       causationEventId: input.reaction.causationEventId,
       execution: { workspaceRef: input.ctx.factoryStore.repo.id, runRef: failure },
-      evidence: [failure],
+      evidence: [failure, ...(checkpoint ? [checkpoint] : [])],
       phase: "implementation",
       failureKind,
       message: error,
@@ -553,7 +619,7 @@ function assertReaction(input: Parameters<typeof reviewImplementationCandidate>[
     workItemKey: deriveFactoryWorkItemKey(input.ctx.workItem),
     roots: roots(input.ctx),
   });
-  return { candidate, continuation };
+  return { candidate, continuation, latest };
 }
 
 function validateRecoveredReview(
@@ -587,6 +653,21 @@ function validateRecoveredReview(
   verifyFactoryArtifactRef(manifest.reviewers.implementation, roots(ctx));
   verifyFactoryArtifactRef(manifest.reviewers.quality, roots(ctx));
   if (manifest.blockingFindings) verifyFactoryArtifactRef(manifest.blockingFindings, roots(ctx));
+  const checkpointRef = event.data.evidence.at(-1);
+  if (!checkpointRef) throw new Error("Recovered implementation review has no checkpoint");
+  const authenticated = authenticateFactoryImplementationReviewCheckpoint({
+    ref: checkpointRef,
+    roots: roots(ctx),
+    identity: reviewCheckpointIdentity(ctx, input.reaction, candidate),
+  });
+  if (
+    !authenticated.checkpoint ||
+    JSON.stringify(authenticated.roles.implementation?.output) !==
+      JSON.stringify(manifest.reviewers.implementation) ||
+    JSON.stringify(authenticated.roles.quality?.output) !==
+      JSON.stringify(manifest.reviewers.quality)
+  )
+    throw new Error("Recovered implementation review checkpoint conflicts with review evidence");
 }
 
 function readPriorImplementationReview(
@@ -616,6 +697,64 @@ function readPriorImplementationReview(
       readFileSync(verifyFactoryArtifactRef(manifest.reviewers.quality, roots(ctx)), "utf8"),
     ),
   };
+}
+
+function reviewCheckpointIdentity(
+  ctx: FactoryImplementationRunContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  candidate: Extract<FactoryLifecycleEvent, { type: "implementation.candidate.produced" }>,
+): FactoryImplementationReviewCheckpointIdentity {
+  return {
+    phaseRunId: ctx.runId,
+    reviewRound: reaction.attempt,
+    candidateAttempt: candidate.data.attempt,
+    base: ctx.identity.baseSha,
+    commit: candidate.data.commit,
+    tree: candidate.data.tree,
+    executionProfile: ctx.identity.actions.reviewImplementationCandidate,
+  };
+}
+
+function loadReusableReviewRoles(input: {
+  ctx: FactoryImplementationRunContext;
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>;
+  latest: FactoryLifecycleEvent;
+  checkpointIdentity: FactoryImplementationReviewCheckpointIdentity;
+}): {
+  roles: AuthenticatedFactoryImplementationReviewRoles;
+  ref?: ReturnType<typeof ref>;
+} {
+  if (input.reaction.scheduling !== "retry") return { roles: {} };
+  const event = input.latest;
+  if (
+    event.id !== input.reaction.causationEventId ||
+    event.type !== "factory.action.failed" ||
+    event.data.handler !== "reviewImplementationCandidate" ||
+    event.data.failureKind !== "retryable" ||
+    event.data.attempt !== input.reaction.attempt
+  )
+    return { roles: {} };
+  const failureRef = event.data.evidence[0];
+  if (!failureRef) throw new Error("Retryable review failure has no primary evidence");
+  return authenticateCausativeFactoryImplementationReviewCheckpoint({
+    failureRef,
+    executionRef: event.data.execution.runRef,
+    evidence: event.data.evidence,
+    roots: roots(input.ctx),
+    identity: input.checkpointIdentity,
+  });
+}
+
+function writeReviewCheckpoint(
+  ctx: FactoryImplementationRunContext,
+  actionDir: string,
+  identity: FactoryImplementationReviewCheckpointIdentity,
+  roles: AuthenticatedFactoryImplementationReviewRoles,
+) {
+  const checkpoint = buildFactoryImplementationReviewCheckpoint(identity, roles);
+  const path = join(actionDir, "implementation-review-checkpoint.json");
+  writeDurableFactoryFile(path, `${JSON.stringify(checkpoint, null, 2)}\n`, true);
+  return ref(ctx, path);
 }
 
 function readStagedReview(path: string): z.infer<typeof StagedReviewSchema> | undefined {

@@ -72,11 +72,11 @@ separate mutable target worktree.
 
 ## Phase model
 
-| Phase          | Actions and durable outcomes                                                                                                                                                        | Human or publication waits                                                                                                       |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Triage         | `triageWorkItem` validates one immutable work item and records one route: direct implementation, planning, needs information, or park                                               | Needs-information and parked routes wait without a runnable action                                                               |
-| Planning       | `producePlanCandidate` and `reviewPlanCandidate` alternate through explicit reactions; pass retains reviewed plan bytes                                                             | `revise` resumes the planner session; `re-review` keeps candidate bytes; publication and merge acknowledgement are separate      |
-| Implementation | `produceImplementationCandidate` creates an immutable candidate; `reviewImplementationCandidate` runs implementation and quality review against it; pass promotes that exact commit | `revise` resumes the implementer session; `re-review` keeps the candidate; PR publication and merge acknowledgement are separate |
+| Phase          | Actions and durable outcomes                                                                                                                                                                                                                                      | Human or publication waits                                                                                                                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Triage         | `triageWorkItem` validates one immutable work item and records one route: direct implementation, planning, needs information, or park                                                                                                                             | Needs-information and parked routes wait without a runnable action                                                                                                                                              |
+| Planning       | `producePlanCandidate` and `reviewPlanCandidate` alternate through explicit reactions; pass retains reviewed plan bytes                                                                                                                                           | `revise` resumes the planner session; `re-review` keeps candidate bytes; publication and merge acknowledgement are separate                                                                                     |
+| Implementation | `produceImplementationCandidate` creates an immutable candidate; `reviewImplementationCandidate` authenticates cumulative implementation/quality evidence, asks change-review to run only missing roles, and promotes the exact commit only after a complete pass | `revise` resumes the implementer session; retry preserves completed roles for the exact candidate and reviewer contract; `re-review` keeps the candidate; PR publication and merge acknowledgement are separate |
 
 Before the first review, only `revise` can replace a candidate. After a review,
 `revise` changes candidate bytes through the original producer session;
@@ -122,6 +122,13 @@ PR-backed phases snapshot the target workspace's exact `HEAD` and attached
 branch at phase start. The configured base ref names the pull-request target; it
 is not re-resolved as execution authority. The caller must provision and verify
 the accepted baseline before starting the phase.
+
+Factory implementation review owns cumulative role checkpoints. Each retained
+role is bound to the phase run, review round, candidate identity, snapshotted
+reviewer profile, rendered prompt/output hashes, and current role contract.
+`change-review` remains the subset executor and reports subset runs honestly as
+partial; Factory publishes a complete review manifest only after both fixed
+roles authenticate.
 
 The constrained `factory linear create` command is intake, not a phase action.
 Read-only list, fetch, status, and inspect surfaces do not derive or advance

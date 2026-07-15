@@ -3,6 +3,7 @@ import { z } from "zod";
 import { aggregateVerdict } from "./aggregate.ts";
 import { FactoryArtifactRefSchema } from "./factory-artifact-ref.ts";
 import { ReviewOutputSchema, type ReviewOutput } from "./schemas.ts";
+import { assertTerminalReviewVerdict } from "./factory-implementation-review-checkpoint.ts";
 
 export const FactoryImplementationSessionSchema = z.object({
   provider: z.enum(["cursor", "codex"]),
@@ -84,15 +85,26 @@ export function validateImplementationReviewEvidence(input: {
     JSON.parse(readFileSync(input.implementationPath, "utf8")),
   );
   const quality = ReviewOutputSchema.parse(JSON.parse(readFileSync(input.qualityPath, "utf8")));
-  const verdict = aggregateVerdict(implementation, quality);
+  const evidence = validateCumulativeImplementationReviewEvidence({ implementation, quality });
+  const { verdict } = evidence;
   if (input.meta.verdict !== verdict) throw new Error("Change-review aggregate verdict mismatch");
+  return evidence;
+}
+
+export function validateCumulativeImplementationReviewEvidence(input: {
+  implementation: ReviewOutput;
+  quality: ReviewOutput;
+}): ImplementationReviewEvidence {
+  assertTerminalReviewVerdict("implementation", input.implementation);
+  assertTerminalReviewVerdict("quality", input.quality);
+  const verdict = aggregateVerdict(input.implementation, input.quality);
   const blocking = [
-    ...blockingFor("implementation", implementation),
-    ...blockingFor("quality", quality),
+    ...blockingFor("implementation", input.implementation),
+    ...blockingFor("quality", input.quality),
   ];
   if (verdict === "needs_changes" && blocking.length === 0)
     throw new Error("needs_changes review has no blocking findings");
-  return { verdict, implementation, quality, blocking };
+  return { verdict, ...input, blocking };
 }
 
 export function collectImplementationBlockingFindings(input: {
