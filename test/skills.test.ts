@@ -270,20 +270,31 @@ test("orchestrated work preserves authority, routing, and recovery invariants", 
   expect(prose).not.toContain("Keep `projectId` and `environment` under `target`");
 });
 
-test("architect prefers the smallest intent-aligned design", () => {
+test("architect prefers the smallest intent-aligned design and explains its impact", () => {
   const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
+  const metadata = readFileSync(join(REPO_ROOT, "skills/architect/agents/openai.yaml"), "utf8");
   const prose = normalizedProse(architect);
 
   expect(prose).toContain("Repository invariants and documented project intent");
   expect(prose).toContain("Recommend no change when it already satisfies the goal");
   expect(prose).toContain("smallest repo-native change");
   expect(prose).toContain("Do not manufacture an option count");
+  expect(prose).toContain("identify the current owner and existing repository");
+  expect(prose).toContain("Name the verified gap they cannot satisfy");
+  expect(prose).toContain("observable behavior; APIs, CLI, configuration, schemas, events");
+  expect(prose).toContain("assess expected performance and separate measurements from estimates");
+  expect(prose).toContain("winning direction's accepted tradeoffs");
+  expect(prose).toContain("recommend build now, defer, or record only");
   expect(prose).toContain("highest existing stable test seam");
   expect(prose).toContain("only when its answer could change the recommendation");
   expect(prose).toContain("challenge the smallest proposed design");
   expect(prose).toContain("Name the task `architect-advisor`");
   expect(prose).toContain("Only materially different viable choices");
   expect(prose).toContain("Omit when one direction is clear");
+  expect(architect).toContain("## Impact and tradeoffs");
+  expect(prose).toContain("State relevant unchanged surfaces the user asked about");
+  expect(prose).toContain("material consequences and accepted tradeoffs understood");
+  expect(metadata).toContain("explain material impact and accepted tradeoffs");
   expect(architect).not.toContain("Use an alternate model");
   expect(architect).not.toMatch(/gpt-5\.6-(terra|luna)/);
   expect(architect).not.toContain("Generate two to four viable designs");
