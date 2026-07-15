@@ -284,6 +284,9 @@ test("orchestrated work preserves authority, routing, and recovery invariants", 
   expect(prose).toContain("`source_host_id` and title-update output are not steering routes");
   expect(prose).toContain("consult the parent whenever a decision or blocker appears");
   expect(prose).toContain("do not poll unchanged state");
+  expect(skill).toContain("Readiness: [target-repo command or none]");
+  expect(prose).toContain("before source edits or provider work");
+  expect(prose).toContain("success needs no second approval");
   expect(skill).toContain("Verification: [exact commands/gates and evidence required]");
   expect(skill).toContain("Publication: [none, commit, push, pull request, or merge authority]");
   expect(skill).toContain("`change-review-workflow`");

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,40 +21,51 @@ const SESSIONS_BIN = join(dirname(fileURLToPath(import.meta.url)), "../scripts/s
 const SESSIONS_SKILL_ROOT = join(dirname(SESSIONS_BIN), "..");
 
 test("installed sessions skill bootstraps dependencies without harness checkout", () => {
+  const store = spawnSync("pnpm", ["store", "path", "--silent"], { encoding: "utf8" });
+  expect({ status: store.status, stderr: store.stderr }).toMatchObject({ status: 0 });
+  const storeDir = store.stdout.trim();
+  expect(storeDir).not.toBe("");
+
   const installRoot = mkdtempSync(join(tmpdir(), "harness-sessions-install-"));
-  const installedSkillRoot = join(installRoot, "sessions");
-  const binDir = join(installRoot, "bin");
-  cpSync(SESSIONS_SKILL_ROOT, installedSkillRoot, {
-    recursive: true,
-    filter: (source) => !source.split(/[\\/]/).includes("node_modules"),
-  });
+  try {
+    const installedSkillRoot = join(installRoot, "sessions");
+    const binDir = join(installRoot, "bin");
+    cpSync(SESSIONS_SKILL_ROOT, installedSkillRoot, {
+      recursive: true,
+      filter: (source) => !source.split(/[\\/]/).includes("node_modules"),
+    });
 
-  const install = spawnSync("bash", [join(installedSkillRoot, "scripts/install.sh")], {
-    env: {
-      ...process.env,
-      HOME: installRoot,
-      SESSIONS_INSTALL_BIN: binDir,
-    },
-    encoding: "utf8",
-  });
+    const install = spawnSync("bash", [join(installedSkillRoot, "scripts/install.sh")], {
+      env: {
+        ...process.env,
+        HOME: installRoot,
+        PNPM_CONFIG_OFFLINE: "true",
+        PNPM_CONFIG_STORE_DIR: storeDir,
+        SESSIONS_INSTALL_BIN: binDir,
+      },
+      encoding: "utf8",
+    });
 
-  expect(install.status).toBe(0);
-  expect(existsSync(join(installedSkillRoot, "node_modules/commander"))).toBe(true);
-  expect(existsSync(join(installedSkillRoot, "node_modules/zod"))).toBe(true);
-  expect(existsSync(join(installedSkillRoot, "node_modules/vitest"))).toBe(false);
-  expect(existsSync(join(binDir, "sessions"))).toBe(true);
+    expect({ status: install.status, stderr: install.stderr }).toMatchObject({ status: 0 });
+    expect(existsSync(join(installedSkillRoot, "node_modules/commander"))).toBe(true);
+    expect(existsSync(join(installedSkillRoot, "node_modules/zod"))).toBe(true);
+    expect(existsSync(join(installedSkillRoot, "node_modules/vitest"))).toBe(false);
+    expect(existsSync(join(binDir, "sessions"))).toBe(true);
 
-  const help = spawnSync("sessions", ["--help"], {
-    env: {
-      ...process.env,
-      HOME: installRoot,
-      PATH: `${binDir}:${process.env.PATH ?? ""}`,
-    },
-    encoding: "utf8",
-  });
+    const help = spawnSync("sessions", ["--help"], {
+      env: {
+        ...process.env,
+        HOME: installRoot,
+        PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      },
+      encoding: "utf8",
+    });
 
-  expect(help.status).toBe(0);
-  expect(help.stdout).toContain("Browse local agent sessions");
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain("Browse local agent sessions");
+  } finally {
+    rmSync(installRoot, { recursive: true, force: true });
+  }
 });
 
 test("sessions analyze emits JSON for Cursor cache", () => {

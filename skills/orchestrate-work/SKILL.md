@@ -24,6 +24,8 @@ result or an exact recoverable state.
   settings from the sender.
 - Publication is explicit: none, commit, push, pull request, or merge. Opening a
   pull request includes its required push. Merge requires user authority.
+- Readiness is explicit: use the target repository's command or `none`; never
+  infer package-manager setup.
 - Keep one writer: the executor owns its worktree, edits, commits, verification,
   and requested review mechanics. The parent inspects read-only.
 
@@ -57,8 +59,9 @@ result or an exact recoverable state.
    read before steering. Set a useful title with `codex_app__set_thread_title`,
    then verify the intended project and fresh worktree.
 6. Require a before-edit checkpoint with actual worktree, branch or detached-HEAD
-   state, exact `git rev-parse HEAD`, cleanliness, intended file surface,
-   existing seams, and material conflicts. Pause on baseline mismatch.
+   state, exact `git rev-parse HEAD`, cleanliness, the exact readiness command,
+   intended file surface, existing seams, and material conflicts. Pause on
+   baseline mismatch.
 7. Verify both callback directions before mutation:
    - executor to parent: parent ID from the outer `<source_thread_id>`;
    - parent to executor: `{ threadId, hostId }` route returned by
@@ -71,9 +74,13 @@ result or an exact recoverable state.
 8. Require the executor to inspect `codex_app__send_message_to_thread` before its
    first checkpoint; do the same before the first parent reply. Prove delivery
    with a successful send plus read-back or acknowledgement.
+9. Parent acknowledgement authorizes the reported readiness command as bounded
+   setup. The executor runs it before source edits or provider work. Failure
+   pauses with exact evidence; success needs no second approval.
 
 Bootstrap is complete only when repository identity, exact baseline, isolation,
-and both callback directions are verified. Otherwise report `blocked`.
+both callback directions, and readiness are verified. Otherwise report
+`blocked`.
 
 ## 2. Decision checkpoints
 
@@ -124,6 +131,7 @@ Implement [bounded goal] in this isolated worktree.
 Authority: [request/plan/spec]
 Repository: [repository and isolated-worktree requirement]
 Baseline: [verified exact commit; branch only when selected]
+Readiness: [target-repo command or none]
 Settings: preserve destination settings; use only explicit schema-valid
 overrides for the named destination.
 Single writer: own changes only in this worktree; treat other worktrees as
@@ -141,8 +149,8 @@ ID is absent.
 
 Checkpoints:
 
-- Before edits: prove worktree, Git state, exact HEAD, cleanliness, scope, seams,
-  and conflicts.
+- Before edits: prove worktree, Git state, exact HEAD, cleanliness, readiness,
+  scope, seams, and conflicts.
 - Coherent implementation: report diff, behavior, verification, adaptations,
   risks, and remaining gates.
 - Review when requested: follow change-review-workflow, propose dispositions,

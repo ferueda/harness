@@ -11,6 +11,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - Add brief code comments for tricky or non-obvious logic.
 - Keep files concise; extract helpers instead of “V2” copies. Use existing patterns preferentially unless you have a better approach.
 - When answering questions, respond with high-confidence answers only: verify in code; do not guess.
+- Fresh isolated worktrees: after verifying the Git baseline, run `make setup-worktree` before source edits or provider work. Stop and report the blocker if setup fails.
 - Before handoff, pull-request publication, or declaring work complete, run `make check`. Use the focused gate documented in `docs/contributing/testing.md` only for the approved plan-only class.
 - For formatting or lint failures, run `make fix`, inspect the resulting diff, then rerun `make check`. Fix other failures at their root. If the gate cannot run, report the blocker and do not claim completion.
 

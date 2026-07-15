@@ -32,6 +32,22 @@ The default user-level shim path is `~/.local/bin/harness`. If the harness
 checkout moves, rerun `./install` from the new checkout so the shim points at the
 current `bin/harness.ts`.
 
+## Isolated worktree readiness
+
+After verifying a fresh Harness worktree's Git baseline, run `make
+setup-worktree` before source edits or provider work. It runs
+`SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline`
+against the ordinary shared pnpm store. A cache miss fails immediately; warm the
+store from an accepted lockfile before delegation rather than adding an online
+fallback.
+
+The command creates only the normal ignored `node_modules/`, skips shared Git
+hook mutation, and does not copy or link dependencies from another worktree or
+create a worktree-local package store. Manual executors run it after their
+before-edit checkpoint is acknowledged. Workspace hosts may run the same
+repository-owned command as an acquire hook. Factory does not install
+dependencies. Readiness does not replace the final `make check` gate.
+
 ## Hook activation
 
 Fresh checkout installs run `pnpm install --frozen-lockfile`, which runs the
@@ -56,6 +72,7 @@ depend on local Git hooks.
 | Path                                                                                       | Created by                                                                                                                                                     | Repo boundary                                                              | Commit policy                              | Notes                                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.git/hooks/pre-commit` in the harness checkout                                            | `pnpm install --frozen-lockfile`, `pnpm exec simple-git-hooks`                                                                                                 | Harness repo local Git metadata                                            | Do not commit                              | Runs staged format/lint fixes and `pnpm typecheck` before local commits.                                                                                                                                    |
+| `node_modules/` in a Harness checkout or worktree                                          | `pnpm install --frozen-lockfile`, `make setup-worktree`                                                                                                        | Harness checkout or isolated executor worktree                             | Ignored; do not commit                     | `make setup-worktree` uses the ordinary shared pnpm store in offline mode and skips shared Git-hook mutation.                                                                                               |
 | `dist/` in the harness checkout                                                            | `pnpm build`, `make build`, `pnpm smoke:dist`, `make smoke-dist`, `make check`, `make check-v`, `make check-ci`, `pnpm check`, `pnpm check:v`, `pnpm check:ci` | Harness repo local build output                                            | Ignored; do not commit                     | Built JavaScript used by smoke tests and future package paths.                                                                                                                                              |
 | OS temp `harness-gate-*` dirs or `GATE_LOG_DIR`                                            | Wrapped Make targets via `scripts/run-gate-step.ts`                                                                                                            | Harness repo local gate diagnostics                                        | Do not commit; review before sharing       | Failed gate logs are kept for diagnosis. Successful logs are deleted unless `KEEP_GATE_LOGS=1`.                                                                                                             |
 | `logs/codex-proxy/` in the harness checkout                                                | `pnpm codex:proxy` / `scripts/codex-proxy.mjs`                                                                                                                 | Local Codex Responses API request audits                                   | Ignored; do not commit                     | Contains Markdown request audits and, when `CODEX_PROXY_WRITE_RAW=1`, parsed request JSON. Treat as sensitive because captured prompts, tool definitions, and request metadata may include private context. |
