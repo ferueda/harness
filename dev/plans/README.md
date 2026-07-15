@@ -2,6 +2,7 @@
 
 ## Active queue
 
+- [Add deterministic full-chain Factory system smoke](FER-76.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-76/add-deterministic-full-chain-factory-system-smoke)
 - [Preserve Factory candidates through review continuations](260714-factory-review-continuations.md) — implementation plan under review.
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
