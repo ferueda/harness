@@ -333,7 +333,9 @@ test("Factory smoke stays explicit locally and runs only in the full CI gate", (
   const packageJson: unknown = JSON.parse(readRepoFile("package.json"));
   expect(isObject(packageJson) && isObject(packageJson.scripts)).toBe(true);
   if (!isObject(packageJson) || !isObject(packageJson.scripts)) return;
-  expect(packageJson.scripts["smoke:factory"]).toBe("node scripts/smoke-factory.ts");
+  expect(packageJson.scripts["smoke:factory"]).toBe(
+    "node scripts/smoke-factory.ts && node scripts/smoke-factory-grove.ts",
+  );
 
   const makefile = readRepoFile("Makefile");
   expect(makefile).toMatch(/^smoke-factory: ensure-node ##/m);
@@ -626,6 +628,8 @@ test("factory contributor and operator guidance stay linked from entrypoints", (
   const factoryGuide = readRepoFile("docs/contributing/factory.md");
   expect(factoryGuide).toContain("# Factory Contributor Guide");
   expect(factoryGuide).toContain("../../skills/factory-operator/SKILL.md");
+  expect(factoryGuide).toContain("## Grove workspace boundary");
+  expect(factoryGuide).toContain("lib/factory-grove-workspace.ts");
   expect(readRepoFile("README.md")).toContain("docs/contributing/factory.md");
   expect(readRepoFile("README.md")).toContain("skills/factory-operator/SKILL.md");
   expect(readRepoFile("docs/contributing/index.md")).toContain("./factory.md");
@@ -663,6 +667,8 @@ test("fresh worktree readiness stays explicit and offline", () => {
   expect(setup).toContain("## Isolated worktree readiness");
   expect(setup).toContain("ordinary shared pnpm store");
   expect(setupProse).toContain("Factory does not install dependencies");
+  expect(setupProse).toContain("Grove's idempotent `postAcquire` hook");
+  expect(setupProse).toContain("persistent worker filesystem");
   expect(setupProse).toContain("does not replace the final `make check` gate");
 });
 

@@ -48,6 +48,20 @@ before-edit checkpoint is acknowledged. Workspace hosts may run the same
 repository-owned command as an acquire hook. Factory does not install
 dependencies. Readiness does not replace the final `make check` gate.
 
+Hosted Factory workspace callers configure this command as Grove's idempotent
+`postAcquire` hook with hook failure set to fail. The command must be
+credential-free because acquisition only prepares local repository state;
+provider or publication credentials belong to the later Factory action. Harness
+uses `make setup-worktree`. A failed hook prevents Factory invocation, and a
+compatible reacquire reruns it on the same lease path.
+
+The Grove pool must live on a persistent worker filesystem. Its state and lease
+worktrees are host data, not target-repository files. Keep active planning and
+implementation leases through waits and failures. Release only with verified
+phase-matched terminal authority. A busy, missing, or quarantined lease requires
+operator repair or quarantine attention; do not delete the pool or allocate a
+replacement path for the same phase generation.
+
 ## Hook activation
 
 Fresh checkout installs run `pnpm install --frozen-lockfile`, which runs the
@@ -73,6 +87,7 @@ depend on local Git hooks.
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.git/hooks/pre-commit` in the harness checkout                                            | `pnpm install --frozen-lockfile`, `pnpm exec simple-git-hooks`                                                                                                 | Harness repo local Git metadata                                            | Do not commit                              | Runs staged format/lint fixes and `pnpm typecheck` before local commits.                                                                                                                                    |
 | `node_modules/` in a Harness checkout or worktree                                          | `pnpm install --frozen-lockfile`, `make setup-worktree`                                                                                                        | Harness checkout or isolated executor worktree                             | Ignored; do not commit                     | `make setup-worktree` uses the ordinary shared pnpm store in offline mode and skips shared Git-hook mutation.                                                                                               |
+| Host-chosen persistent Grove pool and `grove-state.json`                                   | `ensureFactoryGroveWorkspace`, Grove repair and release                                                                                                        | Hosted worker data                                                         | User data; do not commit                   | Holds stable Factory phase lease paths and Grove cleanup/repair state. Preserve active work; terminal reset requires verified Factory event authority.                                                      |
 | `dist/` in the harness checkout                                                            | `pnpm build`, `make build`, `pnpm smoke:dist`, `make smoke-dist`, `make check`, `make check-v`, `make check-ci`, `pnpm check`, `pnpm check:v`, `pnpm check:ci` | Harness repo local build output                                            | Ignored; do not commit                     | Built JavaScript used by smoke tests and future package paths.                                                                                                                                              |
 | OS temp `harness-gate-*` dirs or `GATE_LOG_DIR`                                            | Wrapped Make targets via `scripts/run-gate-step.ts`                                                                                                            | Harness repo local gate diagnostics                                        | Do not commit; review before sharing       | Failed gate logs are kept for diagnosis. Successful logs are deleted unless `KEEP_GATE_LOGS=1`.                                                                                                             |
 | `logs/codex-proxy/` in the harness checkout                                                | `pnpm codex:proxy` / `scripts/codex-proxy.mjs`                                                                                                                 | Local Codex Responses API request audits                                   | Ignored; do not commit                     | Contains Markdown request audits and, when `CODEX_PROXY_WRITE_RAW=1`, parsed request JSON. Treat as sensitive because captured prompts, tool definitions, and request metadata may include private context. |

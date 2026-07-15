@@ -39,6 +39,18 @@ manual CLI or future event host
   -> optional Linear or GitHub projection
 ```
 
+Hosted workspace preparation is a separate step before that unchanged Factory
+boundary:
+
+```text
+host delivery
+  -> derive stable Factory workspace intent
+  -> Grove acquire or compatible reacquire
+  -> repository-owned setup hook
+  -> one existing Factory action with the canonical workspace path
+  -> preserve, terminal reset/release, or bounded repair
+```
+
 Both paths resolve target-repo configuration and use provider adapters. They
 differ in continuity: standalone review runs are independent workspace
 artifacts; Factory owns a durable multi-phase lifecycle outside the target
@@ -46,14 +58,16 @@ workspace.
 
 ## Ownership boundaries
 
-| Owner                 | Owns                                                                                                                                   | Does not own                                            |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Harness checkout      | CLI, config/schema handling, workflows, Factory kernel and actions, providers, packaged skills, scripts, and contributor docs          | Target product decisions, source, tests, or CI policy   |
-| Target repository     | `harness.json`, shim, optional installed skills, source, tests, project docs, CI, plans/code, and workspace-local review runs          | Harness provider internals or durable Factory lifecycle |
-| Durable Factory store | Lifecycle JSONL, locks, rebuildable state, phase contexts, action evidence, provider/reviewer artifacts, and Factory-owned review runs | Target source or Git history                            |
-| Git                   | Reviewed plan/code commits, candidate refs, promoted branch history, and merge ancestry                                                | Factory lifecycle or human board status                 |
-| Linear and GitHub     | Human-facing issue and pull-request projections                                                                                        | Factory transition truth                                |
-| Future event host     | Delivery, retries, waits, and scheduling from Factory reactions                                                                        | A second workflow state machine or policy copy          |
+| Owner                 | Owns                                                                                                                                   | Does not own                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Harness checkout      | CLI, config/schema handling, workflows, Factory kernel and actions, providers, packaged skills, scripts, and contributor docs          | Target product decisions, source, tests, or CI policy                 |
+| Target repository     | `harness.json`, shim, optional installed skills, source, tests, project docs, CI, plans/code, and workspace-local review runs          | Harness provider internals or durable Factory lifecycle               |
+| Durable Factory store | Lifecycle JSONL, locks, rebuildable state, phase contexts, action evidence, provider/reviewer artifacts, and Factory-owned review runs | Target source or Git history                                          |
+| Git                   | Reviewed plan/code commits, candidate refs, promoted branch history, and merge ancestry                                                | Factory lifecycle or human board status                               |
+| Grove                 | Persistent pool capacity, stable lease paths, checkout, serialized setup hooks, process-safe reset/release, quarantine, and repair     | Factory lifecycle, reactions, Git promotion, or publication authority |
+| Linear and GitHub     | Human-facing issue and pull-request projections                                                                                        | Factory transition truth                                              |
+| Workspace caller      | Stable phase generation, authoritative base commit, setup command, and verified terminal-event authority                               | Lease internals or Factory state interpretation                       |
+| Future event host     | Delivery, retries, waits, and scheduling from Factory reactions                                                                        | A second workflow state machine or policy copy                        |
 
 The target workspace remains the execution sandbox and Git materialization
 point. The durable store remains Factory's continuity boundary. Linear and
@@ -68,6 +82,7 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-lifecycle-*.ts`, `lib/factory-state-machine.ts`             | Factory event schemas, compare-and-append kernel, state reduction, and pure reactions                                 |
 | `lib/factory-*-action.ts`, phase input/context modules                   | Triage, planning, and implementation action boundaries and immutable evidence                                         |
 | `lib/factory-store.ts`, `lib/factory-locks.ts`, `lib/factory-inspect.ts` | Durable paths, lock ownership, store provenance, and read-only lifecycle inspection                                   |
+| `lib/factory-grove-workspace.ts`                                         | Deterministic Grove lease intent, ensure/reopen, terminal release, and bounded repair                                 |
 | `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
 | `lib/factory-*-publication*.ts`, `lib/factory-pull-request-publisher.ts` | Reviewed-commit validation and bounded GitHub publication                                                             |
 | `providers/`                                                             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation                   |
@@ -136,6 +151,12 @@ The CLI is the current host for manually stepped Factory actions. Linear-backed
 input and explicit projections, planning/implementation publication, and human
 merge acknowledgement are shipped. General tracker adapters and Inngest remain
 future hosts or projections.
+
+The Grove workspace adapter is shipped for host-side use, but no Inngest runner
+is. A caller can derive a lease before a Factory phase run ID exists, acquire an
+exact detached triage checkout or an attached planning/implementation branch,
+then pass the returned canonical path through the existing `--workspace`
+boundary. Factory remains the authority for later Git changes in that path.
 
 Future hosts should call the same Factory coordinator, persist only identifiers
 in delivery events, reread durable state on every retry, and schedule exactly

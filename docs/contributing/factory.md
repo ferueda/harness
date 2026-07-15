@@ -65,6 +65,10 @@ Factory vocabulary:
 8. **Providers stay bounded.** Producers may edit the target workspace under
    Harness validation. Reviewers are read-only. Provider sessions, models, and
    policies are snapshotted for the phase responsibility.
+9. **Hosted workspaces keep one stable lease.** Repository identity, canonical
+   work-item key, phase, and caller-owned phase generation derive the Grove
+   lease before a phase run ID exists. Revisions, re-reviews, retries, and
+   publication reuse that lease and exact path.
 
 Run only one phase command for a work item at a time. When Harness dogfoods
 itself, keep the controller checkout fixed for the active phase and use a
@@ -134,6 +138,30 @@ The constrained `factory linear create` command is intake, not a phase action.
 Read-only list, fetch, status, and inspect surfaces do not derive or advance
 Factory machine state.
 
+## Grove workspace boundary
+
+`lib/factory-grove-workspace.ts` is the direct hosted workspace adapter. Grove
+owns persistent worktree slots, lease state, checkout, process-safe cleanup,
+quarantine, and repair. Factory handlers stay Grove-agnostic and continue to
+receive an explicit workspace.
+
+The caller supplies a full authoritative base commit and a stable phase
+generation. Triage gets a detached short-lived lease. Planning and
+implementation get separate attached branches because implementation begins
+from its accepted post-plan baseline. A compatible ensure reruns the
+repository-owned setup command and returns the same canonical path without
+checking out, resetting, or rejecting Factory's later commits, branch switch,
+or dirty candidate bytes.
+
+Active planning and implementation leases survive reviews, retries, human
+waits, failures, and open pull requests. Cleanup is not inferred by the
+adapter. The caller must pass a matching durable terminal event: terminal
+triage, acknowledged plan merge, or acknowledged implementation merge. Reset
+release is non-forced and targets the recorded base. Unsafe cleanup, identity
+conflicts, missing paths, and uncertain recovery are infrastructure-attention
+states; bounded repair can resume a matching acquire or cleanup, or quarantine
+the lease, but cannot force-destroy or silently replace it.
+
 ## Code ownership map
 
 | Responsibility                      | Primary sources                                                                                                                     |
@@ -145,6 +173,7 @@ Factory machine state.
 | Implementation actions              | `lib/factory-implementation-candidate-action.ts`, `lib/factory-implementation-review-action.ts`, revision and Git-authority modules |
 | Linear projections                  | `lib/factory-linear-adapter.ts`, `lib/factory-linear-*-apply.ts`, `lib/factory-linear-*-handoff.ts`                                 |
 | Pull-request publication            | `lib/factory-*-publication*.ts`, `lib/factory-publication-git.ts`, `lib/factory-pull-request-publisher.ts`                          |
+| Hosted workspace leases             | `lib/factory-grove-workspace.ts`                                                                                                    |
 | Provider execution and prompts      | `providers/`, `workflows/`, `lib/prompts/factory-*.ts`                                                                              |
 
 Keep lifecycle decisions in the reducer/reaction boundary, external mutations in
