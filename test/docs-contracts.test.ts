@@ -601,7 +601,9 @@ test("factory contributor and operator guidance stay linked from entrypoints", (
 test("agent and Factory operator completion gates stay explicit", () => {
   const agents = readRepoFile("AGENTS.md");
   expect(agents).toContain("Before handoff, pull-request publication");
-  expect(agents).toContain("Use `pnpm check` for normal Harness changes");
+  expect(agents).toContain("run `make check`");
+  expect(agents).toContain("run `make fix`, inspect the resulting diff");
+  expect(agents).toContain("then rerun `make check`");
   expect(agents).toContain("do not claim completion");
 
   const operator = readRepoFile("skills/factory-operator/SKILL.md");
