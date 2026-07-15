@@ -51,6 +51,11 @@ configuration, and lifecycle boundaries needed to follow the behavior. Use
 prior plans only for accepted decisions, and keep current behavior distinct
 from planned work. Consult official sources when third-party behavior matters.
 
+Before proposing new state, coordination, or abstraction, identify the current
+owner and existing repository, platform, or provider primitives. Name the
+verified gap they cannot satisfy; if none exists, prefer no change or use those
+primitives.
+
 Follow the flow far enough to support each decision with durable `path:line`
 anchors. Label remaining assumptions.
 
@@ -66,12 +71,24 @@ anchors. Label remaining assumptions.
   compatibility layer the smaller design does not need.
 - Add an alternative only when it is viable, materially different, and exposes
   a decision-relevant tradeoff. Do not manufacture an option count.
+- Compare the current and proposed design only across material surfaces:
+  observable behavior; APIs, CLI, configuration, schemas, events, storage, or
+  protocols; ownership, lifecycle, and data boundaries; compatibility,
+  adoption, operations, and risk.
+- When the design affects hot paths, network or disk I/O, client payload,
+  storage, concurrency, caching, capacity, or cost, assess expected performance
+  and separate measurements from estimates.
+- State the winning direction's accepted tradeoffs: the benefit, the downside,
+  why it is acceptable, and a revisit trigger when useful.
+- When the design depends on a future component or need, recommend build now,
+  defer, or record only, and name what should trigger implementation.
 - When behavioral proof affects the choice, prefer the highest existing stable
   test seam. Add a lower seam only for a distinct invariant or failure mode
   unobservable there.
 
 Evaluate only the fit, tradeoffs, risks, compatibility, and test implications
-that could change the recommendation.
+that could change the recommendation or the user's approval. Explicitly answer
+any surface the user asked about, even when unchanged.
 
 **Done when:** one recommendation wins on current evidence; alternatives remain
 only where the user has a real choice.
@@ -114,6 +131,15 @@ Return a proportional memo using the smallest useful shape:
 Decision-shaping project intent, repository facts, and tradeoffs. Place each
 `path:line` anchor beside the claim it supports.
 
+## Impact and tradeoffs
+
+Only material current-to-proposed changes to behavior, contracts,
+ownership/lifecycle boundaries, compatibility/adoption,
+operations/performance, and risk. State relevant unchanged surfaces the user
+asked about. Name the recommended direction's benefit, accepted downside, why
+it is acceptable, and a revisit trigger when useful. Omit when a no-change
+result or `Why this fits` already makes the consequences clear.
+
 ## Alternatives
 
 Only materially different viable choices. Omit when one direction is clear.
@@ -132,5 +158,6 @@ when no consultation affected the recommendation.
 Do not duplicate the recommendation as a separate decision or planning
 checklist. Add another section only when it changes the architecture choice.
 
-**Done when:** the user can approve the direction, answer one focused question,
-or ask to turn it into a plan.
+**Done when:** the user can approve the direction with its material consequences
+and accepted tradeoffs understood, answer one focused question, or ask to turn
+it into a plan.
