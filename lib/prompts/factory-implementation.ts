@@ -1,5 +1,7 @@
 import type { FactoryWorkItem } from "../factory-schemas.ts";
 
+export const FACTORY_IMPLEMENTATION_REVIEW_HANDOFF_CONTRACT_VERSION = 1;
+
 export function renderFactoryImplementationPrompt(input: {
   workItem: FactoryWorkItem;
   planPath?: string;

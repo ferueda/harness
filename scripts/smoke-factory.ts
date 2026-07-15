@@ -332,6 +332,10 @@ if (role === "implementer") {
 if (role === "implementation-reviewer") output = count === 1 ? { verdict: "needs_changes", summary: "Revise the fixture output.", findings: [{ title: "Revise output", severity: "High", location: "factory-smoke.txt", issue: "The first candidate is intentionally incomplete.", recommendation: "Write the reviewed revised candidate.", rationale: "Proves implementation continuation.", must_fix: true }] } : pass;
 if (role === "quality-reviewer") output = pass;
 appendFileSync(log, JSON.stringify({ role, count, args, session }) + "\\n");
+if (role === "quality-reviewer" && count === 2) {
+  console.error("controlled quality reviewer transport failure");
+  process.exit(1);
+}
 console.log(JSON.stringify({ type: "thread.started", thread_id: session }));
 console.log(JSON.stringify({ type: "item.completed", item: { id: role + "-message-" + count, type: "agent_message", text: JSON.stringify(output) } }));
 console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } }));
@@ -573,7 +577,38 @@ if (args[1] === "list") {
   assert(read(implementationPath) === "reviewed revised candidate\n", "revised edit missing");
   expectGitStatus("?? factory-smoke.txt");
 
-  station = "implementation review 2 and promotion";
+  station = "implementation review 2 controlled failure";
+  const implementationReviewFailure = harness(["factory", "implementation", "run"]);
+  assert(
+    expectAction(implementationReviewFailure, "reviewImplementationCandidate", 2, {
+      kind: "invoke",
+      handler: "reviewImplementationCandidate",
+    }) === implementationRunId,
+    "failed implementation review changed phase run",
+  );
+  const failedReviewEvent = jsonLines(lifecyclePath()).at(-1)!;
+  const failedReviewData = object(failedReviewEvent.data, "failed review data");
+  const failedReviewEvidence = failedReviewData.evidence;
+  assert(
+    failedReviewEvent.type === "factory.action.failed" &&
+      failedReviewData.failureKind === "retryable" &&
+      Array.isArray(failedReviewEvidence) &&
+      failedReviewEvidence.length === 2,
+    "controlled reviewer failure did not publish checkpoint evidence",
+  );
+  const checkpointPath = resolveArtifact(
+    failedReviewEvidence[1] as ArtifactRef,
+    object(inspect().artifactRoots, "artifact roots"),
+  );
+  const checkpoint = object(JSON.parse(readFileSync(checkpointPath, "utf8")), "review checkpoint");
+  const checkpointRoles = object(checkpoint.roles, "review checkpoint roles");
+  assert(
+    checkpointRoles.implementation !== undefined && checkpointRoles.quality === undefined,
+    "controlled failure checkpoint did not retain only implementation evidence",
+  );
+  expectGitStatus("?? factory-smoke.txt");
+
+  station = "implementation review 2 manual recovery and promotion";
   const implementationReview2 = harness(["factory", "implementation", "run"]);
   assert(
     expectAction(implementationReview2, "reviewImplementationCandidate", 2, {
@@ -704,6 +739,7 @@ if (args[1] === "list") {
         "implementation.review.completed",
         "factory.continuation.recorded",
         "implementation.candidate.produced",
+        "factory.action.failed",
         "implementation.review.completed",
         "implementation_pr.opened",
         "implementation_pr.merged",
@@ -741,7 +777,7 @@ if (args[1] === "list") {
         "spec-reviewer": 2,
         implementer: 2,
         "implementation-reviewer": 2,
-        "quality-reviewer": 2,
+        "quality-reviewer": 3,
       }),
     "provider invocation counts mismatch",
   );

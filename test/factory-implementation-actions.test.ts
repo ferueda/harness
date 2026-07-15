@@ -1583,7 +1583,7 @@ test.each([
   { name: "partial set", meta: { ...fullReviewMeta("pass"), partial: true }, kind: "terminal" },
   {
     name: "failed reviewer",
-    meta: { ...fullReviewMeta("pass"), status: "failed" },
+    meta: failedReviewMeta("implementation", "pass"),
     kind: "retryable",
   },
 ] as const)("$name review result becomes an action failure", async ({ meta, kind }) => {
@@ -1596,7 +1596,9 @@ test.each([
     maxRuntimeMs: 1_000,
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: (async (reviewCtx: { runDir?: string }) => {
-      writePassReviews(reviewCtx.runDir!);
+      if (meta.status === "failed")
+        writeReviewRole(reviewCtx.runDir!, "implementation", passReview());
+      else writePassReviews(reviewCtx.runDir!);
       return meta;
     }) as never,
   });
@@ -1744,18 +1746,89 @@ test.each(["current branch", "current phase ref"] as const)(
   },
 );
 
-test("retryable reviewer failure runs the same review action again", async () => {
+test.each(["implementation", "quality"] as const)(
+  "retryable %s counterpart failure resumes only the missing role after restart",
+  async (successfulRole) => {
+    const fixture = directFixture();
+    const { ctx, candidate } = await produceCandidate(fixture);
+    const missingRole = successfulRole === "implementation" ? "quality" : "implementation";
+    const reviewRunner = vi.fn<
+      (
+        reviewCtx: { runDir?: string },
+        options: { steps?: Array<"implementation" | "quality"> },
+      ) => Promise<unknown>
+    >(
+      async (
+        reviewCtx: { runDir?: string },
+        options: { steps?: Array<"implementation" | "quality"> },
+      ) => {
+        expect(options.steps).toEqual([missingRole]);
+        writeReviewRole(reviewCtx.runDir!, missingRole, passReview());
+        return subsetReviewMeta(missingRole, "pass");
+      },
+    );
+    reviewRunner.mockImplementationOnce(
+      async (
+        reviewCtx: { runDir?: string },
+        options: { steps?: Array<"implementation" | "quality"> },
+      ) => {
+        expect(options.steps).toEqual(["implementation", "quality"]);
+        writeReviewRole(reviewCtx.runDir!, successfulRole, passReview());
+        return failedReviewMeta(successfulRole, "pass");
+      },
+    );
+    const first = await reviewImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(candidate),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: reviewRunner as never,
+    });
+    expect(() =>
+      continueImplementation(fixture, "revise", "Do not bypass the pending review retry."),
+    ).toThrow(/no candidate awaiting continuation/);
+    expect(decideNextFactoryAction(first.state, first.event)).toMatchObject({
+      handler: "reviewImplementationCandidate",
+      attempt: 1,
+      scheduling: "retry",
+    });
+    if (first.event.type !== "factory.action.failed") throw new Error("retry failure missing");
+    expect(first.event.data.evidence).toHaveLength(2);
+    const reopened = openFactoryImplementationRunContext({
+      workspace: fixture.workspace,
+      runsDir: fixture.store.factoryRunsDir,
+      phaseRunId: ctx.runId,
+      workItem: fixture.workItem,
+      factoryStore: fixture.store,
+    });
+    const second = await reviewImplementationCandidate({
+      ctx: reopened,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(first),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: reviewRunner as never,
+    });
+    expect(reviewRunner).toHaveBeenCalledTimes(2);
+    expect(second.event).toMatchObject({ type: "implementation.review.completed" });
+    expect(second.state).toMatchObject({
+      status: "awaiting-pr-publication",
+      reviewedHead:
+        candidate.event.type === "implementation.candidate.produced"
+          ? candidate.event.data.commit
+          : undefined,
+    });
+  },
+);
+
+test("retry rejects tampered retained role output before reviewer invocation", async () => {
   const fixture = directFixture();
   const { ctx, candidate } = await produceCandidate(fixture);
-  const reviewRunner = vi
-    .fn(async (reviewCtx: { runDir?: string }) => {
-      writePassReviews(reviewCtx.runDir!);
-      return fullReviewMeta("pass");
-    })
-    .mockImplementationOnce(async (reviewCtx: { runDir?: string }) => {
-      writePassReviews(reviewCtx.runDir!);
-      return { ...fullReviewMeta("pass"), status: "failed" };
-    });
+  const reviewRunner = vi.fn(async (reviewCtx: { runDir?: string }) => {
+    writeReviewRole(reviewCtx.runDir!, "implementation", passReview());
+    return failedReviewMeta("implementation", "pass");
+  });
   const first = await reviewImplementationCandidate({
     ctx,
     factoryStateRoot: fixture.factoryStateRoot,
@@ -1764,14 +1837,20 @@ test("retryable reviewer failure runs the same review action again", async () =>
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: reviewRunner as never,
   });
-  expect(() =>
-    continueImplementation(fixture, "revise", "Do not bypass the pending review retry."),
-  ).toThrow(/no candidate awaiting continuation/);
-  expect(decideNextFactoryAction(first.state, first.event)).toMatchObject({
-    handler: "reviewImplementationCandidate",
-    attempt: 1,
-    scheduling: "retry",
+  if (first.event.type !== "factory.action.failed") throw new Error("retry failure missing");
+  const checkpointRef = first.event.data.evidence[1]!;
+  const checkpointPath = verifyFactoryArtifactRef(checkpointRef, {
+    "factory-store": fixture.store.projectRoot,
+    repository: fixture.workspace,
   });
+  const checkpoint = JSON.parse(readFileSync(checkpointPath, "utf8")) as {
+    roles: { implementation: { output: ReturnType<typeof createFactoryArtifactRef> } };
+  };
+  const outputPath = verifyFactoryArtifactRef(checkpoint.roles.implementation.output, {
+    "factory-store": fixture.store.projectRoot,
+    repository: fixture.workspace,
+  });
+  writeFileSync(outputPath, `${JSON.stringify(passReview())}\nchanged`);
   const second = await reviewImplementationCandidate({
     ctx,
     factoryStateRoot: fixture.factoryStateRoot,
@@ -1780,15 +1859,60 @@ test("retryable reviewer failure runs the same review action again", async () =>
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: reviewRunner as never,
   });
-  expect(reviewRunner).toHaveBeenCalledTimes(2);
-  expect(second.state).toMatchObject({
-    status: "awaiting-pr-publication",
-    reviewedHead:
-      candidate.event.type === "implementation.candidate.produced"
-        ? candidate.event.data.commit
-        : undefined,
+  expect(reviewRunner).toHaveBeenCalledOnce();
+  expect(second.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "terminal", message: expect.stringMatching(/hash mismatch/) },
   });
 });
+
+test.each(["needs_changes", "blocked"] as const)(
+  "cumulative retry publishes the final %s aggregate",
+  async (verdict) => {
+    const fixture = directFixture();
+    const { ctx, candidate } = await produceCandidate(fixture);
+    const reviewRunner = vi
+      .fn<
+        (
+          reviewCtx: { runDir?: string },
+          options: { steps?: Array<"implementation" | "quality"> },
+        ) => Promise<unknown>
+      >(
+        async (
+          reviewCtx: { runDir?: string },
+          _options: { steps?: Array<"implementation" | "quality"> },
+        ) => {
+          writeReviewRole(reviewCtx.runDir!, "quality", reviewFor(verdict));
+          return subsetReviewMeta("quality", verdict);
+        },
+      )
+      .mockImplementationOnce(async (reviewCtx: { runDir?: string }) => {
+        writeReviewRole(reviewCtx.runDir!, "implementation", passReview());
+        return failedReviewMeta("implementation", "pass");
+      });
+    const first = await reviewImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(candidate),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: reviewRunner as never,
+    });
+    const second = await reviewImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(first),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+      reviewRunner: reviewRunner as never,
+    });
+    expect(second.event).toMatchObject({
+      type: "implementation.review.completed",
+      data: { verdict },
+    });
+    expect(git(fixture.workspace, ["rev-parse", "HEAD"]).trim()).toBe(fixture.baseSha);
+  },
+);
 
 test("candidate evidence digest tampering fails before reviewer invocation", async () => {
   const fixture = directFixture();
@@ -2311,10 +2435,38 @@ function invoke(result: {
 }
 
 function writePassReviews(runDir: string) {
+  writeReviewRole(runDir, "implementation", passReview());
+  writeReviewRole(runDir, "quality", passReview());
+}
+
+function passReview() {
+  return { verdict: "pass" as const, summary: "ok", findings: [] };
+}
+
+function reviewFor(verdict: "pass" | "needs_changes" | "blocked") {
+  return verdict === "needs_changes"
+    ? {
+        verdict,
+        summary: "fix",
+        findings: [
+          {
+            title: "Fix",
+            severity: "High" as const,
+            location: "tracked.txt",
+            issue: "issue",
+            recommendation: "fix",
+            rationale: "required",
+            must_fix: true,
+          },
+        ],
+      }
+    : { verdict, summary: verdict, findings: [] };
+}
+
+function writeReviewRole(runDir: string, role: "implementation" | "quality", review: unknown) {
   mkdirSync(runDir, { recursive: true });
-  const review = { verdict: "pass", summary: "ok", findings: [] };
-  writeFileSync(join(runDir, "implementation-review.json"), JSON.stringify(review));
-  writeFileSync(join(runDir, "quality-review.json"), JSON.stringify(review));
+  writeFileSync(join(runDir, `${role}-review.prompt.md`), `${role} prompt\n`);
+  writeFileSync(join(runDir, `${role}-review.json`), JSON.stringify(review));
 }
 
 function writeBlockingReviews(runDir: string) {
@@ -2323,6 +2475,7 @@ function writeBlockingReviews(runDir: string) {
     ["implementation", "Correctness"],
     ["quality", "Clarity"],
   ]) {
+    writeFileSync(join(runDir, `${name}-review.prompt.md`), `${name} prompt\n`);
     writeFileSync(
       join(runDir, `${name}-review.json`),
       JSON.stringify({
@@ -2347,7 +2500,9 @@ function writeBlockingReviews(runDir: string) {
 function writeBlockedReviews(runDir: string) {
   mkdirSync(runDir, { recursive: true });
   const review = { verdict: "blocked", summary: "blocked", findings: [] };
+  writeFileSync(join(runDir, "implementation-review.prompt.md"), "implementation prompt\n");
   writeFileSync(join(runDir, "implementation-review.json"), JSON.stringify(review));
+  writeFileSync(join(runDir, "quality-review.prompt.md"), "quality prompt\n");
   writeFileSync(join(runDir, "quality-review.json"), JSON.stringify(review));
 }
 
@@ -2361,6 +2516,41 @@ function fullReviewMeta(verdict: "pass" | "needs_changes" | "blocked") {
     executedSteps: ["implementation", "quality"],
     omittedSteps: [],
     partial: false,
+    reviews: {
+      implementation: { verdict, findingCount: verdict === "needs_changes" ? 1 : 0 },
+      codeQuality: { verdict, findingCount: verdict === "needs_changes" ? 1 : 0 },
+    },
+  };
+}
+
+function failedReviewMeta(
+  successfulRole: "implementation" | "quality",
+  verdict: "pass" | "needs_changes" | "blocked",
+) {
+  const summaryKey = successfulRole === "implementation" ? "implementation" : "codeQuality";
+  return {
+    ...fullReviewMeta(verdict),
+    status: "failed",
+    reviews: { [summaryKey]: { verdict, findingCount: 0 } },
+  };
+}
+
+function subsetReviewMeta(
+  role: "implementation" | "quality",
+  verdict: "pass" | "needs_changes" | "blocked",
+) {
+  const omitted = role === "implementation" ? "quality" : "implementation";
+  const summaryKey = role === "implementation" ? "implementation" : "codeQuality";
+  return {
+    status: "completed",
+    verdict,
+    workflow: "change-review",
+    availableSteps: ["implementation", "quality"],
+    requestedSteps: [role],
+    executedSteps: [role],
+    omittedSteps: [omitted],
+    partial: true,
+    reviews: { [summaryKey]: { verdict, findingCount: 0 } },
   };
 }
 
