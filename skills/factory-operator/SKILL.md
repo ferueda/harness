@@ -14,9 +14,10 @@ caller. Never turn the CLI into an automatic loop.
 - Operate one work item at a time.
 - Treat the durable Factory event log as machine truth. Treat Linear and GitHub
   as retryable human-facing projections.
-- Use one fixed Harness controller checkout for every command in an active
-  phase. When dogfooding Harness, pass a separate mutable checkout through
-  `--workspace`; do not run a CLI that changes underneath the phase.
+- Pin one immutable Harness controller artifact for every command in an active
+  phase. When dogfooding from source, use a dedicated clean detached checkout
+  at a recorded SHA, not a mutable human or `main` checkout. Pass the separate
+  mutable target through `--workspace`.
 - Run only the exact action selected by durable state. One invocation executes
   at most one handler, persists its result, prints the next reaction, and exits.
 - Wait for process exit. Action-started output and heartbeats mean progress, not
@@ -44,7 +45,8 @@ caller. Never turn the CLI into an automatic loop.
 
 ## Preflight
 
-1. Confirm the fixed controller checkout and mutable target workspace.
+1. Record the controller realpath and version or exact SHA; verify the same
+   identity before every action. It need not track the target's `main`.
 2. Record the target branch or detached state, exact `HEAD`, worktree status,
    and expected base. Stop on unexplained drift.
 3. Run read-only `factory status`. When resolving one item, also run `factory
