@@ -10,6 +10,8 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - Add brief code comments for tricky or non-obvious logic.
 - Keep files concise; extract helpers instead of “V2” copies. Use existing patterns preferentially unless you have a better approach.
 - When answering questions, respond with high-confidence answers only: verify in code; do not guess.
+- Before handoff, pull-request publication, or declaring work complete, run the repository's required final gate. Use `pnpm check` for normal Harness changes; use the focused gate documented in `docs/contributing/testing.md` only for the approved plan-only class.
+- If the required gate fails or cannot run, report the exact blocker and do not claim completion. Scoped iteration checks and Git hooks do not replace the final gate.
 
 ## Commit Guidelines
 

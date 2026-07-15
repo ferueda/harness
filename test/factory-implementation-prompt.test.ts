@@ -15,6 +15,9 @@ const workItem = {
 test("implementation prompt grants edits but forbids Git and Factory authority", () => {
   const prompt = renderFactoryImplementationPrompt({ workItem, planPath: "/tmp/plan.md" });
   expect(prompt).toContain("Follow the reviewed plan");
+  expect(prompt).toContain("target repository's instructions");
+  expect(prompt).toContain("canonical final handoff gate");
+  expect(prompt).toContain("do not claim the implementation is complete");
   expect(prompt).toContain("Do not stage, commit, checkout");
   expect(prompt).toContain("Do not mutate trackers");
 });

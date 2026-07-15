@@ -598,6 +598,19 @@ test("factory contributor and operator guidance stay linked from entrypoints", (
   expect(readRepoFile("docs/contributing/script-command-surface.md")).toContain("./factory.md");
 });
 
+test("agent and Factory operator completion gates stay explicit", () => {
+  const agents = readRepoFile("AGENTS.md");
+  expect(agents).toContain("Before handoff, pull-request publication");
+  expect(agents).toContain("Use `pnpm check` for normal Harness changes");
+  expect(agents).toContain("do not claim completion");
+
+  const operator = readRepoFile("skills/factory-operator/SKILL.md");
+  expect(operator).toContain("Before invoking reviewers");
+  expect(operator).toContain("pre-review `revise`");
+  expect(operator).toContain("does not consume a review round");
+  expect(operator).toContain("Do not fabricate a revision or review finding");
+});
+
 test("factory lifecycle generated artifacts are documented", () => {
   const setup = readRepoFile(SETUP_MANIFEST);
   expect(setup).toContain("harness/store/projects/<repo-id>/factory/events/*.jsonl");
