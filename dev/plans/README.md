@@ -1,6 +1,7 @@
 # Plans & handoffs
 
 ## Active queue
+- [Provision Factory worktrees with Grove for hosted execution](FER-30.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-30/provision-factory-worktrees-with-grove-for-hosted-execution)
 
 No active plans.
 
