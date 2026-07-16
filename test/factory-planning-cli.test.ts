@@ -107,8 +107,10 @@ test.each([
       readFactoryPhaseRunIdentity(join(store.factoryRunsDir, candidate.phaseRunId)),
     ).toMatchObject({
       baseRef: "main",
-      baseSha: acceptedBase,
-      branchRef: "refs/heads/codex/plan",
+      git: {
+        baseSha: acceptedBase,
+        target: { mode: "branch", branchRef: "refs/heads/codex/plan" },
+      },
     });
     execFileSync("git", ["update-ref", "refs/heads/main", acceptedBase], { cwd: workspace });
   }

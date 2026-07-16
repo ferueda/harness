@@ -54,6 +54,12 @@ filesystem, retain leases through nonterminal states, and release only with
 phase-matched terminal authority. Repair or quarantine uncertain leases; do not
 delete the pool or replace the path for the same phase generation.
 
+The hosted operation runner receives no paths or credentials. The host injects
+the trusted Factory store, repository identity, Grove pool, provider controls,
+and secrets. Immutable phase Git identity permits the same repository checkout
+at a different absolute Grove path; the recorded phase workspace is provenance,
+not cross-host authority.
+
 ## Hook activation
 
 Fresh checkout installs run `pnpm install --frozen-lockfile`, which runs the

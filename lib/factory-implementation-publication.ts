@@ -4,6 +4,7 @@ import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lif
 import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { readFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
+import { factoryPhaseBranchRef } from "./factory-phase-git.ts";
 import { prepareImplementationPublication } from "./factory-implementation-publication-preparation.ts";
 import { assertCommitAncestor, resolveLocalCommit } from "./factory-publication-git.ts";
 import {
@@ -51,7 +52,7 @@ export async function publishImplementationPullRequest(input: {
       throw new Error("Implementation publication requires a final passing review");
     const prepared = prepareImplementationPublication({
       workspace: input.workspace,
-      branchRef: identity.branchRef,
+      branchRef: factoryPhaseBranchRef(identity),
       baseRef: identity.baseRef,
       reviewedHead: state.reviewedHead,
       title: phaseWorkItem.title,

@@ -65,6 +65,9 @@ Factory vocabulary:
    policies are snapshotted for the phase responsibility.
 9. **Grove workspaces keep one stable phase lease.** Revisions, retries, and
    publication reuse its path.
+10. **Hosted receipts are hints.** Only executed or recovered receipts may
+    carry a recomputed identifier-only next request. Every delivery is checked
+    again against canonical Factory JSONL.
 
 Run only one phase command for a work item at a time. When Harness dogfoods
 itself, use a dedicated clean detached controller checkout pinned to one SHA
@@ -140,13 +143,25 @@ Factory machine state.
 ## Grove workspace boundary
 
 `lib/factory-grove-workspace.ts` owns Grove lease intent, acquisition, release,
-and bounded repair. Factory remains Grove-agnostic and receives a workspace
-path.
+and bounded repair. `lib/factory-hosted-operation.ts` is the sole composition
+boundary: it receives an identifier-only request while trusted runtime supplies
+store paths, repository identity, Grove config, credentials, and providers.
 
 The caller supplies the exact base commit and a stable phase generation. Triage
 uses a detached lease; planning and implementation use separate branches.
 Compatible reacquisition reruns repository setup and returns the same path while
 preserving Factory commits and candidate bytes.
+
+Version-2 phase evidence records `{ repositoryId, baseSha, target }` as immutable
+Git authority. Its absolute `workspace` remains local provenance. A hosted
+delivery recovers authenticated results and rejects stale or waiting work before
+Grove; after acquisition it validates the relocated checkout and re-resolves
+Factory before invoking one action.
+
+Hosted eligibility requires that immutable target to already equal the
+deterministic Grove target. A phase started manually on another branch fails
+closed; acquiring Grove before hosted phase creation remains phase-start policy,
+not runner behavior.
 
 Leases survive nonterminal waits and open pull requests. Release requires the
 matching terminal Factory event and performs a non-forced reset to the recorded
@@ -164,6 +179,7 @@ base. Conflicts or uncertain cleanup require explicit repair or quarantine.
 | Linear projections                  | `lib/factory-linear-adapter.ts`, `lib/factory-linear-*-apply.ts`, `lib/factory-linear-*-handoff.ts`                                 |
 | Pull-request publication            | `lib/factory-*-publication*.ts`, `lib/factory-publication-git.ts`, `lib/factory-pull-request-publisher.ts`                          |
 | Hosted workspace leases             | `lib/factory-grove-workspace.ts`                                                                                                    |
+| Hosted operation delivery           | `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`                                                                       |
 | Provider execution and prompts      | `providers/`, `workflows/`, `lib/prompts/factory-*.ts`                                                                              |
 
 Keep lifecycle decisions in the reducer/reaction boundary, external mutations in

@@ -39,6 +39,7 @@ import {
   type FactoryLifecycleState,
   type FactoryReaction,
 } from "../lib/factory-state-machine.ts";
+import { assertFactoryTriageRunMetaIdentity } from "../lib/factory-triage-result-auth.ts";
 
 export const meta = { name: "factory-triage" };
 
@@ -319,43 +320,17 @@ function writeActionProviderOutcome(
 }
 
 function assertRecoveredMetaIdentity(value: FactoryRunMeta, ctx: FactoryRunContext): void {
-  if (value.status !== "completed" && value.status !== "failed") {
-    throw new Error(`Factory action metadata has no terminal provider status for ${ctx.runId}`);
-  }
-  const valueStore = value.factoryStore;
   const contextStore = ctx.factoryStore;
+  if (!contextStore) throw new Error(`Factory store metadata is missing for ${ctx.runId}`);
+  assertFactoryTriageRunMetaIdentity(value, {
+    runDir: ctx.runDir,
+    workItem: ctx.workItem,
+    factoryStore: contextStore,
+  });
   const identity = readFactoryPhaseRunIdentity(ctx.runDir);
-  if (identity.phase !== "triage") throw new Error(`Factory phase is not triage: ${ctx.runId}`);
-  const profile = identity.actions.triageWorkItem;
   if (
-    value.runId !== ctx.runId ||
-    resolve(value.runDir) !== resolve(ctx.runDir) ||
     resolve(value.workspace) !== resolve(ctx.workspace) ||
-    value.workItem.id !== ctx.workItem.id ||
-    value.workItem.source !== ctx.workItem.source ||
-    value.workItem.title !== ctx.workItem.title ||
-    !valueStore ||
-    !contextStore ||
-    resolve(valueStore.factoryStateRoot) !== resolve(contextStore.factoryStateRoot) ||
-    valueStore.projectId !== contextStore.projectId ||
-    resolve(valueStore.projectRoot) !== resolve(contextStore.projectRoot) ||
-    valueStore.repo.id !== contextStore.repo.id ||
-    valueStore.repo.name !== contextStore.repo.name ||
-    valueStore.repo.idSource !== contextStore.repo.idSource ||
-    identity.phaseRunId !== ctx.runId ||
-    identity.projectId !== contextStore.projectId ||
-    identity.factoryStateRoot !== resolve(contextStore.factoryStateRoot) ||
-    identity.workspace !== resolve(ctx.workspace) ||
-    value.agent.name !== profile.provider ||
-    value.agent.model !== profile.model ||
-    (profile.provider === "codex" &&
-      (value.agent.sandboxMode !== profile.sandbox ||
-        value.agent.approvalPolicy !== profile.approvalPolicy ||
-        value.agent.modelReasoningEffort !== profile.reasoningEffort)) ||
-    (profile.provider === "cursor" &&
-      (value.agent.sandboxMode !== undefined ||
-        value.agent.approvalPolicy !== undefined ||
-        value.agent.modelReasoningEffort !== undefined))
+    (identity.version === 1 && identity.workspace !== resolve(ctx.workspace))
   ) {
     throw new Error(`Completed Factory run metadata conflicts with ${ctx.runId}`);
   }
@@ -388,7 +363,7 @@ function assertRecoveredActionResult(input: {
     identity.phaseRunId !== ctx.runId ||
     identity.phase !== "triage" ||
     identity.workItemKey !== input.workItemKey ||
-    identity.workspace !== resolve(ctx.workspace) ||
+    (identity.version === 1 && identity.workspace !== resolve(ctx.workspace)) ||
     identity.projectId !== ctx.factoryStore?.projectId ||
     identity.factoryStateRoot !== resolve(input.factoryStateRoot) ||
     terminal.data.execution.workspaceRef !== identity.projectId

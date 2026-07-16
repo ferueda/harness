@@ -11,6 +11,12 @@ import {
   writeFactoryPhaseRunIdentity,
   type FactoryImplementationInputSnapshot,
 } from "./factory-phase-run.ts";
+import {
+  assertFactoryPhaseWorkspace,
+  factoryPhaseBaseSha,
+  factoryPhaseBranchRef,
+  snapshotFactoryPhaseGit,
+} from "./factory-phase-git.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { parseFactoryWorkItem, type FactoryWorkItem } from "./factory-schemas.ts";
 import type { FactoryStoreMeta } from "./factory-store.ts";
@@ -71,7 +77,7 @@ export function createFactoryImplementationRunContext(input: {
       ...input.implementationInput,
     };
     writeFactoryPhaseRunIdentity(runDir, {
-      version: 1,
+      version: 2,
       phaseRunId: runId,
       phase: "implementation",
       workItemKey: deriveFactoryWorkItemKey(authoritativeWorkItem),
@@ -79,8 +85,7 @@ export function createFactoryImplementationRunContext(input: {
       projectId: input.factoryStore.projectId,
       factoryStateRoot: resolve(input.factoryStore.factoryStateRoot),
       baseRef: input.baseRef ?? "main",
-      branchRef: gitIdentity.branchRef,
-      baseSha: gitIdentity.baseSha,
+      git: snapshotFactoryPhaseGit(workspace, { requireBranch: true })!,
       input: snapshot,
       actions: {
         produceImplementationCandidate: factoryActionExecutionProfile(input.implementerRole),
@@ -111,18 +116,30 @@ export function openFactoryImplementationRunContext(input: {
 }) {
   const workspace = canonicalWorkspace(input.workspace);
   const runDir = join(resolve(input.runsDir), input.phaseRunId);
-  const identity = readFactoryPhaseRunIdentity(runDir);
+  const persistedIdentity = readFactoryPhaseRunIdentity(runDir);
   if (
-    identity.phase !== "implementation" ||
-    identity.phaseRunId !== input.phaseRunId ||
-    identity.workItemKey !== deriveFactoryWorkItemKey(input.workItem) ||
-    identity.workspace !== workspace ||
-    identity.projectId !== input.factoryStore.projectId ||
-    identity.factoryStateRoot !== resolve(input.factoryStore.factoryStateRoot)
+    persistedIdentity.phase !== "implementation" ||
+    persistedIdentity.phaseRunId !== input.phaseRunId ||
+    persistedIdentity.workItemKey !== deriveFactoryWorkItemKey(input.workItem) ||
+    persistedIdentity.projectId !== input.factoryStore.projectId ||
+    persistedIdentity.factoryStateRoot !== resolve(input.factoryStore.factoryStateRoot)
   )
     throw new FactoryImplementationRunError(
       `Factory implementation phase-run identity conflicts with ${input.phaseRunId}`,
     );
+  try {
+    assertFactoryPhaseWorkspace(persistedIdentity, workspace);
+  } catch (error) {
+    throw new FactoryImplementationRunError(
+      `Factory implementation phase-run identity conflicts with ${input.phaseRunId}`,
+      { cause: error },
+    );
+  }
+  const identity = {
+    ...persistedIdentity,
+    baseSha: factoryPhaseBaseSha(persistedIdentity),
+    branchRef: factoryPhaseBranchRef(persistedIdentity),
+  };
   const branchRef = git(workspace, ["symbolic-ref", "-q", "HEAD"]).trim();
   if (branchRef !== identity.branchRef)
     throw new FactoryImplementationRunError(

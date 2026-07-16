@@ -59,6 +59,12 @@ import {
   type FactoryStoreMeta,
 } from "./factory-store.ts";
 import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
+import {
+  assertFactoryPhaseWorkspace,
+  factoryPhaseBaseSha,
+  factoryPhaseBranchRef,
+  snapshotFactoryPhaseGit,
+} from "./factory-phase-git.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 
 export type DraftValidationReason =
@@ -379,12 +385,16 @@ function createFactoryPlanningRunContextInternal(
     writeJson(join(runDir, "context/work-item.json"), options.workItem);
     if (options.factoryStore) {
       const publicationMode = options.publicationMode ?? "local";
-      const gitIdentity =
+      const publicationGit =
         publicationMode === "pull-request"
           ? assertPlanningPublicationGit(workspace, options.baseRef ?? "main", true)
           : undefined;
+      const gitIdentity = snapshotFactoryPhaseGit(workspace, {
+        optional: publicationMode === "local",
+        requireBranch: publicationMode === "pull-request",
+      });
       writeFactoryPhaseRunIdentity(runDir, {
-        version: 1,
+        version: 2,
         phaseRunId: runId,
         phase: "planning",
         workItemKey: deriveFactoryWorkItemKey(options.workItem),
@@ -401,7 +411,8 @@ function createFactoryPlanningRunContextInternal(
           }),
         ),
         publicationMode,
-        ...gitIdentity,
+        git: gitIdentity,
+        ...(publicationGit ? { baseRef: publicationGit.baseRef } : {}),
         actions: {
           producePlanCandidate: factoryActionExecutionProfile(options.plannerRole),
           reviewPlanCandidate: factoryActionExecutionProfile(options.reviewerRole),
@@ -596,20 +607,36 @@ export type OpenFactoryPlanningRunContextOptions = {
 /** Reopen immutable planning policy without allocating or consulting config. */
 export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunContextOptions) {
   const runDir = join(resolve(options.runsDir), options.phaseRunId);
-  const identity = readFactoryPhaseRunIdentity(runDir);
+  const persistedIdentity = readFactoryPhaseRunIdentity(runDir);
   if (
-    identity.phase !== "planning" ||
-    identity.phaseRunId !== options.phaseRunId ||
-    identity.workItemKey !== deriveFactoryWorkItemKey(options.workItem) ||
-    identity.workspace !== resolve(options.workspace) ||
-    identity.projectId !== options.factoryStore.projectId ||
-    identity.factoryStateRoot !== resolve(options.factoryStore.factoryStateRoot)
+    persistedIdentity.phase !== "planning" ||
+    persistedIdentity.phaseRunId !== options.phaseRunId ||
+    persistedIdentity.workItemKey !== deriveFactoryWorkItemKey(options.workItem) ||
+    persistedIdentity.projectId !== options.factoryStore.projectId ||
+    persistedIdentity.factoryStateRoot !== resolve(options.factoryStore.factoryStateRoot)
   )
     throw new FactoryPlanningError(
       `Factory planning phase-run identity conflicts with ${options.phaseRunId}`,
     );
+  let workspace: string;
+  try {
+    workspace = assertFactoryPhaseWorkspace(persistedIdentity, options.workspace);
+  } catch (error) {
+    throw new FactoryPlanningError("Factory planning Git identity changed since phase start", {
+      cause: error,
+    });
+  }
+  const identity = {
+    ...persistedIdentity,
+    ...(persistedIdentity.publicationMode === "pull-request"
+      ? {
+          baseSha: factoryPhaseBaseSha(persistedIdentity),
+          branchRef: factoryPhaseBranchRef(persistedIdentity),
+        }
+      : {}),
+  };
   if (identity.publicationMode === "pull-request") {
-    const current = assertPlanningPublicationGit(identity.workspace, identity.baseRef!, false);
+    const current = assertPlanningPublicationGit(workspace, identity.baseRef!, false);
     if (
       current.baseSha !== identity.baseSha ||
       current.branchRef !== identity.branchRef ||
@@ -629,33 +656,24 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
   return {
     runId: identity.phaseRunId,
     runDir,
-    workspace: identity.workspace,
+    workspace,
     workItem: persisted,
     factoryStore: options.factoryStore,
     identity,
     eventSink,
     preparePlannerScratch(): { scratchRunDir: string; draftPath: string } {
-      const scratchRunDir = join(
-        identity.workspace,
-        ".harness/factory-drafts",
-        identity.phaseRunId,
-      );
+      const scratchRunDir = join(workspace, ".harness/factory-drafts", identity.phaseRunId);
+      ensureScratchDirectory(join(workspace, ".harness"), workspace, runDir, scratchRunDir);
       ensureScratchDirectory(
-        join(identity.workspace, ".harness"),
-        identity.workspace,
-        runDir,
-        scratchRunDir,
-      );
-      ensureScratchDirectory(
-        join(identity.workspace, ".harness", "factory-drafts"),
-        identity.workspace,
+        join(workspace, ".harness", "factory-drafts"),
+        workspace,
         runDir,
         scratchRunDir,
       );
       if (!existsSync(scratchRunDir))
-        createExclusiveScratchRunDir(scratchRunDir, identity.workspace, runDir);
+        createExclusiveScratchRunDir(scratchRunDir, workspace, runDir);
       preparedScratch = validatePreparedScratch({
-        workspace: identity.workspace,
+        workspace,
         scratchRunDir,
         runDir,
         ...(preparedScratch ? { expected: preparedScratch } : {}),
@@ -672,13 +690,9 @@ export function openFactoryPlanningRunContext(options: OpenFactoryPlanningRunCon
     },
     readPlannerDraft(): Buffer {
       if (!preparedScratch) throw new DraftValidationError("parent-unsafe");
-      const scratchRunDir = join(
-        identity.workspace,
-        ".harness/factory-drafts",
-        identity.phaseRunId,
-      );
+      const scratchRunDir = join(workspace, ".harness/factory-drafts", identity.phaseRunId);
       return readValidatedScratchDraft({
-        workspace: identity.workspace,
+        workspace,
         scratchRunDir,
         draftPath: join(scratchRunDir, "draft.md"),
         runDir,

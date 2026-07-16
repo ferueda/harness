@@ -6,6 +6,7 @@ import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { readFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
 import { preparePlanPublication } from "./factory-plan-publication-preparation.ts";
 import { assertCommitAncestor, resolveLocalCommit } from "./factory-publication-git.ts";
+import { factoryPhaseBaseSha, factoryPhaseBranchRef } from "./factory-phase-git.ts";
 import {
   publishFactoryPullRequest,
   type FactoryCommandRunner,
@@ -75,8 +76,8 @@ export async function publishPlanPullRequest(input: {
       workItemKey: key,
       workItem: phaseWorkItem,
       baseRef: identity.baseRef!,
-      baseSha: identity.baseSha!,
-      branchRef: identity.branchRef!,
+      baseSha: factoryPhaseBaseSha(identity),
+      branchRef: factoryPhaseBranchRef(identity),
       outputPlan: identity.outputPlan,
       candidate: candidate.data.candidate,
     });
