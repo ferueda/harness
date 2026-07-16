@@ -15,6 +15,8 @@ import {
   verifyFactoryArtifactRef,
 } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
+import { createFactoryOperationRef, executeFactoryOperation } from "../lib/factory-operation.ts";
+import type { Agent, AgentProviderOptions } from "../lib/agents.ts";
 import {
   appendFactoryActionEvent,
   FactoryLifecycleConflictError,
@@ -78,9 +80,9 @@ import {
   type FactoryTriageOutput,
   type FactoryWorkItem,
 } from "../lib/factory-schemas.ts";
-import type { WorkflowEvent } from "../lib/workflow-events.ts";
+import type { WorkflowEvent, WorkflowEventSink } from "../lib/workflow-events.ts";
 import { createAgentProvider } from "../providers/registry.ts";
-import { run as runFactoryTriage, triageWorkItem } from "../workflows/factory-triage.workflow.ts";
+import { run as runFactoryTriage } from "../workflows/factory-triage.workflow.ts";
 
 type FactoryStatusOptions = {
   workspace?: string;
@@ -543,6 +545,7 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         issueRef: options.linearIssue ?? "",
         itemFile: options.itemFile,
         applyAdapter,
+        eventSink: options.verbose ? config.writeVerboseWorkflowEvent : undefined,
         createContext: (signal, existingRunId) => {
           const common = {
             workspace,
@@ -623,12 +626,14 @@ export async function runFactoryTriageWithLinearApply(input: {
   issueRef: string;
   itemFile?: string;
   applyAdapter?: LinearFactoryAdapter;
+  eventSink?: WorkflowEventSink;
   createContext: (signal: AbortSignal, existingRunId?: string) => FactoryRunContext;
   runTriage?: (
     ctx: FactoryRunContext,
     options: { nextLiveRunRequiresRerun: boolean },
   ) => Promise<FactoryRunMeta>;
   announceRunStarted?: (input: Parameters<typeof announceFactoryRunStarted>[0]) => void;
+  agentProviderFactory?: (options: AgentProviderOptions) => Agent;
 }): Promise<
   | {
       meta: FactoryRunMeta;
@@ -842,14 +847,26 @@ export async function runFactoryTriageWithLinearApply(input: {
       });
     } else {
       let handledMeta: FactoryRunMeta | undefined;
-      const appended = await triageWorkItem({
-        ctx,
-        factoryStateRoot: input.factoryStateRoot,
-        reaction: reaction!,
-        nextLiveRunRequiresRerun: !ctx.dryRun || policy.hadPriorCompletion,
-        runProvider: runTriage,
-        onMeta: (value) => {
-          handledMeta = value;
+      const appended = await executeFactoryOperation({
+        operation: createFactoryOperationRef({
+          phaseRunId: ctx.runId,
+          handler: reaction!.handler,
+          attempt: reaction!.attempt,
+          causationEventId: reaction!.causationEventId,
+        }),
+        factoryStore: ctx.factoryStore!,
+        workspace: ctx.workspace,
+        workItem: input.workItem,
+        maxRuntimeMs: ctx.maxRuntimeMs,
+        signal: runAbort.signal,
+        eventSink: input.eventSink,
+        agentProviderFactory: input.agentProviderFactory ?? createAgentProvider,
+        triage: {
+          nextLiveRunRequiresRerun: !ctx.dryRun || policy.hadPriorCompletion,
+          runProvider: runTriage,
+          onMeta: (value) => {
+            handledMeta = value;
+          },
         },
       });
       if (handledMeta) meta = handledMeta;

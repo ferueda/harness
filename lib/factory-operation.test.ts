@@ -1,12 +1,20 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
+import type { Agent } from "./agents.ts";
+import { createFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import { writeFactoryActionResult } from "./factory-action-result.ts";
-import { appendFactoryActionEvent } from "./factory-lifecycle-kernel.ts";
+import {
+  actionLifecycleEventPath,
+  actionLifecycleStatePath,
+  appendFactoryActionEvent,
+  readFactoryActionEvents,
+} from "./factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "./factory-lifecycle.ts";
 import {
   createFactoryOperationRef,
+  executeFactoryOperation,
   resolveFactoryOperation,
   type FactoryOperationRef,
 } from "./factory-operation.ts";
@@ -21,6 +29,13 @@ const inputRef = {
   path: "inputs/item.json",
   sha256: "0".repeat(64),
 };
+const workItem = {
+  id: "linear:ITEM-1",
+  source: "linear" as const,
+  title: "Factory operation",
+  body: "Execute once",
+  labels: [],
+};
 const temporaryRoots: string[] = [];
 
 afterEach(() => {
@@ -32,7 +47,16 @@ function fixture() {
   temporaryRoots.push(projectRoot);
   const factoryStateRoot = join(projectRoot, "factory");
   const runDir = join(projectRoot, "runs", "factory", phaseRunId);
-  const workspace = join(projectRoot, "workspace-does-not-exist");
+  const workspace = join(projectRoot, "workspace");
+  mkdirSync(join(runDir, "context"), { recursive: true });
+  mkdirSync(workspace, { recursive: true });
+  writeFileSync(join(runDir, "context/work-item.json"), JSON.stringify(workItem));
+  writeFileSync(join(runDir, "factory-triage.prompt.md"), "triage prompt");
+  const durableInputRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: projectRoot,
+    path: "runs/factory/triage-run/context/work-item.json",
+  });
   writeFactoryPhaseRunIdentity(runDir, {
     version: 1,
     phaseRunId,
@@ -60,7 +84,7 @@ function fixture() {
     phaseRunId,
     data: {
       expectedPredecessor: imported.id,
-      inputRefs: [inputRef],
+      inputRefs: [durableInputRef],
       intent: "start",
     },
   };
@@ -80,7 +104,27 @@ function fixture() {
     attempt: 1,
     causationEventId: requested.id,
   });
-  return { projectRoot, factoryStateRoot, runDir, requested, operation };
+  const factoryStore = {
+    storeRoot: projectRoot,
+    projectId,
+    projectRoot,
+    factoryStateRoot,
+    factoryRunsDir: join(projectRoot, "runs", "factory"),
+    reviewRunsDir: join(projectRoot, "runs", "reviews"),
+    repo: { name: "project", id: projectId, idSource: "config" as const },
+    overrides: {},
+    warnings: [],
+  };
+  return {
+    projectRoot,
+    factoryStateRoot,
+    runDir,
+    workspace,
+    requested,
+    operation,
+    inputRef: durableInputRef,
+    factoryStore,
+  };
 }
 
 function resolveFixture(
@@ -111,8 +155,8 @@ function completedEvent(
       handlerVersion: 1,
       attempt: 1,
       causationEventId: value.requested.id,
-      execution: { workspaceRef: "unused", runRef: inputRef },
-      evidence: [inputRef],
+      execution: { workspaceRef: "unused", runRef: value.inputRef },
+      evidence: [value.inputRef],
       route: "ready-to-plan",
       rationale: "Ready",
     },
@@ -227,6 +271,139 @@ test("returns wait when durable state has no invocation", () => {
     status: "wait",
     reaction: { kind: "wait", reason: "phase-command" },
   });
+});
+
+test("executes the authenticated triage handler once and returns its persisted result", async () => {
+  const value = fixture();
+  const eventPath = actionLifecycleEventPath(value.factoryStateRoot, workItemKey);
+  const statePath = actionLifecycleStatePath(value.factoryStateRoot, workItemKey);
+  const lifecycleBefore = readFileSync(eventPath, "utf8");
+  const stateBefore = readFileSync(statePath, "utf8");
+  const providerRun = vi.fn<Agent["run"]>();
+  const runProvider = vi.fn(async () => ({
+    runId: phaseRunId,
+    workflow: "factory-triage" as const,
+    status: "failed" as const,
+    workspace: value.workspace,
+    runDir: value.runDir,
+    workItem: { id: workItem.id, source: workItem.source, title: workItem.title },
+    agent: { name: "cursor" as const, model: profile.model },
+    startedAt: "2026-07-15T20:02:00.000Z",
+    durationMs: 1,
+    error: "retry later",
+    failureKind: "retryable" as const,
+    factoryStore: value.factoryStore,
+  }));
+
+  const result = await executeFactoryOperation({
+    operation: value.operation,
+    factoryStore: value.factoryStore,
+    workspace: value.workspace,
+    workItem,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+    triage: { nextLiveRunRequiresRerun: true, runProvider },
+  });
+
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { handler: "triageWorkItem", failureKind: "retryable" },
+  });
+  expect(result.state.lastEventId).toBe(result.event.id);
+  expect(runProvider).toHaveBeenCalledOnce();
+  expect(providerRun).not.toHaveBeenCalled();
+  expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey)).toHaveLength(3);
+
+  // Simulate a crash after the action result was staged but before its lifecycle append.
+  writeFileSync(eventPath, lifecycleBefore);
+  writeFileSync(statePath, stateBefore);
+  const recovered = await executeFactoryOperation({
+    operation: value.operation,
+    factoryStore: value.factoryStore,
+    workspace: value.workspace,
+    workItem,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+    triage: { nextLiveRunRequiresRerun: true, runProvider },
+  });
+  expect(recovered.event.id).toBe(result.event.id);
+  expect(runProvider).toHaveBeenCalledOnce();
+  expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey)).toHaveLength(3);
+});
+
+test("rejects stale and waiting operations before invoking a provider", async () => {
+  const staleValue = fixture();
+  const providerRun = vi.fn<Agent["run"]>();
+  const stale = createFactoryOperationRef({
+    ...staleValue.operation,
+    causationEventId: "older-request",
+  });
+  const beforeStale = durableFiles(staleValue.projectRoot);
+  await expect(
+    executeFactoryOperation({
+      operation: stale,
+      factoryStore: staleValue.factoryStore,
+      workspace: staleValue.workspace,
+      workItem,
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+      triage: { nextLiveRunRequiresRerun: true },
+    }),
+  ).rejects.toThrow(/stale/);
+  expect(providerRun).not.toHaveBeenCalled();
+  expect(durableFiles(staleValue.projectRoot)).toEqual(beforeStale);
+
+  const waitingValue = fixture();
+  appendFactoryActionEvent({
+    factoryStateRoot: waitingValue.factoryStateRoot,
+    event: completedEvent(waitingValue),
+    expectedLastEventId: waitingValue.requested.id,
+  });
+  const beforeWait = durableFiles(waitingValue.projectRoot);
+  await expect(
+    executeFactoryOperation({
+      operation: waitingValue.operation,
+      factoryStore: waitingValue.factoryStore,
+      workspace: waitingValue.workspace,
+      workItem,
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+      triage: { nextLiveRunRequiresRerun: true },
+    }),
+  ).rejects.toThrow(/waiting/);
+  expect(providerRun).not.toHaveBeenCalled();
+  expect(durableFiles(waitingValue.projectRoot)).toEqual(beforeWait);
+});
+
+test("rejects mismatched execution identity before invoking a provider", async () => {
+  const value = fixture();
+  const providerRun = vi.fn<Agent["run"]>();
+  const base = {
+    factoryStore: value.factoryStore,
+    workspace: value.workspace,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor" as const, run: providerRun }),
+    triage: { nextLiveRunRequiresRerun: true },
+  };
+  const mismatches = [
+    { operation: { ...value.operation, actionKey: "f".repeat(64) }, workItem },
+    { operation: value.operation, workItem: { ...workItem, id: "linear:OTHER-1" } },
+    {
+      operation: createFactoryOperationRef({
+        phaseRunId,
+        handler: "producePlanCandidate",
+        attempt: 1,
+        causationEventId: value.requested.id,
+      }),
+      workItem,
+    },
+  ];
+
+  for (const mismatch of mismatches) {
+    await expect(executeFactoryOperation({ ...base, ...mismatch })).rejects.toThrow(/mismatch/);
+  }
+  expect(providerRun).not.toHaveBeenCalled();
+  expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey)).toHaveLength(2);
 });
 
 test("fails closed for divergent project, work-item, action-key, and result identity", () => {

@@ -84,6 +84,7 @@ export type FactoryRunContext = {
   workItem: FactoryWorkItem;
   factoryStore?: FactoryStoreMeta;
   dryRun?: boolean;
+  maxRuntimeMs: number;
   executionProfile: FactoryActionExecutionProfile;
   eventSink: WorkflowEventSink;
   bindActionOutcome?(input: {
@@ -289,6 +290,7 @@ function createFactoryRunContextInternal(
     workItem,
     factoryStore: options.factoryStore,
     dryRun: options.dryRun,
+    maxRuntimeMs: options.maxRuntimeMs,
     executionProfile,
     eventSink,
     bindActionOutcome(binding): void {

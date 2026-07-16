@@ -20,8 +20,7 @@ import {
 } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
-import { producePlanCandidate } from "../lib/factory-plan-candidate-action.ts";
-import { reviewPlanCandidate } from "../lib/factory-plan-review-action.ts";
+import { createFactoryOperationRef, executeFactoryOperation } from "../lib/factory-operation.ts";
 import {
   createFactoryPlanningRunContext,
   openFactoryPlanningRunContext,
@@ -485,24 +484,21 @@ export async function runOneFactoryPlanningAction(input: {
       attempt: reaction.attempt,
     }),
   );
-  const handled =
-    reaction.handler === "producePlanCandidate"
-      ? await producePlanCandidate({
-          ctx,
-          factoryStateRoot: input.factoryStateRoot,
-          reaction,
-          maxRuntimeMs: input.maxRuntimeMs,
-          agentProviderFactory,
-          signal: input.signal,
-        })
-      : await reviewPlanCandidate({
-          ctx,
-          factoryStateRoot: input.factoryStateRoot,
-          reaction,
-          maxRuntimeMs: input.maxRuntimeMs,
-          agentProviderFactory,
-          signal: input.signal,
-        });
+  const handled = await executeFactoryOperation({
+    operation: createFactoryOperationRef({
+      phaseRunId,
+      handler: reaction.handler,
+      attempt: reaction.attempt,
+      causationEventId: reaction.causationEventId,
+    }),
+    factoryStore: input.factoryStore,
+    workspace: input.workspace,
+    workItem: input.workItem,
+    maxRuntimeMs: input.maxRuntimeMs,
+    signal: input.signal,
+    eventSink: input.eventSink,
+    agentProviderFactory,
+  });
   if (
     input.applyAdapter &&
     (handled.state.status === "needs-human" || handled.state.status === "failed")
