@@ -26,7 +26,7 @@ export function registerHostedFixtureRoot(root: string): void {
   roots.push(root);
 }
 
-export function fixture() {
+export function fixture(options: { projectId?: string } = {}) {
   const root = mkdtempSync(join(tmpdir(), "factory-hosted-operation-"));
   roots.push(root);
   const workspace = join(root, "repository");
@@ -40,7 +40,7 @@ export function fixture() {
   const baseSha = git(workspace, ["rev-parse", "HEAD"]);
   git(workspace, ["checkout", "--detach", baseSha]);
   const repositoryId = deriveFactoryRepoIdentity(workspace).id;
-  const projectId = "project-1";
+  const projectId = options.projectId ?? "project-1";
   const workItemKey = "linear:ITEM-1";
   const phaseRunId = "triage-run";
   const projectRoot = join(root, "store", "projects", projectId);

@@ -42,6 +42,9 @@ CLI
 Hosted operation delivery composes Factory with Grove without moving lifecycle policy:
 
 ```text
+trusted project/work-item targets
+  -> reconcile the canonical reaction
+  -> identifier-only request or bounded wait/stale/attention result
 identifier-only request + trusted project runtime
   -> authenticate phase, work item, action, and completed result
   -> recover, stale, or wait before Grove when possible
@@ -85,6 +88,8 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-store.ts`, `lib/factory-locks.ts`, `lib/factory-inspect.ts` | Durable paths, lock ownership, store provenance, and read-only lifecycle inspection                                   |
 | `lib/factory-grove-workspace.ts`                                         | Deterministic Grove lease intent, ensure/reopen, terminal release, and bounded repair                                 |
 | `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`            | Identifier-only hosted delivery, authenticated resolution/execution, and reconstructable receipts                     |
+| `lib/factory-operation-reconciliation.ts`                                | Bounded caller-supplied log-to-delivery repair with per-target failure isolation                                      |
+| `lib/factory-inngest-adapter.ts`                                         | Deterministic Factory event IDs, direct sends, chained sends, and hosted function controls                            |
 | `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
 | `lib/factory-*-publication*.ts`, `lib/factory-pull-request-publisher.ts` | Reviewed-commit validation and bounded GitHub publication                                                             |
 | `providers/`                                                             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation                   |
@@ -154,12 +159,16 @@ projections, publication, and merge acknowledgement. The callable hosted runner
 accepts only project/work-item/operation identifiers; trusted runtime owns store
 paths, repository identity, credentials, provider controls, and Grove config.
 
-`lib/factory-inngest-adapter.ts` delivers one identifier-only operation per
-function run and may send the returned `next` operation as another event. Factory
-remains the authority; Inngest concurrency only schedules work. Operation and
-delivery failures may retry three times, while saved receipts prevent Factory or
-provider replay. Actions stop after 110 minutes. The current integration has one
-persistent host and no webhook, production worker, or recovery supervisor.
+An external host may call `lib/factory-operation-reconciliation.ts` with a
+bounded trusted target list. It returns `delivered`, `waiting`, `stale`, or
+`attention` per target, isolates failures, and neither changes lifecycle state
+nor discovers or schedules work.
+
+`lib/factory-inngest-adapter.ts` owns deterministic event IDs and direct or
+chained sends. IDs suppress transport duplicates; Factory action identity
+prevents replay. The adapter keeps three retries and a 110-minute action limit.
+The current integration assumes one persistent host and ships no production
+worker or Harness scheduler.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.
