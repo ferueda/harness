@@ -84,6 +84,11 @@ export function preparePlanPublication(input: {
         GIT_COMMITTER_DATE: baseDate,
       },
     ).trim();
+    // Validate the prepared commit before moving refs or handing it to the GitHub publisher.
+    assertPreparedBlob(input.workspace, commit, input.outputPlan, planBlob);
+    assertPreparedBlob(input.workspace, commit, readmePath, readmeBlob);
+    if (updateActiveQueue(nextReadme, input.outputPlan, input.workItem) !== nextReadme)
+      throw new Error("Prepared plan index is not canonical");
     const existing = tryResolve(input.workspace, headBranch);
     if (existing && existing !== commit)
       throw new Error("Deterministic planning publication branch has a conflicting commit");
@@ -132,12 +137,24 @@ function updateActiveQueue(readme: string, outputPlan: string, workItem: Factory
   const canonical = `- [${workItem.title}](${planLink}) — approved; awaiting plan merge.${link}`;
   const retained = bullets.filter((line) => !line.includes(target));
   const sorted = [...retained, canonical].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const firstBullet = lines.findIndex((line) => line.startsWith("- ["));
-  const lastBullet = lines.findLastIndex((line) => line.startsWith("- ["));
-  const before = firstBullet < 0 ? [""] : lines.slice(0, firstBullet);
-  const after = lastBullet < 0 ? lines.slice(1) : lines.slice(lastBullet + 1);
-  const replacement = [...before, ...sorted, ...after].join("\n");
+  const remaining = lines.filter(
+    (line) => !line.startsWith("- [") && line.trim() !== "No active plans.",
+  );
+  while (remaining[0]?.trim() === "") remaining.shift();
+  while (remaining.at(-1)?.trim() === "") remaining.pop();
+  const blocks = [sorted.join("\n"), remaining.join("\n")].filter(Boolean);
+  const replacement = `\n\n${blocks.join("\n\n")}\n`;
   return `${readme.slice(0, contentStart)}${replacement}${readme.slice(end)}`;
+}
+
+function assertPreparedBlob(
+  workspace: string,
+  commit: string,
+  path: string,
+  expected: string,
+): void {
+  const actual = git(workspace, ["rev-parse", `${commit}:${path}`]).trim();
+  if (actual !== expected) throw new Error(`Prepared plan publication has invalid bytes: ${path}`);
 }
 
 function tryResolve(workspace: string, ref: string): string | undefined {

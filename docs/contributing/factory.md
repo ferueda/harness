@@ -117,7 +117,9 @@ invocation can repair the projection without rerunning a provider.
 Planning and implementation publication use a bounded Git/`gh` publisher only
 after explicit publication authority. It pushes the reviewed branch and finds
 or creates one pull request; it cannot merge. Merge acknowledgement verifies the
-recorded URL and local ancestry before completing the phase.
+recorded URL and local ancestry before completing the phase. Plan publication
+canonicalizes its generated Active queue entry and verifies the prepared commit
+before calling GitHub.
 
 PR-backed phases snapshot the target workspace's exact `HEAD` and attached
 branch at phase start. The configured base ref names the pull-request target; it
