@@ -238,6 +238,8 @@ test("a host failure before a receipt rejects without emitting", async () => {
 test("a deadline abort during real provider work persists and succeeds", async () => {
   const value = fixture();
   const providerStarted = Promise.withResolvers<void>();
+  const deadline = new AbortController();
+  const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
   let providerSignal: AbortSignal | undefined;
   value.providerRun.mockImplementation(async (input) => {
     const signal = input.signal;
@@ -266,32 +268,37 @@ test("a deadline abort during real provider work persists and succeeds", async (
     },
     runner,
   });
-  const execution = new InngestTestEngine({
-    function: fn,
-    events: [eventFor(value.request)],
-  }).execute();
-  await providerStarted.promise;
-  const output = await execution;
+  try {
+    const execution = new InngestTestEngine({
+      function: fn,
+      events: [eventFor(value.request)],
+    }).execute();
+    await providerStarted.promise;
+    deadline.abort("adapter deadline");
+    const output = await execution;
 
-  expect(output.error).toBeUndefined();
-  expect(runner).toHaveBeenCalledOnce();
-  expect(value.providerRun).toHaveBeenCalledOnce();
-  expect(providerSignal?.aborted).toBe(true);
-  const persisted = readFactoryActionEvents(value.factoryStateRoot, value.workItemKey, {
-    mode: "inspection",
-  }).at(-1);
-  expect(persisted).toMatchObject({
-    type: "factory.action.failed",
-    data: { failureKind: "human-required", message: "Agent was aborted: factory-triage" },
-  });
-  expect(output.result).toMatchObject({
-    outcome: "executed",
-    resultEventId: persisted?.id,
-  });
-  await expect(output.state[Object.keys(output.state)[0]!]).resolves.toMatchObject({
-    outcome: "executed",
-    resultEventId: persisted?.id,
-  });
+    expect(output.error).toBeUndefined();
+    expect(runner).toHaveBeenCalledOnce();
+    expect(value.providerRun).toHaveBeenCalledOnce();
+    expect(providerSignal?.aborted).toBe(true);
+    const persisted = readFactoryActionEvents(value.factoryStateRoot, value.workItemKey, {
+      mode: "inspection",
+    }).at(-1);
+    expect(persisted).toMatchObject({
+      type: "factory.action.failed",
+      data: { failureKind: "human-required", message: "Agent was aborted: factory-triage" },
+    });
+    expect(output.result).toMatchObject({
+      outcome: "executed",
+      resultEventId: persisted?.id,
+    });
+    await expect(output.state[Object.keys(output.state)[0]!]).resolves.toMatchObject({
+      outcome: "executed",
+      resultEventId: persisted?.id,
+    });
+  } finally {
+    timeout.mockRestore();
+  }
 });
 
 test("a send failure replays the saved Factory result without provider work", async () => {

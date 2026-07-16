@@ -136,6 +136,7 @@ async function runAsync(command: string, args: string[]): Promise<string> {
     cwd: ROOT,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
+    timeout: 10_000,
   });
   let stdout = "";
   let stderr = "";
@@ -158,7 +159,7 @@ async function waitForDevServer(baseUrl: string): Promise<void> {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (devServer?.exitCode !== null) fail(`Inngest Dev Server exited ${devServer?.exitCode}`);
     try {
-      const response = await fetch(baseUrl);
+      const response = await fetch(baseUrl, { signal: AbortSignal.timeout(500) });
       if (response.ok) return;
     } catch {
       // The child may still be binding its loopback listener.
