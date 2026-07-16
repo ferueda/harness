@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -14,11 +14,24 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createServer } from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
 import { createGrove } from "@ferueda/grove";
+import { Inngest } from "inngest";
+import { connect } from "inngest/connect";
 import { createAgentProvider } from "../providers/registry.ts";
 import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import {
+  createFactoryInngestAdapter,
+  FACTORY_INNGEST_APP_ID,
+  FACTORY_INNGEST_FUNCTION_ID,
+  FactoryOperationRequestedEvent,
+} from "../lib/factory-inngest-adapter.ts";
 import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
-import { createFactoryOperationRef } from "../lib/factory-operation.ts";
+import {
+  createFactoryOperationRef,
+  FactoryOperationReceiptSchema,
+} from "../lib/factory-operation.ts";
 import { createFactoryRunContext } from "../lib/factory-run-context.ts";
 import {
   deriveFactoryGroveWorkspaceIntent,
@@ -30,11 +43,19 @@ import { factoryStoreMetadata, resolveFactoryStore } from "../lib/factory-store.
 type JsonObject = Record<string, unknown>;
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const INNGEST_CLI = join(ROOT, "node_modules/.bin/inngest");
 const HOSTED_RUNNER = pathToFileURL(join(ROOT, "lib/factory-hosted-operation.ts")).href;
 const PROVIDERS = pathToFileURL(join(ROOT, "providers/registry.ts")).href;
 const startedAt = Date.now();
 let station = "fixture allocation";
 let lastChild = { stdout: "", stderr: "" };
+let devOutput = { stdout: "", stderr: "" };
+let devServer: ReturnType<typeof spawn> | undefined;
+let worker: Awaited<ReturnType<typeof connect>> | undefined;
+
+for (const key of Object.keys(process.env)) {
+  if (key.startsWith("INNGEST_")) delete process.env[key];
+}
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), "harness-factory-grove-smoke-"));
 const controllerRepository = join(fixtureRoot, "controller");
@@ -92,6 +113,182 @@ function parseObject(value: string, name: string): JsonObject {
   return parsed as JsonObject;
 }
 
+async function allocatePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolveReady, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolveReady);
+  });
+  const address = server.address();
+  assert(address && typeof address === "object", "failed to allocate loopback port");
+  const port = address.port;
+  await new Promise<void>((resolveClose, reject) => {
+    server.close((error) => {
+      if (error) reject(error);
+      else resolveClose();
+    });
+  });
+  return port;
+}
+
+async function runAsync(command: string, args: string[]): Promise<string> {
+  const child = spawn(command, args, {
+    cwd: ROOT,
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 10_000,
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => (stdout += String(chunk)));
+  child.stderr.on("data", (chunk) => (stderr += String(chunk)));
+  const status = await new Promise<number | null>((resolveExit, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolveExit);
+  });
+  lastChild = { stdout, stderr };
+  if (status !== 0) fail(`${command} ${args.join(" ")} exited ${status ?? "without status"}`);
+  return stdout.trim();
+}
+
+function rememberDevOutput(target: "stdout" | "stderr", chunk: unknown): void {
+  devOutput[target] = `${devOutput[target]}${String(chunk)}`.slice(-8000);
+}
+
+async function waitForDevServer(baseUrl: string): Promise<void> {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (devServer?.exitCode !== null) fail(`Inngest Dev Server exited ${devServer?.exitCode}`);
+    try {
+      const response = await fetch(baseUrl, { signal: AbortSignal.timeout(500) });
+      if (response.ok) return;
+    } catch {
+      // The child may still be binding its loopback listener.
+    }
+    await delay(100);
+  }
+  fail(`Inngest Dev Server was not ready at ${baseUrl}`);
+}
+
+function findReceipt(value: unknown, outcome: "executed" | "recovered"): JsonObject | undefined {
+  if (typeof value === "string") {
+    try {
+      return findReceipt(JSON.parse(value), outcome);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!value || typeof value !== "object") return undefined;
+  if (!Array.isArray(value) && (value as JsonObject).outcome === outcome)
+    return value as JsonObject;
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    const found = findReceipt(child, outcome);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+async function pollEventReceipt(
+  apiHost: string,
+  eventId: string,
+  outcome: "executed" | "recovered",
+): Promise<JsonObject> {
+  let last = "";
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      last = await runAsync(INNGEST_CLI, [
+        "api",
+        "--api-host",
+        apiHost,
+        "--raw",
+        "get-event-runs",
+        "--event-id",
+        eventId,
+        "--include-output",
+      ]);
+      const receipt = findReceipt(JSON.parse(last), outcome);
+      if (receipt) return receipt;
+    } catch {
+      // Registration and execution are asynchronous; retain the last child diagnostics.
+    }
+    await delay(100);
+  }
+  fail(`event ${eventId} did not resolve to ${outcome}; last response: ${last.slice(-1000)}`);
+}
+
+async function waitForWorkerIdle(): Promise<void> {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (worker?.getDebugState().inFlightRequestCount === 0) {
+      // Let provider child cleanup finish after the worker releases its lease.
+      await delay(100);
+      return;
+    }
+    await delay(50);
+  }
+  fail("Inngest Connect worker did not become idle");
+}
+
+async function stopInngest(): Promise<void> {
+  const errors: unknown[] = [];
+  const currentWorker = worker;
+  worker = undefined;
+  if (currentWorker) {
+    try {
+      await currentWorker.close();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  const currentDevServer = devServer;
+  devServer = undefined;
+  if (currentDevServer && currentDevServer.exitCode === null) {
+    try {
+      const exited = new Promise<void>((resolveExit, rejectExit) => {
+        const cleanup = () => {
+          currentDevServer.off("exit", onExit);
+          currentDevServer.off("error", onError);
+        };
+        const onExit = () => {
+          cleanup();
+          resolveExit();
+        };
+        const onError = (error: Error) => {
+          cleanup();
+          rejectExit(error);
+        };
+        currentDevServer.once("exit", onExit);
+        currentDevServer.once("error", onError);
+        if (currentDevServer.exitCode !== null) onExit();
+      });
+
+      currentDevServer.kill("SIGTERM");
+      const exitedGracefully = await Promise.race([
+        exited.then(() => true),
+        delay(2_000).then(() => false),
+      ]);
+      if (!exitedGracefully) {
+        if (currentDevServer.exitCode === null) currentDevServer.kill("SIGKILL");
+        await exited;
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to stop Inngest smoke resources");
+}
+
+function lifecyclePath(): string {
+  const eventsDirectory = join(storeRoot, "projects", projectId, "factory", "events");
+  const entries = existsSync(eventsDirectory)
+    ? readdirSync(eventsDirectory)
+        .filter((entry) => entry.endsWith(".jsonl"))
+        .map((entry) => join(eventsDirectory, entry))
+    : [];
+  assert(entries.length === 1, `expected one lifecycle log, found ${entries.length}`);
+  return entries[0]!;
+}
+
 function runHostedInFreshProcess(input: JsonObject): JsonObject {
   const source = `
     const { runHostedFactoryOperation } = await import(${JSON.stringify(HOSTED_RUNNER)});
@@ -106,17 +303,6 @@ function runHostedInFreshProcess(input: JsonObject): JsonObject {
     }),
     "hosted operation receipt",
   );
-}
-
-function lifecyclePath(): string {
-  const eventsDirectory = join(storeRoot, "projects", projectId, "factory", "events");
-  const entries = existsSync(eventsDirectory)
-    ? readdirSync(eventsDirectory)
-        .filter((entry) => entry.endsWith(".jsonl"))
-        .map((entry) => join(eventsDirectory, entry))
-    : [];
-  assert(entries.length === 1, `expected one lifecycle log, found ${entries.length}`);
-  return entries[0]!;
 }
 
 try {
@@ -270,19 +456,82 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   process.env.FACTORY_GROVE_SMOKE_PROVIDER_LOG = providerLog;
   process.env.GIT_TERMINAL_PROMPT = "0";
   process.env.CI = "1";
-  station = "hosted Factory execution";
+  station = "Inngest Dev Server startup";
+  const [httpPort, gatewayPort] = await Promise.all([allocatePort(), allocatePort()]);
+  assert(httpPort !== gatewayPort, "Inngest smoke ports must differ");
+  const apiHost = `http://127.0.0.1:${httpPort}`;
+  const gatewayUrl = `ws://127.0.0.1:${gatewayPort}/v0/connect`;
+  devServer = spawn(
+    INNGEST_CLI,
+    [
+      "dev",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(httpPort),
+      "--connect-gateway-port",
+      String(gatewayPort),
+      "--no-discovery",
+      "--no-poll",
+    ],
+    { cwd: fixtureRoot, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  devServer.stdout!.on("data", (chunk) => rememberDevOutput("stdout", chunk));
+  devServer.stderr!.on("data", (chunk) => rememberDevOutput("stderr", chunk));
+  await waitForDevServer(apiHost);
+
+  process.env.INNGEST_DEV = "1";
+  process.env.INNGEST_BASE_URL = apiHost;
+  process.env.INNGEST_EVENT_KEY = "factory-grove-smoke";
   const runtime = {
     projectId,
     repositoryId: intent.repositoryId,
     factoryStore,
     grove: config,
     maxRuntimeMs: 30_000,
+    agentProviderFactory: createAgentProvider,
     triage: { nextLiveRunRequiresRerun: false },
   };
-  const executed = runHostedInFreshProcess({
-    request,
+  const inngest = new Inngest({ id: FACTORY_INNGEST_APP_ID });
+  const factoryFunction = createFactoryInngestAdapter({
+    client: inngest,
     runtime,
+    runner: async ({ request: deliveredRequest, runtime: deliveredRuntime }) =>
+      FactoryOperationReceiptSchema.parse(
+        runHostedInFreshProcess({
+          request: deliveredRequest,
+          runtime: { ...deliveredRuntime, signal: undefined },
+        }),
+      ),
   });
+  station = "Inngest Connect registration";
+  worker = await connect({
+    apps: [{ client: inngest, functions: [factoryFunction] }],
+    instanceId: "factory-grove-smoke",
+    maxWorkerConcurrency: 1,
+    handleShutdownSignals: [],
+    gatewayUrl,
+    isolateExecution: false,
+  });
+
+  const functions = await runAsync(INNGEST_CLI, [
+    "api",
+    "--api-host",
+    apiHost,
+    "--raw",
+    "get-functions",
+    "--app-id",
+    FACTORY_INNGEST_APP_ID,
+  ]);
+  assert(functions.includes(FACTORY_INNGEST_APP_ID), "registered Inngest app missing");
+  assert(functions.includes(FACTORY_INNGEST_FUNCTION_ID), "registered Inngest function missing");
+
+  station = "hosted Factory execution through Inngest";
+  const executedEvent = await inngest.send(FactoryOperationRequestedEvent.create(request));
+  const executedEventId = executedEvent.ids[0];
+  assert(typeof executedEventId === "string", "executed delivery event ID missing");
+  const executed = await pollEventReceipt(apiHost, executedEventId, "executed");
+  await waitForWorkerIdle();
   assert(executed.outcome === "executed", "hosted Factory action did not execute");
   const eventPath = lifecyclePath();
   const evidenceBefore = readFileSync(eventPath, "utf8");
@@ -314,11 +563,11 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   assert((await grove.inspect(intent.leaseId)) === null, "released lease is still present");
   assert(readFileSync(eventPath, "utf8") === evidenceBefore, "release changed Factory evidence");
 
-  station = "hosted Factory replay after release";
-  const recovered = runHostedInFreshProcess({
-    request,
-    runtime,
-  });
+  station = "hosted Factory replay through Inngest after release";
+  const recoveredEvent = await inngest.send(FactoryOperationRequestedEvent.create(request));
+  const recoveredEventId = recoveredEvent.ids[0];
+  assert(typeof recoveredEventId === "string", "recovered delivery event ID missing");
+  const recovered = await pollEventReceipt(apiHost, recoveredEventId, "recovered");
   assert(recovered.outcome === "recovered", "hosted replay did not recover");
   assert(readFileSync(setupLog, "utf8") === "x", "replay reran the setup hook");
   assert(
@@ -328,14 +577,29 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   assert((await grove.inspect(intent.leaseId)) === null, "replay recreated the released lease");
   assert(readFileSync(eventPath, "utf8") === evidenceBefore, "replay changed Factory evidence");
 
+  await stopInngest();
   rmSync(fixtureRoot, { recursive: true, force: true });
   console.log(`Factory Grove smoke PASS (${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
 } catch (error) {
+  let cleanupError: unknown;
+  try {
+    await stopInngest();
+  } catch (caught) {
+    cleanupError = caught;
+  }
   const bounded = (value: string) => value.trim().slice(-4000);
   console.error(`Factory Grove smoke FAIL at station: ${station}`);
   console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+  if (cleanupError)
+    console.error(
+      `--- cleanup error ---\n${cleanupError instanceof Error ? (cleanupError.stack ?? cleanupError.message) : String(cleanupError)}`,
+    );
   if (lastChild.stderr.trim()) console.error(`--- child stderr ---\n${bounded(lastChild.stderr)}`);
   if (lastChild.stdout.trim()) console.error(`--- child stdout ---\n${bounded(lastChild.stdout)}`);
+  if (devOutput.stderr.trim())
+    console.error(`--- Dev Server stderr ---\n${bounded(devOutput.stderr)}`);
+  if (devOutput.stdout.trim())
+    console.error(`--- Dev Server stdout ---\n${bounded(devOutput.stdout)}`);
   console.error(`Retained fixture: ${fixtureRoot}`);
   process.exitCode = 1;
 }

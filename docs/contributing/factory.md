@@ -158,6 +158,13 @@ delivery recovers authenticated results and rejects stale or waiting work before
 Grove; after acquisition it validates the relocated checkout and re-resolves
 Factory before invoking one action.
 
+`lib/factory-inngest-adapter.ts` delivers one identifier-only operation per run
+and sends the returned `next` operation as a new event. Waits emit nothing.
+Concurrency limits schedule work but do not replace Factory locks or action
+identity. Operation and delivery failures may retry three times; saved receipts
+prevent Factory or provider replay. Actions stop after 110 minutes. No production
+worker, recovery supervisor, or multi-worker guarantee ships yet.
+
 Hosted eligibility requires that immutable target to already equal the
 deterministic Grove target. A phase started manually on another branch fails
 closed; acquiring Grove before hosted phase creation remains phase-start policy,
@@ -179,7 +186,7 @@ base. Conflicts or uncertain cleanup require explicit repair or quarantine.
 | Linear projections                  | `lib/factory-linear-adapter.ts`, `lib/factory-linear-*-apply.ts`, `lib/factory-linear-*-handoff.ts`                                 |
 | Pull-request publication            | `lib/factory-*-publication*.ts`, `lib/factory-publication-git.ts`, `lib/factory-pull-request-publisher.ts`                          |
 | Hosted workspace leases             | `lib/factory-grove-workspace.ts`                                                                                                    |
-| Hosted operation delivery           | `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`                                                                       |
+| Hosted operation delivery           | `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`, `lib/factory-inngest-adapter.ts`                                     |
 | Provider execution and prompts      | `providers/`, `workflows/`, `lib/prompts/factory-*.ts`                                                                              |
 
 Keep lifecycle decisions in the reducer/reaction boundary, external mutations in

@@ -355,6 +355,7 @@ test("Factory smoke stays explicit locally and runs only in the full CI gate", (
     expect(testing).toContain(lane);
   }
   expect(testing).toContain("pnpm smoke:factory");
+  expect(testing).toContain("scripts/smoke-factory-grove.ts");
   expect(testing).toContain("make fix-plan");
   expect(testing).toContain("make check-plan");
   expect(testing).toContain("bypasses the full gate and Factory smoke");
@@ -633,6 +634,7 @@ test("factory contributor and operator guidance stay linked from entrypoints", (
   expect(factoryGuide).toContain("## Grove workspace boundary");
   expect(factoryGuide).toContain("lib/factory-grove-workspace.ts");
   expect(factoryGuide).toContain("lib/factory-hosted-operation.ts");
+  expect(factoryGuide).toContain("lib/factory-inngest-adapter.ts");
   expect(factoryGuide).toContain("identifier-only request");
   expect(readRepoFile("docs/contributing/architecture.md")).not.toContain(
     "No scheduler or hosted operation runner ships today",

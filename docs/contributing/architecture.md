@@ -153,8 +153,13 @@ The CLI still manually steps phase start, continuation, Linear/GitHub
 projections, publication, and merge acknowledgement. The callable hosted runner
 accepts only project/work-item/operation identifiers; trusted runtime owns store
 paths, repository identity, credentials, provider controls, and Grove config.
-It does not schedule its optional next-operation hint or release leases. No
-scheduler or deployment integration ships.
+
+`lib/factory-inngest-adapter.ts` delivers one identifier-only operation per
+function run and may send the returned `next` operation as another event. Factory
+remains the authority; Inngest concurrency only schedules work. Operation and
+delivery failures may retry three times, while saved receipts prevent Factory or
+provider replay. Actions stop after 110 minutes. The current integration has one
+persistent host and no webhook, production worker, or recovery supervisor.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

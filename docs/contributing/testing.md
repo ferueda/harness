@@ -40,7 +40,7 @@ docs should link here. Exact command ownership lives in
 | CLI integration          | Argument parsing, command selection, structured output, and separate-process behavior   |
 | Repository self-contract | Packaged skills, command inventory, documentation structure, and private-path exclusion |
 | Distribution smoke       | Built package layout, installed entrypoint, generated shim, and basic public wiring     |
-| Factory system smoke     | Offline full-chain CLI journey plus hosted Grove execution/replay-after-release journey |
+| Factory system smoke     | Offline Factory CLI, Inngest delivery, and Grove recovery                               |
 | Optional live            | Explicitly authorized external integration proof                                        |
 
 Use fast module and contract tests by default. Add broader proof only when the
@@ -57,9 +57,9 @@ changed behavior crosses a boundary the cheaper layer cannot observe.
   CLI test.
 - Keep skill-owned suites inside the owning skill, such as
   `skills/sessions/test/**`.
-- Keep built-distribution coverage in `scripts/smoke-dist.ts`, the offline
-  Factory journey in `scripts/smoke-factory.ts`, and gate-output behavior in
-  `test/gate-output.test.ts`.
+- Keep built-distribution coverage in `scripts/smoke-dist.ts`, Factory smokes in
+  `scripts/smoke-factory.ts` and `scripts/smoke-factory-grove.ts`, and gate-output
+  behavior in `test/gate-output.test.ts`.
 - Keep target-repo fixtures isolated from the Harness checkout and user state.
 
 Use an existing location before inventing another test directory or suffix.
@@ -94,12 +94,11 @@ System smokes should:
 - clean on success and preserve bounded evidence on failure;
 - avoid generic test-only runtimes or weakened production validation.
 
-Distribution smoke proves packaging and basic command wiring. The Factory system
-smoke proves one critical multi-process journey through local fakes, a temporary
-repository, and an isolated durable store. It cleans its fixture on success and
-prints retained fixture, store, and remote paths on failure. Live protocols
-require explicit authority, credentials, stop conditions, disposable targets,
-and cleanup; they are not routine CI or deterministic regression coverage.
+Distribution smoke proves packaging and command wiring. Factory smoke runs local
+fakes in a temporary repository and store, then proves Inngest execution and
+recovery around Grove release. It cleans on success and retains bounded diagnostics
+on failure. Live protocols require explicit authority, credentials, stop
+conditions, disposable targets, and cleanup; they are not routine CI coverage.
 
 ## Verification Commands
 
@@ -113,9 +112,9 @@ pnpm exec vitest run test/docs-contracts.test.ts
 
 - `pnpm test` runs the Vitest suite.
 - `pnpm smoke:dist` proves built distribution wiring.
-- `pnpm smoke:factory` / `make smoke-factory` runs the offline Factory CLI and
-  hosted Grove execution plus replay after terminal lease release. It is not part of Vitest, watch mode,
-  pre-commit, or ordinary local `pnpm check`.
+- `pnpm smoke:factory` / `make smoke-factory` runs the offline Factory, Inngest,
+  and Grove recovery journey. It is not part of Vitest, watch mode, pre-commit, or
+  ordinary local `pnpm check`.
 - `pnpm check` / `make check` is the normal local handoff gate.
 - `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Factory
   system smoke after the ordinary checks.
