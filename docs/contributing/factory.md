@@ -158,24 +158,12 @@ delivery recovers authenticated results and rejects stale or waiting work before
 Grove; after acquisition it validates the relocated checkout and re-resolves
 Factory before invoking one action.
 
-Inngest delivery lives in `lib/factory-inngest-adapter.ts`. A caller-owned
-`harness-factory` client and trusted `HostedFactoryRuntime` register only
-`execute-factory-operation-v1`, triggered by version `"1"` of
-`harness/factory.operation.requested`. The event, operation step, next-event step,
-and returned receipt stay identifier-only. The function runs one requested
-operation, never follows the next reaction inside that step, and uses durable
-`step.sendEvent()` only when the receipt includes `next`.
-
-The per-work-item and global concurrency limits are scheduling controls, not
-Factory locks. A 110-minute adapter deadline leaves ten minutes below Inngest's
-two-hour step ceiling and is combined with the runtime signal.
-The operation step checkpoints every authenticated durable receipt, including a
-persisted failure or abort. A host error before that checkpoint or a later
-next-event delivery failure may retry three times after its first execution. A
-delivery retry reuses the saved receipt instead of rerunning Factory or the
-provider. Exhaustion fails the Inngest run; no recovery supervisor ships yet.
-Human, publication, merge, complete, failed, and stale waits emit nothing. This
-adapter does not add a production worker or claim multi-worker correctness.
+`lib/factory-inngest-adapter.ts` delivers one identifier-only operation per run
+and sends the returned `next` operation as a new event. Waits emit nothing.
+Concurrency limits schedule work but do not replace Factory locks or action
+identity. Operation and delivery failures may retry three times; saved receipts
+prevent Factory or provider replay. Actions stop after 110 minutes. No production
+worker, recovery supervisor, or multi-worker guarantee ships yet.
 
 Hosted eligibility requires that immutable target to already equal the
 deterministic Grove target. A phase started manually on another branch fails

@@ -154,19 +154,12 @@ projections, publication, and merge acknowledgement. The callable hosted runner
 accepts only project/work-item/operation identifiers; trusted runtime owns store
 paths, repository identity, credentials, provider controls, and Grove config.
 
-`lib/factory-inngest-adapter.ts` is the narrow delivery boundary. Inngest retries
-one versioned identifier-only operation in one stable step and sends one hinted
-operation only when the authenticated Factory receipt contains `next`. Per-work-item
-and global concurrency are both one, but they only schedule work; Factory action
-identity and persisted results remain correctness authority. The adapter caps the
-trusted runtime at 110 minutes, leaving ten minutes below Inngest's two-hour step
-ceiling, and combines that deadline with its host signal.
-The operation step checkpoints every durable receipt, including a persisted
-failure or abort. A host failure before that checkpoint or a later next-event
-delivery failure may retry three times after the first execution; delivery retries
-reuse the saved receipt. Exhaustion fails the Inngest run, and no recovery
-supervisor ships yet. The current boundary is a single persistent execution host
-and includes no webhook ingress or production deployment wiring.
+`lib/factory-inngest-adapter.ts` delivers one identifier-only operation per
+function run and may send the returned `next` operation as another event. Factory
+remains the authority; Inngest concurrency only schedules work. Operation and
+delivery failures may retry three times, while saved receipts prevent Factory or
+provider replay. Actions stop after 110 minutes. The current integration has one
+persistent host and no webhook, production worker, or recovery supervisor.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.
