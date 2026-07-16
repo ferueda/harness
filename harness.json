@@ -50,6 +50,9 @@
         }
       }
     },
+    "store": {
+      "projectId": "harness"
+    },
     "linear": {
       "teamKey": "FER",
       "projectId": "d885bd86-e17a-4c8e-ace2-b39793528c49",
