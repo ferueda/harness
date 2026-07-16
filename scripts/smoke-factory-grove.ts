@@ -228,20 +228,54 @@ async function waitForWorkerIdle(): Promise<void> {
 }
 
 async function stopInngest(): Promise<void> {
-  if (worker) {
-    await worker.close();
-    worker = undefined;
+  const errors: unknown[] = [];
+  const currentWorker = worker;
+  worker = undefined;
+  if (currentWorker) {
+    try {
+      await currentWorker.close();
+    } catch (error) {
+      errors.push(error);
+    }
   }
-  if (devServer && devServer.exitCode === null) {
-    devServer.kill("SIGTERM");
-    await Promise.race([
-      new Promise<void>((resolveExit) => devServer?.once("exit", () => resolveExit())),
-      delay(2_000).then(() => {
-        if (devServer?.exitCode === null) devServer.kill("SIGKILL");
-      }),
-    ]);
-  }
+
+  const currentDevServer = devServer;
   devServer = undefined;
+  if (currentDevServer && currentDevServer.exitCode === null) {
+    try {
+      const exited = new Promise<void>((resolveExit, rejectExit) => {
+        const cleanup = () => {
+          currentDevServer.off("exit", onExit);
+          currentDevServer.off("error", onError);
+        };
+        const onExit = () => {
+          cleanup();
+          resolveExit();
+        };
+        const onError = (error: Error) => {
+          cleanup();
+          rejectExit(error);
+        };
+        currentDevServer.once("exit", onExit);
+        currentDevServer.once("error", onError);
+        if (currentDevServer.exitCode !== null) onExit();
+      });
+
+      currentDevServer.kill("SIGTERM");
+      const exitedGracefully = await Promise.race([
+        exited.then(() => true),
+        delay(2_000).then(() => false),
+      ]);
+      if (!exitedGracefully) {
+        if (currentDevServer.exitCode === null) currentDevServer.kill("SIGKILL");
+        await exited;
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  if (errors.length > 0) throw new AggregateError(errors, "Failed to stop Inngest smoke resources");
 }
 
 function lifecyclePath(): string {
@@ -547,10 +581,19 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   rmSync(fixtureRoot, { recursive: true, force: true });
   console.log(`Factory Grove smoke PASS (${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);
 } catch (error) {
-  await stopInngest();
+  let cleanupError: unknown;
+  try {
+    await stopInngest();
+  } catch (caught) {
+    cleanupError = caught;
+  }
   const bounded = (value: string) => value.trim().slice(-4000);
   console.error(`Factory Grove smoke FAIL at station: ${station}`);
   console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+  if (cleanupError)
+    console.error(
+      `--- cleanup error ---\n${cleanupError instanceof Error ? (cleanupError.stack ?? cleanupError.message) : String(cleanupError)}`,
+    );
   if (lastChild.stderr.trim()) console.error(`--- child stderr ---\n${bounded(lastChild.stderr)}`);
   if (lastChild.stdout.trim()) console.error(`--- child stdout ---\n${bounded(lastChild.stdout)}`);
   if (devOutput.stderr.trim())
