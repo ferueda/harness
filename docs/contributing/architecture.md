@@ -42,10 +42,9 @@ CLI
 Hosted operation delivery composes Factory with Grove without moving lifecycle policy:
 
 ```text
-trusted bounded project/work-item targets
-  -> canonical log reaction and authenticated operation
-  -> delivered, waiting, stale, or attention result per target
-  -> identifier-only request
+trusted project/work-item targets
+  -> reconcile the canonical reaction
+  -> identifier-only request or bounded wait/stale/attention result
 identifier-only request + trusted project runtime
   -> authenticate phase, work item, action, and completed result
   -> recover, stale, or wait before Grove when possible
@@ -160,21 +159,16 @@ projections, publication, and merge acknowledgement. The callable hosted runner
 accepts only project/work-item/operation identifiers; trusted runtime owns store
 paths, repository identity, credentials, provider controls, and Grove config.
 
-The host may explicitly invoke `lib/factory-operation-reconciliation.ts` for a
-bounded trusted target list or schedule that invocation outside Harness. Each
-target returns `delivered`, `waiting`, `stale`, or `attention`; errors are
-bounded and isolated, and no lifecycle state changes. Harness does not discover
-targets or provide a project registry, scheduler, polling framework, or report
-store.
+An external host may call `lib/factory-operation-reconciliation.ts` with a
+bounded trusted target list. It returns `delivered`, `waiting`, `stale`, or
+`attention` per target, isolates failures, and neither changes lifecycle state
+nor discovers or schedules work.
 
-`lib/factory-inngest-adapter.ts` owns the deterministic event ID and both direct
-and chained sends. It delivers one identifier-only operation per function run
-and may send the returned `next` operation as another event. The event ID only
-suppresses duplicate transport work; the canonical Factory action identity
-prevents lifecycle and provider replay even after the transport deduplication
-window. Operation and delivery failures may retry three times. Actions stop
-after 110 minutes. The current integration has one persistent host and no
-webhook, production worker, or recovery supervisor.
+`lib/factory-inngest-adapter.ts` owns deterministic event IDs and direct or
+chained sends. IDs suppress transport duplicates; Factory action identity
+prevents replay. The adapter keeps three retries and a 110-minute action limit.
+The current integration assumes one persistent host and ships no production
+worker or Harness scheduler.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

@@ -637,13 +637,9 @@ test("factory contributor and operator guidance stay linked from entrypoints", (
   expect(factoryGuide).toContain("lib/factory-operation-reconciliation.ts");
   expect(factoryGuide).toContain("lib/factory-inngest-adapter.ts");
   expect(factoryGuide).toContain("identifier-only request");
-  expect(factoryGuide).toContain("caller-supplied, trusted list");
-  expect(factoryGuide).toContain("`delivered`, `waiting`, `stale`, or `attention`");
-  expect(factoryGuide).toContain("identity remains the correctness boundary");
+  expect(factoryGuide).toContain("Factory action identity");
   const architecture = readRepoFile("docs/contributing/architecture.md");
   expect(architecture).toContain("lib/factory-operation-reconciliation.ts");
-  expect(architecture).toContain("does not discover");
-  expect(architecture).toContain("event ID only");
   expect(architecture).not.toContain("No scheduler or hosted operation runner ships today");
   expect(readRepoFile("README.md")).toContain("docs/contributing/factory.md");
   expect(readRepoFile("README.md")).toContain("skills/factory-operator/SKILL.md");

@@ -159,26 +159,18 @@ Grove; after acquisition it validates the relocated checkout and re-resolves
 Factory before invoking one action.
 
 `lib/factory-operation-reconciliation.ts` owns bounded log-to-delivery repair.
-An external host explicitly invokes it with a caller-supplied, trusted list of
-project/work-item/store targets and one delivery callback. It processes that
-list in order and returns one `delivered`, `waiting`, `stale`, or `attention`
-result per target. One target's store or transport failure does not block the
-others. Reconciliation reads and authenticates the current reaction; it never
-appends lifecycle state, discovers projects, invokes providers, or creates
-workflow authority. A failed send can be regenerated from the same Factory log
-by a later explicit invocation or host-owned schedule.
+An external host passes a bounded trusted target list and a delivery callback.
+Reconciliation validates the current reaction, processes targets in order,
+isolates failures, and returns `delivered`, `waiting`, `stale`, or `attention`
+without changing lifecycle state or discovering work. A later call can
+regenerate a failed send from the Factory log.
 
 `lib/factory-inngest-adapter.ts` owns Factory event construction, deterministic
-delivery IDs, and sends. It delivers one identifier-only operation per run and
-sends the returned `next` operation as a new event. The same canonical request
-always gets the same transport ID as a duplicate-suppression aid. Factory action
-identity remains the correctness boundary after a lost response, a retry, or a
-redelivery outside Inngest's deduplication window. Waits emit nothing.
-Concurrency limits schedule work but do not replace Factory locks or action
-identity. Operation and delivery failures may retry three times; saved receipts
-prevent Factory or provider replay. Actions stop after 110 minutes. No production
-worker, Harness scheduler, project registry, recovery supervisor, or multi-worker
-guarantee ships yet.
+delivery IDs, and direct or chained sends. The same request gets the same ID to
+suppress transport duplicates; Factory action identity prevents replay. Waits
+emit nothing. Concurrency limits do not replace Factory locks. The adapter keeps
+three retries and a 110-minute action limit. Target discovery, scheduling, and a
+production worker remain host-owned.
 
 Hosted eligibility requires that immutable target to already equal the
 deterministic Grove target. A phase started manually on another branch fails
