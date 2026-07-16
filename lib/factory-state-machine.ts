@@ -94,6 +94,19 @@ export const FactoryLifecycleStateSchema = z.union([
 ]);
 export type FactoryLifecycleState = z.infer<typeof FactoryLifecycleStateSchema>;
 
+export const FactoryWaitReasonSchema = z.enum([
+  "phase-command",
+  "human",
+  "plan-publication",
+  "plan-merge",
+  "pr-publication",
+  "pr-merge",
+  "complete",
+  "failed",
+  "stale-event",
+]);
+export type FactoryWaitReason = z.infer<typeof FactoryWaitReasonSchema>;
+
 export type FactoryReaction =
   | {
       kind: "invoke";
@@ -107,16 +120,7 @@ export type FactoryReaction =
     }
   | {
       kind: "wait";
-      reason:
-        | "phase-command"
-        | "human"
-        | "plan-publication"
-        | "plan-merge"
-        | "pr-publication"
-        | "pr-merge"
-        | "complete"
-        | "failed"
-        | "stale-event";
+      reason: FactoryWaitReason;
       command?: string;
     };
 

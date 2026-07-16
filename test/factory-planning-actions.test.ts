@@ -1,9 +1,18 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import type { Agent, AgentRunInput } from "../lib/agents.ts";
-import { verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import { recordFactoryContinuation } from "../lib/factory-continuation.ts";
 import { producePlanCandidate } from "../lib/factory-plan-candidate-action.ts";
@@ -19,6 +28,122 @@ import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import type { FactoryStoreMeta } from "../lib/factory-store.ts";
 import { decideNextFactoryAction } from "../lib/factory-state-machine.ts";
+
+const relocatedRoots: string[] = [];
+afterEach(() => {
+  for (const root of relocatedRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+test("relocated planning uses the validated Grove workspace for provider and scratch", async () => {
+  const root = mkdtempSync(join(tmpdir(), "factory-planning-relocated-"));
+  relocatedRoots.push(root);
+  const controller = join(root, "controller");
+  mkdirSync(controller);
+  git(controller, ["init", "--initial-branch=main"]);
+  git(controller, ["config", "user.name", "Factory Test"]);
+  git(controller, ["config", "user.email", "factory@example.test"]);
+  git(controller, ["remote", "add", "origin", "https://example.test/repo.git"]);
+  writeFileSync(join(controller, "README.md"), "fixture\n");
+  git(controller, ["add", "README.md"]);
+  git(controller, ["commit", "-m", "fixture"]);
+
+  const projectRoot = join(root, "store");
+  const factoryStateRoot = join(projectRoot, "factory");
+  ensureFactoryStoreFormat(factoryStateRoot);
+  const store: FactoryStoreMeta = {
+    storeRoot: projectRoot,
+    projectId: "repo",
+    projectRoot,
+    factoryStateRoot,
+    factoryRunsDir: join(projectRoot, "runs/factory"),
+    reviewRunsDir: join(projectRoot, "runs/reviews"),
+    repo: { name: "repo", id: "repo", idSource: "config" },
+    overrides: {},
+    warnings: [],
+  };
+  const workItem: FactoryWorkItem = {
+    id: "item-relocated",
+    source: "file",
+    title: "Relocated plan",
+    body: "Ship it",
+    labels: [],
+  };
+  const created = createFactoryPlanningRunContext({
+    workspace: controller,
+    runsDir: store.factoryRunsDir,
+    workItem,
+    plannerRole: { agent: "cursor", model: "planner" },
+    reviewerRole: { agent: "cursor", model: "reviewer" },
+    outputPlan: "dev/plans/relocated.md",
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    factoryStore: store,
+  });
+  git(controller, ["checkout", "--detach"]);
+  const groveWorkspace = join(root, "grove-workspace");
+  git(controller, ["worktree", "add", groveWorkspace, "main"]);
+  const ctx = openFactoryPlanningRunContext({
+    workspace: groveWorkspace,
+    runsDir: store.factoryRunsDir,
+    phaseRunId: created.runId,
+    workItem,
+    factoryStore: store,
+  });
+  const workItemRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: projectRoot,
+    path: `runs/factory/${created.runId}/context/work-item.json`,
+  });
+  const imported: FactoryLifecycleEvent = {
+    version: 1,
+    id: "import:relocated",
+    type: "work_item.imported",
+    workItemKey: deriveFactoryWorkItemKey(workItem),
+    occurredAt: new Date().toISOString(),
+    data: { source: "file" },
+  };
+  appendFactoryActionEvent({ factoryStateRoot, event: imported, expectedLastEventId: null });
+  const requested: FactoryLifecycleEvent = {
+    version: 1,
+    id: `planning.requested:${created.runId}`,
+    type: "planning.requested",
+    workItemKey: deriveFactoryWorkItemKey(workItem),
+    occurredAt: new Date().toISOString(),
+    phaseRunId: created.runId,
+    data: {
+      expectedPredecessor: imported.id,
+      inputRefs: [workItemRef],
+      intent: "start",
+      publicationMode: "local",
+      outputPlan: "dev/plans/relocated.md",
+    },
+  };
+  const start = appendFactoryActionEvent({
+    factoryStateRoot,
+    event: requested,
+    expectedLastEventId: imported.id,
+  });
+  const providerWorkspaces: string[] = [];
+  await producePlanCandidate({
+    ctx,
+    factoryStateRoot,
+    reaction: invoke(start),
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      async run(input) {
+        providerWorkspaces.push(input.workspace);
+        writeFileSync(plannerDraftPath(input), "# Relocated\n");
+        return successfulPlannerResult();
+      },
+    }),
+  });
+
+  expect(ctx.workspace).toBe(realpathSync(groveWorkspace));
+  expect(providerWorkspaces).toEqual([realpathSync(groveWorkspace)]);
+  expect(existsSync(join(groveWorkspace, ".harness/factory-drafts", created.runId))).toBe(true);
+  expect(existsSync(join(controller, ".harness/factory-drafts", created.runId))).toBe(false);
+});
 
 test("candidate and review actions step separately and revisions resume the planner session", async () => {
   const { ctx, factoryStateRoot, start } = planningActionFixture();
@@ -1027,6 +1152,10 @@ function successfulPlannerResult(
     raw: unchangedWorkspace(),
     session: { provider: "cursor" as const, id: "planner-session" },
   };
+}
+
+function git(workspace: string, args: string[]): string {
+  return execFileSync("git", args, { cwd: workspace, encoding: "utf8" }).trim();
 }
 
 function unchangedWorkspace() {

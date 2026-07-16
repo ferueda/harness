@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Agent } from "./agents.ts";
 import { createFactoryArtifactRef } from "./factory-artifact-ref.ts";
@@ -15,6 +15,7 @@ import type { FactoryLifecycleEvent } from "./factory-lifecycle.ts";
 import {
   createFactoryOperationRef,
   executeFactoryOperation,
+  recoverCompletedFactoryOperation,
   resolveFactoryOperation,
   type FactoryOperationRef,
 } from "./factory-operation.ts";
@@ -135,6 +136,8 @@ function resolveFixture(
     projectId,
     projectRoot: value.projectRoot,
     factoryStateRoot: value.factoryStateRoot,
+    workspaceRef: projectId,
+    factoryStore: value.factoryStore,
     workItemKey,
     operation,
   });
@@ -143,6 +146,22 @@ function resolveFixture(
 function completedEvent(
   value: ReturnType<typeof fixture>,
 ): Extract<FactoryLifecycleEvent, { type: "triage.work_item.completed" }> {
+  const evidenceDir = join(actionDir(value), "evidence");
+  mkdirSync(evidenceDir, { recursive: true });
+  writeFileSync(join(evidenceDir, "summary.md"), "summary\n");
+  writeFileSync(
+    join(evidenceDir, "factory-triage.json"),
+    JSON.stringify({
+      route: "ready-to-plan",
+      confidence: "high",
+      rationale: "Ready",
+      evidence: [{ kind: "code", path: "README.md", summary: "Checked" }],
+      questions: [],
+      reconsiderWhen: null,
+    }),
+  );
+  const runRef = actionRef(value, "evidence/summary.md");
+  const triageRef = actionRef(value, "evidence/factory-triage.json");
   return {
     version: 1,
     id: `triage.work_item.completed:${value.operation.actionKey}`,
@@ -155,16 +174,67 @@ function completedEvent(
       handlerVersion: 1,
       attempt: 1,
       causationEventId: value.requested.id,
-      execution: { workspaceRef: "unused", runRef: value.inputRef },
-      evidence: [value.inputRef],
+      execution: { workspaceRef: projectId, runRef },
+      evidence: [runRef, triageRef],
       route: "ready-to-plan",
       rationale: "Ready",
     },
   };
 }
 
+function failedEvent(
+  value: ReturnType<typeof fixture>,
+): Extract<FactoryLifecycleEvent, { type: "factory.action.failed" }> {
+  mkdirSync(join(actionDir(value), "evidence"), { recursive: true });
+  writeFileSync(
+    join(actionDir(value), "evidence/failure.json"),
+    JSON.stringify({
+      runId: phaseRunId,
+      workflow: "factory-triage",
+      status: "failed",
+      workspace: value.workspace,
+      runDir: value.runDir,
+      workItem: { id: workItem.id, source: workItem.source, title: workItem.title },
+      agent: { name: "cursor", model: profile.model },
+      startedAt: "2026-07-15T20:02:00.000Z",
+      durationMs: 1,
+      error: "Retry",
+      failureKind: "retryable",
+      factoryStore: value.factoryStore,
+    }),
+  );
+  const failure = actionRef(value, "evidence/failure.json");
+  return {
+    version: 1,
+    id: `factory.action.failed:${value.operation.actionKey}`,
+    type: "factory.action.failed",
+    workItemKey,
+    occurredAt: "2026-07-15T20:02:00.000Z",
+    phaseRunId,
+    data: {
+      handler: "triageWorkItem",
+      handlerVersion: 1,
+      attempt: 1,
+      causationEventId: value.requested.id,
+      execution: { workspaceRef: projectId, runRef: failure },
+      evidence: [failure],
+      phase: "triage",
+      failureKind: "retryable",
+      message: "Retry",
+    },
+  };
+}
+
 function actionDir(value: ReturnType<typeof fixture>): string {
   return join(value.runDir, "actions", "1", "triageWorkItem", value.operation.actionKey);
+}
+
+function actionRef(value: ReturnType<typeof fixture>, path: string) {
+  return createFactoryArtifactRef({
+    base: "factory-store",
+    root: value.projectRoot,
+    path: relative(value.projectRoot, join(actionDir(value), path)),
+  });
 }
 
 test("resolves the exact durable reaction as current without workspace access", () => {
@@ -189,7 +259,72 @@ test("recovers an authenticated completed result before lifecycle append", () =>
   const event = completedEvent(value);
   writeFactoryActionResult(actionDir(value), event);
 
-  expect(resolveFixture(value)).toEqual({ status: "completed", operation: value.operation, event });
+  expect(resolveFixture(value)).toEqual({
+    status: "completed",
+    operation: value.operation,
+    event,
+    eventRecorded: false,
+  });
+});
+
+test("conditionally appends an authenticated result and recovers idempotently", () => {
+  const value = fixture();
+  const event = completedEvent(value);
+  writeFactoryActionResult(actionDir(value), event);
+  const first = recoverFixture(value);
+  expect(first).toEqual({ event, reaction: { kind: "wait", reason: "phase-command" } });
+  expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey).map(({ id }) => id)).toEqual([
+    "import:item-1",
+    value.requested.id,
+    event.id,
+  ]);
+  expect(resolveFixture(value)).toMatchObject({ status: "completed", eventRecorded: true });
+  expect(recoverFixture(value)).toEqual(first);
+  expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey)).toHaveLength(3);
+});
+
+test("recovery rejects a divergent event with the same deterministic identity", () => {
+  const value = fixture();
+  const result = completedEvent(value);
+  appendFactoryActionEvent({
+    factoryStateRoot: value.factoryStateRoot,
+    event: { ...result, data: { ...result.data, rationale: "Divergent" } },
+    expectedLastEventId: value.requested.id,
+  });
+  writeFactoryActionResult(actionDir(value), result);
+  expect(() => recoverFixture(value)).toThrow(/different content/);
+});
+
+test("recovery rejects a stale conditional-append cursor", () => {
+  const value = fixture();
+  const result = completedEvent(value);
+  const blocker = failedEvent(value);
+  appendFactoryActionEvent({
+    factoryStateRoot: value.factoryStateRoot,
+    event: blocker,
+    expectedLastEventId: value.requested.id,
+  });
+  writeFactoryActionResult(actionDir(value), result);
+  expect(() => recoverFixture(value)).toThrow(/Stale Factory cursor/);
+  expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey).at(-1)?.id).toBe(blocker.id);
+});
+
+test("derives an identifier-only next request from canonical recovered state", () => {
+  const value = fixture();
+  const event = failedEvent(value);
+  writeFactoryActionResult(actionDir(value), event);
+  const recovered = recoverFixture(value);
+  expect(recovered.next).toEqual({
+    projectId,
+    workItemKey,
+    operation: createFactoryOperationRef({
+      phaseRunId,
+      handler: "triageWorkItem",
+      attempt: 1,
+      causationEventId: event.id,
+    }),
+  });
+  expect(Object.keys(recovered.next!)).toEqual(["projectId", "workItemKey", "operation"]);
 });
 
 test("rejects a schema-valid result type owned by another handler", () => {
@@ -221,28 +356,15 @@ test("rejects a schema-valid result type owned by another handler", () => {
 
 test("recovers a failed result when its handler and action identity match", () => {
   const value = fixture();
-  const event: Extract<FactoryLifecycleEvent, { type: "factory.action.failed" }> = {
-    version: 1,
-    id: `factory.action.failed:${value.operation.actionKey}`,
-    type: "factory.action.failed",
-    workItemKey,
-    occurredAt: "2026-07-15T20:02:00.000Z",
-    phaseRunId,
-    data: {
-      handler: "triageWorkItem",
-      handlerVersion: 1,
-      attempt: 1,
-      causationEventId: value.requested.id,
-      execution: { workspaceRef: "unused", runRef: inputRef },
-      evidence: [inputRef],
-      phase: "triage",
-      failureKind: "terminal",
-      message: "Provider failed",
-    },
-  };
+  const event = failedEvent(value);
   writeFactoryActionResult(actionDir(value), event);
 
-  expect(resolveFixture(value)).toEqual({ status: "completed", operation: value.operation, event });
+  expect(resolveFixture(value)).toEqual({
+    status: "completed",
+    operation: value.operation,
+    event,
+    eventRecorded: false,
+  });
 });
 
 test("distinguishes a stale operation from the current invocation", () => {
@@ -254,6 +376,7 @@ test("distinguishes a stale operation from the current invocation", () => {
 
   expect(resolveFixture(value, stale)).toMatchObject({
     status: "stale",
+    observedEventId: value.requested.id,
     reaction: { kind: "invoke", causationEventId: value.requested.id },
   });
 });
@@ -269,9 +392,22 @@ test("returns wait when durable state has no invocation", () => {
 
   expect(resolveFixture(value)).toMatchObject({
     status: "wait",
+    observedEventId: event.id,
     reaction: { kind: "wait", reason: "phase-command" },
   });
 });
+
+function recoverFixture(value: ReturnType<typeof fixture>) {
+  return recoverCompletedFactoryOperation({
+    projectId,
+    projectRoot: value.projectRoot,
+    factoryStateRoot: value.factoryStateRoot,
+    workspaceRef: projectId,
+    factoryStore: value.factoryStore,
+    workItemKey,
+    operation: value.operation,
+  });
+}
 
 test("executes the authenticated triage handler once and returns its persisted result", async () => {
   const value = fixture();
@@ -413,6 +549,8 @@ test("fails closed for divergent project, work-item, action-key, and result iden
       projectId: "other-project",
       projectRoot: value.projectRoot,
       factoryStateRoot: value.factoryStateRoot,
+      workspaceRef: projectId,
+      factoryStore: value.factoryStore,
       workItemKey,
       operation: value.operation,
     }),
@@ -422,6 +560,8 @@ test("fails closed for divergent project, work-item, action-key, and result iden
       projectId,
       projectRoot: value.projectRoot,
       factoryStateRoot: value.factoryStateRoot,
+      workspaceRef: projectId,
+      factoryStore: value.factoryStore,
       workItemKey: "linear:OTHER-1",
       operation: value.operation,
     }),

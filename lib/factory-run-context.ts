@@ -37,6 +37,7 @@ import {
 } from "./factory-store.ts";
 import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
 import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
+import { assertFactoryPhaseWorkspace, snapshotFactoryPhaseGit } from "./factory-phase-git.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 
@@ -174,12 +175,21 @@ export function openFactoryRunContext(options: OpenFactoryRunContextOptions) {
     identity.phaseRunId !== options.phaseRunId ||
     identity.phase !== "triage" ||
     identity.workItemKey !== deriveFactoryWorkItemKey(options.workItem) ||
-    identity.workspace !== workspace ||
     !options.factoryStore ||
     identity.projectId !== options.factoryStore.projectId ||
     identity.factoryStateRoot !== resolve(options.factoryStore.factoryStateRoot)
   ) {
     throw new FactoryTriageError(`Factory phase-run identity conflicts with ${options.phaseRunId}`);
+  }
+  try {
+    assertFactoryPhaseWorkspace(identity, workspace);
+  } catch (error) {
+    throw new FactoryTriageError(
+      `Factory phase-run identity conflicts with ${options.phaseRunId}`,
+      {
+        cause: error,
+      },
+    );
   }
   return createFactoryRunContextInternal(
     { ...options, executionProfile: identity.actions.triageWorkItem },
@@ -239,13 +249,14 @@ function createFactoryRunContextInternal(
       writeDurableFactoryFile(join(runDir, "factory-triage.prompt.md"), prompt);
       if (options.factoryStore) {
         writeFactoryPhaseRunIdentity(runDir, {
-          version: 1,
+          version: 2,
           phaseRunId: runId,
           phase: "triage",
           workItemKey: deriveFactoryWorkItemKey(workItem),
           workspace,
           projectId: options.factoryStore.projectId,
           factoryStateRoot: resolve(options.factoryStore.factoryStateRoot),
+          git: snapshotFactoryPhaseGit(workspace, { optional: true }),
           actions: { triageWorkItem: executionProfile },
         });
       }

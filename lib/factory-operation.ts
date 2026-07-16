@@ -10,7 +10,7 @@ import {
   type FactoryPhase,
 } from "./factory-action-contract.ts";
 import { factoryActionResultPath, readFactoryActionResult } from "./factory-action-result.ts";
-import { readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
+import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryActionEvent } from "./factory-lifecycle-events.ts";
 import { produceImplementationCandidate } from "./factory-implementation-candidate-action.ts";
 import { reviewImplementationCandidate } from "./factory-implementation-review-action.ts";
@@ -24,8 +24,10 @@ import { openFactoryRunContext, type FactoryRunMeta } from "./factory-run-contex
 import type { FactoryWorkItem } from "./factory-schemas.ts";
 import type { FactoryStoreMeta } from "./factory-store.ts";
 import type { WorkflowEventSink } from "./workflow-events.ts";
+import { authenticateFactoryActionResult } from "./factory-action-result-auth.ts";
 import {
   decideNextFactoryAction,
+  FactoryWaitReasonSchema,
   reduceFactoryLifecycleEvents,
   type FactoryReaction,
 } from "./factory-state-machine.ts";
@@ -42,14 +44,80 @@ export const FactoryOperationRefSchema = z
   .strict();
 export type FactoryOperationRef = z.infer<typeof FactoryOperationRefSchema>;
 
+export const FactoryOperationRequestSchema = z
+  .object({
+    projectId: z.string().min(1),
+    workItemKey: z.string().min(1),
+    operation: FactoryOperationRefSchema,
+  })
+  .strict();
+export type FactoryOperationRequest = z.infer<typeof FactoryOperationRequestSchema>;
+
+const ReceiptCommon = {
+  version: z.literal(1),
+  projectId: z.string().min(1),
+  workItemKey: z.string().min(1),
+  operation: FactoryOperationRefSchema,
+};
+const NextRequestSchema = FactoryOperationRequestSchema;
+export const FactoryOperationReceiptSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      ...ReceiptCommon,
+      outcome: z.literal("executed"),
+      resultEventId: z.string().min(1),
+      next: NextRequestSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReceiptCommon,
+      outcome: z.literal("recovered"),
+      resultEventId: z.string().min(1),
+      next: NextRequestSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReceiptCommon,
+      outcome: z.literal("stale"),
+      observedEventId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...ReceiptCommon,
+      outcome: z.literal("waiting"),
+      observedEventId: z.string().min(1),
+      reason: FactoryWaitReasonSchema,
+    })
+    .strict(),
+]);
+export type FactoryOperationReceipt = z.infer<typeof FactoryOperationReceiptSchema>;
+
 type InvokeReaction = Extract<FactoryReaction, { kind: "invoke" }>;
 type WaitReaction = Extract<FactoryReaction, { kind: "wait" }>;
 
 export type FactoryOperationResolution =
-  | { status: "completed"; operation: FactoryOperationRef; event: FactoryActionEvent }
+  | {
+      status: "completed";
+      operation: FactoryOperationRef;
+      event: FactoryActionEvent;
+      eventRecorded: boolean;
+    }
   | { status: "current"; operation: FactoryOperationRef; reaction: InvokeReaction }
-  | { status: "stale"; operation: FactoryOperationRef; reaction: InvokeReaction }
-  | { status: "wait"; operation: FactoryOperationRef; reaction: WaitReaction };
+  | {
+      status: "stale";
+      operation: FactoryOperationRef;
+      reaction: InvokeReaction;
+      observedEventId: string;
+    }
+  | {
+      status: "wait";
+      operation: FactoryOperationRef;
+      reaction: WaitReaction;
+      observedEventId: string;
+    };
 
 export class FactoryOperationResolutionError extends Error {
   constructor(message: string, options: { cause?: unknown } = {}) {
@@ -218,6 +286,8 @@ export function resolveFactoryOperation(input: {
   projectId: string;
   projectRoot: string;
   factoryStateRoot: string;
+  workspaceRef: string;
+  factoryStore: FactoryStoreMeta;
   workItemKey: string;
   operation: FactoryOperationRef;
 }): FactoryOperationResolution {
@@ -236,7 +306,27 @@ export function resolveFactoryOperation(input: {
   if (existsSync(factoryActionResultPath(actionDir))) {
     const event = readResult(actionDir);
     assertCompletedIdentity(event, input.workItemKey, operation);
-    return { status: "completed", operation, event };
+    try {
+      authenticateFactoryActionResult({
+        projectRoot: input.projectRoot,
+        factoryStateRoot: input.factoryStateRoot,
+        workItemKey: input.workItemKey,
+        actionDir,
+        workspaceRef: input.workspaceRef,
+        factoryStore: input.factoryStore,
+        handler: operation.handler,
+        event,
+      });
+    } catch (cause) {
+      throw new FactoryOperationResolutionError(
+        "Factory operation result evidence failed authentication",
+        { cause },
+      );
+    }
+    const eventRecorded = readFactoryActionEvents(factoryStateRoot, input.workItemKey, {
+      mode: "inspection",
+    }).some((candidate) => candidate.id === event.id);
+    return { status: "completed", operation, event, eventRecorded };
   }
 
   const events = readFactoryActionEvents(factoryStateRoot, input.workItemKey, {
@@ -248,11 +338,53 @@ export function resolveFactoryOperation(input: {
     throw new FactoryOperationResolutionError("Factory operation has no durable lifecycle state");
   }
   const reaction = decideNextFactoryAction(state, latest);
-  if (reaction.kind === "wait") return { status: "wait", operation, reaction };
+  if (reaction.kind === "wait")
+    return { status: "wait", operation, reaction, observedEventId: latest.id };
   if (matchesReaction(operation, latest.phaseRunId, reaction)) {
     return { status: "current", operation, reaction };
   }
-  return { status: "stale", operation, reaction };
+  return { status: "stale", operation, reaction, observedEventId: latest.id };
+}
+
+/** Compare-append an authenticated completed result and derive canonical post-result delivery. */
+export function recoverCompletedFactoryOperation(input: {
+  projectId: string;
+  projectRoot: string;
+  factoryStateRoot: string;
+  workspaceRef: string;
+  factoryStore: FactoryStoreMeta;
+  workItemKey: string;
+  operation: FactoryOperationRef;
+}): {
+  event: FactoryActionEvent;
+  reaction: FactoryReaction;
+  next?: FactoryOperationRequest;
+} {
+  const resolution = resolveFactoryOperation(input);
+  if (resolution.status !== "completed")
+    throw new FactoryOperationResolutionError(
+      "Factory operation has no completed result to recover",
+    );
+  const appended = appendFactoryActionEvent({
+    factoryStateRoot: input.factoryStateRoot,
+    event: resolution.event,
+    expectedLastEventId: resolution.event.data.causationEventId,
+  });
+  const reaction = decideNextFactoryAction(appended.state, appended.event);
+  const next =
+    reaction.kind === "invoke"
+      ? FactoryOperationRequestSchema.parse({
+          projectId: input.projectId,
+          workItemKey: input.workItemKey,
+          operation: createFactoryOperationRef({
+            phaseRunId: resolution.event.phaseRunId,
+            handler: reaction.handler,
+            attempt: reaction.attempt,
+            causationEventId: reaction.causationEventId,
+          }),
+        })
+      : undefined;
+  return { event: resolution.event, reaction, ...(next ? { next } : {}) };
 }
 
 function authenticateOperationIdentity(input: {
@@ -351,7 +483,7 @@ function assertCompletedIdentity(
     event.data.handler !== operation.handler ||
     event.data.attempt !== operation.attempt ||
     event.data.causationEventId !== operation.causationEventId ||
-    !event.id.endsWith(`:${operation.actionKey}`)
+    event.id !== `${event.type}:${operation.actionKey}`
   ) {
     throw new FactoryOperationResolutionError("Factory operation result identity mismatch");
   }

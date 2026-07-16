@@ -12,21 +12,26 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createGrove } from "@ferueda/grove";
+import { createAgentProvider } from "../providers/registry.ts";
+import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
+import { createFactoryOperationRef } from "../lib/factory-operation.ts";
+import { createFactoryRunContext } from "../lib/factory-run-context.ts";
 import {
   deriveFactoryGroveWorkspaceIntent,
   releaseFactoryGroveWorkspace,
-  type FactoryGroveWorkspace,
   type FactoryGroveWorkspaceConfig,
 } from "../lib/factory-grove-workspace.ts";
+import { factoryStoreMetadata, resolveFactoryStore } from "../lib/factory-store.ts";
 
 type JsonObject = Record<string, unknown>;
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BIN = join(ROOT, "bin/harness.ts");
-const ADAPTER = pathToFileURL(join(ROOT, "lib/factory-grove-workspace.ts")).href;
+const HOSTED_RUNNER = pathToFileURL(join(ROOT, "lib/factory-hosted-operation.ts")).href;
+const PROVIDERS = pathToFileURL(join(ROOT, "providers/registry.ts")).href;
 const startedAt = Date.now();
 let station = "fixture allocation";
 let lastChild = { stdout: "", stderr: "" };
@@ -87,22 +92,20 @@ function parseObject(value: string, name: string): JsonObject {
   return parsed as JsonObject;
 }
 
-function ensureInFreshProcess(
-  config: FactoryGroveWorkspaceConfig,
-  intent: ReturnType<typeof deriveFactoryGroveWorkspaceIntent>,
-): FactoryGroveWorkspace {
+function runHostedInFreshProcess(input: JsonObject): JsonObject {
   const source = `
-    const { ensureFactoryGroveWorkspace } = await import(${JSON.stringify(ADAPTER)});
+    const { runHostedFactoryOperation } = await import(${JSON.stringify(HOSTED_RUNNER)});
+    const { createAgentProvider } = await import(${JSON.stringify(PROVIDERS)});
     const input = JSON.parse(process.env.FACTORY_GROVE_SMOKE_INPUT);
-    console.log(JSON.stringify(await ensureFactoryGroveWorkspace(input)));
+    input.runtime.agentProviderFactory = createAgentProvider;
+    console.log(JSON.stringify(await runHostedFactoryOperation(input)));
   `;
-  const output = run(process.execPath, ["--input-type=module", "--eval", source], {
-    env: {
-      ...process.env,
-      FACTORY_GROVE_SMOKE_INPUT: JSON.stringify({ config, intent }),
-    },
-  });
-  return parseObject(output, "ensure result") as FactoryGroveWorkspace;
+  return parseObject(
+    run(process.execPath, ["--input-type=module", "--eval", source], {
+      env: { ...process.env, FACTORY_GROVE_SMOKE_INPUT: JSON.stringify(input) },
+    }),
+    "hosted operation receipt",
+  );
 }
 
 function lifecyclePath(): string {
@@ -183,6 +186,7 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   const baseSha = git(["rev-parse", "HEAD"]);
   git(["remote", "add", "origin", remoteRepository]);
   git(["push", "-u", "origin", "main"]);
+  git(["checkout", "--detach", baseSha]);
 
   const config: FactoryGroveWorkspaceConfig = {
     controllerRepository,
@@ -190,53 +194,96 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
     poolCapacity: 1,
     setupCommand: `printf x >> '${setupLog}'`,
   };
+  const store = resolveFactoryStore({
+    workspace: controllerRepository,
+    factoryStoreRoot: storeRoot,
+    factoryStoreProjectId: projectId,
+  });
+  const factoryStore = factoryStoreMetadata(store);
+  const workItem = JSON.parse(readFileSync(join(controllerRepository, "item.json"), "utf8"));
+  const ctx = createFactoryRunContext({
+    workspace: controllerRepository,
+    runsDir: factoryStore.factoryRunsDir,
+    workItem,
+    executionProfile: {
+      provider: "codex",
+      model: "fake-codex",
+      executable: fakeCodex,
+      sandbox: "read-only",
+      approvalPolicy: "never",
+      reasoningEffort: "minimal",
+    },
+    maxRuntimeMs: 30_000,
+    agentProviderFactory: createAgentProvider,
+    factoryStore,
+  });
+  // Grove owns checkout creation from the attached controller repository; the
+  // immutable phase identity remains detached and is validated on its lease.
+  git(["switch", "main"]);
+  const inputRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: factoryStore.projectRoot,
+    path: `runs/factory/${ctx.runId}/context/work-item.json`,
+  });
+  const imported = {
+    version: 1 as const,
+    id: "grove-smoke-imported",
+    type: "work_item.imported" as const,
+    workItemKey: "file:GROVE-SMOKE-1",
+    occurredAt: "2026-07-16T00:00:00.000Z",
+    data: { source: "file" },
+  };
+  const requested = {
+    version: 1 as const,
+    id: "grove-smoke-triage-requested",
+    type: "triage.requested" as const,
+    workItemKey: imported.workItemKey,
+    occurredAt: "2026-07-16T00:00:01.000Z",
+    phaseRunId: ctx.runId,
+    data: { expectedPredecessor: imported.id, inputRefs: [inputRef], intent: "start" as const },
+  };
+  appendFactoryActionEvent({
+    factoryStateRoot: factoryStore.factoryStateRoot,
+    event: imported,
+    expectedLastEventId: null,
+  });
+  appendFactoryActionEvent({
+    factoryStateRoot: factoryStore.factoryStateRoot,
+    event: requested,
+    expectedLastEventId: imported.id,
+  });
+  const operation = createFactoryOperationRef({
+    phaseRunId: ctx.runId,
+    handler: "triageWorkItem",
+    attempt: 1,
+    causationEventId: requested.id,
+  });
+  const request = { projectId, workItemKey: imported.workItemKey, operation };
   const intent = deriveFactoryGroveWorkspaceIntent({
     controllerRepository,
-    workItemKey: "file:GROVE-SMOKE-1",
+    workItemKey: request.workItemKey,
     phase: "triage",
-    phaseGeneration: "triage-generation-1",
+    phaseGeneration: imported.id,
     baseSha,
   });
 
-  station = "Grove acquire and setup";
-  const acquired = ensureInFreshProcess(config, intent);
-  assert(
-    git(["rev-parse", "HEAD"], acquired.workspace) === baseSha,
-    "Grove checkout base mismatch",
-  );
-  assert(git(["branch", "--show-current"], acquired.workspace) === "", "triage was not detached");
-  assert(readFileSync(setupLog, "utf8") === "x", "setup hook did not run on acquire");
-
-  station = "Factory triage action";
-  const factoryOutput = parseObject(
-    run(
-      process.execPath,
-      [
-        BIN,
-        "factory",
-        "triage",
-        "--workspace",
-        acquired.workspace,
-        "--item-file",
-        join(acquired.workspace, "item.json"),
-        "--factory-store-root",
-        storeRoot,
-        "--factory-store-project-id",
-        projectId,
-      ],
-      {
-        env: {
-          ...process.env,
-          PATH: `${toolsRoot}${delimiter}${process.env.PATH ?? ""}`,
-          FACTORY_GROVE_SMOKE_PROVIDER_LOG: providerLog,
-          GIT_TERMINAL_PROMPT: "0",
-          CI: "1",
-        },
-      },
-    ),
-    "Factory output",
-  );
-  assert(factoryOutput.outcome === "action-completed", "Factory triage action did not complete");
+  process.env.FACTORY_GROVE_SMOKE_PROVIDER_LOG = providerLog;
+  process.env.GIT_TERMINAL_PROMPT = "0";
+  process.env.CI = "1";
+  station = "hosted Factory execution";
+  const runtime = {
+    projectId,
+    repositoryId: intent.repositoryId,
+    factoryStore,
+    grove: config,
+    maxRuntimeMs: 30_000,
+    triage: { nextLiveRunRequiresRerun: false },
+  };
+  const executed = runHostedInFreshProcess({
+    request,
+    runtime,
+  });
+  assert(executed.outcome === "executed", "hosted Factory action did not execute");
   const eventPath = lifecyclePath();
   const evidenceBefore = readFileSync(eventPath, "utf8");
   assert(
@@ -244,11 +291,7 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
     "provider count mismatch",
   );
 
-  station = "restart reacquire";
-  const reopened = ensureInFreshProcess({ ...config }, { ...intent });
-  assert(reopened.workspace === acquired.workspace, "reacquire changed the canonical path");
-  assert(readFileSync(setupLog, "utf8") === "xx", "setup hook did not rerun on reacquire");
-  assert(readFileSync(eventPath, "utf8") === evidenceBefore, "reacquire changed Factory evidence");
+  assert(readFileSync(setupLog, "utf8") === "x", "setup hook count mismatch");
 
   station = "terminal release";
   const events = evidenceBefore
@@ -270,6 +313,20 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   });
   assert((await grove.inspect(intent.leaseId)) === null, "released lease is still present");
   assert(readFileSync(eventPath, "utf8") === evidenceBefore, "release changed Factory evidence");
+
+  station = "hosted Factory replay after release";
+  const recovered = runHostedInFreshProcess({
+    request,
+    runtime,
+  });
+  assert(recovered.outcome === "recovered", "hosted replay did not recover");
+  assert(readFileSync(setupLog, "utf8") === "x", "replay reran the setup hook");
+  assert(
+    readFileSync(providerLog, "utf8").trim().split(/\r?\n/).length === 1,
+    "replay reran provider",
+  );
+  assert((await grove.inspect(intent.leaseId)) === null, "replay recreated the released lease");
+  assert(readFileSync(eventPath, "utf8") === evidenceBefore, "replay changed Factory evidence");
 
   rmSync(fixtureRoot, { recursive: true, force: true });
   console.log(`Factory Grove smoke PASS (${((Date.now() - startedAt) / 1000).toFixed(1)}s)`);

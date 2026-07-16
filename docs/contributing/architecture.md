@@ -39,15 +39,18 @@ CLI
   -> optional Linear or GitHub projection
 ```
 
-Grove workspace preparation is separate from Factory:
+Hosted operation delivery composes Factory with Grove without moving lifecycle policy:
 
 ```text
-caller
-  -> derive stable lease intent
+identifier-only request + trusted project runtime
+  -> authenticate phase, work item, action, and completed result
+  -> recover, stale, or wait before Grove when possible
+  -> derive lease intent from immutable phase Git identity
   -> Grove acquire or compatible reacquire
   -> repository-owned setup hook
+  -> revalidate canonical Factory state
   -> one existing Factory action with the canonical workspace path
-  -> preserve, terminal reset/release, or bounded repair
+  -> authenticated receipt hint
 ```
 
 Both paths resolve target-repo configuration and use provider adapters. They
@@ -81,6 +84,7 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-*-action.ts`, phase input/context modules                   | Triage, planning, and implementation action boundaries and immutable evidence                                         |
 | `lib/factory-store.ts`, `lib/factory-locks.ts`, `lib/factory-inspect.ts` | Durable paths, lock ownership, store provenance, and read-only lifecycle inspection                                   |
 | `lib/factory-grove-workspace.ts`                                         | Deterministic Grove lease intent, ensure/reopen, terminal release, and bounded repair                                 |
+| `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`            | Identifier-only hosted delivery, authenticated resolution/execution, and reconstructable receipts                     |
 | `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
 | `lib/factory-*-publication*.ts`, `lib/factory-pull-request-publisher.ts` | Reviewed-commit validation and bounded GitHub publication                                                             |
 | `providers/`                                                             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation                   |
@@ -145,11 +149,12 @@ user data and must not be committed.
 
 ## Current execution model
 
-The CLI manually steps Factory actions, Linear/GitHub projections, publication,
-and merge acknowledgement. The Grove adapter is a callable workspace boundary,
-not a runner: callers acquire a phase lease, pass its path through `--workspace`,
-and release it only after the matching terminal event. No scheduler or hosted
-operation runner ships today.
+The CLI still manually steps phase start, continuation, Linear/GitHub
+projections, publication, and merge acknowledgement. The callable hosted runner
+accepts only project/work-item/operation identifiers; trusted runtime owns store
+paths, repository identity, credentials, provider controls, and Grove config.
+It does not schedule its optional next-operation hint or release leases. No
+scheduler or deployment integration ships.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

@@ -21,13 +21,37 @@ export const FactoryActionExecutionProfileSchema = z.discriminatedUnion("provide
 ]);
 export type FactoryActionExecutionProfile = z.infer<typeof FactoryActionExecutionProfileSchema>;
 
-const FactoryPhaseRunBaseSchema = z.object({
+const FactoryPhaseRunV1BaseSchema = z.object({
   version: z.literal(1),
   phaseRunId: FactoryPhaseRunIdSchema,
   workItemKey: z.string().min(1),
   workspace: z.string().min(1),
   projectId: z.string().min(1),
   factoryStateRoot: z.string().min(1),
+});
+
+export const FactoryPhaseGitIdentitySchema = z
+  .object({
+    repositoryId: z.string().min(1),
+    baseSha: z.string().regex(/^[0-9a-f]{40}$/),
+    target: z.discriminatedUnion("mode", [
+      z.object({ mode: z.literal("detached") }).strict(),
+      z
+        .object({ mode: z.literal("branch"), branchRef: z.string().regex(/^refs\/heads\/.+/) })
+        .strict(),
+    ]),
+  })
+  .strict();
+export type FactoryPhaseGitIdentity = z.infer<typeof FactoryPhaseGitIdentitySchema>;
+
+const FactoryPhaseRunV2BaseSchema = z.object({
+  version: z.literal(2),
+  phaseRunId: FactoryPhaseRunIdSchema,
+  workItemKey: z.string().min(1),
+  workspace: z.string().min(1),
+  projectId: z.string().min(1),
+  factoryStateRoot: z.string().min(1),
+  git: FactoryPhaseGitIdentitySchema.optional(),
 });
 
 export const FactoryImplementationInputSnapshotSchema = z.discriminatedUnion("mode", [
@@ -68,8 +92,8 @@ export type FactoryImplementationInputSnapshot = z.infer<
   typeof FactoryImplementationInputSnapshotSchema
 >;
 
-export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
-  FactoryPhaseRunBaseSchema.extend({
+const FactoryPhaseRunV1IdentitySchema = z.discriminatedUnion("phase", [
+  FactoryPhaseRunV1BaseSchema.extend({
     phase: z.literal("triage"),
     actions: z
       .object({
@@ -77,7 +101,7 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
       })
       .strict(),
   }).strict(),
-  FactoryPhaseRunBaseSchema.extend({
+  FactoryPhaseRunV1BaseSchema.extend({
     phase: z.literal("planning"),
     outputPlan: z.string().min(1),
     publicationMode: z.enum(["local", "pull-request"]),
@@ -105,7 +129,7 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
       )
         ctx.addIssue({ code: "custom", message: "pull-request planning requires Git identity" });
     }),
-  FactoryPhaseRunBaseSchema.extend({
+  FactoryPhaseRunV1BaseSchema.extend({
     phase: z.literal("implementation"),
     baseRef: z.string().min(1),
     branchRef: z.string().regex(/^refs\/heads\/.+/),
@@ -118,6 +142,52 @@ export const FactoryPhaseRunIdentitySchema = z.discriminatedUnion("phase", [
       })
       .strict(),
   }).strict(),
+]);
+
+const FactoryPhaseRunV2IdentitySchema = z.discriminatedUnion("phase", [
+  FactoryPhaseRunV2BaseSchema.extend({
+    phase: z.literal("triage"),
+    actions: z.object({ triageWorkItem: FactoryActionExecutionProfileSchema }).strict(),
+  }).strict(),
+  FactoryPhaseRunV2BaseSchema.extend({
+    phase: z.literal("planning"),
+    outputPlan: z.string().min(1),
+    publicationMode: z.enum(["local", "pull-request"]),
+    baseRef: z.string().min(1).optional(),
+    actions: z
+      .object({
+        producePlanCandidate: FactoryActionExecutionProfileSchema,
+        reviewPlanCandidate: FactoryActionExecutionProfileSchema,
+      })
+      .strict(),
+  })
+    .strict()
+    .superRefine((value, ctx) => {
+      if (
+        value.publicationMode === "pull-request" &&
+        (!value.baseRef || value.git?.target.mode !== "branch")
+      )
+        ctx.addIssue({ code: "custom", message: "pull-request planning requires Git identity" });
+    }),
+  FactoryPhaseRunV2BaseSchema.extend({
+    phase: z.literal("implementation"),
+    baseRef: z.string().min(1),
+    git: FactoryPhaseGitIdentitySchema.refine((git) => git.target.mode === "branch", {
+      message: "implementation requires branch Git identity",
+    }),
+    input: FactoryImplementationInputSnapshotSchema,
+    actions: z
+      .object({
+        produceImplementationCandidate: FactoryActionExecutionProfileSchema,
+        reviewImplementationCandidate: FactoryActionExecutionProfileSchema,
+      })
+      .strict(),
+  }).strict(),
+]);
+
+export const FactoryPhaseRunIdentitySchema = z.union([
+  FactoryPhaseRunV1IdentitySchema,
+  FactoryPhaseRunV2IdentitySchema,
 ]);
 export type FactoryPhaseRunIdentity = z.infer<typeof FactoryPhaseRunIdentitySchema>;
 
