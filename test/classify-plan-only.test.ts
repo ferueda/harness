@@ -181,7 +181,17 @@ test("workflow preserves Tests/test and routes only plan-only pull requests to f
   expect(workflow).toContain("name: Tests");
   expect(workflow).toMatch(/jobs:\s+test:/);
   expect(workflow).toContain("node scripts/classify-plan-only.ts");
-  expect(workflow).toContain("pnpm exec oxfmt --check dev/plans");
-  expect(workflow).toContain("pnpm exec vitest run test/docs-contracts.test.ts");
+  expect(workflow).toContain("run: make check-plan");
   expect(workflow).toContain("run: pnpm check:ci");
+});
+
+test("shared plan commands own the focused check and formatter", () => {
+  const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+
+  expect(packageJson.scripts["check:plan"]).toBe(
+    "oxfmt --check dev/plans && vitest run test/docs-contracts.test.ts",
+  );
+  expect(packageJson.scripts["fix:plan"]).toBe("oxfmt --write dev/plans");
 });

@@ -20,14 +20,32 @@ test("materializes one deterministic plan commit from the persisted base", () =>
   );
   expect(git(fixture.workspace, ["rev-parse", `${first.headSha}^`]).trim()).toBe(fixture.baseSha);
   const index = git(fixture.workspace, ["show", `${first.headSha}:dev/plans/README.md`]);
-  expect(index.indexOf("[Plan item](item.md)")).toBeLessThan(index.indexOf("[Zulu](zulu.md)"));
+  expect(index).toBe(
+    "# Plans\n\n## Active queue\n\n- [Plan item](item.md) — approved; awaiting plan merge.\n- [Zulu](zulu.md) — approved.\n\n## Shipped\n",
+  );
 
   const retry = preparePlanPublication(input);
   expect(retry.headSha).toBe(first.headSha);
 });
 
+test("canonicalizes an empty Active queue before publication", () => {
+  const fixture = planningFixture({
+    readme: "# Plans\n\n## Active queue\nNo active plans.\n\nKeep this note.\n\n## Shipped\n",
+  });
+
+  const prepared = preparePlanPublication(publicationInput(fixture));
+
+  expect(git(fixture.workspace, ["show", `${prepared.headSha}:dev/plans/README.md`])).toBe(
+    "# Plans\n\n## Active queue\n\n- [Plan item](item.md) — approved; awaiting plan merge.\n\nKeep this note.\n\n## Shipped\n",
+  );
+  execFileSync(join(process.cwd(), "node_modules/.bin/oxfmt"), [
+    "--check",
+    join(fixture.workspace, "dev/plans/README.md"),
+  ]);
+});
+
 test("rejects an empty conflicting plan already present at the persisted base", () => {
-  const fixture = planningFixture("");
+  const fixture = planningFixture({ existingPlan: "" });
 
   expect(() => preparePlanPublication(publicationInput(fixture))).toThrow(
     /Plan path already contains different bytes/,
@@ -53,7 +71,7 @@ test("rejects the plan index as an output path", () => {
   ).toThrow();
 });
 
-function planningFixture(existingPlan?: string) {
+function planningFixture(options: { existingPlan?: string; readme?: string } = {}) {
   const root = mkdtempSync(join(tmpdir(), "factory-plan-publication-"));
   const workspace = join(root, "workspace");
   const store = join(root, "store");
@@ -63,10 +81,11 @@ function planningFixture(existingPlan?: string) {
   mkdirSync(join(workspace, "dev/plans"), { recursive: true });
   writeFileSync(
     join(workspace, "dev/plans/README.md"),
-    "# Plans\n\n## Active queue\n\n- [Zulu](zulu.md) — approved.\n\n## Shipped\n",
+    options.readme ?? "# Plans\n\n## Active queue\n\n- [Zulu](zulu.md) — approved.\n\n## Shipped\n",
   );
   writeFileSync(join(workspace, "dev/plans/zulu.md"), "# Zulu\n");
-  if (existingPlan !== undefined) writeFileSync(join(workspace, "dev/plans/item.md"), existingPlan);
+  if (options.existingPlan !== undefined)
+    writeFileSync(join(workspace, "dev/plans/item.md"), options.existingPlan);
   git(workspace, ["add", "dev/plans"]);
   git(workspace, ["commit", "-m", "base"]);
   const baseSha = git(workspace, ["rev-parse", "HEAD"]).trim();
