@@ -153,8 +153,17 @@ The CLI still manually steps phase start, continuation, Linear/GitHub
 projections, publication, and merge acknowledgement. The callable hosted runner
 accepts only project/work-item/operation identifiers; trusted runtime owns store
 paths, repository identity, credentials, provider controls, and Grove config.
-It does not schedule its optional next-operation hint or release leases. No
-scheduler or deployment integration ships.
+
+`lib/factory-inngest-adapter.ts` is the narrow delivery boundary. Inngest retries
+one versioned identifier-only operation in one stable step and sends one hinted
+operation only when the authenticated Factory receipt contains `next`. Per-work-item
+and global concurrency are both one, but they only schedule work; Factory action
+identity and persisted results remain correctness authority. The adapter caps the
+trusted runtime at 30 minutes and combines that deadline with its host signal.
+Every durable receipt, including a persisted failure or abort, succeeds in Inngest;
+only a host failure before a receipt is retryable there. The current boundary is a
+single persistent execution host and includes no webhook ingress or production
+deployment wiring.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

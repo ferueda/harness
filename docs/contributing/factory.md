@@ -158,6 +158,21 @@ delivery recovers authenticated results and rejects stale or waiting work before
 Grove; after acquisition it validates the relocated checkout and re-resolves
 Factory before invoking one action.
 
+Inngest delivery lives in `lib/factory-inngest-adapter.ts`. A caller-owned
+`harness-factory` client and trusted `HostedFactoryRuntime` register only
+`execute-factory-operation-v1`, triggered by version `"1"` of
+`harness/factory.operation.requested`. The event, operation step, next-event step,
+and returned receipt stay identifier-only. The function runs one requested
+operation, never follows the next reaction inside that step, and uses durable
+`step.sendEvent()` only when the receipt includes `next`.
+
+The per-work-item and global concurrency limits are scheduling controls, not
+Factory locks. A 30-minute adapter deadline is combined with the runtime signal.
+Authenticated persisted failures and aborts are successful Inngest results; an
+error before a durable receipt is allowed to throw so the same delivery can retry.
+Human, publication, merge, complete, failed, and stale waits emit nothing. This
+adapter does not add a production worker or claim multi-worker correctness.
+
 Hosted eligibility requires that immutable target to already equal the
 deterministic Grove target. A phase started manually on another branch fails
 closed; acquiring Grove before hosted phase creation remains phase-start policy,
@@ -179,7 +194,7 @@ base. Conflicts or uncertain cleanup require explicit repair or quarantine.
 | Linear projections                  | `lib/factory-linear-adapter.ts`, `lib/factory-linear-*-apply.ts`, `lib/factory-linear-*-handoff.ts`                                 |
 | Pull-request publication            | `lib/factory-*-publication*.ts`, `lib/factory-publication-git.ts`, `lib/factory-pull-request-publisher.ts`                          |
 | Hosted workspace leases             | `lib/factory-grove-workspace.ts`                                                                                                    |
-| Hosted operation delivery           | `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`                                                                       |
+| Hosted operation delivery           | `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`, `lib/factory-inngest-adapter.ts`                                     |
 | Provider execution and prompts      | `providers/`, `workflows/`, `lib/prompts/factory-*.ts`                                                                              |
 
 Keep lifecycle decisions in the reducer/reaction boundary, external mutations in
