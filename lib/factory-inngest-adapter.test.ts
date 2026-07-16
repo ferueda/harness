@@ -13,6 +13,7 @@ import {
   FACTORY_INNGEST_APP_ID,
   FACTORY_INNGEST_FUNCTION_ID,
   FACTORY_INNGEST_MAX_RUNTIME_MS,
+  FACTORY_INNGEST_RETRIES,
   FACTORY_NEXT_OPERATION_STEP_ID,
   FACTORY_OPERATION_EVENT_NAME,
   FACTORY_OPERATION_EVENT_VERSION,
@@ -39,8 +40,10 @@ test("locks the identifier-only versioned event and scheduling controls", () => 
   expect(fn.opts).toMatchObject({
     id: FACTORY_INNGEST_FUNCTION_ID,
     concurrency: [{ key: "event.data.workItemKey", limit: 1 }, { limit: 1 }],
+    retries: FACTORY_INNGEST_RETRIES,
     triggers: [FactoryOperationRequestedEvent],
   });
+  expect(FACTORY_INNGEST_RETRIES).toBe(3);
   expect(FactoryOperationRequestedEvent).toMatchObject({
     name: FACTORY_OPERATION_EVENT_NAME,
     version: FACTORY_OPERATION_EVENT_VERSION,

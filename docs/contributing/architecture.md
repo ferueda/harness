@@ -161,10 +161,12 @@ and global concurrency are both one, but they only schedule work; Factory action
 identity and persisted results remain correctness authority. The adapter caps the
 trusted runtime at 110 minutes, leaving ten minutes below Inngest's two-hour step
 ceiling, and combines that deadline with its host signal.
-Every durable receipt, including a persisted failure or abort, succeeds in Inngest;
-only a host failure before a receipt is retryable there. The current boundary is a
-single persistent execution host and includes no webhook ingress or production
-deployment wiring.
+The operation step checkpoints every durable receipt, including a persisted
+failure or abort. A host failure before that checkpoint or a later next-event
+delivery failure may retry three times after the first execution; delivery retries
+reuse the saved receipt. Exhaustion fails the Inngest run, and no recovery
+supervisor ships yet. The current boundary is a single persistent execution host
+and includes no webhook ingress or production deployment wiring.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

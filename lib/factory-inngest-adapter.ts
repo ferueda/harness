@@ -15,6 +15,7 @@ export const FACTORY_OPERATION_EVENT_NAME = "harness/factory.operation.requested
 export const FACTORY_OPERATION_EVENT_VERSION = "1";
 export const FACTORY_OPERATION_STEP_ID = "run-factory-operation-v1";
 export const FACTORY_NEXT_OPERATION_STEP_ID = "send-next-factory-operation-v1";
+export const FACTORY_INNGEST_RETRIES = 3;
 // Leave time below Inngest's two-hour step ceiling to persist an abort and clean up.
 export const FACTORY_INNGEST_MAX_RUNTIME_MS = 110 * 60 * 1_000;
 
@@ -42,6 +43,7 @@ export function createFactoryInngestAdapter(input: {
     {
       id: FACTORY_INNGEST_FUNCTION_ID,
       concurrency: [{ key: "event.data.workItemKey", limit: 1 }, { limit: 1 }],
+      retries: FACTORY_INNGEST_RETRIES,
       triggers: [FactoryOperationRequestedEvent],
     },
     async ({ event, step }) => {

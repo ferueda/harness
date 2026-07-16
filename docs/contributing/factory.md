@@ -169,8 +169,11 @@ operation, never follows the next reaction inside that step, and uses durable
 The per-work-item and global concurrency limits are scheduling controls, not
 Factory locks. A 110-minute adapter deadline leaves ten minutes below Inngest's
 two-hour step ceiling and is combined with the runtime signal.
-Authenticated persisted failures and aborts are successful Inngest results; an
-error before a durable receipt is allowed to throw so the same delivery can retry.
+The operation step checkpoints every authenticated durable receipt, including a
+persisted failure or abort. A host error before that checkpoint or a later
+next-event delivery failure may retry three times after its first execution. A
+delivery retry reuses the saved receipt instead of rerunning Factory or the
+provider. Exhaustion fails the Inngest run; no recovery supervisor ships yet.
 Human, publication, merge, complete, failed, and stale waits emit nothing. This
 adapter does not add a production worker or claim multi-worker correctness.
 
