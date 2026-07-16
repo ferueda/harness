@@ -19,8 +19,7 @@ export const FACTORY_NEXT_OPERATION_STEP_ID = "send-next-factory-operation-v1";
 export const FACTORY_INNGEST_RETRIES = 3;
 // Leave time below Inngest's two-hour step ceiling to persist an abort and clean up.
 export const FACTORY_INNGEST_MAX_RUNTIME_MS = 110 * 60 * 1_000;
-const ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-const FACTORY_DELIVERY_ID_EPOCH_MS = Date.UTC(2026, 0, 1);
+const FACTORY_OPERATION_DELIVERY_ID_PREFIX = "harness-factory-operation-v1";
 
 export const FactoryOperationRequestedEvent = eventType(FACTORY_OPERATION_EVENT_NAME, {
   schema: FactoryOperationRequestSchema,
@@ -43,34 +42,14 @@ export function factoryOperationDeliveryId(request: FactoryOperationRequest): st
     operation.causationEventId,
     operation.actionKey,
   ];
-  const digest = createHash("sha256").update(JSON.stringify(identity)).digest();
-  // The current Inngest dev transport requires a ULID and uses its time field
-  // for scheduling. A fixed version epoch keeps retries deterministic and due;
-  // the remaining 80 bits come from the canonical request hash.
-  const ulid = Buffer.alloc(16);
-  let timestamp = FACTORY_DELIVERY_ID_EPOCH_MS;
-  for (let index = 5; index >= 0; index -= 1) {
-    ulid[index] = timestamp & 0xff;
-    timestamp = Math.floor(timestamp / 256);
-  }
-  digest.copy(ulid, 6, 0, 10);
-  let value = 0n;
-  for (const byte of ulid) value = (value << 8n) | BigInt(byte);
-  let encoded = "";
-  for (let index = 0; index < 26; index += 1) {
-    encoded = ULID_ALPHABET[Number(value & 31n)] + encoded;
-    value >>= 5n;
-  }
-  return encoded;
+  const digest = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
+  return `${FACTORY_OPERATION_DELIVERY_ID_PREFIX}-${digest}`;
 }
 
 export function createFactoryOperationRequestedEvent(request: FactoryOperationRequest) {
   const parsed = FactoryOperationRequestSchema.parse(request);
   return FactoryOperationRequestedEvent.create(parsed, {
     id: factoryOperationDeliveryId(parsed),
-    // Keep transport scheduling tied to the actual send rather than the
-    // deterministic ULID's fixed version epoch.
-    ts: Date.now(),
   });
 }
 

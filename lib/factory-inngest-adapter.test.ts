@@ -36,7 +36,7 @@ function eventFor(request: ReturnType<typeof fixture>["request"]) {
   return createFactoryOperationRequestedEvent(request);
 }
 
-test("locks the identifier-only versioned event and scheduling controls", () => {
+test("locks the identifier-only versioned event and function controls", () => {
   const value = fixture();
   const fn = createFactoryInngestAdapter({ client: client(), runtime: value.runtime });
 
@@ -55,7 +55,7 @@ test("locks the identifier-only versioned event and scheduling controls", () => 
     name: FACTORY_OPERATION_EVENT_NAME,
     data: value.request,
     id: factoryOperationDeliveryId(value.request),
-    ts: expect.any(Number),
+    ts: undefined,
     v: FACTORY_OPERATION_EVENT_VERSION,
     meta: undefined,
     validate: expect.any(Function),
@@ -76,7 +76,7 @@ test("derives transport identity from the complete canonical request", () => {
   const value = fixture();
   const original = factoryOperationDeliveryId(value.request);
   expect(factoryOperationDeliveryId(value.request)).toBe(original);
-  expect(original).toMatch(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
+  expect(original).toMatch(/^harness-factory-operation-v1-[0-9a-f]{64}$/);
 
   const changes = [
     { ...value.request, projectId: "project-2" },
