@@ -119,9 +119,9 @@ pnpm exec vitest run test/docs-contracts.test.ts
 - `pnpm check` / `make check` is the normal local handoff gate.
 - `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Factory
   system smoke after the ordinary checks.
-- Plan-only pull requests use the documented focused CI path. Other docs-only
-  behavior follows the current command contract until that contract changes;
-  the plan-only path bypasses the full gate and Factory smoke.
+- Approved plan-only changes use `make fix-plan` and `make check-plan`. CI runs
+  the same focused check; it bypasses the full gate and Factory smoke.
+- Other docs-only behavior follows the normal command contract.
 - Run an explicit system smoke or live protocol only when the changed boundary
   requires it.
 

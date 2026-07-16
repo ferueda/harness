@@ -70,8 +70,8 @@ simple-git-hooks`.
 
 Hooks do not replace `pnpm check` before handoff. CI uses `pnpm check:ci` for
 pushes and non-plan-only pull requests; pull requests changing only
-`dev/plans/**/*.md` run plan formatting and docs contracts instead. CI does not
-depend on local Git hooks.
+`dev/plans/**/*.md` run `make check-plan` instead. CI does not depend on local
+Git hooks.
 
 ## Generated artifacts and ownership
 

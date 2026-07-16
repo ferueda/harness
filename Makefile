@@ -7,7 +7,7 @@ define RUN
 @VERBOSE="$(VERBOSE)" GATE_STEP_NAME="$(if $(2),$(2),$@)" GATE_STEP_RERUN="$(if $(3),$(3),VERBOSE=1 make $@)" GATE_STEP_COMMAND='$(1)' node scripts/run-gate-step.ts
 endef
 
-.PHONY: help ensure-node setup-worktree build lint typecheck test smoke-dist smoke-factory format check-format fix check check-v check-ci
+.PHONY: help ensure-node setup-worktree build lint typecheck test smoke-dist smoke-factory format check-format fix fix-plan check-plan check check-v check-ci
 
 ensure-node: ## Ensure node and pnpm are available
 	@command -v node >/dev/null 2>&1 || { echo "node not found in PATH"; exit 1; }
@@ -44,6 +44,12 @@ check-format: ensure-node ## Check formatting
 fix: ensure-node ## Auto-format and apply lint fixes
 	pnpm run format
 	pnpm run lint:fix
+
+fix-plan: ensure-node ## Format approved plan-only changes
+	pnpm run fix:plan
+
+check-plan: ensure-node ## Run the focused gate for approved plan-only changes
+	$(call RUN,pnpm run check:plan)
 
 check: ensure-node ## Quiet full local gate
 	@$(MAKE) -j4 check-format lint typecheck test

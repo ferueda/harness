@@ -345,7 +345,7 @@ test("Factory smoke stays explicit locally and runs only in the full CI gate", (
   expect(makefile).toMatch(/^check-ci: check ##[^\n]*\n\t@\$\(MAKE\) smoke-factory$/m);
 
   const workflow = readRepoFile(".github/workflows/test.yml");
-  expect(workflow).toContain("pnpm exec vitest run test/docs-contracts.test.ts");
+  expect(workflow).toContain("run: make check-plan");
   expect(workflow).toContain("run: pnpm check:ci");
   expect(workflow).toContain("steps.changes.outputs.plan_only == 'true'");
   expect(workflow).toContain("steps.changes.outputs.plan_only != 'true'");
@@ -355,7 +355,9 @@ test("Factory smoke stays explicit locally and runs only in the full CI gate", (
     expect(testing).toContain(lane);
   }
   expect(testing).toContain("pnpm smoke:factory");
-  expect(testing).toContain("plan-only path bypasses the full gate and Factory smoke");
+  expect(testing).toContain("make fix-plan");
+  expect(testing).toContain("make check-plan");
+  expect(testing).toContain("bypasses the full gate and Factory smoke");
 });
 
 test("hook docs document activation and gate boundaries", () => {
@@ -641,8 +643,9 @@ test("agent and Factory operator completion gates stay explicit", () => {
   const agents = readRepoFile("AGENTS.md");
   expect(agents).toContain("Before handoff, pull-request publication");
   expect(agents).toContain("run `make check`");
-  expect(agents).toContain("run `make fix`, inspect the resulting diff");
-  expect(agents).toContain("then rerun `make check`");
+  expect(agents).toContain("run `make check-plan` instead");
+  expect(agents).toContain("run `make fix` (`make fix-plan` for plan-only work)");
+  expect(agents).toContain("then rerun the matching check");
   expect(agents).toContain("do not claim completion");
 
   const operator = readRepoFile("skills/factory-operator/SKILL.md");

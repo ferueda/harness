@@ -41,7 +41,7 @@ jobs:
 
       - name: Run plan checks
         if: github.event_name == 'pull_request' && steps.changes.outputs.plan_only == 'true'
-        run: pnpm exec oxfmt --check dev/plans && pnpm exec vitest run test/docs-contracts.test.ts
+        run: make check-plan
 
       - name: Run full checks
         if: github.event_name != 'pull_request' || steps.changes.outputs.plan_only != 'true'
