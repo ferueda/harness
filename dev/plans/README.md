@@ -2,6 +2,7 @@
 
 ## Active queue
 
+- [Add the Inngest Factory operation-delivery adapter](FER-97.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-97/add-the-inngest-factory-operation-delivery-adapter)
 - [Compose the Grove-backed hosted Factory operation runner](FER-96.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-96/compose-the-grove-backed-hosted-factory-operation-runner)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
