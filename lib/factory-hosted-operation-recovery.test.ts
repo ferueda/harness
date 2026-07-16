@@ -31,6 +31,30 @@ test("recovers a completed implementation candidate after Grove without rerunnin
   ).toHaveLength(1);
 });
 
+test("redelivers an appended implementation candidate as recovered", async () => {
+  const value = implementationFixture({ successfulProvider: true });
+  const first = await runHostedFactoryOperation({ request: value.request, runtime: value.runtime });
+  expect(first).toMatchObject({ outcome: "executed" });
+  if (first.outcome !== "executed") throw new Error("Expected executed candidate receipt");
+
+  const recovered = await runHostedFactoryOperation({
+    request: value.request,
+    runtime: value.runtime,
+  });
+
+  expect(recovered).toMatchObject({
+    outcome: "recovered",
+    resultEventId: first.resultEventId,
+  });
+  expect(value.ensureWorkspace).toHaveBeenCalledOnce();
+  expect(value.providerRun).toHaveBeenCalledOnce();
+  expect(
+    readFactoryActionEvents(value.factoryStateRoot, value.workItemKey).filter(
+      (event) => event.type === "implementation.candidate.produced",
+    ),
+  ).toHaveLength(1);
+});
+
 test.each(["staged", "live"] as const)(
   "rejects invalid %s implementation candidate recovery only after Grove",
   async (invalid) => {
@@ -93,6 +117,63 @@ test("recovers a completed implementation review after Grove without rerunning r
 
   expect(recovered).toMatchObject({ outcome: "recovered" });
   expect(value.ensureWorkspace).toHaveBeenCalledTimes(3);
+  expect(value.providerRun).toHaveBeenCalledOnce();
+  expect(value.implementationReviewRunner).toHaveBeenCalledOnce();
+  expect(
+    readFactoryActionEvents(value.factoryStateRoot, value.workItemKey).filter(
+      (event) => event.type === "implementation.review.completed",
+    ),
+  ).toHaveLength(1);
+});
+
+test("redelivers an older candidate after its review without reopening Grove", async () => {
+  const value = implementationFixture({ successfulProvider: true });
+  const candidate = await runHostedFactoryOperation({
+    request: value.request,
+    runtime: value.runtime,
+  });
+  if (candidate.outcome !== "executed") throw new Error("Expected executed candidate receipt");
+  const reviewRequest = requiredNext(candidate);
+  await runHostedFactoryOperation({ request: reviewRequest, runtime: value.runtime });
+
+  const recovered = await runHostedFactoryOperation({
+    request: value.request,
+    runtime: value.runtime,
+  });
+
+  expect(recovered).toMatchObject({
+    outcome: "recovered",
+    resultEventId: candidate.resultEventId,
+  });
+  expect(value.ensureWorkspace).toHaveBeenCalledTimes(2);
+  expect(value.providerRun).toHaveBeenCalledOnce();
+  expect(value.implementationReviewRunner).toHaveBeenCalledOnce();
+});
+
+test("redelivers an appended implementation review as recovered", async () => {
+  const value = implementationFixture({ successfulProvider: true });
+  const candidate = await runHostedFactoryOperation({
+    request: value.request,
+    runtime: value.runtime,
+  });
+  const reviewRequest = requiredNext(candidate);
+  const firstReview = await runHostedFactoryOperation({
+    request: reviewRequest,
+    runtime: value.runtime,
+  });
+  expect(firstReview).toMatchObject({ outcome: "executed" });
+  if (firstReview.outcome !== "executed") throw new Error("Expected executed review receipt");
+
+  const recovered = await runHostedFactoryOperation({
+    request: reviewRequest,
+    runtime: value.runtime,
+  });
+
+  expect(recovered).toMatchObject({
+    outcome: "recovered",
+    resultEventId: firstReview.resultEventId,
+  });
+  expect(value.ensureWorkspace).toHaveBeenCalledTimes(2);
   expect(value.providerRun).toHaveBeenCalledOnce();
   expect(value.implementationReviewRunner).toHaveBeenCalledOnce();
   expect(

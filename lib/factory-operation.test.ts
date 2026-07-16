@@ -259,7 +259,12 @@ test("recovers an authenticated completed result before lifecycle append", () =>
   const event = completedEvent(value);
   writeFactoryActionResult(actionDir(value), event);
 
-  expect(resolveFixture(value)).toEqual({ status: "completed", operation: value.operation, event });
+  expect(resolveFixture(value)).toEqual({
+    status: "completed",
+    operation: value.operation,
+    event,
+    eventRecorded: false,
+  });
 });
 
 test("conditionally appends an authenticated result and recovers idempotently", () => {
@@ -273,6 +278,7 @@ test("conditionally appends an authenticated result and recovers idempotently", 
     value.requested.id,
     event.id,
   ]);
+  expect(resolveFixture(value)).toMatchObject({ status: "completed", eventRecorded: true });
   expect(recoverFixture(value)).toEqual(first);
   expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey)).toHaveLength(3);
 });
@@ -353,7 +359,12 @@ test("recovers a failed result when its handler and action identity match", () =
   const event = failedEvent(value);
   writeFactoryActionResult(actionDir(value), event);
 
-  expect(resolveFixture(value)).toEqual({ status: "completed", operation: value.operation, event });
+  expect(resolveFixture(value)).toEqual({
+    status: "completed",
+    operation: value.operation,
+    event,
+    eventRecorded: false,
+  });
 });
 
 test("distinguishes a stale operation from the current invocation", () => {

@@ -225,9 +225,11 @@ function receiptWithoutExecution(
 ): FactoryOperationReceipt | undefined {
   const common = { version: 1 as const, ...request };
   if (resolution.status === "completed") {
-    // Implementation recovery needs the acquired workspace for staged-result and
-    // live Git checks performed by the existing implementation actions.
-    if (isImplementationHandler(request.operation.handler)) return undefined;
+    // An unrecorded implementation result may be a crash-gap artifact and still
+    // needs Grove plus the action's live Git checks. A recorded event is already
+    // canonical and can safely regenerate its receipt without workspace access.
+    if (isImplementationHandler(request.operation.handler) && !resolution.eventRecorded)
+      return undefined;
     const completed = recoverCompletedFactoryOperation({
       projectId: request.projectId,
       projectRoot: store.projectRoot,

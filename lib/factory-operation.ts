@@ -99,7 +99,12 @@ type InvokeReaction = Extract<FactoryReaction, { kind: "invoke" }>;
 type WaitReaction = Extract<FactoryReaction, { kind: "wait" }>;
 
 export type FactoryOperationResolution =
-  | { status: "completed"; operation: FactoryOperationRef; event: FactoryActionEvent }
+  | {
+      status: "completed";
+      operation: FactoryOperationRef;
+      event: FactoryActionEvent;
+      eventRecorded: boolean;
+    }
   | { status: "current"; operation: FactoryOperationRef; reaction: InvokeReaction }
   | {
       status: "stale";
@@ -318,7 +323,10 @@ export function resolveFactoryOperation(input: {
         { cause },
       );
     }
-    return { status: "completed", operation, event };
+    const eventRecorded = readFactoryActionEvents(factoryStateRoot, input.workItemKey, {
+      mode: "inspection",
+    }).some((candidate) => candidate.id === event.id);
+    return { status: "completed", operation, event, eventRecorded };
   }
 
   const events = readFactoryActionEvents(factoryStateRoot, input.workItemKey, {
