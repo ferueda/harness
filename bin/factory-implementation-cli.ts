@@ -10,14 +10,17 @@ import {
   resolveHarnessWorkspace,
   type FactoryRoleAgent,
 } from "../lib/config.ts";
-import { produceImplementationCandidate } from "../lib/factory-implementation-candidate-action.ts";
+import {
+  createFactoryOperationRef,
+  executeFactoryOperation,
+  type ExecuteFactoryOperationInput,
+} from "../lib/factory-operation.ts";
 import {
   readFactoryContinuationResponseFile,
   recordFactoryContinuation,
   type FactoryContinuationDecision,
 } from "../lib/factory-continuation.ts";
 import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
-import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
 import {
   markImplementationPullRequestMerged,
   publishImplementationPullRequest,
@@ -367,7 +370,7 @@ export async function runOneFactoryImplementationAction(input: {
   eventSink?: WorkflowEventSink;
   signal?: AbortSignal;
   agentProviderFactory?: (options: AgentProviderOptions) => Agent;
-  reviewRunner?: Parameters<typeof reviewImplementationCandidate>[0]["reviewRunner"];
+  reviewRunner?: ExecuteFactoryOperationInput["implementationReviewRunner"];
 }) {
   const key = deriveFactoryWorkItemKey(input.workItem);
   let events = readFactoryActionEvents(input.factoryStateRoot, key);
@@ -537,25 +540,22 @@ export async function runOneFactoryImplementationAction(input: {
   const maxRuntimeMs =
     input.explicitMaxRuntimeMs ??
     (reaction.handler === "produceImplementationCandidate" ? 0 : REVIEW_DEFAULT_MS);
-  const handled =
-    reaction.handler === "produceImplementationCandidate"
-      ? await produceImplementationCandidate({
-          ctx,
-          factoryStateRoot: input.factoryStateRoot,
-          reaction,
-          maxRuntimeMs,
-          signal: input.signal,
-          agentProviderFactory: input.agentProviderFactory ?? createAgentProvider,
-        })
-      : await reviewImplementationCandidate({
-          ctx,
-          factoryStateRoot: input.factoryStateRoot,
-          reaction,
-          maxRuntimeMs,
-          signal: input.signal,
-          agentProviderFactory: input.agentProviderFactory ?? createAgentProvider,
-          reviewRunner: input.reviewRunner,
-        });
+  const handled = await executeFactoryOperation({
+    operation: createFactoryOperationRef({
+      phaseRunId,
+      handler: reaction.handler,
+      attempt: reaction.attempt,
+      causationEventId: reaction.causationEventId,
+    }),
+    factoryStore: input.factoryStore,
+    workspace: input.workspace,
+    workItem: input.workItem,
+    maxRuntimeMs,
+    signal: input.signal,
+    eventSink: input.eventSink,
+    agentProviderFactory: input.agentProviderFactory ?? createAgentProvider,
+    implementationReviewRunner: input.reviewRunner,
+  });
   if (
     input.applyAdapter &&
     handled.event.type === "implementation.review.completed" &&

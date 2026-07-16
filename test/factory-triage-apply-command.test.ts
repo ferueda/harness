@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { expect, test, vi } from "vitest";
 import { runFactoryTriageWithLinearApply } from "../bin/factory-commands.ts";
+import type { Agent } from "../lib/agents.ts";
 import {
   appendFactoryActionEvent,
   readFactoryActionEvents,
@@ -49,6 +50,7 @@ function context(
   mkdirSync(runDir, { recursive: true });
   mkdirSync(join(runDir, "context"), { recursive: true });
   writeFileSync(join(runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
+  writeFileSync(join(runDir, "factory-triage.prompt.md"), "triage prompt");
   writeFileSync(join(runDir, "summary.md"), "summary");
   writeFileSync(
     join(runDir, "factory-route.json"),
@@ -205,7 +207,10 @@ test.each([
         applyTriageCompleted: completedApply,
       }),
     });
-    expect(runTriage).toHaveBeenCalledWith(ctx, { nextLiveRunRequiresRerun: expected });
+    expect(runTriage).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: ctx.runId, runDir: ctx.runDir }),
+      { nextLiveRunRequiresRerun: expected },
+    );
     if (dryRun) {
       expect(started).not.toHaveBeenCalled();
       expect(completedApply).not.toHaveBeenCalled();
@@ -278,6 +283,41 @@ test("new triage action invokes one handler and returns the next reaction", asyn
     reason: "phase-command",
     command: `harness factory planning run --workspace ${workspace} --linear-issue ENG-37 --apply`,
   });
+});
+
+test("triage delegation forwards its coordinator abort signal to the provider", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "triage-signal-run-"));
+  const root = join(workspace, "factory");
+  const ctx = context(workspace, false, root);
+  let coordinatorSignal: AbortSignal | undefined;
+  const providerRun = vi.fn<Agent["run"]>(async () => ({
+    ok: true,
+    raw: {},
+    structuredOutput: {
+      route: "needs-info",
+      confidence: "high",
+      rationale: "Question",
+      evidence: [{ kind: "tracker", path: null, summary: "Missing detail" }],
+      questions: ["Which target?"],
+      reconsiderWhen: null,
+    },
+  }));
+
+  await runFactoryTriageWithLinearApply({
+    factoryStateRoot: root,
+    workItem: WORK_ITEM,
+    rerun: false,
+    issueRef: "ENG-37",
+    createContext: (signal) => {
+      coordinatorSignal = signal;
+      return ctx;
+    },
+    announceRunStarted: () => {},
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+
+  expect(coordinatorSignal).toBeInstanceOf(AbortSignal);
+  expect(providerRun).toHaveBeenCalledWith(expect.objectContaining({ signal: coordinatorSignal }));
 });
 
 test.each(["missing", "malformed"] as const)(
@@ -475,6 +515,7 @@ test("the handler rejects an injected command in a recovered PR 1 result", async
   );
   mkdirSync(join(runDir, "context"), { recursive: true });
   writeFileSync(join(runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
+  writeFileSync(join(runDir, "factory-triage.prompt.md"), "triage prompt");
   const inputRef = createFactoryArtifactRef({
     base: "factory-store",
     root: projectRoot,
@@ -585,6 +626,7 @@ test("the handler rejects an injected command in a recovered PR 1 result", async
     ...recoveredContext.factoryStore!,
     projectRoot,
     factoryStateRoot: root,
+    factoryRunsDir: join(projectRoot, "runs", "factory"),
   };
   const createContext = vi.fn(() => recoveredContext);
   await expect(
@@ -609,6 +651,7 @@ async function assertCompletedProviderMetaRecovery(
   const runDir = join(projectRoot, "runs", "factory", runId);
   mkdirSync(join(runDir, "context"), { recursive: true });
   writeFileSync(join(runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
+  writeFileSync(join(runDir, "factory-triage.prompt.md"), "triage prompt");
   const inputRef = createFactoryArtifactRef({
     base: "factory-store",
     root: projectRoot,
@@ -649,6 +692,7 @@ async function assertCompletedProviderMetaRecovery(
     projectRoot,
     projectId: "repo",
     factoryStateRoot: root,
+    factoryRunsDir: join(projectRoot, "runs", "factory"),
     repo: { name: "repo", id: "repo", idSource: "config" },
   };
   mkdirSync(join(runDir, "context"), { recursive: true });
@@ -831,8 +875,13 @@ test("recovers immutable finalization failure without rerunning the provider", a
   const root = join(workspace, "state");
   const ctx = context(workspace, false);
   ctx.runDir = join(workspace, "runs", "factory", ctx.runId);
+  ctx.factoryStore = {
+    ...ctx.factoryStore!,
+    factoryRunsDir: join(workspace, "runs", "factory"),
+  };
   mkdirSync(join(ctx.runDir, "context"), { recursive: true });
   writeFileSync(join(ctx.runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
+  writeFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "triage prompt");
   writeFactoryPhaseRunIdentity(ctx.runDir, {
     version: 1,
     phaseRunId: ctx.runId,
@@ -1058,7 +1107,12 @@ test("retries the same triage action and phase run after a retryable failure", a
       failureKind: "retryable",
     }),
   );
-  const failedRun = vi.fn(async () => Promise.reject(new Error("provider unavailable")));
+  const failedRun = vi.fn(async () => ({
+    ...meta(ctx),
+    status: "failed" as const,
+    error: "provider unavailable",
+    failureKind: "retryable" as const,
+  }));
   const applyTriageFailed = vi.fn();
   const applyTriageStarted = vi.fn(async () => ({
     issueIdentifier: "ENG-37",
@@ -1114,9 +1168,15 @@ test("retries a failed terminal projection without rerunning the provider", asyn
   const root = join(workspace, "state");
   const ctx = context(workspace, false);
   ctx.runDir = join(workspace, "runs", "factory", ctx.runId);
-  ctx.factoryStore = { ...ctx.factoryStore!, factoryStateRoot: root, projectRoot: workspace };
+  ctx.factoryStore = {
+    ...ctx.factoryStore!,
+    factoryStateRoot: root,
+    projectRoot: workspace,
+    factoryRunsDir: join(workspace, "runs", "factory"),
+  };
   mkdirSync(join(ctx.runDir, "context"), { recursive: true });
   writeFileSync(join(ctx.runDir, "context/work-item.json"), JSON.stringify(WORK_ITEM));
+  writeFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "triage prompt");
   writeFactoryPhaseRunIdentity(ctx.runDir, {
     version: 1,
     phaseRunId: ctx.runId,
@@ -1175,7 +1235,7 @@ test("retries a failed terminal projection without rerunning the provider", asyn
       createContext: vi.fn(),
       applyAdapter: fakeLinearAdapter({ applyTriageFailed: vi.fn() }),
     }),
-  ).rejects.toThrow(/failure metadata conflicts/);
+  ).rejects.toThrow(/metadata conflicts/);
   writeFileSync(join(ctx.runDir, "meta.json"), JSON.stringify(first.meta));
 
   const recoveredProjection = vi.fn(async () => ({
