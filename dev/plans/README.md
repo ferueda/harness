@@ -1,6 +1,7 @@
 # Plans & handoffs
 
 ## Active queue
+
 - [Execute one Factory reaction on an existing workspace](FER-95.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-95/execute-one-factory-reaction-on-an-existing-workspace)
 - [Provision Factory worktrees with Grove for hosted execution](FER-30.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-30/provision-factory-worktrees-with-grove-for-hosted-execution)
 
