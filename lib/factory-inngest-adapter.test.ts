@@ -94,6 +94,7 @@ test("bounds the runtime and combines the host and deadline signals", async () =
   }).execute();
 
   expect(output.error).toBeUndefined();
+  expect(FACTORY_INNGEST_MAX_RUNTIME_MS).toBe(110 * 60 * 1_000);
   expect(runner).toHaveBeenCalledOnce();
   expect(receivedRuntime?.maxRuntimeMs).toBe(FACTORY_INNGEST_MAX_RUNTIME_MS);
   expect(receivedRuntime?.signal).not.toBe(host.signal);

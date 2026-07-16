@@ -167,7 +167,8 @@ operation, never follows the next reaction inside that step, and uses durable
 `step.sendEvent()` only when the receipt includes `next`.
 
 The per-work-item and global concurrency limits are scheduling controls, not
-Factory locks. A 30-minute adapter deadline is combined with the runtime signal.
+Factory locks. A 110-minute adapter deadline leaves ten minutes below Inngest's
+two-hour step ceiling and is combined with the runtime signal.
 Authenticated persisted failures and aborts are successful Inngest results; an
 error before a durable receipt is allowed to throw so the same delivery can retry.
 Human, publication, merge, complete, failed, and stale waits emit nothing. This

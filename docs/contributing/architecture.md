@@ -159,7 +159,8 @@ one versioned identifier-only operation in one stable step and sends one hinted
 operation only when the authenticated Factory receipt contains `next`. Per-work-item
 and global concurrency are both one, but they only schedule work; Factory action
 identity and persisted results remain correctness authority. The adapter caps the
-trusted runtime at 30 minutes and combines that deadline with its host signal.
+trusted runtime at 110 minutes, leaving ten minutes below Inngest's two-hour step
+ceiling, and combines that deadline with its host signal.
 Every durable receipt, including a persisted failure or abort, succeeds in Inngest;
 only a host failure before a receipt is retryable there. The current boundary is a
 single persistent execution host and includes no webhook ingress or production
