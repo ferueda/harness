@@ -23,11 +23,15 @@ import { createAgentProvider } from "../providers/registry.ts";
 import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import {
   createFactoryInngestAdapter,
+  createFactoryInngestDelivery,
+  createFactoryOperationRequestedEvent,
   FACTORY_INNGEST_APP_ID,
   FACTORY_INNGEST_FUNCTION_ID,
+  factoryOperationDeliveryId,
   FactoryOperationRequestedEvent,
 } from "../lib/factory-inngest-adapter.ts";
 import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
+import { reconcileFactoryOperations } from "../lib/factory-operation-reconciliation.ts";
 import {
   createFactoryOperationRef,
   FactoryOperationReceiptSchema,
@@ -527,8 +531,21 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   assert(functions.includes(FACTORY_INNGEST_FUNCTION_ID), "registered Inngest function missing");
 
   station = "hosted Factory execution through Inngest";
-  const executedEvent = await inngest.send(FactoryOperationRequestedEvent.create(request));
-  const executedEventId = executedEvent.ids[0];
+  const deliverFactoryOperation = createFactoryInngestDelivery(inngest);
+  let executedEventId: string | undefined;
+  const reconciled = await reconcileFactoryOperations(
+    [{ projectId, workItemKey: request.workItemKey, factoryStore }],
+    async (deliveredRequest) => {
+      const sent = await deliverFactoryOperation(deliveredRequest);
+      executedEventId = sent.ids[0];
+    },
+  );
+  assert(reconciled.length === 1, "reconciliation result count mismatch");
+  assert(reconciled[0]?.outcome === "delivered", "Factory operation was not reconciled");
+  assert(
+    factoryOperationDeliveryId(request) === createFactoryOperationRequestedEvent(request).id,
+    "deterministic delivery identity mismatch",
+  );
   assert(typeof executedEventId === "string", "executed delivery event ID missing");
   const executed = await pollEventReceipt(apiHost, executedEventId, "executed");
   await waitForWorkerIdle();
@@ -564,7 +581,10 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   assert(readFileSync(eventPath, "utf8") === evidenceBefore, "release changed Factory evidence");
 
   station = "hosted Factory replay through Inngest after release";
-  const recoveredEvent = await inngest.send(FactoryOperationRequestedEvent.create(request));
+  const replayEventId = `${executedEventId.slice(0, -1)}${executedEventId.endsWith("0") ? "1" : "0"}`;
+  const recoveredEvent = await inngest.send(
+    FactoryOperationRequestedEvent.create(request, { id: replayEventId }),
+  );
   const recoveredEventId = recoveredEvent.ids[0];
   assert(typeof recoveredEventId === "string", "recovered delivery event ID missing");
   const recovered = await pollEventReceipt(apiHost, recoveredEventId, "recovered");

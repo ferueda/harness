@@ -10,6 +10,8 @@ import { readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import { createFactoryOperationRef, type FactoryOperationReceipt } from "./factory-operation.ts";
 import {
   createFactoryInngestAdapter,
+  createFactoryInngestDelivery,
+  createFactoryOperationRequestedEvent,
   FACTORY_INNGEST_APP_ID,
   FACTORY_INNGEST_FUNCTION_ID,
   FACTORY_INNGEST_MAX_RUNTIME_MS,
@@ -18,6 +20,7 @@ import {
   FACTORY_OPERATION_EVENT_NAME,
   FACTORY_OPERATION_EVENT_VERSION,
   FACTORY_OPERATION_STEP_ID,
+  factoryOperationDeliveryId,
   FactoryOperationRequestedEvent,
 } from "./factory-inngest-adapter.ts";
 
@@ -30,7 +33,7 @@ function client() {
 }
 
 function eventFor(request: ReturnType<typeof fixture>["request"]) {
-  return FactoryOperationRequestedEvent.create(request);
+  return createFactoryOperationRequestedEvent(request);
 }
 
 test("locks the identifier-only versioned event and scheduling controls", () => {
@@ -51,8 +54,8 @@ test("locks the identifier-only versioned event and scheduling controls", () => 
   expect(eventFor(value.request)).toEqual({
     name: FACTORY_OPERATION_EVENT_NAME,
     data: value.request,
-    id: undefined,
-    ts: undefined,
+    id: factoryOperationDeliveryId(value.request),
+    ts: expect.any(Number),
     v: FACTORY_OPERATION_EVENT_VERSION,
     meta: undefined,
     validate: expect.any(Function),
@@ -67,6 +70,49 @@ test("locks the identifier-only versioned event and scheduling controls", () => 
       runtime: value.runtime,
     }),
   ).toThrow(/harness-factory/);
+});
+
+test("derives transport identity from the complete canonical request", () => {
+  const value = fixture();
+  const original = factoryOperationDeliveryId(value.request);
+  expect(factoryOperationDeliveryId(value.request)).toBe(original);
+  expect(original).toMatch(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
+
+  const changes = [
+    { ...value.request, projectId: "project-2" },
+    { ...value.request, workItemKey: "linear:ITEM-2" },
+    {
+      ...value.request,
+      operation: createFactoryOperationRef({
+        ...value.operation,
+        causationEventId: "different-causation",
+      }),
+    },
+  ];
+  for (const request of changes) expect(factoryOperationDeliveryId(request)).not.toBe(original);
+});
+
+test("direct delivery retries a lost response with the same event identity", async () => {
+  const value = fixture();
+  const inngest = client();
+  const accepted: unknown[] = [];
+  vi.spyOn(inngest, "send").mockImplementation(async (event) => {
+    accepted.push(event);
+    if (accepted.length === 1) throw new Error("response lost after acceptance");
+    return { ids: ["accepted"] };
+  });
+  const deliver = createFactoryInngestDelivery(inngest);
+
+  await expect(deliver(value.request)).rejects.toThrow(/response lost/);
+  await expect(deliver(value.request)).resolves.toEqual({ ids: ["accepted"] });
+  expect(accepted).toHaveLength(2);
+  for (const event of accepted)
+    expect(event).toMatchObject({
+      name: FACTORY_OPERATION_EVENT_NAME,
+      v: FACTORY_OPERATION_EVENT_VERSION,
+      id: factoryOperationDeliveryId(value.request),
+      data: value.request,
+    });
 });
 
 test("bounds the runtime and combines the host and deadline signals", async () => {
@@ -139,6 +185,7 @@ test("a durable retryable failure succeeds and emits only its derived operation"
       name: FACTORY_OPERATION_EVENT_NAME,
       v: FACTORY_OPERATION_EVENT_VERSION,
       data: "next" in result ? result.next : undefined,
+      id: "next" in result && result.next ? factoryOperationDeliveryId(result.next) : undefined,
     }),
   );
   expect(value.runProvider).toHaveBeenCalledOnce();
@@ -151,9 +198,11 @@ test("duplicate delivery recovers the same action without following its hint", a
     function: fn,
     events: [eventFor(value.request)],
   }).execute();
+  const canonicalEventId = factoryOperationDeliveryId(value.request);
+  const laterEventId = `${canonicalEventId.slice(0, -1)}${canonicalEventId.endsWith("0") ? "1" : "0"}`;
   const second = await new InngestTestEngine({
     function: fn,
-    events: [eventFor(value.request)],
+    events: [FactoryOperationRequestedEvent.create(value.request, { id: laterEventId })],
   }).execute();
 
   expect(first.result).toMatchObject({ outcome: "executed", operation: value.operation });
