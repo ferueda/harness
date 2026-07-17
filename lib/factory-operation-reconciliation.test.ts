@@ -3,7 +3,7 @@ import { basename, join, relative } from "node:path";
 import { hostname } from "node:os";
 import { expect, test, vi } from "vitest";
 import { writeFactoryActionResult } from "./factory-action-result.ts";
-import { fixture } from "./factory-hosted-operation-test-fixtures.ts";
+import { fixture } from "../test/factory-hosted-operation-test-fixtures.ts";
 import {
   actionLifecycleEventPath,
   actionLifecycleStatePath,

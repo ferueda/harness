@@ -22,7 +22,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | B     | SDK stream JSONL + `streamArtifacts`          | [#34](https://github.com/ferueda/harness/pull/34)                                                        |
 | C     | `events.jsonl` + `--verbose`                  | [#34](https://github.com/ferueda/harness/pull/34)                                                        |
 | D     | Provider `AbortSignal`                        | [#36](https://github.com/ferueda/harness/pull/36)                                                        |
-| E     | SDK-only reviews; `cursor-cli` skill launcher | [#37](https://github.com/ferueda/harness/pull/37)                                                        |
+| E     | SDK-only reviews                              | [#37](https://github.com/ferueda/harness/pull/37)                                                        |
 | —     | Shared review JSON parse                      | [#38](https://github.com/ferueda/harness/pull/38)                                                        |
 | F     | Review-output schema ↔ Zod sync tests         | [#39](https://github.com/ferueda/harness/pull/39)                                                        |
 | G     | Review-runtime hardening                      | [#40](https://github.com/ferueda/harness/pull/40)                                                        |
