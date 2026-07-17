@@ -142,8 +142,36 @@ Hosted execution keeps the same boundary:
 | Git      | Committed plan and code bytes                                                    |
 | Trackers | Verified external facts and retryable human-facing projections                   |
 
-An Inngest event is a delivery hint for authority already recorded by Factory.
-It cannot create a phase or choose the next phase.
+#### Target hosted flow
+
+The hosted composition is event-driven, but Factory remains the decision owner:
+
+```mermaid
+flowchart TD
+    L["Linear or GitHub event"] --> I["Inngest ingress function"]
+    I --> F1["Record verified authority in Factory"]
+    F1 --> P1["Project boundary to Linear"]
+    P1 --> S["Send exact operation event"]
+
+    S --> E["Inngest operation function"]
+    E --> R["Hosted runner and Grove workspace"]
+    R --> F2["Factory authenticates and executes one action"]
+    F2 --> A["Persist evidence, result, and lifecycle event"]
+    A --> P2["Inngest projects result to Linear"]
+
+    P2 --> N{"Factory receipt"}
+    N -->|"Exact same-phase operation"| S
+    N -->|"Cross-phase boundary"| D["Send advance wakeup"]
+    D --> X["Inngest advance driver"]
+    X --> F3["Factory selects one typed effect"]
+    F3 --> P1
+    N -->|"Wait or complete"| W["Function ends"]
+```
+
+Inngest never decides that planning should begin, a retry should happen, or a
+pull request should publish. It asks Factory, then executes Factory's answer.
+An Inngest event is therefore a delivery hint for authority already recorded by
+Factory; it cannot create a phase or choose the next phase.
 
 ### Schema boundary
 
