@@ -43,11 +43,9 @@ Hosted operation delivery composes Factory with Grove without moving lifecycle p
 
 ```text
 trusted observed phase request or continuation
-  -> validate project, work-item, cursor, phase-run, candidate, and review identity
-  -> snapshot controller HEAD before Grove acquisition
-  -> create the immutable phase context when starting or restarting
-  -> compare-and-append existing phase-request or continuation authority
-  -> reconcile the canonical reaction only after authority is durable
+  -> validate observed identities and snapshot controller HEAD
+  -> acquire Grove, create phase context, and append authority
+  -> reconcile only after authority is durable
   -> identifier-only request or bounded wait/stale/attention result
 identifier-only request + trusted project runtime
   -> authenticate phase, work item, action, and completed result
@@ -159,14 +157,11 @@ user data and must not be committed.
 
 ## Current execution model
 
-The CLI is the synchronous adapter for phase start and continuation: it reads
-the current identities and applies them immediately. Async adapters must retain
-the exact observed cursor, phase run, candidate, and review until application.
-`lib/factory-hosted-authority.ts` records that authority before reconciliation;
-the callable hosted runner accepts only project/work-item/operation identifiers.
-Trusted runtime owns store paths, repository identity, provider controls, base
-metadata, and Grove config. Transport authentication and credentials remain
-adapter-owned.
+The CLI reads and applies phase-start or continuation identities synchronously.
+Hosted adapters preserve those observed identities and use
+`lib/factory-hosted-authority.ts` to record authority before reconciliation. The
+runner accepts only project, work-item, and operation identifiers; trusted
+runtime supplies store, repository, provider, and Grove configuration.
 
 An external host may call `lib/factory-operation-reconciliation.ts` with a
 bounded trusted target list. It returns `delivered`, `waiting`, `stale`, or
@@ -177,8 +172,7 @@ nor discovers or schedules work.
 chained sends. IDs suppress transport duplicates; Factory action identity
 prevents replay. The adapter keeps three retries and a 110-minute action limit.
 The current integration assumes one persistent host and ships no production
-worker or Harness scheduler. Hosted publication and merge acknowledgement are
-outside the hosted authority boundary.
+worker or scheduler. Publication and merge acknowledgement remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.
