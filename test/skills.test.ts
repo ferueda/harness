@@ -278,6 +278,17 @@ test("architect prefers the smallest intent-aligned design and explains its impa
   expect(prose).toContain("Repository invariants and documented project intent");
   expect(prose).toContain("Recommend no change when it already satisfies the goal");
   expect(prose).toContain("smallest repo-native change");
+  expect(prose).toContain(
+    "Classify the recommended direction as **One scoped outcome** or **An umbrella requiring scoped units**",
+  );
+  expect(prose).toContain(
+    "Complexity, file count, and cross-layer reach do not make it an umbrella",
+  );
+  expect(prose).toContain("could be accepted, shipped, deferred, or rolled back independently");
+  expect(prose).toContain(
+    "observable outcome, acceptance boundary, dependencies on other units, and explicit exclusions",
+  );
+  expect(prose).toContain("do not split work mechanically by layer or module");
   expect(prose).toContain("Do not manufacture an option count");
   expect(prose).toContain("identify the current owner and existing repository");
   expect(prose).toContain("Name the verified gap they cannot satisfy");
@@ -292,9 +303,12 @@ test("architect prefers the smallest intent-aligned design and explains its impa
   expect(prose).toContain("Only materially different viable choices");
   expect(prose).toContain("Omit when one direction is clear");
   expect(architect).toContain("## Impact and tradeoffs");
+  expect(architect).toContain("**Scope**: One scoped outcome | An umbrella requiring scoped units");
+  expect(architect).toContain("## Scoped units");
   expect(prose).toContain("State relevant unchanged surfaces the user asked about");
   expect(prose).toContain("material consequences and accepted tradeoffs understood");
   expect(metadata).toContain("explain material impact and accepted tradeoffs");
+  expect(architect).not.toContain("disable-model-invocation");
   expect(architect).not.toContain("Use an alternate model");
   expect(architect).not.toMatch(/gpt-5\.6-(terra|luna)/);
   expect(architect).not.toContain("Generate two to four viable designs");
