@@ -18,21 +18,7 @@ afterEach(() => {
 });
 
 test("rejects an initial request when Factory advances after the deterministic import", () => {
-  const root = mkdtempSync(join(tmpdir(), "factory-phase-request-"));
-  roots.push(root);
-  const projectRoot = join(root, "project");
-  const store: FactoryStoreMeta = {
-    storeRoot: root,
-    projectId: "project",
-    projectRoot,
-    factoryStateRoot: join(projectRoot, "factory"),
-    factoryRunsDir: join(projectRoot, "runs/factory"),
-    reviewRunsDir: join(projectRoot, "runs/reviews"),
-    repo: { name: "repository", id: "project", idSource: "config" },
-    overrides: {},
-    warnings: [],
-  };
-  ensureFactoryStoreFormat(store.factoryStateRoot);
+  const { projectRoot, store } = phaseRequestFixture();
   const workItem = {
     id: "manual:RACE-1",
     source: "manual" as const,
@@ -86,21 +72,7 @@ test("rejects an initial request when Factory advances after the deterministic i
 });
 
 test("fresh phases still reject changed work-item evidence", () => {
-  const root = mkdtempSync(join(tmpdir(), "factory-phase-request-"));
-  roots.push(root);
-  const projectRoot = join(root, "project");
-  const store: FactoryStoreMeta = {
-    storeRoot: root,
-    projectId: "project",
-    projectRoot,
-    factoryStateRoot: join(projectRoot, "factory"),
-    factoryRunsDir: join(projectRoot, "runs/factory"),
-    reviewRunsDir: join(projectRoot, "runs/reviews"),
-    repo: { name: "repository", id: "project", idSource: "config" },
-    overrides: {},
-    warnings: [],
-  };
-  ensureFactoryStoreFormat(store.factoryStateRoot);
+  const { root, store } = phaseRequestFixture();
   const workItem = {
     id: "manual:EVIDENCE-1",
     source: "manual" as const,
@@ -141,3 +113,26 @@ test("fresh phases still reject changed work-item evidence", () => {
     /work-item evidence changed/,
   );
 });
+
+function phaseRequestFixture(): {
+  root: string;
+  projectRoot: string;
+  store: FactoryStoreMeta;
+} {
+  const root = mkdtempSync(join(tmpdir(), "factory-phase-request-"));
+  roots.push(root);
+  const projectRoot = join(root, "project");
+  const store: FactoryStoreMeta = {
+    storeRoot: root,
+    projectId: "project",
+    projectRoot,
+    factoryStateRoot: join(projectRoot, "factory"),
+    factoryRunsDir: join(projectRoot, "runs/factory"),
+    reviewRunsDir: join(projectRoot, "runs/reviews"),
+    repo: { name: "repository", id: "project", idSource: "config" },
+    overrides: {},
+    warnings: [],
+  };
+  ensureFactoryStoreFormat(store.factoryStateRoot);
+  return { root, projectRoot, store };
+}
