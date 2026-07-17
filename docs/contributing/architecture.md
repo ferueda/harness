@@ -132,6 +132,19 @@ is content-addressed. Git is authoritative for committed plan/code bytes. Linear
 and GitHub may lag and be repaired, but they cannot select Factory transitions.
 See [Factory contributor guide](./factory.md) for the full invariant set.
 
+Hosted execution keeps the same boundary:
+
+| Owner    | Responsibility                                                                   |
+| -------- | -------------------------------------------------------------------------------- |
+| Factory  | Lifecycle facts, transition rules, exact action identity, evidence, and recovery |
+| Inngest  | Event delivery, step retries, scheduling, concurrency, and traces                |
+| Grove    | Workspace lease, setup, reset, release, quarantine, and repair                   |
+| Git      | Committed plan and code bytes                                                    |
+| Trackers | Verified external facts and retryable human-facing projections                   |
+
+An Inngest event is a delivery hint for authority already recorded by Factory.
+It cannot create a phase or choose the next phase.
+
 ### Schema boundary
 
 Runtime validation lives primarily in `lib/schemas.ts`,
@@ -169,10 +182,13 @@ bounded trusted target list. It returns `delivered`, `waiting`, `stale`, or
 nor discovers or schedules work.
 
 `lib/factory-inngest-adapter.ts` owns deterministic event IDs and direct or
-chained sends. IDs suppress transport duplicates; Factory action identity
-prevents replay. The adapter keeps three retries and a 110-minute action limit.
-The current integration assumes one persistent host and ships no production
-worker or scheduler. Publication and merge acknowledgement remain separate.
+chained sends. It may chain only the exact next operation returned by an
+authenticated Factory receipt; it does not interpret `phase-command` or choose a
+new phase. IDs suppress transport duplicates; Factory action identity prevents
+replay. The adapter keeps three retries and a 110-minute action limit. The
+current integration assumes one persistent host and ships no production worker,
+cross-phase driver, or webhook ingress. Publication and merge acknowledgement
+remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.
