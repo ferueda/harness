@@ -39,6 +39,9 @@ such as `/path/to/repo`, `harness.json`, and `.harness/runs/reviews/<run-id>/`.
 - Current behavior and planned work must be clearly separated.
 - Provider-specific details belong behind provider adapters; workflows should
   stay provider-agnostic.
+- Factory owns lifecycle truth and transition rules. Execution hosts such as
+  Inngest may deliver, retry, schedule, and observe work, but they must not keep
+  a second lifecycle state machine.
 - Runtime schemas and exported schemas must stay aligned when either side
   changes.
 
@@ -54,7 +57,8 @@ they own `harness.json`, the harness shim, inbox files, source, tests, local
 skill installs, and committed plans and code. Standalone review artifacts keep their target-repo
 `.harness/runs/reviews` defaults. Linear and GitHub will remain human/project
 projections, while Git remains the source of truth for committed plans and
-code.
+code. External events enter Factory as verified durable facts before they can
+enable more work.
 
 Factory planning keeps planner scratch separate from Harness evidence. The
 planner writes only the retained, ignored workspace-local
