@@ -2,7 +2,6 @@ import type { FactoryLinearSettings } from "./config.ts";
 import type { FactoryPlanningRunStatus } from "./factory-planning-run-context.ts";
 import type {
   LinearClientLike,
-  LinearCommentLike,
   LinearIssueLike,
   LinearWorkflowStateLike,
 } from "./factory-linear-types.ts";
@@ -222,19 +221,6 @@ export function linearPlanningApplyFailedCommentMarker(runId: string): string {
   return `<!-- harness-factory:planning-apply-failed:${runId} -->`;
 }
 
-export function linearPlanningAttentionStageFromComments(
-  comments: LinearCommentLike[],
-): "plan-needs-human" | "plan-review-unresolved" | undefined {
-  const latestPlanningComment = [...comments]
-    .filter((comment) => comment.body.includes("<!-- harness-factory:planning-apply:"))
-    .sort(compareCommentsByCreatedAt)
-    .at(-1);
-  const statusMatch = /^Status:\s*(plan-needs-human|plan-review-unresolved)\s*$/m.exec(
-    latestPlanningComment?.body ?? "",
-  );
-  return statusMatch?.[1] as "plan-needs-human" | "plan-review-unresolved" | undefined;
-}
-
 export function renderLinearPlanningApplyCompleteComment(
   input: LinearPlanningCompletedInput & { targetStatus: string },
 ): string {
@@ -303,16 +289,4 @@ function planningCommentHeadline(status: FactoryPlanningRunStatus): string {
 
 function normalizeStatus(value: string): string {
   return value.trim().toLowerCase();
-}
-
-function compareCommentsByCreatedAt(a: LinearCommentLike, b: LinearCommentLike): number {
-  const left = dateSortValue(a.createdAt);
-  const right = dateSortValue(b.createdAt);
-  if (left !== right) return left - right;
-  return 0;
-}
-
-function dateSortValue(value: Date | string | undefined): number {
-  if (!value) return 0;
-  return value instanceof Date ? value.getTime() : Date.parse(value);
 }

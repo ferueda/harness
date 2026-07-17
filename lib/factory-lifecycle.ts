@@ -22,13 +22,6 @@ export {
   type FactoryReaction,
 } from "./factory-state-machine.ts";
 
-export type FactoryLifecycleWarning = {
-  code: string;
-  message: string;
-  factoryStateRoot?: string;
-  workItemKey?: string;
-};
-
 export function deriveFactoryWorkItemKey(workItem: FactoryWorkItem): string {
   const metadata = FactoryWorkItemMetadataSchema.safeParse(workItem.metadata ?? {});
   const tracker = metadata.success ? metadata.data.tracker : undefined;

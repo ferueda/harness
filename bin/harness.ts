@@ -296,17 +296,12 @@ function addPlanReviewCommand(parent: Command): void {
         includeGitScope: false,
       });
       assertPlanFileExists(resolvedOptions.workspace, options.plan);
-      if (
-        resolvedOptions.agentProvider !== "codex" &&
-        (options.sandbox || options.approvalPolicy || options.reasoningEffort)
-      ) {
-        throw new Error(
-          "--sandbox, --approval-policy, and --reasoning-effort apply only when --agent codex is active",
-        );
-      }
-      if (resolvedOptions.agentProvider !== "codex" && options.codexExecutable) {
-        throw new Error("--codex-executable applies only when --agent codex is active");
-      }
+      assertCodexOnlyAgentOptions(resolvedOptions.agentProvider, {
+        codexExecutable: options.codexExecutable,
+        sandbox: options.sandbox,
+        approvalPolicy: options.approvalPolicy,
+        reasoningEffort: options.reasoningEffort,
+      });
 
       const runAbort = new AbortController();
       const onRunAbort = () => runAbort.abort();
@@ -407,17 +402,12 @@ function addReviewCommand(
         maxRuntimeMs: options.maxRuntimeMs,
         dryRun: options.dryRun,
       });
-      if (
-        resolvedOptions.agentProvider !== "codex" &&
-        (options.sandbox || options.approvalPolicy || options.reasoningEffort)
-      ) {
-        throw new Error(
-          "--sandbox, --approval-policy, and --reasoning-effort apply only when --agent codex is active",
-        );
-      }
-      if (resolvedOptions.agentProvider !== "codex" && options.codexExecutable) {
-        throw new Error("--codex-executable applies only when --agent codex is active");
-      }
+      assertCodexOnlyAgentOptions(resolvedOptions.agentProvider, {
+        codexExecutable: options.codexExecutable,
+        sandbox: options.sandbox,
+        approvalPolicy: options.approvalPolicy,
+        reasoningEffort: options.reasoningEffort,
+      });
 
       const runAbort = new AbortController();
       const onRunAbort = () => runAbort.abort();

@@ -12,7 +12,6 @@ import {
 } from "../lib/factory-linear-adapter.ts";
 import {
   assertLinearPlanningApplyAllowed,
-  linearPlanningAttentionStageFromComments,
   linearPlanningApplyCommentMarker,
   linearPlanningApplyFailedCommentMarker,
   linearPlanningTargetStatus,
@@ -580,30 +579,6 @@ test("Linear planning apply helpers map statuses and render concise comments", (
       error: "agent timeout",
     }),
   ).toContain("Factory planning command failed.");
-});
-
-test("Linear planning attention parser selects the latest planning marker", () => {
-  expect(
-    linearPlanningAttentionStageFromComments([
-      {
-        body: [
-          "<!-- harness-factory:planning-apply:run-1 -->",
-          "",
-          "Status: plan-needs-human",
-        ].join("\n"),
-        createdAt: new Date("2026-07-07T10:00:00Z"),
-      },
-      {
-        body: [
-          "<!-- harness-factory:planning-apply:run-2 -->",
-          "",
-          "Status: plan-review-unresolved",
-        ].join("\n"),
-        createdAt: new Date("2026-07-07T11:00:00Z"),
-      },
-    ]),
-  ).toBe("plan-review-unresolved");
-  expect(linearPlanningAttentionStageFromComments([{ body: "human comment" }])).toBeUndefined();
 });
 
 test("Linear triage helpers map routes and render concise comments", () => {

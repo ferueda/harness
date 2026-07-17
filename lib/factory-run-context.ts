@@ -148,8 +148,8 @@ export function readFactoryWorkItemFile(path: string): FactoryWorkItem {
 function stripFetchWarnings(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const candidate = value as Record<string, unknown>;
-  // `factory linear fetch` retains work-item fields at the top level and adds
-  // optional warnings. Accept that intentional CLI envelope for item-file reuse.
+  // Historical fetch output could include top-level warnings. Keep accepting
+  // those saved item files even though current fetches return the work item directly.
   if (!Array.isArray(candidate.warnings)) return value;
   const { warnings: _warnings, ...workItem } = candidate;
   return workItem;

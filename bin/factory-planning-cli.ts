@@ -142,8 +142,6 @@ async function runPlanningCommand(options: PlanningOptions): Promise<void> {
     linearSettings,
     env: process.env,
     linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
-    lifecycleReadMode: "none",
-    factoryStateRoot: store.factoryStateRoot,
   });
   const events = readFactoryActionEvents(
     store.factoryStateRoot,
@@ -234,8 +232,6 @@ async function runPlanningContinuationCommand(options: {
     linearSettings,
     env: process.env,
     linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
-    lifecycleReadMode: "none",
-    factoryStateRoot: store.factoryStateRoot,
   });
   const events = readFactoryActionEvents(
     store.factoryStateRoot,
@@ -619,8 +615,6 @@ export async function recordPlanningPublication(
     linearSettings: settings,
     env: process.env,
     linearAdapterFactory,
-    lifecycleReadMode: "none",
-    factoryStateRoot: store.factoryStateRoot,
   });
   const factoryStore = factoryStoreMetadata(store);
   const adapter = options.apply

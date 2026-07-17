@@ -27,7 +27,6 @@ export type WorkflowContext = {
   agent(name: ReviewAgentName): Promise<ReviewOutput>;
   aggregate(...reviews: ReviewOutput[]): ReviewVerdict;
   reviewInfo(name: ReviewAgentName): { key: string; title: string; stage: string };
-  reviewConcurrency?: "parallel" | "serial";
   export(input: {
     title: string;
     reviews: ReviewSection[];
@@ -56,11 +55,7 @@ export async function runReviewSteps(
     ...step,
     ...ctx.reviewInfo(step.agentName),
   }));
-  const results =
-    ctx.reviewConcurrency === "serial"
-      ? await runReviewTasksSerially(ctx, reviewTasks)
-      : await Promise.allSettled(reviewTasks.map((task) => runReviewTask(ctx, task)));
-  const exportStepMetadata = trimExecutedStepMetadata(stepMetadata, results.length);
+  const results = await Promise.allSettled(reviewTasks.map((task) => runReviewTask(ctx, task)));
 
   const reviews: ReviewSection[] = [];
   const failedReviews: FailedReview[] = [];
@@ -81,14 +76,14 @@ export async function runReviewSteps(
   }
 
   if (failedReviews.length > 0) {
-    return ctx.exportFailed({ title, reviews, failedReviews, steps: exportStepMetadata });
+    return ctx.exportFailed({ title, reviews, failedReviews, steps: stepMetadata });
   }
 
   return ctx.export({
     title,
     reviews,
     verdict: ctx.aggregate(...reviews.map(({ review }) => review)),
-    steps: exportStepMetadata,
+    steps: stepMetadata,
   });
 }
 
@@ -165,35 +160,6 @@ function runReviewTask(ctx: WorkflowContext, task: ReviewTask) {
       throw error;
     },
   );
-}
-
-async function runReviewTasksSerially(ctx: WorkflowContext, tasks: ReviewTask[]) {
-  const results: PromiseSettledResult<Awaited<ReturnType<typeof runReviewTask>>>[] = [];
-  for (const task of tasks) {
-    try {
-      results.push({ status: "fulfilled", value: await runReviewTask(ctx, task) });
-    } catch (reason) {
-      results.push({ status: "rejected", reason });
-      break;
-    }
-  }
-  return results;
-}
-
-function trimExecutedStepMetadata(
-  stepMetadata: WorkflowStepMetadata | undefined,
-  executedCount: number,
-): WorkflowStepMetadata | undefined {
-  if (!stepMetadata || executedCount >= stepMetadata.executedSteps.length) return stepMetadata;
-
-  const executedSteps = stepMetadata.executedSteps.slice(0, executedCount);
-  const stoppedSteps = stepMetadata.executedSteps.slice(executedCount);
-  return {
-    ...stepMetadata,
-    executedSteps,
-    omittedSteps: [...stepMetadata.omittedSteps, ...stoppedSteps],
-    partial: true,
-  };
 }
 
 function requiredRunId(ctx: WorkflowContext): string {

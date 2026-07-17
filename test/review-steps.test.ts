@@ -39,14 +39,7 @@ function createDeferredReviews(): Record<ReviewAgentName, DeferredReview> {
   };
 }
 
-function flushAsyncWork(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
-
-function createContext(
-  deferred: Record<ReviewAgentName, DeferredReview>,
-  options: { reviewConcurrency?: WorkflowContext["reviewConcurrency"] } = {},
-) {
+function createContext(deferred: Record<ReviewAgentName, DeferredReview>) {
   const started: ReviewAgentName[] = [];
   let exportedReviews: ReviewSection[] | undefined;
   let exportedFailures: unknown[] | undefined;
@@ -75,7 +68,6 @@ function createContext(
       } satisfies Record<ReviewAgentName, { key: string; title: string; stage: string }>;
       return info[name];
     },
-    reviewConcurrency: options.reviewConcurrency,
     export({ reviews, verdict, steps }) {
       exportedReviews = reviews;
       exportedSteps = steps;
@@ -142,54 +134,6 @@ test("plan-review starts only the spec review step", async () => {
     executedSteps: ["spec"],
     omittedSteps: [],
     partial: false,
-  });
-});
-
-test("change-review can run selected reviews serially", async () => {
-  const deferred = createDeferredReviews();
-  const harness = createContext(deferred, { reviewConcurrency: "serial" });
-  const run = runChangeReview(harness.ctx);
-
-  expect(harness.started).toEqual(["review-implementation"]);
-  deferred["review-implementation"].resolve(PASS_REVIEW);
-  await flushAsyncWork();
-  expect(harness.started).toEqual(["review-implementation", "code-quality-review"]);
-  deferred["code-quality-review"].resolve(PASS_REVIEW);
-
-  await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
-  expect(harness.exportedReviews?.map((review) => review.key)).toEqual([
-    "implementation",
-    "codeQuality",
-  ]);
-});
-
-test("change-review serial mode stops after the first failed reviewer", async () => {
-  const deferred = createDeferredReviews();
-  const harness = createContext(deferred, { reviewConcurrency: "serial" });
-  const run = runChangeReview(harness.ctx);
-
-  expect(harness.started).toEqual(["review-implementation"]);
-  deferred["review-implementation"].reject(
-    new Error("Agent runtime modified the workspace during a review run"),
-  );
-
-  await expect(run).resolves.toMatchObject({ status: "failed" });
-  expect(harness.started).toEqual(["review-implementation"]);
-  expect(harness.exportedReviews).toEqual([]);
-  expect(harness.exportedFailures).toEqual([
-    {
-      key: "implementation",
-      stage: "implementation",
-      error: "Agent runtime modified the workspace during a review run",
-    },
-  ]);
-  expect(harness.exportedSteps).toEqual({
-    workflow: "change-review",
-    availableSteps: ["implementation", "quality"],
-    requestedSteps: ["implementation", "quality"],
-    executedSteps: ["implementation"],
-    omittedSteps: ["quality"],
-    partial: true,
   });
 });
 

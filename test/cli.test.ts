@@ -1262,6 +1262,46 @@ test("harness run plan-review rejects missing plan files", () => {
   expect(result.stderr).toMatch(/Plan file does not exist: missing\.md/);
 });
 
+test("harness run plan-review rejects Codex-only policy flags for Cursor", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "run",
+    "plan-review",
+    "--workspace",
+    workspace,
+    "--plan",
+    "plan.md",
+    "--agent",
+    "cursor",
+    "--approval-policy",
+    "never",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/apply only when --agent codex is active/);
+});
+
+test("harness run plan-review rejects Codex executable override for Cursor", () => {
+  const workspace = createPlainWorkspace();
+  const result = runHarness([
+    "run",
+    "plan-review",
+    "--workspace",
+    workspace,
+    "--plan",
+    "plan.md",
+    "--agent",
+    "cursor",
+    "--codex-executable",
+    "/opt/codex",
+    "--dry-run",
+  ]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/--codex-executable applies only when --agent codex is active/);
+});
+
 test("harness run plan-review rejects change-review flags", () => {
   const workspace = createPlainWorkspace();
   for (const args of [
