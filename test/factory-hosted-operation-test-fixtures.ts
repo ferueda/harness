@@ -3,19 +3,19 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, expect, vi } from "vitest";
-import type { Agent } from "./agents.ts";
-import { createFactoryArtifactRef } from "./factory-artifact-ref.ts";
-import type { runHostedFactoryOperation } from "./factory-hosted-operation.ts";
-import { deriveFactoryGroveWorkspaceIntent } from "./factory-grove-workspace.ts";
+import type { Agent } from "../lib/agents.ts";
+import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import type { runHostedFactoryOperation } from "../lib/factory-hosted-operation.ts";
+import { deriveFactoryGroveWorkspaceIntent } from "../lib/factory-grove-workspace.ts";
 import {
   actionLifecycleEventPath,
   actionLifecycleStatePath,
   appendFactoryActionEvent,
-} from "./factory-lifecycle-kernel.ts";
-import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
-import { createFactoryOperationRef } from "./factory-operation.ts";
-import { writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
-import { deriveFactoryRepoIdentity } from "./factory-store.ts";
+} from "../lib/factory-lifecycle-kernel.ts";
+import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
+import { createFactoryOperationRef } from "../lib/factory-operation.ts";
+import { writeFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
+import { deriveFactoryRepoIdentity } from "../lib/factory-store.ts";
 
 const roots: string[] = [];
 afterEach(() => {

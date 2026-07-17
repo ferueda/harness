@@ -531,7 +531,7 @@ test.each([
   expect(matchesGlob(path, rule)).toBe(true);
 });
 
-test.each(["skills/cursor-cli/scripts/cursor-cli.test.ts", "skills/sessions/node_modules/foo.js"])(
+test.each(["skills/example/scripts/example.test.ts", "skills/sessions/node_modules/foo.js"])(
   "inventory exclusions cover %s",
   (path) => {
     expect(isExcludedInventoryPath(path)).toBe(true);

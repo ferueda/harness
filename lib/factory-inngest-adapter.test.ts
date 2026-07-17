@@ -1,7 +1,7 @@
 import { Inngest } from "inngest";
 import { InngestTestEngine, mockCtx } from "@inngest/test";
 import { expect, test, vi } from "vitest";
-import { fixture } from "./factory-hosted-operation-test-fixtures.ts";
+import { fixture } from "../test/factory-hosted-operation-test-fixtures.ts";
 import {
   runHostedFactoryOperation,
   type HostedFactoryRuntime,

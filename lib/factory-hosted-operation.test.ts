@@ -11,7 +11,7 @@ import {
   git,
   implementationFixture,
   registerHostedFixtureRoot,
-} from "./factory-hosted-operation-test-fixtures.ts";
+} from "../test/factory-hosted-operation-test-fixtures.ts";
 import { runHostedFactoryOperation } from "./factory-hosted-operation.ts";
 import { deriveFactoryGroveWorkspaceIntent } from "./factory-grove-workspace.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
