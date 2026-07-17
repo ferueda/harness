@@ -36,10 +36,11 @@ current `bin/harness.ts`.
 
 After verifying a fresh Harness worktree's Git baseline, run `make
 setup-worktree` before source edits or provider work. It runs
-`SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline`
+`CI=1 SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline`
 against the ordinary shared pnpm store. A cache miss fails immediately; warm the
 store from an accepted lockfile before delegation rather than adding an online
-fallback.
+fallback. Non-interactive mode lets pnpm refresh the ignored dependency tree
+when its install metadata changes.
 
 The command creates only the normal ignored `node_modules/`, skips shared Git
 hook mutation, and does not copy or link dependencies from another worktree or
