@@ -78,6 +78,38 @@ test("candidate and pass review run in separate commands and promote the exact r
   expect(git(fixture.workspace, ["diff", "--cached", "--name-only"]).trim()).toBe("");
 });
 
+test("implementation starts from immutable input after live tracker comments change", async () => {
+  const fixture = directFixture();
+  fixture.workItem.body += "\n\n## Linear Comments\n\n- Factory routed the issue.";
+  const providerRun = vi.fn<Agent["run"]>(async () => {
+    writeFileSync(join(fixture.workspace, "tracked.txt"), "implemented\n");
+    return {
+      ok: true,
+      raw: {},
+      session: { provider: "cursor", id: "implementer-session" },
+    };
+  });
+
+  const result = await runOneFactoryImplementationAction({
+    ...coordinatorInput(fixture),
+    agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+  });
+
+  expect(result.action?.handler).toBe("produceImplementationCandidate");
+  expect(providerRun).toHaveBeenCalledOnce();
+  const request = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).find(
+    (event) => event.type === "implementation.requested",
+  );
+  if (!request?.phaseRunId) throw new Error("implementation request missing");
+  const persisted = JSON.parse(
+    readFileSync(
+      join(fixture.store.factoryRunsDir, request.phaseRunId, "context/work-item.json"),
+      "utf8",
+    ),
+  ) as FactoryWorkItem;
+  expect(persisted.body).toBe("Change tracked.txt");
+});
+
 test("revision resumes the effective session with complete blockers and promotes only its new candidate", async () => {
   const fixture = directFixture();
   const firstProvider = vi.fn<Agent["run"]>(async () => {
