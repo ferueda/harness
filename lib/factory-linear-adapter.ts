@@ -76,6 +76,12 @@ const COMMENT_FETCH_LIMIT = 20;
 const LABEL_FETCH_LIMIT = 50;
 const STATUS_FETCH_LIMIT = 100;
 const TRIAGE_COMMENT_EVIDENCE_LIMIT = 3;
+const TRIAGE_RATIONALE_HEADINGS: Record<FactoryRoute, string> = {
+  "ready-to-implement": "Why Ready to Implement:",
+  "ready-to-plan": "Why Needs Plan:",
+  "needs-info": "Why Needs Clarification:",
+  "wait-to-implement": "Why Parked:",
+};
 
 export type LinearFactoryAdapter = {
   fetchWorkItem: (issueRef: string) => Promise<FactoryWorkItem>;
@@ -522,20 +528,13 @@ function triageRationaleContext(input: {
   rationale: string;
   evidence: FactoryTriageOutput["evidence"];
 }): string[] {
-  const heading =
-    input.route === "ready-to-plan"
-      ? "Why Needs Plan:"
-      : input.route === "needs-info"
-        ? "Why Needs Clarification:"
-        : undefined;
-  if (!heading) return [];
   const evidence = input.evidence.slice(0, TRIAGE_COMMENT_EVIDENCE_LIMIT).map((item) => {
     const prefix = item.path ? `${item.kind} (${item.path})` : item.kind;
     return `- ${prefix}: ${item.summary}`;
   });
   return [
     "",
-    heading,
+    TRIAGE_RATIONALE_HEADINGS[input.route],
     `- ${input.rationale}`,
     ...(input.route === "ready-to-plan" && evidence.length ? ["", "Evidence:", ...evidence] : []),
   ];

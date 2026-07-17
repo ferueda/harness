@@ -2557,23 +2557,25 @@ test.each([
   {
     route: "ready-to-implement" as const,
     targetStatus: "Ready to Implement",
-    expectedBody: "Route: ready-to-implement",
+    expectedHeading: "Why Ready to Implement:",
   },
   {
     route: "needs-info" as const,
     targetStatus: "Needs Clarification",
     triageExtra: { questions: ["Which provider should own this?"] },
+    expectedHeading: "Why Needs Clarification:",
     expectedBody: "- Which provider should own this?",
   },
   {
     route: "wait-to-implement" as const,
     targetStatus: "Parked",
     triageExtra: { reconsiderWhen: "Roadmap priority changes." },
+    expectedHeading: "Why Parked:",
     expectedBody: "Reconsider when: Roadmap priority changes.",
   },
 ])(
   "Linear adapter applies completed triage route $route",
-  async ({ route, targetStatus, triageExtra, expectedBody }) => {
+  async ({ route, targetStatus, triageExtra, expectedHeading, expectedBody }) => {
     const updates: Array<{ id: string; input: { stateId: string } }> = [];
     const comments: Array<{ issueId: string; body: string }> = [];
     const adapter = createLinearFactoryAdapterForClient({
@@ -2607,8 +2609,9 @@ test.each([
 
     expect(updates).toEqual([{ id: "issue-1", input: { stateId: `state-${targetStatus}` } }]);
     expect(comments[0].body).toContain(`Next: ${targetStatus}`);
-    expect(comments[0].body).toContain(expectedBody);
-    expect(comments[0].body).not.toContain("Why Needs Plan:");
+    expect(comments[0].body).toContain(expectedHeading);
+    expect(comments[0].body).toContain("- Route-specific triage.");
+    if (expectedBody) expect(comments[0].body).toContain(expectedBody);
     expect(comments[0].body).not.toContain("Evidence:");
   },
 );
