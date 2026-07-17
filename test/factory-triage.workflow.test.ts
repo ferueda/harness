@@ -149,6 +149,10 @@ test("factory triage live run writes artifacts and workflow events", async () =>
   );
   const prompt = readFileSync(join(ctx.runDir, "factory-triage.prompt.md"), "utf8");
   expect(prompt).toContain("strong chance a coding agent can complete it correctly in one pass");
+  expect(prompt).toContain("ready-to-plan: aligned work with one coherent outcome");
+  expect(prompt).toContain("one vertical outcome may span storage, API, and UI");
+  expect(prompt).toContain("accepted, shipped, deferred, or rolled back independently");
+  expect(prompt).toContain("Ask exactly one scope decision question");
   expect(prompt).toContain("operational or verification-only work");
   expect(prompt).toContain("not already shipped, duplicated, or actively being implemented");
   expect(prompt).toContain("Only the final response is authoritative");
