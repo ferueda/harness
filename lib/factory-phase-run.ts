@@ -44,6 +44,16 @@ export const FactoryPhaseGitIdentitySchema = z
   .strict();
 export type FactoryPhaseGitIdentity = z.infer<typeof FactoryPhaseGitIdentitySchema>;
 
+export const DEFAULT_FACTORY_AUTOMATIC_ACTION_POLICY = Object.freeze({
+  maxExecutions: 3,
+});
+export const FactoryAutomaticActionPolicySchema = z
+  .object({
+    maxExecutions: z.number().int().positive(),
+  })
+  .strict();
+export type FactoryAutomaticActionPolicy = z.infer<typeof FactoryAutomaticActionPolicySchema>;
+
 const FactoryPhaseRunV2BaseSchema = z.object({
   version: z.literal(2),
   phaseRunId: FactoryPhaseRunIdSchema,
@@ -52,6 +62,7 @@ const FactoryPhaseRunV2BaseSchema = z.object({
   projectId: z.string().min(1),
   factoryStateRoot: z.string().min(1),
   git: FactoryPhaseGitIdentitySchema.optional(),
+  automaticActionPolicy: FactoryAutomaticActionPolicySchema.optional(),
 });
 
 export const FactoryImplementationInputSnapshotSchema = z.discriminatedUnion("mode", [

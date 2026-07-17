@@ -58,7 +58,11 @@ import {
   type FactoryExecutionProvenance,
   type FactoryStoreMeta,
 } from "./factory-store.ts";
-import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
+import {
+  DEFAULT_FACTORY_AUTOMATIC_ACTION_POLICY,
+  readFactoryPhaseRunIdentity,
+  writeFactoryPhaseRunIdentity,
+} from "./factory-phase-run.ts";
 import {
   assertFactoryPhaseWorkspace,
   factoryPhaseBaseSha,
@@ -412,6 +416,7 @@ function createFactoryPlanningRunContextInternal(
         ),
         publicationMode,
         git: gitIdentity,
+        automaticActionPolicy: DEFAULT_FACTORY_AUTOMATIC_ACTION_POLICY,
         ...(publicationGit ? { baseRef: publicationGit.baseRef } : {}),
         actions: {
           producePlanCandidate: factoryActionExecutionProfile(options.plannerRole),

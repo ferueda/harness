@@ -7,6 +7,7 @@ import { buildRunId } from "./context.ts";
 import { verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import type { FactoryImplementationInput } from "./factory-implementation-input.ts";
 import {
+  DEFAULT_FACTORY_AUTOMATIC_ACTION_POLICY,
   readFactoryPhaseRunIdentity,
   writeFactoryPhaseRunIdentity,
   type FactoryImplementationInputSnapshot,
@@ -86,6 +87,7 @@ export function createFactoryImplementationRunContext(input: {
       factoryStateRoot: resolve(input.factoryStore.factoryStateRoot),
       baseRef: input.baseRef ?? "main",
       git: snapshotFactoryPhaseGit(workspace, { requireBranch: true })!,
+      automaticActionPolicy: DEFAULT_FACTORY_AUTOMATIC_ACTION_POLICY,
       input: snapshot,
       actions: {
         produceImplementationCandidate: factoryActionExecutionProfile(input.implementerRole),

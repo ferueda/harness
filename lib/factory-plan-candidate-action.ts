@@ -8,6 +8,7 @@ import {
   verifyFactoryArtifactRef,
 } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
+import { classifyFactoryActionFailure } from "./factory-action-failure.ts";
 import {
   factoryActionResultPath,
   readFactoryActionResult,
@@ -529,13 +530,20 @@ function buildFailure(
   failureKind: "retryable" | "human-required" | "terminal",
   retainedCandidateEventId?: string,
 ): FactoryActionEvent {
+  const effective = classifyFactoryActionFailure({
+    identity: ctx.identity,
+    events: readFactoryActionEvents(
+      ctx.identity.factoryStateRoot,
+      deriveFactoryWorkItemKey(ctx.workItem),
+    ),
+    handler: reaction.handler,
+    attempt: reaction.attempt,
+    causationEventId: reaction.causationEventId,
+    proposed: { message, failureKind },
+  });
   const common = eventCommon(ctx, reaction, actionDir);
   const failurePath = join(actionDir, "failure.json");
-  writeDurableFactoryFile(
-    failurePath,
-    `${JSON.stringify({ message, failureKind }, null, 2)}\n`,
-    true,
-  );
+  writeDurableFactoryFile(failurePath, `${JSON.stringify(effective, null, 2)}\n`, true);
   const failure = ref(ctx, failurePath);
   return {
     ...common,
@@ -546,8 +554,8 @@ function buildFailure(
       evidence: [failure],
       execution: { ...common.data.execution, runRef: failure },
       phase: "planning",
-      failureKind,
-      message,
+      failureKind: effective.failureKind,
+      message: effective.message,
       ...(retainedCandidateEventId ? { retainedCandidateEventId } : {}),
     },
   };

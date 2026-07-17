@@ -70,6 +70,7 @@ export function fixture(options: { projectId?: string } = {}) {
     projectId,
     factoryStateRoot,
     git: { repositoryId, baseSha, target: { mode: "detached" } },
+    automaticActionPolicy: { maxExecutions: 3 },
     actions: { triageWorkItem: { provider: "cursor", model: "test" } },
   });
   const imported: FactoryLifecycleEvent = {

@@ -9,6 +9,7 @@ import {
   type FactoryArtifactRef,
 } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
+import { classifyFactoryActionFailure } from "./factory-action-failure.ts";
 import {
   factoryActionResultPath,
   readFactoryActionResult,
@@ -473,10 +474,21 @@ function fail(
   failureKind: "retryable" | "human-required" | "terminal",
   retainedCandidateEventId?: string,
 ) {
+  const effective = classifyFactoryActionFailure({
+    identity: input.ctx.identity,
+    events: readFactoryActionEvents(
+      input.factoryStateRoot,
+      deriveFactoryWorkItemKey(input.ctx.workItem),
+    ),
+    handler: input.reaction.handler,
+    attempt: input.reaction.attempt,
+    causationEventId: input.reaction.causationEventId,
+    proposed: { message: error, failureKind },
+  });
   const failurePath = join(actionDir, "failure.json");
   writeDurableFactoryFile(
     failurePath,
-    `${JSON.stringify({ error, failureKind }, null, 2)}\n`,
+    `${JSON.stringify({ error: effective.message, failureKind: effective.failureKind }, null, 2)}\n`,
     true,
   );
   const failure = ref(input.ctx, failurePath);
@@ -495,8 +507,8 @@ function fail(
       execution: { workspaceRef: input.ctx.factoryStore.repo.id, runRef: failure },
       evidence: [failure],
       phase: "implementation",
-      failureKind,
-      message: error,
+      failureKind: effective.failureKind,
+      message: effective.message,
       ...(retainedCandidateEventId ? { retainedCandidateEventId } : {}),
     },
   };

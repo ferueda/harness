@@ -499,6 +499,7 @@ export async function runOneFactoryImplementationAction(input: {
           runId: phaseRunId,
           runDir: ctx.runDir,
           verdict: "human_required",
+          message: predecessor.data.message,
           ...optionalCandidateCommit(events, phaseRunId),
         });
         linearApplied = true;
@@ -569,6 +570,7 @@ export async function runOneFactoryImplementationAction(input: {
       runId: phaseRunId,
       runDir: ctx.runDir,
       verdict: "human_required",
+      message: handled.event.data.message,
       ...optionalCandidateCommit(eventsFor(input, key), phaseRunId),
     });
     linearApplied = true;
@@ -618,6 +620,7 @@ async function repairTerminalProjection(input: {
       runId: input.state.phaseRunId,
       runDir: input.runDir,
       verdict: "human_required",
+      message: input.latest.data.message,
       ...optionalCandidateCommit(input.events, input.state.phaseRunId),
     });
     return true;
@@ -647,6 +650,7 @@ async function repairTerminalProjection(input: {
       runId: input.state.phaseRunId,
       runDir: input.runDir,
       verdict: "human_required",
+      message: input.latest.data.message,
       ...optionalCandidateCommit(input.events, input.state.phaseRunId),
     });
     return true;

@@ -761,6 +761,41 @@ test("candidate failure classification ignores misleading error text", async () 
   });
 });
 
+test("candidate retry ceiling publishes the third failure as human-required", async () => {
+  const fixture = planningActionFixture();
+  const providerRun = vi.fn<Agent["run"]>(async () => ({
+    ok: false,
+    error: "provider unavailable",
+    exitCode: 1,
+    raw: unchangedWorkspace(),
+  }));
+  let current = fixture.start;
+
+  for (let execution = 1; execution <= 3; execution += 1) {
+    const completed = await producePlanCandidate({
+      ctx: fixture.ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(current),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+    });
+    expect(completed.event).toMatchObject({
+      type: "factory.action.failed",
+      data: {
+        failureKind: execution < 3 ? "retryable" : "human-required",
+        ...(execution === 3 ? { message: expect.stringContaining("limit 3") } : {}),
+      },
+    });
+    current = completed;
+  }
+
+  expect(providerRun).toHaveBeenCalledTimes(3);
+  expect(decideNextFactoryAction(current.state, current.event)).toEqual({
+    kind: "wait",
+    reason: "human",
+  });
+});
+
 test.each([
   {
     name: "workspace mutation",
@@ -871,6 +906,42 @@ test("review failure text cannot override validated unchanged workspace evidence
   expect(reviewed.event).toMatchObject({
     type: "factory.action.failed",
     data: { failureKind: "retryable" },
+  });
+});
+
+test("review retry ceiling retains the candidate and requires a human", async () => {
+  const fixture = planningActionFixture();
+  const candidate = await produceTestCandidate(fixture);
+  const reviewerRun = vi.fn<Agent["run"]>(async () => ({
+    ok: false,
+    error: "reviewer unavailable",
+    exitCode: 1,
+    raw: unchangedWorkspace(),
+  }));
+  let current = candidate;
+
+  for (let execution = 1; execution <= 3; execution += 1) {
+    const reviewed = await reviewPlanCandidate({
+      ctx: fixture.ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(current),
+      maxRuntimeMs: 1_000,
+      agentProviderFactory: () => ({ name: "cursor", run: reviewerRun }),
+    });
+    expect(reviewed.event).toMatchObject({
+      type: "factory.action.failed",
+      data: {
+        failureKind: execution < 3 ? "retryable" : "human-required",
+        retainedCandidateEventId: candidate.event.id,
+      },
+    });
+    current = reviewed;
+  }
+
+  expect(current.state).toMatchObject({ status: "awaiting-continuation" });
+  expect(decideNextFactoryAction(current.state, current.event)).toEqual({
+    kind: "wait",
+    reason: "human",
   });
 });
 

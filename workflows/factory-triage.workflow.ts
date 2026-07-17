@@ -12,6 +12,7 @@ import {
   writeFactoryActionResult,
 } from "../lib/factory-action-result.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
+import { classifyFactoryActionFailure } from "../lib/factory-action-failure.ts";
 import {
   appendFactoryActionEvent,
   readFactoryActionEvents,
@@ -143,9 +144,11 @@ export async function triageWorkItem(input: {
       try {
         const triage =
           terminalMeta.status === "completed" ? readTriageArtifact(terminalMeta) : undefined;
+        terminalMeta = effectiveTriageFailureMeta(ctx, reaction, events, terminalMeta);
         terminal = buildTriageActionEvent(ctx, terminalMeta, triage, reaction);
       } catch (error) {
         terminalMeta = ctx.exportFailed(error, { publishActionOutcome: false });
+        terminalMeta = effectiveTriageFailureMeta(ctx, reaction, events, terminalMeta);
         terminal = buildTriageActionEvent(ctx, terminalMeta, undefined, reaction);
       }
     }
@@ -187,6 +190,27 @@ export async function triageWorkItem(input: {
     event: terminal,
     expectedLastEventId: reaction.causationEventId,
   });
+}
+
+function effectiveTriageFailureMeta(
+  ctx: FactoryRunContext,
+  reaction: Extract<FactoryReaction, { kind: "invoke" }>,
+  events: readonly FactoryLifecycleEvent[],
+  meta: FactoryRunMeta,
+): FactoryRunMeta {
+  if (meta.status !== "failed") return meta;
+  const effective = classifyFactoryActionFailure({
+    identity: readFactoryPhaseRunIdentity(ctx.runDir),
+    events,
+    handler: reaction.handler,
+    attempt: reaction.attempt,
+    causationEventId: reaction.causationEventId,
+    proposed: {
+      failureKind: meta.failureKind ?? "terminal",
+      message: meta.error ?? "Factory triage failed.",
+    },
+  });
+  return { ...meta, failureKind: effective.failureKind, error: effective.message };
 }
 
 export async function run(

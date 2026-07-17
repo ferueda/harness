@@ -45,6 +45,7 @@ function context(
   workspace: string,
   dryRun: boolean,
   factoryStateRoot = join(workspace, "state"),
+  maxExecutions = 3,
 ): FactoryRunContext {
   const runDir = join(workspace, "runs/run-new");
   mkdirSync(runDir, { recursive: true });
@@ -92,13 +93,14 @@ function context(
       warnings: [],
     };
     writeFactoryPhaseRunIdentity(runDir, {
-      version: 1,
+      version: 2,
       phaseRunId: ctx.runId,
       phase: "triage",
       workItemKey: "linear:ENG-37",
       workspace,
       projectId: ctx.factoryStore.projectId,
       factoryStateRoot: ctx.factoryStore.factoryStateRoot,
+      automaticActionPolicy: { maxExecutions },
       actions: { triageWorkItem: ctx.executionProfile },
     });
   }
@@ -1167,6 +1169,55 @@ test("retries the same triage action and phase run after a retryable failure", a
   expect(successfulRun).toHaveBeenCalledOnce();
   expect(second.phaseRunId).toBe(first.phaseRunId);
   expect(second.action.attempt).toBe(1);
+});
+
+test("third retryable triage execution projects human attention and stops", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "triage-retry-ceiling-"));
+  const root = join(workspace, "state");
+  const ctx = context(workspace, false, root, 3);
+  const failedRun = vi.fn(async () => ({
+    ...meta(ctx),
+    status: "failed" as const,
+    error: "provider unavailable",
+    failureKind: "retryable" as const,
+  }));
+  const applyTriageFailed = vi.fn(async () => ({
+    issueIdentifier: "ENG-37",
+    runId: ctx.runId,
+    runDir: ctx.runDir,
+    stage: "failed" as const,
+    targetStatus: "Triage Failed",
+  }));
+  const applyTriageStarted = vi.fn(async () => ({
+    issueIdentifier: "ENG-37",
+    runId: ctx.runId,
+    runDir: ctx.runDir,
+    stage: "start" as const,
+    targetStatus: "Triaging",
+  }));
+  let latest: Awaited<ReturnType<typeof runFactoryTriageWithLinearApply>> | undefined;
+
+  for (let execution = 1; execution <= 3; execution += 1) {
+    latest = await runFactoryTriageWithLinearApply({
+      factoryStateRoot: root,
+      workItem: WORK_ITEM,
+      rerun: false,
+      issueRef: "ENG-37",
+      createContext: () => ctx,
+      runTriage: failedRun,
+      applyAdapter: fakeLinearAdapter({ applyTriageStarted, applyTriageFailed }),
+    });
+    assertActionResult(latest);
+    if (execution < 3)
+      expect(latest.next).toMatchObject({ kind: "invoke", scheduling: "retry", attempt: 1 });
+  }
+
+  expect(failedRun).toHaveBeenCalledTimes(3);
+  expect(latest?.next).toEqual({ kind: "wait", reason: "human" });
+  expect(applyTriageFailed).toHaveBeenCalledOnce();
+  expect(applyTriageFailed).toHaveBeenCalledWith(
+    expect.objectContaining({ error: expect.stringContaining("limit 3") }),
+  );
 });
 
 test("retries a failed terminal projection without rerunning the provider", async () => {

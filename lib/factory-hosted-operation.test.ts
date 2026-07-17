@@ -55,6 +55,34 @@ test("executes exactly one current handler with predecessor-derived Grove intent
   expect(value.providerRun).not.toHaveBeenCalled();
 });
 
+test("third hosted retryable execution waits without another operation", async () => {
+  const value = fixture();
+  let request = value.request;
+
+  for (let execution = 1; execution <= 3; execution += 1) {
+    const receipt = await runHostedFactoryOperation({ request, runtime: value.runtime });
+    expect(receipt).toMatchObject({
+      outcome: "executed",
+      ...(execution === 3 ? {} : { next: expect.any(Object) }),
+    });
+    if (execution < 3) {
+      if (!("next" in receipt) || !receipt.next) throw new Error("expected retry operation");
+      request = receipt.next;
+    } else {
+      expect("next" in receipt).toBe(false);
+    }
+  }
+
+  expect(value.runProvider).toHaveBeenCalledTimes(3);
+  expect(readFactoryActionEvents(value.factoryStateRoot, value.workItemKey).at(-1)).toMatchObject({
+    type: "factory.action.failed",
+    data: {
+      failureKind: "human-required",
+      message: expect.stringContaining("limit 3"),
+    },
+  });
+});
+
 test("executes hosted planning on the exact persisted deterministic Grove branch", async () => {
   const value = planningFixture();
   const receipt = await runHostedFactoryOperation({
