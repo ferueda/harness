@@ -15,7 +15,7 @@ ensure-node: ## Ensure node and pnpm are available
 	@if [ "$(VERBOSE)" = "1" ]; then node -v; pnpm -v; fi
 
 setup-worktree: ensure-node ## Prepare a fresh isolated worktree from the shared offline cache
-	SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline
+	CI=1 SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline
 
 build: ensure-node ## Build installable JavaScript into dist/
 	$(call RUN,pnpm run build)
