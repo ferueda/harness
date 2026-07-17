@@ -5,13 +5,17 @@ import { join, relative } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Agent } from "./agents.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
-import { createFactoryArtifactRef } from "./factory-artifact-ref.ts";
+import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import {
   recordHostedFactoryContinuation,
   requestHostedFactoryPhase,
   type HostedFactoryAuthorityRuntime,
 } from "./factory-hosted-authority.ts";
-import { readFactoryActionEvents, appendFactoryActionEvent } from "./factory-lifecycle-kernel.ts";
+import {
+  actionLifecycleEventPath,
+  readFactoryActionEvents,
+  appendFactoryActionEvent,
+} from "./factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { reconcileFactoryOperations } from "./factory-operation-reconciliation.ts";
 import { ensureFactoryStoreFormat } from "./factory-store-format.ts";
@@ -313,6 +317,7 @@ test("hosted implementation creates authority and converges a pending valid rest
   const restartRequest = implementationRequest(value, "restart", failed.id);
 
   await requestHostedFactoryPhase({ request: restartRequest, runtime: value.runtime });
+  value.workItem.body += "\n\n## Linear Comments\n\n- Factory projection changed.";
   await requestHostedFactoryPhase({ request: restartRequest, runtime: value.runtime });
 
   const requests = phaseRequests(value, "implementation.requested");
@@ -321,6 +326,60 @@ test("hosted implementation creates authority and converges a pending valid rest
   expect(requests[1]?.phaseRunId).not.toBe(requests[0]?.phaseRunId);
   expect(value.ensureWorkspace).toHaveBeenCalledTimes(2);
   expect(value.runtime.deliver).toHaveBeenCalledTimes(3);
+});
+
+test("duplicate implementation rejects tampered immutable input before Grove or delivery", async () => {
+  const value = authorityFixture();
+  const ready = seedDirectImplementation(value);
+  const request = implementationRequest(value, "start", ready.id);
+  await requestHostedFactoryPhase({ request, runtime: value.runtime });
+  const requested = latestRequest(value, "implementation.requested");
+  const workItemPath = verifyFactoryArtifactRef(requested.data.inputRefs[0]!, {
+    "factory-store": value.store.projectRoot,
+    repository: value.repository,
+  });
+  writeFileSync(workItemPath, `${JSON.stringify({ ...value.workItem, id: "manual:OTHER" })}\n`);
+  vi.mocked(value.ensureWorkspace).mockClear();
+  vi.mocked(value.runtime.deliver).mockClear();
+
+  await expect(requestHostedFactoryPhase({ request, runtime: value.runtime })).rejects.toThrow(
+    /authenticated duplicate/,
+  );
+  expect(value.ensureWorkspace).not.toHaveBeenCalled();
+  expect(value.runtime.deliver).not.toHaveBeenCalled();
+});
+
+test("duplicate implementation rejects a valid wrong-key artifact before Grove or delivery", async () => {
+  const value = authorityFixture();
+  const ready = seedDirectImplementation(value);
+  const request = implementationRequest(value, "start", ready.id);
+  await requestHostedFactoryPhase({ request, runtime: value.runtime });
+  const requested = latestRequest(value, "implementation.requested");
+  const wrongPath = join(value.store.projectRoot, "inputs/wrong-work-item.json");
+  writeFileSync(wrongPath, `${JSON.stringify({ ...value.workItem, id: "manual:OTHER" })}\n`);
+  const wrongRef = createFactoryArtifactRef({
+    base: "factory-store",
+    root: value.store.projectRoot,
+    path: relative(value.store.projectRoot, wrongPath),
+  });
+  const lifecyclePath = actionLifecycleEventPath(value.store.factoryStateRoot, value.workItem.id);
+  const lines = readFileSync(lifecyclePath, "utf8").trimEnd().split("\n");
+  const latest = JSON.parse(lines.at(-1)!) as Extract<
+    FactoryLifecycleEvent,
+    { type: "implementation.requested" }
+  >;
+  latest.data.inputRefs[0] = wrongRef;
+  lines[lines.length - 1] = JSON.stringify(latest);
+  writeFileSync(lifecyclePath, `${lines.join("\n")}\n`);
+  vi.mocked(value.ensureWorkspace).mockClear();
+  vi.mocked(value.runtime.deliver).mockClear();
+
+  await expect(requestHostedFactoryPhase({ request, runtime: value.runtime })).rejects.toThrow(
+    /authenticated duplicate/,
+  );
+  expect(requested.data.inputRefs[0]).not.toEqual(wrongRef);
+  expect(value.ensureWorkspace).not.toHaveBeenCalled();
+  expect(value.runtime.deliver).not.toHaveBeenCalled();
 });
 
 test("invalid hosted restart fails before Grove acquisition or delivery", async () => {

@@ -267,10 +267,7 @@ function authenticateExistingRequest(
     repository: identity.workspace,
   });
   const persisted = parseFactoryWorkItem(JSON.parse(readFileSync(path, "utf8")));
-  if (
-    deriveFactoryWorkItemKey(persisted) !== deriveFactoryWorkItemKey(workItem) ||
-    !sameWorkItemEvidence(persisted, workItem)
-  )
+  if (!samePhaseWorkItemEvidence(requestPhase(request), persisted, workItem))
     throw new Error("Factory phase request work-item evidence changed");
   for (const inputRef of request.data.inputRefs)
     verifyFactoryArtifactRef(inputRef, {
@@ -377,15 +374,29 @@ function authenticatePhaseIdentity(
   );
   if (
     deriveFactoryWorkItemKey(persisted) !== workItemKey ||
-    !sameWorkItemEvidence(persisted, input.workItem)
+    !samePhaseWorkItemEvidence(identity.phase, persisted, input.workItem)
   )
     throw new Error("Factory phase request work-item evidence changed");
 }
 
-function sameWorkItemEvidence(left: FactoryWorkItem, right: FactoryWorkItem): boolean {
+function samePhaseWorkItemEvidence(
+  phase: FactoryPhase,
+  left: FactoryWorkItem,
+  right: FactoryWorkItem,
+): boolean {
+  if (deriveFactoryWorkItemKey(left) !== deriveFactoryWorkItemKey(right)) return false;
+  // Implementation consumes the authenticated triage/planning artifact. The live tracker copy
+  // may have gained projection comments between phases and is not implementation authority.
+  if (phase === "implementation") return true;
   const { metadata: _leftMetadata, ...leftEvidence } = left;
   const { metadata: _rightMetadata, ...rightEvidence } = right;
   return JSON.stringify(leftEvidence) === JSON.stringify(rightEvidence);
+}
+
+function requestPhase(request: PhaseRequest): FactoryPhase {
+  if (request.type === "triage.requested") return "triage";
+  if (request.type === "planning.requested") return "planning";
+  return "implementation";
 }
 
 function phaseRequestEvent(
