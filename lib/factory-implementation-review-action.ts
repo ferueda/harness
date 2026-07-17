@@ -166,7 +166,10 @@ async function runLeased(
     const profile = ctx.identity.actions.reviewImplementationCandidate;
     const planPath =
       ctx.identity.input.mode === "planned"
-        ? verifyFactoryArtifactRef(ctx.identity.input.planCandidate, roots(ctx))
+        ? verifyFactoryArtifactRef(
+            ctx.identity.input.approvedPlan ?? ctx.identity.input.planCandidate,
+            roots(ctx),
+          )
         : undefined;
     let priorReview;
     try {

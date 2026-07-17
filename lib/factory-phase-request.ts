@@ -287,7 +287,7 @@ function authenticateExistingRequest(
     const expectedRefs =
       identity.input.mode === "direct"
         ? [identity.input.workItem, identity.input.readiness]
-        : [identity.input.workItem, identity.input.planCandidate];
+        : [identity.input.workItem, identity.input.approvedPlan ?? identity.input.planCandidate];
     if (JSON.stringify(request.data.inputRefs) !== JSON.stringify(expectedRefs))
       throw new Error("Factory implementation request inputs changed");
   }
@@ -441,7 +441,7 @@ function phaseRequestEvent(
   const inputRefs =
     identity.input.mode === "direct"
       ? [identity.input.workItem, identity.input.readiness]
-      : [identity.input.workItem, identity.input.planCandidate];
+      : [identity.input.workItem, identity.input.approvedPlan ?? identity.input.planCandidate];
   return {
     ...common,
     type: "implementation.requested",

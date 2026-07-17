@@ -103,7 +103,13 @@ export const FactoryLifecycleEventSchema = z.discriminatedUnion("type", [
   Base.extend({
     type: z.literal("plan_pr.merged"),
     phaseRunId: FactoryPhaseRunIdSchema,
-    data: z.object({ url: z.url(), commit: z.string().regex(/^[0-9a-f]{40}$/) }).strict(),
+    data: z
+      .object({
+        url: z.url(),
+        commit: z.string().regex(/^[0-9a-f]{40}$/),
+        approvedPlan: FactoryArtifactRefSchema.optional(),
+      })
+      .strict(),
   }),
   Base.extend({
     type: z.literal("implementation.requested"),

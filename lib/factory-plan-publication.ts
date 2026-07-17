@@ -1,5 +1,12 @@
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { join, relative } from "node:path";
 import { readFileSync } from "node:fs";
+import {
+  createFactoryArtifactRef,
+  verifyFactoryArtifactRef,
+  type FactoryArtifactRef,
+} from "./factory-artifact-ref.ts";
+import { writeDurableFactoryFile } from "./factory-durable-file.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
@@ -144,6 +151,17 @@ export async function markPlanPullRequestMerged(input: {
     (existing.data.url !== input.url || existing.data.commit !== resolved)
   )
     throw new Error("Plan merge retry conflicts with durable lifecycle truth");
+  const runDir = join(input.factoryStore.projectRoot, "runs/factory", state.phaseRunId);
+  const identity = readFactoryPhaseRunIdentity(runDir);
+  if (identity.phase !== "planning") throw new Error("Invalid planning phase identity");
+  let approvedPlan: FactoryArtifactRef | undefined;
+  if (existing?.type !== "plan_pr.merged" || existing.data.approvedPlan) {
+    const mergedPlanBytes = readMergedPlan(input.workspace, resolved, identity.outputPlan);
+    approvedPlan =
+      existing?.type === "plan_pr.merged"
+        ? authenticateRecordedApprovedPlan(existing.data.approvedPlan!, input, mergedPlanBytes)
+        : persistApprovedPlan(input.factoryStore, runDir, mergedPlanBytes);
+  }
   const merged: Extract<FactoryLifecycleEvent, { type: "plan_pr.merged" }> =
     existing?.type === "plan_pr.merged"
       ? existing
@@ -154,7 +172,7 @@ export async function markPlanPullRequestMerged(input: {
           workItemKey: key,
           occurredAt: new Date().toISOString(),
           phaseRunId: state.phaseRunId,
-          data: { url: input.url, commit: resolved },
+          data: { url: input.url, commit: resolved, approvedPlan: approvedPlan! },
         };
   const appended = existing
     ? { event: merged, state }
@@ -166,14 +184,10 @@ export async function markPlanPullRequestMerged(input: {
   let linearApplied = false;
   if (input.applyAdapter) {
     if (!input.issueRef) throw new Error("Linear plan merge requires an issue reference");
-    const identity = readFactoryPhaseRunIdentity(
-      join(input.factoryStore.projectRoot, "runs/factory", state.phaseRunId),
-    );
-    if (identity.phase !== "planning") throw new Error("Invalid planning phase identity");
     await input.applyAdapter.applyPlanningMerged({
       issueRef: input.issueRef,
       runId: state.phaseRunId,
-      runDir: join(input.factoryStore.projectRoot, "runs/factory", state.phaseRunId),
+      runDir,
       approvedPlanPath: identity.outputPlan,
       approvedPlanPrUrl: opened.data.url,
       approvedPlanCommit: resolved,
@@ -187,4 +201,46 @@ export async function markPlanPullRequestMerged(input: {
     reaction: decideNextFactoryAction(appended.state, merged),
     linearApplied,
   };
+}
+
+function readMergedPlan(workspace: string, commit: string, outputPlan: string): Buffer {
+  try {
+    return execFileSync("git", ["show", `${commit}:${outputPlan}`], {
+      cwd: workspace,
+      encoding: "buffer",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    throw new Error(`Merged plan is missing at ${outputPlan} in commit ${commit}`, {
+      cause: error,
+    });
+  }
+}
+
+function persistApprovedPlan(
+  store: FactoryStoreMeta,
+  runDir: string,
+  bytes: Buffer,
+): FactoryArtifactRef {
+  const path = join(runDir, "artifacts/approved-plan.md");
+  writeDurableFactoryFile(path, bytes, true);
+  return createFactoryArtifactRef({
+    base: "factory-store",
+    root: store.projectRoot,
+    path: relative(store.projectRoot, path),
+  });
+}
+
+function authenticateRecordedApprovedPlan(
+  approvedPlan: FactoryArtifactRef,
+  input: Pick<Parameters<typeof markPlanPullRequestMerged>[0], "factoryStore" | "workspace">,
+  mergedPlanBytes: Buffer,
+): FactoryArtifactRef {
+  const path = verifyFactoryArtifactRef(approvedPlan, {
+    "factory-store": input.factoryStore.projectRoot,
+    repository: input.workspace,
+  });
+  if (!readFileSync(path).equals(mergedPlanBytes))
+    throw new Error("Approved plan artifact does not match the recorded merge commit");
+  return approvedPlan;
 }

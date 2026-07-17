@@ -191,7 +191,10 @@ async function runLeased(input: {
     }
     const planPath =
       ctx.identity.input.mode === "planned"
-        ? verifyFactoryArtifactRef(ctx.identity.input.planCandidate, roots(ctx))
+        ? verifyFactoryArtifactRef(
+            ctx.identity.input.approvedPlan ?? ctx.identity.input.planCandidate,
+            roots(ctx),
+          )
         : undefined;
     const prompt = renderFactoryImplementationPrompt({
       workItem: ctx.workItem,

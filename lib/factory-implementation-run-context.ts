@@ -200,12 +200,16 @@ function validateInputAuthority(
     verifyFactoryArtifactRef(input.readiness, roots(store, workspace));
     return;
   }
-  const candidatePath = verifyFactoryArtifactRef(input.planCandidate, roots(store, workspace));
-  const candidate = readFileSync(candidatePath);
+  verifyFactoryArtifactRef(input.planCandidate, roots(store, workspace));
+  const approvedPath = verifyFactoryArtifactRef(
+    input.approvedPlan ?? input.planCandidate,
+    roots(store, workspace),
+  );
+  const approved = readFileSync(approvedPath);
   const atBase = gitBuffer(workspace, ["show", `${baseSha}:${input.outputPlan}`]);
-  if (!candidate.equals(atBase))
+  if (!approved.equals(atBase))
     throw new FactoryImplementationRunError(
-      "Committed implementation plan does not match the reviewed candidate",
+      "Committed implementation plan does not match the approved plan",
     );
   if (input.publicationMode === "pull-request") {
     if (!input.mergedCommit)
@@ -214,8 +218,8 @@ function validateInputAuthority(
       );
     git(workspace, ["merge-base", "--is-ancestor", input.mergedCommit, baseSha]);
     const atMerge = gitBuffer(workspace, ["show", `${input.mergedCommit}:${input.outputPlan}`]);
-    if (!candidate.equals(atMerge))
-      throw new FactoryImplementationRunError("Merged plan does not match the reviewed candidate");
+    if (!approved.equals(atMerge))
+      throw new FactoryImplementationRunError("Merged plan does not match the approved plan");
   }
 }
 
@@ -227,7 +231,11 @@ function verifyInputSnapshot(
   verifyFactoryArtifactRef(snapshot.workItem, roots(store, workspace));
   if (snapshot.mode === "direct")
     verifyFactoryArtifactRef(snapshot.readiness, roots(store, workspace));
-  else verifyFactoryArtifactRef(snapshot.planCandidate, roots(store, workspace));
+  else {
+    verifyFactoryArtifactRef(snapshot.planCandidate, roots(store, workspace));
+    if (snapshot.approvedPlan)
+      verifyFactoryArtifactRef(snapshot.approvedPlan, roots(store, workspace));
+  }
 }
 
 function roots(store: FactoryStoreMeta, workspace: string) {
