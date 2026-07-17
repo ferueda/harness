@@ -20,7 +20,7 @@ import { createGrove } from "@ferueda/grove";
 import { Inngest } from "inngest";
 import { connect } from "inngest/connect";
 import { createAgentProvider } from "../providers/registry.ts";
-import { createFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import { requestHostedFactoryPhase } from "../lib/factory-hosted-authority.ts";
 import {
   createFactoryInngestAdapter,
   createFactoryInngestDelivery,
@@ -30,19 +30,21 @@ import {
   factoryOperationDeliveryId,
   FactoryOperationRequestedEvent,
 } from "../lib/factory-inngest-adapter.ts";
-import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
-import { reconcileFactoryOperations } from "../lib/factory-operation-reconciliation.ts";
+import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
 import {
   createFactoryOperationRef,
   FactoryOperationReceiptSchema,
 } from "../lib/factory-operation.ts";
-import { createFactoryRunContext } from "../lib/factory-run-context.ts";
 import {
   deriveFactoryGroveWorkspaceIntent,
   releaseFactoryGroveWorkspace,
   type FactoryGroveWorkspaceConfig,
 } from "../lib/factory-grove-workspace.ts";
-import { factoryStoreMetadata, resolveFactoryStore } from "../lib/factory-store.ts";
+import {
+  deriveFactoryRepoIdentity,
+  factoryStoreMetadata,
+  resolveFactoryStore,
+} from "../lib/factory-store.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -376,7 +378,6 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   const baseSha = git(["rev-parse", "HEAD"]);
   git(["remote", "add", "origin", remoteRepository]);
   git(["push", "-u", "origin", "main"]);
-  git(["checkout", "--detach", baseSha]);
 
   const config: FactoryGroveWorkspaceConfig = {
     controllerRepository,
@@ -391,71 +392,7 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   });
   const factoryStore = factoryStoreMetadata(store);
   const workItem = JSON.parse(readFileSync(join(controllerRepository, "item.json"), "utf8"));
-  const ctx = createFactoryRunContext({
-    workspace: controllerRepository,
-    runsDir: factoryStore.factoryRunsDir,
-    workItem,
-    executionProfile: {
-      provider: "codex",
-      model: "fake-codex",
-      executable: fakeCodex,
-      sandbox: "read-only",
-      approvalPolicy: "never",
-      reasoningEffort: "minimal",
-    },
-    maxRuntimeMs: 30_000,
-    agentProviderFactory: createAgentProvider,
-    factoryStore,
-  });
-  // Grove owns checkout creation from the attached controller repository; the
-  // immutable phase identity remains detached and is validated on its lease.
-  git(["switch", "main"]);
-  const inputRef = createFactoryArtifactRef({
-    base: "factory-store",
-    root: factoryStore.projectRoot,
-    path: `runs/factory/${ctx.runId}/context/work-item.json`,
-  });
-  const imported = {
-    version: 1 as const,
-    id: "grove-smoke-imported",
-    type: "work_item.imported" as const,
-    workItemKey: "file:GROVE-SMOKE-1",
-    occurredAt: "2026-07-16T00:00:00.000Z",
-    data: { source: "file" },
-  };
-  const requested = {
-    version: 1 as const,
-    id: "grove-smoke-triage-requested",
-    type: "triage.requested" as const,
-    workItemKey: imported.workItemKey,
-    occurredAt: "2026-07-16T00:00:01.000Z",
-    phaseRunId: ctx.runId,
-    data: { expectedPredecessor: imported.id, inputRefs: [inputRef], intent: "start" as const },
-  };
-  appendFactoryActionEvent({
-    factoryStateRoot: factoryStore.factoryStateRoot,
-    event: imported,
-    expectedLastEventId: null,
-  });
-  appendFactoryActionEvent({
-    factoryStateRoot: factoryStore.factoryStateRoot,
-    event: requested,
-    expectedLastEventId: imported.id,
-  });
-  const operation = createFactoryOperationRef({
-    phaseRunId: ctx.runId,
-    handler: "triageWorkItem",
-    attempt: 1,
-    causationEventId: requested.id,
-  });
-  const request = { projectId, workItemKey: imported.workItemKey, operation };
-  const intent = deriveFactoryGroveWorkspaceIntent({
-    controllerRepository,
-    workItemKey: request.workItemKey,
-    phase: "triage",
-    phaseGeneration: imported.id,
-    baseSha,
-  });
+  const repositoryId = deriveFactoryRepoIdentity(controllerRepository).id;
 
   process.env.FACTORY_GROVE_SMOKE_PROVIDER_LOG = providerLog;
   process.env.GIT_TERMINAL_PROMPT = "0";
@@ -489,7 +426,7 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   process.env.INNGEST_EVENT_KEY = "factory-grove-smoke";
   const runtime = {
     projectId,
-    repositoryId: intent.repositoryId,
+    repositoryId,
     factoryStore,
     grove: config,
     maxRuntimeMs: 30_000,
@@ -533,15 +470,76 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   station = "hosted Factory execution through Inngest";
   const deliverFactoryOperation = createFactoryInngestDelivery(inngest);
   let executedEventId: string | undefined;
-  const reconciled = await reconcileFactoryOperations(
-    [{ projectId, workItemKey: request.workItemKey, factoryStore }],
-    async (deliveredRequest) => {
-      const sent = await deliverFactoryOperation(deliveredRequest);
-      executedEventId = sent.ids[0];
+  const reconciled = await requestHostedFactoryPhase({
+    request: {
+      projectId,
+      workItem,
+      phase: "triage",
+      intent: "start",
+      expectedPredecessor: null,
     },
+    runtime: {
+      projectId,
+      repositoryId,
+      factoryStore,
+      grove: config,
+      baseRef: "main",
+      deliver: async (deliveredRequest) => {
+        const durable = readFactoryActionEvents(
+          factoryStore.factoryStateRoot,
+          "file:GROVE-SMOKE-1",
+        );
+        assert(durable.at(-1)?.type === "triage.requested", "delivery preceded durable authority");
+        const sent = await deliverFactoryOperation(deliveredRequest);
+        executedEventId = sent.ids[0];
+      },
+      triage: {
+        executionProfile: {
+          provider: "codex",
+          model: "fake-codex",
+          executable: fakeCodex,
+          sandbox: "read-only",
+          approvalPolicy: "never",
+          reasoningEffort: "minimal",
+        },
+        maxRuntimeMs: 30_000,
+        agentProviderFactory: createAgentProvider,
+      },
+      planning: {
+        plannerRole: { agent: "codex", model: "fake-codex" },
+        reviewerRole: { agent: "codex", model: "fake-codex" },
+        maxRuntimeMs: 30_000,
+        agentProviderFactory: createAgentProvider,
+        publicationMode: "local",
+      },
+      implementation: {
+        implementerRole: { agent: "codex", model: "fake-codex" },
+        reviewerRole: { agent: "codex", model: "fake-codex" },
+      },
+    },
+  });
+  assert(reconciled.outcome === "delivered", "Factory operation was not reconciled");
+  const authorityEvents = readFactoryActionEvents(
+    factoryStore.factoryStateRoot,
+    "file:GROVE-SMOKE-1",
   );
-  assert(reconciled.length === 1, "reconciliation result count mismatch");
-  assert(reconciled[0]?.outcome === "delivered", "Factory operation was not reconciled");
+  const requested = authorityEvents.find((event) => event.type === "triage.requested");
+  assert(requested?.type === "triage.requested", "durable triage request missing");
+  const operation = createFactoryOperationRef({
+    phaseRunId: requested.phaseRunId,
+    handler: "triageWorkItem",
+    attempt: 1,
+    causationEventId: requested.id,
+  });
+  const request = { projectId, workItemKey: requested.workItemKey, operation };
+  const intent = deriveFactoryGroveWorkspaceIntent({
+    controllerRepository,
+    workItemKey: request.workItemKey,
+    phase: "triage",
+    phaseGeneration: requested.data.expectedPredecessor!,
+    baseSha,
+  });
+  assert(intent.baseSha === baseSha, "authority changed the controller baseline");
   assert(
     factoryOperationDeliveryId(request) === createFactoryOperationRequestedEvent(request).id,
     "deterministic delivery identity mismatch",
@@ -557,7 +555,7 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
     "provider count mismatch",
   );
 
-  assert(readFileSync(setupLog, "utf8") === "x", "setup hook count mismatch");
+  assert(readFileSync(setupLog, "utf8") === "xx", "setup hook count mismatch");
 
   station = "terminal release";
   const events = evidenceBefore
@@ -589,7 +587,7 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
   assert(typeof recoveredEventId === "string", "recovered delivery event ID missing");
   const recovered = await pollEventReceipt(apiHost, recoveredEventId, "recovered");
   assert(recovered.outcome === "recovered", "hosted replay did not recover");
-  assert(readFileSync(setupLog, "utf8") === "x", "replay reran the setup hook");
+  assert(readFileSync(setupLog, "utf8") === "xx", "replay reran the setup hook");
   assert(
     readFileSync(providerLog, "utf8").trim().split(/\r?\n/).length === 1,
     "replay reran provider",

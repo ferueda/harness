@@ -68,6 +68,10 @@ Factory vocabulary:
 10. **Hosted receipts are hints.** Only executed or recovered receipts may
     carry a recomputed identifier-only next request. Every delivery is checked
     again against canonical Factory JSONL.
+11. **Hosted authority precedes delivery.** A trusted phase or continuation
+    request first appends the existing lifecycle event. Reconciliation derives
+    the operation hint only after that event is durable, so a failed send is
+    recoverable from the log.
 
 Run only one phase command for a work item at a time. When Harness dogfoods
 itself, use a dedicated clean detached controller checkout pinned to one SHA
@@ -143,12 +147,18 @@ Factory machine state.
 ## Grove workspace boundary
 
 `lib/factory-grove-workspace.ts` owns Grove lease intent, acquisition, release,
-and bounded repair. `lib/factory-hosted-operation.ts` is the sole composition
-boundary: it receives an identifier-only request while trusted runtime supplies
-store paths, repository identity, Grove config, credentials, and providers.
+and bounded repair. `lib/factory-hosted-authority.ts` owns trusted observed
+phase starts/restarts and explicit continuations. It validates identities,
+creates a Grove-backed phase context before a new request, appends the existing
+authority event, and invokes reconciliation. `lib/factory-hosted-operation.ts`
+only executes an already-authorized identifier-only request. Trusted runtime
+supplies store paths, repository identity, Grove config, phase roles, provider
+controls, base-ref metadata, and the delivery callback.
 
-The caller supplies the exact base commit and a stable phase generation. Triage
-uses a detached lease; planning and implementation use separate branches.
+The hosted authority boundary snapshots the configured controller repository's
+`HEAD^{commit}` before acquisition and derives phase generation from the
+caller's observed predecessor. Callers cannot supply a base SHA. Triage uses a
+detached lease; planning and implementation use separate branches.
 Compatible reacquisition reruns repository setup and returns the same path while
 preserving Factory commits and candidate bytes.
 
@@ -165,6 +175,13 @@ isolates failures, and returns `delivered`, `waiting`, `stale`, or `attention`
 without changing lifecycle state or discovering work. A later call can
 regenerate a failed send from the Factory log.
 
+The CLI is a synchronous adapter: it reads the current predecessor and any
+continuation identities immediately before applying them. Async adapters must
+preserve the exact observed predecessor, phase run, candidate, and review.
+Transport authentication is adapter-owned; these trusted application
+boundaries validate Factory identity and evidence, not users or credentials.
+Hosted publication and merge acknowledgement remain separate boundaries.
+
 `lib/factory-inngest-adapter.ts` owns Factory event construction, deterministic
 delivery IDs, and direct or chained sends. The same request gets the same ID to
 suppress transport duplicates; Factory action identity prevents replay. Waits
@@ -172,10 +189,10 @@ emit nothing. Concurrency limits do not replace Factory locks. The adapter keeps
 three retries and a 110-minute action limit. Target discovery, scheduling, and a
 production worker remain host-owned.
 
-Hosted eligibility requires that immutable target to already equal the
-deterministic Grove target. A phase started manually on another branch fails
-closed; acquiring Grove before hosted phase creation remains phase-start policy,
-not runner behavior.
+Hosted phase creation verifies that the lease, live checkout, version-2 phase
+context, controller snapshot, and request predecessor describe one baseline.
+Later execution repeats the Grove/phase Git comparison and fails closed if a
+manually created phase used another target.
 
 Leases survive nonterminal waits and open pull requests. Release requires the
 matching terminal Factory event and performs a non-forced reset to the recorded
@@ -193,6 +210,7 @@ base. Conflicts or uncertain cleanup require explicit repair or quarantine.
 | Linear projections                  | `lib/factory-linear-adapter.ts`, `lib/factory-linear-*-apply.ts`, `lib/factory-linear-*-handoff.ts`                                 |
 | Pull-request publication            | `lib/factory-*-publication*.ts`, `lib/factory-publication-git.ts`, `lib/factory-pull-request-publisher.ts`                          |
 | Hosted workspace leases             | `lib/factory-grove-workspace.ts`                                                                                                    |
+| Hosted phase/continuation authority | `lib/factory-phase-request.ts`, `lib/factory-hosted-authority.ts`, `lib/factory-continuation.ts`                                    |
 | Hosted operation execution          | `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`                                                                       |
 | Bounded delivery repair             | `lib/factory-operation-reconciliation.ts`                                                                                           |
 | Inngest delivery IDs and sends      | `lib/factory-inngest-adapter.ts`                                                                                                    |

@@ -17,6 +17,7 @@ import {
 } from "../lib/factory-operation.ts";
 import {
   readFactoryContinuationResponseFile,
+  observeFactoryContinuation,
   recordFactoryContinuation,
   type FactoryContinuationDecision,
 } from "../lib/factory-continuation.ts";
@@ -29,17 +30,17 @@ import {
   createFactoryImplementationRunContext,
   openFactoryImplementationRunContext,
 } from "../lib/factory-implementation-run-context.ts";
-import {
-  appendFactoryActionEvent,
-  readFactoryActionEvents,
-} from "../lib/factory-lifecycle-kernel.ts";
+import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import {
   createLinearFactoryAdapter,
   type LinearFactoryAdapter,
 } from "../lib/factory-linear-adapter.ts";
 import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
-import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
+import {
+  appendPreparedFactoryPhaseRequest,
+  prepareFactoryPhaseRequest,
+} from "../lib/factory-phase-request.ts";
 import type { FactoryWorkItem } from "../lib/factory-schemas.ts";
 import {
   decideNextFactoryAction,
@@ -318,7 +319,8 @@ async function runImplementationContinuationCommand(options: {
     response: readFactoryContinuationResponseFile(options.responseFile),
     factoryStateRoot: store.factoryStateRoot,
     factoryStore: factoryStoreMetadata(store),
-    workItem: resolved.workItem,
+    workItemKey: deriveFactoryWorkItemKey(resolved.workItem),
+    observed: observeFactoryContinuation(events, "implementation"),
   });
   console.log(
     JSON.stringify(
@@ -393,19 +395,18 @@ export async function runOneFactoryImplementationAction(input: {
     latest?.type === "implementation.requested"
       ? latest
       : undefined;
-  const pendingRequest = Boolean(pendingRequestEvent);
-  if (
-    input.rerun &&
-    !pendingRequest &&
-    !(
-      state?.phase === "implementation" &&
-      (state.status === "needs-human" || state.status === "failed") &&
-      !state.candidateEventId
-    )
-  )
-    throw new Error(
-      "implementation --rerun is allowed only after a failure without a reusable candidate",
-    );
+  let prepared = input.rerun
+    ? prepareFactoryPhaseRequest({
+        projectId: input.factoryStore.projectId,
+        workItem: input.workItem,
+        phase: "implementation",
+        intent: "restart",
+        expectedPredecessor: pendingRequestEvent
+          ? pendingRequestEvent.data.expectedPredecessor
+          : (latest?.id ?? null),
+        factoryStore: input.factoryStore,
+      })
+    : undefined;
   const active = reaction?.kind === "invoke" && reaction.phase === "implementation";
   if (!active) {
     if (state?.phase === "implementation" && !input.rerun) {
@@ -428,6 +429,14 @@ export async function runOneFactoryImplementationAction(input: {
     }
     if (input.linearIssue && !input.applyAdapter)
       throw new Error("Linear implementation start and --rerun require --apply");
+    prepared ??= prepareFactoryPhaseRequest({
+      projectId: input.factoryStore.projectId,
+      workItem: input.workItem,
+      phase: "implementation",
+      intent: "start",
+      expectedPredecessor: latest?.id ?? null,
+      factoryStore: input.factoryStore,
+    });
     const implementationInput = resolveFactoryImplementationInput(events);
     const created = createFactoryImplementationRunContext({
       workspace: input.workspace,
@@ -440,27 +449,13 @@ export async function runOneFactoryImplementationAction(input: {
       reviewerRole: input.reviewerRole,
       eventSink: input.eventSink,
     });
-    const identity = readFactoryPhaseRunIdentity(created.runDir);
-    if (identity.phase !== "implementation") throw new Error("Created phase is not implementation");
-    const request: FactoryLifecycleEvent = {
-      version: 1,
-      id: `implementation.requested:${created.runId}`,
-      type: "implementation.requested",
-      workItemKey: key,
-      occurredAt: new Date().toISOString(),
+    const appended = appendPreparedFactoryPhaseRequest({
+      prepared,
       phaseRunId: created.runId,
-      data: {
-        expectedPredecessor: state?.lastEventId ?? null,
-        inputRefs: implementationInputRefs(identity),
-        intent: input.rerun ? "restart" : "start",
-      },
-    };
-    ({ event: latest, state } = appendFactoryActionEvent({
-      factoryStateRoot: input.factoryStateRoot,
-      event: request,
-      expectedLastEventId: state?.lastEventId ?? null,
-    }));
-    reaction = decideNextFactoryAction(state, latest);
+    });
+    latest = appended.event;
+    state = appended.state;
+    reaction = appended.next;
   }
   if (!reaction || reaction.kind !== "invoke" || reaction.phase !== "implementation")
     throw new Error("Factory implementation has no invokable action");
@@ -723,16 +718,6 @@ function pendingImplementationStart(
     state.candidateAttempt === 0 &&
     latest?.type === "implementation.requested"
   );
-}
-
-function implementationInputRefs(
-  identity: Extract<ReturnType<typeof readFactoryPhaseRunIdentity>, { phase: "implementation" }>,
-) {
-  const inputRefs =
-    identity.input.mode === "direct"
-      ? [identity.input.workItem, identity.input.readiness]
-      : [identity.input.workItem, identity.input.planCandidate];
-  return inputRefs;
 }
 
 function eventsFor(input: { factoryStateRoot: string }, key: string) {

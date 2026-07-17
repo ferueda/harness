@@ -1,12 +1,13 @@
 import type { Command } from "commander";
 import { readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
 import { formatFactoryActionOutput } from "./factory-action-output.ts";
 import { decorateFactoryReaction } from "./factory-manual-command.ts";
-import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import { verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import {
   readFactoryContinuationResponseFile,
+  observeFactoryContinuation,
   recordFactoryContinuation,
   type FactoryContinuationDecision,
 } from "../lib/factory-continuation.ts";
@@ -14,12 +15,12 @@ import {
   markPlanPullRequestMerged,
   publishPlanPullRequest,
 } from "../lib/factory-plan-publication.ts";
-import {
-  appendFactoryActionEvent,
-  readFactoryActionEvents,
-} from "../lib/factory-lifecycle-kernel.ts";
+import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
-import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
+import {
+  appendPreparedFactoryPhaseRequest,
+  prepareFactoryPhaseRequest,
+} from "../lib/factory-phase-request.ts";
 import { createFactoryOperationRef, executeFactoryOperation } from "../lib/factory-operation.ts";
 import {
   createFactoryPlanningRunContext,
@@ -254,7 +255,8 @@ async function runPlanningContinuationCommand(options: {
     response: readFactoryContinuationResponseFile(options.responseFile),
     factoryStateRoot: store.factoryStateRoot,
     factoryStore: factoryStoreMetadata(store),
-    workItem: resolved.workItem,
+    workItemKey: deriveFactoryWorkItemKey(resolved.workItem),
+    observed: observeFactoryContinuation(events, "planning"),
   });
   console.log(
     JSON.stringify(
@@ -360,12 +362,19 @@ export async function runOneFactoryPlanningAction(input: {
     isPendingPlanningStartProjection(state, latest) &&
     latest?.type === "planning.requested" &&
     latest.data.intent === "restart";
-  if (
-    input.rerun &&
-    !pendingRestartProjection &&
-    !(state?.phase === "planning" && (state.status === "needs-human" || state.status === "failed"))
-  )
-    throw new Error("planning --rerun is allowed only from needs-human or failed");
+  let prepared = input.rerun
+    ? prepareFactoryPhaseRequest({
+        projectId: input.factoryStore.projectId,
+        workItem: input.workItem,
+        phase: "planning",
+        intent: "restart",
+        expectedPredecessor:
+          pendingRestartProjection && latest?.type === "planning.requested"
+            ? latest.data.expectedPredecessor
+            : (latest?.id ?? null),
+        factoryStore: input.factoryStore,
+      })
+    : undefined;
   const active = reaction?.kind === "invoke" && reaction.phase === "planning";
   if (!active) {
     if (state?.phase === "planning" && !input.rerun) {
@@ -390,6 +399,14 @@ export async function runOneFactoryPlanningAction(input: {
     }
     if (input.linearIssue && !input.applyAdapter)
       throw new Error("Linear planning start and --rerun require --apply");
+    prepared ??= prepareFactoryPhaseRequest({
+      projectId: input.factoryStore.projectId,
+      workItem: input.workItem,
+      phase: "planning",
+      intent: "start",
+      expectedPredecessor: latest?.id ?? null,
+      factoryStore: input.factoryStore,
+    });
     const created = createFactoryPlanningRunContext({
       workspace: input.workspace,
       runsDir: join(input.factoryStore.projectRoot, "runs/factory"),
@@ -405,53 +422,13 @@ export async function runOneFactoryPlanningAction(input: {
       eventSink: input.eventSink,
       signal: input.signal,
     });
-    if (!state) {
-      const imported: FactoryLifecycleEvent = {
-        version: 1,
-        id: `work_item.imported:${key}`,
-        type: "work_item.imported",
-        workItemKey: key,
-        occurredAt: new Date().toISOString(),
-        data: { source: input.workItem.source },
-      };
-      ({ event: latest, state } = appendFactoryActionEvent({
-        factoryStateRoot: input.factoryStateRoot,
-        event: imported,
-        expectedLastEventId: null,
-      }));
-    }
-    const identity = readFactoryPhaseRunIdentity(created.runDir);
-    if (identity.phase !== "planning") throw new Error("Created Factory phase is not planning");
-    const request: FactoryLifecycleEvent = {
-      version: 1,
-      id: `planning.requested:${created.runId}`,
-      type: "planning.requested",
-      workItemKey: key,
-      occurredAt: new Date().toISOString(),
+    const appended = appendPreparedFactoryPhaseRequest({
+      prepared,
       phaseRunId: created.runId,
-      data: {
-        expectedPredecessor: state!.lastEventId,
-        inputRefs: [
-          createFactoryArtifactRef({
-            base: "factory-store",
-            root: input.factoryStore.projectRoot,
-            path: relative(
-              input.factoryStore.projectRoot,
-              join(created.runDir, "context/work-item.json"),
-            ),
-          }),
-        ],
-        intent: input.rerun ? "restart" : "start",
-        publicationMode: identity.publicationMode,
-        outputPlan: identity.outputPlan,
-      },
-    };
-    ({ event: latest, state } = appendFactoryActionEvent({
-      factoryStateRoot: input.factoryStateRoot,
-      event: request,
-      expectedLastEventId: state!.lastEventId,
-    }));
-    reaction = decideNextFactoryAction(state, latest);
+    });
+    latest = appended.event;
+    state = appended.state;
+    reaction = appended.next;
   }
   if (!reaction || reaction.kind !== "invoke" || reaction.phase !== "planning")
     throw new Error("Factory planning has no invokable action");

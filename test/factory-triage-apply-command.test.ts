@@ -162,6 +162,7 @@ function writeProviderOutcome(
 test.each([
   { prior: false, dryRun: true, expected: false },
   { prior: false, dryRun: false, expected: true },
+  { prior: true, dryRun: false, expected: true },
 ])(
   "passes rerun guidance and apply intent with external tracker evidence: $prior/$dryRun",
   async ({ prior, dryRun, expected }) => {
@@ -219,6 +220,11 @@ test.each([
       expect(completedApply).toHaveBeenCalledWith(
         expect.not.objectContaining({ rerun: expect.anything() }),
       );
+      expect(
+        readFactoryActionEvents(root, WORK_ITEM.id).find(
+          (event) => event.type === "triage.requested",
+        ),
+      ).toMatchObject({ data: { intent: "start" } });
     }
   },
 );

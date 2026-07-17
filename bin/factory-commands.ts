@@ -10,20 +10,19 @@ import { addFactoryPlanningStationCommand } from "./factory-planning-cli.ts";
 import { addFactoryImplementationStationCommand } from "./factory-implementation-cli.ts";
 import {
   assertFactoryPathContained,
-  createFactoryArtifactRef,
   isFactoryRelativePathContained,
   verifyFactoryArtifactRef,
 } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import { createFactoryOperationRef, executeFactoryOperation } from "../lib/factory-operation.ts";
 import type { Agent, AgentProviderOptions } from "../lib/agents.ts";
-import {
-  appendFactoryActionEvent,
-  FactoryLifecycleConflictError,
-  readFactoryActionEvents,
-} from "../lib/factory-lifecycle-kernel.ts";
+import { readFactoryActionEvents } from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent as FactoryActionLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
+import {
+  appendPreparedFactoryPhaseRequest,
+  prepareFactoryPhaseRequest,
+} from "../lib/factory-phase-request.ts";
 import { assertFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import {
   decideNextFactoryAction,
@@ -697,9 +696,11 @@ export async function runFactoryTriageWithLinearApply(input: {
   if (activeTriage && !activeTriage.phaseRunId) {
     throw new Error("Active Factory triage reaction has no phase-run identity");
   }
-  const policy = input.dryRun
-    ? { hadPriorCompletion: false }
-    : assertFactoryActionTriageAllowed(input);
+  const restartRequired =
+    existingState?.phase === "triage" &&
+    ["routed", "parked", "needs-human", "failed"].includes(existingState.status);
+  const policy = { hadPriorCompletion: !input.dryRun && restartRequired };
+  const observedPredecessor = existingLatest?.id ?? null;
   const announceRunStarted = input.announceRunStarted ?? announceFactoryRunStarted;
   const runTriage = input.runTriage ?? runFactoryTriage;
   const runAbort = new AbortController();
@@ -745,61 +746,21 @@ export async function runFactoryTriageWithLinearApply(input: {
         workspace: ctx.workspace,
       });
     }
-    let actionRequest:
-      | Extract<FactoryActionLifecycleEvent, { type: "triage.requested" }>
-      | undefined;
     let reaction = activeTriage?.reaction;
     if (!ctx.dryRun && !activeTriage) {
-      const key = deriveFactoryWorkItemKey(input.workItem);
-      const importedEvent: FactoryActionLifecycleEvent = {
-        version: 1,
-        id: `work_item.imported:${key}`,
-        type: "work_item.imported",
-        workItemKey: key,
-        occurredAt: new Date().toISOString(),
-        data: { source: input.workItem.source },
-      };
-      const expectedRequestPredecessor = existingState?.lastEventId ?? importedEvent.id;
-      const importedResult = appendFactoryEventOrRejectConcurrent({
-        factoryStateRoot: input.factoryStateRoot,
-        event: importedEvent,
-        expectedLastEventId: null,
+      const prepared = prepareFactoryPhaseRequest({
+        projectId: ctx.factoryStore!.projectId,
+        workItem: input.workItem,
+        phase: "triage",
+        intent: input.rerun && restartRequired ? "restart" : "start",
+        expectedPredecessor: observedPredecessor,
+        factoryStore: ctx.factoryStore!,
       });
-      if (importedResult.state.lastEventId !== expectedRequestPredecessor) {
-        throw new Error(
-          `Factory command lost the durable CAS for ${key}; another command owns the current action. Current event: ${importedResult.state.lastEventId}. Do not run Factory phase commands for the same work item concurrently.`,
-        );
-      }
-      actionRequest = {
-        version: 1,
-        id: `triage.requested:${ctx.runId}`,
-        type: "triage.requested",
-        workItemKey: key,
-        occurredAt: new Date().toISOString(),
+      const requested = appendPreparedFactoryPhaseRequest({
+        prepared,
         phaseRunId: ctx.runId,
-        data: {
-          expectedPredecessor: expectedRequestPredecessor,
-          intent: policy.hadPriorCompletion ? "restart" : "start",
-          inputRefs: ctx.factoryStore
-            ? [
-                createFactoryArtifactRef({
-                  base: "factory-store",
-                  root: ctx.factoryStore.projectRoot,
-                  path: relative(
-                    ctx.factoryStore.projectRoot,
-                    join(ctx.runDir, "context/work-item.json"),
-                  ),
-                }),
-              ]
-            : [],
-        },
-      };
-      const requested = appendFactoryEventOrRejectConcurrent({
-        factoryStateRoot: input.factoryStateRoot,
-        event: actionRequest,
-        expectedLastEventId: expectedRequestPredecessor,
       });
-      const requestedReaction = decideNextFactoryAction(requested.state, requested.event);
+      const requestedReaction = requested.next;
       if (requestedReaction.kind !== "invoke") {
         throw new Error("New Factory triage request did not produce an action reaction");
       }
@@ -1229,25 +1190,6 @@ function expectedTriageNextAction(
   }
 }
 
-function appendFactoryEventOrRejectConcurrent(
-  input: Parameters<typeof appendFactoryActionEvent>[0],
-): ReturnType<typeof appendFactoryActionEvent> {
-  try {
-    return appendFactoryActionEvent(input);
-  } catch (error) {
-    if (!(error instanceof FactoryLifecycleConflictError) || error.reason !== "stale-cursor")
-      throw error;
-    const events = readFactoryActionEvents(input.factoryStateRoot, input.event.workItemKey);
-    const latest = events.at(-1);
-    const state = reduceFactoryLifecycleEvents(events);
-    const next = latest && state ? decideNextFactoryAction(state, latest) : undefined;
-    throw new Error(
-      `Factory command lost the durable CAS for ${input.event.workItemKey}; another command owns the current action. Current event: ${latest?.type ?? "none"}; next: ${next ? JSON.stringify(next) : "unknown"}. Do not run Factory phase commands for the same work item concurrently.`,
-      { cause: error },
-    );
-  }
-}
-
 function assertFactoryRunMeta(value: unknown): asserts value is FactoryRunMeta {
   if (
     !isRecord(value) ||
@@ -1274,23 +1216,4 @@ function assertFactoryRunMeta(value: unknown): asserts value is FactoryRunMeta {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function assertFactoryActionTriageAllowed(input: {
-  factoryStateRoot: string;
-  workItem: FactoryWorkItem;
-  rerun: boolean;
-}): { hadPriorCompletion: boolean } {
-  const key = deriveFactoryWorkItemKey(input.workItem);
-  const events = readFactoryActionEvents(input.factoryStateRoot, key);
-  const state = reduceFactoryLifecycleEvents(events);
-  const requiresRestart =
-    state?.phase === "triage" &&
-    ["routed", "parked", "needs-human", "failed"].includes(state.status);
-  if (requiresRestart && !input.rerun) {
-    throw new Error(
-      `Factory triage already completed for ${key}; use --rerun to start an explicit new triage phase run.`,
-    );
-  }
-  return { hadPriorCompletion: requiresRestart };
 }

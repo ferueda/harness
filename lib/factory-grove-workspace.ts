@@ -11,6 +11,7 @@ import {
   type GroveLeaseTarget,
 } from "@ferueda/grove";
 import { deriveFactoryRepoIdentity } from "./factory-store.ts";
+import type { FactoryPhaseGitIdentity } from "./factory-phase-run.ts";
 
 const FACTORY_GROVE_INTENT_VERSION = "1";
 const FACTORY_GROVE_OWNER = "harness-factory";
@@ -180,6 +181,21 @@ export function deriveFactoryGroveWorkspaceIntent(input: IntentInput): FactoryGr
     target,
     metadata,
   };
+}
+
+/** Compare the Grove target with the immutable Git identity stored for a phase run. */
+export function factoryGroveIntentMatchesPhaseGit(
+  intent: FactoryGroveWorkspaceIntent,
+  git: FactoryPhaseGitIdentity,
+): boolean {
+  const targetMatches =
+    (git.target.mode === "detached" && intent.target.mode === "detached") ||
+    (git.target.mode === "branch" &&
+      intent.target.mode === "branch" &&
+      git.target.branchRef === `refs/heads/${intent.target.branch}`);
+  return (
+    intent.repositoryId === git.repositoryId && intent.baseSha === git.baseSha && targetMatches
+  );
 }
 
 async function createFactoryGrove(config: FactoryGroveWorkspaceConfig): Promise<Grove> {
