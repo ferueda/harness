@@ -108,14 +108,6 @@ Facts first; label interpretation separately. Do not treat `patterns` as recomme
 
 **Coordinator audits (retrospective):** Use `sessions` to score real transcripts against routing fixtures — e.g. `planning-workflow/references/routing.md`. Coordinators like `planning-workflow` do not invoke `sessions`; when an agent runs planning, it is executing work, not auditing past sessions.
 
-## Learning
-
-| Skill | Role | Artifact |
-|-------|------|----------|
-| `learning-coach` | Topic learning over repeated sessions; one question at a time | `MISSION.md`, `LEARNER.md`, `PLAN.md`, `LOG.md`, `RESOURCES.md` |
-
-Standalone — not part of planning or review coordinators. One topic per workspace directory.
-
 ## New packaged skills
 
 - Directory: `skills/{kebab-case}/` with required `SKILL.md`; optional `agents/openai.yaml`, `references/`, `scripts/`.
