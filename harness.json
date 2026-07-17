@@ -41,7 +41,7 @@
         "implementer": {
           "agent": "codex",
           "model": "gpt-5.6-sol",
-          "modelReasoningEffort": "medium"
+          "modelReasoningEffort": "high"
         },
         "reviewer": {
           "agent": "codex",
