@@ -3,6 +3,7 @@
 ## Active queue
 
 - [Add the Inngest Factory operation-delivery adapter](FER-97.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-97/add-the-inngest-factory-operation-delivery-adapter)
+- [Bound automatic Factory retryable-action chains](FER-183.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-183/bound-automatic-factory-retryable-action-chains)
 - [Compose the Grove-backed hosted Factory operation runner](FER-96.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-96/compose-the-grove-backed-hosted-factory-operation-runner)
 - [Reconcile runnable Factory operations into delivery hints](FER-98.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-98/reconcile-runnable-factory-operations-into-delivery-hints)
 - [Record hosted Factory phase and continuation authority before delivery](FER-99.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-99/record-hosted-factory-phase-and-continuation-authority-before-delivery)
