@@ -400,7 +400,7 @@ export function renderLinearTriageCompleteComment(input: {
     `Route: ${input.route}`,
     `Run: \`${input.runDir}\``,
     `Next: ${input.targetStatus}`,
-    ...readyToPlanContext(input),
+    ...triageRationaleContext(input),
     ...(input.questions.length > 0
       ? ["", "Questions:", ...input.questions.map((question) => `- ${question}`)]
       : []),
@@ -517,21 +517,27 @@ async function applyTriageCompleted(
   };
 }
 
-function readyToPlanContext(input: {
+function triageRationaleContext(input: {
   route: FactoryRoute;
   rationale: string;
   evidence: FactoryTriageOutput["evidence"];
 }): string[] {
-  if (input.route !== "ready-to-plan") return [];
+  const heading =
+    input.route === "ready-to-plan"
+      ? "Why Needs Plan:"
+      : input.route === "needs-info"
+        ? "Why Needs Clarification:"
+        : undefined;
+  if (!heading) return [];
   const evidence = input.evidence.slice(0, TRIAGE_COMMENT_EVIDENCE_LIMIT).map((item) => {
     const prefix = item.path ? `${item.kind} (${item.path})` : item.kind;
     return `- ${prefix}: ${item.summary}`;
   });
   return [
     "",
-    "Why Needs Plan:",
+    heading,
     `- ${input.rationale}`,
-    ...(evidence.length ? ["", "Evidence:", ...evidence] : []),
+    ...(input.route === "ready-to-plan" && evidence.length ? ["", "Evidence:", ...evidence] : []),
   ];
 }
 
