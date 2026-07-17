@@ -36,7 +36,11 @@ import {
   type FactoryStoreMeta,
 } from "./factory-store.ts";
 import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
-import { readFactoryPhaseRunIdentity, writeFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
+import {
+  DEFAULT_FACTORY_AUTOMATIC_ACTION_POLICY,
+  readFactoryPhaseRunIdentity,
+  writeFactoryPhaseRunIdentity,
+} from "./factory-phase-run.ts";
 import { assertFactoryPhaseWorkspace, snapshotFactoryPhaseGit } from "./factory-phase-git.ts";
 import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { writeDurableFactoryFile } from "./factory-durable-file.ts";
@@ -257,6 +261,7 @@ function createFactoryRunContextInternal(
           projectId: options.factoryStore.projectId,
           factoryStateRoot: resolve(options.factoryStore.factoryStateRoot),
           git: snapshotFactoryPhaseGit(workspace, { optional: true }),
+          automaticActionPolicy: DEFAULT_FACTORY_AUTOMATIC_ACTION_POLICY,
           actions: { triageWorkItem: executionProfile },
         });
       }

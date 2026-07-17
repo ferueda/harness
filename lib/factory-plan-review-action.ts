@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import type { Agent, AgentProviderOptions, AgentRunResult } from "./agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
+import { classifyFactoryActionFailure } from "./factory-action-failure.ts";
 import {
   factoryActionResultPath,
   readFactoryActionResult,
@@ -582,12 +583,19 @@ function buildFailure(
   failureKind: "retryable" | "human-required" | "terminal",
   retainedCandidateEventId?: string,
 ): FactoryActionEvent {
+  const effective = classifyFactoryActionFailure({
+    identity: ctx.identity,
+    events: readFactoryActionEvents(
+      ctx.identity.factoryStateRoot,
+      deriveFactoryWorkItemKey(ctx.workItem),
+    ),
+    handler: reaction.handler,
+    attempt: reaction.attempt,
+    causationEventId: reaction.causationEventId,
+    proposed: { message, failureKind },
+  });
   const failurePath = join(actionDir, "failure.json");
-  writeDurableFactoryFile(
-    failurePath,
-    `${JSON.stringify({ message, failureKind }, null, 2)}\n`,
-    true,
-  );
+  writeDurableFactoryFile(failurePath, `${JSON.stringify(effective, null, 2)}\n`, true);
   const failure = ref(ctx, failurePath);
   return {
     version: 1,
@@ -604,8 +612,8 @@ function buildFailure(
       execution: { workspaceRef: ctx.factoryStore.repo.id, runRef: failure },
       evidence: [failure],
       phase: "planning",
-      failureKind,
-      message,
+      failureKind: effective.failureKind,
+      message: effective.message,
       ...(retainedCandidateEventId ? { retainedCandidateEventId } : {}),
     },
   };

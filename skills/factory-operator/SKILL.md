@@ -140,6 +140,14 @@ inspect`. Use the same store overrides planned for later actions.
 
 ## Retry and recovery rules
 
+- A new phase allows at most three automatic executions of the same handler and
+  Factory attempt. If the third durable outcome is retryable, Factory records it
+  as human-required. Stop at the resulting human wait; do not invoke or invent
+  another operation.
+- Do not count duplicate delivery, saved-result recovery, next-event send
+  retries, or Inngest retries of thrown infrastructure errors as another
+  Factory execution. Explicit human `revise` and `re-review` continuations start
+  a new applicable chain and remain caller-controlled without a fixed limit.
 - Repeat an explicit `--apply` command to repair its failed Linear projection.
   Recovery must not append a duplicate phase request or rerun a completed
   provider action.

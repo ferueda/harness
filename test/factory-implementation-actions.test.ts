@@ -1105,6 +1105,41 @@ test("ambient private ref churn keeps an otherwise unchanged provider failure re
   });
 });
 
+test("implementation candidate retry ceiling stops after the third execution", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  let current = appendRequest(fixture, ctx);
+  const providerRun = vi.fn<Agent["run"]>(async () => ({
+    ok: false,
+    error: "temporary",
+    exitCode: 1,
+  }));
+
+  for (let execution = 1; execution <= 3; execution += 1) {
+    const result = await produceImplementationCandidate({
+      ctx,
+      factoryStateRoot: fixture.factoryStateRoot,
+      reaction: invoke(current),
+      maxRuntimeMs: 0,
+      agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
+    });
+    expect(result.event).toMatchObject({
+      type: "factory.action.failed",
+      data: {
+        failureKind: execution < 3 ? "retryable" : "human-required",
+        ...(execution === 3 ? { message: expect.stringContaining("limit 3") } : {}),
+      },
+    });
+    current = result;
+  }
+
+  expect(providerRun).toHaveBeenCalledTimes(3);
+  expect(decideNextFactoryAction(current.state, current.event)).toEqual({
+    kind: "wait",
+    reason: "human",
+  });
+});
+
 test("staged passing review recovers after branch promotion without rerunning reviewers", async () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
@@ -1865,6 +1900,81 @@ test.each(["implementation", "quality"] as const)(
   },
 );
 
+test("implementation review retry ceiling retains the candidate and requires a human", async () => {
+  const fixture = directFixture();
+  const { ctx, candidate } = await produceCandidate(fixture);
+  const reviewRunner = vi.fn<
+    (
+      reviewCtx: { runDir?: string },
+      options: { steps?: Array<"implementation" | "quality"> },
+    ) => Promise<unknown>
+  >(async (_reviewCtx, options) => ({
+    status: "failed",
+    workflow: "change-review",
+    availableSteps: ["implementation", "quality"],
+    requestedSteps: options.steps,
+    executedSteps: [],
+    omittedSteps: [],
+    partial: false,
+    reviews: {},
+  }));
+  const actionInput = {
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    maxRuntimeMs: 1_000,
+    agentProviderFactory: () => ({ name: "cursor" as const, run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  };
+
+  const first = await reviewImplementationCandidate({
+    ...actionInput,
+    reaction: invoke(candidate),
+  });
+  const second = await reviewImplementationCandidate({
+    ...actionInput,
+    reaction: invoke(first),
+  });
+  const third = await reviewImplementationCandidate({
+    ...actionInput,
+    reaction: invoke(second),
+  });
+
+  expect(first.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "retryable", retainedCandidateEventId: candidate.event.id },
+  });
+  expect(second.event).toMatchObject({
+    type: "factory.action.failed",
+    data: { failureKind: "retryable", retainedCandidateEventId: candidate.event.id },
+  });
+  expect(third.event).toMatchObject({
+    type: "factory.action.failed",
+    data: {
+      failureKind: "human-required",
+      message: expect.stringContaining("limit 3"),
+      retainedCandidateEventId: candidate.event.id,
+    },
+  });
+  if (third.event.type !== "factory.action.failed") throw new Error("failure event missing");
+  const failurePath = verifyFactoryArtifactRef(third.event.data.evidence[0]!, {
+    "factory-store": fixture.store.projectRoot,
+    repository: fixture.workspace,
+  });
+  expect(JSON.parse(readFileSync(failurePath, "utf8"))).toMatchObject({
+    error: expect.stringContaining("limit 3"),
+    failureKind: "human-required",
+  });
+  expect(third.state).toMatchObject({
+    status: "awaiting-continuation",
+    candidateEventId: candidate.event.id,
+  });
+  expect(decideNextFactoryAction(third.state, third.event)).toEqual({
+    kind: "wait",
+    reason: "human",
+  });
+  expect(reviewRunner).toHaveBeenCalledTimes(3);
+});
+
 test("retry rejects tampered retained role output before reviewer invocation", async () => {
   const fixture = directFixture();
   const { ctx, candidate } = await produceCandidate(fixture);
@@ -2116,7 +2226,10 @@ test("Linear human-required failure projects and repairs attention without anoth
     }),
   ).rejects.toThrow("attention projection unavailable");
   expect(attentionFailure).toHaveBeenCalledWith(
-    expect.objectContaining({ verdict: "human_required" }),
+    expect.objectContaining({
+      verdict: "human_required",
+      message: expect.stringContaining("operator canceled"),
+    }),
   );
   const before = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).length;
   fixture.workItem.metadata = { linearStatus: "Implementing" };
@@ -2139,7 +2252,10 @@ test("Linear human-required failure projects and repairs attention without anoth
   expect(repaired.action).toBeUndefined();
   expect(repaired.linearApplied).toBe(true);
   expect(repairedAttention).toHaveBeenCalledWith(
-    expect.objectContaining({ verdict: "human_required" }),
+    expect.objectContaining({
+      verdict: "human_required",
+      message: expect.stringContaining("operator canceled"),
+    }),
   );
   expect(providerRun).toHaveBeenCalledTimes(1);
   expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key)).toHaveLength(before);
@@ -2189,12 +2305,15 @@ test("Linear retained-candidate terminal failure repairs attention before re-rev
       reviewRunner: invalidReview as never,
     }),
   ).rejects.toThrow("attention projection unavailable");
-  expect(readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1)).toMatchObject({
+  const failure = readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).at(-1);
+  expect(failure).toMatchObject({
     type: "factory.action.failed",
     data: { failureKind: "terminal", retainedCandidateEventId: expect.any(String) },
   });
+  if (failure?.type !== "factory.action.failed") throw new Error("Expected retained failure");
+  const persistedReason = failure.data.message;
 
-  const repairedAttention = vi.fn(async () => ({
+  const repairedAttention = vi.fn(async (_input: unknown) => ({
     issueIdentifier: "ENG-123",
     runId: "run",
     runDir: "run",
@@ -2215,15 +2334,18 @@ test("Linear retained-candidate terminal failure repairs attention before re-rev
     issueRef: "ENG-123",
     linearStatuses: LINEAR_SETTINGS.statuses,
     applyAdapter: fakeLinearAdapter({
-      applyImplementationAttention: async () => {
+      applyImplementationAttention: async (attention) => {
         ordering.push("projection");
-        return repairedAttention();
+        return repairedAttention(attention);
       },
     }),
     agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
     reviewRunner: passReview as never,
   });
   expect(ordering).toEqual(["projection", "review"]);
+  expect(repairedAttention).toHaveBeenCalledWith(
+    expect.objectContaining({ message: persistedReason }),
+  );
   expect(passed.linearApplied).toBe(true);
   expect(passed.next).toEqual({ kind: "wait", reason: "pr-publication" });
   expect(producer).toHaveBeenCalledOnce();

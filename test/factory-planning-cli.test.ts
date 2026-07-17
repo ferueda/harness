@@ -587,6 +587,72 @@ test("terminal Linear wait repair rejects tampered questions before projection",
   expect(readFactoryActionEvents(store.factoryStateRoot, base.workItem.id)).toEqual(terminalEvents);
 });
 
+test("retained-candidate retry ceiling projects and repairs planning attention", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "factory-planning-linear-ceiling-"));
+  const store = createStore();
+  const provider = vi.fn(async (input: AgentRunInput) => {
+    const draftPath = /Draft path:\s+```text\s+([^\n]+)/.exec(input.prompt)?.[1];
+    if (draftPath) {
+      writeFileSync(draftPath, "# Candidate\n", "utf8");
+      return {
+        ok: true as const,
+        structuredOutput: {
+          outcome: "draft-ready" as const,
+          summary: "ready",
+          humanQuestions: [],
+          findingDecisions: [],
+        },
+        raw: unchangedWorkspace(),
+        session: { provider: "cursor" as const, id: "planner-session" },
+      };
+    }
+    return {
+      ok: false as const,
+      error: "reviewer unavailable",
+      exitCode: 1,
+      raw: unchangedWorkspace(),
+    };
+  });
+  const applyPlanningCompleted = vi.fn(async () => undefined);
+  const base = {
+    ...coordinatorInput(workspace, store, () => ({ name: "cursor" as const, run: provider })),
+    workItem: {
+      id: "linear:ENG-183",
+      source: "linear" as const,
+      title: "Plan",
+      body: "",
+      labels: [],
+    },
+    itemFile: undefined,
+    linearIssue: "ENG-183",
+    issueRef: "ENG-183",
+  };
+  const adapter = {
+    applyPlanningStarted: vi.fn(async () => undefined),
+    applyPlanningCompleted,
+  } as never;
+
+  await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
+  await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
+  await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
+  const stopped = await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
+
+  expect(stopped.next).toEqual({ kind: "wait", reason: "human" });
+  expect(applyPlanningCompleted).toHaveBeenCalledOnce();
+  expect(applyPlanningCompleted).toHaveBeenCalledWith(
+    expect.objectContaining({
+      status: "plan-review-unresolved",
+      error: expect.stringContaining("limit 3"),
+    }),
+  );
+  const terminalEvents = readFactoryActionEvents(store.factoryStateRoot, base.workItem.id);
+
+  await runOneFactoryPlanningAction({ ...base, applyAdapter: adapter });
+  expect(applyPlanningCompleted).toHaveBeenCalledTimes(2);
+  expect(provider).toHaveBeenCalledTimes(4);
+  expect(readFactoryActionEvents(store.factoryStateRoot, base.workItem.id)).toEqual(terminalEvents);
+});
+
 test("coordinator propagates its abort signal to the planning provider", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-abort-"));
   const store = createStore();

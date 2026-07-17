@@ -74,6 +74,10 @@ Factory vocabulary:
 12. **Execution engines do not choose transitions.** Inngest may deliver, retry,
     order, and observe work. Factory alone decides the next action, phase,
     publication, or wait.
+13. **Automatic action retries are bounded.** A new phase snapshots a default
+    limit of three executions for one phase run, handler, and Factory attempt.
+    The third retryable outcome becomes human-required and yields no next
+    operation.
 
 Run only one phase command for a work item at a time. When Harness dogfoods
 itself, use a dedicated clean detached controller checkout pinned to one SHA
@@ -98,6 +102,13 @@ Factory does not enforce a review-round ceiling. A caller may stop automated
 continuation by comparing its policy with durable `reviewRound`. That policy
 must not alter Factory state or prevent a later explicitly authorized human
 continuation.
+
+The automatic action ceiling is separate from review rounds. It counts only
+authenticated durable `factory.action.failed` outcomes in one direct causal
+chain. Saved-result recovery, duplicate delivery, next-event send retries, and
+Inngest retries of thrown infrastructure errors reuse the same action identity
+and do not count again. Success, a new phase run, handler, Factory attempt, or
+explicit human continuation starts a new applicable chain.
 
 ## State and evidence ownership
 

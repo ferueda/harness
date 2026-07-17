@@ -374,13 +374,14 @@ export async function runOneFactoryPlanningAction(input: {
   const active = reaction?.kind === "invoke" && reaction.phase === "planning";
   if (!active) {
     if (state?.phase === "planning" && !input.rerun) {
-      if (input.applyAdapter && (state.status === "needs-human" || state.status === "failed")) {
+      const terminalStatus = terminalPlanningProjectionStatus(state.status, latest);
+      if (input.applyAdapter && terminalStatus) {
         await applyTerminalPlanningProjection({
           adapter: input.applyAdapter,
           issueRef: input.issueRef!,
           runId: state.phaseRunId,
           runDir: join(input.factoryStore.projectRoot, "runs/factory", state.phaseRunId),
-          status: state.status,
+          status: terminalStatus,
           latest,
           factoryStoreRoot: input.factoryStore.projectRoot,
           workspace: input.workspace,
@@ -472,16 +473,14 @@ export async function runOneFactoryPlanningAction(input: {
     eventSink: input.eventSink,
     agentProviderFactory,
   });
-  if (
-    input.applyAdapter &&
-    (handled.state.status === "needs-human" || handled.state.status === "failed")
-  ) {
+  const terminalStatus = terminalPlanningProjectionStatus(handled.state.status, handled.event);
+  if (input.applyAdapter && terminalStatus) {
     await applyTerminalPlanningProjection({
       adapter: input.applyAdapter,
       issueRef: input.issueRef!,
       runId: phaseRunId,
       runDir: ctx.runDir,
-      status: handled.state.status,
+      status: terminalStatus,
       latest: handled.event,
       factoryStoreRoot: input.factoryStore.projectRoot,
       workspace: input.workspace,
@@ -498,6 +497,22 @@ export async function runOneFactoryPlanningAction(input: {
     )!,
     linearApplied,
   };
+}
+
+type TerminalPlanningProjectionStatus = "needs-human" | "awaiting-continuation" | "failed";
+
+function terminalPlanningProjectionStatus(
+  status: string,
+  latest: FactoryLifecycleEvent | undefined,
+): TerminalPlanningProjectionStatus | undefined {
+  if (status === "needs-human" || status === "failed") return status;
+  if (
+    status === "awaiting-continuation" &&
+    latest?.type === "factory.action.failed" &&
+    latest.data.failureKind === "human-required"
+  )
+    return status;
+  return undefined;
 }
 
 function isPendingPlanningStartProjection(
@@ -517,7 +532,7 @@ async function applyTerminalPlanningProjection(input: {
   issueRef: string;
   runId: string;
   runDir: string;
-  status: "needs-human" | "failed";
+  status: TerminalPlanningProjectionStatus;
   latest: FactoryLifecycleEvent | undefined;
   factoryStoreRoot: string;
   workspace: string;
@@ -547,6 +562,7 @@ async function applyTerminalPlanningProjection(input: {
           }),
         }
       : {}),
+    ...(input.latest?.type === "factory.action.failed" ? { error: input.latest.data.message } : {}),
   });
 }
 

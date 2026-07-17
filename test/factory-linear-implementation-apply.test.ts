@@ -152,11 +152,18 @@ test("implementation attention remains Implementing and deduplicates its comment
     runDir: ".harness/runs/factory/run-attention",
     verdict: "needs_changes" as const,
     candidateCommit: "a".repeat(40),
+    message: "Factory automatic retry ceiling reached after 3 executions (limit 3)",
   };
-  await applyLinearImplementationAttention(state.deps, state.client, LINEAR_SETTINGS, input);
+  const first = await applyLinearImplementationAttention(
+    state.deps,
+    state.client,
+    LINEAR_SETTINGS,
+    input,
+  );
   await applyLinearImplementationAttention(state.deps, state.client, LINEAR_SETTINGS, input);
   expect(state.updateIssue).not.toHaveBeenCalled();
   expect(state.createComment).toHaveBeenCalledTimes(1);
+  expect(first.commentBody).toContain(`Reason: ${input.message}`);
 });
 
 test("implementation start fails closed when fresh state changed", async () => {

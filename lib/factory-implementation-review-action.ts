@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Agent, AgentProviderOptions } from "./agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
 import { factoryActionKey } from "./factory-action-contract.ts";
+import { classifyFactoryActionFailure } from "./factory-action-failure.ts";
 import {
   factoryActionResultPath,
   readFactoryActionResult,
@@ -512,10 +513,21 @@ function fail(
   retainedCandidateEventId?: string,
   checkpoint?: ReturnType<typeof ref>,
 ) {
+  const effective = classifyFactoryActionFailure({
+    identity: input.ctx.identity,
+    events: readFactoryActionEvents(
+      input.factoryStateRoot,
+      deriveFactoryWorkItemKey(input.ctx.workItem),
+    ),
+    handler: input.reaction.handler,
+    attempt: input.reaction.attempt,
+    causationEventId: input.reaction.causationEventId,
+    proposed: { message: error, failureKind },
+  });
   const path = join(actionDir, "failure.json");
   writeDurableFactoryFile(
     path,
-    `${JSON.stringify({ error, failureKind, ...(checkpoint ? { checkpoint } : {}) }, null, 2)}\n`,
+    `${JSON.stringify({ error: effective.message, failureKind: effective.failureKind, ...(checkpoint ? { checkpoint } : {}) }, null, 2)}\n`,
     true,
   );
   const failure = ref(input.ctx, path);
@@ -534,8 +546,8 @@ function fail(
       execution: { workspaceRef: input.ctx.factoryStore.repo.id, runRef: failure },
       evidence: [failure, ...(checkpoint ? [checkpoint] : [])],
       phase: "implementation",
-      failureKind,
-      message: error,
+      failureKind: effective.failureKind,
+      message: effective.message,
       ...(retainedCandidateEventId ? { retainedCandidateEventId } : {}),
     },
   };

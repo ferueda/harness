@@ -835,7 +835,11 @@ export async function runFactoryTriageWithLinearApply(input: {
     }
     let terminalUpdate: LinearTriageUpdatePlan | undefined;
     let terminalApplyError: unknown;
-    if (input.applyAdapter && !ctx.dryRun && meta.failureKind !== "retryable") {
+    const effectiveFailureKind =
+      terminalAction?.type === "factory.action.failed"
+        ? terminalAction.data.failureKind
+        : meta.failureKind;
+    if (input.applyAdapter && !ctx.dryRun && effectiveFailureKind !== "retryable") {
       try {
         terminalUpdate = completedTriage
           ? await input.applyAdapter.applyTriageCompleted({
