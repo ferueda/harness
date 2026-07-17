@@ -36,7 +36,7 @@ import { DEFAULT_AGENT_MODELS } from "./agents.ts";
 import { factoryActionExecutionProfile, type FactoryRoleAgent } from "./config.ts";
 import { buildRunId } from "./context.ts";
 import { parseLinearIssueIdentifier } from "./factory-linear-adapter.ts";
-import { renderFactoryPlanningSummary } from "./factory-planning-handoff.ts";
+import { renderFactoryPlanningSummary } from "./factory-planning-summary.ts";
 import { FactoryPlanningError, type FactoryPlanningOutput } from "./factory-planning-schemas.ts";
 import {
   FactoryWorkItemMetadataSchema,

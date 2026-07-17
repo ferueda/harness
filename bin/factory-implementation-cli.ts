@@ -152,8 +152,6 @@ export async function runImplementationPublicationCommand(
     linearSettings: settings,
     env: process.env,
     linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
-    lifecycleReadMode: "none",
-    factoryStateRoot: store.factoryStateRoot,
   });
   const adapter = options.apply
     ? createLinearFactoryAdapter({ apiKey: process.env.LINEAR_API_KEY ?? "", settings: settings! })
@@ -220,8 +218,6 @@ async function runImplementationCommand(options: Options): Promise<void> {
     linearSettings,
     env: process.env,
     linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
-    lifecycleReadMode: "none",
-    factoryStateRoot: store.factoryStateRoot,
   });
   const adapter = options.apply
     ? createLinearFactoryAdapter({
@@ -298,8 +294,6 @@ async function runImplementationContinuationCommand(options: {
     linearSettings,
     env: process.env,
     linearAdapterFactory: options.linearIssue ? createLinearFactoryAdapter : undefined,
-    lifecycleReadMode: "none",
-    factoryStateRoot: store.factoryStateRoot,
   });
   const events = readFactoryActionEvents(
     store.factoryStateRoot,

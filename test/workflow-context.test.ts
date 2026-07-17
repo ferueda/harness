@@ -399,30 +399,6 @@ test("workflow context passes Cursor provider to factory", () => {
   expect(meta.agent).toMatchObject({ name: "cursor", model: "grok-4.5" });
 });
 
-test("workflow context keeps Cursor reviews parallel by default", () => {
-  const workspace = createGitWorkspace();
-  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
-  const ctx = createWorkflowContextForTest({
-    workspace,
-    baseRef: "HEAD",
-    headRef: "HEAD",
-    runsDir,
-    agentProvider: "cursor",
-    dryRun: true,
-    agentProviderFactory(options) {
-      return {
-        name: options.provider,
-        async run() {
-          throw new Error("dry-run should not call provider");
-        },
-      };
-    },
-    maxRuntimeMs: 1_000,
-  });
-
-  expect(ctx.reviewConcurrency).toBe("parallel");
-});
-
 test("workflow context validates provider structured output as review output", async () => {
   const workspace = createGitWorkspace();
   const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));

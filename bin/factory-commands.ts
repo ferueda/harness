@@ -47,10 +47,7 @@ import {
   type FactoryStoreResolution,
 } from "../lib/factory-store.ts";
 import { factoryStatus } from "../lib/factory-status.ts";
-import {
-  deriveFactoryWorkItemKey,
-  type FactoryLifecycleWarning,
-} from "../lib/factory-lifecycle.ts";
+import { deriveFactoryWorkItemKey } from "../lib/factory-lifecycle.ts";
 import { inspectFactoryWorkItem } from "../lib/factory-inspect.ts";
 import {
   createLinearFactoryAdapter,
@@ -61,7 +58,6 @@ import {
 } from "../lib/factory-linear-adapter.ts";
 import type { LinearCreateWorkItemResult } from "../lib/factory-linear-create.ts";
 import {
-  mergeLifecycleState,
   resolveFactoryWorkItemInput,
   validateFactoryWorkItemInput,
 } from "../lib/factory-triage-input.ts";
@@ -342,14 +338,11 @@ function addFactoryLinearCommand(parent: Command): void {
     });
 }
 
-export type FactoryLinearFetchOutput = FactoryWorkItem & {
-  warnings?: FactoryLifecycleWarning[];
-};
+export type FactoryLinearFetchOutput = FactoryWorkItem;
 
 export async function fetchFactoryLinearWorkItem(input: {
   issue: string;
   workspace?: string;
-  factoryStateRoot?: string;
   factoryStoreRoot?: string;
   factoryStoreProjectId?: string;
   env?: NodeJS.ProcessEnv;
@@ -368,24 +361,13 @@ export async function fetchFactoryLinearWorkItem(input: {
   }
   const adapter = (input.adapterFactory ?? createLinearFactoryAdapter)({ apiKey, settings });
   const workspace = resolveHarnessOptions({ workspace: input.workspace }).workspace;
-  const factoryStateRoot =
-    input.factoryStateRoot ??
-    resolveFactoryStore({
-      workspace,
-      factoryStoreRoot: input.factoryStoreRoot,
-      factoryStoreProjectId: input.factoryStoreProjectId,
-      env: input.env,
-    }).factoryStateRoot;
-  const merged = mergeLifecycleState({
+  resolveFactoryStore({
     workspace,
-    factoryStateRoot,
-    workItem: await adapter.fetchWorkItem(input.issue),
-    lifecycleReadMode: "none",
+    factoryStoreRoot: input.factoryStoreRoot,
+    factoryStoreProjectId: input.factoryStoreProjectId,
+    env: input.env,
   });
-  return {
-    ...merged.workItem,
-    ...(merged.warnings.length > 0 ? { warnings: merged.warnings } : {}),
-  };
+  return adapter.fetchWorkItem(input.issue);
 }
 
 export async function createFactoryLinearWorkItem(input: {
@@ -527,8 +509,6 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
         linearSettings,
         env: process.env,
         linearAdapterFactory,
-        lifecycleReadMode: "none",
-        factoryStateRoot: store.factoryStateRoot,
       });
 
       const applyAdapter = options.apply ? requireLinearApplyAdapter(linearAdapter) : undefined;
@@ -598,7 +578,6 @@ function addFactoryTriageStationCommand(parent: Command, config: FactoryCommandO
               ...(options.apply
                 ? { linearUpdate: { started: startedUpdate, terminal: terminalUpdate } }
                 : {}),
-              ...(input.warnings ? { warnings: input.warnings } : {}),
             }),
             ...actionOutput,
           },

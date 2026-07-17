@@ -1,22 +1,15 @@
 import { type FactoryLinearSettings } from "./config.ts";
 import { type LinearFactoryAdapter, createLinearFactoryAdapter } from "./factory-linear-adapter.ts";
-import type { FactoryLockRuntimeOptions } from "./factory-locks.ts";
-import type { FactoryLifecycleWarning } from "./factory-lifecycle.ts";
 import { type FactoryWorkItem } from "./factory-schemas.ts";
 import { assertFactoryItemFileExists, readFactoryWorkItemFile } from "./factory-run-context.ts";
 
-// Shared station input resolver. Kept in the original triage-named module for now
-// to avoid import churn while planning adopts the same input contract.
 export type FactoryWorkItemInputSource = "item-file" | "linear";
 
 export type FactoryResolvedWorkItemInput = {
   source: FactoryWorkItemInputSource;
   workItem: FactoryWorkItem;
   linearApplied?: false;
-  warnings?: FactoryLifecycleWarning[];
 };
-
-export type FactoryLifecycleReadMode = "inspect" | "load" | "none";
 
 export type ResolveFactoryWorkItemInput = {
   workspace: string;
@@ -24,12 +17,6 @@ export type ResolveFactoryWorkItemInput = {
   linearIssue?: string;
   linearSettings?: FactoryLinearSettings;
   env?: NodeJS.ProcessEnv;
-  factoryStateRoot?: string;
-  /** Low-level/test-only workspace-local lifecycle escape hatch. */
-  allowWorkspaceLocalStateRoot?: boolean;
-  lifecycleReadMode: FactoryLifecycleReadMode;
-  /** Test-only seam for bounded lock contention coverage. */
-  lifecycleLockOptions?: FactoryLockRuntimeOptions;
   linearAdapterFactory?: (input: {
     apiKey: string;
     settings: FactoryLinearSettings;
@@ -47,18 +34,9 @@ export async function resolveFactoryWorkItemInput(
 
   if (input.itemFile !== undefined) {
     const itemPath = assertFactoryItemFileExists(input.workspace, input.itemFile);
-    const merged = mergeLifecycleState({
-      workspace: input.workspace,
-      factoryStateRoot: input.factoryStateRoot,
-      allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
-      lifecycleReadMode: input.lifecycleReadMode,
-      lifecycleLockOptions: input.lifecycleLockOptions,
-      workItem: readFactoryWorkItemFile(itemPath),
-    });
     return {
       source: "item-file",
-      workItem: merged.workItem,
-      ...(merged.warnings.length > 0 ? { warnings: merged.warnings } : {}),
+      workItem: readFactoryWorkItemFile(itemPath),
     };
   }
 
@@ -78,39 +56,11 @@ export async function resolveFactoryWorkItemInput(
     apiKey,
     settings: input.linearSettings,
   });
-  const merged = mergeLifecycleState({
-    workspace: input.workspace,
-    factoryStateRoot: input.factoryStateRoot,
-    allowWorkspaceLocalStateRoot: input.allowWorkspaceLocalStateRoot,
-    lifecycleReadMode: input.lifecycleReadMode,
-    lifecycleLockOptions: input.lifecycleLockOptions,
-    workItem: await adapter.fetchWorkItem(input.linearIssue),
-  });
   return {
     source: "linear",
-    workItem: merged.workItem,
-    ...(merged.warnings.length > 0 ? { warnings: merged.warnings } : {}),
+    workItem: await adapter.fetchWorkItem(input.linearIssue),
     linearApplied: false,
   };
-}
-
-export function mergeLifecycleState(input: {
-  workspace: string;
-  workItem: FactoryWorkItem;
-  factoryStateRoot?: string;
-  allowWorkspaceLocalStateRoot?: boolean;
-  lifecycleReadMode: FactoryLifecycleReadMode;
-  lifecycleLockOptions?: FactoryLockRuntimeOptions;
-}): { workItem: FactoryWorkItem; warnings: FactoryLifecycleWarning[] } {
-  if (input.lifecycleReadMode === "none") return { workItem: input.workItem, warnings: [] };
-  throw new Error("Legacy Factory lifecycle reads are unavailable; use the action store kernel.");
-}
-
-export function validateFactoryTriageWorkItemInput(input: {
-  itemFile?: string;
-  linearIssue?: string;
-}): asserts input is ValidFactoryWorkItemInputSources {
-  validateFactoryWorkItemInput(input);
 }
 
 export function validateFactoryWorkItemInput(input: {
@@ -123,14 +73,4 @@ export function validateFactoryWorkItemInput(input: {
   if (!input.itemFile && !input.linearIssue) {
     throw new Error("one of --item-file or --linear-issue is required");
   }
-}
-
-export type FactoryTriageInputSource = FactoryWorkItemInputSource;
-export type FactoryTriageWorkItemInput = FactoryResolvedWorkItemInput;
-export type ResolveFactoryTriageWorkItemInput = ResolveFactoryWorkItemInput;
-
-export async function resolveFactoryTriageWorkItem(
-  input: ResolveFactoryTriageWorkItemInput,
-): Promise<FactoryTriageWorkItemInput> {
-  return resolveFactoryWorkItemInput(input);
 }

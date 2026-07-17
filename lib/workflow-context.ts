@@ -320,7 +320,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
     dryRun: options.dryRun,
     eventSink,
     heartbeatMs: options.heartbeatMs,
-    reviewConcurrency: resolvedReviewConcurrency(reviewProvider.name, options),
+    reviewConcurrency: "parallel",
     aggregate: aggregateVerdict,
     reviewInfo: getReviewInfo,
     async agent(name: ReviewAgentName): Promise<ReviewOutput> {
@@ -436,13 +436,6 @@ function reviewPolicyOptions(
 
 function resolvedAgentModel(providerName: AgentProviderName, options: WorkflowRunOptions): string {
   return options.model ?? DEFAULT_AGENT_MODELS[providerName];
-}
-
-function resolvedReviewConcurrency(
-  _providerName: AgentProviderName,
-  _options: WorkflowRunOptions,
-): "parallel" | "serial" {
-  return "parallel";
 }
 
 function buildScopeMeta(scope: Scope) {
