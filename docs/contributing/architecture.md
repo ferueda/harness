@@ -132,6 +132,47 @@ is content-addressed. Git is authoritative for committed plan/code bytes. Linear
 and GitHub may lag and be repaired, but they cannot select Factory transitions.
 See [Factory contributor guide](./factory.md) for the full invariant set.
 
+Hosted execution keeps the same boundary:
+
+| Owner    | Responsibility                                                                   |
+| -------- | -------------------------------------------------------------------------------- |
+| Factory  | Lifecycle facts, transition rules, exact action identity, evidence, and recovery |
+| Inngest  | Event delivery, step retries, scheduling, concurrency, and traces                |
+| Grove    | Workspace lease, setup, reset, release, quarantine, and repair                   |
+| Git      | Committed plan and code bytes                                                    |
+| Trackers | Verified external facts and retryable human-facing projections                   |
+
+#### Target hosted flow
+
+The hosted composition is event-driven, but Factory remains the decision owner:
+
+```mermaid
+flowchart TD
+    L["Linear or GitHub event"] --> I["Inngest ingress function"]
+    I --> F1["Record verified authority in Factory"]
+    F1 --> P1["Project boundary to Linear"]
+    P1 --> S["Send exact operation event"]
+
+    S --> E["Inngest operation function"]
+    E --> R["Hosted runner and Grove workspace"]
+    R --> F2["Factory authenticates and executes one action"]
+    F2 --> A["Persist evidence, result, and lifecycle event"]
+    A --> P2["Inngest projects result to Linear"]
+
+    P2 --> N{"Factory receipt"}
+    N -->|"Exact same-phase operation"| S
+    N -->|"Cross-phase boundary"| D["Send advance wakeup"]
+    D --> X["Inngest advance driver"]
+    X --> F3["Factory selects one typed effect"]
+    F3 --> P1
+    N -->|"Wait or complete"| W["Function ends"]
+```
+
+Inngest never decides that planning should begin, a retry should happen, or a
+pull request should publish. It asks Factory, then executes Factory's answer.
+An Inngest event is therefore a delivery hint for authority already recorded by
+Factory; it cannot create a phase or choose the next phase.
+
 ### Schema boundary
 
 Runtime validation lives primarily in `lib/schemas.ts`,
@@ -169,10 +210,13 @@ bounded trusted target list. It returns `delivered`, `waiting`, `stale`, or
 nor discovers or schedules work.
 
 `lib/factory-inngest-adapter.ts` owns deterministic event IDs and direct or
-chained sends. IDs suppress transport duplicates; Factory action identity
-prevents replay. The adapter keeps three retries and a 110-minute action limit.
-The current integration assumes one persistent host and ships no production
-worker or scheduler. Publication and merge acknowledgement remain separate.
+chained sends. It may chain only the exact next operation returned by an
+authenticated Factory receipt; it does not interpret `phase-command` or choose a
+new phase. IDs suppress transport duplicates; Factory action identity prevents
+replay. The adapter keeps three retries and a 110-minute action limit. The
+current integration assumes one persistent host and ships no production worker,
+cross-phase driver, or webhook ingress. Publication and merge acknowledgement
+remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

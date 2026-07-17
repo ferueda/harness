@@ -71,6 +71,9 @@ Factory vocabulary:
 11. **Hosted authority precedes delivery.** Phase and continuation events are
     durable before operation delivery, so reconciliation can recover a failed
     send from the log.
+12. **Execution engines do not choose transitions.** Inngest may deliver, retry,
+    order, and observe work. Factory alone decides the next action, phase,
+    publication, or wait.
 
 Run only one phase command for a work item at a time. When Harness dogfoods
 itself, use a dedicated clean detached controller checkout pinned to one SHA
@@ -103,6 +106,7 @@ continuation.
 | Target workspace      | Source, tests, `harness.json`, shim, inbox, transient planning draft, and Git materialization                                         |
 | Durable Factory store | Work-item lifecycle JSONL, locks, rebuildable state, phase contexts, action evidence, results, prompts, streams, and review manifests |
 | Git                   | Committed plans, implementation candidates, promoted branch history, and merge ancestry                                               |
+| Inngest               | Delivery attempts, step retries, scheduling, concurrency, and traces; never Factory lifecycle authority                               |
 | Linear                | Retryable issue statuses and concise marker comments for human coordination                                                           |
 | GitHub                | Retryable pull-request publication for an already reviewed plan or implementation                                                     |
 
@@ -119,6 +123,13 @@ Linear-backed phase commands read the live issue but mutate Linear only when
 that invocation carries explicit `--apply` authority. Durable state is written
 before the corresponding status or comment projection so a later authorized
 invocation can repair the projection without rerunning a provider.
+
+Hosted orchestration keeps this order: append the Factory result, project that
+result, then deliver newly enabled work. A failed projection may delay delivery,
+but it cannot roll back Factory or repeat a completed provider action. An
+authenticated same-phase next operation may be delivered directly. Crossing a
+phase, publication, merge, or human boundary requires a fresh Factory decision;
+the transport must not infer it from tracker state or a rendered CLI command.
 
 Planning and implementation publication use a bounded Git/`gh` publisher only
 after explicit publication authority. It pushes the reviewed branch and finds
