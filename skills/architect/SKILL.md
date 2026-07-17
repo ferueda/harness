@@ -1,7 +1,6 @@
 ---
 name: architect
 description: Repo-grounded ideation, research, and technical solution design before planning or implementation.
-disable-model-invocation: true
 ---
 
 # Architect
@@ -13,8 +12,10 @@ an inline architecture memo the user can keep, discard, or turn into a plan.
 
 - Stay read-only. Do not edit files, write artifacts, stage, commit, or create
   plans.
-- Stop before implementation planning: no phases, file-edit checklist, command
-  gates, executor skills table, or task breakdown.
+- Treat outcome decomposition as architecture, not implementation planning.
+  Define coherent solution units for an umbrella, but do not produce phases,
+  file-edit checklists, command gates, executor skills tables, or task
+  breakdowns.
 - Ask the user only when ambiguity materially changes the architecture. Include
   a recommended answer and the real tradeoff.
 - Route bugs, symptoms, and code-truth questions to `diagnose-issue` first. Use
@@ -66,6 +67,19 @@ anchors. Label remaining assumptions.
 - Recommend no change when it already satisfies the goal.
 - Otherwise prefer the smallest repo-native change that satisfies the goal and
   invariants.
+- Classify the recommended direction as **One scoped outcome** or **An umbrella
+  requiring scoped units**.
+- Treat a direction as one scoped outcome when it has one observable user or
+  system result and one coherent acceptance boundary. Complexity, file count,
+  and cross-layer reach do not make it an umbrella; one vertical outcome may
+  legitimately span storage, API, and UI.
+- Treat a direction as an umbrella when it contains multiple outcomes that
+  could be accepted, shipped, deferred, or rolled back independently without
+  violating an invariant.
+- For an umbrella, recommend the smallest coherent outcome units. For each
+  unit, state its observable outcome, acceptance boundary, dependencies on
+  other units, and explicit exclusions. Keep behavior that must work together
+  in one vertical unit; do not split work mechanically by layer or module.
 - Require a present acceptance criterion, invariant, or verified risk before
   adding an abstraction, boundary, extension point, registry, workflow, or
   compatibility layer the smaller design does not need.
@@ -90,8 +104,9 @@ Evaluate only the fit, tradeoffs, risks, compatibility, and test implications
 that could change the recommendation or the user's approval. Explicitly answer
 any surface the user asked about, even when unchanged.
 
-**Done when:** one recommendation wins on current evidence; alternatives remain
-only where the user has a real choice.
+**Done when:** one recommendation wins on current evidence, its outcome scope is
+classified, any umbrella has coherent architectural units, and alternatives
+remain only where the user has a real choice.
 
 ### 4. Consult when decision-changing
 
@@ -125,11 +140,21 @@ Return a proportional memo using the smallest useful shape:
 **Goal**:
 **Recommendation**:
 **Confidence**: High | Medium | Low
+**Scope**: One scoped outcome | An umbrella requiring scoped units
 
 ## Why this fits
 
 Decision-shaping project intent, repository facts, and tradeoffs. Place each
 `path:line` anchor beside the claim it supports.
+
+## Scoped units
+
+Include only for an umbrella. For each unit, state:
+
+- **Observable outcome**:
+- **Acceptance boundary**:
+- **Dependencies**:
+- **Explicit exclusions**:
 
 ## Impact and tradeoffs
 
