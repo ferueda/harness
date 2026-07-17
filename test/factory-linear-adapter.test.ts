@@ -620,8 +620,11 @@ test("Linear triage helpers map routes and render concise comments", () => {
     reconsiderWhen: null,
   });
   expect(comment).toContain("<!-- harness-factory:triage:run-1 -->");
+  expect(comment).toContain("Why Needs Clarification:");
+  expect(comment).toContain("- Human input is required.");
   expect(comment).not.toContain("Why Needs Plan:");
   expect(comment).not.toContain("Evidence:");
+  expect(comment.indexOf("Why Needs Clarification:")).toBeLessThan(comment.indexOf("Questions:"));
 });
 
 test("Linear adapter fetches an issue as a factory work item", async () => {
