@@ -633,12 +633,15 @@ test("factory contributor and operator guidance stay linked from entrypoints", (
   expect(factoryGuide).toContain("../../skills/factory-operator/SKILL.md");
   expect(factoryGuide).toContain("## Grove workspace boundary");
   expect(factoryGuide).toContain("lib/factory-grove-workspace.ts");
+  expect(factoryGuide).toContain("lib/factory-hosted-authority.ts");
   expect(factoryGuide).toContain("lib/factory-hosted-operation.ts");
   expect(factoryGuide).toContain("lib/factory-operation-reconciliation.ts");
   expect(factoryGuide).toContain("lib/factory-inngest-adapter.ts");
   expect(factoryGuide).toContain("identifier-only request");
   expect(factoryGuide).toContain("Factory action identity");
+  expect(factoryGuide).toContain("Hosted authority precedes delivery");
   const architecture = readRepoFile("docs/contributing/architecture.md");
+  expect(architecture).toContain("lib/factory-hosted-authority.ts");
   expect(architecture).toContain("lib/factory-operation-reconciliation.ts");
   expect(architecture).not.toContain("No scheduler or hosted operation runner ships today");
   expect(readRepoFile("README.md")).toContain("docs/contributing/factory.md");

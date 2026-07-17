@@ -14,10 +14,16 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { Agent, AgentRunInput } from "../lib/agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
-import { recordFactoryContinuation } from "../lib/factory-continuation.ts";
+import {
+  observeFactoryContinuation,
+  recordFactoryContinuation,
+} from "../lib/factory-continuation.ts";
 import { producePlanCandidate } from "../lib/factory-plan-candidate-action.ts";
 import { reviewPlanCandidate } from "../lib/factory-plan-review-action.ts";
-import { appendFactoryActionEvent } from "../lib/factory-lifecycle-kernel.ts";
+import {
+  appendFactoryActionEvent,
+  readFactoryActionEvents,
+} from "../lib/factory-lifecycle-kernel.ts";
 import type { FactoryLifecycleEvent } from "../lib/factory-lifecycle-events.ts";
 import {
   createFactoryPlanningRunContext,
@@ -1174,7 +1180,11 @@ function continuePlanning(
     response,
     factoryStateRoot,
     factoryStore: ctx.factoryStore,
-    workItem: ctx.workItem,
+    workItemKey: deriveFactoryWorkItemKey(ctx.workItem),
+    observed: observeFactoryContinuation(
+      readFactoryActionEvents(factoryStateRoot, deriveFactoryWorkItemKey(ctx.workItem)),
+      "planning",
+    ),
   });
 }
 

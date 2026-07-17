@@ -10,7 +10,10 @@ import {
 import type { Agent, AgentRunInput } from "../lib/agents.ts";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
-import { recordFactoryContinuation } from "../lib/factory-continuation.ts";
+import {
+  observeFactoryContinuation,
+  recordFactoryContinuation,
+} from "../lib/factory-continuation.ts";
 import { produceImplementationCandidate } from "../lib/factory-implementation-candidate-action.ts";
 import { reviewImplementationCandidate } from "../lib/factory-implementation-review-action.ts";
 import {
@@ -107,7 +110,11 @@ test("revision resumes the effective session with complete blockers and promotes
     response: "Apply both accepted blockers without replacing valid prior work.",
     factoryStateRoot: fixture.factoryStateRoot,
     factoryStore: fixture.store,
-    workItem: fixture.workItem,
+    workItemKey: deriveFactoryWorkItemKey(fixture.workItem),
+    observed: observeFactoryContinuation(
+      readFactoryActionEvents(fixture.factoryStateRoot, deriveFactoryWorkItemKey(fixture.workItem)),
+      "implementation",
+    ),
   });
   expect(continued.next).toMatchObject({
     kind: "invoke",
@@ -354,7 +361,11 @@ test("Linear needs_changes attention retries before one scheduled revision produ
     response: "Apply the two accepted blocking findings.",
     factoryStateRoot: fixture.factoryStateRoot,
     factoryStore: fixture.store,
-    workItem: fixture.workItem,
+    workItemKey: deriveFactoryWorkItemKey(fixture.workItem),
+    observed: observeFactoryContinuation(
+      readFactoryActionEvents(fixture.factoryStateRoot, deriveFactoryWorkItemKey(fixture.workItem)),
+      "implementation",
+    ),
   });
 
   const repairedAttention = vi.fn(async () => ({
@@ -2388,7 +2399,11 @@ function continueImplementation(
     response,
     factoryStateRoot: fixture.factoryStateRoot,
     factoryStore: fixture.store,
-    workItem: fixture.workItem,
+    workItemKey: deriveFactoryWorkItemKey(fixture.workItem),
+    observed: observeFactoryContinuation(
+      readFactoryActionEvents(fixture.factoryStateRoot, deriveFactoryWorkItemKey(fixture.workItem)),
+      "implementation",
+    ),
   });
 }
 

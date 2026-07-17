@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import type { z } from "zod";
 import { createFactoryArtifactRef, verifyFactoryArtifactRef } from "./factory-artifact-ref.ts";
@@ -9,15 +9,41 @@ import {
   type FactoryLifecycleEvent,
 } from "./factory-lifecycle-events.ts";
 import { appendFactoryActionEvent, readFactoryActionEvents } from "./factory-lifecycle-kernel.ts";
-import { deriveFactoryWorkItemKey } from "./factory-lifecycle.ts";
 import { readFactoryPhaseRunIdentity } from "./factory-phase-run.ts";
-import type { FactoryWorkItem } from "./factory-schemas.ts";
 import type { FactoryStoreMeta } from "./factory-store.ts";
 import type { FactoryHandler } from "./factory-action-contract.ts";
 import { decideNextFactoryAction, reduceFactoryLifecycleEvents } from "./factory-state-machine.ts";
 
 export const MAX_FACTORY_CONTINUATION_RESPONSE_BYTES = 32 * 1024;
 export type FactoryContinuationDecision = z.infer<typeof FactoryContinuationDecisionSchema>;
+export type FactoryContinuationObservation = Readonly<{
+  expectedPredecessor: string;
+  phaseRunId: string;
+  candidateEventId: string;
+  reviewEventId?: string;
+}>;
+
+export function observeFactoryContinuation(
+  events: readonly FactoryLifecycleEvent[],
+  phase: "planning" | "implementation",
+): FactoryContinuationObservation {
+  const state = reduceFactoryLifecycleEvents(events);
+  const latest = events.at(-1);
+  if (
+    !state ||
+    !latest ||
+    state.phase !== phase ||
+    !state.candidateEventId ||
+    (state.status !== "awaiting-review" && state.status !== "awaiting-continuation")
+  )
+    throw new Error(`Factory ${phase} has no candidate awaiting continuation`);
+  return {
+    expectedPredecessor: latest.id,
+    phaseRunId: state.phaseRunId,
+    candidateEventId: state.candidateEventId,
+    ...(state.reviewEventId ? { reviewEventId: state.reviewEventId } : {}),
+  };
+}
 
 export function readFactoryContinuationResponseFile(path: string): string {
   if (!isAbsolute(path)) throw new Error("Factory continuation response path must be absolute");
@@ -47,14 +73,30 @@ export function recordFactoryContinuation(input: {
   response: string;
   factoryStateRoot: string;
   factoryStore: FactoryStoreMeta;
-  workItem: FactoryWorkItem;
+  workItemKey: string;
+  observed: FactoryContinuationObservation;
 }) {
   const decision = FactoryContinuationDecisionSchema.parse(input.decision);
   const response = validateFactoryContinuationResponse(input.response);
-  const key = deriveFactoryWorkItemKey(input.workItem);
+  const key = input.workItemKey;
   const events = readFactoryActionEvents(input.factoryStateRoot, key);
   const state = reduceFactoryLifecycleEvents(events);
   const latest = events.at(-1);
+  if (!latest || !state) throw new Error(`Factory ${input.phase} has no durable state`);
+  const authenticated = authenticateContinuationPhaseRun(input);
+  const existing = exactContinuationDuplicate(latest, input, authenticated.roots);
+  if (existing) {
+    return {
+      phaseRunId: existing.phaseRunId,
+      event: existing,
+      state,
+      next: decideNextFactoryAction(state, existing),
+    };
+  }
+  if (latest.id !== input.observed.expectedPredecessor)
+    throw new Error(
+      `Stale Factory continuation: expected ${input.observed.expectedPredecessor}, found ${latest.id}`,
+    );
   const mayReviseBeforeReview =
     state?.status === "awaiting-review" &&
     state.reviewEventId === undefined &&
@@ -62,36 +104,30 @@ export function recordFactoryContinuation(input: {
     decision === "revise";
   const mayContinueAfterReview = state?.status === "awaiting-continuation";
   if (
-    !state ||
-    !latest ||
     state.phase !== input.phase ||
     (!mayReviseBeforeReview && !mayContinueAfterReview) ||
-    !state.candidateEventId
+    !state.candidateEventId ||
+    state.phaseRunId !== input.observed.phaseRunId ||
+    state.candidateEventId !== input.observed.candidateEventId ||
+    state.reviewEventId !== input.observed.reviewEventId
   )
     throw new Error(`Factory ${input.phase} has no candidate awaiting continuation`);
-  const runDir = join(input.factoryStore.projectRoot, "runs/factory", state.phaseRunId);
-  const identity = readFactoryPhaseRunIdentity(runDir);
-  if (
-    identity.phase !== input.phase ||
-    identity.phaseRunId !== state.phaseRunId ||
-    identity.workItemKey !== key ||
-    identity.projectId !== input.factoryStore.projectId
-  )
-    throw new Error(`Factory ${input.phase} continuation conflicts with phase-run identity`);
+  const { runDir, identity } = authenticated;
   const digest = createHash("sha256")
     .update(
       JSON.stringify({
         phase: input.phase,
-        phaseRunId: state.phaseRunId,
-        predecessor: latest.id,
+        phaseRunId: input.observed.phaseRunId,
+        predecessor: input.observed.expectedPredecessor,
         decision,
-        candidateEventId: state.candidateEventId,
-        reviewEventId: state.reviewEventId,
+        candidateEventId: input.observed.candidateEventId,
+        reviewEventId: input.observed.reviewEventId,
         response,
       }),
     )
     .digest("hex");
   const responsePath = join(runDir, "continuations", digest, "response.md");
+  validateContinuationEvidence(events, input, identity.workspace);
   writeDurableFactoryFile(responsePath, response, true);
   const responseRef = createFactoryArtifactRef({
     base: "factory-store",
@@ -106,18 +142,18 @@ export function recordFactoryContinuation(input: {
     occurredAt: new Date().toISOString(),
     phaseRunId: state.phaseRunId,
     data: {
-      expectedPredecessor: latest.id,
+      expectedPredecessor: input.observed.expectedPredecessor,
       phase: input.phase,
       decision,
-      candidateEventId: state.candidateEventId,
-      ...(state.reviewEventId ? { reviewEventId: state.reviewEventId } : {}),
+      candidateEventId: input.observed.candidateEventId,
+      ...(input.observed.reviewEventId ? { reviewEventId: input.observed.reviewEventId } : {}),
       response: responseRef,
     },
   };
   const appended = appendFactoryActionEvent({
     factoryStateRoot: input.factoryStateRoot,
     event,
-    expectedLastEventId: latest.id,
+    expectedLastEventId: input.observed.expectedPredecessor,
   });
   return {
     phaseRunId: state.phaseRunId,
@@ -125,6 +161,99 @@ export function recordFactoryContinuation(input: {
     state: appended.state,
     next: decideNextFactoryAction(appended.state, appended.event),
   };
+}
+
+function exactContinuationDuplicate(
+  latest: FactoryLifecycleEvent,
+  input: Parameters<typeof recordFactoryContinuation>[0],
+  roots: { "factory-store": string; repository: string },
+): Extract<FactoryLifecycleEvent, { type: "factory.continuation.recorded" }> | undefined {
+  if (
+    latest.type !== "factory.continuation.recorded" ||
+    latest.workItemKey !== input.workItemKey ||
+    latest.phaseRunId !== input.observed.phaseRunId ||
+    latest.data.phase !== input.phase ||
+    latest.data.decision !== input.decision ||
+    latest.data.expectedPredecessor !== input.observed.expectedPredecessor ||
+    latest.data.candidateEventId !== input.observed.candidateEventId ||
+    latest.data.reviewEventId !== input.observed.reviewEventId
+  )
+    return undefined;
+  const path = verifyFactoryArtifactRef(latest.data.response, roots);
+  if (readFileSync(path, "utf8") !== validateFactoryContinuationResponse(input.response))
+    throw new Error("Factory continuation response conflicts with the durable decision");
+  return latest;
+}
+
+function authenticateContinuationPhaseRun(input: Parameters<typeof recordFactoryContinuation>[0]): {
+  runDir: string;
+  identity: ReturnType<typeof readFactoryPhaseRunIdentity>;
+  roots: { "factory-store": string; repository: string };
+} {
+  const runDir = join(input.factoryStore.factoryRunsDir, input.observed.phaseRunId);
+  const identity = readFactoryPhaseRunIdentity(runDir);
+  if (
+    identity.phase !== input.phase ||
+    identity.phaseRunId !== input.observed.phaseRunId ||
+    identity.workItemKey !== input.workItemKey ||
+    identity.projectId !== input.factoryStore.projectId ||
+    resolve(identity.factoryStateRoot) !== resolve(input.factoryStateRoot) ||
+    resolve(input.factoryStore.factoryStateRoot) !== resolve(input.factoryStateRoot)
+  )
+    throw new Error(`Factory ${input.phase} continuation conflicts with phase-run identity`);
+  return {
+    runDir,
+    identity,
+    roots: {
+      "factory-store": input.factoryStore.projectRoot,
+      repository: identity.workspace,
+    },
+  };
+}
+
+function validateContinuationEvidence(
+  events: readonly FactoryLifecycleEvent[],
+  input: Parameters<typeof recordFactoryContinuation>[0],
+  repository: string,
+): void {
+  const candidate = events.find((event) => event.id === input.observed.candidateEventId);
+  const candidateType =
+    input.phase === "planning"
+      ? "planning.candidate.produced"
+      : "implementation.candidate.produced";
+  if (
+    !candidate ||
+    candidate.type !== candidateType ||
+    candidate.phaseRunId !== input.observed.phaseRunId ||
+    candidate.workItemKey !== input.workItemKey
+  )
+    throw new Error(`Factory ${input.phase} continuation candidate identity mismatch`);
+  verifyFactoryArtifactRef(candidate.data.candidate, {
+    "factory-store": input.factoryStore.projectRoot,
+    repository,
+  });
+
+  if (!input.observed.reviewEventId) return;
+  const review = events.find((event) => event.id === input.observed.reviewEventId);
+  const reviewType =
+    input.phase === "planning" ? "planning.review.completed" : "implementation.review.completed";
+  if (
+    !review ||
+    review.type !== reviewType ||
+    review.phaseRunId !== input.observed.phaseRunId ||
+    review.workItemKey !== input.workItemKey ||
+    review.data.candidateEventId !== input.observed.candidateEventId
+  )
+    throw new Error(`Factory ${input.phase} continuation review identity mismatch`);
+  verifyFactoryArtifactRef(review.data.review, {
+    "factory-store": input.factoryStore.projectRoot,
+    repository,
+  });
+  if (review.data.blockingFindings)
+    verifyFactoryArtifactRef(review.data.blockingFindings, {
+      "factory-store": input.factoryStore.projectRoot,
+      repository,
+    });
 }
 
 type FactoryContinuationReactionInput = {

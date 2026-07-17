@@ -8,6 +8,7 @@ import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import {
   deriveFactoryGroveWorkspaceIntent,
   ensureFactoryGroveWorkspace,
+  factoryGroveIntentMatchesPhaseGit,
   type FactoryGroveWorkspaceConfig,
 } from "./factory-grove-workspace.ts";
 import {
@@ -274,11 +275,6 @@ function assertIntentMatchesIdentity(
   intent: ReturnType<typeof deriveFactoryGroveWorkspaceIntent>,
   git: ReturnType<typeof requireFactoryPhaseGit>,
 ): void {
-  const targetMatches =
-    (git.target.mode === "detached" && intent.target.mode === "detached") ||
-    (git.target.mode === "branch" &&
-      intent.target.mode === "branch" &&
-      git.target.branchRef === `refs/heads/${intent.target.branch}`);
-  if (intent.repositoryId !== git.repositoryId || intent.baseSha !== git.baseSha || !targetMatches)
+  if (!factoryGroveIntentMatchesPhaseGit(intent, git))
     throw new FactoryOperationResolutionError("Grove intent conflicts with Factory phase identity");
 }

@@ -42,8 +42,10 @@ CLI
 Hosted operation delivery composes Factory with Grove without moving lifecycle policy:
 
 ```text
-trusted project/work-item targets
-  -> reconcile the canonical reaction
+trusted observed phase request or continuation
+  -> validate observed identities and snapshot controller HEAD
+  -> acquire Grove, create phase context, and append authority
+  -> reconcile only after authority is durable
   -> identifier-only request or bounded wait/stale/attention result
 identifier-only request + trusted project runtime
   -> authenticate phase, work item, action, and completed result
@@ -87,6 +89,7 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-*-action.ts`, phase input/context modules                   | Triage, planning, and implementation action boundaries and immutable evidence                                         |
 | `lib/factory-store.ts`, `lib/factory-locks.ts`, `lib/factory-inspect.ts` | Durable paths, lock ownership, store provenance, and read-only lifecycle inspection                                   |
 | `lib/factory-grove-workspace.ts`                                         | Deterministic Grove lease intent, ensure/reopen, terminal release, and bounded repair                                 |
+| `lib/factory-phase-request.ts`, `lib/factory-hosted-authority.ts`        | Observed phase/continuation validation, pre-request context creation, durable authority, and reconciliation           |
 | `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`            | Identifier-only hosted delivery, authenticated resolution/execution, and reconstructable receipts                     |
 | `lib/factory-operation-reconciliation.ts`                                | Bounded caller-supplied log-to-delivery repair with per-target failure isolation                                      |
 | `lib/factory-inngest-adapter.ts`                                         | Deterministic Factory event IDs, direct sends, chained sends, and hosted function controls                            |
@@ -154,10 +157,11 @@ user data and must not be committed.
 
 ## Current execution model
 
-The CLI still manually steps phase start, continuation, Linear/GitHub
-projections, publication, and merge acknowledgement. The callable hosted runner
-accepts only project/work-item/operation identifiers; trusted runtime owns store
-paths, repository identity, credentials, provider controls, and Grove config.
+The CLI reads and applies phase-start or continuation identities synchronously.
+Hosted adapters preserve those observed identities and use
+`lib/factory-hosted-authority.ts` to record authority before reconciliation. The
+runner accepts only project, work-item, and operation identifiers; trusted
+runtime supplies store, repository, provider, and Grove configuration.
 
 An external host may call `lib/factory-operation-reconciliation.ts` with a
 bounded trusted target list. It returns `delivered`, `waiting`, `stale`, or
@@ -168,7 +172,7 @@ nor discovers or schedules work.
 chained sends. IDs suppress transport duplicates; Factory action identity
 prevents replay. The adapter keeps three retries and a 110-minute action limit.
 The current integration assumes one persistent host and ships no production
-worker or Harness scheduler.
+worker or scheduler. Publication and merge acknowledgement remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

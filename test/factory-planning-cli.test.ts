@@ -11,7 +11,10 @@ import {
 import { publishPlanPullRequest } from "../lib/factory-plan-publication.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
 import type { AgentRunInput } from "../lib/agents.ts";
-import { recordFactoryContinuation } from "../lib/factory-continuation.ts";
+import {
+  observeFactoryContinuation,
+  recordFactoryContinuation,
+} from "../lib/factory-continuation.ts";
 import { readFactoryPhaseRunIdentity } from "../lib/factory-phase-run.ts";
 import { ensureFactoryStoreFormat } from "../lib/factory-store-format.ts";
 import {
@@ -707,7 +710,11 @@ test("publication apply appends once and repairs its Linear projection on retry"
     response: "The accepted external proof is now available.",
     factoryStateRoot: store.factoryStateRoot,
     factoryStore: store,
-    workItem,
+    workItemKey: deriveFactoryWorkItemKey(workItem),
+    observed: observeFactoryContinuation(
+      readFactoryActionEvents(store.factoryStateRoot, deriveFactoryWorkItemKey(workItem)),
+      "planning",
+    ),
   });
   await runOneFactoryPlanningAction(coordinator);
   expect(reviewCount).toBe(2);
