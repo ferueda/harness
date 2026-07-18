@@ -261,17 +261,12 @@ test("orchestrated work preserves authority, routing, and recovery invariants", 
   expect(prose).not.toContain("Keep `projectId` and `environment` under `target`");
 });
 
-test("architect and diagnose issue require explicit human invocation", () => {
+test("architect and diagnose issue disable implicit selection without changing routing", () => {
   for (const name of ["architect", "diagnose-issue"]) {
-    const skill = readFileSync(join(REPO_ROOT, `skills/${name}/SKILL.md`), "utf8");
     const metadata = readFileSync(join(REPO_ROOT, `skills/${name}/agents/openai.yaml`), "utf8");
-    const prose = normalizedProse(skill);
 
-    expect(skill).toContain(`description: Manual-only \`$${name}\` workflow`);
     expect(metadata).toContain("policy:\n  allow_implicit_invocation: false");
-    expect(prose).toContain(`only when the human explicitly invokes \`$${name}\``);
-    expect(prose).toContain("An agent handoff");
-    expect(skill).not.toContain("disable-model-invocation");
+    expect(metadata).toContain(`default_prompt: "Use $${name}`);
   }
 
   const coordinator = readFileSync(join(REPO_ROOT, "skills/planning-workflow/SKILL.md"), "utf8");
@@ -280,27 +275,18 @@ test("architect and diagnose issue require explicit human invocation", () => {
     "utf8",
   );
   const shaping = readFileSync(join(REPO_ROOT, "skills/shape-requirements/SKILL.md"), "utf8");
-  const agentGuidance = readFileSync(join(REPO_ROOT, "AGENTS.md"), "utf8");
+  const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
 
-  for (const content of [coordinator, routing, shaping]) {
-    expect(normalizedProse(content)).toContain(
-      "unless the human explicitly invoked `$diagnose-issue`",
-    );
-  }
-  expect(normalizedProse(agentGuidance)).toContain(
-    "Use `diagnose-issue` only when the human explicitly invokes `$diagnose-issue`",
-  );
   expect(coordinator).toContain(
-    "| Symptom, bug, ticket, or design concern about current code | Focused current-code inspection",
-  );
-  expect(routing).toContain(
-    "| Is this bug/risk real in the code? | focused inspection in the active workflow |",
-  );
-  expect(coordinator).not.toContain(
     "| Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |",
   );
-  expect(shaping).not.toContain(
+  expect(routing).toContain("| Is this bug/risk real in the code? | diagnose |");
+  expect(routing).toContain("| Brief asserts current behavior | shape → diagnose |");
+  expect(shaping).toContain(
     "| `diagnose-issue` | Brief or interpretation asserts current behavior",
+  );
+  expect(architect).toContain(
+    "Route bugs, symptoms, and code-truth questions to `diagnose-issue` first.",
   );
 });
 

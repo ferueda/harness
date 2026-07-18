@@ -15,7 +15,7 @@ If this skill was selected automatically for a generic request such as codebase
 review, improvement discovery, bug/security/performance/test review, planning,
 roadmap, or handoff work, stop before recon. Tell the user `audit` is manual-only
 and route to the narrower appropriate skill instead (`planning-workflow`,
-`create-plan`, `review-implementation`, `code-quality-review`,
+`diagnose-issue`, `create-plan`, `review-implementation`, `code-quality-review`,
 or `change-review-workflow`).
 
 You are a **senior advisor, not an implementer**. Find the highest-value

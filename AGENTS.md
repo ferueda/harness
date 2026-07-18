@@ -52,7 +52,7 @@ Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/REA
 |-------|------|----------|
 | `planning-workflow` | Route intake → shape/validate → handoff → implement → close | — |
 | `shape-requirements` | Gate or interview → confirmed interpretation or brief | `dev/briefs/YYMMDD-short-slug.md` (interview) |
-| `diagnose-issue` | Manual-only evidence-backed problem definition before planning | inline or `dev/issues/YYMMDD-short-slug.md` |
+| `diagnose-issue` | Evidence-backed problem definition before planning | inline or `dev/issues/YYMMDD-short-slug.md` |
 | `architect` | Manual-only repo-grounded design/architecture memo before planning | inline |
 | `audit` | Codebase survey → prioritized handoff plans | `dev/plans/YYMMDD-short-slug.md` |
 | `create-plan` | Scoped plan from todo/spec/issue | `dev/plans/YYMMDD-short-slug.md` |
@@ -60,19 +60,10 @@ Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/REA
 | `plan-review` | Executable one-pass `review-spec` for non-trivial implementation plans | `.harness/runs/reviews/<run-id>/` |
 | `handoff-work` | Transfer context between agents or sessions | inline handoff |
 
-**Shape vs code truth:** use `shape-requirements` when the question is what the
-user wants. Inspect current code inline when the question is what is true in the
-repo. Use `diagnose-issue` only when the human explicitly invokes
-`$diagnose-issue`. Too vague to investigate → gate only, then inspect inline.
+**Shape vs diagnose:** `shape-requirements` when the question is what the user wants. `diagnose-issue` when the question is what is true in the repo. Too vague to investigate → gate only, then diagnose.
 
-**Typical chain** (skip steps per `planning-workflow` routing):
-`shape-requirements` → inline code grounding when needed → `review-spec` →
-`create-plan` → `plan-review` → implementation → `handoff-work` →
-`change-review-workflow`.
-Use `architect` and `diagnose-issue` only when the human explicitly invokes
-`$architect` or `$diagnose-issue` in the current conversation. Neither may be
-selected from an agent handoff or another skill. `architect` writes no artifacts
-and hands back an inline memo.
+**Typical chain** (skip steps per `planning-workflow` routing): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `plan-review` → implementation → `handoff-work` → `change-review-workflow`.
+Use `architect` only when explicitly invoked for ideation/research/solution design; it writes no artifacts and hands back an inline memo.
 
 **Routing reference:** `planning-workflow/references/routing.md` — intake, skip rules, scenario fixtures, pass criteria.
 
