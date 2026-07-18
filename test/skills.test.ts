@@ -261,14 +261,16 @@ test("orchestrated work preserves authority, routing, and recovery invariants", 
   expect(prose).not.toContain("Keep `projectId` and `environment` under `target`");
 });
 
-test("architect and diagnose issue disable implicit selection without changing routing", () => {
-  for (const name of ["architect", "diagnose-issue"]) {
-    const metadata = readFileSync(join(REPO_ROOT, `skills/${name}/agents/openai.yaml`), "utf8");
-
-    expect(metadata).toContain("policy:\n  allow_implicit_invocation: false");
-    expect(metadata).toContain(`default_prompt: "Use $${name}`);
-  }
-
+test("architect stays explicit while diagnosis requires explicit or coordinator entry", () => {
+  const architectMetadata = readFileSync(
+    join(REPO_ROOT, "skills/architect/agents/openai.yaml"),
+    "utf8",
+  );
+  const diagnosisMetadata = readFileSync(
+    join(REPO_ROOT, "skills/diagnose-issue/agents/openai.yaml"),
+    "utf8",
+  );
+  const diagnosis = readFileSync(join(REPO_ROOT, "skills/diagnose-issue/SKILL.md"), "utf8");
   const coordinator = readFileSync(join(REPO_ROOT, "skills/planning-workflow/SKILL.md"), "utf8");
   const routing = readFileSync(
     join(REPO_ROOT, "skills/planning-workflow/references/routing.md"),
@@ -276,17 +278,38 @@ test("architect and diagnose issue disable implicit selection without changing r
   );
   const shaping = readFileSync(join(REPO_ROOT, "skills/shape-requirements/SKILL.md"), "utf8");
   const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
+  const agentGuidance = readFileSync(join(REPO_ROOT, "AGENTS.md"), "utf8");
 
+  expect(architectMetadata).toContain("policy:\n  allow_implicit_invocation: false");
+  expect(architectMetadata).toContain('default_prompt: "Use $architect');
+  expect(diagnosisMetadata).toContain('default_prompt: "Use $diagnose-issue');
+  expect(diagnosisMetadata).not.toContain("allow_implicit_invocation: false");
+  expect(diagnosis).toContain(
+    "Do not select it directly from a generic bug, ticket, symptom, or design concern",
+  );
+  expect(normalizedProse(diagnosis)).toContain("the human explicitly invoked `$diagnose-issue`");
+  expect(normalizedProse(diagnosis)).toContain(
+    "an active documented workflow routed the current request here",
+  );
   expect(coordinator).toContain(
     "| Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |",
   );
+  expect(coordinator).toContain("`../diagnose-issue/SKILL.md`");
+  expect(normalizedProse(coordinator)).toContain(
+    "Do not imitate the child skill's output without loading its instructions",
+  );
   expect(routing).toContain("| Is this bug/risk real in the code? | diagnose |");
   expect(routing).toContain("| Brief asserts current behavior | shape → diagnose |");
+  expect(routing).toContain(
+    '| 3 | "JIRA-442: login 500 when email is empty" | `planning-workflow` loads `diagnose-issue` |',
+  );
   expect(shaping).toContain(
     "| `diagnose-issue` | Brief or interpretation asserts current behavior",
   );
-  expect(architect).toContain(
-    "Route bugs, symptoms, and code-truth questions to `diagnose-issue` first.",
+  expect(shaping).toContain("`../diagnose-issue/SKILL.md`");
+  expect(architect).toContain("read `../diagnose-issue/SKILL.md` completely");
+  expect(normalizedProse(agentGuidance)).toContain(
+    "generic bugs, tickets, symptoms, and code-truth questions enter through `planning-workflow`",
   );
 });
 

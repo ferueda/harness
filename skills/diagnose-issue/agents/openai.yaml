@@ -2,5 +2,3 @@ interface:
   display_name: "Diagnose Issue"
   short_description: "Research and define codebase issues"
   default_prompt: "Use $diagnose-issue to research this issue in the codebase and produce an evidence-backed problem definition."
-policy:
-  allow_implicit_invocation: false

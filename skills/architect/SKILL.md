@@ -18,8 +18,10 @@ an inline architecture memo the user can keep, discard, or turn into a plan.
   breakdowns.
 - Ask the user only when ambiguity materially changes the architecture. Include
   a recommended answer and the real tradeoff.
-- Route bugs, symptoms, and code-truth questions to `diagnose-issue` first. Use
-  the `shape-requirements` gate when unclear product intent prevents a choice.
+- Route bugs, symptoms, and code-truth questions to `diagnose-issue` first:
+  read `../diagnose-issue/SKILL.md` completely and follow it instead of
+  diagnosing inline. Use the `shape-requirements` gate when unclear product
+  intent prevents a choice.
 
 ## Workflow
 

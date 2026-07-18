@@ -26,6 +26,12 @@ auto-route generic planning prompts to it.
 | Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing implementation plans; otherwise `review-spec` or `create-plan` (see step 2) |
 | Approved plan ready to execute | implementation in the current or delegated session |
 
+Treat the selected route as an executable handoff. Read the sibling skill's
+`SKILL.md` completely and follow it in the current workflow; resolve sibling
+paths from this skill's directory (for example,
+`../diagnose-issue/SKILL.md`). Do not imitate the child skill's output without
+loading its instructions.
+
 **diagnose-issue** when the question is what is true in the repo. **shape-requirements** when the question is what the user wants.
 
 Too vague to investigate → `shape-requirements` **gate** only (not interview), then `diagnose-issue`.
