@@ -235,7 +235,6 @@ test("stale delivery returns without another event", async () => {
 });
 
 test.each([
-  "phase-command",
   "human",
   "plan-publication",
   "plan-merge",

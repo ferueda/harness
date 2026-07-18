@@ -286,9 +286,10 @@ test("new triage action invokes one handler and returns the next reaction", asyn
   expect(result.meta).toMatchObject({ status: "completed" });
   expect(runTriage).toHaveBeenCalledOnce();
   expect(result.action).toMatchObject({ handler: "triageWorkItem", attempt: 1 });
-  expect(result.next).toEqual({
-    kind: "wait",
-    reason: "phase-command",
+  expect(result.next).toMatchObject({
+    kind: "start-phase",
+    phase: "planning",
+    event: { id: result.action.eventId, type: "triage.work_item.completed" },
     command: `harness factory planning run --workspace ${workspace} --linear-issue ENG-37 --apply`,
   });
 });

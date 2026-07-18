@@ -18,7 +18,6 @@ import {
   FactoryLifecycleEventSchema,
   type FactoryLifecycleEvent,
 } from "../lib/factory-lifecycle-events.ts";
-import { FactoryLifecycleStateSchema } from "../lib/factory-state-machine.ts";
 
 const BIN = join(process.cwd(), "bin/harness.ts");
 const ref = { base: "factory-store" as const, path: "inputs/item.json", sha256: "0".repeat(64) };
@@ -120,66 +119,38 @@ test("reads an existing event log without creating a lifecycle lock", () => {
 test.each([
   [
     "idle starts triage",
-    FactoryLifecycleStateSchema.parse({
-      projectionVersion: 1,
-      workItemKey: "item-1",
-      lastEventId: "import",
-      updatedAt: "2026-07-13T00:00:00.000Z",
-      phase: "idle",
-      status: "idle",
-    }),
-    { kind: "wait", reason: "phase-command" } as const,
+    {
+      kind: "start-phase",
+      phase: "triage",
+      event: importedEvent("item-1"),
+    } as const,
     "harness factory triage --workspace /repo --item-file 'item file.json' --factory-store-root '/store root'",
   ],
   [
     "triage routes to planning",
-    FactoryLifecycleStateSchema.parse({
-      projectionVersion: 1,
-      workItemKey: "item-1",
-      lastEventId: "triage",
-      updatedAt: "2026-07-13T00:00:00.000Z",
-      phase: "triage",
-      status: "routed",
-      phaseRunId: "triage-run",
-      route: "ready-to-plan",
-    }),
-    { kind: "wait", reason: "phase-command" } as const,
+    {
+      kind: "start-phase",
+      phase: "planning",
+      event: triageCompleted("item-1", "triage.requested:triage-run", "ready-to-plan"),
+    } as const,
     "harness factory planning run --workspace /repo --item-file 'item file.json' --factory-store-root '/store root'",
   ],
   [
     "approved planning starts implementation",
-    FactoryLifecycleStateSchema.parse({
-      projectionVersion: 1,
-      workItemKey: "item-1",
-      lastEventId: "plan",
-      updatedAt: "2026-07-13T00:00:00.000Z",
-      phase: "planning",
-      status: "approved",
-      phaseRunId: "planning-run",
-      candidateAttempt: 1,
-      reviewRound: 1,
-      publicationMode: "local",
-      outputPlan: "dev/plans/item.md",
-    }),
-    { kind: "wait", reason: "phase-command" } as const,
+    {
+      kind: "start-phase",
+      phase: "implementation",
+      event: planningReviewCompleted("item-1"),
+    } as const,
     "harness factory implementation run --workspace /repo --item-file 'item file.json' --factory-store-root '/store root'",
   ],
   [
     "human and terminal waits stay commandless",
-    FactoryLifecycleStateSchema.parse({
-      projectionVersion: 1,
-      workItemKey: "item-1",
-      lastEventId: "wait",
-      updatedAt: "2026-07-13T00:00:00.000Z",
-      phase: "triage",
-      status: "needs-human",
-      phaseRunId: "triage-run",
-    }),
     { kind: "wait", reason: "human" } as const,
     undefined,
   ],
-])("decorates only mechanically selectable reactions: %s", (_name, state, reaction, command) => {
-  const decorated = decorateFactoryReaction(reaction, state, {
+])("decorates only mechanically selectable reactions: %s", (_name, reaction, command) => {
+  const decorated = decorateFactoryReaction(reaction, {
     workspace: "/repo",
     itemFile: "item file.json",
     factoryStoreRoot: "/store root",
@@ -517,7 +488,9 @@ type ActionEventType =
   | "implementation.review.completed"
   | "factory.action.failed";
 
-function importedEvent(workItemKey: string): FactoryLifecycleEvent {
+function importedEvent(
+  workItemKey: string,
+): Extract<FactoryLifecycleEvent, { type: "work_item.imported" }> {
   return FactoryLifecycleEventSchema.parse({
     version: 1,
     id: "work_item.imported:fixture",
@@ -525,7 +498,7 @@ function importedEvent(workItemKey: string): FactoryLifecycleEvent {
     workItemKey,
     occurredAt: at(0),
     data: { source: "file" },
-  });
+  }) as Extract<FactoryLifecycleEvent, { type: "work_item.imported" }>;
 }
 
 function triageRequested(workItemKey: string, predecessor: string): FactoryLifecycleEvent {
@@ -548,7 +521,7 @@ function triageCompleted(
   workItemKey: string,
   predecessor: string,
   route: "ready-to-plan" | "ready-to-implement",
-): FactoryLifecycleEvent {
+): Extract<FactoryLifecycleEvent, { type: "triage.work_item.completed" }> {
   return actionEvent({
     key: workItemKey,
     type: "triage.work_item.completed",
@@ -559,7 +532,29 @@ function triageCompleted(
     at: 2,
     label: `triage-${route}`,
     data: { route, rationale: `route ${route}` },
-  });
+  }) as Extract<FactoryLifecycleEvent, { type: "triage.work_item.completed" }>;
+}
+
+function planningReviewCompleted(
+  workItemKey: string,
+): Extract<FactoryLifecycleEvent, { type: "planning.review.completed" }> {
+  const candidateEventId = "planning.candidate.produced:planning-run:1";
+  return actionEvent({
+    key: workItemKey,
+    type: "planning.review.completed",
+    phaseRunId: "planning-run",
+    handler: "reviewPlanCandidate",
+    attempt: 1,
+    causationEventId: candidateEventId,
+    at: 5,
+    label: "planning-review-pass",
+    data: {
+      candidateEventId,
+      candidateAttempt: 1,
+      verdict: "pass",
+      review: artifactRef("planning/review-pass"),
+    },
+  }) as Extract<FactoryLifecycleEvent, { type: "planning.review.completed" }>;
 }
 
 function planningRequested(workItemKey: string, predecessor: string): FactoryLifecycleEvent {

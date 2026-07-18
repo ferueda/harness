@@ -53,6 +53,10 @@ export async function runHostedFactoryOperation(input: {
   const request = parseRequest(input.request);
   const { runtime } = input;
   authenticateRuntime(request, runtime);
+  const before = resolve(runtime.factoryStore, request);
+  const early = receiptWithoutExecution(runtime.factoryStore, request, before);
+  if (early) return early;
+
   const phaseRunDir = join(runtime.factoryStore.factoryRunsDir, request.operation.phaseRunId);
   const identity = readFactoryPhaseRunIdentity(phaseRunDir);
   const gitIdentity = requireFactoryPhaseGit(identity);
@@ -65,10 +69,6 @@ export async function runHostedFactoryOperation(input: {
     phaseRequest,
     runtime,
   );
-
-  const before = resolve(runtime.factoryStore, request);
-  const early = receiptWithoutExecution(runtime.factoryStore, request, before);
-  if (early) return early;
 
   if (phaseRequest.data.expectedPredecessor === null)
     throw new FactoryOperationResolutionError(

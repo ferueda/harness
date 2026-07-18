@@ -261,7 +261,6 @@ async function runPlanningContinuationCommand(options: {
         phaseRunId: result.phaseRunId,
         next: decorateFactoryReaction(
           result.next,
-          result.state,
           planningCommandProvenance({
             workspace,
             itemFile: options.itemFile,
@@ -390,7 +389,7 @@ export async function runOneFactoryPlanningAction(input: {
       }
       return {
         phaseRunId: state.phaseRunId,
-        next: decorateFactoryReaction(reaction!, state, planningCommandProvenance(input))!,
+        next: decorateFactoryReaction(reaction!, planningCommandProvenance(input))!,
         linearApplied,
       };
     }
@@ -492,7 +491,6 @@ export async function runOneFactoryPlanningAction(input: {
     action: { handler: reaction.handler, attempt: reaction.attempt, eventId: handled.event.id },
     next: decorateFactoryReaction(
       decideNextFactoryAction(handled.state, handled.event),
-      handled.state,
       planningCommandProvenance(input),
     )!,
     linearApplied,
@@ -661,18 +659,14 @@ export async function recordPlanningPublication(
       formatFactoryActionOutput({
         phase: "planning",
         phaseRunId: result.phaseRunId,
-        next: decorateFactoryReaction(
-          decideNextFactoryAction(result.state, result.event),
-          result.state,
-          {
-            workspace,
-            linearIssue: options.linearIssue,
-            ...(options.factoryStoreRoot ? { factoryStoreRoot: options.factoryStoreRoot } : {}),
-            ...(options.factoryStoreProjectId
-              ? { factoryStoreProjectId: options.factoryStoreProjectId }
-              : {}),
-          },
-        )!,
+        next: decorateFactoryReaction(decideNextFactoryAction(result.state, result.event), {
+          workspace,
+          linearIssue: options.linearIssue,
+          ...(options.factoryStoreRoot ? { factoryStoreRoot: options.factoryStoreRoot } : {}),
+          ...(options.factoryStoreProjectId
+            ? { factoryStoreProjectId: options.factoryStoreProjectId }
+            : {}),
+        })!,
         linearApplied: result.linearApplied,
       }),
       null,

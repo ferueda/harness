@@ -179,7 +179,6 @@ export async function runImplementationPublicationCommand(
         phaseRunId: result.phaseRunId,
         next: decorateFactoryReaction(
           decideNextFactoryAction(result.state, result.event),
-          result.state,
           implementationCommandProvenance({
             workspace,
             itemFile: options.itemFile,
@@ -323,7 +322,6 @@ async function runImplementationContinuationCommand(options: {
         phaseRunId: result.phaseRunId,
         next: decorateFactoryReaction(
           result.next,
-          result.state,
           implementationCommandProvenance({
             workspace,
             itemFile: options.itemFile,
@@ -417,7 +415,7 @@ export async function runOneFactoryImplementationAction(input: {
       }
       return {
         phaseRunId: state.phaseRunId,
-        next: decorateFactoryReaction(reaction!, state, implementationCommandProvenance(input))!,
+        next: decorateFactoryReaction(reaction!, implementationCommandProvenance(input))!,
         linearApplied,
       };
     }
@@ -592,7 +590,6 @@ export async function runOneFactoryImplementationAction(input: {
     action: { handler: reaction.handler, attempt: reaction.attempt, eventId: handled.event.id },
     next: decorateFactoryReaction(
       decideNextFactoryAction(handled.state, handled.event),
-      handled.state,
       implementationCommandProvenance(input),
     )!,
     linearApplied,

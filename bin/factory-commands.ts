@@ -196,7 +196,7 @@ function inspectFactoryCommand(options: FactoryInspectOptions) {
   });
   return {
     ...inspection,
-    reaction: decorateFactoryReaction(inspection.reaction, inspection.state, {
+    reaction: decorateFactoryReaction(inspection.reaction, {
       workspace,
       ...(options.itemFile ? { itemFile: options.itemFile } : {}),
       ...(options.linearIssue ? { linearIssue: options.linearIssue } : {}),
@@ -625,7 +625,7 @@ export async function runFactoryTriageWithLinearApply(input: {
   | {
       waiting: true;
       phaseRunId?: string;
-      next: Extract<FactoryReaction, { kind: "wait" }>;
+      next: Exclude<FactoryReaction, { kind: "invoke" }>;
     }
 > {
   if (input.dryRun) assertFactoryStoreFormat(input.factoryStateRoot);
@@ -634,7 +634,6 @@ export async function runFactoryTriageWithLinearApply(input: {
     : readFactoryActionEvents(input.factoryStateRoot, deriveFactoryWorkItemKey(input.workItem));
   const existingLatest = existingEvents.at(-1);
   const existingState = reduceFactoryLifecycleEvents(existingEvents);
-  let currentState = existingState;
   const existingReaction =
     existingLatest && existingState
       ? decideNextFactoryAction(existingState, existingLatest)
@@ -648,7 +647,8 @@ export async function runFactoryTriageWithLinearApply(input: {
     !input.dryRun &&
     !input.rerun &&
     existingLatest?.type !== "work_item.imported" &&
-    existingReaction?.kind === "wait"
+    existingReaction &&
+    existingReaction.kind !== "invoke"
   ) {
     // Validate terminal truth on every retry; explicit apply may also repair its projection.
     if (terminalProjectionRecoverable) {
@@ -658,11 +658,10 @@ export async function runFactoryTriageWithLinearApply(input: {
     return {
       waiting: true,
       ...(existingLatest?.phaseRunId ? { phaseRunId: existingLatest.phaseRunId } : {}),
-      next: decorateFactoryReaction(
-        existingReaction,
-        existingState,
-        triageCommandProvenance(input),
-      ) as Extract<FactoryReaction, { kind: "wait" }>,
+      next: decorateFactoryReaction(existingReaction, triageCommandProvenance(input)) as Exclude<
+        FactoryReaction,
+        { kind: "invoke" }
+      >,
     };
   }
   const activeTriage =
@@ -744,7 +743,6 @@ export async function runFactoryTriageWithLinearApply(input: {
         throw new Error("New Factory triage request did not produce an action reaction");
       }
       reaction = requestedReaction;
-      currentState = requested.state;
     }
     if (!ctx.dryRun && (!reaction || reaction.kind !== "invoke")) {
       throw new Error("Factory triage has no invokable action");
@@ -816,7 +814,6 @@ export async function runFactoryTriageWithLinearApply(input: {
         meta = metaValue;
       }
       terminalAction = appended.event;
-      currentState = appended.state;
       next = decideNextFactoryAction(appended.state, appended.event);
     }
     let completedTriage: FactoryTriageOutput | undefined;
@@ -869,11 +866,7 @@ export async function runFactoryTriageWithLinearApply(input: {
         attempt: 1,
         eventId: terminalAction?.id ?? `triage.completed:${ctx.runId}`,
       },
-      next: decorateFactoryReaction(
-        next,
-        currentState,
-        triageCommandProvenance(input, ctx.workspace),
-      )!,
+      next: decorateFactoryReaction(next, triageCommandProvenance(input, ctx.workspace))!,
       ...(startedUpdate ? { startedUpdate } : {}),
       ...(terminalUpdate ? { terminalUpdate } : {}),
       ...(terminalApplyError ? { terminalApplyError } : {}),
@@ -987,7 +980,6 @@ async function recoverTriageActionResult(input: {
       },
       next: decorateFactoryReaction(
         decideNextFactoryAction(state, latest),
-        state,
         triageCommandProvenance(input),
       )!,
       ...(terminalUpdate ? { terminalUpdate } : {}),

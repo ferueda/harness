@@ -10,6 +10,7 @@ import {
   appendFactoryActionEvent,
 } from "./factory-lifecycle-kernel.ts";
 import * as lifecycle from "./factory-lifecycle-kernel.ts";
+import type { FactoryLifecycleEvent } from "./factory-lifecycle-events.ts";
 import { factoryWorkItemLockPath } from "./factory-locks.ts";
 import * as stateMachine from "./factory-state-machine.ts";
 import {
@@ -111,6 +112,37 @@ test("rediscovers the exact identifier-only operation without advancing Factory"
   expect(durableState(value)).toEqual(before);
 });
 
+test("returns an exact phase start without phase-run identity or operation delivery", async () => {
+  const value = fixture();
+  const workItemKey = "linear:IDLE-1";
+  const event: FactoryLifecycleEvent = {
+    version: 1,
+    id: `work_item.imported:${workItemKey}`,
+    type: "work_item.imported",
+    workItemKey,
+    occurredAt: "2026-07-17T00:00:00.000Z",
+    data: { source: "linear" },
+  };
+  appendFactoryActionEvent({
+    factoryStateRoot: value.factoryStateRoot,
+    event,
+    expectedLastEventId: null,
+  });
+  const delivered = vi.fn<FactoryOperationDelivery>(async () => undefined);
+
+  const results = await reconcileFactoryOperations([{ ...target(value), workItemKey }], delivered);
+
+  expect(results).toEqual([
+    {
+      outcome: "phase-start",
+      projectId: value.projectId,
+      workItemKey,
+      reaction: { kind: "start-phase", phase: "triage", event },
+    },
+  ]);
+  expect(delivered).not.toHaveBeenCalled();
+});
+
 test("a lost send response leaves state unchanged and regenerates the same action", async () => {
   const value = fixture();
   seedStaleLock(value);
@@ -180,12 +212,13 @@ test("does not deliver a superseded operation found by the final state read", as
   read.mockRestore();
 });
 
-test("leaves waiting and terminal work items untouched", async () => {
-  const phaseCommand = fixture();
+test("leaves phase-start and terminal work items untouched", async () => {
+  const phaseStart = fixture();
+  const completed = phaseStart.completed();
   appendFactoryActionEvent({
-    factoryStateRoot: phaseCommand.factoryStateRoot,
-    event: phaseCommand.completed(),
-    expectedLastEventId: phaseCommand.requested.id,
+    factoryStateRoot: phaseStart.factoryStateRoot,
+    event: completed,
+    expectedLastEventId: phaseStart.requested.id,
   });
   const failed = fixture();
   const terminalFailure = {
@@ -197,24 +230,30 @@ test("leaves waiting and terminal work items untouched", async () => {
     event: terminalFailure,
     expectedLastEventId: failed.requested.id,
   });
-  const before = [durableState(phaseCommand), durableState(failed)];
+  const before = [durableState(phaseStart), durableState(failed)];
   const delivered = vi.fn<FactoryOperationDelivery>(async () => undefined);
 
-  const results = await reconcileFactoryOperations(
-    [target(phaseCommand), target(failed)],
-    delivered,
-  );
+  const results = await reconcileFactoryOperations([target(phaseStart), target(failed)], delivered);
 
-  expect(results.map((result) => [result.outcome, result.reason])).toEqual([
-    ["waiting", "phase-command"],
-    ["waiting", "failed"],
+  expect(results).toEqual([
+    {
+      outcome: "phase-start",
+      projectId: phaseStart.projectId,
+      workItemKey: phaseStart.workItemKey,
+      reaction: { kind: "start-phase", phase: "planning", event: completed },
+    },
+    {
+      outcome: "waiting",
+      projectId: failed.projectId,
+      workItemKey: failed.workItemKey,
+      reason: "failed",
+    },
   ]);
   expect(delivered).not.toHaveBeenCalled();
-  expect([durableState(phaseCommand), durableState(failed)]).toEqual(before);
+  expect([durableState(phaseStart), durableState(failed)]).toEqual(before);
 });
 
 test.each([
-  "phase-command",
   "human",
   "plan-publication",
   "plan-merge",

@@ -272,13 +272,21 @@ test("conditionally appends an authenticated result and recovers idempotently", 
   const event = completedEvent(value);
   writeFactoryActionResult(actionDir(value), event);
   const first = recoverFixture(value);
-  expect(first).toEqual({ event, reaction: { kind: "wait", reason: "phase-command" } });
+  expect(first).toEqual({
+    event,
+    reaction: { kind: "start-phase", phase: "planning", event },
+  });
   expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey).map(({ id }) => id)).toEqual([
     "import:item-1",
     value.requested.id,
     event.id,
   ]);
-  expect(resolveFixture(value)).toMatchObject({ status: "completed", eventRecorded: true });
+  expect(resolveFixture(value)).toEqual({
+    status: "stale",
+    operation: value.operation,
+    observedEventId: event.id,
+    reaction: { kind: "start-phase", phase: "planning", event },
+  });
   expect(recoverFixture(value)).toEqual(first);
   expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey)).toHaveLength(3);
 });
@@ -381,7 +389,7 @@ test("distinguishes a stale operation from the current invocation", () => {
   });
 });
 
-test("returns wait when durable state has no invocation", () => {
+test("treats an old operation at a phase-start boundary as stale", () => {
   const value = fixture();
   const event = completedEvent(value);
   appendFactoryActionEvent({
@@ -391,9 +399,9 @@ test("returns wait when durable state has no invocation", () => {
   });
 
   expect(resolveFixture(value)).toMatchObject({
-    status: "wait",
+    status: "stale",
     observedEventId: event.id,
-    reaction: { kind: "wait", reason: "phase-command" },
+    reaction: { kind: "start-phase", phase: "planning", event },
   });
 });
 
@@ -467,7 +475,7 @@ test("executes the authenticated triage handler once and returns its persisted r
   expect(readFactoryActionEvents(value.factoryStateRoot, workItemKey)).toHaveLength(3);
 });
 
-test("rejects stale and waiting operations before invoking a provider", async () => {
+test("rejects stale and phase-start operations before invoking a provider", async () => {
   const staleValue = fixture();
   const providerRun = vi.fn<Agent["run"]>();
   const stale = createFactoryOperationRef({
@@ -506,7 +514,7 @@ test("rejects stale and waiting operations before invoking a provider", async ()
       agentProviderFactory: () => ({ name: "cursor", run: providerRun }),
       triage: { nextLiveRunRequiresRerun: true },
     }),
-  ).rejects.toThrow(/waiting/);
+  ).rejects.toThrow(/phase boundary/);
   expect(providerRun).not.toHaveBeenCalled();
   expect(durableFiles(waitingValue.projectRoot)).toEqual(beforeWait);
 });

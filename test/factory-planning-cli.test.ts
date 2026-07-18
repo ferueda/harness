@@ -48,7 +48,7 @@ test("planning uses the shared one-action output contract", () => {
 });
 
 test.each([
-  { mode: "local" as const, linearIssue: undefined, expectedWait: "phase-command" },
+  { mode: "local" as const, linearIssue: undefined, expectedWait: undefined },
   {
     mode: "pull-request" as const,
     linearIssue: "ENG-123",
@@ -127,7 +127,11 @@ test.each([
   const reviewed = await runOneFactoryPlanningAction(input);
   expect(reviewed.phaseRunId).toBe(candidate.phaseRunId);
   expect(reviewed.action).toMatchObject({ handler: "reviewPlanCandidate", attempt: 1 });
-  expect(reviewed.next).toMatchObject({ kind: "wait", reason: testCase.expectedWait });
+  expect(reviewed.next).toMatchObject(
+    testCase.expectedWait
+      ? { kind: "wait", reason: testCase.expectedWait }
+      : { kind: "start-phase", phase: "implementation" },
+  );
   expect(calls).toHaveLength(2);
   expect(existsSync(join(workspace, "dev/plans/item.md"))).toBe(testCase.mode === "local");
 });

@@ -96,6 +96,7 @@ export const FactoryOperationReceiptSchema = z.discriminatedUnion("outcome", [
 export type FactoryOperationReceipt = z.infer<typeof FactoryOperationReceiptSchema>;
 
 type InvokeReaction = Extract<FactoryReaction, { kind: "invoke" }>;
+type StartPhaseReaction = Extract<FactoryReaction, { kind: "start-phase" }>;
 type WaitReaction = Extract<FactoryReaction, { kind: "wait" }>;
 
 export type FactoryOperationResolution =
@@ -109,7 +110,7 @@ export type FactoryOperationResolution =
   | {
       status: "stale";
       operation: FactoryOperationRef;
-      reaction: InvokeReaction;
+      reaction: InvokeReaction | StartPhaseReaction;
       observedEventId: string;
     }
   | {
@@ -291,6 +292,17 @@ export function resolveFactoryOperation(input: {
   workItemKey: string;
   operation: FactoryOperationRef;
 }): FactoryOperationResolution {
+  const observedOperation = authenticateOperationKey(input.operation);
+  authenticateOperationScope(input);
+  const boundary = tryReadCurrentReaction(input.factoryStateRoot, input.workItemKey);
+  if (boundary?.reaction.kind === "start-phase")
+    return {
+      status: "stale",
+      operation: observedOperation,
+      reaction: boundary.reaction,
+      observedEventId: boundary.latest.id,
+    };
+
   const operation = authenticateOperationIdentity(input);
   const projectRoot = resolve(input.projectRoot);
   const factoryStateRoot = resolve(input.factoryStateRoot);
@@ -303,31 +315,8 @@ export function resolveFactoryOperation(input: {
     operation.handler,
     operation.actionKey,
   );
-  if (existsSync(factoryActionResultPath(actionDir))) {
-    const event = readResult(actionDir);
-    assertCompletedIdentity(event, input.workItemKey, operation);
-    try {
-      authenticateFactoryActionResult({
-        projectRoot: input.projectRoot,
-        factoryStateRoot: input.factoryStateRoot,
-        workItemKey: input.workItemKey,
-        actionDir,
-        workspaceRef: input.workspaceRef,
-        factoryStore: input.factoryStore,
-        handler: operation.handler,
-        event,
-      });
-    } catch (cause) {
-      throw new FactoryOperationResolutionError(
-        "Factory operation result evidence failed authentication",
-        { cause },
-      );
-    }
-    const eventRecorded = readFactoryActionEvents(factoryStateRoot, input.workItemKey, {
-      mode: "inspection",
-    }).some((candidate) => candidate.id === event.id);
-    return { status: "completed", operation, event, eventRecorded };
-  }
+  const completed = readCompletedResolution(input, operation, actionDir);
+  if (completed) return completed;
 
   const events = readFactoryActionEvents(factoryStateRoot, input.workItemKey, {
     mode: "inspection",
@@ -340,6 +329,8 @@ export function resolveFactoryOperation(input: {
   const reaction = decideNextFactoryAction(state, latest);
   if (reaction.kind === "wait")
     return { status: "wait", operation, reaction, observedEventId: latest.id };
+  if (reaction.kind === "start-phase")
+    return { status: "stale", operation, reaction, observedEventId: latest.id };
   if (matchesReaction(operation, latest.phaseRunId, reaction)) {
     return { status: "current", operation, reaction };
   }
@@ -360,8 +351,19 @@ export function recoverCompletedFactoryOperation(input: {
   reaction: FactoryReaction;
   next?: FactoryOperationRequest;
 } {
-  const resolution = resolveFactoryOperation(input);
-  if (resolution.status !== "completed")
+  const operation = authenticateOperationIdentity(input);
+  const actionDir = join(
+    resolve(input.projectRoot),
+    "runs",
+    "factory",
+    operation.phaseRunId,
+    "actions",
+    String(operation.attempt),
+    operation.handler,
+    operation.actionKey,
+  );
+  const resolution = readCompletedResolution(input, operation, actionDir);
+  if (!resolution)
     throw new FactoryOperationResolutionError(
       "Factory operation has no completed result to recover",
     );
@@ -395,10 +397,7 @@ function authenticateOperationIdentity(input: {
   operation: FactoryOperationRef;
   runsDir?: string;
 }): FactoryOperationRef {
-  const operation = parseOperation(input.operation);
-  if (operation.actionKey !== factoryActionKey(operation)) {
-    throw new FactoryOperationResolutionError("Factory operation action identity mismatch");
-  }
+  const operation = authenticateOperationKey(input.operation);
   const runDir = join(
     resolve(input.runsDir ?? join(input.projectRoot, "runs", "factory")),
     operation.phaseRunId,
@@ -414,6 +413,29 @@ function authenticateOperationIdentity(input: {
     throw new FactoryOperationResolutionError("Factory operation phase-run identity mismatch");
   }
   return operation;
+}
+
+function authenticateOperationKey(value: FactoryOperationRef): FactoryOperationRef {
+  const operation = parseOperation(value);
+  if (operation.actionKey !== factoryActionKey(operation))
+    throw new FactoryOperationResolutionError("Factory operation action identity mismatch");
+  return operation;
+}
+
+function authenticateOperationScope(input: {
+  projectId: string;
+  projectRoot: string;
+  factoryStateRoot: string;
+  workspaceRef: string;
+  factoryStore: FactoryStoreMeta;
+}): void {
+  if (
+    input.projectId !== input.factoryStore.projectId ||
+    resolve(input.projectRoot) !== resolve(input.factoryStore.projectRoot) ||
+    resolve(input.factoryStateRoot) !== resolve(input.factoryStore.factoryStateRoot) ||
+    input.workspaceRef !== input.factoryStore.repo.id
+  )
+    throw new FactoryOperationResolutionError("Factory operation phase-run identity mismatch");
 }
 
 function requireCurrentInvoke(
@@ -435,10 +457,59 @@ function requireCurrentInvoke(
     throw new FactoryOperationResolutionError(
       reaction.kind === "wait"
         ? "Factory operation is waiting and cannot be invoked"
-        : "Factory operation is stale and cannot be invoked",
+        : reaction.kind === "start-phase"
+          ? "Factory operation reached a phase boundary and cannot be invoked"
+          : "Factory operation is stale and cannot be invoked",
     );
   }
   return reaction;
+}
+
+function tryReadCurrentReaction(factoryStateRoot: string, workItemKey: string) {
+  const events = readFactoryActionEvents(factoryStateRoot, workItemKey, {
+    mode: "inspection",
+  });
+  const latest = events.at(-1);
+  const state = reduceFactoryLifecycleEvents(events);
+  if (!latest || !state) return undefined;
+  return { latest, reaction: decideNextFactoryAction(state, latest) };
+}
+
+function readCompletedResolution(
+  input: {
+    projectRoot: string;
+    factoryStateRoot: string;
+    workspaceRef: string;
+    factoryStore: FactoryStoreMeta;
+    workItemKey: string;
+  },
+  operation: FactoryOperationRef,
+  actionDir: string,
+): Extract<FactoryOperationResolution, { status: "completed" }> | undefined {
+  if (!existsSync(factoryActionResultPath(actionDir))) return undefined;
+  const event = readResult(actionDir);
+  assertCompletedIdentity(event, input.workItemKey, operation);
+  try {
+    authenticateFactoryActionResult({
+      projectRoot: input.projectRoot,
+      factoryStateRoot: input.factoryStateRoot,
+      workItemKey: input.workItemKey,
+      actionDir,
+      workspaceRef: input.workspaceRef,
+      factoryStore: input.factoryStore,
+      handler: operation.handler,
+      event,
+    });
+  } catch (cause) {
+    throw new FactoryOperationResolutionError(
+      "Factory operation result evidence failed authentication",
+      { cause },
+    );
+  }
+  const eventRecorded = readFactoryActionEvents(input.factoryStateRoot, input.workItemKey, {
+    mode: "inspection",
+  }).some((candidate) => candidate.id === event.id);
+  return { status: "completed", operation, event, eventRecorded };
 }
 
 function parseOperation(value: FactoryOperationRef): FactoryOperationRef {

@@ -7,7 +7,6 @@ describe("Factory manual action output", () => {
     ["complete", "complete"],
     ["human", "waiting"],
     ["plan-merge", "waiting"],
-    ["phase-command", "waiting"],
     ["failed", "failed"],
   ] as const)("maps %s waits to %s", (reason, outcome) => {
     expect(
@@ -31,7 +30,6 @@ describe("Factory manual action output", () => {
         scheduling: "retry",
         reason: "retryable-failure",
       },
-      null,
       { workspace: "/repo", linearIssue: "ENG-1" },
     );
     expect(reaction).toMatchObject({
