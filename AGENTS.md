@@ -62,6 +62,12 @@ Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/REA
 
 **Shape vs diagnose:** `shape-requirements` when the question is what the user wants. `diagnose-issue` when the question is what is true in the repo. Too vague to investigate → gate only, then diagnose.
 
+**Diagnosis entry:** generic bugs, tickets, symptoms, and code-truth questions
+enter through `planning-workflow`. Run `diagnose-issue` only when the human
+explicitly invokes `$diagnose-issue` or an active documented workflow routes
+there. A routed handoff must load and follow the child `SKILL.md`; do not imitate
+its output inline.
+
 **Typical chain** (skip steps per `planning-workflow` routing): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `plan-review` → implementation → `handoff-work` → `change-review-workflow`.
 Use `architect` only when explicitly invoked for ideation/research/solution design; it writes no artifacts and hands back an inline memo.
 

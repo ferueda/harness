@@ -42,6 +42,12 @@ Follow the loaded reference through its **completion criterion**.
 | `planning-workflow` | Unsure which planning step comes next |
 | Stop | User only wanted confirmation or brief |
 
+When continuing the user's original work, treat a packaged-skill handoff as
+executable: read the selected sibling `SKILL.md` completely and follow it.
+Resolve sibling paths from this skill's directory (for example,
+`../diagnose-issue/SKILL.md`). Do not only name the next skill or imitate its
+output inline.
+
 After **gate** approval, continue with the user's original build, fix, or plan request. For **interview** mode or clarify-only requests, offer the natural next step and wait.
 
 **Done when:** original requested work continues, or next step stated for interview/clarify-only.

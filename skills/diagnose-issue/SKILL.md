@@ -1,11 +1,23 @@
 ---
 name: diagnose-issue
-description: Research and define codebase issues before implementation planning. Use when the user provides an issue statement, bug report, Jira ticket, vague problem, proposed solution, runtime symptom, or design concern and wants Codex to inspect the current codebase, validate whether the problem exists, diagnose likely causes, compare solution directions, and produce an evidence-backed problem definition. Do not use when the user asks for a step-by-step implementation plan, direct implementation, or code review of an existing diff.
+description: Research and define codebase issues before implementation planning. Use when the human explicitly invokes `$diagnose-issue`, or when an active documented workflow such as `planning-workflow`, `shape-requirements`, or `architect` routes a current-code question here. Do not select it directly from a generic bug, ticket, symptom, or design concern; enter through `planning-workflow` instead. Do not use when the user asks for a step-by-step implementation plan, direct implementation, or code review of an existing diff.
 ---
 
 # Diagnose Issue
 
 Turn incomplete issue input into an evidence-backed problem definition and solution direction. The product is understanding, not an implementation plan.
+
+## Entry Gate
+
+Continue only when either:
+
+- the human explicitly invoked `$diagnose-issue`; or
+- an active documented workflow routed the current request here.
+
+Name the routing workflow when using the second path. If neither condition is
+true, stop before investigation and enter `planning-workflow`, which may route
+back here. Do not treat a generic bug, ticket, symptom, or code-truth request as
+direct authority to run this skill.
 
 ## Operating Rules
 

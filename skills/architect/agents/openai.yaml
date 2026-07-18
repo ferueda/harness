@@ -2,3 +2,5 @@ interface:
   display_name: "Architect"
   short_description: "Design minimal, repo-grounded technical solutions"
   default_prompt: "Use $architect to ground this design in project intent and codebase reality, recommend the smallest credible direction, and explain material impact and accepted tradeoffs."
+policy:
+  allow_implicit_invocation: false

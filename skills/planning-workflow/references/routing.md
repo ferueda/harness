@@ -14,6 +14,9 @@ Routing rules, skip table, artifact paths, and scenario fixtures. Use when choos
 | Created implementation plan needs review before execution | `harness run plan-review --plan <path>` (`review-spec` fallback) |
 | Approved plan ready to execute | implementation in the current or delegated session |
 
+Routes to packaged skills are executable handoffs: load the selected sibling
+`SKILL.md` and follow it instead of reproducing its workflow inline.
+
 **shape-requirements** when the question is what the user wants. **diagnose-issue** when the question is what is true in the repo. Too vague to investigate → **gate** only (not interview), then `diagnose-issue`.
 
 Intent-aware review: when work affects product direction, architecture boundaries, docs-architecture, data/tenancy, provider contracts, public APIs, or workflow-wide behavior, validate it against the target repo's intent source (`docs/project-intent.md`, root `VISION.md`, or explicit intent docs linked from repo guidance).
@@ -60,7 +63,7 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 |---|-------------|----------------------|---------------|
 | 1 | "Interview me about a caching layer for session indexing" | `shape-requirements` **interview** | brief → `review-spec` → `create-plan` → `plan-review` |
 | 2 | "Add retry logic to the API client" (no scope) | `shape-requirements` **gate** | gate → implement or `create-plan` |
-| 3 | "JIRA-442: login 500 when email is empty" | `diagnose-issue` | diagnose → `create-plan` → `plan-review` → implementation |
+| 3 | "JIRA-442: login 500 when email is empty" | `planning-workflow` loads `diagnose-issue` | diagnose → `create-plan` → `plan-review` → implementation |
 | 4 | "Review dev/plans/foo.md against the codebase" | `harness run plan-review --plan dev/plans/foo.md` | `plan-review` when harness is available; direct `review-spec` fallback |
 | 5 | "Implement dev/plans/foo.md" | implementation | implement → `change-review-workflow` |
 | 6 | "Audit this repo for DX improvements" | `audit` | audit → `create-plan`(s) |
@@ -73,6 +76,7 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 ### Pass criteria
 
 - Names first skill before acting.
+- Loads the selected child skill instead of imitating it inline.
 - **gate**: no commands, edits, or plans before confirmed interpretation.
 - **interview**: one question at a time until user says write up.
 - Skipped steps match the skip table above with a stated reason.
