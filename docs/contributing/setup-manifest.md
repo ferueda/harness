@@ -37,17 +37,20 @@ current `bin/harness.ts`.
 After verifying a fresh Harness worktree's Git baseline, run `make
 setup-worktree` before source edits or provider work. It runs
 `CI=1 SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline`
-against the ordinary shared pnpm store. A cache miss fails immediately; warm the
-store from an accepted lockfile before delegation rather than adding an online
-fallback. Non-interactive mode lets pnpm refresh the ignored dependency tree
-when its install metadata changes.
+against the ordinary shared pnpm store. Repository-owned Make gates resolve that
+store without ambient pnpm store overrides, then pass it to pnpm explicitly. A
+cache miss fails immediately; warm the store from an accepted lockfile before
+delegation rather than adding an online fallback. Non-interactive mode lets pnpm
+refresh the ignored dependency tree when its install metadata changes.
 
 The command creates only the normal ignored `node_modules/`, skips shared Git
 hook mutation, and does not copy or link dependencies from another worktree or
-create a worktree-local package store. Manual executors run it after their
-before-edit checkpoint is acknowledged. Workspace hosts may run the same
-repository-owned command as an acquire hook. Factory does not install
-dependencies. Readiness does not replace the final `make check` gate.
+create a worktree-local package store. `.pnpm-store/` is also ignored as defense
+in depth so transient cache files cannot become candidate source evidence.
+Manual executors run setup after their before-edit checkpoint is acknowledged.
+Workspace hosts may run the same repository-owned command as an acquire hook.
+Factory does not install dependencies. Readiness does not replace the final
+`make check` gate.
 
 Grove's idempotent `postAcquire` hook runs `make setup-worktree`; setup failure
 fails acquisition. Keep its pool on a persistent worker
@@ -85,7 +88,7 @@ Git hooks.
 | Path                                                                                       | Created by                                                                                                                                                     | Repo boundary                                                              | Commit policy                              | Notes                                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.git/hooks/pre-commit` in the harness checkout                                            | `pnpm install --frozen-lockfile`, `pnpm exec simple-git-hooks`                                                                                                 | Harness repo local Git metadata                                            | Do not commit                              | Runs staged format/lint fixes and `pnpm typecheck` before local commits.                                                                                                                                    |
-| `node_modules/` in a Harness checkout or worktree                                          | `pnpm install --frozen-lockfile`, `make setup-worktree`                                                                                                        | Harness checkout or isolated executor worktree                             | Ignored; do not commit                     | `make setup-worktree` uses the ordinary shared pnpm store in offline mode and skips shared Git-hook mutation.                                                                                               |
+| `node_modules/` and defensive `.pnpm-store/` ignore in a Harness checkout or worktree      | `pnpm install --frozen-lockfile`, `make setup-worktree`                                                                                                        | Harness checkout or isolated executor worktree                             | Ignored; do not commit                     | Repository-owned Make gates use the ordinary shared pnpm store and skip shared Git-hook mutation during setup.                                                                                              |
 | Host-chosen persistent Grove pool and `grove-state.json`                                   | `ensureFactoryGroveWorkspace`, Grove repair and release                                                                                                        | Hosted worker data                                                         | User data; do not commit                   | Holds stable Factory phase lease paths and Grove cleanup/repair state. Preserve active work; terminal reset requires verified Factory event authority.                                                      |
 | `dist/` in the harness checkout                                                            | `pnpm build`, `make build`, `pnpm smoke:dist`, `make smoke-dist`, `make check`, `make check-v`, `make check-ci`, `pnpm check`, `pnpm check:v`, `pnpm check:ci` | Harness repo local build output                                            | Ignored; do not commit                     | Built JavaScript used by smoke tests and future package paths.                                                                                                                                              |
 | OS temp `harness-gate-*` dirs or `GATE_LOG_DIR`                                            | Wrapped Make targets via `scripts/run-gate-step.ts`                                                                                                            | Harness repo local gate diagnostics                                        | Do not commit; review before sharing       | Failed gate logs are kept for diagnosis. Successful logs are deleted unless `KEEP_GATE_LOGS=1`.                                                                                                             |

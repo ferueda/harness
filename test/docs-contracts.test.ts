@@ -670,7 +670,7 @@ test("agent and Factory operator completion gates stay explicit", () => {
 test("fresh worktree readiness stays explicit and offline", () => {
   const makefile = readRepoFile("Makefile");
   expect(readMakeTarget(makefile, "setup-worktree")).toContain(
-    "CI=1 SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline",
+    "CI=1 SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 $(PNPM) install --frozen-lockfile --offline",
   );
 
   const agents = readRepoFile("AGENTS.md");
@@ -680,7 +680,7 @@ test("fresh worktree readiness stays explicit and offline", () => {
   const setup = readRepoFile(SETUP_MANIFEST);
   const setupProse = setup.replace(/\s+/g, " ");
   expect(setup).toContain("## Isolated worktree readiness");
-  expect(setup).toContain("ordinary shared pnpm store");
+  expect(setupProse).toContain("ordinary shared pnpm store");
   expect(setupProse).toContain("Factory does not install dependencies");
   expect(setupProse).toContain("Grove's idempotent `postAcquire` hook");
   expect(setupProse).toContain("persistent worker filesystem");
