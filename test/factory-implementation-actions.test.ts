@@ -1463,6 +1463,44 @@ test("uncertain candidate materialization failure becomes human-required", async
   });
 });
 
+test("ignored pnpm cache from a blocked provider cannot become an implementation candidate", async () => {
+  const fixture = directFixture();
+  const ctx = createPhase(fixture);
+  const requested = appendRequest(fixture, ctx);
+  const result = await produceImplementationCandidate({
+    ctx,
+    factoryStateRoot: fixture.factoryStateRoot,
+    reaction: invoke(requested),
+    maxRuntimeMs: 0,
+    agentProviderFactory: () => ({
+      name: "cursor",
+      run: async () => {
+        mkdirSync(join(fixture.workspace, ".pnpm-store/v11"), { recursive: true });
+        writeFileSync(join(fixture.workspace, ".pnpm-store/v11/index.db"), "transient cache\n");
+        return {
+          ok: true,
+          raw: { message: "setup blocked" },
+          session: { provider: "cursor", id: "session-1" },
+        };
+      },
+    }),
+  });
+
+  expect(result.event).toMatchObject({
+    type: "factory.action.failed",
+    data: {
+      failureKind: "terminal",
+      message: "Implementation produced no tree change",
+    },
+  });
+  expect(
+    readFactoryActionEvents(fixture.factoryStateRoot, fixture.key).some(
+      (event) => event.type === "implementation.candidate.produced",
+    ),
+  ).toBe(false);
+  expect(git(fixture.workspace, ["status", "--porcelain=v1", "--untracked-files=all"])).toBe("");
+});
+
 test("blank provider session becomes human-required without candidate success", async () => {
   const fixture = directFixture();
   const ctx = createPhase(fixture);
@@ -2358,7 +2396,7 @@ function directFixture() {
   git(workspace, ["init", "-b", "main"]);
   git(workspace, ["config", "user.email", "test@example.com"]);
   git(workspace, ["config", "user.name", "Test"]);
-  writeFileSync(join(workspace, ".gitignore"), ".harness/\n");
+  writeFileSync(join(workspace, ".gitignore"), ".harness/\n.pnpm-store/\n");
   writeFileSync(join(workspace, "tracked.txt"), "base\n");
   git(workspace, ["add", "."]);
   git(workspace, ["commit", "-m", "base"]);

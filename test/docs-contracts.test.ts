@@ -680,7 +680,7 @@ test("fresh worktree readiness stays explicit and offline", () => {
   const setup = readRepoFile(SETUP_MANIFEST);
   const setupProse = setup.replace(/\s+/g, " ");
   expect(setup).toContain("## Isolated worktree readiness");
-  expect(setup).toContain("ordinary shared pnpm store");
+  expect(setupProse).toContain("ordinary shared pnpm store");
   expect(setupProse).toContain("Factory does not install dependencies");
   expect(setupProse).toContain("Grove's idempotent `postAcquire` hook");
   expect(setupProse).toContain("persistent worker filesystem");
