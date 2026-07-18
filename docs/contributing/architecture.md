@@ -199,24 +199,28 @@ user data and must not be committed.
 ## Current execution model
 
 The CLI reads and applies phase-start or continuation identities synchronously.
+Factory returns each cross-phase choice as a typed `start-phase` reaction with
+the exact lifecycle event that authorized it; the CLI only renders that selected
+phase as a manual command.
 Hosted adapters preserve those observed identities and use
 `lib/factory-hosted-authority.ts` to record authority before reconciliation. The
 runner accepts only project, work-item, and operation identifiers; trusted
 runtime supplies store, repository, provider, and Grove configuration.
 
 An external host may call `lib/factory-operation-reconciliation.ts` with a
-bounded trusted target list. It returns `delivered`, `waiting`, `stale`, or
-`attention` per target, isolates failures, and neither changes lifecycle state
-nor discovers or schedules work.
+bounded trusted target list. It returns `phase-start`, `delivered`, `waiting`,
+`stale`, or `attention` per target, isolates failures, and neither changes
+lifecycle state nor discovers or schedules work.
 
 `lib/factory-inngest-adapter.ts` owns deterministic event IDs and direct or
 chained sends. It may chain only the exact next operation returned by an
-authenticated Factory receipt; it does not interpret `phase-command` or choose a
-new phase. IDs suppress transport duplicates; Factory action identity prevents
-replay. The adapter keeps three retries and a 110-minute action limit. The
-current integration assumes one persistent host and ships no production worker,
-cross-phase driver, or webhook ingress. Publication and merge acknowledgement
-remain separate.
+authenticated Factory receipt. It still executes only same-phase operations and
+does not persist or schedule `start-phase`; [FER-196](https://linear.app/ferueda/issue/FER-196/drive-factory-advancement-and-linear-projections-through-inngest)
+will add that cross-phase driver. IDs suppress transport duplicates; Factory
+action identity prevents replay. The adapter keeps three retries and a
+110-minute action limit. The current integration assumes one persistent host and
+ships no production worker, cross-phase driver, or webhook ingress. Publication
+and merge acknowledgement remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

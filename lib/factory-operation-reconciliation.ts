@@ -9,6 +9,7 @@ import {
 import {
   decideNextFactoryAction,
   reduceFactoryLifecycleEvents,
+  type FactoryLifecycleState,
   type FactoryReaction,
   type FactoryWaitReason,
 } from "./factory-state-machine.ts";
@@ -25,6 +26,12 @@ export type FactoryOperationReconciliationTarget = {
 export type FactoryOperationDelivery = (request: FactoryOperationRequest) => Promise<unknown>;
 
 export type FactoryOperationReconciliationResult =
+  | {
+      outcome: "phase-start";
+      projectId: string;
+      workItemKey: string;
+      reaction: Extract<FactoryReaction, { kind: "start-phase" }>;
+    }
   | {
       outcome: "delivered";
       projectId: string;
@@ -74,9 +81,11 @@ async function reconcileTarget(
       throw new Error("Factory reconciliation project identity mismatch");
 
     const initial = readReaction(target);
+    if (initial.reaction.kind === "start-phase")
+      return phaseStartResult(identity, initial.reaction);
     if (initial.reaction.kind === "wait") return waitResult(identity, initial.reaction);
 
-    operation = operationFor(initial.phaseRunId, initial.reaction);
+    operation = operationFor(phaseRunId(initial.state), initial.reaction);
     const request = FactoryOperationRequestSchema.parse({ ...identity, operation });
     const resolution = resolveFactoryOperation({
       projectId: target.projectId,
@@ -94,8 +103,10 @@ async function reconcileTarget(
     // Resolution can authenticate a staged completed result. The log must still
     // request the same action before hosted recovery is safe to redeliver.
     const current = readReaction(target);
+    if (current.reaction.kind === "start-phase")
+      return phaseStartResult(identity, current.reaction);
     if (current.reaction.kind === "wait") return waitResult(identity, current.reaction);
-    const currentOperation = operationFor(current.phaseRunId, current.reaction);
+    const currentOperation = operationFor(phaseRunId(current.state), current.reaction);
     if (currentOperation.actionKey !== operation.actionKey)
       return { outcome: "stale", ...identity, operation, reason: "superseded" };
 
@@ -112,7 +123,7 @@ async function reconcileTarget(
 }
 
 function readReaction(target: FactoryOperationReconciliationTarget): {
-  phaseRunId: string;
+  state: FactoryLifecycleState;
   reaction: FactoryReaction;
 } {
   const events = readFactoryActionEvents(target.factoryStore.factoryStateRoot, target.workItemKey, {
@@ -121,11 +132,13 @@ function readReaction(target: FactoryOperationReconciliationTarget): {
   const latest = events.at(-1);
   const state = reduceFactoryLifecycleEvents(events);
   if (!latest || !state) throw new Error("Factory reconciliation has no durable lifecycle state");
-  const reaction = decideNextFactoryAction(state, latest);
-  if (reaction.kind === "wait") return { phaseRunId: "", reaction };
+  return { state, reaction: decideNextFactoryAction(state, latest) };
+}
+
+function phaseRunId(state: NonNullable<ReturnType<typeof reduceFactoryLifecycleEvents>>): string {
   if (!("phaseRunId" in state))
     throw new Error("Factory reconciliation invokable state has no phase run identity");
-  return { phaseRunId: state.phaseRunId, reaction };
+  return state.phaseRunId;
 }
 
 function operationFor(
@@ -147,6 +160,13 @@ function waitResult(
   if (reaction.reason === "stale-event")
     return { outcome: "stale", ...identity, reason: "stale-event" };
   return { outcome: "waiting", ...identity, reason: reaction.reason };
+}
+
+function phaseStartResult(
+  identity: { projectId: string; workItemKey: string },
+  reaction: Extract<FactoryReaction, { kind: "start-phase" }>,
+): FactoryOperationReconciliationResult {
+  return { outcome: "phase-start", ...identity, reaction };
 }
 
 function boundedReason(error: unknown): string {

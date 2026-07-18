@@ -97,6 +97,60 @@ const imported = (
 });
 
 describe("Factory action lifecycle kernel", () => {
+  test("returns typed phase starts with the exact authorizing event", () => {
+    const importedEvent = imported();
+    const idle = reduceFactoryLifecycleEvents([importedEvent])!;
+    expect(decideNextFactoryAction(idle, importedEvent)).toEqual({
+      kind: "start-phase",
+      phase: "triage",
+      event: importedEvent,
+    });
+
+    for (const [route, phase] of [
+      ["ready-to-plan", "planning"],
+      ["ready-to-implement", "implementation"],
+    ] as const) {
+      const events = completedTriageEvents(route);
+      const event = events.at(-1)!;
+      const state = reduceFactoryLifecycleEvents(events)!;
+      expect(decideNextFactoryAction(state, event)).toEqual({
+        kind: "start-phase",
+        phase,
+        event,
+      });
+    }
+
+    const merged: Extract<FactoryLifecycleEvent, { type: "plan_pr.merged" }> = {
+      version: 1,
+      id: "plan_pr.merged:planning-run",
+      type: "plan_pr.merged",
+      workItemKey: "item-1",
+      occurredAt: "2026-07-11T07:00:00.000Z",
+      phaseRunId: "planning-run",
+      data: { url: "https://example.test/pr/1", commit: "a".repeat(40) },
+    };
+    const approved = FactoryLifecycleStateSchema.parse({
+      projectionVersion: 1,
+      workItemKey: "item-1",
+      lastEventId: merged.id,
+      updatedAt: merged.occurredAt,
+      phase: "planning",
+      status: "approved",
+      phaseRunId: "planning-run",
+      candidateAttempt: 1,
+      reviewRound: 1,
+      publicationMode: "pull-request",
+      outputPlan: "dev/plans/item-1.md",
+      planPrUrl: merged.data.url,
+      planMergeCommit: merged.data.commit,
+    });
+    expect(decideNextFactoryAction(approved, merged)).toEqual({
+      kind: "start-phase",
+      phase: "implementation",
+      event: merged,
+    });
+  });
+
   test("rejects plan publication without an immutable head", () => {
     expect(() =>
       FactoryLifecycleEventSchema.parse({
@@ -498,9 +552,9 @@ describe("Factory action lifecycle kernel", () => {
     });
     expect(recovered.state).toMatchObject({ phase: "triage", status: "routed" });
     expect(decideNextFactoryAction(recovered.state, recovered.event)).toEqual({
-      kind: "wait",
-      reason: "phase-command",
-      command: terminal.data.nextCommand,
+      kind: "start-phase",
+      phase: "planning",
+      event: terminal,
     });
   });
 

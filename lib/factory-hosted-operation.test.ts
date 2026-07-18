@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
@@ -178,7 +178,7 @@ test("recovered retryable results carry only a recomputed identifier-only next r
   expectNoProviderOrGroveCalls(value);
 });
 
-test("returns exact stale and waiting receipts without Grove or provider work", async () => {
+test("returns stale receipts without Grove or provider work", async () => {
   const staleValue = fixture();
   const staleOperation = createFactoryOperationRef({
     ...staleValue.operation,
@@ -206,6 +206,7 @@ test("returns exact stale and waiting receipts without Grove or provider work", 
     event: terminal,
     expectedLastEventId: waitingValue.requested.id,
   });
+  rmSync(waitingValue.runDir, { recursive: true });
   const waiting = await runHostedFactoryOperation({
     request: waitingValue.request,
     runtime: waitingValue.runtime,
@@ -213,9 +214,8 @@ test("returns exact stale and waiting receipts without Grove or provider work", 
   expect(waiting).toEqual({
     version: 1,
     ...waitingValue.request,
-    outcome: "waiting",
+    outcome: "stale",
     observedEventId: terminal.id,
-    reason: "phase-command",
   });
   expect("next" in waiting).toBe(false);
   expectNoProviderOrGroveCalls(waitingValue);
@@ -459,7 +459,7 @@ test("a lifecycle change during acquisition prevents provider work", async () =>
     request: value.request,
     runtime: value.runtime,
   });
-  expect(receipt).toMatchObject({ outcome: "waiting" });
+  expect(receipt).toMatchObject({ outcome: "stale" });
   expect(value.agentProviderFactory).not.toHaveBeenCalled();
   expect(value.runProvider).not.toHaveBeenCalled();
 });

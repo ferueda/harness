@@ -175,7 +175,7 @@ async function waitForDevServer(baseUrl: string): Promise<void> {
   fail(`Inngest Dev Server was not ready at ${baseUrl}`);
 }
 
-function findReceipt(value: unknown, outcome: "executed" | "recovered"): JsonObject | undefined {
+function findReceipt(value: unknown, outcome: "executed" | "stale"): JsonObject | undefined {
   if (typeof value === "string") {
     try {
       return findReceipt(JSON.parse(value), outcome);
@@ -196,7 +196,7 @@ function findReceipt(value: unknown, outcome: "executed" | "recovered"): JsonObj
 async function pollEventReceipt(
   apiHost: string,
   eventId: string,
-  outcome: "executed" | "recovered",
+  outcome: "executed" | "stale",
 ): Promise<JsonObject> {
   let last = "";
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -580,13 +580,13 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
 
   station = "hosted Factory replay through Inngest after release";
   const replayEventId = `${executedEventId.slice(0, -1)}${executedEventId.endsWith("0") ? "1" : "0"}`;
-  const recoveredEvent = await inngest.send(
+  const replayedEvent = await inngest.send(
     FactoryOperationRequestedEvent.create(request, { id: replayEventId }),
   );
-  const recoveredEventId = recoveredEvent.ids[0];
-  assert(typeof recoveredEventId === "string", "recovered delivery event ID missing");
-  const recovered = await pollEventReceipt(apiHost, recoveredEventId, "recovered");
-  assert(recovered.outcome === "recovered", "hosted replay did not recover");
+  const replayedEventId = replayedEvent.ids[0];
+  assert(typeof replayedEventId === "string", "replayed delivery event ID missing");
+  const replayed = await pollEventReceipt(apiHost, replayedEventId, "stale");
+  assert(replayed.outcome === "stale", "hosted replay was not stale at the phase boundary");
   assert(readFileSync(setupLog, "utf8") === "xx", "replay reran the setup hook");
   assert(
     readFileSync(providerLog, "utf8").trim().split(/\r?\n/).length === 1,

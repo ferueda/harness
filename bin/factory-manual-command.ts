@@ -1,4 +1,4 @@
-import type { FactoryLifecycleState, FactoryReaction } from "../lib/factory-state-machine.ts";
+import type { FactoryReaction } from "../lib/factory-state-machine.ts";
 
 export type FactoryManualCommandProvenance = {
   workspace: string;
@@ -10,33 +10,15 @@ export type FactoryManualCommandProvenance = {
 
 export function decorateFactoryReaction(
   reaction: FactoryReaction | null,
-  state: FactoryLifecycleState | null | undefined,
   provenance: FactoryManualCommandProvenance | undefined,
 ): FactoryReaction | null {
   if (!reaction) return null;
   const cleanReaction = withoutCommand(reaction);
   const station =
-    reaction.kind === "invoke"
-      ? reaction.phase
-      : reaction.reason === "phase-command" && state
-        ? nextPhase(state)
-        : null;
+    reaction.kind === "invoke" || reaction.kind === "start-phase" ? reaction.phase : null;
   if (!station || !provenance) return cleanReaction;
   const command = factoryManualCommand(station, provenance);
   return command ? { ...cleanReaction, command } : cleanReaction;
-}
-
-function nextPhase(state: FactoryLifecycleState): "triage" | "planning" | "implementation" | null {
-  if (state.phase === "idle" && state.status === "idle") return "triage";
-  if (state.phase === "triage" && state.status === "routed") {
-    return state.route === "ready-to-plan"
-      ? "planning"
-      : state.route === "ready-to-implement"
-        ? "implementation"
-        : null;
-  }
-  if (state.phase === "planning" && state.status === "approved") return "implementation";
-  return null;
 }
 
 function factoryManualCommand(

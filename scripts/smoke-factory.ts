@@ -113,7 +113,7 @@ function expectAction(
   output: JsonObject,
   handler: string,
   attempt: number,
-  next: { kind: string; handler?: string; reason?: string },
+  next: { kind: string; phase?: string; handler?: string; reason?: string },
 ): string {
   assert(output.outcome === "action-completed", `${handler} did not complete an action`);
   const action = object(output.action, `${handler} action`);
@@ -121,6 +121,7 @@ function expectAction(
   assert(action.attempt === attempt, `${handler} attempt was not ${attempt}`);
   const reaction = object(output.next, `${handler} next reaction`);
   assert(reaction.kind === next.kind, `${handler} next kind was not ${next.kind}`);
+  if (next.phase) assert(reaction.phase === next.phase, `${handler} next phase mismatch`);
   if (next.handler) assert(reaction.handler === next.handler, `${handler} next handler mismatch`);
   if (next.reason) assert(reaction.reason === next.reason, `${handler} wait reason mismatch`);
   assert(typeof output.phaseRunId === "string", `${handler} omitted phaseRunId`);
@@ -398,7 +399,7 @@ if (args[1] === "list") {
 
   station = "triage";
   const triage = harness(["factory", "triage"]);
-  expectAction(triage, "triageWorkItem", 1, { kind: "wait", reason: "phase-command" });
+  expectAction(triage, "triageWorkItem", 1, { kind: "start-phase", phase: "planning" });
   expectGitStatus();
 
   station = "planning candidate 1";
@@ -466,8 +467,8 @@ if (args[1] === "list") {
   const planReview2 = harness(["factory", "planning", "run"]);
   assert(
     expectAction(planReview2, "reviewPlanCandidate", 2, {
-      kind: "wait",
-      reason: "phase-command",
+      kind: "start-phase",
+      phase: "implementation",
     }) === planningRunId,
     "passing plan review changed phase run",
   );

@@ -95,7 +95,6 @@ export const FactoryLifecycleStateSchema = z.union([
 export type FactoryLifecycleState = z.infer<typeof FactoryLifecycleStateSchema>;
 
 export const FactoryWaitReasonSchema = z.enum([
-  "phase-command",
   "human",
   "plan-publication",
   "plan-merge",
@@ -107,6 +106,17 @@ export const FactoryWaitReasonSchema = z.enum([
 ]);
 export type FactoryWaitReason = z.infer<typeof FactoryWaitReasonSchema>;
 
+export type FactoryPhaseStartEvent = Extract<
+  FactoryLifecycleEvent,
+  {
+    type:
+      | "work_item.imported"
+      | "triage.work_item.completed"
+      | "planning.review.completed"
+      | "plan_pr.merged";
+  }
+>;
+
 export type FactoryReaction =
   | {
       kind: "invoke";
@@ -116,6 +126,12 @@ export type FactoryReaction =
       causationEventId: string;
       scheduling: "immediate" | "retry";
       reason: string;
+      command?: string;
+    }
+  | {
+      kind: "start-phase";
+      phase: FactoryPhase;
+      event: FactoryPhaseStartEvent;
       command?: string;
     }
   | {
@@ -615,6 +631,25 @@ export function decideNextFactoryAction(
   latestEvent: FactoryLifecycleEvent,
 ): FactoryReaction {
   if (state.lastEventId !== latestEvent.id) return { kind: "wait", reason: "stale-event" };
+  if (latestEvent.type === "work_item.imported") return startPhase("triage", latestEvent);
+  if (
+    latestEvent.type === "triage.work_item.completed" &&
+    latestEvent.data.route === "ready-to-plan"
+  )
+    return startPhase("planning", latestEvent);
+  if (
+    latestEvent.type === "triage.work_item.completed" &&
+    latestEvent.data.route === "ready-to-implement"
+  )
+    return startPhase("implementation", latestEvent);
+  if (
+    latestEvent.type === "planning.review.completed" &&
+    latestEvent.data.verdict === "pass" &&
+    state.phase === "planning" &&
+    state.status === "approved"
+  )
+    return startPhase("implementation", latestEvent);
+  if (latestEvent.type === "plan_pr.merged") return startPhase("implementation", latestEvent);
   if (latestEvent.type === "triage.requested")
     return invoke("triage", "triageWorkItem", 1, latestEvent.id, "triage-requested");
   if (latestEvent.type === "planning.requested")
@@ -693,13 +728,16 @@ export function decideNextFactoryAction(
   if (state.phase === "implementation" && state.status === "awaiting-pr-merge")
     return { kind: "wait", reason: "pr-merge" };
   if (state.status === "complete") return { kind: "wait", reason: "complete" };
-  return {
-    kind: "wait",
-    reason: "phase-command",
-    ...(latestEvent.type === "triage.work_item.completed" && latestEvent.data.nextCommand
-      ? { command: latestEvent.data.nextCommand }
-      : {}),
-  };
+  throw new Error(
+    `Factory state ${state.phase}/${state.status} has no reaction for ${latestEvent.type}`,
+  );
+}
+
+function startPhase(
+  phase: FactoryPhase,
+  event: FactoryPhaseStartEvent,
+): Extract<FactoryReaction, { kind: "start-phase" }> {
+  return { kind: "start-phase", phase, event };
 }
 
 function invoke(

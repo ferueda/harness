@@ -50,7 +50,7 @@
       "properties": {
         "version": { "const": 1 }, "projectId": { "type": "string", "minLength": 1 }, "workItemKey": { "type": "string", "minLength": 1 },
         "operation": { "$ref": "#/$defs/operation" }, "outcome": { "const": "waiting" }, "observedEventId": { "type": "string", "minLength": 1 },
-        "reason": { "enum": ["phase-command", "human", "plan-publication", "plan-merge", "pr-publication", "pr-merge", "complete", "failed", "stale-event"] }
+        "reason": { "enum": ["human", "plan-publication", "plan-merge", "pr-publication", "pr-merge", "complete", "failed", "stale-event"] }
       }
     }
   ]
