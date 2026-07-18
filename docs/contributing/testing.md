@@ -55,8 +55,8 @@ changed behavior crosses a boundary the cheaper layer cannot observe.
   `test/review-steps.test.ts` and `test/workflow-context.test.ts`.
 - Keep public CLI behavior in `test/cli.test.ts` or an existing station-specific
   CLI test.
-- Keep skill-owned suites inside the owning skill, such as
-  `skills/sessions/test/**`.
+- Keep skill-owned suites inside the owning skill when a packaged skill needs
+  its own test boundary.
 - Keep built-distribution coverage in `scripts/smoke-dist.ts`, Factory smokes in
   `scripts/smoke-factory.ts` and `scripts/smoke-factory-grove.ts`, and gate-output
   behavior in `test/gate-output.test.ts`.

@@ -1,2 +1,0 @@
-{"role":"user","message":{"content":[{"type":"text","text":"<user_info>\nWorkspace Path: /Users/alice/dev/other-repo\n</user_info>\n<user_query>\nPlease prefer concise status updates in this repo.\n</user_query>"}]}}
-{"role":"assistant","message":{"content":[{"type":"text","text":"Understood."}]}}

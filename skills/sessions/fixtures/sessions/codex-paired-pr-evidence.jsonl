@@ -1,4 +1,0 @@
-{"type":"event_msg","payload":{"type":"user_message","message":"Review PR3 and PR4 rollout evidence."}}
-{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Review PR3 and PR4 rollout evidence."}]}}
-{"type":"event_msg","payload":{"type":"agent_message","message":"I will compare both pull requests."}}
-{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I will compare both pull requests."}]}}

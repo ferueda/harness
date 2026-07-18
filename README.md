@@ -157,9 +157,8 @@ harness skills install change-review-workflow --workspace /path/to/repo
 
 Skill resolution prefers target-repository `.agents/skills/`, then user
 `~/.agents/skills/`, then packaged Harness skills. Background task definitions
-live under [`automations/`](automations/). The
-[sessions skill](skills/sessions/SKILL.md) owns local Cursor and Codex transcript
-inspection.
+live under [`automations/`](automations/). Local agent-history analysis is
+provided separately by [Sessions](https://github.com/ferueda/sessions).
 
 ## Develop Harness
 

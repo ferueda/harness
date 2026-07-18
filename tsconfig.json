@@ -22,8 +22,7 @@
     "scripts/**/*.ts",
     "test/**/*.ts",
     "vitest.config.ts",
-    "workflows/**/*.ts",
-    "skills/sessions/**/*.ts"
+    "workflows/**/*.ts"
   ],
   "exclude": ["dist", "node_modules", ".harness"]
 }

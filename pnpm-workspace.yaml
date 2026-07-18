@@ -1,6 +1,5 @@
 packages:
   - "."
-  - "!skills/sessions"
 
 allowBuilds:
   inngest-cli: true

@@ -15,7 +15,6 @@
     "scripts/**/*.ts",
     "test/**/*.ts",
     "**/*.test.ts",
-    "vitest.config.ts",
-    "skills/sessions/**"
+    "vitest.config.ts"
   ]
 }

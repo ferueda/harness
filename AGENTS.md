@@ -96,18 +96,6 @@ Use `handoff-work` when ending a session (done or not) so the next agent can con
 
 Typical close: `planning-workflow` → implementation → `handoff-work` (if needed) → `change-review-workflow`.
 
-## Sessions
-
-| Skill | Role |
-|-------|------|
-| `sessions` | Browse and extract snippets, artifacts, and session ids via `sessions analyze` |
-
-CLI: `skills/sessions/scripts/sessions.ts` (install via `skills/sessions/scripts/install.sh`). Cache: `~/.sessions/index`.
-
-Facts first; label interpretation separately. Do not treat `patterns` as recommendations.
-
-**Coordinator audits (retrospective):** Use `sessions` to score real transcripts against routing fixtures — e.g. `planning-workflow/references/routing.md`. Coordinators like `planning-workflow` do not invoke `sessions`; when an agent runs planning, it is executing work, not auditing past sessions.
-
 ## New packaged skills
 
 - Directory: `skills/{kebab-case}/` with required `SKILL.md`; optional `agents/openai.yaml`, `references/`, `scripts/`.

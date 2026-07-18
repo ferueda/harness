@@ -1,4 +1,0 @@
-interface:
-  display_name: "Sessions"
-  short_description: "Browse and extract evidence from local Cursor or Codex sessions"
-  default_prompt: "Use $sessions to run Cursor or Codex extract-only transcript searches with repeatable turn queries, collect matching snippets and artifacts, and report session ids with turn indexes."
