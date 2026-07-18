@@ -318,7 +318,6 @@ test("testing taxonomy documents required proof layers", () => {
     "test/cli.test.ts",
     "scripts/smoke-dist.ts",
     "test/gate-output.test.ts",
-    "skills/sessions/test",
     "target-repo",
   ]) {
     expect(content, `${TESTING_DOC} missing ${layer}`).toContain(layer);
@@ -368,7 +367,6 @@ test("hook docs document activation and gate boundaries", () => {
   expect(setup).toContain(".git/hooks/pre-commit");
   expect(setup).toContain("simple-git-hooks");
   expect(setup).toContain("pnpm-workspace.yaml");
-  expect(setup).toContain("--ignore-workspace");
   expect(setup).toContain("pnpm exec simple-git-hooks");
   expect(setup).toContain("Hooks do not replace `pnpm check`");
   expect(setup).toContain("CI uses `pnpm check:ci`");
@@ -449,7 +447,7 @@ test("pre-commit hook config stays scoped to staged hygiene", () => {
     )
     .map(([glob]) => glob);
   expect(oxlintGlobs).toEqual([
-    "{bin,lib,providers,scripts,workflows,test,skills/sessions}/**/*.{ts,js}",
+    "{bin,lib,providers,scripts,workflows,test}/**/*.{ts,js}",
     "./vitest.config.ts",
   ]);
   expect(oxlintGlobs.every((glob) => !glob.includes(".json"))).toBe(true);
@@ -464,20 +462,9 @@ test("pre-commit hook config stays scoped to staged hygiene", () => {
 
   const workspace = readRepoFile("pnpm-workspace.yaml");
   expect(workspace).toContain('  - "."');
-  expect(workspace).toContain('  - "!skills/sessions"');
   expect(workspace).toContain("allowBuilds:");
   expect(workspace).toContain("  simple-git-hooks: true");
-
-  const sessionsInstaller = readRepoFile("skills/sessions/scripts/install.sh");
-  expect(sessionsInstaller).toContain("pnpm install --ignore-workspace --prod --frozen-lockfile");
-  expect(sessionsInstaller).toContain(
-    "corepack pnpm install --ignore-workspace --prod --frozen-lockfile",
-  );
-
-  const sessionsSkill = readRepoFile("skills/sessions/SKILL.md");
-  expect(sessionsSkill).toContain("pnpm install --ignore-workspace --prod --frozen-lockfile");
-  const setup = readRepoFile(SETUP_MANIFEST);
-  expect(setup).toContain("skill-local `pnpm install --ignore-workspace --prod --frozen-lockfile`");
+  expect(workspace).not.toContain("skills/sessions");
 });
 
 test("command parser extracts Make and pnpm commands from ownership table", () => {
@@ -526,12 +513,12 @@ test("documented Make and pnpm commands exist in source truth", () => {
 test.each([
   ["scripts/smoke-dist.ts", "scripts/*"],
   ["workflows/review-steps.ts", "workflows/*.ts"],
-  ["skills/sessions/scripts/sessions.ts", "skills/*/scripts/*"],
+  ["skills/example/scripts/example.ts", "skills/*/scripts/*"],
 ])("inventory matcher covers %s with %s", (path, rule) => {
   expect(matchesGlob(path, rule)).toBe(true);
 });
 
-test.each(["skills/example/scripts/example.test.ts", "skills/sessions/node_modules/foo.js"])(
+test.each(["skills/example/scripts/example.test.ts", "skills/example/node_modules/foo.js"])(
   "inventory exclusions cover %s",
   (path) => {
     expect(isExcludedInventoryPath(path)).toBe(true);
@@ -618,7 +605,7 @@ test("readme stays a concise entrypoint", () => {
   expect(readme).toContain("skills/change-review-workflow/SKILL.md");
   expect(readme).toContain("docs/contributing/script-command-surface.md");
   expect(readme).toContain("docs/contributing/setup-manifest.md");
-  expect(readme).toContain("skills/sessions/SKILL.md");
+  expect(readme).toContain("https://github.com/ferueda/sessions");
   expect(readme).not.toContain("## Available Skills");
   expect(readme).not.toContain("## Session Extraction");
   expect(readme).not.toContain("dev/plans/");

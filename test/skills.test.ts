@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import type * as NodeFs from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -45,54 +45,45 @@ test("installPackagedSkill restores existing skill when forced replace fails", a
   expect(readFileSync(skillPath, "utf8")).toBe("# Original local skill\n");
 });
 
-test("sessions skill stays extraction-focused", () => {
-  const skill = readFileSync(join(REPO_ROOT, "skills/sessions/SKILL.md"), "utf8");
+const LEGACY_SESSIONS_PATTERNS = [
+  /skills\/sessions/,
+  /sessions analyze/,
+  /~\/\.sessions\/index/,
+  /SESSIONS_INSTALL_BIN/,
+  /session-evidence/,
+  /\bbin\/sessions/,
+  /\blib\/sessions/,
+] as const;
 
-  expect(skill).toContain("name: sessions");
-  expect(skill).toMatch(/install\.sh|Install launcher/i);
-  expect(skill).toContain("--extract-only");
-  expect(skill).toContain("--turn-query");
-  expect(skill).toContain("--evidence-limit");
-  expect(skill).toContain("matchedQueries");
-  expect(skill).toContain("~/.sessions/index");
-  expect(skill.toLowerCase()).not.toMatch(
-    /workflow proposal|skill candidate|self-improvement|recommended next plan/,
-  );
-});
-
-const STALE_SESSIONS_PATTERNS = [/session-evidence/, /\bbin\/sessions/, /\blib\/sessions/] as const;
-
-test("harness docs do not reference removed sessions harness paths", () => {
-  const docPaths = [
-    "README.md",
-    "AGENTS.md",
-    "skills/planning-workflow/SKILL.md",
-    "skills/planning-workflow/references/routing.md",
-    "skills/sessions/references/audit-examples.md",
-    "skills/sessions/references/turn-queries.md",
-  ];
-
-  for (const relativePath of docPaths) {
-    const content = readFileSync(join(REPO_ROOT, relativePath), "utf8");
-    for (const pattern of STALE_SESSIONS_PATTERNS) {
-      expect(content, relativePath).not.toMatch(pattern);
-    }
-  }
-});
-
-test("sessions CLI lives under skills/sessions only", () => {
+test("Harness does not vendor or route to the legacy Sessions implementation", () => {
   const removedPaths = [
     "bin/sessions.ts",
     "lib/sessions",
     "skills/session-evidence",
+    "skills/sessions",
     "test/sessions",
     "test/fixtures/sessions",
   ];
   for (const relativePath of removedPaths) {
-    expect(existsSync(join(REPO_ROOT, relativePath)), relativePath).toBe(false);
+    expect(existsSync(join(REPO_ROOT, relativePath))).toBe(false);
   }
-  expect(statSync(join(REPO_ROOT, "skills/sessions/scripts/sessions.ts")).isFile()).toBe(true);
-  expect(statSync(join(REPO_ROOT, "skills/sessions/scripts/install.sh")).isFile()).toBe(true);
+
+  const docPaths = [
+    "README.md",
+    "AGENTS.md",
+    "docs/contributing/script-command-surface.md",
+    "docs/contributing/setup-manifest.md",
+    "docs/contributing/testing.md",
+    "skills/planning-workflow/SKILL.md",
+    "skills/planning-workflow/references/routing.md",
+  ];
+
+  for (const relativePath of docPaths) {
+    const content = readFileSync(join(REPO_ROOT, relativePath), "utf8");
+    for (const pattern of LEGACY_SESSIONS_PATTERNS) {
+      expect(content).not.toMatch(pattern);
+    }
+  }
 });
 
 test("planning skills use the compact capable-executor contract", () => {

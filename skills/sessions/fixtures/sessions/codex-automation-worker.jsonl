@@ -1,2 +1,0 @@
-{"type":"event_msg","payload":{"type":"user_message","message":"You are running as an automated worker. Hard requirements for your FINAL answer."}}
-{"type":"event_msg","payload":{"type":"agent_message","message":"Done."}}

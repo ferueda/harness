@@ -1,2 +1,0 @@
-{"role":"user","message":{"content":[{"type":"text","text":"<user_info>\nWorkspace Path: /Users/alice/dev/my-repo\n</user_info>\n<user_query>\nDebug the broken transcript parser.\n</user_query>"}]}}
-{"role":"assistant","message":{"content":[{"type":"text","text":"I will investigate."}]}}

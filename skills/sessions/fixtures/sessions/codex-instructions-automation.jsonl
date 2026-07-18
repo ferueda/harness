@@ -1,2 +1,0 @@
-{"type":"event_msg","payload":{"type":"user_message","message":"<INSTRUCTIONS>\nYou are running as an automated worker.\n</INSTRUCTIONS>\n\nPlease review this branch."}}
-{"type":"event_msg","payload":{"type":"agent_message","message":"I will review it."}}

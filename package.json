@@ -22,10 +22,10 @@
     "codex:proxy": "node scripts/codex-proxy.mjs",
     "fix": "make fix",
     "fix:plan": "oxfmt --write dev/plans",
-    "format": "oxfmt --write bin lib providers scripts workflows test skills/sessions docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
-    "format:check": "oxfmt --check bin lib providers scripts workflows test skills/sessions docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
-    "lint": "oxlint -c .oxlintrc.json bin lib providers scripts workflows test skills/sessions vitest.config.ts",
-    "lint:fix": "oxlint -c .oxlintrc.json --fix bin lib providers scripts workflows test skills/sessions vitest.config.ts",
+    "format": "oxfmt --write bin lib providers scripts workflows test docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
+    "format:check": "oxfmt --check bin lib providers scripts workflows test docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
+    "lint": "oxlint -c .oxlintrc.json bin lib providers scripts workflows test vitest.config.ts",
+    "lint:fix": "oxlint -c .oxlintrc.json --fix bin lib providers scripts workflows test vitest.config.ts",
     "prepare": "simple-git-hooks",
     "smoke:dist": "node scripts/smoke-dist.ts",
     "smoke:factory": "node scripts/smoke-factory.ts && node scripts/smoke-factory-grove.ts",
@@ -57,9 +57,9 @@
     "pre-commit": "pnpm exec lint-staged && pnpm typecheck"
   },
   "lint-staged": {
-    "{bin,lib,providers,scripts,workflows,test,skills/sessions,docs}/**/*.{ts,js,json,md}": "pnpm exec oxfmt --write",
+    "{bin,lib,providers,scripts,workflows,test,docs}/**/*.{ts,js,json,md}": "pnpm exec oxfmt --write",
     "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts,.oxlintrc.json,.oxfmtrc.json}": "pnpm exec oxfmt --write",
-    "{bin,lib,providers,scripts,workflows,test,skills/sessions}/**/*.{ts,js}": "pnpm exec oxlint -c .oxlintrc.json --fix",
+    "{bin,lib,providers,scripts,workflows,test}/**/*.{ts,js}": "pnpm exec oxlint -c .oxlintrc.json --fix",
     "./vitest.config.ts": "pnpm exec oxlint -c .oxlintrc.json --fix"
   },
   "engines": {
