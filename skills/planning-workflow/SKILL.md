@@ -2,7 +2,7 @@
 name: planning-workflow
 description: >
   Coordinate planning from intent to implementation. Route through shape-requirements,
-  diagnose-issue, review-spec, create-plan, plan-review, and handoff-work.
+  review-spec, create-plan, plan-review, and handoff-work.
   Use when starting feature work, fixing a non-trivial issue, or running the full
   plan-build cycle.
 ---
@@ -11,9 +11,10 @@ description: >
 
 Chat coordinator for intent → validated plan → implementation. Not a `harness run` target.
 
-`architect` is manual-only. When the user explicitly invokes it for
-repo-grounded ideation or solution design, run it before `create-plan`; do not
-auto-route generic planning prompts to it.
+`architect` and `diagnose-issue` are manual-only. Run either workflow only when
+the human explicitly invokes its `$skill-name` in the current conversation. Do
+not auto-route generic planning, design, bug, ticket, symptom, or code-truth
+prompts to either skill.
 
 ## 1. Route intake
 
@@ -21,16 +22,20 @@ auto-route generic planning prompts to it.
 |--------|------------|
 | Vague idea, no brief | `shape-requirements` **interview** |
 | Build/fix/plan now but scope or done-ness unclear | `shape-requirements` **gate** |
-| Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |
-| Explicit `$architect` / "use architect" design request | `architect` |
+| Symptom, bug, ticket, or design concern about current code | Focused current-code inspection in this workflow; use `shape-requirements` **gate** first when intent or done-ness is unclear |
+| Explicit human `$diagnose-issue` investigation request | `diagnose-issue` |
+| Explicit human `$architect` design request | `architect` |
 | Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing implementation plans; otherwise `review-spec` or `create-plan` (see step 2) |
 | Approved plan ready to execute | implementation in the current or delegated session |
 
-**diagnose-issue** when the question is what is true in the repo. **shape-requirements** when the question is what the user wants.
+Use **shape-requirements** when the question is what the user wants. When the
+question is what is true in the repo, inspect the relevant code in the active
+workflow unless the human explicitly invoked `$diagnose-issue`.
 
-Too vague to investigate → `shape-requirements` **gate** only (not interview), then `diagnose-issue`.
+Too vague to investigate → `shape-requirements` **gate** only (not interview),
+then inspect the relevant code in the resumed workflow.
 
-**Done when:** starting skill chosen.
+**Done when:** starting route chosen.
 
 ## 2. Shape and validate
 

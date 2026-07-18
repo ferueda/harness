@@ -8,27 +8,33 @@ Routing rules, skip table, artifact paths, and scenario fixtures. Use when choos
 |--------|------------|
 | Vague idea, no brief | `shape-requirements` **interview** |
 | Build/fix/plan now but scope or done-ness unclear | `shape-requirements` **gate** |
-| Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |
-| Explicit `$architect` / "use architect" design request | `architect` |
+| Symptom, bug, ticket, or design concern about current code | Focused current-code inspection in this workflow; use `shape-requirements` **gate** first when intent or done-ness is unclear |
+| Explicit human `$diagnose-issue` investigation request | `diagnose-issue` |
+| Explicit human `$architect` design request | `architect` |
 | Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing plans; otherwise `review-spec` or `create-plan` |
 | Created implementation plan needs review before execution | `harness run plan-review --plan <path>` (`review-spec` fallback) |
 | Approved plan ready to execute | implementation in the current or delegated session |
 
-**shape-requirements** when the question is what the user wants. **diagnose-issue** when the question is what is true in the repo. Too vague to investigate → **gate** only (not interview), then `diagnose-issue`.
+Use **shape-requirements** when the question is what the user wants. When the
+question is what is true in the repo, inspect the relevant code in the active
+workflow unless the human explicitly invoked `$diagnose-issue`. Too vague to
+investigate → **gate** only (not interview), then resume focused code inspection.
 
 Intent-aware review: when work affects product direction, architecture boundaries, docs-architecture, data/tenancy, provider contracts, public APIs, or workflow-wide behavior, validate it against the target repo's intent source (`docs/project-intent.md`, root `VISION.md`, or explicit intent docs linked from repo guidance).
 
-`architect` is manual-only. It returns an inline architecture memo, writes no
-artifacts, and should sit before `create-plan` only when the user explicitly
-asks for repo-grounded ideation, research, or solution design.
+`architect` and `diagnose-issue` are manual-only. Run either only when the human
+explicitly invokes its `$skill-name` in the current conversation. `architect`
+returns an inline architecture memo, writes no artifacts, and should sit before
+`create-plan` only after an explicit human `$architect` invocation.
 
-## shape ↔ diagnose handoffs
+## Shape, code truth, and manual diagnosis
 
-| Question | Skill |
+| Question | Route |
 |----------|-------|
 | What should we build? | shape |
-| Is this bug/risk real in the code? | diagnose |
-| Brief asserts current behavior | shape → diagnose |
+| Is this bug/risk real in the code? | focused inspection in the active workflow |
+| Brief asserts current behavior | shape → focused inspection in the resumed workflow |
+| Human explicitly invoked `$diagnose-issue` | diagnose |
 | Diagnose found multiple directions | diagnose → shape **gate** |
 | Diagnose **Not Found** / **Invalidated** | report evidence; shape **interview** only if the goal was wrong |
 
@@ -37,8 +43,8 @@ asks for repo-grounded ideation, research, or solution design.
 | Skip | When |
 |------|------|
 | shape | Ticket has repro + clear acceptance criteria |
-| diagnose | Greenfield feature with no code-truth claims |
-| architect | User did not explicitly invoke it, or the design decision is already clear enough for `create-plan` |
+| diagnose | Human did not explicitly invoke `$diagnose-issue` |
+| architect | Human did not explicitly invoke `$architect`, or the design decision is already clear enough for `create-plan` |
 | plan-review / review-spec | Trivial plan or prior review on same revision |
 | create-plan | Single-file fix after gate |
 | handoff-work | Same agent continues in one session |
@@ -60,7 +66,7 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 |---|-------------|----------------------|---------------|
 | 1 | "Interview me about a caching layer for session indexing" | `shape-requirements` **interview** | brief → `review-spec` → `create-plan` → `plan-review` |
 | 2 | "Add retry logic to the API client" (no scope) | `shape-requirements` **gate** | gate → implement or `create-plan` |
-| 3 | "JIRA-442: login 500 when email is empty" | `diagnose-issue` | diagnose → `create-plan` → `plan-review` → implementation |
+| 3 | "JIRA-442: login 500 when email is empty" | Focused current-code inspection in the active workflow | inspect → `create-plan` → `plan-review` → implementation |
 | 4 | "Review dev/plans/foo.md against the codebase" | `harness run plan-review --plan dev/plans/foo.md` | `plan-review` when harness is available; direct `review-spec` fallback |
 | 5 | "Implement dev/plans/foo.md" | implementation | implement → `change-review-workflow` |
 | 6 | "Audit this repo for DX improvements" | `audit` | audit → `create-plan`(s) |
@@ -68,11 +74,12 @@ Manual checks after editing `planning-workflow` or child skills. Compare agent b
 | 8 | Three diagnose directions; pick one | `shape-requirements` **gate** | gate → `create-plan` → `plan-review` |
 | 9 | Greenfield brief, no code-truth claims | `shape-requirements` **interview** | brief → `create-plan` → `plan-review` (skip diagnose) |
 | 10 | "Plan a new public API shape for this project" | `shape-requirements` **gate** when intent is unclear; otherwise `review-spec` or `create-plan` | confirm intent source → `create-plan` → `plan-review` validates project alignment |
-| 11 | "Use architect to design a new public API shape first" | `architect` | inline memo → user chooses whether to `create-plan` |
+| 11 | "Use $architect to design a new public API shape first" | `architect` | inline memo → user chooses whether to `create-plan` |
+| 12 | "Use $diagnose-issue to investigate JIRA-442 first" | `diagnose-issue` | problem definition → user chooses whether to `create-plan` |
 
 ### Pass criteria
 
-- Names first skill before acting.
+- Names the first skill or inline inspection route before acting.
 - **gate**: no commands, edits, or plans before confirmed interpretation.
 - **interview**: one question at a time until user says write up.
 - Skipped steps match the skip table above with a stated reason.

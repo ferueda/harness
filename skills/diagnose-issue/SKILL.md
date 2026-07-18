@@ -1,11 +1,20 @@
 ---
 name: diagnose-issue
-description: Research and define codebase issues before implementation planning. Use when the user provides an issue statement, bug report, Jira ticket, vague problem, proposed solution, runtime symptom, or design concern and wants Codex to inspect the current codebase, validate whether the problem exists, diagnose likely causes, compare solution directions, and produce an evidence-backed problem definition. Do not use when the user asks for a step-by-step implementation plan, direct implementation, or code review of an existing diff.
+description: Manual-only `$diagnose-issue` workflow for researching and defining codebase issues before implementation planning. Use only when the human explicitly invokes `$diagnose-issue`; agents must not select or route to it themselves. Do not use for direct implementation, step-by-step planning, or review of an existing diff.
 ---
 
 # Diagnose Issue
 
 Turn incomplete issue input into an evidence-backed problem definition and solution direction. The product is understanding, not an implementation plan.
+
+## Manual Invocation Gate
+
+Run this skill only when the human explicitly invokes `$diagnose-issue` in the
+current conversation. An agent handoff, another skill, or a generic bug, ticket,
+symptom, or code-truth request is not authority to run it.
+
+If this skill was selected without that human invocation, stop before
+investigation and continue the narrower work in the active workflow.
 
 ## Operating Rules
 
@@ -122,7 +131,7 @@ Use this format unless the user asked for something narrower:
 | Next | When |
 |------|------|
 | `shape-requirements` **gate** | **Ambiguous** status or multiple directions need a product/priority pick |
-| `architect` (manual-only) | **Confirmed** or **Likely** and the user explicitly requests solution design before planning. Pass status, mechanism, evidence, constraints, and candidate directions as hypotheses. |
+| `$architect` (manual-only) | **Confirmed** or **Likely** and the human explicitly invokes `$architect` for solution design before planning. Pass status, mechanism, evidence, constraints, and candidate directions as hypotheses. |
 | `create-plan` | **Confirmed** or **Likely** with a recommended direction |
 | `review-spec` | Definition will become a written plan needing codebase validation |
 | Stop | **Not Found** or **Invalidated** — report evidence; reshape only if the goal was wrong |

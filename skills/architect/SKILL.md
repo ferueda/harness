@@ -1,12 +1,21 @@
 ---
 name: architect
-description: Repo-grounded ideation, research, and technical solution design before planning or implementation.
+description: Manual-only `$architect` workflow for repo-grounded ideation, research, and technical solution design before planning or implementation. Use only when the human explicitly invokes `$architect`; agents must not select or route to it themselves.
 ---
 
 # Architect
 
 Design the smallest repo-grounded solution before planning or building. Return
 an inline architecture memo the user can keep, discard, or turn into a plan.
+
+## Manual Invocation Gate
+
+Run this skill only when the human explicitly invokes `$architect` in the
+current conversation. An agent handoff, another skill, or a generic design or
+planning request is not authority to run it.
+
+If this skill was selected without that human invocation, stop before research
+and continue the narrower work in the active workflow.
 
 ## Rules
 
@@ -18,8 +27,10 @@ an inline architecture memo the user can keep, discard, or turn into a plan.
   breakdowns.
 - Ask the user only when ambiguity materially changes the architecture. Include
   a recommended answer and the real tradeoff.
-- Route bugs, symptoms, and code-truth questions to `diagnose-issue` first. Use
-  the `shape-requirements` gate when unclear product intent prevents a choice.
+- For bugs, symptoms, and code-truth questions, verify only the facts needed for
+  the design inline. Use the `shape-requirements` gate when unclear product
+  intent prevents a choice. Do not invoke `diagnose-issue` unless the human also
+  explicitly invoked `$diagnose-issue`.
 
 ## Workflow
 

@@ -36,7 +36,8 @@ Follow the loaded reference through its **completion criterion**.
 | Next | When |
 |------|------|
 | Implement | Gate cleared; small repo-local change |
-| `diagnose-issue` | Brief or interpretation asserts current behavior, bug, or risk needing code evidence |
+| Inspect inline | Brief or interpretation asserts current behavior, bug, or risk needing code evidence; inspect it in the resumed workflow unless the human explicitly invoked `$diagnose-issue` |
+| `$diagnose-issue` | The human explicitly invoked `$diagnose-issue` in the current conversation |
 | `create-plan` | Multi-step, cross-area, or phased |
 | `review-spec` | Brief or plan needs codebase validation |
 | `planning-workflow` | Unsure which planning step comes next |

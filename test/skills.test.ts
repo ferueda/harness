@@ -261,6 +261,49 @@ test("orchestrated work preserves authority, routing, and recovery invariants", 
   expect(prose).not.toContain("Keep `projectId` and `environment` under `target`");
 });
 
+test("architect and diagnose issue require explicit human invocation", () => {
+  for (const name of ["architect", "diagnose-issue"]) {
+    const skill = readFileSync(join(REPO_ROOT, `skills/${name}/SKILL.md`), "utf8");
+    const metadata = readFileSync(join(REPO_ROOT, `skills/${name}/agents/openai.yaml`), "utf8");
+    const prose = normalizedProse(skill);
+
+    expect(skill).toContain(`description: Manual-only \`$${name}\` workflow`);
+    expect(metadata).toContain("policy:\n  allow_implicit_invocation: false");
+    expect(prose).toContain(`only when the human explicitly invokes \`$${name}\``);
+    expect(prose).toContain("An agent handoff");
+    expect(skill).not.toContain("disable-model-invocation");
+  }
+
+  const coordinator = readFileSync(join(REPO_ROOT, "skills/planning-workflow/SKILL.md"), "utf8");
+  const routing = readFileSync(
+    join(REPO_ROOT, "skills/planning-workflow/references/routing.md"),
+    "utf8",
+  );
+  const shaping = readFileSync(join(REPO_ROOT, "skills/shape-requirements/SKILL.md"), "utf8");
+  const agentGuidance = readFileSync(join(REPO_ROOT, "AGENTS.md"), "utf8");
+
+  for (const content of [coordinator, routing, shaping]) {
+    expect(normalizedProse(content)).toContain(
+      "unless the human explicitly invoked `$diagnose-issue`",
+    );
+  }
+  expect(normalizedProse(agentGuidance)).toContain(
+    "Use `diagnose-issue` only when the human explicitly invokes `$diagnose-issue`",
+  );
+  expect(coordinator).toContain(
+    "| Symptom, bug, ticket, or design concern about current code | Focused current-code inspection",
+  );
+  expect(routing).toContain(
+    "| Is this bug/risk real in the code? | focused inspection in the active workflow |",
+  );
+  expect(coordinator).not.toContain(
+    "| Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |",
+  );
+  expect(shaping).not.toContain(
+    "| `diagnose-issue` | Brief or interpretation asserts current behavior",
+  );
+});
+
 test("architect prefers the smallest intent-aligned design and explains its impact", () => {
   const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
   const metadata = readFileSync(join(REPO_ROOT, "skills/architect/agents/openai.yaml"), "utf8");
