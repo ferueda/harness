@@ -670,7 +670,7 @@ test("agent and Factory operator completion gates stay explicit", () => {
 test("fresh worktree readiness stays explicit and offline", () => {
   const makefile = readRepoFile("Makefile");
   expect(readMakeTarget(makefile, "setup-worktree")).toContain(
-    "CI=1 SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile --offline",
+    "CI=1 SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 $(PNPM) install --frozen-lockfile --offline",
   );
 
   const agents = readRepoFile("AGENTS.md");

@@ -56,11 +56,10 @@ const { spawnSync } = require("node:child_process");
 const args = process.argv.slice(2);
 appendFileSync(process.env.PNPM_LOG, JSON.stringify({
   args,
-  frozenStore: process.env.PNPM_CONFIG_FROZEN_STORE ?? null,
   storeOverride: process.env.PNPM_CONFIG_STORE_DIR ?? null,
 }) + "\\n");
 if (args[0] === "store" && args[1] === "path") {
-  if (process.env.PNPM_CONFIG_STORE_DIR) process.exit(86);
+  if (process.env.PNPM_CONFIG_STORE_DIR || process.env.pnpm_config_store_dir) process.exit(86);
   process.stdout.write(realpathSync(process.env.EXPECTED_STORE) + "\\n");
   process.exit(0);
 }
@@ -106,7 +105,11 @@ process.exit(result.status ?? 1);
     });
     const dependencyInode = lstatSync(join(workspace, "node_modules/fixture-dependency")).ino;
 
-    const providerEnv = { ...baseEnv, PNPM_CONFIG_STORE_DIR: ".pnpm-store" };
+    const providerEnv = {
+      ...baseEnv,
+      PNPM_CONFIG_STORE_DIR: ".pnpm-store",
+      pnpm_config_store_dir: ".lowercase-pnpm-store",
+    };
     execFileSync("make", ["-f", join(REPO_ROOT, "Makefile"), "setup-worktree"], {
       cwd: workspace,
       env: providerEnv,
@@ -132,31 +135,21 @@ process.exit(result.status ?? 1);
         (line) =>
           JSON.parse(line) as {
             args: string[];
-            frozenStore: string | null;
             storeOverride: string | null;
           },
       );
-    expect(calls.filter(({ args }) => args[0] === "store")).toEqual([
-      { args: ["store", "path"], frozenStore: null, storeOverride: null },
-    ]);
+    expect(calls.filter(({ args }) => args[0] === "store")).toEqual(
+      Array.from({ length: 3 }, () => ({
+        args: ["store", "path"],
+        storeOverride: null,
+      })),
+    );
     const installs = calls.filter(({ args }) => args[0] === "install");
     expect(installs).toHaveLength(3);
     for (const call of installs) {
-      expect(call.args).toEqual([
-        "install",
-        "--frozen-lockfile",
-        "--offline",
-        "--store-dir",
-        realpathSync(sharedStore),
-      ]);
+      expect(call.args).toEqual(["install", "--frozen-lockfile", "--offline"]);
+      expect(call.storeOverride).toBe(realpathSync(sharedStore));
     }
-    expect(
-      installs.map(({ frozenStore, storeOverride }) => ({ frozenStore, storeOverride })),
-    ).toEqual([
-      { frozenStore: null, storeOverride: null },
-      { frozenStore: "true", storeOverride: realpathSync(sharedStore) },
-      { frozenStore: "true", storeOverride: realpathSync(sharedStore) },
-    ]);
 
     mkdirSync(join(workspace, ".pnpm-store/v11"), { recursive: true });
     writeFileSync(join(workspace, ".pnpm-store/v11/index.db"), "transient cache\n");
