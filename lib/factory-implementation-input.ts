@@ -23,6 +23,7 @@ export type FactoryImplementationInput =
       candidateEventId: string;
       reviewEventId: string;
       planCandidate: FactoryArtifactRef;
+      approvedPlan?: FactoryArtifactRef;
       outputPlan: string;
       publicationMode: "local" | "pull-request";
       mergedEventId?: string;
@@ -100,6 +101,10 @@ export function resolveFactoryImplementationInput(
     candidateEventId: candidate.id,
     reviewEventId: review.id,
     planCandidate: candidate.data.candidate,
+    approvedPlan:
+      mergedPlan?.type === "plan_pr.merged"
+        ? (mergedPlan.data.approvedPlan ?? candidate.data.candidate)
+        : candidate.data.candidate,
     outputPlan: request.data.outputPlan,
     publicationMode: request.data.publicationMode,
   };

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,9 +8,15 @@ import {
   assertLivePlanningStatus,
   runOneFactoryPlanningAction,
 } from "../bin/factory-planning-cli.ts";
-import { publishPlanPullRequest } from "../lib/factory-plan-publication.ts";
+import { runOneFactoryImplementationAction } from "../bin/factory-implementation-cli.ts";
+import {
+  markPlanPullRequestMerged,
+  publishPlanPullRequest,
+} from "../lib/factory-plan-publication.ts";
+import { verifyFactoryArtifactRef } from "../lib/factory-artifact-ref.ts";
+import { resolveFactoryImplementationInput } from "../lib/factory-implementation-input.ts";
 import { factoryActionKey } from "../lib/factory-action-contract.ts";
-import type { AgentRunInput } from "../lib/agents.ts";
+import type { Agent, AgentRunInput } from "../lib/agents.ts";
 import {
   observeFactoryContinuation,
   recordFactoryContinuation,
@@ -678,7 +684,7 @@ test("coordinator propagates its abort signal to the planning provider", async (
   expect(provider).toHaveBeenCalledOnce();
 });
 
-test("publication apply appends once and repairs its Linear projection on retry", async () => {
+test("merged plan bytes become implementation authority and merge retries fail closed", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "factory-planning-publication-workspace-"));
   initializeGit(workspace);
   mkdirSync(join(workspace, "dev/plans"), { recursive: true });
@@ -834,6 +840,158 @@ test("publication apply appends once and repairs its Linear projection on retry"
   expect(applyPlanningPublished).toHaveBeenCalledTimes(2);
   const events = readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-123");
   expect(events.filter((event) => event.type === "plan_pr.opened")).toHaveLength(1);
+  const opened = events.findLast((event) => event.type === "plan_pr.opened");
+  expect(opened?.type).toBe("plan_pr.opened");
+  if (opened?.type !== "plan_pr.opened") throw new Error("Missing plan publication");
+
+  const mergeInput = {
+    workspace,
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStore: store,
+    workItem,
+    url: opened.data.url,
+    issueRef: "ENG-123",
+  };
+  const publishedHead = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspace,
+    encoding: "utf8",
+  }).trim();
+  const unrelated = execFileSync("git", ["rev-parse", "main"], {
+    cwd: workspace,
+    encoding: "utf8",
+  }).trim();
+  await expect(
+    markPlanPullRequestMerged({
+      ...mergeInput,
+      url: "https://example.test/pr/2",
+      commit: publishedHead,
+    }),
+  ).rejects.toThrow("Plan merge URL does not match publication");
+  await expect(markPlanPullRequestMerged({ ...mergeInput, commit: unrelated })).rejects.toThrow(
+    "does not contain reviewed head",
+  );
+
+  execFileSync("git", ["rm", "dev/plans/item.md"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "remove plan"], { cwd: workspace, stdio: "ignore" });
+  const missingPlanCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspace,
+    encoding: "utf8",
+  }).trim();
+  await expect(
+    markPlanPullRequestMerged({ ...mergeInput, commit: missingPlanCommit }),
+  ).rejects.toThrow("Merged plan is missing");
+
+  writeFileSync(join(workspace, "dev/plans/item.md"), "# Human-approved plan B\n", "utf8");
+  execFileSync("git", ["add", "dev/plans/item.md"], { cwd: workspace });
+  execFileSync("git", ["commit", "-m", "revise plan in review"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  const mergedCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspace,
+    encoding: "utf8",
+  }).trim();
+  const applyPlanningMerged = vi.fn(async () => undefined);
+  const acknowledged = await markPlanPullRequestMerged({
+    ...mergeInput,
+    commit: mergedCommit,
+    applyAdapter: { applyPlanningMerged } as never,
+  });
+  expect(acknowledged.event.data.approvedPlan).toBeDefined();
+  const approvedPlan = acknowledged.event.data.approvedPlan!;
+  const approvedPlanPath = verifyFactoryArtifactRef(approvedPlan, {
+    "factory-store": store.projectRoot,
+    repository: workspace,
+  });
+  expect(readFileSync(approvedPlanPath, "utf8")).toBe("# Human-approved plan B\n");
+  expect(
+    resolveFactoryImplementationInput(
+      readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-123"),
+    ),
+  ).toMatchObject({ mode: "planned", approvedPlan, mergedCommit });
+
+  await markPlanPullRequestMerged({
+    ...mergeInput,
+    commit: mergedCommit,
+    applyAdapter: { applyPlanningMerged } as never,
+  });
+  expect(applyPlanningMerged).toHaveBeenCalledTimes(2);
+  expect(
+    readFactoryActionEvents(store.factoryStateRoot, "linear:ENG-123").filter(
+      (event) => event.type === "plan_pr.merged",
+    ),
+  ).toHaveLength(1);
+
+  writeFileSync(join(workspace, "dev/plans/item.md"), "# Conflicting plan C\n", "utf8");
+  execFileSync("git", ["add", "dev/plans/item.md"], { cwd: workspace });
+  execFileSync("git", ["commit", "-m", "conflicting later merge"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  const conflictingCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspace,
+    encoding: "utf8",
+  }).trim();
+  await expect(
+    markPlanPullRequestMerged({ ...mergeInput, commit: conflictingCommit }),
+  ).rejects.toThrow("retry conflicts with durable lifecycle truth");
+
+  writeFileSync(join(workspace, "dev/plans/item.md"), "# Human-approved plan B\n", "utf8");
+  execFileSync("git", ["add", "dev/plans/item.md"], { cwd: workspace });
+  execFileSync("git", ["commit", "-m", "restore approved plan"], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  writeFileSync(approvedPlanPath, "# Corrupt\n");
+  await expect(markPlanPullRequestMerged({ ...mergeInput, commit: mergedCommit })).rejects.toThrow(
+    "Factory artifact hash mismatch",
+  );
+  expect(applyPlanningMerged).toHaveBeenCalledTimes(2);
+  writeFileSync(approvedPlanPath, "# Human-approved plan B\n");
+
+  const implementationProvider = vi.fn<Agent["run"]>(async (input) => {
+    const planPath = /Follow the reviewed plan at: ([^\n]+)/.exec(input.prompt)?.[1];
+    expect(planPath).toBe(approvedPlanPath);
+    const receivedPlan = readFileSync(planPath!, "utf8");
+    expect(receivedPlan).toBe("# Human-approved plan B\n");
+    expect(receivedPlan).not.toContain("# Candidate");
+    writeFileSync(join(workspace, "implemented.txt"), "implemented from plan B\n");
+    return {
+      ok: true,
+      raw: {},
+      session: { provider: "cursor", id: "implementation-session" },
+    };
+  });
+  const implementationInput = {
+    factoryStateRoot: store.factoryStateRoot,
+    factoryStore: store,
+    workspace,
+    workItem,
+    rerun: false,
+    implementerRole: { agent: "cursor" as const, model: "implementer" },
+    reviewerRole: { agent: "cursor" as const, model: "reviewer" },
+  };
+  const implemented = await runOneFactoryImplementationAction({
+    ...implementationInput,
+    agentProviderFactory: () => ({ name: "cursor", run: implementationProvider }),
+  });
+  expect(implemented.action).toMatchObject({ handler: "produceImplementationCandidate" });
+  expect(implementationProvider).toHaveBeenCalledOnce();
+
+  const reviewRunner = vi.fn(async (reviewContext: { runDir?: string }) => {
+    const receivedPlan = readFileSync(join(reviewContext.runDir!, "context/plan.md"), "utf8");
+    expect(receivedPlan).toBe("# Human-approved plan B\n");
+    expect(receivedPlan).not.toContain("# Candidate");
+    writePassingImplementationReviews(reviewContext.runDir!);
+    return passingImplementationReviewMeta();
+  });
+  const reviewed = await runOneFactoryImplementationAction({
+    ...implementationInput,
+    agentProviderFactory: () => ({ name: "cursor", run: vi.fn<Agent["run"]>() }),
+    reviewRunner: reviewRunner as never,
+  });
+  expect(reviewed.action).toMatchObject({ handler: "reviewImplementationCandidate" });
+  expect(reviewRunner).toHaveBeenCalledOnce();
 });
 
 function coordinatorInput(
@@ -1013,4 +1171,31 @@ function linearConfig() {
 
 function unchangedWorkspace() {
   return { workspaceStatus: { before: "clean", after: "clean" } };
+}
+
+function writePassingImplementationReviews(runDir: string): void {
+  for (const role of ["implementation", "quality"]) {
+    writeFileSync(join(runDir, `${role}-review.prompt.md`), `${role} prompt\n`);
+    writeFileSync(
+      join(runDir, `${role}-review.json`),
+      JSON.stringify({ verdict: "pass", summary: "ok", findings: [] }),
+    );
+  }
+}
+
+function passingImplementationReviewMeta() {
+  return {
+    status: "completed",
+    verdict: "pass",
+    workflow: "change-review",
+    availableSteps: ["implementation", "quality"],
+    requestedSteps: ["implementation", "quality"],
+    executedSteps: ["implementation", "quality"],
+    omittedSteps: [],
+    partial: false,
+    reviews: {
+      implementation: { verdict: "pass", findingCount: 0 },
+      codeQuality: { verdict: "pass", findingCount: 0 },
+    },
+  };
 }

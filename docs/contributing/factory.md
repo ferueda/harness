@@ -52,8 +52,9 @@ Factory vocabulary:
    continuation, and publication references carry content hashes. Mutable
    tracker fields never replace lifecycle truth.
 5. **Git owns committed plans and code.** Harness creates and reviews immutable
-   candidate commits, then promotes only the exact reviewed candidate through
-   compare-and-swap guards.
+   candidates. For a plan pull request, the exact plan at the verified human
+   merge commit becomes implementation authority; later drift still fails
+   closed.
 6. **External systems are projections.** Linear describes human board state;
    GitHub exposes reviewed pull requests. Projection failure must be repairable
    without repeating the underlying action.

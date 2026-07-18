@@ -83,6 +83,7 @@ export const FactoryImplementationInputSnapshotSchema = z.discriminatedUnion("mo
       reviewEventId: z.string().min(1),
       workItem: FactoryArtifactRefSchema,
       planCandidate: FactoryArtifactRefSchema,
+      approvedPlan: FactoryArtifactRefSchema.optional(),
       outputPlan: z.string().min(1),
       publicationMode: z.enum(["local", "pull-request"]),
       mergedEventId: z.string().min(1).optional(),

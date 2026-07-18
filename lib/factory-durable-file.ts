@@ -13,7 +13,11 @@ import {
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
-export function writeDurableFactoryFile(path: string, data: string, exclusive = false): void {
+export function writeDurableFactoryFile(
+  path: string,
+  data: string | Uint8Array,
+  exclusive = false,
+): void {
   mkdirSync(dirname(path), { recursive: true });
   if (exclusive) {
     const temp = `${path}.${randomUUID()}.tmp`;
@@ -25,7 +29,9 @@ export function writeDurableFactoryFile(path: string, data: string, exclusive = 
         syncDirectory(dirname(path));
       } catch (error) {
         if (!isAlreadyExistsError(error)) throw error;
-        if (readFileSync(path, "utf8") !== data) {
+        const existing = readFileSync(path);
+        const expected = typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data);
+        if (!existing.equals(expected)) {
           throw new Error(`Divergent durable Factory file: ${path}`);
         }
       }
