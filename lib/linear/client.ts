@@ -17,6 +17,7 @@ import {
   ensureBlockedByRelation as ensureBlockedByRelationOperation,
   ensureComment as ensureCommentOperation,
   ensureDuplicateRelation as ensureDuplicateRelationOperation,
+  updateIssueLabels as updateIssueLabelsOperation,
   updateIssueState as updateIssueStateOperation,
   type CreateCommentInput,
   type EnsureBlockedByRelationInput,
@@ -24,6 +25,8 @@ import {
   type EnsureDuplicateRelationInput,
   type LinearCreatedResult,
   type LinearWriteClient,
+  type UpdateIssueLabelsInput,
+  type UpdateIssueLabelsResult,
   type UpdateIssueStateInput,
 } from "./write.ts";
 
@@ -47,6 +50,8 @@ export type {
   EnsureDuplicateRelationInput,
   LinearCreatedResult,
   LinearWriteClient,
+  UpdateIssueLabelsInput,
+  UpdateIssueLabelsResult,
   UpdateIssueStateInput,
 } from "./write.ts";
 
@@ -61,6 +66,7 @@ export type LinearService = Readonly<{
   updateIssueState: (
     input: UpdateIssueStateInput,
   ) => Promise<Readonly<{ changed: boolean; stateId: string }>>;
+  updateIssueLabels: (input: UpdateIssueLabelsInput) => Promise<UpdateIssueLabelsResult>;
   ensureDuplicateRelation: (input: EnsureDuplicateRelationInput) => Promise<LinearCreatedResult>;
   ensureBlockedByRelation: (input: EnsureBlockedByRelationInput) => Promise<LinearCreatedResult>;
 }>;
@@ -87,6 +93,7 @@ export function createLinearForClient(input: {
     ensureComment: (commentInput) =>
       ensureCommentOperation(input.client, limits.comments, commentInput),
     updateIssueState: (stateInput) => updateIssueStateOperation(input.client, stateInput),
+    updateIssueLabels: (labelsInput) => updateIssueLabelsOperation(input.client, labelsInput),
     ensureDuplicateRelation: (relationInput) =>
       ensureDuplicateRelationOperation(input.client, limits.relations, relationInput),
     ensureBlockedByRelation: (relationInput) =>

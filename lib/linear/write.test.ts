@@ -353,6 +353,132 @@ describe("standalone Linear state mutations", () => {
   });
 });
 
+describe("standalone Linear label mutations", () => {
+  it("submits normalized incremental additions and removals", async () => {
+    const fake = makeFake();
+
+    await expect(
+      service(fake).updateIssueLabels({
+        issueId: " issue-1 ",
+        addLabelIds: [" label-plan ", "label-plan", "label-scope"],
+        removeLabelIds: ["label-input", " label-input "],
+      }),
+    ).resolves.toEqual({
+      submitted: true,
+      addedLabelIds: ["label-plan", "label-scope"],
+      removedLabelIds: ["label-input"],
+    });
+    expect(fake.updateIssue).toHaveBeenCalledWith("issue-1", {
+      addedLabelIds: ["label-plan", "label-scope"],
+      removedLabelIds: ["label-input"],
+    });
+  });
+
+  it("returns a serializable no-op without calling Linear", async () => {
+    const fake = makeFake();
+    const result = await service(fake).updateIssueLabels({
+      issueId: "issue-1",
+      addLabelIds: [],
+      removeLabelIds: [],
+    });
+
+    expect(result).toEqual({
+      submitted: false,
+      addedLabelIds: [],
+      removedLabelIds: [],
+    });
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+    expect(fake.updateIssue).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid and overlapping label IDs before mutation", async () => {
+    const whitespace = makeFake();
+    await expect(
+      service(whitespace).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: [" "],
+        removeLabelIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(whitespace.updateIssue).not.toHaveBeenCalled();
+
+    const overlap = makeFake();
+    await expect(
+      service(overlap).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: [" label-plan "],
+        removeLabelIds: ["label-plan"],
+      }),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(overlap.updateIssue).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing label ID arrays before mutation", async () => {
+    const fake = makeFake();
+
+    await expect(
+      service(fake).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: undefined,
+        removeLabelIds: [],
+      } as unknown as Parameters<ReturnType<typeof service>["updateIssueLabels"]>[0]),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(fake.updateIssue).not.toHaveBeenCalled();
+  });
+
+  it("normalizes rejection, malformed success, and a wrong returned issue", async () => {
+    const rejected = makeFake();
+    rejected.updateIssue.mockResolvedValueOnce({ success: false, issue: undefined });
+    await expect(
+      service(rejected).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: ["label-plan"],
+        removeLabelIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "rejected" });
+
+    const malformed = makeFake();
+    malformed.updateIssue.mockResolvedValueOnce({ success: true, issue: undefined });
+    await expect(
+      service(malformed).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: ["label-plan"],
+        removeLabelIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "invalid-response" });
+
+    const wrongIssue = makeFake();
+    wrongIssue.updateIssue.mockResolvedValueOnce({
+      success: true,
+      issue: { id: "issue-other" },
+    });
+    await expect(
+      service(wrongIssue).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: ["label-plan"],
+        removeLabelIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "invalid-response" });
+  });
+
+  it("preserves the cause of label SDK failures", async () => {
+    const cause = new Error("label mutation unavailable");
+    const fake = makeFake();
+    fake.updateIssue.mockRejectedValueOnce(cause);
+
+    const error = await service(fake)
+      .updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: ["label-plan"],
+        removeLabelIds: [],
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toBeInstanceOf(LinearError);
+    expect(error).toMatchObject({ code: "upstream", cause });
+  });
+});
+
 describe("standalone Linear relation mutations", () => {
   it("creates duplicate and blocker relations in the correct direction", async () => {
     const duplicate = makeFake();
