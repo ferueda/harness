@@ -44,7 +44,12 @@ export async function readLimited<T>(
 }
 
 export function assertPage<T>(value: LinearPage<T>, label: string): void {
-  if (!value || !Array.isArray(value.nodes) || !value.pageInfo) {
+  if (
+    !value ||
+    !Array.isArray(value.nodes) ||
+    !value.pageInfo ||
+    typeof value.pageInfo.hasNextPage !== "boolean"
+  ) {
     throw invalidResponse(`Linear returned an invalid ${label} page.`);
   }
 }

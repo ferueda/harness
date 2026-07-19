@@ -232,6 +232,23 @@ describe("standalone Linear comment mutations", () => {
     expect(fake.createComment).not.toHaveBeenCalled();
   });
 
+  it("does not write after malformed comment pagination metadata", async () => {
+    const fake = makeFake();
+    fake.commentReads.mockResolvedValueOnce({
+      nodes: [],
+      pageInfo: {},
+    } as unknown as TestPage<TestComment>);
+
+    await expect(
+      service(fake).ensureComment({
+        issueId: "issue-1",
+        marker: "<!-- triage:delivery-1 -->",
+        body: "<!-- triage:delivery-1 -->",
+      }),
+    ).rejects.toMatchObject({ code: "invalid-response" });
+    expect(fake.createComment).not.toHaveBeenCalled();
+  });
+
   it("normalizes comment rejection and malformed success", async () => {
     const rejected = makeFake();
     rejected.createComment.mockResolvedValueOnce({ success: false, comment: undefined });
@@ -440,6 +457,22 @@ describe("standalone Linear relation mutations", () => {
       }),
     ).rejects.toMatchObject({ code: "incomplete" });
     expect(blocker.createIssueRelation).not.toHaveBeenCalled();
+  });
+
+  it("does not write after malformed relation pagination metadata", async () => {
+    const fake = makeFake();
+    fake.relationReads.mockResolvedValueOnce({
+      nodes: [],
+      pageInfo: {},
+    } as unknown as TestPage<TestRelation>);
+
+    await expect(
+      service(fake).ensureDuplicateRelation({
+        issueId: "issue-1",
+        duplicateOfIssueId: "issue-canonical",
+      }),
+    ).rejects.toMatchObject({ code: "invalid-response" });
+    expect(fake.createIssueRelation).not.toHaveBeenCalled();
   });
 
   it("rejects self-relations before any read or mutation", async () => {
