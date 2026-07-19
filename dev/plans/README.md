@@ -2,7 +2,6 @@
 
 ## Active queue
 
-- [Add safe standalone Linear mutations](260718-safe-linear-mutations.md) — approved architecture; implementation in progress. [Linear](https://linear.app/ferueda/issue/FER-214/add-safe-standalone-linear-mutation-primitives)
 - [Bound automatic Factory retryable-action chains](FER-183.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-183/bound-automatic-factory-retryable-action-chains)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
@@ -71,6 +70,8 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Runnable Factory operation reconciliation    | [#193](https://github.com/ferueda/harness/pull/193)                                                      |
 | —     | Hosted Factory authority before delivery     | [#195](https://github.com/ferueda/harness/pull/195)                                                      |
 | —     | Obsolete Factory cutover removal             | [#199](https://github.com/ferueda/harness/pull/199)                                                      |
+| —     | Standalone Linear issue-context reader       | [#213](https://github.com/ferueda/harness/pull/213)                                                      |
+| —     | Safe standalone Linear mutations             | [#214](https://github.com/ferueda/harness/pull/214)                                                      |
 
 ---
 
