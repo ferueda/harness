@@ -326,7 +326,8 @@ function normalizedIds(value: unknown, label: string): string[] {
   if (!Array.isArray(value)) {
     throw new LinearError("invalid-input", `Linear ${label} must be an array.`);
   }
-  return [...new Set(value.map((id, index) => nonEmptyInput(id, `${label}[${index}]`)))];
+  const ids = Array.from(value, (id, index) => nonEmptyInput(id, `${label}[${index}]`));
+  return [...new Set(ids)];
 }
 
 function rejectOverlappingIds(addedLabelIds: string[], removedLabelIds: string[]): void {

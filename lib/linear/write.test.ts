@@ -426,6 +426,19 @@ describe("standalone Linear label mutations", () => {
     expect(fake.updateIssue).not.toHaveBeenCalled();
   });
 
+  it("rejects sparse label ID arrays before mutation", async () => {
+    const fake = makeFake();
+
+    await expect(
+      service(fake).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: new Array<string>(1),
+        removeLabelIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(fake.updateIssue).not.toHaveBeenCalled();
+  });
+
   it("normalizes rejection, malformed success, and a wrong returned issue", async () => {
     const rejected = makeFake();
     rejected.updateIssue.mockResolvedValueOnce({ success: false, issue: undefined });
