@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createLinear,
   createLinearForClient,
-  LinearReadError,
-  type LinearReadClient,
+  LinearError,
+  type LinearClientLike,
   type LinearReadLimits,
 } from "./client.ts";
 
@@ -178,14 +178,20 @@ function makeFakeClient(input: {
       issues: issueReads,
       users: userReads,
       workflowStates: stateReads,
-    } as unknown as LinearReadClient,
+      createComment: async () => ({ success: true, comment: { id: "unused-comment" } }),
+      updateIssue: async () => ({ success: true, issue: { id: "unused-issue" } }),
+      createIssueRelation: async () => ({
+        success: true,
+        issueRelation: { id: "unused-relation" },
+      }),
+    } as unknown as LinearClientLike,
     issueReads,
     userReads,
     stateReads,
   };
 }
 
-function service(client: LinearReadClient, limits: LinearReadLimits = DEFAULT_LIMITS) {
+function service(client: LinearClientLike, limits: LinearReadLimits = DEFAULT_LIMITS) {
   return createLinearForClient({ client, limits });
 }
 
@@ -645,7 +651,7 @@ describe("standalone Linear issue context", () => {
       .getIssueContext("FER-213")
       .catch((value: unknown) => value);
 
-    expect(error).toBeInstanceOf(LinearReadError);
+    expect(error).toBeInstanceOf(LinearError);
     expect(error).toMatchObject({ code: "upstream", cause });
   });
 
