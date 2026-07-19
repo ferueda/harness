@@ -132,27 +132,42 @@ describe("triage decision schema", () => {
   });
 
   it.each([
-    {
-      ...READY_TO_IMPLEMENT,
-      evidence: [{ kind: "code", path: null, summary: "Implementation exists." }],
-    },
-    {
-      ...READY_TO_IMPLEMENT,
-      evidence: [{ kind: "tracker", path: "FER-216", summary: "Issue text." }],
-    },
-    {
-      ...READY_TO_IMPLEMENT,
-      evidence: [{ kind: "code", path: "../outside.ts", summary: "Unsafe path." }],
-    },
-    {
-      ...READY_TO_IMPLEMENT,
-      evidence: [{ kind: "docs", path: "docs//intent.md", summary: "Unsafe path." }],
-    },
-    {
-      ...READY_TO_IMPLEMENT,
-      evidence: [{ kind: "test", path: "test/example.test.ts", summary: "" }],
-    },
-  ])("rejects invalid evidence %#", (payload) => {
+    [
+      "code without a path",
+      {
+        ...READY_TO_IMPLEMENT,
+        evidence: [{ kind: "code", path: null, summary: "Implementation exists." }],
+      },
+    ],
+    [
+      "tracker evidence with a path",
+      {
+        ...READY_TO_IMPLEMENT,
+        evidence: [{ kind: "tracker", path: "FER-216", summary: "Issue text." }],
+      },
+    ],
+    [
+      "a parent traversal",
+      {
+        ...READY_TO_IMPLEMENT,
+        evidence: [{ kind: "code", path: "../outside.ts", summary: "Unsafe path." }],
+      },
+    ],
+    [
+      "an empty path segment",
+      {
+        ...READY_TO_IMPLEMENT,
+        evidence: [{ kind: "docs", path: "docs//intent.md", summary: "Unsafe path." }],
+      },
+    ],
+    [
+      "an empty summary",
+      {
+        ...READY_TO_IMPLEMENT,
+        evidence: [{ kind: "test", path: "test/example.test.ts", summary: "" }],
+      },
+    ],
+  ])("rejects invalid evidence: %s", (_name, payload) => {
     expect(TriageDecisionSchema.safeParse(payload).success).toBe(false);
   });
 });

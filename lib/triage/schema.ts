@@ -221,7 +221,7 @@ export type TriageDecision = z.infer<typeof TriageDecisionSchema>;
 
 function requireValue(
   condition: boolean,
-  ctx: z.core.$RefinementCtx<z.output<typeof TriageDecisionSchema>>,
+  ctx: z.RefinementCtx<z.output<typeof TriageDecisionSchema>>,
   path: PropertyKey[],
   message: string,
 ): void {
@@ -230,7 +230,7 @@ function requireValue(
 
 function requireEmpty(
   values: readonly unknown[],
-  ctx: z.core.$RefinementCtx<z.output<typeof TriageDecisionSchema>>,
+  ctx: z.RefinementCtx<z.output<typeof TriageDecisionSchema>>,
   path: PropertyKey[],
   message: string,
 ): void {
