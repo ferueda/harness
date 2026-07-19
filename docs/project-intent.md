@@ -3,9 +3,9 @@
 ## What this repo is
 
 `harness` is a personal agent workflow harness. It keeps reusable skills,
-callable review and planning workflows, runner code, provider adapters,
-automations, plans, schemas, scripts, and review artifact conventions in one
-repository.
+callable review and planning workflows, standalone service primitives, runner
+code, provider adapters, automations, plans, schemas, scripts, and review
+artifact conventions in one repository.
 
 The repo is both a tool and its own reference target: harness can run against
 external target repositories, and this checkout dogfoods the same workflows for
@@ -39,11 +39,34 @@ such as `/path/to/repo`, `harness.json`, and `.harness/runs/reviews/<run-id>/`.
 - Current behavior and planned work must be clearly separated.
 - Provider-specific details belong behind provider adapters; workflows should
   stay provider-agnostic.
-- Factory owns lifecycle truth and transition rules. Execution hosts such as
-  Inngest may deliver, retry, schedule, and observe work, but they must not keep
-  a second lifecycle state machine.
+- Reusable service primitives own connection and communication only. They must
+  not depend on Factory, orchestration hosts, agent providers, prompts, or
+  domain workflow policy.
+- Factory owns lifecycle truth and transition rules for Factory-managed work.
+  Execution hosts such as Inngest may deliver, retry, schedule, and observe
+  that work, but they must not keep a second Factory lifecycle state machine.
 - Runtime schemas and exported schemas must stay aligned when either side
   changes.
+
+## Automation shape
+
+New automation capabilities should be small, independent operations rather than
+new stations in a fixed lifecycle. Compose them in one direction:
+
+```text
+delivery and retries
+  -> domain operation and policy
+  -> standalone service and provider primitives
+```
+
+The delivery layer coordinates durable execution. Domain operations own their
+decisions and structured results. Service and provider primitives communicate
+with external systems without knowing which operation or delivery host called
+them.
+
+Factory remains one workflow model in the repo, not the required boundary for
+all new automation. Standalone operations may be connected when a real workflow
+needs it, but they should not require an artificial shared state machine.
 
 ## Durable factory-store boundary
 
