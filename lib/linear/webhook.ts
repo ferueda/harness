@@ -1,5 +1,28 @@
 import { LinearWebhookClient } from "@linear/sdk/webhooks";
+import { z } from "zod";
 import { LinearError } from "./error.ts";
+
+const nonEmptyStringSchema = z.string().refine((value) => value.trim() !== "");
+const webhookEnvelopeSchema = z
+  .object({
+    webhookTimestamp: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  })
+  .passthrough();
+const webhookEventSchema = webhookEnvelopeSchema.extend({
+  type: nonEmptyStringSchema,
+  action: nonEmptyStringSchema,
+});
+const issueCreatedPayloadSchema = webhookEventSchema.extend({
+  type: z.literal("Issue"),
+  action: z.literal("create"),
+  organizationId: nonEmptyStringSchema,
+  data: z.object({
+    id: nonEmptyStringSchema,
+    updatedAt: nonEmptyStringSchema
+      .refine((value) => Number.isFinite(Date.parse(value)))
+      .transform((value) => new Date(Date.parse(value)).toISOString()),
+  }),
+});
 
 export type VerifyLinearIssueCreatedWebhookInput = Readonly<{
   secret: string;
@@ -27,7 +50,14 @@ export function verifyLinearIssueCreatedWebhook(
   }
 
   const payload = parsePayload(input.rawBody);
-  const webhookTimestamp = requiredWebhookTimestamp(payload.webhookTimestamp);
+  const envelope = webhookEnvelopeSchema.safeParse(payload);
+  if (!envelope.success) {
+    throw invalidInput(
+      "Linear webhook body must include a valid webhookTimestamp.",
+      envelope.error,
+    );
+  }
+  const { webhookTimestamp } = envelope.data;
 
   try {
     new LinearWebhookClient(secret).verify(input.rawBody, signature, webhookTimestamp);
@@ -35,43 +65,35 @@ export function verifyLinearIssueCreatedWebhook(
     throw new LinearError("rejected", "Linear webhook verification failed.", { cause });
   }
 
-  const type = requiredString(payload.type, "payload type");
-  const action = requiredString(payload.action, "payload action");
+  const event = webhookEventSchema.safeParse(payload);
+  if (!event.success) {
+    throw invalidInput("Linear webhook body must include a valid type and action.", event.error);
+  }
+  const { type, action } = event.data;
   if (type !== "Issue" || action !== "create") return null;
 
-  const organizationId = requiredString(payload.organizationId, "organizationId");
-  const data = requiredRecord(payload.data, "data");
-  const issueId = requiredString(data.id, "data.id");
-  const issueUpdatedAt = normalizedDate(data.updatedAt, "data.updatedAt");
+  const issueCreated = issueCreatedPayloadSchema.safeParse(payload);
+  if (!issueCreated.success) {
+    throw invalidInput("Linear Issue/create webhook body is invalid.", issueCreated.error);
+  }
 
   return {
     deliveryId,
-    organizationId,
-    issueId,
-    issueUpdatedAt,
+    organizationId: issueCreated.data.organizationId,
+    issueId: issueCreated.data.data.id,
+    issueUpdatedAt: issueCreated.data.data.updatedAt,
     webhookTimestamp,
   };
 }
 
-function parsePayload(rawBody: Buffer): Record<string, unknown> {
+function parsePayload(rawBody: Buffer): unknown {
   let value: unknown;
   try {
     value = JSON.parse(rawBody.toString("utf8"));
   } catch (cause) {
     throw new LinearError("invalid-input", "Linear webhook body must be valid JSON.", { cause });
   }
-  return requiredRecord(value, "body");
-}
-
-function requiredRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw invalidInput(`Linear webhook ${label} must be an object.`);
-  }
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function requiredString(
@@ -85,22 +107,6 @@ function requiredString(
   return value;
 }
 
-function requiredWebhookTimestamp(value: unknown): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
-    throw invalidInput("Linear webhook webhookTimestamp must be a positive safe integer.");
-  }
-  return value;
-}
-
-function normalizedDate(value: unknown, label: string): string {
-  const text = requiredString(value, label);
-  const timestamp = Date.parse(text);
-  if (!Number.isFinite(timestamp)) {
-    throw invalidInput(`Linear webhook ${label} must be a valid date.`);
-  }
-  return new Date(timestamp).toISOString();
-}
-
-function invalidInput(message: string): LinearError {
-  return new LinearError("invalid-input", message);
+function invalidInput(message: string, cause?: unknown): LinearError {
+  return new LinearError("invalid-input", message, { cause });
 }
