@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TriageDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision",
+    "scope",
+    "agentAction",
+    "summary",
+    "evidence",
+    "questions",
+    "inputReason",
+    "duplicateOf",
+    "blockedBy"
+  ],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["ready-for-agent", "needs-input", "duplicate"]
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["bounded", "too-broad"]
+    },
+    "agentAction": {
+      "type": ["string", "null"],
+      "enum": ["implement", "plan", null]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "summary"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["tracker", "code", "docs", "test", "repo-state"]
+          },
+          "path": {
+            "type": ["string", "null"],
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "inputReason": {
+      "type": ["string", "null"],
+      "enum": ["rescope", "clarification", "product-decision", "access", "external-fact", null]
+    },
+    "duplicateOf": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "blockedBy": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
