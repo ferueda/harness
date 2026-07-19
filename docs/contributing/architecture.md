@@ -94,6 +94,7 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-operation-reconciliation.ts`                                | Bounded caller-supplied log-to-delivery repair with per-target failure isolation                                      |
 | `lib/factory-inngest-adapter.ts`                                         | Deterministic Factory event IDs, direct sends, chained sends, and hosted function controls                            |
 | `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
+| `lib/linear/`                                                            | Standalone, JSON-safe Linear communication primitives that do not depend on Factory or orchestration                  |
 | `lib/factory-*-publication*.ts`, `lib/factory-pull-request-publisher.ts` | Reviewed-commit validation and bounded GitHub publication                                                             |
 | `providers/`                                                             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation                   |
 | `workflows/`, `lib/prompts/`                                             | Provider-agnostic workflow definitions, shared review execution, and prompt contracts                                 |

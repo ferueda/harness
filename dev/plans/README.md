@@ -2,6 +2,7 @@
 
 ## Active queue
 
+- [Build a standalone Linear issue-context reader](260718-linear-issue-context-reader.md) — implemented; awaiting review. [Linear](https://linear.app/ferueda/issue/FER-213/build-a-standalone-linear-issue-context-reader)
 - [Bound automatic Factory retryable-action chains](FER-183.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-183/bound-automatic-factory-retryable-action-chains)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
