@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   verifyLinearIssueCreatedWebhook,
   type VerifyLinearIssueCreatedWebhookInput,
@@ -7,6 +7,10 @@ import {
 
 const SECRET = "linear-webhook-secret";
 const DELIVERY_ID = "234d1a4e-b617-4388-90fe-adc3633d6b72";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function issuePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -117,6 +121,8 @@ describe("Linear issue-created webhook verification", () => {
     ["expired", -61_000],
     ["future", 61_000],
   ])("rejects a webhook timestamp outside the freshness window: %s", (_label, offset) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-19T15:00:00.000Z"));
     const body = rawBody(issuePayload({ webhookTimestamp: Date.now() + offset }));
 
     expect(() => verify(body)).toThrowError(expect.objectContaining({ code: "rejected" }));
