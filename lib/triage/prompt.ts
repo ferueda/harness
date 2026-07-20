@@ -1,6 +1,6 @@
 import { TriageWorkItemContextSchema, type TriageWorkItemContext } from "./schema.ts";
 
-export const TRIAGE_POLICY_VERSION = "1";
+export const TRIAGE_POLICY_VERSION = "2";
 
 export function renderTriagePrompt(input: TriageWorkItemContext): string {
   const context = TriageWorkItemContextSchema.parse(input);
@@ -14,6 +14,8 @@ Apply this rubric in order:
 1. Check scope first.
    - A bounded item has one coherent, observable outcome and one acceptance boundary. A vertical outcome may span several layers or files.
    - An item is too broad when it contains outcomes that could be accepted, shipped, deferred, or rolled back independently.
+   - Count independent outcomes, not unanswered questions or implementation steps. Several human decisions about one observable outcome do not make the item too broad; keep it bounded and classify those decisions in step 2.
+   - Example: one stale-issue automation with an undecided age threshold and close behavior is bounded and needs a product decision. Webhook ingress, triage, planning, implementation, and a dashboard are independent outcomes and need rescoping.
    - For a too-broad item, return decision "needs-input", scope "too-broad", agentAction null, and inputReason "rescope".
    - Name the independent outcome seams in the summary, recommend the smallest useful first slice, and ask exactly one question: whether to narrow this item to that slice and create separate work for the others.
 
@@ -24,7 +26,9 @@ Apply this rubric in order:
 
 3. Choose the next agent action for bounded work.
    - Return decision "ready-for-agent" and agentAction "implement" when the issue is specified well enough for one safe implementation pass.
-   - Return decision "ready-for-agent" and agentAction "plan" when the outcome is clear but repository investigation, diagnosis, migration design, risk reduction, or technical planning should happen before editing.
+   - Normal repository inspection to locate files, follow existing patterns, and write tests is part of implementation. It does not by itself require agentAction "plan".
+   - Return decision "ready-for-agent" and agentAction "plan" only when the next useful deliverable should be a diagnosis, design, migration strategy, or risk-reduction plan because editing now would be premature or unsafe.
+   - When the issue supplies an observable outcome, constraints, and an acceptance boundary, prefer agentAction "implement" if repository evidence supports a straightforward safe change.
    - agentAction is a recommendation, not a tracker phase.
 
 4. Detect duplicates.
