@@ -18,6 +18,22 @@ artifact lifecycle, and directory ownership.
 | Git remote credentials and authenticated `gh` | Explicit Factory plan/implementation publication | Publication may push one deterministic branch and find or create its PR. Merge remains human-controlled. |
 | Optional PATH entry for installed shim        | Interactive `harness ...` command                | See Install and update for the default shim path.                                                        |
 
+## Linear automation worker
+
+`harness linear worker` reads stable project, team, workflow-state, and
+Next-action label IDs from the target repository's `linearAutomation` section.
+The first consumer requires `triage.agent: "codex"` and also accepts a timeout
+plus optional model and reasoning overrides. Unsupported providers fail during
+startup configuration loading, before Connect accepts work. The section does
+not contain secrets.
+
+The worker requires `LINEAR_API_KEY` and `LINEAR_WEBHOOK_SECRET`. Cloud Connect
+also requires `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY`; local development
+uses `INNGEST_DEV=1`. `HARNESS_WORKER_HOST` and `HARNESS_WORKER_PORT` default to
+`0.0.0.0:8080`. `HARNESS_WORKER_INSTANCE_ID` and `HARNESS_APP_VERSION` are
+optional deployment metadata. Inngest's standard Connect gateway environment
+variables remain available for local or self-hosted routing.
+
 ## Install and update
 
 Run `./install` from the harness checkout, or run `/path/to/harness/install`

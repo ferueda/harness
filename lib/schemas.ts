@@ -7,6 +7,7 @@ import {
   CURSOR_SDK_MODEL_MODES,
   type AgentProviderName,
 } from "./agents.ts";
+import { LinearReadinessMappingSchema } from "./linear-readiness.ts";
 
 const CodexOnlyRoleFields = [
   "executable",
@@ -114,6 +115,23 @@ const FactoryConfigSchema = z
   })
   .strict();
 
+const LinearAutomationTriageSchema = z
+  .object({
+    agent: z.literal("codex"),
+    model: z.string().trim().min(1).optional(),
+    modelReasoningEffort: z.enum(AGENT_REASONING_EFFORTS).optional(),
+    maxRuntimeMs: z.number().int().positive(),
+  })
+  .strict();
+
+const LinearAutomationConfigSchema = z
+  .object({
+    organizationId: z.string().trim().min(1),
+    readiness: LinearReadinessMappingSchema,
+    triage: LinearAutomationTriageSchema,
+  })
+  .strict();
+
 export const HarnessConfigSchema = z
   .object({
     base: z.string().optional(),
@@ -140,6 +158,7 @@ export const HarnessConfigSchema = z
       .passthrough()
       .optional(),
     factory: FactoryConfigSchema.optional(),
+    linearAutomation: LinearAutomationConfigSchema.optional(),
   })
   .passthrough()
   .superRefine((config, ctx) => {
@@ -190,6 +209,7 @@ export type FactoryRoleConfig = z.infer<typeof FactoryRoleSchema>;
 export type FactoryLinearConfig = z.infer<typeof FactoryLinearConfigSchema>;
 export type FactoryLinearStatusesConfig = z.infer<typeof FactoryLinearStatusesSchema>;
 export type FactoryStoreConfig = z.infer<typeof FactoryStoreConfigSchema>;
+export type LinearAutomationConfig = z.infer<typeof LinearAutomationConfigSchema>;
 
 export const ReviewOutputSchema = z
   .object({

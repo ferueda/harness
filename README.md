@@ -132,6 +132,9 @@ base branch only; add provider choices as needed:
 
 Factory roles may override the provider and model under
 `factory.<station>.roles`. Run `harness models` for the supported model catalog.
+The independent `harness linear worker` reads its stable Linear IDs and triage
+profile from `linearAutomation`; see the
+[Linear webhook source guide](docs/contributing/linear-webhook-source.md).
 
 Cursor SDK runs require `CURSOR_API_KEY`. Codex follows local `codex login`
 authentication or `CODEX_API_KEY`. Linear commands require `LINEAR_API_KEY`;

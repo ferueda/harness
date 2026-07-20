@@ -41,6 +41,7 @@ docs should link here. Exact command ownership lives in
 | Repository self-contract | Packaged skills, command inventory, documentation structure, and private-path exclusion |
 | Distribution smoke       | Built package layout, installed entrypoint, generated shim, and basic public wiring     |
 | Factory system smoke     | Offline Factory CLI, Inngest delivery, and Grove recovery                               |
+| Linear automation smoke  | Offline Inngest Dev Server, Connect registration, routing, triage, and projection       |
 | Optional live            | Explicitly authorized external integration proof                                        |
 
 Use fast module and contract tests by default. Add broader proof only when the
@@ -58,8 +59,9 @@ changed behavior crosses a boundary the cheaper layer cannot observe.
 - Keep skill-owned suites inside the owning skill when a packaged skill needs
   its own test boundary.
 - Keep built-distribution coverage in `scripts/smoke-dist.ts`, Factory smokes in
-  `scripts/smoke-factory.ts` and `scripts/smoke-factory-grove.ts`, and gate-output
-  behavior in `test/gate-output.test.ts`.
+  `scripts/smoke-factory.ts` and `scripts/smoke-factory-grove.ts`, the independent
+  Linear journey in `scripts/smoke-linear-automation.ts`, and gate-output behavior
+  in `test/gate-output.test.ts`.
 - Keep target-repo fixtures isolated from the Harness checkout and user state.
 
 Use an existing location before inventing another test directory or suffix.
@@ -96,9 +98,11 @@ System smokes should:
 
 Distribution smoke proves packaging and command wiring. Factory smoke runs local
 fakes in a temporary repository and store, then proves Inngest execution and
-recovery around Grove release. It cleans on success and retains bounded diagnostics
-on failure. Live protocols require explicit authority, credentials, stop
-conditions, disposable targets, and cleanup; they are not routine CI coverage.
+recovery around Grove release. Linear automation smoke runs a real local Inngest
+Dev Server and Connect worker with fake Linear and agent boundaries, then proves
+the signed webhook-to-projection journey. Both clean on success and retain bounded
+diagnostics on failure. Live protocols require explicit authority, credentials,
+stop conditions, disposable targets, and cleanup; they are not routine CI coverage.
 
 ## Verification Commands
 
@@ -115,9 +119,12 @@ pnpm exec vitest run test/docs-contracts.test.ts
 - `pnpm smoke:factory` / `make smoke-factory` runs the offline Factory, Inngest,
   and Grove recovery journey. It is not part of Vitest, watch mode, pre-commit, or
   ordinary local `pnpm check`.
+- `pnpm smoke:linear-automation` / `make smoke-linear-automation` runs the
+  independent Linear automation journey. It is not part of Vitest, watch mode,
+  pre-commit, or ordinary local `pnpm check`.
 - `pnpm check` / `make check` is the normal local handoff gate.
-- `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Factory
-  system smoke after the ordinary checks.
+- `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs both system
+  smokes after the ordinary checks.
 - Approved plan-only changes use `make fix-plan` and `make check-plan`. CI runs
   the same focused check; it bypasses the full gate and Factory smoke.
 - Other docs-only behavior follows the normal command contract.

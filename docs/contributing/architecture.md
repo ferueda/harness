@@ -83,7 +83,7 @@ GitHub mutations are explicit, retryable projections.
 
 | Area                                                                     | Responsibility                                                                                                        |
 | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `bin/`                                                                   | CLI entrypoints, generated help, manual Factory commands, and action output                                           |
+| `bin/`                                                                   | CLI entrypoints, generated help, manual Factory commands, the Linear worker command, and action output                |
 | `lib/config.ts`, `lib/context.ts`, `lib/workflow-context.ts`             | Workspace/config resolution, review scope, immutable context, provider wiring, aggregation, and standalone run export |
 | `lib/factory-lifecycle-*.ts`, `lib/factory-state-machine.ts`             | Factory event schemas, compare-and-append kernel, state reduction, and pure reactions                                 |
 | `lib/factory-*-action.ts`, phase input/context modules                   | Triage, planning, and implementation action boundaries and immutable evidence                                         |
@@ -96,8 +96,9 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
 | `lib/inngest/`                                                           | Independent Inngest event contracts and hosted webhook transform sources, without domain policy or service clients    |
 | `lib/linear/`                                                            | Standalone, JSON-safe Linear communication primitives that do not depend on Factory or orchestration                  |
-| `lib/linear-readiness.ts`, `lib/linear-readiness-router.ts`              | Deterministic Linear readiness policy and its unregistered, read-only Inngest delivery adapter                        |
-| `lib/linear-triage.ts`                                                   | Unregistered independent Inngest consumer that composes triage policy with standalone Linear projections              |
+| `lib/linear-readiness.ts`, `lib/linear-readiness-router.ts`              | Deterministic Linear readiness policy and its read-only Inngest delivery adapter                                      |
+| `lib/linear-triage.ts`                                                   | Independent Inngest consumer that composes triage policy with standalone Linear projections                           |
+| `lib/linear-automation-worker.ts`                                        | Minimal Connect composition, fixed function registration, environment validation, and health/readiness endpoints      |
 | `lib/factory-*-publication*.ts`, `lib/factory-pull-request-publisher.ts` | Reviewed-commit validation and bounded GitHub publication                                                             |
 | `providers/`                                                             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation                   |
 | `workflows/`, `lib/prompts/`                                             | Provider-agnostic workflow definitions, shared review execution, and prompt contracts                                 |
@@ -228,9 +229,12 @@ webhook transform under `lib/inngest/` can produce an untrusted hosted event.
 The top-level readiness adapter can verify that event, reload Linear truth, and
 emit one provider-neutral work request without mutating Linear. The independent
 triage consumer can handle that request and project one triage decision through
-the standalone Linear service. No worker registers either function yet, so this
-path does not run persistently. Harness does not host a Linear webhook endpoint.
-Publication and merge acknowledgement remain separate.
+the standalone Linear service. `harness linear worker` registers those two
+functions through Inngest Connect. It loads one `linearAutomation` configuration
+snapshot at startup, enables only the triage route, caps total worker concurrency
+at one, and exposes `/health` plus Connect-backed `/ready`. Plan and implementation
+routes stay disabled until their own consumers exist. Harness does not host a
+Linear webhook endpoint. Publication and merge acknowledgement remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

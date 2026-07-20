@@ -12,6 +12,31 @@
       "approvalPolicy": "never"
     }
   },
+  "linearAutomation": {
+    "organizationId": "41bd0d5d-a31d-4a6c-a887-f986e81d9693",
+    "readiness": {
+      "teamId": "e24149c2-1d82-47c7-b886-7f0a8829261b",
+      "projectId": "d885bd86-e17a-4c8e-ace2-b39793528c49",
+      "stateIds": {
+        "backlog": "a876317f-d866-446c-969a-1b26396c945c",
+        "open": "0bbd1f8f-fc73-4ee0-a49b-a3cf113ee50a",
+        "inProgress": "876c58f0-25ec-44c4-a39c-41920ccb4b93",
+        "inReview": "86a6d635-ecad-46fe-a892-19c010ee0e62",
+        "done": "fe71f143-a07c-41d0-b063-64f1984c7fdc",
+        "canceled": "a46b4412-ec7e-4cba-a162-72168f635763",
+        "duplicate": "c37bf82c-c0d6-4aa6-865a-7509e879335b"
+      },
+      "nextActionLabelIds": {
+        "plan": "2e19103e-810d-4dc7-941d-7f79ef33b053",
+        "implement": "774146a5-9974-47f4-82bb-c3a368ba6902",
+        "needsInput": "d8d7fa19-f98b-4dee-bffe-a52ef52d1033"
+      }
+    },
+    "triage": {
+      "agent": "codex",
+      "maxRuntimeMs": 1800000
+    }
+  },
   "factory": {
     "triage": {
       "roles": {

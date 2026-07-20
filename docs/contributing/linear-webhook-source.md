@@ -26,8 +26,8 @@ Then:
 3. Copy the generated Inngest webhook URL.
 4. In Linear workspace settings, open **API → Webhooks** and create an
    `Issue` webhook using that URL.
-5. Store the Linear signing secret in the runtime configuration used by the
-   future router. Do not add it to the transform or repository.
+5. Store the Linear signing secret as `LINEAR_WEBHOOK_SECRET` in the worker
+   environment. Do not add it to the transform or repository.
 
 Leave the transform event timestamp unset. Inngest will set it to the time the
 HTTP request was received, and the verifier uses that receipt time for Linear's
@@ -46,14 +46,16 @@ consumers own any lifecycle projection.
 
 `lib/linear-triage.ts` defines the independent triage consumer that can handle
 the router's triage request and project one decision through the standalone
-Linear service. No Connect worker registers these functions yet, and no
-planning or implementation consumer is currently available.
+Linear service. `harness linear worker` registers both functions through Inngest
+Connect. Its route map enables triage only; planning and implementation remain
+disabled until their own consumers exist.
 
 The event ID is namespaced with the Linear delivery ID so provider retries
 converge during Inngest's event-deduplication window. Missing headers remain
 empty untrusted data and do not receive a caller-selected event ID.
 
 For local tests, send a representative `linear/webhook.received` event directly
-to the Inngest Dev Server. The hosted transform itself is covered by the
-colocated unit test and can also be exercised with the Inngest dashboard's
-transform tester.
+to the Inngest Dev Server. `make smoke-linear-automation` runs the full offline
+Dev Server and Connect journey with fake Linear and agent boundaries. The hosted
+transform itself is covered by the colocated unit test and can also be exercised
+with the Inngest dashboard's transform tester.

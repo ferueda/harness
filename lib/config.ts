@@ -17,7 +17,9 @@ import {
   type FactoryRoleConfig,
   type FactoryStoreConfig,
   type HarnessConfig,
+  type LinearAutomationConfig,
 } from "./schemas.ts";
+import type { LinearReadinessMapping } from "./linear-readiness.ts";
 import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
 
 const CONFIG_FILE = "harness.json";
@@ -104,17 +106,74 @@ type ResolveFactoryRoleAgentInput =
       role: Extract<FactoryStationRole, "implementer" | "reviewer">;
     };
 
-export type FactoryConfigSnapshot = Readonly<{
+export type HarnessConfigSnapshot = Readonly<{
   workspace: string;
   config: HarnessConfig;
+}>;
+export type FactoryConfigSnapshot = HarnessConfigSnapshot;
+
+export type LinearAutomationSettings = Readonly<{
+  workspace: string;
+  organizationId: string;
+  readiness: LinearReadinessMapping;
+  triage: Readonly<{
+    agent: AgentProviderName;
+    model: string;
+    modelReasoningEffort: AgentReasoningEffort;
+    maxRuntimeMs: number;
+    codexPathOverride?: string;
+  }>;
 }>;
 
 export function loadFactoryConfigSnapshot(
   workspaceInput?: string,
   cwd = process.cwd(),
 ): FactoryConfigSnapshot {
+  return loadHarnessConfigSnapshot(workspaceInput, cwd);
+}
+
+export function loadHarnessConfigSnapshot(
+  workspaceInput?: string,
+  cwd = process.cwd(),
+): HarnessConfigSnapshot {
   const workspace = resolveHarnessWorkspace(workspaceInput, cwd);
   return Object.freeze({ workspace, config: readHarnessConfig(workspace) });
+}
+
+export function resolveLinearAutomationSettings(
+  options: { workspace?: string },
+  cwd = process.cwd(),
+): LinearAutomationSettings {
+  return resolveLinearAutomationSettingsFromSnapshot(
+    loadHarnessConfigSnapshot(options.workspace, cwd),
+  );
+}
+
+export function resolveLinearAutomationSettingsFromSnapshot(
+  snapshot: HarnessConfigSnapshot,
+): LinearAutomationSettings {
+  const { workspace, config } = snapshot;
+  const automation = config.linearAutomation;
+  if (!automation) {
+    throw new Error(
+      "linearAutomation is required in harness.json for the Linear worker. Configure organizationId, readiness IDs, and triage.",
+    );
+  }
+
+  const agentConfig = config.agents?.codex ?? {};
+  const model = automation.triage.model ?? agentConfig.model ?? DEFAULT_AGENT_MODELS.codex;
+  const modelReasoningEffort =
+    automation.triage.modelReasoningEffort ??
+    config.agents?.codex?.modelReasoningEffort ??
+    DEFAULT_CODEX_REASONING_EFFORT;
+
+  return freezeLinearAutomationSettings({
+    workspace,
+    automation,
+    model,
+    modelReasoningEffort,
+    codexPathOverride: config.agents?.codex?.executable,
+  });
 }
 
 export function resolveHarnessOptions<T extends HarnessOptions>(
@@ -390,6 +449,34 @@ function factoryRoleConfig(
     return config.factory?.implementation?.roles?.[input.role];
   }
   return config.factory?.planning?.roles?.[input.role];
+}
+
+function freezeLinearAutomationSettings(input: {
+  workspace: string;
+  automation: LinearAutomationConfig;
+  model: string;
+  modelReasoningEffort: AgentReasoningEffort;
+  codexPathOverride?: string;
+}): LinearAutomationSettings {
+  const readiness = Object.freeze({
+    ...input.automation.readiness,
+    stateIds: Object.freeze({ ...input.automation.readiness.stateIds }),
+    nextActionLabelIds: Object.freeze({
+      ...input.automation.readiness.nextActionLabelIds,
+    }),
+  });
+  const triage = Object.freeze({
+    ...input.automation.triage,
+    model: input.model,
+    modelReasoningEffort: input.modelReasoningEffort,
+    ...(input.codexPathOverride ? { codexPathOverride: input.codexPathOverride } : {}),
+  });
+  return Object.freeze({
+    workspace: input.workspace,
+    organizationId: input.automation.organizationId,
+    readiness,
+    triage,
+  });
 }
 
 function resolveGitRoot(cwd: string): string {
