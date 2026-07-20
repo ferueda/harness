@@ -7,7 +7,7 @@ describe("triage prompt", () => {
     const context = validContext();
     const prompt = renderTriagePrompt(context);
 
-    expect(TRIAGE_POLICY_VERSION).toBe("1");
+    expect(TRIAGE_POLICY_VERSION).toBe("2");
     expect(prompt).toContain(JSON.stringify(context, null, 2));
     expect(prompt).toContain('"commentsTruncated": true');
     expect(prompt).toContain('"childrenTruncated": false');
@@ -21,6 +21,18 @@ describe("triage prompt", () => {
     expect(prompt).toContain("1. Check scope first.");
     expect(prompt).toContain(
       "outcomes that could be accepted, shipped, deferred, or rolled back independently",
+    );
+    expect(prompt).toContain(
+      "Count independent outcomes, not unanswered questions or implementation steps.",
+    );
+    expect(prompt).toContain(
+      "Several human decisions about one observable outcome do not make the item too broad",
+    );
+    expect(prompt).toContain(
+      "one stale-issue automation with an undecided age threshold and close behavior is bounded",
+    );
+    expect(prompt).toContain(
+      "Webhook ingress, triage, planning, implementation, and a dashboard are independent outcomes",
     );
     expect(prompt).toContain('decision "needs-input", scope "too-broad"');
     expect(prompt).toContain("recommend the smallest useful first slice");
@@ -38,6 +50,15 @@ describe("triage prompt", () => {
     );
     expect(prompt).toContain('decision "ready-for-agent" and agentAction "implement"');
     expect(prompt).toContain('decision "ready-for-agent" and agentAction "plan"');
+    expect(prompt).toContain(
+      "Normal repository inspection to locate files, follow existing patterns, and write tests is part of implementation.",
+    );
+    expect(prompt).toContain(
+      "only when the next useful deliverable should be a diagnosis, design, migration strategy, or risk-reduction plan",
+    );
+    expect(prompt).toContain(
+      'prefer agentAction "implement" if repository evidence supports a straightforward safe change',
+    );
     expect(prompt).toContain("agentAction is a recommendation, not a tracker phase");
   });
 
