@@ -14,7 +14,7 @@ const READY_TO_IMPLEMENT = {
   decision: "ready-for-agent",
   scope: "bounded",
   agentAction: "implement",
-  summary: "The issue is bounded and specified for implementation.",
+  rationale: "The issue is bounded and specified for implementation.",
   evidence: [
     {
       kind: "tracker",
@@ -31,7 +31,7 @@ const READY_TO_IMPLEMENT = {
 const READY_TO_PLAN = {
   ...READY_TO_IMPLEMENT,
   agentAction: "plan",
-  summary: "Repository investigation should come before implementation.",
+  rationale: "Repository investigation should come before implementation.",
 } satisfies TriageDecision;
 
 describe("triageIssue", () => {

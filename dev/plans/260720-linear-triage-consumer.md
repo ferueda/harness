@@ -48,10 +48,10 @@ projection ledger, repair mode, lock, compare-and-set layer, or second store.
 
    Derive the hidden comment marker by recomputing
    `workRequestEventId("triage", event.data)`. Render one concise comment from
-   the structured decision and safe provenance: outcome/action, summary,
-   evidence, questions or input reason, relation references, provider/model,
-   and policy/schema versions. Do not include the raw prompt, webhook data,
-   credentials, provider logs, or internal reasoning.
+   the structured decision and safe provenance: outcome/action, route-specific
+   rationale, evidence, questions or input reason, relation references,
+   provider/model, and policy/schema versions. Do not include the raw prompt,
+   webhook data, credentials, provider logs, or internal reasoning.
 
    Project through fixed named steps after reference resolution:
 

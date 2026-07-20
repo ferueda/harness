@@ -62,7 +62,7 @@ const READY_TO_IMPLEMENT = {
   decision: "ready-for-agent",
   scope: "bounded",
   agentAction: "implement",
-  summary: "The issue has one bounded implementation outcome.",
+  rationale: "The issue has one bounded implementation outcome.",
   evidence: [{ kind: "tracker", path: null, summary: "The acceptance boundary is explicit." }],
   questions: [],
   inputReason: null,
@@ -73,14 +73,14 @@ const READY_TO_IMPLEMENT = {
 const READY_TO_PLAN = {
   ...READY_TO_IMPLEMENT,
   agentAction: "plan",
-  summary: "The next useful deliverable is a technical plan.",
+  rationale: "The next useful deliverable is a technical plan.",
 } satisfies TriageDecision;
 
 const NEEDS_INPUT = {
   ...READY_TO_IMPLEMENT,
   decision: "needs-input",
   agentAction: null,
-  summary: "One product decision blocks useful agent work.",
+  rationale: "One product decision blocks useful agent work.",
   questions: ["Should this include archived records?"],
   inputReason: "product-decision",
 } satisfies TriageDecision;
@@ -89,7 +89,7 @@ const DUPLICATE = {
   ...READY_TO_IMPLEMENT,
   decision: "duplicate",
   agentAction: null,
-  summary: "FER-400 already owns this outcome.",
+  rationale: "FER-400 already owns this outcome.",
   duplicateOf: "FER-400",
 } satisfies TriageDecision;
 
@@ -312,6 +312,9 @@ describe("independent Linear triage function", () => {
     const expectedEventId = workRequestEventId("triage", workEvent(context).data);
     expect(comment?.marker).toBe(`<!-- harness:linear-triage:${expectedEventId} -->`);
     expect(comment?.body).toContain("Ready for agent — Implement");
+    expect(comment?.body).toContain(
+      "**Why Implement:** The issue has one bounded implementation outcome.",
+    );
     expect(comment?.body).toContain("**Blocked by:** FER-300, FER-300");
     expect(comment?.body).toContain("codex / gpt-5.6-sol / high");
     expect(comment?.body).not.toContain("causationEventId");
@@ -355,6 +358,11 @@ describe("independent Linear triage function", () => {
       });
       expect(linear.ensureComment.mock.calls[0]?.[0].body).toContain(firstCommentSnippet);
       expect(linear.ensureComment.mock.calls[0]?.[0].body).toContain(secondCommentSnippet);
+      expect(linear.ensureComment.mock.calls[0]?.[0].body).toContain(
+        _name === "Plan"
+          ? "**Why Plan:** The next useful deliverable is a technical plan."
+          : "**Why Needs Input:** One product decision blocks useful agent work.",
+      );
     },
   );
 
@@ -393,6 +401,9 @@ describe("independent Linear triage function", () => {
       issueId: context.id,
       duplicateOfIssueId: duplicate.id,
     });
+    expect(linear.ensureComment.mock.calls[0]?.[0].body).toContain(
+      "**Why Duplicate:** FER-400 already owns this outcome.",
+    );
     expect(linear.updateIssueState).not.toHaveBeenCalled();
   });
 

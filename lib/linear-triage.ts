@@ -387,7 +387,7 @@ function renderTriageComment(
     marker,
     "## Agent triage",
     `**Decision:** ${decisionTitle(decision)}`,
-    decision.summary,
+    `**${rationaleTitle(decision)}:** ${decision.rationale}`,
     evidenceSection(decision.evidence),
   ];
   if (decision.questions.length > 0) {
@@ -408,6 +408,12 @@ function decisionTitle(decision: TriageDecision): string {
   if (decision.decision === "duplicate") return "Duplicate";
   if (decision.decision === "needs-input") return "Needs input";
   return decision.agentAction === "plan" ? "Ready for agent — Plan" : "Ready for agent — Implement";
+}
+
+function rationaleTitle(decision: TriageDecision): string {
+  if (decision.decision === "duplicate") return "Why Duplicate";
+  if (decision.decision === "needs-input") return "Why Needs Input";
+  return decision.agentAction === "plan" ? "Why Plan" : "Why Implement";
 }
 
 function evidenceSection(evidence: readonly TriageEvidence[]): string {
