@@ -25,9 +25,13 @@ type RelationMutationPayload = {
   issueRelation?: MaybeFetch<MutationEntity>;
 };
 
+type IssueMutationInput =
+  | Readonly<{ stateId: string }>
+  | Readonly<{ addedLabelIds: string[]; removedLabelIds: string[] }>;
+
 export type LinearWriteClient = {
   createComment: (input: { issueId: string; body: string }) => PromiseLike<CommentMutationPayload>;
-  updateIssue: (issueId: string, input: { stateId: string }) => PromiseLike<IssueMutationPayload>;
+  updateIssue: (issueId: string, input: IssueMutationInput) => PromiseLike<IssueMutationPayload>;
   createIssueRelation: (input: {
     issueId: string;
     relatedIssueId: string;
@@ -51,6 +55,18 @@ export type UpdateIssueStateInput = Readonly<{
   issueId: string;
   expectedStateId: string;
   stateId: string;
+}>;
+
+export type UpdateIssueLabelsInput = Readonly<{
+  issueId: string;
+  addLabelIds: readonly string[];
+  removeLabelIds: readonly string[];
+}>;
+
+export type UpdateIssueLabelsResult = Readonly<{
+  submitted: boolean;
+  addedLabelIds: readonly string[];
+  removedLabelIds: readonly string[];
 }>;
 
 export type EnsureDuplicateRelationInput = Readonly<{
@@ -131,6 +147,33 @@ export async function updateIssueState(
     return { changed: true, stateId };
   } catch (error) {
     throw writeError(error, `Failed to update Linear issue ${issueId} state.`);
+  }
+}
+
+export async function updateIssueLabels(
+  client: LinearWriteClient,
+  input: UpdateIssueLabelsInput,
+): Promise<UpdateIssueLabelsResult> {
+  const issueId = nonEmptyInput(input.issueId, "issueId");
+  const addedLabelIds = normalizedIds(input.addLabelIds, "addLabelIds");
+  const removedLabelIds = normalizedIds(input.removeLabelIds, "removeLabelIds");
+  rejectOverlappingIds(addedLabelIds, removedLabelIds);
+
+  if (addedLabelIds.length === 0 && removedLabelIds.length === 0) {
+    return { submitted: false, addedLabelIds, removedLabelIds };
+  }
+
+  try {
+    const payload = await client.updateIssue(issueId, { addedLabelIds, removedLabelIds });
+    const updatedIssueId = await mutationEntityId(payload, payload?.issue, "label update", "issue");
+    if (updatedIssueId !== issueId) {
+      throw invalidResponse(
+        `Linear label update returned issue ${updatedIssueId}, expected ${issueId}.`,
+      );
+    }
+    return { submitted: true, addedLabelIds, removedLabelIds };
+  } catch (error) {
+    throw writeError(error, `Failed to update Linear issue ${issueId} labels.`);
   }
 }
 
@@ -277,6 +320,25 @@ function nonEmptyInput(value: unknown, label: string): string {
     throw new LinearError("invalid-input", `Linear ${label} must be a non-empty string.`);
   }
   return value.trim();
+}
+
+function normalizedIds(value: unknown, label: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new LinearError("invalid-input", `Linear ${label} must be an array.`);
+  }
+  const ids = Array.from(value, (id, index) => nonEmptyInput(id, `${label}[${index}]`));
+  return [...new Set(ids)];
+}
+
+function rejectOverlappingIds(addedLabelIds: string[], removedLabelIds: string[]): void {
+  const added = new Set(addedLabelIds);
+  const overlap = removedLabelIds.find((id) => added.has(id));
+  if (overlap) {
+    throw new LinearError(
+      "invalid-input",
+      `Linear label ${overlap} cannot be added and removed in the same update.`,
+    );
+  }
 }
 
 function nonEmptyBody(value: unknown): string {
