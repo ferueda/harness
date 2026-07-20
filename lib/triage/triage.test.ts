@@ -54,6 +54,7 @@ describe("triageIssue", () => {
       workspace: "/workspace/harness",
       execution: {
         model: "gpt-5.6-sol",
+        modelReasoningEffort: "xhigh",
         maxRuntimeMs: 120_000,
         logPath: "/logs/triage.jsonl",
         signal,
@@ -66,6 +67,7 @@ describe("triageIssue", () => {
       prompt: renderTriagePrompt(validWorkItem()),
       schemaPath: TRIAGE_DECISION_SCHEMA_PATH,
       model: "gpt-5.6-sol",
+      modelReasoningEffort: "xhigh",
       sandboxMode: "read-only",
       approvalPolicy: "never",
       workspaceGuard: "enforce",
@@ -79,6 +81,7 @@ describe("triageIssue", () => {
       provenance: {
         provider: "codex",
         model: "gpt-5.6-sol",
+        modelReasoningEffort: "xhigh",
         policyVersion: TRIAGE_POLICY_VERSION,
         decisionSchemaVersion: TRIAGE_DECISION_SCHEMA_VERSION,
         session: { provider: "codex", id: "thread-217" },
@@ -208,6 +211,7 @@ describe("triageIssue", () => {
         provenance: {
           provider: "codex",
           model: "gpt-5.6-sol",
+          modelReasoningEffort: "high",
           policyVersion: TRIAGE_POLICY_VERSION,
           decisionSchemaVersion: TRIAGE_DECISION_SCHEMA_VERSION,
           session: null,
@@ -256,6 +260,7 @@ function run(agent: Agent) {
     workspace: "/workspace/harness",
     execution: {
       model: "gpt-5.6-sol",
+      modelReasoningEffort: "high",
       maxRuntimeMs: 120_000,
     },
   });
