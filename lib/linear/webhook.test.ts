@@ -1,8 +1,8 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  verifyLinearIssueCreatedWebhook,
-  type VerifyLinearIssueCreatedWebhookInput,
+  verifyLinearIssueChangedWebhook,
+  type VerifyLinearIssueChangedWebhookInput,
 } from "./webhook.ts";
 
 const SECRET = "linear-webhook-secret";
@@ -34,8 +34,8 @@ function signature(body: Buffer, secret = SECRET): string {
   return createHmac("sha256", secret).update(body).digest("hex");
 }
 
-function verify(body: Buffer, overrides: Partial<VerifyLinearIssueCreatedWebhookInput> = {}) {
-  return verifyLinearIssueCreatedWebhook({
+function verify(body: Buffer, overrides: Partial<VerifyLinearIssueChangedWebhookInput> = {}) {
+  return verifyLinearIssueChangedWebhook({
     secret: SECRET,
     rawBody: body,
     signature: signature(body),
@@ -44,25 +44,44 @@ function verify(body: Buffer, overrides: Partial<VerifyLinearIssueCreatedWebhook
   });
 }
 
-describe("Linear issue-created webhook verification", () => {
-  it("returns the small normalized issue-created delivery", () => {
-    const payload = issuePayload();
+describe("Linear issue-changed webhook verification", () => {
+  it.each(["create", "update"] as const)(
+    "returns the small normalized Issue/%s delivery",
+    (action) => {
+      const payload = issuePayload({ action });
+      const body = rawBody(payload);
+
+      const result = verify(body);
+
+      expect(result).toEqual({
+        deliveryId: DELIVERY_ID,
+        organizationId: "organization-1",
+        action,
+        issueId: "issue-1",
+        issueUpdatedAt: "2026-07-19T15:00:00.000Z",
+        webhookTimestamp: payload.webhookTimestamp,
+      });
+      expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+    },
+  );
+
+  it("uses current update data and ignores updatedFrom", () => {
+    const payload = issuePayload({
+      action: "update",
+      updatedFrom: {
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      },
+    });
     const body = rawBody(payload);
 
     const result = verify(body);
 
-    expect(result).toEqual({
-      deliveryId: DELIVERY_ID,
-      organizationId: "organization-1",
-      issueId: "issue-1",
-      issueUpdatedAt: "2026-07-19T15:00:00.000Z",
-      webhookTimestamp: payload.webhookTimestamp,
-    });
-    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+    expect(result?.issueUpdatedAt).toBe("2026-07-19T15:00:00.000Z");
   });
 
   it.each([
-    ["an issue update", issuePayload({ action: "update" })],
+    ["issue removal", issuePayload({ action: "remove", data: null })],
+    ["unsupported issue action", issuePayload({ action: "archive", data: null })],
     [
       "another entity",
       issuePayload({
@@ -91,7 +110,7 @@ describe("Linear issue-created webhook verification", () => {
     ["delivery ID", { deliveryId: "" }, "invalid-input"],
     ["raw body", { rawBody: Buffer.alloc(0) }, "invalid-input"],
   ] satisfies Array<
-    [string, Partial<VerifyLinearIssueCreatedWebhookInput>, "invalid-config" | "invalid-input"]
+    [string, Partial<VerifyLinearIssueChangedWebhookInput>, "invalid-config" | "invalid-input"]
   >)("rejects a missing %s", (_label, overrides, code) => {
     const body = rawBody(issuePayload());
 
@@ -154,6 +173,17 @@ describe("Linear issue-created webhook verification", () => {
     ],
   ])("rejects a malformed target %s", (_label, payload) => {
     const body = rawBody(payload);
+
+    expect(() => verify(body)).toThrowError(expect.objectContaining({ code: "invalid-input" }));
+  });
+
+  it("rejects malformed Issue/update data", () => {
+    const body = rawBody(
+      issuePayload({
+        action: "update",
+        data: { id: "issue-1", updatedAt: "not-a-date" },
+      }),
+    );
 
     expect(() => verify(body)).toThrowError(expect.objectContaining({ code: "invalid-input" }));
   });
