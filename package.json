@@ -37,7 +37,7 @@
     "@cursor/sdk": "1.0.23",
     "@ferueda/grove": "1.4.4",
     "@linear/sdk": "88.1.0",
-    "@openai/codex-sdk": "0.144.4",
+    "@openai/codex-sdk": "0.144.6",
     "commander": "15.0.0",
     "inngest": "4.13.0",
     "zod": "4.4.3"
