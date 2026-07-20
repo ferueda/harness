@@ -3,7 +3,7 @@
 ## Active queue
 
 - [Bound automatic Factory retryable-action chains](FER-183.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-183/bound-automatic-factory-retryable-action-chains)
-- [Project independent Linear triage decisions](260720-linear-triage-consumer.md) — implemented; awaiting change review. [Linear](https://linear.app/ferueda/issue/FER-218/triage-linear-issues-with-an-independent-inngest-function)
+- [Poll Linear Backlog through self-hosted Inngest](260720-linear-backlog-poller.md) — approved; ready to implement. [Linear](https://linear.app/ferueda/issue/FER-248/poll-a-configured-linear-projects-backlog-every-60-seconds)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
@@ -74,6 +74,7 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Standalone Linear issue-context reader       | [#213](https://github.com/ferueda/harness/pull/213)                                                      |
 | —     | Safe standalone Linear mutations             | [#214](https://github.com/ferueda/harness/pull/214)                                                      |
 | —     | Provider-neutral Linear readiness router     | [#224](https://github.com/ferueda/harness/pull/224)                                                      |
+| —     | Independent Linear triage consumer           | [#225](https://github.com/ferueda/harness/pull/225)                                                      |
 
 ---
 
