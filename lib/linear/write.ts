@@ -151,19 +151,38 @@ export async function updateIssueState(
 }
 
 export async function updateIssueLabels(
-  client: LinearWriteClient,
+  client: LinearProjectionClient,
+  labelLimit: number,
   input: UpdateIssueLabelsInput,
 ): Promise<UpdateIssueLabelsResult> {
   const issueId = nonEmptyInput(input.issueId, "issueId");
-  const addedLabelIds = normalizedIds(input.addLabelIds, "addLabelIds");
-  const removedLabelIds = normalizedIds(input.removeLabelIds, "removeLabelIds");
-  rejectOverlappingIds(addedLabelIds, removedLabelIds);
+  const requestedAddedLabelIds = normalizedIds(input.addLabelIds, "addLabelIds");
+  const requestedRemovedLabelIds = normalizedIds(input.removeLabelIds, "removeLabelIds");
+  rejectOverlappingIds(requestedAddedLabelIds, requestedRemovedLabelIds);
 
-  if (addedLabelIds.length === 0 && removedLabelIds.length === 0) {
-    return { submitted: false, addedLabelIds, removedLabelIds };
+  if (requestedAddedLabelIds.length === 0 && requestedRemovedLabelIds.length === 0) {
+    return {
+      submitted: false,
+      addedLabelIds: requestedAddedLabelIds,
+      removedLabelIds: requestedRemovedLabelIds,
+    };
   }
 
   try {
+    const issue = await findIssueById(client, issueId);
+    const labels = await readLimited(labelLimit, (variables) => issue.labels(variables), "labels");
+    if (labels.truncated) {
+      throw incompleteLabelScan(issueId);
+    }
+    const currentLabelIds = new Set(
+      labels.nodes.map((label) => responseString(label.id, "label id")),
+    );
+    const addedLabelIds = requestedAddedLabelIds.filter((id) => !currentLabelIds.has(id));
+    const removedLabelIds = requestedRemovedLabelIds.filter((id) => currentLabelIds.has(id));
+    if (addedLabelIds.length === 0 && removedLabelIds.length === 0) {
+      return { submitted: false, addedLabelIds, removedLabelIds };
+    }
+
     const payload = await client.updateIssue(issueId, { addedLabelIds, removedLabelIds });
     const updatedIssueId = await mutationEntityId(payload, payload?.issue, "label update", "issue");
     if (updatedIssueId !== issueId) {
@@ -312,6 +331,13 @@ function incompleteRelationScan(issueId: string): LinearError {
   return new LinearError(
     "incomplete",
     `Linear relation scan for issue ${issueId} reached its configured limit.`,
+  );
+}
+
+function incompleteLabelScan(issueId: string): LinearError {
+  return new LinearError(
+    "incomplete",
+    `Linear label scan for issue ${issueId} reached its configured limit.`,
   );
 }
 

@@ -7,7 +7,7 @@ describe("triage prompt", () => {
     const context = validContext();
     const prompt = renderTriagePrompt(context);
 
-    expect(TRIAGE_POLICY_VERSION).toBe("2");
+    expect(TRIAGE_POLICY_VERSION).toBe("3");
     expect(prompt).toContain(JSON.stringify(context, null, 2));
     expect(prompt).toContain('"commentsTruncated": true');
     expect(prompt).toContain('"childrenTruncated": false');
@@ -76,6 +76,25 @@ describe("triage prompt", () => {
       "When a collection is truncated, do not treat an absent item as proof that it does not exist.",
     );
     expect(prompt).toContain("not self-reported confidence");
+  });
+
+  it("requires route-specific rationale instead of an issue restatement", () => {
+    const prompt = renderTriagePrompt(validContext());
+
+    expect(prompt).toContain("Explain why the exact decision and agentAction are appropriate.");
+    expect(prompt).toContain("Do not merely restate the issue or list the evidence.");
+    expect(prompt).toContain(
+      "For Implement, explain why the outcome and acceptance boundary support one safe implementation pass.",
+    );
+    expect(prompt).toContain(
+      "For Plan, explain what makes editing premature or unsafe and how the next planning deliverable reduces that risk.",
+    );
+    expect(prompt).toContain(
+      "For Needs Input, explain which human-only decision or scope boundary blocks useful agent work.",
+    );
+    expect(prompt).toContain(
+      "For Duplicate, explain why the referenced work item represents the same outcome.",
+    );
   });
 
   it("requires read-only structured output", () => {
