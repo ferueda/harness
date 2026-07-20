@@ -12,9 +12,10 @@ const webhookEventSchema = webhookEnvelopeSchema.extend({
   type: nonEmptyStringSchema,
   action: nonEmptyStringSchema,
 });
-const issueCreatedPayloadSchema = webhookEventSchema.extend({
+const issueChangedActionSchema = z.enum(["create", "update"]);
+const issueChangedPayloadSchema = webhookEventSchema.extend({
   type: z.literal("Issue"),
-  action: z.literal("create"),
+  action: issueChangedActionSchema,
   organizationId: nonEmptyStringSchema,
   data: z.object({
     id: nonEmptyStringSchema,
@@ -24,24 +25,25 @@ const issueCreatedPayloadSchema = webhookEventSchema.extend({
   }),
 });
 
-export type VerifyLinearIssueCreatedWebhookInput = Readonly<{
+export type VerifyLinearIssueChangedWebhookInput = Readonly<{
   secret: string;
   rawBody: Buffer;
   signature: string;
   deliveryId: string;
 }>;
 
-export type LinearIssueCreatedDelivery = Readonly<{
+export type LinearIssueChangedDelivery = Readonly<{
   deliveryId: string;
   organizationId: string;
+  action: z.infer<typeof issueChangedActionSchema>;
   issueId: string;
   issueUpdatedAt: string;
   webhookTimestamp: number;
 }>;
 
-export function verifyLinearIssueCreatedWebhook(
-  input: VerifyLinearIssueCreatedWebhookInput,
-): LinearIssueCreatedDelivery | null {
+export function verifyLinearIssueChangedWebhook(
+  input: VerifyLinearIssueChangedWebhookInput,
+): LinearIssueChangedDelivery | null {
   const secret = requiredString(input.secret, "secret", "invalid-config");
   const signature = requiredString(input.signature, "signature");
   const deliveryId = requiredString(input.deliveryId, "deliveryId");
@@ -70,18 +72,19 @@ export function verifyLinearIssueCreatedWebhook(
     throw invalidInput("Linear webhook body must include a valid type and action.", event.error);
   }
   const { type, action } = event.data;
-  if (type !== "Issue" || action !== "create") return null;
+  if (type !== "Issue" || !issueChangedActionSchema.safeParse(action).success) return null;
 
-  const issueCreated = issueCreatedPayloadSchema.safeParse(payload);
-  if (!issueCreated.success) {
-    throw invalidInput("Linear Issue/create webhook body is invalid.", issueCreated.error);
+  const issueChanged = issueChangedPayloadSchema.safeParse(payload);
+  if (!issueChanged.success) {
+    throw invalidInput(`Linear Issue/${action} webhook body is invalid.`, issueChanged.error);
   }
 
   return {
     deliveryId,
-    organizationId: issueCreated.data.organizationId,
-    issueId: issueCreated.data.data.id,
-    issueUpdatedAt: issueCreated.data.data.updatedAt,
+    organizationId: issueChanged.data.organizationId,
+    action: issueChanged.data.action,
+    issueId: issueChanged.data.data.id,
+    issueUpdatedAt: issueChanged.data.data.updatedAt,
     webhookTimestamp,
   };
 }
