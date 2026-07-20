@@ -14,15 +14,25 @@ import {
 import {
   createLinearTriageFunction,
   LINEAR_TRIAGE_AGENT_STEP_ID,
+  LINEAR_TRIAGE_COMMENT_STEP_ID,
   LINEAR_TRIAGE_CONFIRM_STEP_ID,
   LINEAR_TRIAGE_FUNCTION_ID,
+  LINEAR_TRIAGE_LABELS_STEP_ID,
   LINEAR_TRIAGE_LOAD_STEP_ID,
+  LINEAR_TRIAGE_RELATIONS_STEP_ID,
   LINEAR_TRIAGE_RESOLVE_STEP_ID,
   LINEAR_TRIAGE_RETRIES,
+  LINEAR_TRIAGE_STATE_STEP_ID,
   type LinearTriageService,
 } from "./linear-triage.ts";
 import type { LinearIssueContext, LinearIssueReference } from "./linear/read.ts";
 import type { TriageDecision } from "./triage/schema.ts";
+import {
+  completedStepsBefore,
+  fakeLinear,
+  projectionState,
+  statefulLinear,
+} from "../test/linear-triage-test-fixtures.ts";
 
 const readiness: LinearReadinessConfig = {
   teamId: "team-1",
@@ -225,75 +235,6 @@ function workEvent(context: LinearIssueContext, overrides: Partial<WorkRequestDa
 function fakeAgent(result: AgentRunResult) {
   const run = vi.fn<Agent["run"]>(async () => result);
   return { agent: { name: "codex", run } satisfies Agent, run };
-}
-
-function fakeLinear(input: {
-  roots: LinearIssueContext[];
-  targets?: Record<string, LinearIssueContext>;
-  errors?: Partial<Record<"comment" | "blocker" | "labels" | "state", Error>>;
-}) {
-  const order: string[] = [];
-  let rootIndex = 0;
-  const getIssueContext = vi.fn<LinearTriageService["getIssueContext"]>(async (reference) => {
-    order.push(`read:${reference}`);
-    if (reference === "issue-1") {
-      const value = input.roots[rootIndex] ?? input.roots.at(-1);
-      rootIndex += 1;
-      if (value) return value;
-    }
-    const target = input.targets?.[reference];
-    if (target) return target;
-    throw new Error(`Unexpected Linear read ${reference}`);
-  });
-  const ensureComment = vi.fn<LinearTriageService["ensureComment"]>(async () => {
-    order.push("comment");
-    if (input.errors?.comment) throw input.errors.comment;
-    return { created: true, id: "comment-created" };
-  });
-  const ensureDuplicateRelation = vi.fn<LinearTriageService["ensureDuplicateRelation"]>(
-    async () => {
-      order.push("duplicate");
-      return { created: true, id: "duplicate-created" };
-    },
-  );
-  const ensureBlockedByRelation = vi.fn<LinearTriageService["ensureBlockedByRelation"]>(
-    async () => {
-      order.push("blocker");
-      if (input.errors?.blocker) throw input.errors.blocker;
-      return { created: true, id: "blocker-created" };
-    },
-  );
-  const updateIssueLabels = vi.fn<LinearTriageService["updateIssueLabels"]>(async (labels) => {
-    order.push("labels");
-    if (input.errors?.labels) throw input.errors.labels;
-    return {
-      submitted: true,
-      addedLabelIds: labels.addLabelIds,
-      removedLabelIds: labels.removeLabelIds,
-    };
-  });
-  const updateIssueState = vi.fn<LinearTriageService["updateIssueState"]>(async (state) => {
-    order.push("state");
-    if (input.errors?.state) throw input.errors.state;
-    return { changed: true, stateId: state.stateId };
-  });
-  return {
-    service: {
-      getIssueContext,
-      ensureComment,
-      ensureDuplicateRelation,
-      ensureBlockedByRelation,
-      updateIssueLabels,
-      updateIssueState,
-    } satisfies LinearTriageService,
-    order,
-    getIssueContext,
-    ensureComment,
-    ensureDuplicateRelation,
-    ensureBlockedByRelation,
-    updateIssueLabels,
-    updateIssueState,
-  };
 }
 
 describe("independent Linear triage function", () => {
@@ -596,31 +537,82 @@ describe("independent Linear triage function", () => {
   });
 
   it.each([
-    ["comment", ["read:issue-1", "read:issue-1", "read:FER-300", "comment"]],
-    ["blocker", ["read:issue-1", "read:issue-1", "read:FER-300", "comment", "blocker"]],
-    ["labels", ["read:issue-1", "read:issue-1", "read:FER-300", "comment", "blocker", "labels"]],
-    [
-      "state",
-      ["read:issue-1", "read:issue-1", "read:FER-300", "comment", "blocker", "labels", "state"],
-    ],
-  ] as const)("stops at a failed %s write boundary", async (boundary, expectedOrder) => {
+    ["comment", LINEAR_TRIAGE_COMMENT_STEP_ID],
+    ["blocker", LINEAR_TRIAGE_RELATIONS_STEP_ID],
+    ["labels", LINEAR_TRIAGE_LABELS_STEP_ID],
+    ["state", LINEAR_TRIAGE_STATE_STEP_ID],
+  ] as const)(
+    "converges after a lost %s response and durable replay",
+    async (boundary, failedStepId) => {
+      const context = issueContext();
+      const blocker = issueContext({ id: "blocker-1", identifier: "FER-300" });
+      const state = projectionState(context, boundary);
+      const linear = statefulLinear(context, blocker, state);
+      const agent = fakeAgent(success({ ...READY_TO_IMPLEMENT, blockedBy: [" FER-300 "] }));
+      const fn = triageFunction(linear.service, agent.agent);
+      const event = workEvent(context);
+      const failed = await new InngestTestEngine({
+        function: fn,
+        events: [event],
+      }).execute();
+
+      expect(failed.error).toMatchObject({
+        message: expect.stringContaining(`${boundary} response lost`),
+      });
+      const retry = await new InngestTestEngine({
+        function: fn,
+        events: [event],
+        steps: await completedStepsBefore(failed.state, failedStepId),
+      }).execute();
+
+      expect(retry.error).toBeUndefined();
+      expect(retry.result).toMatchObject({
+        outcome: "projected",
+        decision: "ready-for-agent",
+        agentAction: "implement",
+      });
+      expect(state.applied).toEqual({ comment: 1, blocker: 1, labels: 1, state: 1 });
+      expect(state.commentMarkers).toHaveLength(1);
+      expect(state.blockerIssueIds).toEqual(new Set([blocker.id]));
+      expect(state.labelIds).toEqual(
+        new Set(["label-unrelated", readiness.nextActionLabelIds.implement]),
+      );
+      expect(state.stateId).toBe(readiness.stateIds.open);
+      expect(agent.run).toHaveBeenCalledOnce();
+      expect(linear.getIssueContext).toHaveBeenCalledWith("FER-300");
+      expect(retry.ctx.step.sendEvent).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ignores a repeated completed delivery after the first projection", async () => {
     const context = issueContext();
     const blocker = issueContext({ id: "blocker-1", identifier: "FER-300" });
-    const linear = fakeLinear({
-      roots: [context, context],
-      targets: { "FER-300": blocker },
-      errors: { [boundary]: new Error(`${boundary} unavailable`) },
-    });
+    const state = projectionState(context, null);
+    const linear = statefulLinear(context, blocker, state);
     const agent = fakeAgent(success({ ...READY_TO_IMPLEMENT, blockedBy: ["FER-300"] }));
-    const output = await new InngestTestEngine({
-      function: triageFunction(linear.service, agent.agent),
+    const fn = triageFunction(linear.service, agent.agent);
+    const event = workEvent(context);
+    const first = await new InngestTestEngine({
+      function: fn,
       events: [workEvent(context)],
     }).execute();
+    const repeated = await new InngestTestEngine({
+      function: fn,
+      events: [event],
+    }).execute();
 
-    expect(output.error).toMatchObject({
-      message: expect.stringContaining(`${boundary} unavailable`),
+    expect(first.result).toMatchObject({ outcome: "projected" });
+    expect(repeated.result).toEqual({
+      outcome: "ignored",
+      reason: "not-triage-ready",
     });
-    expect(linear.order).toEqual(expectedOrder);
+    expect(state.applied).toEqual({ comment: 1, blocker: 1, labels: 1, state: 1 });
+    expect(state.commentMarkers).toHaveLength(1);
+    expect(state.blockerIssueIds).toHaveLength(1);
+    expect(state.labelIds).toContain("label-unrelated");
+    expect(agent.run).toHaveBeenCalledOnce();
+    expect(first.ctx.step.sendEvent).not.toHaveBeenCalled();
+    expect(repeated.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
   it("uses fixed read and resolution step boundaries", async () => {

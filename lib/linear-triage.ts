@@ -325,14 +325,18 @@ async function resolveIssueReference(
   issueId: string,
   reference: string,
 ): Promise<string> {
-  const context = await linear.getIssueContext(reference);
+  const normalizedReference = reference.trim();
+  const context = await linear.getIssueContext(normalizedReference);
   if (context.id === issueId) {
     throw new LinearError("invalid-input", `Linear triage relation cannot reference ${issueId}.`);
   }
-  if (reference !== context.id && reference.toUpperCase() !== context.identifier.toUpperCase()) {
+  if (
+    normalizedReference !== context.id &&
+    normalizedReference.toUpperCase() !== context.identifier.toUpperCase()
+  ) {
     throw new LinearError(
       "invalid-response",
-      `Linear resolved ${reference} as unexpected issue ${context.identifier}.`,
+      `Linear resolved ${normalizedReference} as unexpected issue ${context.identifier}.`,
     );
   }
   return context.id;
