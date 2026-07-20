@@ -133,6 +133,9 @@ async function invokeCursorSdkAgent({
   const modelResult = cursorSdkModelSelection(input.model);
   if (!modelResult.ok) return modelResult.error;
 
+  const policyFailure = unsupportedCursorPolicyFailure(input);
+  if (policyFailure) return policyFailure;
+
   const schemaResult = readOutputSchema(input);
   if (!schemaResult.ok) return schemaResult.error;
 
@@ -219,6 +222,7 @@ async function invokeCursorSdkAgent({
         error: "Cursor SDK run was cancelled",
         raw,
         exitCode: 130,
+        aborted: true,
       });
     }
 
@@ -285,6 +289,25 @@ function buildCursorAgentOptions(
       autoReview: true,
     },
   } satisfies CursorSdkAgentOptions;
+}
+
+function unsupportedCursorPolicyFailure(
+  input: AgentRunInput,
+): Extract<AgentRunResult, { ok: false }> | undefined {
+  const requestedPolicies = [
+    input.sandboxMode ? `sandboxMode=${input.sandboxMode}` : undefined,
+    input.approvalPolicy ? `approvalPolicy=${input.approvalPolicy}` : undefined,
+  ].filter((value) => value !== undefined);
+  if (requestedPolicies.length === 0) return undefined;
+
+  // The current SDK exposes agent/plan modes, but no hard read-only or
+  // shared approval-policy mapping. Reject explicit policies instead of
+  // silently running with Cursor's different local defaults.
+  return {
+    ok: false,
+    error: `Cursor SDK adapter cannot honor Agent execution policies: ${requestedPolicies.join(", ")}`,
+    exitCode: 1,
+  };
 }
 
 function openCursorSdkAgent(

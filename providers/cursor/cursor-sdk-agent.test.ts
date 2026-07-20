@@ -717,6 +717,27 @@ test("createCursorSdkAgent returns invalid schema failures", async () => {
   expect(result.error).toMatch(/Invalid Cursor SDK output schema/);
 });
 
+test("createCursorSdkAgent rejects unsupported shared execution policies before starting", async () => {
+  const workspace = createGitWorkspace();
+  const { calls, createSdkAgent } = createFakeSdk();
+
+  const result = await createCursorSdkAgent({ apiKey: "cursor-key", createSdkAgent }).run({
+    workspace,
+    prompt: "review this",
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result).toEqual({
+    ok: false,
+    error:
+      "Cursor SDK adapter cannot honor Agent execution policies: sandboxMode=read-only, approvalPolicy=never",
+    exitCode: 1,
+  });
+  expect(calls.createCount).toBe(0);
+});
+
 test("createCursorSdkAgent detects workspace mutations outside .harness", async () => {
   const workspace = createGitWorkspace();
   const { createSdkAgent } = createFakeSdk({
@@ -941,6 +962,7 @@ test("createCursorSdkAgent reports terminal SDK statuses", async () => {
   expect(cancelledResult.ok).toBe(false);
   if (cancelledResult.ok) return;
   expect(cancelledResult.exitCode).toBe(130);
+  expect(cancelledResult.aborted).toBe(true);
 });
 
 test("createCursorSdkAgent cancels timed-out runs", async () => {
