@@ -3,6 +3,7 @@
 ## Active queue
 
 - [Bound automatic Factory retryable-action chains](FER-183.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-183/bound-automatic-factory-retryable-action-chains)
+- [Route verified Linear readiness into work events](260719-linear-readiness-router.md) — implementation in progress. [Linear](https://linear.app/ferueda/issue/FER-225/route-linear-issue-snapshots-into-provider-neutral-work-events)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 

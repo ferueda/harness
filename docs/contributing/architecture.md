@@ -96,6 +96,7 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
 | `lib/inngest/`                                                           | Independent Inngest event contracts and hosted webhook transform sources, without domain policy or service clients    |
 | `lib/linear/`                                                            | Standalone, JSON-safe Linear communication primitives that do not depend on Factory or orchestration                  |
+| `lib/linear-readiness.ts`, `lib/linear-readiness-router.ts`              | Deterministic Linear readiness policy and its unregistered, read-only Inngest delivery adapter                        |
 | `lib/factory-*-publication*.ts`, `lib/factory-pull-request-publisher.ts` | Reviewed-commit validation and bounded GitHub publication                                                             |
 | `providers/`                                                             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation                   |
 | `workflows/`, `lib/prompts/`                                             | Provider-agnostic workflow definitions, shared review execution, and prompt contracts                                 |
@@ -222,9 +223,11 @@ will add that cross-phase driver. IDs suppress transport duplicates; Factory
 action identity prevents replay. The adapter keeps three retries and a
 110-minute action limit. The current integration assumes one persistent host and
 ships no production worker or cross-phase driver. The independent Linear
-webhook transform under `lib/inngest/` can produce an untrusted hosted event,
-but no readiness consumer is registered yet. Harness does not host a Linear
-webhook endpoint. Publication and merge acknowledgement remain separate.
+webhook transform under `lib/inngest/` can produce an untrusted hosted event.
+The top-level readiness adapter can verify that event, reload Linear truth, and
+emit one provider-neutral work request without mutating Linear, but no worker or
+work consumer is registered yet. Harness does not host a Linear webhook
+endpoint. Publication and merge acknowledgement remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.
