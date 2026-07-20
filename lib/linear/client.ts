@@ -93,7 +93,8 @@ export function createLinearForClient(input: {
     ensureComment: (commentInput) =>
       ensureCommentOperation(input.client, limits.comments, commentInput),
     updateIssueState: (stateInput) => updateIssueStateOperation(input.client, stateInput),
-    updateIssueLabels: (labelsInput) => updateIssueLabelsOperation(input.client, labelsInput),
+    updateIssueLabels: (labelsInput) =>
+      updateIssueLabelsOperation(input.client, limits.labels, labelsInput),
     ensureDuplicateRelation: (relationInput) =>
       ensureDuplicateRelationOperation(input.client, limits.relations, relationInput),
     ensureBlockedByRelation: (relationInput) =>

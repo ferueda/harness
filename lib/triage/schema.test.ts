@@ -22,7 +22,7 @@ const READY_TO_IMPLEMENT = {
   decision: "ready-for-agent",
   scope: "bounded",
   agentAction: "implement",
-  summary: "The issue is bounded and specified for implementation.",
+  rationale: "The issue is bounded and specified for implementation.",
   evidence: [TRACKER_EVIDENCE],
   questions: [],
   inputReason: null,
@@ -33,7 +33,7 @@ const READY_TO_IMPLEMENT = {
 const READY_TO_PLAN = {
   ...READY_TO_IMPLEMENT,
   agentAction: "plan",
-  summary: "The goal is clear, but repository investigation should come first.",
+  rationale: "The goal is clear, but repository investigation should come first.",
 };
 
 const NEEDS_RESCOPE = {
@@ -41,7 +41,7 @@ const NEEDS_RESCOPE = {
   decision: "needs-input",
   scope: "too-broad",
   agentAction: null,
-  summary: "The issue contains two independently shippable outcomes.",
+  rationale: "The issue contains two independently shippable outcomes.",
   questions: ["Should this issue keep only the first outcome?"],
   inputReason: "rescope",
 };
@@ -49,7 +49,7 @@ const NEEDS_RESCOPE = {
 const NEEDS_PRODUCT_DECISION = {
   ...NEEDS_RESCOPE,
   scope: "bounded",
-  summary: "The desired user-facing behavior is not specified.",
+  rationale: "The desired user-facing behavior is not specified.",
   questions: ["Should the action be visible to all users?"],
   inputReason: "product-decision",
 };
@@ -58,7 +58,7 @@ const DUPLICATE = {
   ...READY_TO_IMPLEMENT,
   decision: "duplicate",
   agentAction: null,
-  summary: "FER-100 already represents this work.",
+  rationale: "FER-100 already represents this work.",
   duplicateOf: "FER-100",
 };
 
@@ -195,14 +195,14 @@ describe("triage work-item context schema", () => {
 
 describe("exported triage decision JSON schema", () => {
   it("is strict and defines every required provider field", () => {
-    expect(TRIAGE_DECISION_SCHEMA_VERSION).toBe("1");
+    expect(TRIAGE_DECISION_SCHEMA_VERSION).toBe("2");
     expect(() => assertCodexStrictSchema(JSON_SCHEMA)).not.toThrow();
     expect(JSON_SCHEMA.additionalProperties).toBe(false);
     expect(JSON_SCHEMA.required).toEqual([
       "decision",
       "scope",
       "agentAction",
-      "summary",
+      "rationale",
       "evidence",
       "questions",
       "inputReason",
@@ -225,6 +225,13 @@ describe("exported triage decision JSON schema", () => {
     ["an invalid decision", { ...READY_TO_IMPLEMENT, decision: "backlog" }],
     ["empty evidence", { ...READY_TO_IMPLEMENT, evidence: [] }],
     ["an extra property", { ...READY_TO_IMPLEMENT, confidence: "high" }],
+    [
+      "the legacy summary field",
+      {
+        ...omit(READY_TO_IMPLEMENT, "rationale"),
+        summary: "The issue is ready for implementation.",
+      },
+    ],
     ["an omitted nullable field", omit(READY_TO_IMPLEMENT, "duplicateOf")],
     [
       "an omitted nested nullable field",

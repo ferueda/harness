@@ -21,6 +21,7 @@ type TestPage<T> = {
 
 type PageInput = { first: number; after?: string };
 type TestComment = { id: string; body: string };
+type TestLabel = { id: string; name: string };
 type TestRelation = {
   id: string;
   type: string;
@@ -56,18 +57,21 @@ function makeFake(
   input: {
     stateId?: string;
     comments?: TestComment[][];
+    labels?: TestLabel[][];
     relations?: TestRelation[][];
     inverseRelations?: TestRelation[][];
     workflowStates?: Array<{ id: string; name: string; type: string }>;
   } = {},
 ) {
   const commentReads = paged(input.comments ?? [[]]);
+  const labelReads = paged(input.labels ?? [[]]);
   const relationReads = paged(input.relations ?? [[]]);
   const inverseRelationReads = paged(input.inverseRelations ?? [[]]);
   const issue = {
     id: "issue-1",
     stateId: input.stateId ?? "state-backlog",
     comments: commentReads,
+    labels: labelReads,
     relations: relationReads,
     inverseRelations: inverseRelationReads,
   };
@@ -97,6 +101,7 @@ function makeFake(
   return {
     client,
     commentReads,
+    labelReads,
     relationReads,
     inverseRelationReads,
     issueReads,
@@ -355,7 +360,14 @@ describe("standalone Linear state mutations", () => {
 
 describe("standalone Linear label mutations", () => {
   it("submits normalized incremental additions and removals", async () => {
-    const fake = makeFake();
+    const fake = makeFake({
+      labels: [
+        [
+          { id: "label-input", name: "Needs Input" },
+          { id: "label-unrelated", name: "Improvement" },
+        ],
+      ],
+    });
 
     await expect(
       service(fake).updateIssueLabels({
@@ -372,6 +384,77 @@ describe("standalone Linear label mutations", () => {
       addedLabelIds: ["label-plan", "label-scope"],
       removedLabelIds: ["label-input"],
     });
+  });
+
+  it("filters absent removals and labels that are already present", async () => {
+    const fake = makeFake({
+      labels: [
+        [
+          { id: "label-plan", name: "Plan" },
+          { id: "label-unrelated", name: "Improvement" },
+        ],
+      ],
+    });
+
+    await expect(
+      service(fake).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: ["label-plan", "label-scope"],
+        removeLabelIds: ["label-input"],
+      }),
+    ).resolves.toEqual({
+      submitted: true,
+      addedLabelIds: ["label-scope"],
+      removedLabelIds: [],
+    });
+    expect(fake.updateIssue).toHaveBeenCalledWith("issue-1", {
+      addedLabelIds: ["label-scope"],
+      removedLabelIds: [],
+    });
+  });
+
+  it("converges without a second mutation after a lost response", async () => {
+    const fake = makeFake();
+    let labelIds = new Set<string>();
+    fake.labelReads.mockImplementation(async () =>
+      page([...labelIds].map((id) => ({ id, name: id }))),
+    );
+    fake.updateIssue.mockImplementationOnce(async (_issueId, input) => {
+      if ("addedLabelIds" in input) {
+        for (const id of input.removedLabelIds) labelIds.delete(id);
+        for (const id of input.addedLabelIds) labelIds.add(id);
+      }
+      throw new Error("response lost");
+    });
+    const linear = service(fake);
+    const input = {
+      issueId: "issue-1",
+      addLabelIds: ["label-plan"],
+      removeLabelIds: ["label-input"],
+    };
+
+    await expect(linear.updateIssueLabels(input)).rejects.toMatchObject({ code: "upstream" });
+    await expect(linear.updateIssueLabels(input)).resolves.toEqual({
+      submitted: false,
+      addedLabelIds: [],
+      removedLabelIds: [],
+    });
+    expect(fake.updateIssue).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when the live label scan reaches its limit", async () => {
+    const fake = makeFake({
+      labels: [[{ id: "label-unrelated", name: "Improvement" }]],
+    });
+
+    await expect(
+      service(fake, { ...DEFAULT_LIMITS, labels: 1 }).updateIssueLabels({
+        issueId: "issue-1",
+        addLabelIds: ["label-plan"],
+        removeLabelIds: ["label-input"],
+      }),
+    ).rejects.toMatchObject({ code: "incomplete" });
+    expect(fake.updateIssue).not.toHaveBeenCalled();
   });
 
   it("returns a serializable no-op without calling Linear", async () => {
