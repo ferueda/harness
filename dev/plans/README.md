@@ -3,7 +3,7 @@
 ## Active queue
 
 - [Bound automatic Factory retryable-action chains](FER-183.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-183/bound-automatic-factory-retryable-action-chains)
-- [Project independent Linear triage decisions](260720-linear-triage-consumer.md) — approved; ready to implement. [Linear](https://linear.app/ferueda/issue/FER-218/triage-linear-issues-with-an-independent-inngest-function)
+- [Project independent Linear triage decisions](260720-linear-triage-consumer.md) — implemented; awaiting change review. [Linear](https://linear.app/ferueda/issue/FER-218/triage-linear-issues-with-an-independent-inngest-function)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 

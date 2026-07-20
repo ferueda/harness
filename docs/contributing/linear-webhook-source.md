@@ -44,8 +44,10 @@ provider-neutral work request. It remains read-only with respect to Linear:
 Inngest event identity and concurrency own execution safety, while later
 consumers own any lifecycle projection.
 
-No Connect worker registers the router yet, and no triage, planning, or
-implementation consumer is currently available.
+`lib/linear-triage.ts` defines the independent triage consumer that can handle
+the router's triage request and project one decision through the standalone
+Linear service. No Connect worker registers these functions yet, and no
+planning or implementation consumer is currently available.
 
 The event ID is namespaced with the Linear delivery ID so provider retries
 converge during Inngest's event-deduplication window. Missing headers remain
