@@ -3,9 +3,10 @@ import { z } from "zod";
 import { LinearError } from "./error.ts";
 
 const nonEmptyStringSchema = z.string().refine((value) => value.trim() !== "");
+const timestampSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const webhookEnvelopeSchema = z
   .object({
-    webhookTimestamp: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    webhookTimestamp: timestampSchema,
   })
   .passthrough();
 const webhookEventSchema = webhookEnvelopeSchema.extend({
@@ -30,6 +31,7 @@ export type VerifyLinearIssueChangedWebhookInput = Readonly<{
   rawBody: Buffer;
   signature: string;
   deliveryId: string;
+  receivedAt: number;
 }>;
 
 export type LinearIssueChangedDelivery = Readonly<{
@@ -47,6 +49,7 @@ export function verifyLinearIssueChangedWebhook(
   const secret = requiredString(input.secret, "secret", "invalid-config");
   const signature = requiredString(input.signature, "signature");
   const deliveryId = requiredString(input.deliveryId, "deliveryId");
+  const receivedAt = requiredTimestamp(input.receivedAt, "receivedAt");
   if (!Buffer.isBuffer(input.rawBody) || input.rawBody.length === 0) {
     throw invalidInput("Linear webhook rawBody must be a non-empty Buffer.");
   }
@@ -62,9 +65,14 @@ export function verifyLinearIssueChangedWebhook(
   const { webhookTimestamp } = envelope.data;
 
   try {
-    new LinearWebhookClient(secret).verify(input.rawBody, signature, webhookTimestamp);
+    // The SDK compares timestamps with processing time. Verify only the
+    // signature here so durable consumers can use the trusted receipt time.
+    new LinearWebhookClient(secret).verify(input.rawBody, signature);
   } catch (cause) {
     throw new LinearError("rejected", "Linear webhook verification failed.", { cause });
+  }
+  if (Math.abs(receivedAt - webhookTimestamp) > 60_000) {
+    throw new LinearError("rejected", "Linear webhook timestamp is outside the freshness window.");
   }
 
   const event = webhookEventSchema.safeParse(payload);
@@ -97,6 +105,14 @@ function parsePayload(rawBody: Buffer): unknown {
     throw new LinearError("invalid-input", "Linear webhook body must be valid JSON.", { cause });
   }
   return value;
+}
+
+function requiredTimestamp(value: unknown, label: string): number {
+  const parsed = timestampSchema.safeParse(value);
+  if (!parsed.success) {
+    throw invalidInput(`Linear webhook ${label} must be a valid Unix timestamp.`, parsed.error);
+  }
+  return parsed.data;
 }
 
 function requiredString(

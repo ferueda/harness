@@ -15,6 +15,8 @@ loops.
   decisions and durable improvement habits.
 - [Architecture map](./architecture.md) - runtime paths, ownership boundaries,
   subsystem locations, artifacts, and extension seams.
+- [Linear webhook source](./linear-webhook-source.md) - configure the
+  Inngest-hosted Linear source and understand its untrusted event boundary.
 - [Factory contributor guide](./factory.md) - Factory's domain model, lifecycle
   invariants, code ownership, projections, and host boundary.
 - [Script and command surface](./script-command-surface.md) - command
