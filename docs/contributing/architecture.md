@@ -94,6 +94,7 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-operation-reconciliation.ts`                                | Bounded caller-supplied log-to-delivery repair with per-target failure isolation                                      |
 | `lib/factory-inngest-adapter.ts`                                         | Deterministic Factory event IDs, direct sends, chained sends, and hosted function controls                            |
 | `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
+| `lib/inngest/`                                                           | Independent Inngest event contracts and hosted webhook transform sources, without domain policy or service clients    |
 | `lib/linear/`                                                            | Standalone, JSON-safe Linear communication primitives that do not depend on Factory or orchestration                  |
 | `lib/factory-*-publication*.ts`, `lib/factory-pull-request-publisher.ts` | Reviewed-commit validation and bounded GitHub publication                                                             |
 | `providers/`                                                             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation                   |
@@ -220,8 +221,10 @@ does not persist or schedule `start-phase`; [FER-196](https://linear.app/ferueda
 will add that cross-phase driver. IDs suppress transport duplicates; Factory
 action identity prevents replay. The adapter keeps three retries and a
 110-minute action limit. The current integration assumes one persistent host and
-ships no production worker, cross-phase driver, or webhook ingress. Publication
-and merge acknowledgement remain separate.
+ships no production worker or cross-phase driver. The independent Linear
+webhook transform under `lib/inngest/` can produce an untrusted hosted event,
+but no readiness consumer is registered yet. Harness does not host a Linear
+webhook endpoint. Publication and merge acknowledgement remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

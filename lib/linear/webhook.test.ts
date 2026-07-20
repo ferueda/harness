@@ -7,6 +7,7 @@ import {
 
 const SECRET = "linear-webhook-secret";
 const DELIVERY_ID = "234d1a4e-b617-4388-90fe-adc3633d6b72";
+const RECEIVED_AT = Date.parse("2026-07-19T15:00:00.000Z");
 
 afterEach(() => {
   vi.useRealTimers();
@@ -17,7 +18,7 @@ function issuePayload(overrides: Record<string, unknown> = {}): Record<string, u
     action: "create",
     type: "Issue",
     organizationId: "organization-1",
-    webhookTimestamp: Date.now(),
+    webhookTimestamp: RECEIVED_AT,
     data: {
       id: "issue-1",
       updatedAt: "2026-07-19T08:00:00-07:00",
@@ -40,6 +41,7 @@ function verify(body: Buffer, overrides: Partial<VerifyLinearIssueChangedWebhook
     rawBody: body,
     signature: signature(body),
     deliveryId: DELIVERY_ID,
+    receivedAt: RECEIVED_AT,
     ...overrides,
   });
 }
@@ -108,6 +110,7 @@ describe("Linear issue-changed webhook verification", () => {
     ["secret", { secret: "" }, "invalid-config"],
     ["signature", { signature: "" }, "invalid-input"],
     ["delivery ID", { deliveryId: "" }, "invalid-input"],
+    ["receipt time", { receivedAt: 0 }, "invalid-input"],
     ["raw body", { rawBody: Buffer.alloc(0) }, "invalid-input"],
   ] satisfies Array<
     [string, Partial<VerifyLinearIssueChangedWebhookInput>, "invalid-config" | "invalid-input"]
@@ -140,11 +143,17 @@ describe("Linear issue-changed webhook verification", () => {
     ["expired", -61_000],
     ["future", 61_000],
   ])("rejects a webhook timestamp outside the freshness window: %s", (_label, offset) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-19T15:00:00.000Z"));
-    const body = rawBody(issuePayload({ webhookTimestamp: Date.now() + offset }));
+    const body = rawBody(issuePayload({ webhookTimestamp: RECEIVED_AT + offset }));
 
     expect(() => verify(body)).toThrowError(expect.objectContaining({ code: "rejected" }));
+  });
+
+  it("uses receipt time when durable processing starts later", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(RECEIVED_AT + 24 * 60 * 60 * 1_000);
+    const body = rawBody(issuePayload());
+
+    expect(verify(body)).toMatchObject({ webhookTimestamp: RECEIVED_AT });
   });
 
   it("rejects malformed JSON", () => {
