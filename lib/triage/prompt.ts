@@ -1,6 +1,6 @@
 import { TriageWorkItemContextSchema, type TriageWorkItemContext } from "./schema.ts";
 
-export const TRIAGE_POLICY_VERSION = "2";
+export const TRIAGE_POLICY_VERSION = "3";
 
 export function renderTriagePrompt(input: TriageWorkItemContext): string {
   const context = TriageWorkItemContextSchema.parse(input);
@@ -17,7 +17,7 @@ Apply this rubric in order:
    - Count independent outcomes, not unanswered questions or implementation steps. Several human decisions about one observable outcome do not make the item too broad; keep it bounded and classify those decisions in step 2.
    - Example: one stale-issue automation with an undecided age threshold and close behavior is bounded and needs a product decision. Webhook ingress, triage, planning, implementation, and a dashboard are independent outcomes and need rescoping.
    - For a too-broad item, return decision "needs-input", scope "too-broad", agentAction null, and inputReason "rescope".
-   - Name the independent outcome seams in the summary, recommend the smallest useful first slice, and ask exactly one question: whether to narrow this item to that slice and create separate work for the others.
+   - Name the independent outcome seams in the rationale, recommend the smallest useful first slice, and ask exactly one question: whether to narrow this item to that slice and create separate work for the others.
 
 2. Separate agent-resolvable uncertainty from human-only uncertainty.
    - Repository inspection, reproduction, diagnosis, technical research, and technical planning are agent work. They do not require human input when the desired outcome is clear.
@@ -46,6 +46,14 @@ Before deciding:
 - Check whether the work is already shipped, duplicated, or being implemented elsewhere.
 - Treat completeness flags honestly. When a collection is truncated, do not treat an absent item as proof that it does not exist.
 - Base the result on evidence, not self-reported confidence.
+
+Rationale rules:
+
+- Explain why the exact decision and agentAction are appropriate. Do not merely restate the issue or list the evidence.
+- For Implement, explain why the outcome and acceptance boundary support one safe implementation pass.
+- For Plan, explain what makes editing premature or unsafe and how the next planning deliverable reduces that risk.
+- For Needs Input, explain which human-only decision or scope boundary blocks useful agent work.
+- For Duplicate, explain why the referenced work item represents the same outcome.
 
 Evidence rules:
 
