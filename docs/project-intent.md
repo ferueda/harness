@@ -80,8 +80,9 @@ they own `harness.json`, the harness shim, inbox files, source, tests, local
 skill installs, and committed plans and code. Standalone review artifacts keep their target-repo
 `.harness/runs/reviews` defaults. Linear and GitHub will remain human/project
 projections, while Git remains the source of truth for committed plans and
-code. External events enter Factory as verified durable facts before they can
-enable more work.
+code. Events for Factory-managed work enter Factory as verified durable facts
+before they can enable more Factory work. Independent automations verify their
+own ingress and do not acquire a Factory lifecycle only for durability.
 
 Factory planning keeps planner scratch separate from Harness evidence. The
 planner writes only the retained, ignored workspace-local

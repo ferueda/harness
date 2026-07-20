@@ -2,28 +2,37 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { LinearIssueContext } from "./linear/read.ts";
 
+const LinearReadinessMappingShape = {
+  teamId: z.string().trim().min(1),
+  projectId: z.string().trim().min(1),
+  stateIds: z
+    .object({
+      backlog: z.string().trim().min(1),
+      open: z.string().trim().min(1),
+      inProgress: z.string().trim().min(1),
+      inReview: z.string().trim().min(1),
+      done: z.string().trim().min(1),
+      canceled: z.string().trim().min(1),
+      duplicate: z.string().trim().min(1),
+    })
+    .strict(),
+  nextActionLabelIds: z
+    .object({
+      plan: z.string().trim().min(1),
+      implement: z.string().trim().min(1),
+      needsInput: z.string().trim().min(1),
+    })
+    .strict(),
+} as const;
+
+export const LinearReadinessMappingSchema = z
+  .object(LinearReadinessMappingShape)
+  .strict()
+  .superRefine(validateUniqueReadinessIds);
+
 export const LinearReadinessConfigSchema = z
   .object({
-    teamId: z.string().min(1),
-    projectId: z.string().min(1),
-    stateIds: z
-      .object({
-        backlog: z.string().min(1),
-        open: z.string().min(1),
-        inProgress: z.string().min(1),
-        inReview: z.string().min(1),
-        done: z.string().min(1),
-        canceled: z.string().min(1),
-        duplicate: z.string().min(1),
-      })
-      .strict(),
-    nextActionLabelIds: z
-      .object({
-        plan: z.string().min(1),
-        implement: z.string().min(1),
-        needsInput: z.string().min(1),
-      })
-      .strict(),
+    ...LinearReadinessMappingShape,
     enabledRoutes: z
       .object({
         triage: z.boolean(),
@@ -33,11 +42,9 @@ export const LinearReadinessConfigSchema = z
       .strict(),
   })
   .strict()
-  .superRefine((config, ctx) => {
-    requireUnique(Object.values(config.stateIds), ctx, ["stateIds"]);
-    requireUnique(Object.values(config.nextActionLabelIds), ctx, ["nextActionLabelIds"]);
-  });
+  .superRefine(validateUniqueReadinessIds);
 
+export type LinearReadinessMapping = Readonly<z.infer<typeof LinearReadinessMappingSchema>>;
 export type LinearReadinessConfig = Readonly<z.infer<typeof LinearReadinessConfigSchema>>;
 export type LinearReadinessRoute = "triage" | "plan" | "implement";
 
@@ -185,4 +192,12 @@ function requireUnique(values: string[], ctx: z.RefinementCtx, path: PropertyKey
   if (new Set(values).size !== values.length) {
     ctx.addIssue({ code: "custom", path, message: "IDs must be unique" });
   }
+}
+
+function validateUniqueReadinessIds(
+  config: z.infer<typeof LinearReadinessMappingSchema>,
+  ctx: z.RefinementCtx,
+): void {
+  requireUnique(Object.values(config.stateIds), ctx, ["stateIds"]);
+  requireUnique(Object.values(config.nextActionLabelIds), ctx, ["nextActionLabelIds"]);
 }

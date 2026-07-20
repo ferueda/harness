@@ -210,6 +210,28 @@ test("harness root help exits cleanly", () => {
   expect(result.stdout).toMatch(/run/);
   expect(result.stdout).toMatch(/runs/);
   expect(result.stdout).toMatch(/skills/);
+  expect(result.stdout).toMatch(/linear/);
+});
+test("harness linear worker help exposes only workspace selection", () => {
+  const result = runHarness(["linear", "worker", "--help"]);
+  expect(result.status).toBe(0);
+  expect(result.stdout).toMatch(/harness linear worker/);
+  expect(result.stdout).toMatch(/readiness and triage functions/);
+  expect(result.stdout).toMatch(/--workspace/);
+  expect(result.stdout).not.toMatch(/--model|--agent|--port/);
+});
+test("harness linear worker validates environment before connecting", () => {
+  const workspace = createGitWorkspace();
+  const result = runHarness(["linear", "worker", "--workspace", workspace], {
+    env: {
+      LINEAR_API_KEY: "",
+      LINEAR_WEBHOOK_SECRET: "",
+      INNGEST_DEV: "1",
+    },
+  });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toMatch(/LINEAR_API_KEY/);
+  expect(result.stderr).toMatch(/LINEAR_WEBHOOK_SECRET/);
 });
 test("harness factory continuation help requires a decision and response file", () => {
   for (const phase of ["planning", "implementation"] as const) {

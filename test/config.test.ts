@@ -20,6 +20,7 @@ import {
   findHarnessConfig,
   initHarnessConfig,
   loadFactoryConfigSnapshot,
+  loadHarnessConfigSnapshot,
   resolveFactoryLinearSettings,
   resolveFactoryLinearSettingsFromSnapshot,
   resolveFactoryRoleAgent,
@@ -27,6 +28,8 @@ import {
   resolveFactoryStoreSettingsFromSnapshot,
   factoryActionExecutionProfile,
   resolveHarnessOptions,
+  resolveLinearAutomationSettings,
+  resolveLinearAutomationSettingsFromSnapshot,
 } from "../lib/config.ts";
 const TEST_HARNESS_ENTRYPOINT = "/opt/harness/dist/bin/harness.js";
 
@@ -68,6 +71,32 @@ const LINEAR_STATUSES = {
   done: "Done",
   canceled: "Canceled",
   duplicate: "Duplicate",
+};
+
+const LINEAR_AUTOMATION = {
+  organizationId: "organization-1",
+  readiness: {
+    teamId: "team-1",
+    projectId: "project-1",
+    stateIds: {
+      backlog: "state-backlog",
+      open: "state-open",
+      inProgress: "state-in-progress",
+      inReview: "state-in-review",
+      done: "state-done",
+      canceled: "state-canceled",
+      duplicate: "state-duplicate",
+    },
+    nextActionLabelIds: {
+      plan: "label-plan",
+      implement: "label-implement",
+      needsInput: "label-needs-input",
+    },
+  },
+  triage: {
+    agent: "codex",
+    maxRuntimeMs: 120_000,
+  },
 };
 
 test("findHarnessConfig walks up from nested directories", () => {
@@ -144,6 +173,100 @@ test("resolveHarnessOptions applies provider model defaults", () => {
   expect(codexOptions.agentProvider).toBe("codex");
   expect(codexOptions.model).toBe("gpt-5.6-sol");
   expect(codexOptions.modelReasoningEffort).toBe("high");
+});
+
+test("resolveLinearAutomationSettings resolves one immutable worker snapshot", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(workspace, {
+    agents: {
+      codex: {
+        model: "gpt-worker",
+        executable: "/opt/codex-worker",
+        modelReasoningEffort: "medium",
+      },
+    },
+    linearAutomation: LINEAR_AUTOMATION,
+  });
+
+  const snapshot = loadHarnessConfigSnapshot(workspace, "/");
+  writeHarnessJson(workspace, {
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      organizationId: "organization-newer",
+    },
+  });
+  const settings = resolveLinearAutomationSettingsFromSnapshot(snapshot);
+
+  expect(settings).toEqual({
+    workspace,
+    organizationId: "organization-1",
+    readiness: LINEAR_AUTOMATION.readiness,
+    triage: {
+      ...LINEAR_AUTOMATION.triage,
+      model: "gpt-worker",
+      modelReasoningEffort: "medium",
+      codexPathOverride: "/opt/codex-worker",
+    },
+  });
+  expect(Object.isFrozen(settings)).toBe(true);
+  expect(Object.isFrozen(settings.readiness.stateIds)).toBe(true);
+  expect(Object.isFrozen(settings.readiness.nextActionLabelIds)).toBe(true);
+  expect(Object.isFrozen(settings.triage)).toBe(true);
+});
+
+test("resolveLinearAutomationSettings prefers triage model overrides", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(workspace, {
+    agents: { codex: { model: "gpt-provider", modelReasoningEffort: "low" } },
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      triage: {
+        ...LINEAR_AUTOMATION.triage,
+        model: "gpt-triage",
+        modelReasoningEffort: "xhigh",
+      },
+    },
+  });
+
+  expect(resolveLinearAutomationSettings({ workspace }, "/").triage).toMatchObject({
+    model: "gpt-triage",
+    modelReasoningEffort: "xhigh",
+  });
+});
+
+test("resolveLinearAutomationSettings rejects missing or invalid worker config", () => {
+  const missing = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  expect(() => resolveLinearAutomationSettings({ workspace: missing }, "/")).toThrow(
+    /linearAutomation is required/,
+  );
+
+  const invalid = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(invalid, {
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      readiness: {
+        ...LINEAR_AUTOMATION.readiness,
+        stateIds: {
+          ...LINEAR_AUTOMATION.readiness.stateIds,
+          open: LINEAR_AUTOMATION.readiness.stateIds.backlog,
+        },
+      },
+    },
+  });
+  expect(() => resolveLinearAutomationSettings({ workspace: invalid }, "/")).toThrow(
+    /linearAutomation\.readiness\.stateIds: IDs must be unique/,
+  );
+
+  const unsupportedProvider = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(unsupportedProvider, {
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      triage: { ...LINEAR_AUTOMATION.triage, agent: "cursor" },
+    },
+  });
+  expect(() => resolveLinearAutomationSettings({ workspace: unsupportedProvider }, "/")).toThrow(
+    /linearAutomation\.triage\.agent: Invalid input: expected "codex"/,
+  );
 });
 
 test("resolveFactoryRoleAgent resolves absent factory through defaultAgent then cursor", () => {

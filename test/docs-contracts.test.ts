@@ -328,20 +328,27 @@ test("testing taxonomy documents required proof layers", () => {
   expect(content).toContain("do not replace `pnpm check`");
 });
 
-test("Factory smoke stays explicit locally and runs only in the full CI gate", () => {
+test("system smokes stay explicit locally and run only in the full CI gate", () => {
   const packageJson: unknown = JSON.parse(readRepoFile("package.json"));
   expect(isObject(packageJson) && isObject(packageJson.scripts)).toBe(true);
   if (!isObject(packageJson) || !isObject(packageJson.scripts)) return;
   expect(packageJson.scripts["smoke:factory"]).toBe(
     "node scripts/smoke-factory.ts && node scripts/smoke-factory-grove.ts",
   );
+  expect(packageJson.scripts["smoke:linear-automation"]).toBe(
+    "node scripts/smoke-linear-automation.ts",
+  );
 
   const makefile = readRepoFile("Makefile");
   expect(makefile).toMatch(/^smoke-factory: ensure-node ##/m);
+  expect(makefile).toMatch(/^smoke-linear-automation: ensure-node ##/m);
   const localCheck = readMakeTarget(makefile, "check");
   expect(localCheck).toContain("$(MAKE) smoke-dist");
   expect(localCheck).not.toContain("smoke-factory");
-  expect(makefile).toMatch(/^check-ci: check ##[^\n]*\n\t@\$\(MAKE\) smoke-factory$/m);
+  expect(localCheck).not.toContain("smoke-linear-automation");
+  expect(makefile).toMatch(
+    /^check-ci: check ##[^\n]*\n\t@\$\(MAKE\) smoke-factory smoke-linear-automation$/m,
+  );
 
   const workflow = readRepoFile(".github/workflows/test.yml");
   expect(workflow).toContain("run: make check-plan");
@@ -350,11 +357,19 @@ test("Factory smoke stays explicit locally and runs only in the full CI gate", (
   expect(workflow).toContain("steps.changes.outputs.plan_only != 'true'");
 
   const testing = readRepoFile(TESTING_DOC);
-  for (const lane of ["Vitest", "Distribution smoke", "Factory system smoke", "Optional live"]) {
+  for (const lane of [
+    "Vitest",
+    "Distribution smoke",
+    "Factory system smoke",
+    "Linear automation smoke",
+    "Optional live",
+  ]) {
     expect(testing).toContain(lane);
   }
   expect(testing).toContain("pnpm smoke:factory");
+  expect(testing).toContain("pnpm smoke:linear-automation");
   expect(testing).toContain("scripts/smoke-factory-grove.ts");
+  expect(testing).toContain("scripts/smoke-linear-automation.ts");
   expect(testing).toContain("make fix-plan");
   expect(testing).toContain("make check-plan");
   expect(testing).toContain("bypasses the full gate and Factory smoke");
