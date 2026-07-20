@@ -35,9 +35,17 @@ freshness window.
 
 ## Current boundary
 
-This source currently persists an untrusted event only. It does not read or
-mutate Linear and it does not start an agent. The readiness router and Connect
-worker are follow-up work tracked outside this source primitive.
+The source itself persists an untrusted event only. It does not read or mutate
+Linear and it does not start an agent.
+
+`lib/linear-readiness-router.ts` defines the independent function that can
+verify this event, reload current Linear context, classify readiness, and emit a
+provider-neutral work request. It remains read-only with respect to Linear:
+Inngest event identity and concurrency own execution safety, while later
+consumers own any lifecycle projection.
+
+No Connect worker registers the router yet, and no triage, planning, or
+implementation consumer is currently available.
 
 The event ID is namespaced with the Linear delivery ID so provider retries
 converge during Inngest's event-deduplication window. Missing headers remain
