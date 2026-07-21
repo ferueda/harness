@@ -36,6 +36,7 @@ services:
       inngest:
         condition: service_healthy
     environment:
+      CODEX_API_KEY: ${CODEX_API_KEY:-}
       CODEX_HOME: /home/node/.codex
       HARNESS_WORKER_HOST: 0.0.0.0
       HARNESS_WORKER_PORT: "8080"

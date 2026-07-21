@@ -81,16 +81,18 @@ umask 077
   printf 'HARNESS_LINEAR_WORKSPACE=%s\n' "$TARGET_ROOT"
   printf 'INNGEST_DASHBOARD_PORT=8288\n'
   printf 'LINEAR_API_KEY=%s\n' 'replace-with-linear-api-key'
+  printf 'CODEX_API_KEY=%s\n' 'replace-with-codex-api-key'
   printf 'INNGEST_EVENT_KEY=%s\n' "$(openssl rand -hex 32)"
   printf 'INNGEST_SIGNING_KEY=%s\n' "$(openssl rand -hex 32)"
 } > "$LINEAR_AUTOMATION_ENV"
 ```
 
-The target path must be absolute and point to a normal Git checkout. A linked
-worktree whose `.git` file refers to an unmounted parent checkout is not a valid
-container workspace.
+`CODEX_API_KEY` is the recommended auth path for an unattended worker. Compose
+passes it only to the worker, and Harness forwards it only to the Codex child
+process. The protected environment file remains outside the target repository.
 
-Before the first worker start, initialize its dedicated Codex credential volume:
+If you prefer ChatGPT-backed Codex login, omit `CODEX_API_KEY` from the file and
+initialize the worker's dedicated credential volume once:
 
 ```sh
 docker compose \
@@ -98,6 +100,16 @@ docker compose \
   --file "$HARNESS_ROOT/compose.linear-automation.yaml" \
   run --rm --no-deps worker codex login --device-auth
 ```
+
+That login survives normal container restarts because the writable Codex home is
+stored in a named volume. The worker verifies either the API key or `codex login
+status` before it connects to Inngest, so a missing credential fails startup
+instead of waiting for a Backlog issue to fail during triage. Do not copy or bind
+your full host Codex home into the container.
+
+The target path must be absolute and point to a normal Git checkout. A linked
+worktree whose `.git` file refers to an unmounted parent checkout is not a valid
+container workspace.
 
 Then start both services and wait for their health checks:
 

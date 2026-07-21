@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import type { AddressInfo } from "node:net";
+import { promisify } from "node:util";
 import { Inngest, type InngestFunction } from "inngest";
 import {
   connect,
@@ -49,6 +51,7 @@ const LINEAR_AUTOMATION_CODEX_ENV_KEYS = Object.freeze([
   "SSL_CERT_FILE",
   "TMPDIR",
 ] as const);
+const execFileAsync = promisify(execFile);
 
 const WorkerEnvironmentSchema = z
   .object({
@@ -135,9 +138,42 @@ export function linearAutomationCodexEnvironment(
   const selected: Record<string, string> = {};
   for (const key of LINEAR_AUTOMATION_CODEX_ENV_KEYS) {
     const value = environment[key];
-    if (value !== undefined) selected[key] = value;
+    if (value !== undefined && (key !== "CODEX_API_KEY" || value.trim().length > 0)) {
+      selected[key] = value;
+    }
   }
   return Object.freeze(selected);
+}
+
+export async function verifyLinearAutomationCodexAuthentication(input: {
+  environment: NodeJS.ProcessEnv;
+  codexExecutable?: string;
+  checkLogin?: (executable: string, environment: Readonly<Record<string, string>>) => Promise<void>;
+}): Promise<"api-key" | "codex-login"> {
+  const codexEnvironment = linearAutomationCodexEnvironment(input.environment);
+  if (codexEnvironment.CODEX_API_KEY) return "api-key";
+
+  try {
+    await (input.checkLogin ?? checkCodexLogin)(
+      input.codexExecutable ?? input.environment.CODEX_EXECUTABLE ?? "codex",
+      codexEnvironment,
+    );
+    return "codex-login";
+  } catch {
+    throw new Error(
+      "Codex authentication is unavailable. Set CODEX_API_KEY for unattended operation or initialize the persistent Codex login with `docker compose run --rm --no-deps worker codex login --device-auth`.",
+    );
+  }
+}
+
+async function checkCodexLogin(
+  executable: string,
+  environment: Readonly<Record<string, string>>,
+): Promise<void> {
+  await execFileAsync(executable, ["login", "status"], {
+    env: { ...environment },
+    timeout: 10_000,
+  });
 }
 
 export function createLinearAutomationFunctions(input: {
@@ -236,6 +272,12 @@ export async function runLinearAutomationWorker(input: {
   const processEnvironment = input.environment ?? process.env;
   const environment = parseLinearAutomationWorkerEnvironment(processEnvironment);
   const settings = resolveLinearAutomationSettings({ workspace: input.workspace });
+  if (settings.triage.agent === "codex") {
+    await verifyLinearAutomationCodexAuthentication({
+      environment: processEnvironment,
+      codexExecutable: settings.triage.codexPathOverride,
+    });
+  }
   const client = new Inngest({
     id: LINEAR_AUTOMATION_APP_ID,
     eventKey: environment.inngestEventKey,

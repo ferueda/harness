@@ -213,6 +213,7 @@ function prepareFixture(dashboardPort: number): void {
       `INNGEST_DASHBOARD_PORT=${dashboardPort}`,
       `INNGEST_EVENT_KEY=${EVENT_KEY}`,
       `INNGEST_SIGNING_KEY=${SIGNING_KEY}`,
+      "CODEX_API_KEY=blocked-by-internal-smoke-network",
       "LINEAR_API_KEY=blocked-by-internal-smoke-network",
       "",
     ].join("\n"),
