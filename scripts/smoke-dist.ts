@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,13 +52,20 @@ function runHarnessAllowFailure(args: string[]) {
   });
 }
 
-runHarness(["--help"]);
-const factoryHelp = runHarness(["factory", "triage", "--help"]);
-if (!factoryHelp.includes("harness factory triage")) {
-  throw new Error("Expected factory-triage help to include command usage");
+function findFactoryDistEntries(root: string): string[] {
+  if (!existsSync(root)) return [];
+  const matches: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.name.startsWith("factory-")) matches.push(path);
+    if (entry.isDirectory()) matches.push(...findFactoryDistEntries(path));
+  }
+  return matches;
 }
-if (!factoryHelp.includes("--item-file <path>")) {
-  throw new Error("Expected factory-triage help to include --item-file");
+
+const rootHelp = runHarness(["--help"]);
+if (/\bfactory\b/i.test(rootHelp)) {
+  throw new Error("Expected root help not to expose the removed factory command");
 }
 const planReviewHelp = runHarness(["run", "plan-review", "--help"]);
 if (!planReviewHelp.includes("harness run plan-review")) {
@@ -67,214 +74,14 @@ if (!planReviewHelp.includes("harness run plan-review")) {
 if (!planReviewHelp.includes("--plan <path>")) {
   throw new Error("Expected plan-review help to include --plan");
 }
-const factoryStatusHelp = runHarness(["factory", "status", "--help"]);
-if (!factoryStatusHelp.includes("harness factory status")) {
-  throw new Error("Expected factory status help to include command usage");
+const removedFactory = runHarnessAllowFailure(["factory"]);
+const removedFactoryText = `${removedFactory.stderr}\n${removedFactory.stdout}`;
+if (removedFactory.status === 0 || !/unknown command.*factory/i.test(removedFactoryText)) {
+  throw new Error("Expected the installed CLI to reject the removed factory command");
 }
-const factoryInspectHelp = runHarness(["factory", "inspect", "--help"]);
-if (!factoryInspectHelp.includes("harness factory inspect")) {
-  throw new Error("Expected factory inspect help to include command usage");
-}
-for (const flag of [
-  "--workspace <path>",
-  "--item-file <path>",
-  "--linear-issue <issue>",
-  "--factory-store-root <path>",
-  "--factory-store-project-id <id>",
-] as const) {
-  if (!factoryInspectHelp.includes(flag)) {
-    throw new Error(`Expected factory inspect help to include ${flag}`);
-  }
-}
-for (const flag of ["--apply", "--rerun", "--work-item-key"] as const) {
-  if (factoryInspectHelp.includes(flag)) {
-    throw new Error(`Expected factory inspect help not to include ${flag}`);
-  }
-}
-const factoryLinearHelp = runHarness(["factory", "linear", "--help"]);
-if (!factoryLinearHelp.includes("harness factory linear")) {
-  throw new Error("Expected factory linear help to include command usage");
-}
-if (!factoryLinearHelp.includes("list")) {
-  throw new Error("Expected factory linear help to include list command");
-}
-if (!factoryLinearHelp.includes("create")) {
-  throw new Error("Expected factory linear help to include create command");
-}
-const factoryLinearListHelp = runHarness(["factory", "linear", "list", "--help"]);
-if (!factoryLinearListHelp.includes("harness factory linear list")) {
-  throw new Error("Expected factory linear list help to include command usage");
-}
-if (!factoryLinearListHelp.includes("--status")) {
-  throw new Error("Expected factory linear list help to include --status");
-}
-const factoryLinearFetchHelp = runHarness(["factory", "linear", "fetch", "--help"]);
-if (!factoryLinearFetchHelp.includes("harness factory linear fetch")) {
-  throw new Error("Expected factory linear fetch help to include command usage");
-}
-if (!factoryLinearFetchHelp.includes("TEAM-123")) {
-  throw new Error("Expected factory linear fetch help to include issue identifier guidance");
-}
-const factoryLinearCreateHelp = runHarness(["factory", "linear", "create", "--help"]);
-if (!factoryLinearCreateHelp.includes("harness factory linear create")) {
-  throw new Error("Expected factory linear create help to include command usage");
-}
-if (!factoryLinearCreateHelp.includes("--title")) {
-  throw new Error("Expected factory linear create help to include --title");
-}
-if (!factoryLinearCreateHelp.includes("--body")) {
-  throw new Error("Expected factory linear create help to include --body");
-}
-if (!factoryLinearCreateHelp.includes("--body-file")) {
-  throw new Error("Expected factory linear create help to include --body-file");
-}
-if (factoryLinearCreateHelp.includes("--dry-run")) {
-  throw new Error("Expected factory linear create help not to include --dry-run");
-}
-if (factoryLinearCreateHelp.includes("--apply")) {
-  throw new Error("Expected factory linear create help not to include --apply");
-}
-const factoryTriageStationHelp = runHarness(["factory", "triage", "--help"]);
-if (!factoryTriageStationHelp.includes("harness factory triage")) {
-  throw new Error("Expected factory triage help to include command usage");
-}
-if (!factoryTriageStationHelp.includes("--item-file <path>")) {
-  throw new Error("Expected factory triage help to include --item-file");
-}
-if (!factoryTriageStationHelp.includes("--linear-issue <issue>")) {
-  throw new Error("Expected factory triage help to include --linear-issue");
-}
-if (!factoryTriageStationHelp.includes("--apply")) {
-  throw new Error("Expected factory triage help to include --apply");
-}
-if (!factoryTriageStationHelp.includes("--dry-run")) {
-  throw new Error("Expected factory triage help to include --dry-run");
-}
-if (!factoryTriageStationHelp.includes("--rerun")) {
-  throw new Error("Expected factory triage help to include --rerun");
-}
-const factoryPlanningStationHelp = runHarness(["factory", "planning", "--help"]);
-if (!factoryPlanningStationHelp.includes("harness factory planning")) {
-  throw new Error("Expected factory planning help to include command usage");
-}
-if (!factoryPlanningStationHelp.includes("publish")) {
-  throw new Error("Expected factory planning help to include publish subcommand");
-}
-if (!factoryPlanningStationHelp.includes("mark-plan-merged")) {
-  throw new Error("Expected factory planning help to include mark-plan-merged subcommand");
-}
-if (!factoryPlanningStationHelp.includes("continue")) {
-  throw new Error("Expected factory planning help to include continue subcommand");
-}
-const factoryPlanningRunHelp = runHarness(["factory", "planning", "run", "--help"]);
-if (!factoryPlanningRunHelp.includes("harness factory planning run")) {
-  throw new Error("Expected factory planning run help to include command usage");
-}
-const factoryPlanningContinueHelp = runHarness(["factory", "planning", "continue", "--help"]);
-if (
-  !factoryPlanningContinueHelp.includes("--decision") ||
-  !factoryPlanningContinueHelp.includes("--response-file")
-) {
-  throw new Error("Expected factory planning continue help to require decision and response file");
-}
-const factoryPlanningPublishHelp = runHarness(["factory", "planning", "publish", "--help"]);
-if (!factoryPlanningPublishHelp.includes("harness factory planning publish")) {
-  throw new Error("Expected factory planning publish help to include command usage");
-}
-if (factoryPlanningPublishHelp.includes("--url") || factoryPlanningPublishHelp.includes("--plan")) {
-  throw new Error("Factory planning publish must derive its PR URL and plan path");
-}
-const factoryPlanningMergedHelp = runHarness(["factory", "planning", "mark-plan-merged", "--help"]);
-if (!factoryPlanningMergedHelp.includes("harness factory planning mark-plan-merged")) {
-  throw new Error("Expected factory planning mark-plan-merged help to include command usage");
-}
-const factoryImplementationHelp = runHarness(["factory", "implementation", "--help"]);
-if (!factoryImplementationHelp.includes("harness factory implementation")) {
-  throw new Error("Expected factory implementation help to include command usage");
-}
-if (!factoryImplementationHelp.includes("continue")) {
-  throw new Error("Expected factory implementation help to include continue subcommand");
-}
-const factoryImplementationRunHelp = runHarness(["factory", "implementation", "run", "--help"]);
-if (!factoryImplementationRunHelp.includes("harness factory implementation run")) {
-  throw new Error("Expected factory implementation run help to include command usage");
-}
-if (!factoryImplementationRunHelp.includes("--rerun")) {
-  throw new Error("Expected factory implementation run help to include --rerun");
-}
-if (!factoryImplementationRunHelp.includes("--max-runtime-ms")) {
-  throw new Error("Expected factory implementation run help to include --max-runtime-ms");
-}
-if (factoryImplementationRunHelp.includes("--dry-run")) {
-  throw new Error("Factory implementation run must not expose legacy --dry-run");
-}
-const factoryImplementationContinueHelp = runHarness([
-  "factory",
-  "implementation",
-  "continue",
-  "--help",
-]);
-if (
-  !factoryImplementationContinueHelp.includes("--decision") ||
-  !factoryImplementationContinueHelp.includes("--response-file")
-) {
-  throw new Error(
-    "Expected factory implementation continue help to require decision and response file",
-  );
-}
-const factoryImplementationPublishHelp = runHarness([
-  "factory",
-  "implementation",
-  "publish",
-  "--help",
-]);
-if (!factoryImplementationPublishHelp.includes("harness factory implementation publish")) {
-  throw new Error("Expected factory implementation publish help to include command usage");
-}
-if (
-  factoryImplementationPublishHelp.includes("--url") ||
-  factoryImplementationPublishHelp.includes("--commit")
-) {
-  throw new Error("Factory implementation publish must derive its reviewed head and PR identity");
-}
-const factoryImplementationMergedHelp = runHarness([
-  "factory",
-  "implementation",
-  "mark-pr-merged",
-  "--help",
-]);
-if (!factoryImplementationMergedHelp.includes("harness factory implementation mark-pr-merged")) {
-  throw new Error("Expected factory implementation mark-pr-merged help to include command usage");
-}
-for (const [name, help] of [
-  ["factory status", factoryStatusHelp],
-  ["factory linear fetch", factoryLinearFetchHelp],
-  ["factory triage", factoryTriageStationHelp],
-] as const) {
-  if (!help.includes("--factory-store-root")) {
-    throw new Error(`Expected ${name} help to include --factory-store-root`);
-  }
-  if (!help.includes("--factory-store-project-id")) {
-    throw new Error(`Expected ${name} help to include --factory-store-project-id`);
-  }
-}
-for (const [name, help] of [["factory triage", factoryTriageStationHelp]] as const) {
-  if (!/default: durable\s+factory store runs\/factory/.test(help)) {
-    throw new Error(`Expected ${name} help to describe the durable factory run default`);
-  }
-  if (help.includes("default: <workspace>/.harness/runs/factory")) {
-    throw new Error(`Expected ${name} help not to describe the legacy workspace default`);
-  }
-}
-const factoryDispatchHelp = runHarnessAllowFailure(["factory", "dispatch", "--help"]);
-const factoryDispatchHelpText = `${factoryDispatchHelp.stderr}\n${factoryDispatchHelp.stdout}`;
-if (/factory dispatch/i.test(factoryDispatchHelpText)) {
-  throw new Error("Expected factory dispatch to be absent from factory help");
-}
-const factoryDispatch = runHarnessAllowFailure(["factory", "dispatch"]);
-const factoryDispatchText = `${factoryDispatch.stderr}\n${factoryDispatch.stdout}`;
-if (factoryDispatch.status === 0 || !/unknown command.*dispatch/i.test(factoryDispatchText)) {
-  throw new Error("Expected removed factory dispatch command to report unknown command");
+const staleFactoryEntries = findFactoryDistEntries(join(ROOT, "dist"));
+if (staleFactoryEntries.length > 0) {
+  throw new Error(`Expected no stale Factory build output:\n${staleFactoryEntries.join("\n")}`);
 }
 
 const initWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-init-"));

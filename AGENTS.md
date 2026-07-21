@@ -5,7 +5,7 @@ Use clear, simple language. Avoid jargon and unnecessary complexity. Prefer shor
 ## Agent Protocol
 
 - Bugs: add regression test when it fits.
-- Factory lifecycle, continuation, publication, provider-protocol, or system-smoke changes: run `make smoke-factory` in addition to the normal handoff gate. Live protocol checks require explicit authority. Details: `docs/contributing/testing.md`.
+- Linear automation or provider-protocol changes: run the relevant explicit smoke in addition to the normal handoff gate. Live protocol checks require explicit authority. Details: `docs/contributing/testing.md`.
 - Aim to keep files under ~700 LOC; guideline only (not a hard guardrail). Split/refactor when it improves clarity or testability.
 - Add brief code comments for tricky or non-obvious logic.
 - Keep files concise; extract helpers instead of “V2” copies. Use existing patterns preferentially unless you have a better approach.

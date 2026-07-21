@@ -40,11 +40,12 @@ such as `/path/to/repo`, `harness.json`, and `.harness/runs/reviews/<run-id>/`.
 - Provider-specific details belong behind provider adapters; workflows should
   stay provider-agnostic.
 - Reusable service primitives own connection and communication only. They must
-  not depend on Factory, orchestration hosts, agent providers, prompts, or
-  domain workflow policy.
-- Factory owns lifecycle truth and transition rules for Factory-managed work.
-  Execution hosts such as Inngest may deliver, retry, schedule, and observe
-  that work, but they must not keep a second Factory lifecycle state machine.
+  not depend on orchestration hosts, agent providers, prompts, or domain
+  workflow policy.
+- Durable delivery systems may retry, schedule, and observe work, but domain
+  policy belongs in the independent operation that makes the decision.
+- External systems that already own queue or lifecycle state remain the source
+  of truth. Harness must not mirror that state in a second lifecycle store.
 - Runtime schemas and exported schemas must stay aligned when either side
   changes.
 
@@ -64,9 +65,8 @@ decisions and structured results. Service and provider primitives communicate
 with external systems without knowing which operation or delivery host called
 them.
 
-Factory remains one workflow model in the repo, not the required boundary for
-all new automation. Standalone operations may be connected when a real workflow
-needs it, but they should not require an artificial shared state machine.
+Standalone operations may be connected when a real workflow needs it, but they
+should not require an artificial shared state machine.
 
 The current Linear automation follows this shape directly: a self-hosted
 Inngest poller emits revision-scoped events, a readiness operation reloads
@@ -75,27 +75,11 @@ its decision through the standalone Linear module. Linear Backlog remains the
 durable work queue; the delivery layer keeps no second cursor or lifecycle
 store.
 
-## Durable factory-store boundary
-
-Factory lifecycle evidence and factory-owned run evidence live in the durable
-factory store by default:
-`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/` by
-default.
-
 Target repositories remain execution sandboxes and Git materialization points:
-they own `harness.json`, the harness shim, inbox files, source, tests, local
-skill installs, and committed plans and code. Standalone review artifacts keep their target-repo
-`.harness/runs/reviews` defaults. Linear and GitHub will remain human/project
-projections, while Git remains the source of truth for committed plans and
-code. Events for Factory-managed work enter Factory as verified durable facts
-before they can enable more Factory work. Independent automations verify their
-own ingress and do not acquire a Factory lifecycle only for durability.
-
-Factory planning keeps planner scratch separate from Harness evidence. The
-planner writes only the retained, ignored workspace-local
-`.harness/factory-drafts/<run-id>/draft.md`; Harness validates that draft and
-publishes canonical and immutable snapshots into the external durable store.
-Scratch is transient, non-authoritative, and never recovery state.
+they own `harness.json`, the harness shim, source, tests, local skill installs,
+and committed plans and code. Standalone review artifacts keep their target-repo
+`.harness/runs/reviews` defaults. Linear owns issue state, while Git remains the
+source of truth for committed plans and code.
 
 ## Harness-repo vs target-repo boundary
 

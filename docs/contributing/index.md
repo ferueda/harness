@@ -17,8 +17,6 @@ loops.
   subsystem locations, artifacts, and extension seams.
 - [Linear automation](./linear-automation.md) - run the self-hosted polling
   server and persistent Connect worker.
-- [Factory contributor guide](./factory.md) - Factory's domain model, lifecycle
-  invariants, code ownership, projections, and host boundary.
 - [Script and command surface](./script-command-surface.md) - command
   ownership, mutability, generated-help policy, and inventory rules.
 - [Setup manifest](./setup-manifest.md) - local requirements, install/update

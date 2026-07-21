@@ -2,8 +2,7 @@
 
 ## Active queue
 
-- [Bound automatic Factory retryable-action chains](FER-183.md) — approved; awaiting plan merge. [Linear](https://linear.app/ferueda/issue/FER-183/bound-automatic-factory-retryable-action-chains)
-- [Poll Linear Backlog through self-hosted Inngest](260720-linear-backlog-poller.md) — approved; ready to implement. [Linear](https://linear.app/ferueda/issue/FER-248/poll-a-configured-linear-projects-backlog-every-60-seconds)
+- [Remove Factory from Harness](260720-retire-factory.md) — reviewed; implementing. [Linear](https://linear.app/ferueda/issue/FER-220/remove-factory-from-harness)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
@@ -71,10 +70,12 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 | —     | Runnable Factory operation reconciliation    | [#193](https://github.com/ferueda/harness/pull/193)                                                      |
 | —     | Hosted Factory authority before delivery     | [#195](https://github.com/ferueda/harness/pull/195)                                                      |
 | —     | Obsolete Factory cutover removal             | [#199](https://github.com/ferueda/harness/pull/199)                                                      |
+| —     | Bound automatic Factory retryable chains     | [#206](https://github.com/ferueda/harness/pull/206)                                                      |
 | —     | Standalone Linear issue-context reader       | [#213](https://github.com/ferueda/harness/pull/213)                                                      |
 | —     | Safe standalone Linear mutations             | [#214](https://github.com/ferueda/harness/pull/214)                                                      |
 | —     | Provider-neutral Linear readiness router     | [#224](https://github.com/ferueda/harness/pull/224)                                                      |
 | —     | Independent Linear triage consumer           | [#225](https://github.com/ferueda/harness/pull/225)                                                      |
+| —     | Self-hosted Linear Backlog poller            | [#231](https://github.com/ferueda/harness/pull/231)                                                      |
 
 ---
 

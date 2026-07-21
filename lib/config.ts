@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import type { ZodError } from "zod";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
@@ -13,19 +12,12 @@ import {
 import {
   HarnessConfigSchema,
   formatZodError,
-  type FactoryLinearConfig,
-  type FactoryRoleConfig,
-  type FactoryStoreConfig,
   type HarnessConfig,
   type LinearAutomationConfig,
 } from "./schemas.ts";
 import type { LinearReadinessMapping } from "./linear-readiness.ts";
-import type { FactoryActionExecutionProfile } from "./factory-phase-run.ts";
 
 const CONFIG_FILE = "harness.json";
-const FACTORY_PLANNING_CODEX_PLANNER_SANDBOX = "workspace-write" satisfies AgentSandboxMode;
-const FACTORY_IMPLEMENTATION_CODEX_IMPLEMENTER_SANDBOX =
-  "workspace-write" satisfies AgentSandboxMode;
 export const HARNESS_GITIGNORE_ENTRY = ".harness/";
 export const HARNESS_SHIM_RELATIVE_PATH = ".harness/bin/harness";
 export const HARNESS_RECOMMENDED_COMMAND = `${HARNESS_SHIM_RELATIVE_PATH} run change-review`;
@@ -74,43 +66,10 @@ export type InitHarnessResult = {
   shimUpdated: boolean;
 };
 
-type FactoryStationName = "triage" | "planning" | "implementation";
-type FactoryStationRole = "triager" | "planner" | "reviewer" | "implementer";
-
-export type FactoryRoleAgent = {
-  agent: AgentProviderName;
-  model?: string;
-  codexPathOverride?: string;
-  sandboxMode?: AgentSandboxMode;
-  approvalPolicy?: AgentApprovalPolicy;
-  modelReasoningEffort?: AgentReasoningEffort;
-};
-
-export type FactoryLinearSettings = FactoryLinearConfig;
-export type FactoryStoreSettings = FactoryStoreConfig;
-
-type ResolveFactoryRoleAgentInput =
-  | {
-      workspace?: string;
-      station: Extract<FactoryStationName, "triage">;
-      role: Extract<FactoryStationRole, "triager">;
-    }
-  | {
-      workspace?: string;
-      station: Extract<FactoryStationName, "planning">;
-      role: Extract<FactoryStationRole, "planner" | "reviewer">;
-    }
-  | {
-      workspace?: string;
-      station: Extract<FactoryStationName, "implementation">;
-      role: Extract<FactoryStationRole, "implementer" | "reviewer">;
-    };
-
 export type HarnessConfigSnapshot = Readonly<{
   workspace: string;
   config: HarnessConfig;
 }>;
-export type FactoryConfigSnapshot = HarnessConfigSnapshot;
 
 export type LinearAutomationSettings = Readonly<{
   workspace: string;
@@ -123,13 +82,6 @@ export type LinearAutomationSettings = Readonly<{
     codexPathOverride?: string;
   }>;
 }>;
-
-export function loadFactoryConfigSnapshot(
-  workspaceInput?: string,
-  cwd = process.cwd(),
-): FactoryConfigSnapshot {
-  return loadHarnessConfigSnapshot(workspaceInput, cwd);
-}
 
 export function loadHarnessConfigSnapshot(
   workspaceInput?: string,
@@ -200,113 +152,6 @@ export function resolveHarnessOptions<T extends HarnessOptions>(
       (agentProvider === "codex"
         ? (codexConfig?.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT)
         : undefined),
-  };
-}
-
-export function resolveFactoryRoleAgent(
-  input: ResolveFactoryRoleAgentInput,
-  cwd = process.cwd(),
-): FactoryRoleAgent & { workspace: string } {
-  return resolveFactoryRoleAgentFromSnapshot(
-    loadFactoryConfigSnapshot(input.workspace, cwd),
-    input,
-  );
-}
-
-export function resolveFactoryRoleAgentFromSnapshot(
-  snapshot: FactoryConfigSnapshot,
-  input: ResolveFactoryRoleAgentInput,
-): FactoryRoleAgent & { workspace: string } {
-  const { workspace, config } = snapshot;
-  const roleConfig = factoryRoleConfig(config, input);
-  const agent = roleConfig?.agent ?? config.defaultAgent ?? "cursor";
-  const agentConfig = config.agents?.[agent] ?? {};
-  const codexConfig = agent === "codex" ? config.agents?.codex : undefined;
-
-  return {
-    workspace,
-    agent,
-    model: roleConfig?.model ?? agentConfig.model ?? DEFAULT_AGENT_MODELS[agent],
-    codexPathOverride:
-      agent === "codex" ? (roleConfig?.executable ?? codexConfig?.executable) : undefined,
-    sandboxMode:
-      agent === "codex"
-        ? (roleConfig?.sandboxMode ??
-          (input.station === "planning" && input.role === "planner"
-            ? FACTORY_PLANNING_CODEX_PLANNER_SANDBOX
-            : input.station === "implementation" && input.role === "implementer"
-              ? FACTORY_IMPLEMENTATION_CODEX_IMPLEMENTER_SANDBOX
-              : codexConfig?.sandboxMode))
-        : undefined,
-    approvalPolicy:
-      agent === "codex" ? (roleConfig?.approvalPolicy ?? codexConfig?.approvalPolicy) : undefined,
-    modelReasoningEffort:
-      agent === "codex"
-        ? (roleConfig?.modelReasoningEffort ??
-          codexConfig?.modelReasoningEffort ??
-          DEFAULT_CODEX_REASONING_EFFORT)
-        : undefined,
-  };
-}
-
-/** Freeze an invocation-effective Factory role under its handler key. */
-export function factoryActionExecutionProfile(
-  role: FactoryRoleAgent,
-): FactoryActionExecutionProfile {
-  if (role.agent === "cursor") {
-    return {
-      provider: "cursor",
-      model: role.model ?? DEFAULT_AGENT_MODELS.cursor,
-    };
-  }
-  return {
-    provider: "codex",
-    model: role.model ?? DEFAULT_AGENT_MODELS.codex,
-    ...(role.codexPathOverride ? { executable: role.codexPathOverride } : {}),
-    sandbox: role.sandboxMode ?? "read-only",
-    approvalPolicy: role.approvalPolicy ?? "never",
-    reasoningEffort: role.modelReasoningEffort ?? DEFAULT_CODEX_REASONING_EFFORT,
-  };
-}
-
-export function resolveFactoryLinearSettings(
-  options: { workspace?: string },
-  cwd = process.cwd(),
-): FactoryLinearSettings & { workspace: string } {
-  return resolveFactoryLinearSettingsFromSnapshot(
-    loadFactoryConfigSnapshot(options.workspace, cwd),
-  );
-}
-
-export function resolveFactoryLinearSettingsFromSnapshot(
-  snapshot: FactoryConfigSnapshot,
-): FactoryLinearSettings & { workspace: string } {
-  const { workspace, config } = snapshot;
-  if (!config.factory?.linear) {
-    throw new Error(
-      "factory.linear is required in harness.json for Linear commands. Configure teamKey and statuses.",
-    );
-  }
-  return {
-    workspace,
-    ...config.factory.linear,
-  };
-}
-
-export function resolveFactoryStoreSettings(
-  options: { workspace?: string },
-  cwd = process.cwd(),
-): FactoryStoreSettings & { workspace: string } {
-  return resolveFactoryStoreSettingsFromSnapshot(loadFactoryConfigSnapshot(options.workspace, cwd));
-}
-
-export function resolveFactoryStoreSettingsFromSnapshot(
-  snapshot: FactoryConfigSnapshot,
-): FactoryStoreSettings & { workspace: string } {
-  const { workspace, config } = snapshot;
-  return {
-    workspace,
-    ...config.factory?.store,
   };
 }
 
@@ -396,58 +241,10 @@ function readHarnessConfig(workspace: string): HarnessConfig {
 
   const result = HarnessConfigSchema.safeParse(parsed);
   if (!result.success) {
-    throw new Error(`Invalid ${CONFIG_FILE}: ${formatHarnessConfigError(result.error)}`);
+    throw new Error(`Invalid ${CONFIG_FILE}: ${formatZodError(result.error)}`);
   }
 
   return result.data;
-}
-
-function formatHarnessConfigError(error: ZodError): string {
-  const missingImplementationStatuses = error.issues
-    .filter(
-      (issue) =>
-        issue.code === "invalid_type" &&
-        issue.expected === "string" &&
-        issue.input === undefined &&
-        (issue.path.join(".") === "factory.linear.statuses.implementing" ||
-          issue.path.join(".") === "factory.linear.statuses.implementationFailed" ||
-          issue.path.join(".") === "factory.linear.statuses.readyForReview" ||
-          issue.path.join(".") === "factory.linear.statuses.done"),
-    )
-    .map((issue) => issue.path.join("."));
-  if (
-    missingImplementationStatuses.length > 0 &&
-    error.issues.every(
-      (issue) =>
-        issue.code === "invalid_type" &&
-        issue.expected === "string" &&
-        issue.input === undefined &&
-        (issue.path.join(".") === "factory.linear.statuses.implementing" ||
-          issue.path.join(".") === "factory.linear.statuses.implementationFailed" ||
-          issue.path.join(".") === "factory.linear.statuses.readyForReview" ||
-          issue.path.join(".") === "factory.linear.statuses.done"),
-    )
-  ) {
-    const paths = [...new Set(missingImplementationStatuses)].sort();
-    return [
-      `Missing required Linear implementation status mapping${paths.length === 1 ? "" : "s"}: ${paths.join(", ")}.`,
-      "Create or confirm the Implementing, Ready for Review, Implementation Failed, and Done team states, add the mappings to harness.json, then rerun.",
-    ].join(" ");
-  }
-  return formatZodError(error);
-}
-
-function factoryRoleConfig(
-  config: HarnessConfig,
-  input: ResolveFactoryRoleAgentInput,
-): FactoryRoleConfig | undefined {
-  if (input.station === "triage") {
-    return config.factory?.triage?.roles?.triager;
-  }
-  if (input.station === "implementation") {
-    return config.factory?.implementation?.roles?.[input.role];
-  }
-  return config.factory?.planning?.roles?.[input.role];
 }
 
 function freezeLinearAutomationSettings(input: {

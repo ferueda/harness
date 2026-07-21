@@ -4,13 +4,12 @@
 
 This is the navigation map for contributors changing Harness. It explains the
 runtime paths, ownership boundaries, subsystem locations, and durable artifacts
-needed to find the right code without turning this page into command help or a
-Factory runbook.
+needed to find the right code.
 
-Use [Script and command surface](./script-command-surface.md) for exact public
+Use [Script and command surface](./script-command-surface.md) for public
 commands and mutability, [Setup manifest](./setup-manifest.md) for requirements,
-auth, and generated paths, and [Factory contributor guide](./factory.md) for the
-Factory domain model. Generated CLI help owns current flags.
+auth, and generated paths, and [Linear automation](./linear-automation.md) for
+the self-hosted worker. Generated CLI help owns current flags.
 
 ## Runtime flows
 
@@ -26,216 +25,144 @@ CLI
   -> workspace-local review artifacts
 ```
 
-Factory phases:
+Linear triage automation:
 
 ```text
-CLI
-  -> durable work-item state and pure reaction
-  -> one selected action handler
-  -> producer or reviewer through provider/workflow boundaries
-  -> immutable evidence and action result
-  -> compare-and-append lifecycle event
-  -> rebuildable state
-  -> optional Linear or GitHub projection
+self-hosted Inngest cron
+  -> poll configured Linear Backlog revisions
+  -> reload complete current issue context
+  -> deterministic readiness policy
+  -> provider-neutral triage request
+  -> triage operation through the configured agent
+  -> guarded Linear comment, label, and status writes
 ```
 
-Hosted operation delivery composes Factory with Grove without moving lifecycle policy:
+These paths share provider and configuration primitives, but not lifecycle
+state. Reviews are explicit CLI runs. Linear is the issue queue and source of
+truth for automation; Inngest owns delivery, retries, scheduling, and traces.
+
+## Automation model
+
+Automation is built from small operations with one-way dependencies:
 
 ```text
-trusted observed phase request or continuation
-  -> validate observed identities and snapshot controller HEAD
-  -> acquire Grove, create phase context, and append authority
-  -> reconcile only after authority is durable
-  -> identifier-only request or bounded wait/stale/attention result
-identifier-only request + trusted project runtime
-  -> authenticate phase, work item, action, and completed result
-  -> recover, stale, or wait before Grove when possible
-  -> derive lease intent from immutable phase Git identity
-  -> Grove acquire or compatible reacquire
-  -> repository-owned setup hook
-  -> revalidate canonical Factory state
-  -> one existing Factory action with the canonical workspace path
-  -> authenticated receipt hint
+delivery and retries
+  -> domain operation and policy
+  -> standalone service and provider primitives
 ```
 
-Both paths resolve target-repo configuration and use provider adapters. They
-differ in continuity: standalone review runs are independent workspace
-artifacts; Factory owns a durable multi-phase lifecycle outside the target
-workspace.
+The delivery layer coordinates when work runs. A domain operation owns its
+decision and structured result. Service modules communicate with an external
+system without knowing which operation or delivery host called them. Adding a
+new operation does not require adding a station to a shared lifecycle.
+
+The current worker registers three independent functions: polling, readiness
+routing, and triage. Planning and implementation requests are typed but remain
+disabled until they have their own consumers.
 
 ## Ownership boundaries
 
-| Owner                 | Owns                                                                                                                                   | Does not own                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Harness checkout      | CLI, config/schema handling, workflows, Factory kernel and actions, providers, packaged skills, scripts, and contributor docs          | Target product decisions, source, tests, or CI policy                 |
-| Target repository     | `harness.json`, shim, optional installed skills, source, tests, project docs, CI, plans/code, and workspace-local review runs          | Harness provider internals or durable Factory lifecycle               |
-| Durable Factory store | Lifecycle JSONL, locks, rebuildable state, phase contexts, action evidence, provider/reviewer artifacts, and Factory-owned review runs | Target source or Git history                                          |
-| Git                   | Reviewed plan/code commits, candidate refs, promoted branch history, and merge ancestry                                                | Factory lifecycle or human board status                               |
-| Grove                 | Persistent pool capacity, stable lease paths, checkout, serialized setup hooks, process-safe reset/release, quarantine, and repair     | Factory lifecycle, reactions, Git promotion, or publication authority |
-| Linear and GitHub     | Human-facing issue and pull-request projections                                                                                        | Factory transition truth                                              |
-| Workspace caller      | Stable phase generation, authoritative base commit, setup command, and verified terminal-event authority                               | Lease internals or Factory state interpretation                       |
-
-The target workspace remains the execution sandbox and Git materialization
-point. The durable store remains Factory's continuity boundary. Linear and
-GitHub mutations are explicit, retryable projections.
+| Owner             | Owns                                                                                                      | Does not own                                             |
+| ----------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Harness checkout  | CLI, config and schemas, workflows, operations, providers, packaged skills, scripts, and contributor docs | Target product decisions, source, tests, or CI policy    |
+| Target repository | `harness.json`, shim, optional installed skills, source, tests, project docs, and local review runs       | Harness provider internals or Inngest delivery state     |
+| Linear            | Issue content, workflow status, labels, comments, blockers, and the durable work queue                    | Agent execution or delivery retries                      |
+| Inngest           | Function delivery, retries, scheduling, concurrency, traces, and local event history                      | Triage policy or a second issue lifecycle                |
+| Provider adapter  | Authentication, invocation, streams, sessions, sandbox settings, and provider result translation          | Domain routing, Linear projection, or target-repo policy |
+| Git               | Committed plans and code                                                                                  | Linear issue state or Inngest delivery state             |
 
 ## Source map
 
-| Area                                                                     | Responsibility                                                                                                        |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `bin/`                                                                   | CLI entrypoints, generated help, manual Factory commands, the Linear worker command, and action output                |
-| `lib/config.ts`, `lib/context.ts`, `lib/workflow-context.ts`             | Workspace/config resolution, review scope, immutable context, provider wiring, aggregation, and standalone run export |
-| `lib/factory-lifecycle-*.ts`, `lib/factory-state-machine.ts`             | Factory event schemas, compare-and-append kernel, state reduction, and pure reactions                                 |
-| `lib/factory-*-action.ts`, phase input/context modules                   | Triage, planning, and implementation action boundaries and immutable evidence                                         |
-| `lib/factory-store.ts`, `lib/factory-locks.ts`, `lib/factory-inspect.ts` | Durable paths, lock ownership, store provenance, and read-only lifecycle inspection                                   |
-| `lib/factory-grove-workspace.ts`                                         | Deterministic Grove lease intent, ensure/reopen, terminal release, and bounded repair                                 |
-| `lib/factory-phase-request.ts`, `lib/factory-hosted-authority.ts`        | Observed phase/continuation validation, pre-request context creation, durable authority, and reconciliation           |
-| `lib/factory-hosted-operation.ts`, `lib/factory-operation.ts`            | Identifier-only hosted delivery, authenticated resolution/execution, and reconstructable receipts                     |
-| `lib/factory-operation-reconciliation.ts`                                | Bounded caller-supplied log-to-delivery repair with per-target failure isolation                                      |
-| `lib/factory-inngest-adapter.ts`                                         | Deterministic Factory event IDs, direct sends, chained sends, and hosted function controls                            |
-| `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
-| `lib/inngest/`                                                           | Independent Inngest event contracts without domain policy or service clients                                          |
-| `lib/linear/`                                                            | Standalone, JSON-safe Linear communication primitives that do not depend on Factory or orchestration                  |
-| `lib/linear-readiness.ts`, `lib/linear-readiness-router.ts`              | Deterministic Linear readiness policy and its read-only Inngest delivery adapter                                      |
-| `lib/linear-triage.ts`                                                   | Independent Inngest consumer that composes triage policy with standalone Linear projections                           |
-| `lib/linear-automation-worker.ts`                                        | Minimal Connect composition, fixed function registration, environment validation, and health/readiness endpoints      |
-| `lib/factory-*-publication*.ts`, `lib/factory-pull-request-publisher.ts` | Reviewed-commit validation and bounded GitHub publication                                                             |
-| `providers/`                                                             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation                   |
-| `workflows/`, `lib/prompts/`                                             | Provider-agnostic workflow definitions, shared review execution, and prompt contracts                                 |
-| `skills/`                                                                | Packaged skills installed into target repositories                                                                    |
-| `.agents/skills/`                                                        | Development-only skills for this Harness checkout                                                                     |
-| `schemas/`                                                               | Exported JSON schemas that must stay aligned with runtime Zod schemas                                                 |
-| `scripts/`                                                               | Build/distribution utilities and gate infrastructure, including `scripts/run-gate-step.ts`                            |
-| `automations/`                                                           | Background task definitions, not Factory lifecycle state                                                              |
-| `dev/plans/`                                                             | Active implementation plans and their index; not current architecture truth                                           |
+| Area                                                         | Responsibility                                                                                                  |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `bin/`                                                       | CLI entrypoint, generated help, and the persistent Linear worker command                                        |
+| `lib/config.ts`, `lib/context.ts`, `lib/workflow-context.ts` | Workspace and configuration resolution, review context, provider wiring, aggregation, and standalone run export |
+| `workflows/`, `lib/prompts/`                                 | Provider-neutral review workflow definitions, shared review execution, and prompt contracts                     |
+| `lib/linear/`                                                | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
+| `lib/triage/`                                                | Triage prompt, structured decision schema, and provider-independent operation                                   |
+| `lib/linear-backlog-poller.ts`                               | Explicitly scoped issue revision polling                                                                        |
+| `lib/linear-readiness.ts`, `lib/linear-readiness-router.ts`  | Deterministic readiness policy and its read-only Inngest delivery adapter                                       |
+| `lib/linear-triage.ts`                                       | Inngest consumer that composes triage policy with guarded Linear projections                                    |
+| `lib/linear-automation-worker.ts`                            | Connect composition, fixed function registration, startup validation, concurrency, and health endpoints         |
+| `lib/inngest/`                                               | Typed, provider-neutral event contracts                                                                         |
+| `providers/`                                                 | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation             |
+| `skills/`                                                    | Packaged skills installed into target repositories                                                              |
+| `.agents/skills/`                                            | Development-only skills for this Harness checkout                                                               |
+| `schemas/`                                                   | Exported JSON schemas that stay aligned with runtime validation                                                 |
+| `scripts/`                                                   | Build, distribution, smoke, and gate infrastructure                                                             |
+| `automations/`                                               | Background task definitions                                                                                     |
+| `dev/plans/`                                                 | Active implementation plans and their index; not current architecture truth                                     |
 
 Prefer these ownership clusters over a file-by-file mental model. A new source
 file should live with the subsystem whose contract it extends.
 
 ## Runtime boundaries
 
-### Workflow and action boundary
+### Review workflow boundary
 
-Standalone `change-review` and `plan-review` use workflow context plus callable
-workflow definitions. Factory uses its durable action kernel and may call the
-same review machinery inside a phase action. A Factory implementation review is
-therefore not a separate operator-run `change-review`; the action owns its
-candidate, reviewer manifest, aggregate verdict, and lifecycle event.
+`change-review` and `plan-review` use an immutable workflow context and callable
+workflow definitions. Reviewers run through the shared provider interface and
+write structured results beneath the run directory. Aggregation owns the final
+verdict; provider adapters do not.
+
+### Domain operation boundary
+
+Domain operations accept plain serializable input and return validated
+structured output. They own policy and prompt rendering, but they know nothing
+about Inngest scheduling. The triage operation follows this boundary and can be
+tested with a fake agent without starting a worker.
+
+### Service boundary
+
+The Linear module resolves SDK relations, pagination, and failures behind a
+small application interface. It returns plain data and does not import Inngest,
+triage policy, prompts, or providers. Domain code owns route names and how a
+decision maps to Linear status and labels.
 
 ### Provider boundary
 
-Workflows and Factory actions depend on the shared provider interface. Provider
-auth, SDK/CLI invocation, streaming, session continuation, model policy, and
-sandbox details stay under `providers/` or provider-scoped config. Producers may
-run in recorded workspace mode when Harness owns later validation; reviewers
-remain mutation-guarded and read-only.
+Workflows and operations depend on the shared provider interface. Provider
+auth, SDK or CLI invocation, streaming, session continuation, model policy, and
+sandbox details stay under `providers/` or provider-scoped configuration.
 
-### State and projection boundary
+### Delivery boundary
 
-Factory lifecycle JSONL is canonical; state JSON is rebuildable. Action evidence
-is content-addressed. Git is authoritative for committed plan/code bytes. Linear
-and GitHub may lag and be repaired, but they cannot select Factory transitions.
-See [Factory contributor guide](./factory.md) for the full invariant set.
-
-Hosted execution keeps the same boundary:
-
-| Owner    | Responsibility                                                                   |
-| -------- | -------------------------------------------------------------------------------- |
-| Factory  | Lifecycle facts, transition rules, exact action identity, evidence, and recovery |
-| Inngest  | Event delivery, step retries, scheduling, concurrency, and traces                |
-| Grove    | Workspace lease, setup, reset, release, quarantine, and repair                   |
-| Git      | Committed plan and code bytes                                                    |
-| Trackers | Verified external facts and retryable human-facing projections                   |
-
-#### Target hosted flow
-
-The hosted composition is event-driven, but Factory remains the decision owner:
-
-```mermaid
-flowchart TD
-    L["Linear or GitHub event"] --> I["Inngest ingress function"]
-    I --> F1["Record verified authority in Factory"]
-    F1 --> P1["Project boundary to Linear"]
-    P1 --> S["Send exact operation event"]
-
-    S --> E["Inngest operation function"]
-    E --> R["Hosted runner and Grove workspace"]
-    R --> F2["Factory authenticates and executes one action"]
-    F2 --> A["Persist evidence, result, and lifecycle event"]
-    A --> P2["Inngest projects result to Linear"]
-
-    P2 --> N{"Factory receipt"}
-    N -->|"Exact same-phase operation"| S
-    N -->|"Cross-phase boundary"| D["Send advance wakeup"]
-    D --> X["Inngest advance driver"]
-    X --> F3["Factory selects one typed effect"]
-    F3 --> P1
-    N -->|"Wait or complete"| W["Function ends"]
-```
-
-Inngest never decides that planning should begin, a retry should happen, or a
-pull request should publish. It asks Factory, then executes Factory's answer.
-An Inngest event is therefore a delivery hint for authority already recorded by
-Factory; it cannot create a phase or choose the next phase.
+Inngest functions reload external truth before deciding or projecting. Event
+payloads identify work; they do not replace current Linear issue context.
+Revision-scoped event IDs and function concurrency make retries converge while
+leaving Linear as the queue.
 
 ### Schema boundary
 
-Runtime validation lives primarily in `lib/schemas.ts`,
-`lib/factory-schemas.ts`, and phase-specific schemas. Exported schemas live in
-`schemas/`. When a public structured contract changes, check both sides and the
-provider prompt or workflow consuming it.
+Runtime validation lives beside the operation or in `lib/schemas.ts`. Exported
+schemas live in `schemas/`. When a public structured contract changes, check the
+runtime schema, exported schema, prompt, and consumer together.
 
 ## Artifact map
 
-| Root                                                                         | Purpose                                                                                                            |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `.harness/runs/reviews/<run-id>/` in the target workspace                    | Standalone review context, prompts, structured results, streams, summaries, metadata, and events                   |
-| `.harness/bin/harness`                                                       | Ignored target-repo shim pointing to the Harness checkout that initialized it                                      |
-| `.harness/inbox/factory/`                                                    | Workspace-local intake files; current phase commands inspect or select one item rather than batch-moving the inbox |
-| `.harness/factory-drafts/<run-id>/draft.md`                                  | Ignored planner scratch; transient and never recovery truth                                                        |
-| `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory/` | Canonical Factory events, rebuildable state, locks, and store format marker                                        |
-| `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/`    | Factory phase evidence and Factory-owned review artifacts                                                          |
+| Root                                             | Purpose                                                                               |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `.harness/runs/reviews/<run-id>/`                | Review context, prompts, structured results, streams, summaries, metadata, and events |
+| `.harness/bin/harness`                           | Ignored target-repo shim pointing to the Harness checkout that initialized it         |
+| Self-hosted Inngest SQLite volume                | Local delivery history, retry state, function metadata, and traces                    |
+| Protected worker environment file outside a repo | Linear, Inngest, and optional Codex credentials for one deployment                    |
+| Dedicated worker Codex credential volume         | Optional unattended ChatGPT-backed Codex login, separate from the host account        |
 
-Artifact references in Factory events use store-relative paths and SHA-256
-hashes. `summary.md` and `meta.json` are navigation aids; immutable referenced
-evidence and lifecycle events own recovery. Generated local state is ignored or
-user data and must not be committed.
+Review artifacts are ignored workspace-local state. Self-hosted deployment
+state and credentials are external user data. Neither belongs in Git.
 
 ## Current execution model
 
-The CLI reads and applies phase-start or continuation identities synchronously.
-Factory returns each cross-phase choice as a typed `start-phase` reaction with
-the exact lifecycle event that authorized it; the CLI only renders that selected
-phase as a manual command.
-Hosted adapters preserve those observed identities and use
-`lib/factory-hosted-authority.ts` to record authority before reconciliation. The
-runner accepts only project, work-item, and operation identifiers; trusted
-runtime supplies store, repository, provider, and Grove configuration.
+`harness linear worker` loads one `linearAutomation` configuration snapshot at
+startup and registers the poller, readiness router, and triage consumer through
+Inngest Connect. The worker caps total concurrency at one and exposes `/health`
+plus Connect-backed `/ready` endpoints.
 
-An external host may call `lib/factory-operation-reconciliation.ts` with a
-bounded trusted target list. It returns `phase-start`, `delivered`, `waiting`,
-`stale`, or `attention` per target, isolates failures, and neither changes
-lifecycle state nor discovers or schedules work.
-
-`lib/factory-inngest-adapter.ts` owns deterministic event IDs and direct or
-chained sends. It may chain only the exact next operation returned by an
-authenticated Factory receipt. It still executes only same-phase operations and
-does not persist or schedule `start-phase`; [FER-196](https://linear.app/ferueda/issue/FER-196/drive-factory-advancement-and-linear-projections-through-inngest)
-will add that cross-phase driver. IDs suppress transport duplicates; Factory
-action identity prevents replay. The adapter keeps three retries and a
-110-minute action limit. The current integration assumes one persistent host and
-ships no production worker or cross-phase driver. Independent Linear automation
-uses a self-hosted Inngest cron to list one configured project's Backlog issue
-revisions. The readiness adapter consumes those typed revision events, reloads
-Linear truth, and emits one provider-neutral work request without mutating
-Linear. The independent triage consumer handles that request and projects one
-triage decision through the standalone Linear service. `harness linear worker`
-registers the poller, readiness router, and triage consumer through Inngest
-Connect. It loads one `linearAutomation` configuration snapshot at startup,
-enables only the triage route, caps total worker concurrency at one, and exposes
-`/health` plus Connect-backed `/ready`. Plan and implementation routes stay
-disabled until their own consumers exist. Publication and merge acknowledgement
-remain separate.
+The one-minute poller lists revisions for one configured project's Backlog.
+The readiness router reloads the complete issue context and emits a triage
+request only when current Linear state requires it. The triage consumer invokes
+the configured Codex profile and applies its rationale, Next action label, and
+target status through the standalone Linear service.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

@@ -3,7 +3,7 @@
 ## Purpose
 
 Tests are part of the engineering harness. They let humans and agents change
-Harness while keeping lifecycle behavior, provider boundaries, artifacts, and
+Harness while keeping workflow behavior, provider boundaries, artifacts, and
 commands visible.
 
 The goal is high-confidence feedback at the cheapest stable boundary, not the
@@ -34,13 +34,12 @@ docs should link here. Exact command ownership lives in
 
 | Layer                    | Use for                                                                                 |
 | ------------------------ | --------------------------------------------------------------------------------------- |
-| Static and module        | Types, reducers, reactions, parsers, validators, mappers, and helpers                   |
-| Workflow and action      | Factory behavior, recovery, idempotency, immutable evidence, and Git authority          |
+| Static and module        | Types, parsers, validators, mappers, policies, and helpers                              |
+| Workflow and operation   | Review behavior, domain decisions, idempotency, and guarded external projections        |
 | Provider adapter         | SDK/CLI translation, streaming, sessions, schemas, timeout, and abort behavior          |
 | CLI integration          | Argument parsing, command selection, structured output, and separate-process behavior   |
 | Repository self-contract | Packaged skills, command inventory, documentation structure, and private-path exclusion |
 | Distribution smoke       | Built package layout, installed entrypoint, generated shim, and basic public wiring     |
-| Factory system smoke     | Offline Factory CLI, Inngest delivery, and Grove recovery                               |
 | Linear automation smoke  | Self-hosted Inngest, Connect registration, polling, routing, triage, and projection     |
 | Linear Compose smoke     | Worker image, Compose health, restart, reconnection, and persistent local state         |
 | Optional live            | Explicitly authorized external integration proof                                        |
@@ -55,14 +54,13 @@ changed behavior crosses a boundary the cheaper layer cannot observe.
   `providers/` when the owning module already follows that pattern.
 - Keep `workflows` behavior in focused root tests such as
   `test/review-steps.test.ts` and `test/workflow-context.test.ts`.
-- Keep public CLI behavior in `test/cli.test.ts` or an existing station-specific
+- Keep public CLI behavior in `test/cli.test.ts` or an existing command-specific
   CLI test.
 - Keep skill-owned suites inside the owning skill when a packaged skill needs
   its own test boundary.
-- Keep built-distribution coverage in `scripts/smoke-dist.ts`, Factory smokes in
-  `scripts/smoke-factory.ts` and `scripts/smoke-factory-grove.ts`, the independent
-  Linear journey in `scripts/smoke-linear-automation.ts`, the container boundary in
-  `scripts/smoke-linear-automation-compose.ts`, and gate-output behavior in
+- Keep built-distribution coverage in `scripts/smoke-dist.ts`, the independent
+  Linear journey in `scripts/smoke-linear-automation.ts`, the container boundary
+  in `scripts/smoke-linear-automation-compose.ts`, and gate-output behavior in
   `test/gate-output.test.ts`.
 - Keep target-repo fixtures isolated from the Harness checkout and user state.
 
@@ -93,38 +91,33 @@ System smokes should:
 
 - use an explicit command outside default Vitest discovery and watch mode;
 - use local fakes through production-supported seams;
-- run offline with isolated repositories and Factory stores;
+- run offline with isolated repositories and local services;
 - stay out of pre-commit and the ordinary edit loop;
 - clean on success and preserve bounded evidence on failure;
 - avoid generic test-only runtimes or weakened production validation.
 
-Distribution smoke proves packaging and command wiring. Factory smoke runs local
-fakes in a temporary repository and store, then proves Inngest execution and
-recovery around Grove release. Linear automation smoke runs a real local
-self-hosted Inngest server and Connect worker with fake Linear and agent
-boundaries, then proves polling, revision routing, unchanged-revision
+Distribution smoke proves packaging and command wiring. Linear automation smoke
+runs a real local self-hosted Inngest server and Connect worker with fake Linear
+and agent boundaries, then proves polling, revision routing, unchanged-revision
 deduplication, and the triage-to-projection journey. The Linear Compose smoke
-uses a blocked-egress network to prove the worker image, service health, restarts,
-reconnection, and persistent volume behavior without live traffic. These smokes
-clean their disposable state on success. Live protocols require explicit authority,
-credentials, stop conditions, disposable targets, and cleanup; they are not
-routine CI coverage.
+uses a blocked-egress network to prove the worker image, service health,
+restarts, reconnection, and persistent volume behavior without live traffic.
+These smokes clean their disposable state on success. Live protocols require
+explicit authority, credentials, stop conditions, disposable targets, and
+cleanup; they are not routine CI coverage.
 
 ## Verification Commands
 
 During iteration, run the narrowest relevant path, for example:
 
 ```bash
-pnpm exec vitest run test/factory-implementation-actions.test.ts
+pnpm exec vitest run lib/linear-readiness.test.ts
 pnpm exec vitest run providers/codex/codex-agent.test.ts
 pnpm exec vitest run test/docs-contracts.test.ts
 ```
 
 - `pnpm test` runs the Vitest suite.
 - `pnpm smoke:dist` proves built distribution wiring.
-- `pnpm smoke:factory` / `make smoke-factory` runs the offline Factory, Inngest,
-  and Grove recovery journey. It is not part of Vitest, watch mode, pre-commit, or
-  ordinary local `pnpm check`.
 - `pnpm smoke:linear-automation` / `make smoke-linear-automation` runs the
   independent Linear automation journey. It is not part of Vitest, watch mode,
   pre-commit, or ordinary local `pnpm check`.
@@ -132,10 +125,10 @@ pnpm exec vitest run test/docs-contracts.test.ts
   runs the explicit Docker packaging smoke. It is not part of Vitest, pre-commit,
   ordinary local `pnpm check`, or the CI gate.
 - `pnpm check` / `make check` is the normal local handoff gate.
-- `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Factory and
-  Linear automation system smokes after the ordinary checks.
+- `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Linear
+  automation system smoke after the ordinary checks.
 - Approved plan-only changes use `make fix-plan` and `make check-plan`. CI runs
-  the same focused check; it bypasses the full gate and Factory smoke.
+  the same focused check; it bypasses the full gate and system smoke.
 - Other docs-only behavior follows the normal command contract.
 - Run an explicit system smoke or live protocol only when the changed boundary
   requires it.
