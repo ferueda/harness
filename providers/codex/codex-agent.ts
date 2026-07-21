@@ -45,17 +45,19 @@ type CodexTurn = RunResult & { streamLog?: AgentStreamLogSummary };
 export type CodexAgentOptions = {
   codexPathOverride?: string;
   codexFactory?: CodexFactory;
+  environment?: Readonly<Record<string, string>>;
 };
 
 export function createCodexAgent(options: CodexAgentOptions = {}): Agent {
   const createCodex =
     options.codexFactory ?? ((codexOptions: CodexOptions) => new Codex(codexOptions));
   const codexPathOverride = options.codexPathOverride;
+  const environment = options.environment;
 
   return {
     name: "codex",
     run(input) {
-      return invokeCodexAgent(createCodex, codexPathOverride, input);
+      return invokeCodexAgent(createCodex, codexPathOverride, environment, input);
     },
   };
 }
@@ -63,6 +65,7 @@ export function createCodexAgent(options: CodexAgentOptions = {}): Agent {
 async function invokeCodexAgent(
   createCodex: CodexFactory,
   codexPathOverride: string | undefined,
+  environment: Readonly<Record<string, string>> | undefined,
   input: AgentRunInput,
 ): Promise<AgentRunResult> {
   const sessionResult = normalizeAgentSessionForProvider("codex", input.session);
@@ -113,6 +116,7 @@ async function invokeCodexAgent(
   try {
     const codex = createCodex({
       codexPathOverride: codexPathOverride ?? process.env.CODEX_EXECUTABLE,
+      ...(environment ? { env: { ...environment } } : {}),
     });
     const threadOptions = buildThreadOptions(input);
     const thread = openCodexThread(codex, sessionResult.session, threadOptions);

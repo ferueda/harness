@@ -10,7 +10,7 @@ define RUN
 @VERBOSE="$(VERBOSE)" GATE_STEP_NAME="$(if $(2),$(2),$@)" GATE_STEP_RERUN="$(if $(3),$(3),VERBOSE=1 make $@)" GATE_STEP_COMMAND='$(1)' node scripts/run-gate-step.ts
 endef
 
-.PHONY: help ensure-node setup-worktree build lint typecheck test smoke-dist smoke-factory smoke-linear-automation format check-format fix fix-plan check-plan check check-v check-ci
+.PHONY: help ensure-node setup-worktree build lint typecheck test smoke-dist smoke-factory smoke-linear-automation smoke-linear-automation-compose format check-format fix fix-plan check-plan check check-v check-ci
 
 ensure-node: ## Ensure node and pnpm are available
 	@command -v node >/dev/null 2>&1 || { echo "node not found in PATH"; exit 1; }
@@ -40,6 +40,9 @@ smoke-factory: ensure-node ## Smoke test the offline Factory system journey
 
 smoke-linear-automation: ensure-node ## Smoke test the offline Linear automation journey
 	$(call RUN,$(PNPM) run smoke:linear-automation)
+
+smoke-linear-automation-compose: ensure-node ## Smoke test the Docker Compose packaging boundary
+	$(call RUN,$(PNPM) run smoke:linear-automation-compose)
 
 format: ensure-node ## Apply formatting
 	$(PNPM) run format

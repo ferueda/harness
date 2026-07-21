@@ -63,6 +63,7 @@ export const AGENT_MODEL_CATALOG = {
 export type AgentProviderOptions = {
   provider: AgentProviderName;
   codexPathOverride?: string;
+  codexEnvironment?: Readonly<Record<string, string>>;
 };
 
 export type AgentRunInput = {

@@ -1,0 +1,69 @@
+services:
+  inngest:
+    image: inngest/inngest:v1.37.0@sha256:deff5ded6145002bff572f7a28be386167b6e64a97101f5ab9aa65f92cc774f6
+    command:
+      - inngest
+      - start
+      - --host
+      - 0.0.0.0
+      - --sqlite-dir
+      - /var/lib/inngest
+    environment:
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?set INNGEST_EVENT_KEY}
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?set INNGEST_SIGNING_KEY}
+    healthcheck:
+      test: ["CMD", "inngest", "alpha", "doctor", "healthcheck", "--verbose"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - linear-automation
+    ports:
+      - 127.0.0.1:${INNGEST_DASHBOARD_PORT:-8288}:8288
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - inngest-data:/var/lib/inngest
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.linear-worker
+    cap_drop:
+      - ALL
+    depends_on:
+      inngest:
+        condition: service_healthy
+    environment:
+      CODEX_API_KEY: ${CODEX_API_KEY:-}
+      CODEX_HOME: /home/node/.codex
+      HARNESS_WORKER_HOST: 0.0.0.0
+      HARNESS_WORKER_PORT: "8080"
+      HOME: /home/node
+      INNGEST_BASE_URL: http://inngest:8288
+      INNGEST_CONNECT_GATEWAY_URL: ws://inngest:8289/v0/connect
+      INNGEST_DEV: "0"
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?set INNGEST_EVENT_KEY}
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?set INNGEST_SIGNING_KEY}
+      LINEAR_API_KEY: ${LINEAR_API_KEY:?set LINEAR_API_KEY}
+    init: true
+    networks:
+      - linear-automation
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 35m
+    volumes:
+      - type: bind
+        source: ${HARNESS_LINEAR_WORKSPACE:?set HARNESS_LINEAR_WORKSPACE to an absolute path}
+        target: /workspace
+        read_only: true
+      - codex-home:/home/node/.codex
+
+networks:
+  linear-automation:
+
+volumes:
+  codex-home:
+  inngest-data:

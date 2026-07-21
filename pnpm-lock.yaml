@@ -17,6 +17,9 @@ importers:
       '@linear/sdk':
         specifier: 88.2.0
         version: 88.2.0(graphql@17.0.2)
+      '@openai/codex':
+        specifier: 0.144.6
+        version: 0.144.6
       '@openai/codex-sdk':
         specifier: 0.144.6
         version: 0.144.6

@@ -16,8 +16,10 @@ import {
   LINEAR_AUTOMATION_APP_ID,
   LINEAR_AUTOMATION_ENABLED_ROUTES,
   LINEAR_AUTOMATION_MAX_WORKER_CONCURRENCY,
+  linearAutomationCodexEnvironment,
   parseLinearAutomationWorkerEnvironment,
   startLinearAutomationWorker,
+  verifyLinearAutomationCodexAuthentication,
 } from "./linear-automation-worker.ts";
 import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "./linear-readiness-router.ts";
 import { LINEAR_TRIAGE_FUNCTION_ID, type LinearTriageService } from "./linear-triage.ts";
@@ -79,6 +81,72 @@ function app() {
 }
 
 describe("Linear automation worker", () => {
+  it("only exposes the required process environment to Codex", () => {
+    expect(
+      linearAutomationCodexEnvironment({
+        CODEX_HOME: "/codex",
+        CODEX_API_KEY: "codex-secret",
+        HOME: "/home/worker",
+        PATH: "/usr/bin",
+        LINEAR_API_KEY: "linear-secret",
+        INNGEST_EVENT_KEY: "event-secret",
+        INNGEST_SIGNING_KEY: "signing-secret",
+        UNRELATED_SECRET: "other-secret",
+      }),
+    ).toEqual({
+      CODEX_API_KEY: "codex-secret",
+      CODEX_HOME: "/codex",
+      HOME: "/home/worker",
+      PATH: "/usr/bin",
+    });
+  });
+
+  it("accepts an API key without checking persistent Codex login", async () => {
+    const checkLogin = vi.fn<
+      (executable: string, environment: Readonly<Record<string, string>>) => Promise<void>
+    >(async () => {
+      throw new Error("Unexpected login check");
+    });
+
+    await expect(
+      verifyLinearAutomationCodexAuthentication({
+        environment: { CODEX_API_KEY: "codex-secret" },
+        checkLogin,
+      }),
+    ).resolves.toBe("api-key");
+    expect(checkLogin).not.toHaveBeenCalled();
+  });
+
+  it("accepts persistent Codex login and rejects a missing credential", async () => {
+    const checkLogin = vi.fn<
+      (executable: string, environment: Readonly<Record<string, string>>) => Promise<void>
+    >(async () => undefined);
+    const environment = {
+      CODEX_API_KEY: "  ",
+      CODEX_HOME: "/codex",
+      HOME: "/home/worker",
+      PATH: "/usr/bin",
+    };
+
+    await expect(
+      verifyLinearAutomationCodexAuthentication({ environment, checkLogin }),
+    ).resolves.toBe("codex-login");
+    expect(checkLogin).toHaveBeenCalledWith("codex", {
+      CODEX_HOME: "/codex",
+      HOME: "/home/worker",
+      PATH: "/usr/bin",
+    });
+
+    await expect(
+      verifyLinearAutomationCodexAuthentication({
+        environment,
+        checkLogin: async () => {
+          throw new Error("Not logged in");
+        },
+      }),
+    ).rejects.toThrow(/Set CODEX_API_KEY for unattended operation/);
+  });
+
   it("validates self-hosted secrets and keeps SDK development minimal", () => {
     expect(
       parseLinearAutomationWorkerEnvironment({
