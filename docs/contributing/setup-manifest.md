@@ -27,12 +27,14 @@ plus optional model and reasoning overrides. Unsupported providers fail during
 startup configuration loading, before Connect accepts work. The section does
 not contain secrets.
 
-The worker requires `LINEAR_API_KEY` and `LINEAR_WEBHOOK_SECRET`. Cloud Connect
-also requires `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY`; local development
-uses `INNGEST_DEV=1`. `HARNESS_WORKER_HOST` and `HARNESS_WORKER_PORT` default to
+The worker requires `LINEAR_API_KEY`. Self-hosted Inngest requires
+`INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `INNGEST_DEV=0`, and
+`INNGEST_BASE_URL`; `INNGEST_CONNECT_GATEWAY_URL` may point Connect at the
+local gateway. SDK development mode uses `INNGEST_DEV=1` and does not require
+keys or a base URL. `HARNESS_WORKER_HOST` and `HARNESS_WORKER_PORT` default to
 `0.0.0.0:8080`. `HARNESS_WORKER_INSTANCE_ID` and `HARNESS_APP_VERSION` are
-optional deployment metadata. Inngest's standard Connect gateway environment
-variables remain available for local or self-hosted routing.
+optional deployment metadata. See [Linear automation](./linear-automation.md)
+for the SQLite pilot commands.
 
 ## Install and update
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { createHmac } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -13,34 +12,44 @@ import { connect } from "inngest/connect";
 import type { Agent } from "../lib/agents.ts";
 import type { LinearAutomationSettings } from "../lib/config.ts";
 import {
+  LinearPollRequestedEvent,
+  linearIssueRevisionEventId,
+} from "../lib/inngest/linear-revision-events.ts";
+import {
   createLinearAutomationFunctions,
   LINEAR_AUTOMATION_APP_ID,
   startLinearAutomationWorker,
   type LinearAutomationWorker,
 } from "../lib/linear-automation-worker.ts";
+import {
+  LINEAR_BACKLOG_POLL_FUNCTION_ID,
+  LINEAR_BACKLOG_POLL_LIMIT,
+  type LinearBacklogPollerLinear,
+} from "../lib/linear-backlog-poller.ts";
 import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "../lib/linear-readiness-router.ts";
 import { LINEAR_TRIAGE_FUNCTION_ID, type LinearTriageService } from "../lib/linear-triage.ts";
-import {
-  LINEAR_WEBHOOK_RECEIVED_EVENT_ID_PREFIX,
-  LinearWebhookReceivedEvent,
-} from "../lib/inngest/linear-webhook-transform.ts";
 import type { LinearIssueContext } from "../lib/linear/read.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const INNGEST_CLI = join(ROOT, "node_modules/.bin/inngest");
 const INNGEST_CLI_TIMEOUT_MS = 10_000;
-const WEBHOOK_SECRET = "linear-automation-smoke-secret";
+const EVENT_KEY = "linear-automation-smoke-event";
+const SIGNING_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const REVISION_UPDATED_AT = "2026-07-20T12:00:00.000Z";
 const fixtureRoot = mkdtempSync(join(tmpdir(), "harness-linear-automation-smoke-"));
 const startedAt = Date.now();
 let station = "allocation";
-let devServer: ReturnType<typeof spawn> | undefined;
+let inngestServer: ReturnType<typeof spawn> | undefined;
 let worker: LinearAutomationWorker | undefined;
 let devOutput = "";
 let lastCommandOutput = "";
 
+type InngestEventRun = Readonly<{
+  status: string;
+}>;
+
 const settings: LinearAutomationSettings = {
   workspace: fixtureRoot,
-  organizationId: "organization-smoke",
   readiness: {
     teamId: "team-smoke",
     projectId: "project-smoke",
@@ -72,6 +81,13 @@ const projection = {
   labelIds: new Set<string>(),
   comments: [] as string[],
   agentRuns: 0,
+  contextReads: 0,
+  pollInputs: [] as Array<{
+    teamId: string;
+    projectId: string;
+    stateId: string;
+    limit: number;
+  }>,
 };
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -101,8 +117,8 @@ async function waitUntil(
 ): Promise<void> {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     if (await predicate()) return;
-    if (devServer?.exitCode !== null) {
-      throw new Error(`Inngest Dev Server exited ${devServer?.exitCode}`);
+    if (inngestServer?.exitCode !== null) {
+      throw new Error(`Inngest server exited ${inngestServer?.exitCode}`);
     }
     await delay(100);
   }
@@ -127,6 +143,63 @@ async function runCli(args: string[]): Promise<string> {
   lastCommandOutput = `${stdout}\n${stderr}`.trim();
   if (status !== 0) throw new Error(`Inngest CLI exited ${status ?? "without status"}`);
   return stdout;
+}
+
+async function getEventRuns(apiHost: string, eventId: string): Promise<InngestEventRun[]> {
+  const raw = await runCli([
+    "api",
+    "--api-host",
+    apiHost,
+    "--signing-key",
+    SIGNING_KEY,
+    "--raw",
+    "get-event-runs",
+    eventId,
+    "--limit",
+    "10",
+  ]);
+  const parsed: unknown = JSON.parse(raw);
+  assert(isRecord(parsed), "event runs response was invalid");
+  if (parsed.data === undefined) return [];
+  assert(Array.isArray(parsed.data), "event runs data was invalid");
+  return parsed.data.map((run) => {
+    assert(isRecord(run) && typeof run.status === "string", "event run status was invalid");
+    return { status: run.status.toUpperCase() };
+  });
+}
+
+async function waitForEventRuns(apiHost: string, eventId: string): Promise<InngestEventRun[]> {
+  let runs: InngestEventRun[] = [];
+  await waitUntil(`event ${eventId} runs`, async () => {
+    runs = await getEventRuns(apiHost, eventId);
+    const failed = runs.find((run) => run.status === "FAILED" || run.status === "CANCELLED");
+    if (failed) throw new Error(`event ${eventId} run ${failed.status.toLowerCase()}`);
+    return runs.length > 0 && runs.every((run) => run.status === "COMPLETED");
+  });
+  return runs;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function publishedInternalEventIds(externalId: string): string[] {
+  const ids = new Set<string>();
+  for (const line of devOutput.split("\n")) {
+    try {
+      const entry: unknown = JSON.parse(line);
+      if (
+        isRecord(entry) &&
+        entry.external_id === externalId &&
+        typeof entry.internal_id === "string"
+      ) {
+        ids.add(entry.internal_id);
+      }
+    } catch {
+      // Inngest also writes plain-text startup lines; only JSON event records matter here.
+    }
+  }
+  return [...ids];
 }
 
 function issueContext(): LinearIssueContext {
@@ -155,7 +228,7 @@ function issueContext(): LinearIssueContext {
     related: [],
     attachments: [],
     createdAt: "2026-07-20T12:00:00.000Z",
-    updatedAt: "2026-07-20T12:00:00.000Z",
+    updatedAt: REVISION_UPDATED_AT,
     completeness: {
       commentsTruncated: false,
       labelsTruncated: false,
@@ -166,9 +239,25 @@ function issueContext(): LinearIssueContext {
   };
 }
 
-function fakeLinear(): LinearTriageService {
+function fakeLinear(): LinearTriageService & LinearBacklogPollerLinear {
   return {
-    getIssueContext: async () => issueContext(),
+    listIssueRevisions: async (input) => {
+      projection.pollInputs.push(input);
+      return {
+        revisions: [
+          {
+            id: "issue-smoke",
+            identifier: "FER-SMOKE",
+            updatedAt: REVISION_UPDATED_AT,
+          },
+        ],
+        truncated: false,
+      };
+    },
+    getIssueContext: async () => {
+      projection.contextReads += 1;
+      return issueContext();
+    },
     ensureComment: async (input) => {
       if (!projection.comments.some((comment) => comment.includes(input.marker))) {
         projection.comments.push(input.body);
@@ -241,8 +330,8 @@ async function stop(): Promise<void> {
     }
     worker = undefined;
   }
-  if (devServer?.exitCode === null) {
-    const child = devServer;
+  if (inngestServer?.exitCode === null) {
+    const child = inngestServer;
     const exited = new Promise<void>((resolveExit, rejectExit) => {
       const cleanup = () => {
         child.off("exit", onExit);
@@ -267,7 +356,7 @@ async function stop(): Promise<void> {
       await exited;
     }
   }
-  devServer = undefined;
+  inngestServer = undefined;
   if (errors.length > 0) throw new AggregateError(errors, "smoke cleanup failed");
 }
 
@@ -277,25 +366,29 @@ try {
   const apiHost = `http://127.0.0.1:${httpPort}`;
   const gatewayUrl = `ws://127.0.0.1:${gatewayPort}/v0/connect`;
 
-  station = "Inngest Dev Server startup";
-  devServer = spawn(
+  station = "self-hosted Inngest startup";
+  inngestServer = spawn(
     INNGEST_CLI,
     [
-      "dev",
+      "start",
       "--host",
       "127.0.0.1",
       "--port",
       String(httpPort),
       "--connect-gateway-port",
       String(gatewayPort),
-      "--no-discovery",
-      "--no-poll",
+      "--sqlite-dir",
+      join(fixtureRoot, "inngest"),
+      "--event-key",
+      EVENT_KEY,
+      "--signing-key",
+      SIGNING_KEY,
     ],
     { cwd: fixtureRoot, env: process.env, stdio: ["ignore", "pipe", "pipe"] },
   );
-  devServer.stdout!.on("data", (chunk) => (devOutput += String(chunk)));
-  devServer.stderr!.on("data", (chunk) => (devOutput += String(chunk)));
-  await waitUntil("Inngest Dev Server", async () => {
+  inngestServer.stdout!.on("data", (chunk) => (devOutput += String(chunk)));
+  inngestServer.stderr!.on("data", (chunk) => (devOutput += String(chunk)));
+  await waitUntil("self-hosted Inngest", async () => {
     try {
       return (await fetch(apiHost, { signal: AbortSignal.timeout(500) })).ok;
     } catch {
@@ -303,20 +396,22 @@ try {
     }
   });
 
-  process.env.INNGEST_DEV = "1";
+  process.env.INNGEST_DEV = "0";
   process.env.INNGEST_BASE_URL = apiHost;
-  process.env.INNGEST_EVENT_KEY = "linear-automation-smoke";
+  process.env.INNGEST_EVENT_KEY = EVENT_KEY;
+  process.env.INNGEST_SIGNING_KEY = SIGNING_KEY;
   const client = new Inngest({
     id: LINEAR_AUTOMATION_APP_ID,
-    eventKey: "linear-automation-smoke",
-    isDev: true,
+    eventKey: EVENT_KEY,
+    signingKey: SIGNING_KEY,
+    baseUrl: apiHost,
+    isDev: false,
   });
   const app = createLinearAutomationFunctions({
     client,
     linear: fakeLinear(),
     agent,
     settings,
-    webhookSecret: WEBHOOK_SECRET,
   });
 
   station = "Inngest Connect registration";
@@ -343,38 +438,24 @@ try {
     "api",
     "--api-host",
     apiHost,
+    "--signing-key",
+    SIGNING_KEY,
     "--raw",
     "get-functions",
     "--app-id",
     LINEAR_AUTOMATION_APP_ID,
   ]);
+  assert(registered.includes(LINEAR_BACKLOG_POLL_FUNCTION_ID), "poller registration missing");
   assert(registered.includes(LINEAR_READINESS_ROUTER_FUNCTION_ID), "router registration missing");
   assert(registered.includes(LINEAR_TRIAGE_FUNCTION_ID), "triage registration missing");
 
-  station = "signed webhook triage journey";
-  const now = Date.now();
-  const deliveryId = "delivery-smoke";
-  const rawBody = JSON.stringify({
-    action: "create",
-    type: "Issue",
-    organizationId: settings.organizationId,
-    webhookTimestamp: now,
-    data: {
-      id: "issue-smoke",
-      updatedAt: new Date(now).toISOString(),
-    },
-  });
-  const signature = createHmac("sha256", WEBHOOK_SECRET).update(rawBody).digest("hex");
+  station = "polled Backlog triage journey";
+  const pollInputsBeforeJourney = projection.pollInputs.length;
   const sent = await client.send(
-    LinearWebhookReceivedEvent.create(
-      { rawBody, signature, deliveryId },
-      {
-        id: `${LINEAR_WEBHOOK_RECEIVED_EVENT_ID_PREFIX}${deliveryId}`,
-        ts: now,
-      },
-    ),
+    LinearPollRequestedEvent.create({}, { id: "linear-automation-smoke-poll-1" }),
   );
-  assert(sent.ids.length === 1, "webhook event was not accepted");
+  assert(sent.ids.length === 1, "poll event was not accepted");
+  await waitForEventRuns(apiHost, sent.ids[0]!);
 
   await waitUntil(
     "triage projection",
@@ -388,6 +469,62 @@ try {
     projection.comments[0]?.includes("**Why Implement:**"),
     "triage rationale comment missing",
   );
+  assert(
+    projection.pollInputs.length > pollInputsBeforeJourney,
+    "explicit poll did not list Backlog",
+  );
+  assert(
+    projection.pollInputs.slice(pollInputsBeforeJourney).some(
+      (pollInput) =>
+        JSON.stringify(pollInput) ===
+        JSON.stringify({
+          teamId: settings.readiness.teamId,
+          projectId: settings.readiness.projectId,
+          stateId: settings.readiness.stateIds.backlog,
+          limit: LINEAR_BACKLOG_POLL_LIMIT,
+        }),
+    ),
+    "poller used unexpected Linear scope",
+  );
+  const revisionEventId = linearIssueRevisionEventId({
+    issueId: "issue-smoke",
+    issueIdentifier: "FER-SMOKE",
+    updatedAt: REVISION_UPDATED_AT,
+  });
+  await waitUntil(
+    "published revision event",
+    () => publishedInternalEventIds(revisionEventId).length > 0,
+  );
+  const firstRevisionInternalId = publishedInternalEventIds(revisionEventId)[0]!;
+  const firstRevisionRuns = await waitForEventRuns(apiHost, firstRevisionInternalId);
+  assert(
+    firstRevisionRuns.length === 1 && firstRevisionRuns[0]?.status === "COMPLETED",
+    "initial revision readiness run did not complete",
+  );
+
+  station = "unchanged revision deduplication";
+  const contextReadsAfterProjection = projection.contextReads;
+  const pollInputsBeforeRepeat = projection.pollInputs.length;
+  const repeated = await client.send(
+    LinearPollRequestedEvent.create({}, { id: "linear-automation-smoke-poll-2" }),
+  );
+  assert(repeated.ids.length === 1, "repeated poll event was not accepted");
+  await waitForEventRuns(apiHost, repeated.ids[0]!);
+  assert(projection.pollInputs.length > pollInputsBeforeRepeat, "repeated poll did not run");
+  const revisionRuns = (
+    await Promise.all(
+      publishedInternalEventIds(revisionEventId).map((eventId) => getEventRuns(apiHost, eventId)),
+    )
+  ).flat();
+  assert(
+    revisionRuns.length === 1 && revisionRuns[0]?.status === "COMPLETED",
+    "unchanged revision did not retain exactly one completed readiness run",
+  );
+  assert(
+    projection.contextReads === contextReadsAfterProjection,
+    `unchanged revision ${revisionEventId} was routed twice`,
+  );
+  assert(projection.agentRuns === 1, "unchanged revision reran triage");
 
   station = "clean shutdown";
   await stop();
@@ -408,7 +545,7 @@ try {
     );
   }
   if (lastCommandOutput) console.error(`Last CLI output:\n${lastCommandOutput.slice(-4000)}`);
-  if (devOutput) console.error(`Dev Server output:\n${devOutput.slice(-4000)}`);
+  if (devOutput) console.error(`Inngest server output:\n${devOutput.slice(-4000)}`);
   console.error(`Retained fixture: ${fixtureRoot}`);
   process.exitCode = 1;
 }

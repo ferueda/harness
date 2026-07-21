@@ -11,6 +11,10 @@ import {
 import { z } from "zod";
 import type { Agent } from "./agents.ts";
 import { resolveLinearAutomationSettings, type LinearAutomationSettings } from "./config.ts";
+import {
+  createLinearBacklogPoller,
+  type LinearBacklogPollerLinear,
+} from "./linear-backlog-poller.ts";
 import { createLinearReadinessRouter } from "./linear-readiness-router.ts";
 import type { LinearReadinessConfig } from "./linear-readiness.ts";
 import { createLinearTriageFunction, type LinearTriageService } from "./linear-triage.ts";
@@ -35,9 +39,9 @@ export const LINEAR_AUTOMATION_READ_LIMITS = Object.freeze({
 const WorkerEnvironmentSchema = z
   .object({
     LINEAR_API_KEY: z.string().trim().min(1),
-    LINEAR_WEBHOOK_SECRET: z.string().trim().min(1),
     INNGEST_EVENT_KEY: z.string().trim().min(1).optional(),
     INNGEST_SIGNING_KEY: z.string().trim().min(1).optional(),
+    INNGEST_BASE_URL: z.string().trim().url().optional(),
     INNGEST_DEV: z.string().optional(),
     HARNESS_WORKER_HOST: z.string().trim().min(1).default("0.0.0.0"),
     HARNESS_WORKER_PORT: z.string().regex(/^\d+$/).default("8080"),
@@ -55,13 +59,20 @@ const WorkerEnvironmentSchema = z
         message: `${key} is required unless INNGEST_DEV is enabled`,
       });
     }
+    if (!environment.INNGEST_BASE_URL) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["INNGEST_BASE_URL"],
+        message: "INNGEST_BASE_URL is required unless INNGEST_DEV is enabled",
+      });
+    }
   });
 
 export type LinearAutomationWorkerEnvironment = Readonly<{
   linearApiKey: string;
-  linearWebhookSecret: string;
   inngestEventKey?: string;
   inngestSigningKey?: string;
+  inngestBaseUrl?: string;
   isDev: boolean;
   host: string;
   port: number;
@@ -93,9 +104,9 @@ export function parseLinearAutomationWorkerEnvironment(
 
   return Object.freeze({
     linearApiKey: parsed.LINEAR_API_KEY,
-    linearWebhookSecret: parsed.LINEAR_WEBHOOK_SECRET,
     ...(parsed.INNGEST_EVENT_KEY ? { inngestEventKey: parsed.INNGEST_EVENT_KEY } : {}),
     ...(parsed.INNGEST_SIGNING_KEY ? { inngestSigningKey: parsed.INNGEST_SIGNING_KEY } : {}),
+    ...(parsed.INNGEST_BASE_URL ? { inngestBaseUrl: parsed.INNGEST_BASE_URL } : {}),
     isDev: isInngestDev(parsed.INNGEST_DEV),
     host: parsed.HARNESS_WORKER_HOST,
     port,
@@ -106,24 +117,28 @@ export function parseLinearAutomationWorkerEnvironment(
 
 export function createLinearAutomationFunctions(input: {
   client: Inngest.Any;
-  linear: LinearTriageService;
+  linear: LinearTriageService & LinearBacklogPollerLinear;
   agent: Agent;
   settings: LinearAutomationSettings;
-  webhookSecret: string;
 }): LinearAutomationFunctions {
   // The route map follows the consumers in this composition, not target-repo config.
   const readiness = Object.freeze({
     ...input.settings.readiness,
     enabledRoutes: LINEAR_AUTOMATION_ENABLED_ROUTES,
   });
-  const router = createLinearReadinessRouter({
+  const poller = createLinearBacklogPoller({
     client: input.client,
     linear: input.linear,
     config: {
-      webhookSecret: input.webhookSecret,
-      organizationId: input.settings.organizationId,
-      readiness,
+      teamId: readiness.teamId,
+      projectId: readiness.projectId,
+      stateId: readiness.stateIds.backlog,
     },
+  });
+  const router = createLinearReadinessRouter({
+    client: input.client,
+    linear: input.linear,
+    config: { readiness },
   });
   const triage = createLinearTriageFunction({
     client: input.client,
@@ -142,7 +157,7 @@ export function createLinearAutomationFunctions(input: {
 
   return Object.freeze({
     client: input.client,
-    functions: Object.freeze([router, triage]),
+    functions: Object.freeze([poller, router, triage]),
     readiness,
   });
 }
@@ -199,6 +214,7 @@ export async function runLinearAutomationWorker(input: {
     id: LINEAR_AUTOMATION_APP_ID,
     eventKey: environment.inngestEventKey,
     signingKey: environment.inngestSigningKey,
+    baseUrl: environment.inngestBaseUrl,
     isDev: environment.isDev,
     appVersion: environment.appVersion,
   });
@@ -215,7 +231,6 @@ export async function runLinearAutomationWorker(input: {
     linear,
     agent,
     settings,
-    webhookSecret: environment.linearWebhookSecret,
   });
   const worker = await startLinearAutomationWorker({
     app,

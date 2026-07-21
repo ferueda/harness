@@ -1,12 +1,12 @@
-import { createHmac } from "node:crypto";
 import { Inngest } from "inngest";
 import { InngestTestEngine, mockCtx } from "@inngest/test";
 import { describe, expect, it, vi } from "vitest";
-import { WORK_REQUEST_EVENT_NAMES, WORK_REQUEST_EVENT_VERSION } from "./inngest/work-events.ts";
 import {
-  LINEAR_WEBHOOK_RECEIVED_EVENT_ID_PREFIX,
-  LinearWebhookReceivedEvent,
-} from "./inngest/linear-webhook-transform.ts";
+  createLinearIssueRevisionObservedEvent,
+  LinearIssueRevisionObservedEvent,
+  linearIssueRevisionEventId,
+} from "./inngest/linear-revision-events.ts";
+import { WORK_REQUEST_EVENT_NAMES, WORK_REQUEST_EVENT_VERSION } from "./inngest/work-events.ts";
 import type { LinearReadinessConfig } from "./linear-readiness.ts";
 import {
   createLinearReadinessRouter,
@@ -15,14 +15,11 @@ import {
   LINEAR_READINESS_ROUTER_FUNCTION_ID,
   LINEAR_READINESS_ROUTER_RETRIES,
   LINEAR_READINESS_SEND_STEP_ID,
-  LINEAR_READINESS_VERIFY_STEP_ID,
   type LinearReadinessRouterLinear,
 } from "./linear-readiness-router.ts";
 import type { LinearIssueContext, LinearIssueReference } from "./linear/read.ts";
 
-const SECRET = "linear-webhook-secret";
-const ORGANIZATION_ID = "organization-1";
-const RECEIVED_AT = Date.parse("2026-07-19T15:00:00.000Z");
+const UPDATED_AT = "2026-07-19T01:00:00.000Z";
 
 const readiness: LinearReadinessConfig = {
   teamId: "team-1",
@@ -58,20 +55,12 @@ function client() {
 
 function router(
   linear: LinearReadinessRouterLinear,
-  configOverrides: {
-    webhookSecret?: string;
-    organizationId?: string;
-    readiness?: LinearReadinessConfig;
-  } = {},
+  readinessOverride: LinearReadinessConfig = readiness,
 ) {
   return createLinearReadinessRouter({
     client: client(),
     linear,
-    config: {
-      webhookSecret: configOverrides.webhookSecret ?? SECRET,
-      organizationId: configOverrides.organizationId ?? ORGANIZATION_ID,
-      readiness: configOverrides.readiness ?? readiness,
-    },
+    config: { readiness: readinessOverride },
   });
 }
 
@@ -91,14 +80,17 @@ function fakeLinear(...contexts: LinearIssueContext[]) {
 
 function issueContext(
   input: {
+    id?: string;
+    identifier?: string;
+    updatedAt?: string;
     stateId?: string;
     actionLabelId?: string;
     blockerStateId?: string;
   } = {},
 ): LinearIssueContext {
   return {
-    id: "issue-1",
-    identifier: "FER-225",
+    id: input.id ?? "issue-1",
+    identifier: input.identifier ?? "FER-225",
     title: "Route Linear readiness",
     description: "Description",
     url: "https://linear.app/example/FER-225",
@@ -122,7 +114,7 @@ function issueContext(
     related: [],
     attachments: [],
     createdAt: "2026-07-19T00:00:00.000Z",
-    updatedAt: "2026-07-19T01:00:00.000Z",
+    updatedAt: input.updatedAt ?? UPDATED_AT,
     completeness: {
       commentsTruncated: false,
       labelsTruncated: false,
@@ -147,42 +139,12 @@ function blocker(stateId: string): LinearIssueReference {
   };
 }
 
-function receivedEvent(
-  input: {
-    action?: string;
-    type?: string;
-    organizationId?: string;
-    deliveryId?: string;
-    webhookTimestamp?: number;
-    data?: unknown;
-    signature?: string;
-    rawBody?: string;
-  } = {},
-) {
-  const deliveryId = input.deliveryId ?? "delivery-1";
-  const payload = {
-    action: input.action ?? "create",
-    type: input.type ?? "Issue",
-    organizationId: input.organizationId ?? ORGANIZATION_ID,
-    webhookTimestamp: input.webhookTimestamp ?? RECEIVED_AT,
-    data:
-      "data" in input
-        ? input.data
-        : {
-            id: "issue-1",
-            updatedAt: "2026-07-19T15:00:00.000Z",
-          },
-  };
-  const rawBody = input.rawBody ?? JSON.stringify(payload);
-  const signature = input.signature ?? createHmac("sha256", SECRET).update(rawBody).digest("hex");
-  const options = {
-    id:
-      deliveryId.trim() === ""
-        ? undefined
-        : `${LINEAR_WEBHOOK_RECEIVED_EVENT_ID_PREFIX}${deliveryId}`,
-    ts: RECEIVED_AT,
-  };
-  return LinearWebhookReceivedEvent.create({ rawBody, signature, deliveryId }, options);
+function revisionEvent(updatedAt = UPDATED_AT) {
+  return createLinearIssueRevisionObservedEvent({
+    issueId: "issue-1",
+    issueIdentifier: "FER-225",
+    updatedAt,
+  });
 }
 
 function sentEvent(output: Awaited<ReturnType<InngestTestEngine["execute"]>>) {
@@ -197,23 +159,23 @@ function sentEvent(output: Awaited<ReturnType<InngestTestEngine["execute"]>>) {
 }
 
 describe("Linear readiness router", () => {
-  it("locks the untrusted trigger and global function controls", () => {
+  it("locks the trusted revision trigger and global function controls", () => {
     const linear = fakeLinear(issueContext());
-    const fn = router(linear.service);
 
-    expect(fn.opts).toMatchObject({
+    expect(router(linear.service).opts).toMatchObject({
       id: LINEAR_READINESS_ROUTER_FUNCTION_ID,
       concurrency: 1,
       retries: LINEAR_READINESS_ROUTER_RETRIES,
-      triggers: [LinearWebhookReceivedEvent],
+      triggers: [LinearIssueRevisionObservedEvent],
     });
   });
 
-  it.each(["create", "update"])("routes an authenticated Issue/%s to triage", async (action) => {
+  it("routes a matching Backlog revision to triage", async () => {
     const linear = fakeLinear(issueContext());
+    const event = revisionEvent();
     const output = await new InngestTestEngine({
       function: router(linear.service),
-      events: [receivedEvent({ action })],
+      events: [event],
     }).execute();
 
     expect(output.error).toBeUndefined();
@@ -223,10 +185,6 @@ describe("Linear readiness router", () => {
       issueId: "issue-1",
     });
     expect(linear.getIssueContext).toHaveBeenCalledExactlyOnceWith("issue-1");
-    expect(output.ctx.step.run).toHaveBeenCalledWith(
-      LINEAR_READINESS_VERIFY_STEP_ID,
-      expect.any(Function),
-    );
     expect(output.ctx.step.run).toHaveBeenCalledWith(
       LINEAR_READINESS_LOAD_STEP_ID,
       expect.any(Function),
@@ -241,7 +199,7 @@ describe("Linear readiness router", () => {
       data: {
         issueId: "issue-1",
         issueIdentifier: "FER-225",
-        causationEventId: `${LINEAR_WEBHOOK_RECEIVED_EVENT_ID_PREFIX}delivery-1`,
+        causationEventId: linearIssueRevisionEventId(event.data),
       },
     });
   });
@@ -254,7 +212,7 @@ describe("Linear readiness router", () => {
     const linear = fakeLinear(current, current);
     const output = await new InngestTestEngine({
       function: router(linear.service),
-      events: [receivedEvent({ action: "update" })],
+      events: [revisionEvent()],
     }).execute();
 
     expect(output.error).toBeUndefined();
@@ -267,40 +225,35 @@ describe("Linear readiness router", () => {
     expect(sentEvent(output)).toMatchObject({ name: eventName });
   });
 
+  it.each(["2026-07-19T00:59:00.000Z", "2026-07-19T01:01:00.000Z"])(
+    "returns stale for a mismatched %s refetch revision",
+    async (updatedAt) => {
+      const linear = fakeLinear(issueContext({ updatedAt }));
+      const output = await new InngestTestEngine({
+        function: router(linear.service),
+        events: [revisionEvent()],
+      }).execute();
+
+      expect(output.result).toEqual({
+        outcome: "stale",
+        reason: "revision-changed",
+        issueId: "issue-1",
+      });
+      expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
-    ["invalid signature", receivedEvent({ signature: "invalid" }), "invalid-delivery"],
-    ["missing signature", receivedEvent({ signature: "" }), "invalid-delivery"],
-    [
-      "stale timestamp",
-      receivedEvent({ webhookTimestamp: RECEIVED_AT - 61_000 }),
-      "invalid-delivery",
-    ],
-    ["malformed supported payload", receivedEvent({ data: null }), "invalid-delivery"],
-    [
-      "wrong organization",
-      receivedEvent({ organizationId: "organization-2" }),
-      "wrong-organization",
-    ],
-    [
-      "authenticated irrelevant event",
-      receivedEvent({ type: "Comment" }),
-      "authenticated-irrelevant",
-    ],
-    [
-      "authenticated unsupported action",
-      receivedEvent({ action: "remove", data: null }),
-      "authenticated-irrelevant",
-    ],
-  ])("stops %s before any Linear read or send", async (_label, event, reason) => {
-    const linear = fakeLinear();
+    ["issue ID", issueContext({ id: "issue-other" }), "expected issue-1"],
+    ["identifier", issueContext({ identifier: "FER-999" }), "expected FER-225"],
+  ])("rejects a mismatched %s", async (_label, context, message) => {
+    const linear = fakeLinear(context);
     const output = await new InngestTestEngine({
       function: router(linear.service),
-      events: [event],
+      events: [revisionEvent()],
     }).execute();
 
-    expect(output.error).toBeUndefined();
-    expect(output.result).toEqual({ outcome: "ignored", reason });
-    expect(linear.getIssueContext).not.toHaveBeenCalled();
+    expect(output.error).toMatchObject({ message: expect.stringContaining(message) });
     expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
@@ -312,18 +265,13 @@ describe("Linear readiness router", () => {
     const linear = fakeLinear(current);
     const output = await new InngestTestEngine({
       function: router(linear.service, {
-        readiness: {
-          ...readiness,
-          enabledRoutes: { ...readiness.enabledRoutes, plan: false },
-        },
+        ...readiness,
+        enabledRoutes: { ...readiness.enabledRoutes, plan: false },
       }),
-      events: [receivedEvent({ action: "update" })],
+      events: [revisionEvent()],
     }).execute();
 
-    expect(output.result).toMatchObject({
-      outcome: "wait",
-      reason: "route-disabled",
-    });
+    expect(output.result).toMatchObject({ outcome: "wait", reason: "route-disabled" });
     expect(linear.getIssueContext).toHaveBeenCalledOnce();
     expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
@@ -340,7 +288,7 @@ describe("Linear readiness router", () => {
     const linear = fakeLinear(initial, changed);
     const output = await new InngestTestEngine({
       function: router(linear.service),
-      events: [receivedEvent({ action: "update" })],
+      events: [revisionEvent()],
     }).execute();
 
     expect(output.result).toEqual({
@@ -352,50 +300,41 @@ describe("Linear readiness router", () => {
     expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
-  it("ignores a self-generated In Progress update without reusing an earlier route", async () => {
+  it("ignores a claimed issue without reusing an earlier route", async () => {
     const linear = fakeLinear(issueContext({ stateId: readiness.stateIds.inProgress }));
     const output = await new InngestTestEngine({
       function: router(linear.service),
-      events: [receivedEvent({ action: "update" })],
+      events: [revisionEvent()],
     }).execute();
 
-    expect(output.result).toMatchObject({
-      outcome: "ignore",
-      reason: "already-claimed",
-    });
-    expect(linear.getIssueContext).toHaveBeenCalledOnce();
+    expect(output.result).toMatchObject({ outcome: "ignore", reason: "already-claimed" });
     expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
-  it("uses stable work identity without forwarding raw webhook data", async () => {
-    const firstLinear = fakeLinear(issueContext());
-    const secondLinear = fakeLinear(issueContext());
+  it("keeps work identity stable while recording each revision as causation", async () => {
+    const secondUpdatedAt = "2026-07-19T02:00:00.000Z";
     const first = await new InngestTestEngine({
-      function: router(firstLinear.service),
-      events: [receivedEvent({ deliveryId: "delivery-1" })],
+      function: router(fakeLinear(issueContext()).service),
+      events: [revisionEvent()],
     }).execute();
     const second = await new InngestTestEngine({
-      function: router(secondLinear.service),
-      events: [receivedEvent({ deliveryId: "delivery-2" })],
+      function: router(fakeLinear(issueContext({ updatedAt: secondUpdatedAt })).service),
+      events: [revisionEvent(secondUpdatedAt)],
     }).execute();
     const firstEvent = sentEvent(first);
     const secondEvent = sentEvent(second);
 
     expect(secondEvent.id).toBe(firstEvent.id);
     expect(secondEvent.data.causationEventId).not.toBe(firstEvent.data.causationEventId);
-    expect(JSON.stringify(firstEvent)).not.toContain("Linear-Signature");
     expect(firstEvent.data).not.toHaveProperty("rawBody");
     expect(firstEvent.data).not.toHaveProperty("signature");
-    expect(firstEvent.data).not.toHaveProperty("stateId");
-    expect(firstEvent.data).not.toHaveProperty("labelId");
   });
 
   it("retries a failed durable send with the same event identity", async () => {
-    const firstLinear = fakeLinear(issueContext());
     let attempted: unknown;
     const failed = await new InngestTestEngine({
-      function: router(firstLinear.service),
-      events: [receivedEvent()],
+      function: router(fakeLinear(issueContext()).service),
+      events: [revisionEvent()],
       transformCtx(raw) {
         const context = mockCtx(raw);
         context.step.sendEvent = vi.fn<typeof context.step.sendEvent>(async (_stepId, event) => {
@@ -405,10 +344,9 @@ describe("Linear readiness router", () => {
         return context;
       },
     }).execute();
-    const retryLinear = fakeLinear(issueContext());
     const retry = await new InngestTestEngine({
-      function: router(retryLinear.service),
-      events: [receivedEvent()],
+      function: router(fakeLinear(issueContext()).service),
+      events: [revisionEvent()],
     }).execute();
 
     expect(failed.error).toMatchObject({ message: expect.stringContaining("send unavailable") });
@@ -422,13 +360,10 @@ describe("Linear readiness router", () => {
   it("rejects invalid trusted configuration before creating the function", () => {
     const linear = fakeLinear(issueContext());
 
-    expect(() => router(linear.service, { webhookSecret: "" })).toThrow(/webhookSecret/);
     expect(() =>
       router(linear.service, {
-        readiness: {
-          ...readiness,
-          stateIds: { ...readiness.stateIds, open: readiness.stateIds.backlog },
-        },
+        ...readiness,
+        stateIds: { ...readiness.stateIds, open: readiness.stateIds.backlog },
       }),
     ).toThrow(/IDs must be unique/);
   });

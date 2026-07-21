@@ -114,7 +114,6 @@ export type FactoryConfigSnapshot = HarnessConfigSnapshot;
 
 export type LinearAutomationSettings = Readonly<{
   workspace: string;
-  organizationId: string;
   readiness: LinearReadinessMapping;
   triage: Readonly<{
     agent: AgentProviderName;
@@ -156,7 +155,7 @@ export function resolveLinearAutomationSettingsFromSnapshot(
   const automation = config.linearAutomation;
   if (!automation) {
     throw new Error(
-      "linearAutomation is required in harness.json for the Linear worker. Configure organizationId, readiness IDs, and triage.",
+      "linearAutomation is required in harness.json for the Linear worker. Configure readiness IDs and triage.",
     );
   }
 
@@ -473,7 +472,6 @@ function freezeLinearAutomationSettings(input: {
   });
   return Object.freeze({
     workspace: input.workspace,
-    organizationId: input.automation.organizationId,
     readiness,
     triage,
   });

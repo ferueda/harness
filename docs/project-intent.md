@@ -68,6 +68,13 @@ Factory remains one workflow model in the repo, not the required boundary for
 all new automation. Standalone operations may be connected when a real workflow
 needs it, but they should not require an artificial shared state machine.
 
+The current Linear automation follows this shape directly: a self-hosted
+Inngest poller emits revision-scoped events, a readiness operation reloads
+Linear truth and chooses a route, and an independent triage consumer projects
+its decision through the standalone Linear module. Linear Backlog remains the
+durable work queue; the delivery layer keeps no second cursor or lifecycle
+store.
+
 ## Durable factory-store boundary
 
 Factory lifecycle evidence and factory-owned run evidence live in the durable

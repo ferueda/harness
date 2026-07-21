@@ -94,7 +94,7 @@ GitHub mutations are explicit, retryable projections.
 | `lib/factory-operation-reconciliation.ts`                                | Bounded caller-supplied log-to-delivery repair with per-target failure isolation                                      |
 | `lib/factory-inngest-adapter.ts`                                         | Deterministic Factory event IDs, direct sends, chained sends, and hosted function controls                            |
 | `lib/factory-linear-*.ts`                                                | Linear import, listing, intake creation, guarded status/comment projections, and handoffs                             |
-| `lib/inngest/`                                                           | Independent Inngest event contracts and hosted webhook transform sources, without domain policy or service clients    |
+| `lib/inngest/`                                                           | Independent Inngest event contracts without domain policy or service clients                                          |
 | `lib/linear/`                                                            | Standalone, JSON-safe Linear communication primitives that do not depend on Factory or orchestration                  |
 | `lib/linear-readiness.ts`, `lib/linear-readiness-router.ts`              | Deterministic Linear readiness policy and its read-only Inngest delivery adapter                                      |
 | `lib/linear-triage.ts`                                                   | Independent Inngest consumer that composes triage policy with standalone Linear projections                           |
@@ -224,17 +224,18 @@ does not persist or schedule `start-phase`; [FER-196](https://linear.app/ferueda
 will add that cross-phase driver. IDs suppress transport duplicates; Factory
 action identity prevents replay. The adapter keeps three retries and a
 110-minute action limit. The current integration assumes one persistent host and
-ships no production worker or cross-phase driver. The independent Linear
-webhook transform under `lib/inngest/` can produce an untrusted hosted event.
-The top-level readiness adapter can verify that event, reload Linear truth, and
-emit one provider-neutral work request without mutating Linear. The independent
-triage consumer can handle that request and project one triage decision through
-the standalone Linear service. `harness linear worker` registers those two
-functions through Inngest Connect. It loads one `linearAutomation` configuration
-snapshot at startup, enables only the triage route, caps total worker concurrency
-at one, and exposes `/health` plus Connect-backed `/ready`. Plan and implementation
-routes stay disabled until their own consumers exist. Harness does not host a
-Linear webhook endpoint. Publication and merge acknowledgement remain separate.
+ships no production worker or cross-phase driver. Independent Linear automation
+uses a self-hosted Inngest cron to list one configured project's Backlog issue
+revisions. The readiness adapter consumes those typed revision events, reloads
+Linear truth, and emits one provider-neutral work request without mutating
+Linear. The independent triage consumer handles that request and projects one
+triage decision through the standalone Linear service. `harness linear worker`
+registers the poller, readiness router, and triage consumer through Inngest
+Connect. It loads one `linearAutomation` configuration snapshot at startup,
+enables only the triage route, caps total worker concurrency at one, and exposes
+`/health` plus Connect-backed `/ready`. Plan and implementation routes stay
+disabled until their own consumers exist. Publication and merge acknowledgement
+remain separate.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

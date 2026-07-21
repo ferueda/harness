@@ -74,7 +74,6 @@ const LINEAR_STATUSES = {
 };
 
 const LINEAR_AUTOMATION = {
-  organizationId: "organization-1",
   readiness: {
     teamId: "team-1",
     projectId: "project-1",
@@ -192,14 +191,16 @@ test("resolveLinearAutomationSettings resolves one immutable worker snapshot", (
   writeHarnessJson(workspace, {
     linearAutomation: {
       ...LINEAR_AUTOMATION,
-      organizationId: "organization-newer",
+      readiness: {
+        ...LINEAR_AUTOMATION.readiness,
+        projectId: "project-newer",
+      },
     },
   });
   const settings = resolveLinearAutomationSettingsFromSnapshot(snapshot);
 
   expect(settings).toEqual({
     workspace,
-    organizationId: "organization-1",
     readiness: LINEAR_AUTOMATION.readiness,
     triage: {
       ...LINEAR_AUTOMATION.triage,
@@ -255,6 +256,14 @@ test("resolveLinearAutomationSettings rejects missing or invalid worker config",
   });
   expect(() => resolveLinearAutomationSettings({ workspace: invalid }, "/")).toThrow(
     /linearAutomation\.readiness\.stateIds: IDs must be unique/,
+  );
+
+  const legacyOrganization = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(legacyOrganization, {
+    linearAutomation: { ...LINEAR_AUTOMATION, organizationId: "organization-1" },
+  });
+  expect(() => resolveLinearAutomationSettings({ workspace: legacyOrganization }, "/")).toThrow(
+    /linearAutomation: Unrecognized key: "organizationId"/,
   );
 
   const unsupportedProvider = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
