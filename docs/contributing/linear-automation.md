@@ -14,14 +14,41 @@ one-minute Inngest cron
   -> triage decision and Linear projection
 ```
 
-Linear remains the queue. A Backlog issue without a Next action label needs
-triage. Successful triage moves it out of Backlog, and unchanged revision event
-IDs converge within Inngest's deduplication window.
+Linear remains the queue. A Backlog issue without an Agent action label needs
+triage. Successful triage moves it out of Backlog. Work identity includes the
+issue revision, so repeated observation of one revision converges while a later
+human change can request new work.
+
+## Workflow contract
+
+Statuses say who owns the next move. Agent action labels say what an agent
+should do, and only apply when an issue is ready or claimed for agent work.
+
+| Status                       | Agent action                     | Meaning                                    |
+| ---------------------------- | -------------------------------- | ------------------------------------------ |
+| Backlog                      | None                             | Awaiting triage                            |
+| Open                         | Exactly one of Spec or Implement | Ready for an agent                         |
+| In Progress                  | None, Spec, or Implement         | Human work or claimed agent work is active |
+| Needs Input                  | None                             | A prerequisite human answer is missing     |
+| Needs Review                 | None                             | An agent artifact awaits human judgment    |
+| Done, Canceled, or Duplicate | None                             | Terminal                                   |
+
+An unresolved Linear blocker is separate from both status and action. It keeps
+an otherwise actionable issue waiting.
+
+After answering a Needs Input issue, a human moves it to Backlog to request
+triage again. The resulting Linear revision gives that request new identity; a
+comment alone does not start triage. When reviewing an artifact, a human either
+returns it to Open with one action or moves it to a terminal status. Apply the
+Spec or Implement label before moving the issue to Open so the ready snapshot is
+complete. For example, an approved spec returns as Open + Implement, while a
+spec needing revision returns as Open + Spec.
 
 ## Configure the target repository
 
 The target repository's `harness.json` owns stable team, project, state, and
-Next action label IDs plus the triage execution profile. It contains no secrets.
+Agent action label IDs plus the triage execution profile. It contains no
+secrets.
 
 ```json
 {
@@ -33,15 +60,15 @@ Next action label IDs plus the triage execution profile. It contains no secrets.
         "backlog": "backlog-state-id",
         "open": "open-state-id",
         "inProgress": "in-progress-state-id",
-        "inReview": "in-review-state-id",
+        "needsInput": "needs-input-state-id",
+        "needsReview": "needs-review-state-id",
         "done": "done-state-id",
         "canceled": "canceled-state-id",
         "duplicate": "duplicate-state-id"
       },
-      "nextActionLabelIds": {
-        "plan": "plan-label-id",
-        "implement": "implement-label-id",
-        "needsInput": "needs-input-label-id"
+      "agentActionLabelIds": {
+        "spec": "spec-label-id",
+        "implement": "implement-label-id"
       }
     },
     "triage": {
@@ -157,9 +184,18 @@ The worker registers exactly three functions:
   provider-neutral work request; and
 - the triage consumer invokes the configured agent and projects the decision.
 
-Plan and Implement routes remain disabled. The poller accepts an explicit
+Spec and Implement routes remain disabled. The poller accepts an explicit
 `linear/poll.requested` event for deterministic smoke coverage and immediate
 operator checks, but cron is the only automatic trigger.
+
+## Live Linear cutover
+
+The code configuration does not rename or delete workspace labels. During the
+deployment cutover, stop and drain the worker, rename the **Next action** group
+to **Agent action**, rename its **Plan** label to **Spec** without changing that
+label's ID, and remove the old **Needs Input** label. Confirm that the Needs
+Input and Needs Review workflow statuses match the configured IDs before
+restarting the worker. There is no compatibility path for the old config shape.
 
 `make smoke-linear-automation` starts a disposable real `inngest start`
 process, connects the worker, sends the explicit poll event, proves the full

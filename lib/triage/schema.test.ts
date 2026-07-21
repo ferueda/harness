@@ -30,9 +30,9 @@ const READY_TO_IMPLEMENT = {
   blockedBy: [],
 };
 
-const READY_TO_PLAN = {
+const READY_TO_SPEC = {
   ...READY_TO_IMPLEMENT,
-  agentAction: "plan",
+  agentAction: "spec",
   rationale: "The goal is clear, but repository investigation should come first.",
 };
 
@@ -65,7 +65,7 @@ const DUPLICATE = {
 describe("triage decision schema", () => {
   it.each([
     ["ready to implement", READY_TO_IMPLEMENT],
-    ["ready to plan", READY_TO_PLAN],
+    ["ready to spec", READY_TO_SPEC],
     ["needs rescope", NEEDS_RESCOPE],
     ["needs a product decision", NEEDS_PRODUCT_DECISION],
     ["duplicate", DUPLICATE],
@@ -91,7 +91,7 @@ describe("triage decision schema", () => {
   it.each([
     ["no question", { ...NEEDS_PRODUCT_DECISION, questions: [] }],
     ["no reason", { ...NEEDS_PRODUCT_DECISION, inputReason: null }],
-    ["an agent action", { ...NEEDS_PRODUCT_DECISION, agentAction: "plan" }],
+    ["an agent action", { ...NEEDS_PRODUCT_DECISION, agentAction: "spec" }],
     ["a duplicate target", { ...NEEDS_PRODUCT_DECISION, duplicateOf: "FER-100" }],
   ])("rejects needs-input with %s", (_name, payload) => {
     expect(TriageDecisionSchema.safeParse(payload).success).toBe(false);
@@ -116,7 +116,7 @@ describe("triage decision schema", () => {
   it.each([
     ["without a target", { ...DUPLICATE, duplicateOf: null }],
     ["with questions", { ...DUPLICATE, questions: ["Is this a duplicate?"] }],
-    ["with an action", { ...DUPLICATE, agentAction: "plan" }],
+    ["with an action", { ...DUPLICATE, agentAction: "spec" }],
     ["with a broad scope", { ...DUPLICATE, scope: "too-broad" }],
   ])("rejects a duplicate %s", (_name, payload) => {
     expect(TriageDecisionSchema.safeParse(payload).success).toBe(false);
@@ -124,7 +124,7 @@ describe("triage decision schema", () => {
 
   it("allows blockers without changing a ready-for-agent decision", () => {
     const result = TriageDecisionSchema.safeParse({
-      ...READY_TO_PLAN,
+      ...READY_TO_SPEC,
       blockedBy: ["FER-201", "FER-202"],
     });
 
@@ -195,7 +195,7 @@ describe("triage work-item context schema", () => {
 
 describe("exported triage decision JSON schema", () => {
   it("is strict and defines every required provider field", () => {
-    expect(TRIAGE_DECISION_SCHEMA_VERSION).toBe("2");
+    expect(TRIAGE_DECISION_SCHEMA_VERSION).toBe("3");
     expect(() => assertCodexStrictSchema(JSON_SCHEMA)).not.toThrow();
     expect(JSON_SCHEMA.additionalProperties).toBe(false);
     expect(JSON_SCHEMA.required).toEqual([
@@ -213,7 +213,7 @@ describe("exported triage decision JSON schema", () => {
 
   it.each([
     ["ready to implement", READY_TO_IMPLEMENT],
-    ["ready to plan", READY_TO_PLAN],
+    ["ready to spec", READY_TO_SPEC],
     ["needs input", NEEDS_PRODUCT_DECISION],
     ["duplicate", DUPLICATE],
   ])("stays structurally aligned with Zod for %s", (_name, payload) => {

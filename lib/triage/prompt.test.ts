@@ -7,7 +7,7 @@ describe("triage prompt", () => {
     const context = validContext();
     const prompt = renderTriagePrompt(context);
 
-    expect(TRIAGE_POLICY_VERSION).toBe("3");
+    expect(TRIAGE_POLICY_VERSION).toBe("4");
     expect(prompt).toContain(JSON.stringify(context, null, 2));
     expect(prompt).toContain('"commentsTruncated": true');
     expect(prompt).toContain('"childrenTruncated": false');
@@ -32,7 +32,7 @@ describe("triage prompt", () => {
       "one stale-issue automation with an undecided age threshold and close behavior is bounded",
     );
     expect(prompt).toContain(
-      "Webhook ingress, triage, planning, implementation, and a dashboard are independent outcomes",
+      "Webhook ingress, triage, specification, implementation, and a dashboard are independent outcomes",
     );
     expect(prompt).toContain('decision "needs-input", scope "too-broad"');
     expect(prompt).toContain("recommend the smallest useful first slice");
@@ -43,18 +43,18 @@ describe("triage prompt", () => {
     const prompt = renderTriagePrompt(validContext());
 
     expect(prompt).toContain(
-      "Repository inspection, reproduction, diagnosis, technical research, and technical planning are agent work.",
+      "Repository inspection, reproduction, diagnosis, technical research, and technical specification are agent work.",
     );
     expect(prompt).toContain(
       "Product behavior, UX intent, scope authority, credentials, inaccessible facts",
     );
     expect(prompt).toContain('decision "ready-for-agent" and agentAction "implement"');
-    expect(prompt).toContain('decision "ready-for-agent" and agentAction "plan"');
+    expect(prompt).toContain('decision "ready-for-agent" and agentAction "spec"');
     expect(prompt).toContain(
       "Normal repository inspection to locate files, follow existing patterns, and write tests is part of implementation.",
     );
     expect(prompt).toContain(
-      "only when the next useful deliverable should be a diagnosis, design, migration strategy, or risk-reduction plan",
+      "only when the next useful deliverable should be a diagnosis, design, migration strategy, or risk-reduction specification",
     );
     expect(prompt).toContain(
       'prefer agentAction "implement" if repository evidence supports a straightforward safe change',
@@ -87,7 +87,7 @@ describe("triage prompt", () => {
       "For Implement, explain why the outcome and acceptance boundary support one safe implementation pass.",
     );
     expect(prompt).toContain(
-      "For Plan, explain what makes editing premature or unsafe and how the next planning deliverable reduces that risk.",
+      "For Spec, explain what makes editing premature or unsafe and how the next specification deliverable reduces that risk.",
     );
     expect(prompt).toContain(
       "For Needs Input, explain which human-only decision or scope boundary blocks useful agent work.",

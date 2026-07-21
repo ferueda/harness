@@ -57,7 +57,7 @@ system without knowing which operation or delivery host called them. Adding a
 new operation does not require adding a station to a shared lifecycle.
 
 The current worker registers three independent functions: polling, readiness
-routing, and triage. Planning and implementation requests are typed but remain
+routing, and triage. Spec and implementation requests are typed but remain
 disabled until they have their own consumers.
 
 ## Ownership boundaries
@@ -160,9 +160,12 @@ plus Connect-backed `/ready` endpoints.
 
 The one-minute poller lists revisions for one configured project's Backlog.
 The readiness router reloads the complete issue context and emits a triage
-request only when current Linear state requires it. The triage consumer invokes
-the configured Codex profile and applies its rationale, Next action label, and
-target status through the standalone Linear service.
+request only when current Linear state requires it. Revision-bound request
+identity lets a later Backlog revision request triage again without duplicating
+work for an unchanged revision. The triage consumer invokes the configured
+Codex profile and applies its rationale, Agent action label, and target status
+through the standalone Linear service. Human handoffs use Needs Input and Needs
+Review statuses; Spec and Implement labels only describe agent work.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

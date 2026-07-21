@@ -55,15 +55,15 @@ const LINEAR_AUTOMATION = {
       backlog: "state-backlog",
       open: "state-open",
       inProgress: "state-in-progress",
-      inReview: "state-in-review",
+      needsInput: "state-needs-input",
+      needsReview: "state-needs-review",
       done: "state-done",
       canceled: "state-canceled",
       duplicate: "state-duplicate",
     },
-    nextActionLabelIds: {
-      plan: "label-plan",
+    agentActionLabelIds: {
+      spec: "label-spec",
       implement: "label-implement",
-      needsInput: "label-needs-input",
     },
   },
   triage: {
@@ -185,7 +185,7 @@ test("resolveLinearAutomationSettings resolves one immutable worker snapshot", (
   });
   expect(Object.isFrozen(settings)).toBe(true);
   expect(Object.isFrozen(settings.readiness.stateIds)).toBe(true);
-  expect(Object.isFrozen(settings.readiness.nextActionLabelIds)).toBe(true);
+  expect(Object.isFrozen(settings.readiness.agentActionLabelIds)).toBe(true);
   expect(Object.isFrozen(settings.triage)).toBe(true);
 });
 
@@ -249,6 +249,50 @@ test("resolveLinearAutomationSettings rejects missing or invalid worker config",
   });
   expect(() => resolveLinearAutomationSettings({ workspace: unsupportedProvider }, "/")).toThrow(
     /linearAutomation\.triage\.agent: Invalid input: expected "codex"/,
+  );
+});
+
+test("resolveLinearAutomationSettings rejects removed readiness config names", () => {
+  const legacyLabels = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(legacyLabels, {
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      readiness: {
+        teamId: LINEAR_AUTOMATION.readiness.teamId,
+        projectId: LINEAR_AUTOMATION.readiness.projectId,
+        stateIds: LINEAR_AUTOMATION.readiness.stateIds,
+        nextActionLabelIds: {
+          plan: "label-plan",
+          implement: "label-implement",
+          needsInput: "label-needs-input",
+        },
+      },
+    },
+  });
+  expect(() => resolveLinearAutomationSettings({ workspace: legacyLabels }, "/")).toThrow(
+    /nextActionLabelIds/,
+  );
+
+  const legacyReviewState = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(legacyReviewState, {
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      readiness: {
+        ...LINEAR_AUTOMATION.readiness,
+        stateIds: {
+          backlog: "state-backlog",
+          open: "state-open",
+          inProgress: "state-in-progress",
+          inReview: "state-in-review",
+          done: "state-done",
+          canceled: "state-canceled",
+          duplicate: "state-duplicate",
+        },
+      },
+    },
+  });
+  expect(() => resolveLinearAutomationSettings({ workspace: legacyReviewState }, "/")).toThrow(
+    /inReview/,
   );
 });
 

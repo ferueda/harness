@@ -57,15 +57,15 @@ const settings: LinearAutomationSettings = {
       backlog: "state-backlog",
       open: "state-open",
       inProgress: "state-in-progress",
-      inReview: "state-in-review",
+      needsInput: "state-needs-input",
+      needsReview: "state-needs-review",
       done: "state-done",
       canceled: "state-canceled",
       duplicate: "state-duplicate",
     },
-    nextActionLabelIds: {
-      plan: "label-plan",
+    agentActionLabelIds: {
+      spec: "label-spec",
       implement: "label-implement",
-      needsInput: "label-needs-input",
     },
   },
   triage: {
@@ -461,7 +461,7 @@ try {
     "triage projection",
     () =>
       projection.stateId === settings.readiness.stateIds.open &&
-      projection.labelIds.has(settings.readiness.nextActionLabelIds.implement) &&
+      projection.labelIds.has(settings.readiness.agentActionLabelIds.implement) &&
       projection.comments.length === 1,
   );
   assert(projection.agentRuns === 1, "triage agent did not run exactly once");

@@ -28,19 +28,19 @@ const readiness: LinearReadinessConfig = {
     backlog: "state-backlog",
     open: "state-open",
     inProgress: "state-in-progress",
-    inReview: "state-in-review",
+    needsInput: "state-needs-input",
+    needsReview: "state-needs-review",
     done: "state-done",
     canceled: "state-canceled",
     duplicate: "state-duplicate",
   },
-  nextActionLabelIds: {
-    plan: "label-plan",
+  agentActionLabelIds: {
+    spec: "label-spec",
     implement: "label-implement",
-    needsInput: "label-needs-input",
   },
   enabledRoutes: {
     triage: true,
-    plan: true,
+    spec: true,
     implement: true,
   },
 };
@@ -205,8 +205,8 @@ describe("Linear readiness router", () => {
   });
 
   it.each([
-    ["plan", readiness.nextActionLabelIds.plan, WORK_REQUEST_EVENT_NAMES.plan],
-    ["implement", readiness.nextActionLabelIds.implement, WORK_REQUEST_EVENT_NAMES.implement],
+    ["spec", readiness.agentActionLabelIds.spec, WORK_REQUEST_EVENT_NAMES.spec],
+    ["implement", readiness.agentActionLabelIds.implement, WORK_REQUEST_EVENT_NAMES.implement],
   ] as const)("refetches before an enabled %s dispatch", async (route, labelId, eventName) => {
     const current = issueContext({ stateId: readiness.stateIds.open, actionLabelId: labelId });
     const linear = fakeLinear(current, current);
@@ -260,13 +260,13 @@ describe("Linear readiness router", () => {
   it("does not dispatch a disabled route", async () => {
     const current = issueContext({
       stateId: readiness.stateIds.open,
-      actionLabelId: readiness.nextActionLabelIds.plan,
+      actionLabelId: readiness.agentActionLabelIds.spec,
     });
     const linear = fakeLinear(current);
     const output = await new InngestTestEngine({
       function: router(linear.service, {
         ...readiness,
-        enabledRoutes: { ...readiness.enabledRoutes, plan: false },
+        enabledRoutes: { ...readiness.enabledRoutes, spec: false },
       }),
       events: [revisionEvent()],
     }).execute();
@@ -279,12 +279,9 @@ describe("Linear readiness router", () => {
   it("drops an actionable snapshot that changes before dispatch", async () => {
     const initial = issueContext({
       stateId: readiness.stateIds.open,
-      actionLabelId: readiness.nextActionLabelIds.plan,
+      actionLabelId: readiness.agentActionLabelIds.spec,
     });
-    const changed = issueContext({
-      stateId: readiness.stateIds.open,
-      actionLabelId: readiness.nextActionLabelIds.needsInput,
-    });
+    const changed = issueContext({ stateId: readiness.stateIds.needsInput });
     const linear = fakeLinear(initial, changed);
     const output = await new InngestTestEngine({
       function: router(linear.service),
@@ -311,7 +308,21 @@ describe("Linear readiness router", () => {
     expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
-  it("keeps work identity stable while recording each revision as causation", async () => {
+  it.each([
+    ["Needs Input", readiness.stateIds.needsInput, "needs-input"],
+    ["Needs Review", readiness.stateIds.needsReview, "needs-review"],
+  ] as const)("ignores the human-owned %s status", async (_label, stateId, reason) => {
+    const linear = fakeLinear(issueContext({ stateId }));
+    const output = await new InngestTestEngine({
+      function: router(linear.service),
+      events: [revisionEvent()],
+    }).execute();
+
+    expect(output.result).toMatchObject({ outcome: "ignore", reason });
+    expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
+  });
+
+  it("creates a new triage request when a human returns a newer issue revision to Backlog", async () => {
     const secondUpdatedAt = "2026-07-19T02:00:00.000Z";
     const first = await new InngestTestEngine({
       function: router(fakeLinear(issueContext()).service),
@@ -324,8 +335,9 @@ describe("Linear readiness router", () => {
     const firstEvent = sentEvent(first);
     const secondEvent = sentEvent(second);
 
-    expect(secondEvent.id).toBe(firstEvent.id);
+    expect(secondEvent.id).not.toBe(firstEvent.id);
     expect(secondEvent.data.causationEventId).not.toBe(firstEvent.data.causationEventId);
+    expect(secondEvent.data.snapshotGeneration).not.toBe(firstEvent.data.snapshotGeneration);
     expect(firstEvent.data).not.toHaveProperty("rawBody");
     expect(firstEvent.data).not.toHaveProperty("signature");
   });

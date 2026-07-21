@@ -25,7 +25,7 @@
     },
     "agentAction": {
       "type": ["string", "null"],
-      "enum": ["implement", "plan", null]
+      "enum": ["implement", "spec", null]
     },
     "rationale": {
       "type": "string",

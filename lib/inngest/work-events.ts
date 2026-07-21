@@ -7,7 +7,7 @@ export const WORK_REQUEST_EVENT_ID_PREFIX = "harness-work-request-v1-";
 
 export const WORK_REQUEST_EVENT_NAMES = {
   triage: "work/triage.requested",
-  plan: "work/plan.requested",
+  spec: "work/spec.requested",
   implement: "work/implementation.requested",
 } as const;
 
@@ -31,7 +31,7 @@ export const TriageWorkRequestedEvent = eventType(WORK_REQUEST_EVENT_NAMES.triag
   version: WORK_REQUEST_EVENT_VERSION,
 });
 
-export const PlanWorkRequestedEvent = eventType(WORK_REQUEST_EVENT_NAMES.plan, {
+export const SpecWorkRequestedEvent = eventType(WORK_REQUEST_EVENT_NAMES.spec, {
   schema: WorkRequestDataSchema,
   version: WORK_REQUEST_EVENT_VERSION,
 });
@@ -62,8 +62,8 @@ export function createWorkRequestedEvent(route: WorkRequestRoute, data: WorkRequ
   switch (route) {
     case "triage":
       return TriageWorkRequestedEvent.create(parsed, options);
-    case "plan":
-      return PlanWorkRequestedEvent.create(parsed, options);
+    case "spec":
+      return SpecWorkRequestedEvent.create(parsed, options);
     case "implement":
       return ImplementationWorkRequestedEvent.create(parsed, options);
   }

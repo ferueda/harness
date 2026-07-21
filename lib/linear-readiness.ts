@@ -10,17 +10,17 @@ const LinearReadinessMappingShape = {
       backlog: z.string().trim().min(1),
       open: z.string().trim().min(1),
       inProgress: z.string().trim().min(1),
-      inReview: z.string().trim().min(1),
+      needsInput: z.string().trim().min(1),
+      needsReview: z.string().trim().min(1),
       done: z.string().trim().min(1),
       canceled: z.string().trim().min(1),
       duplicate: z.string().trim().min(1),
     })
     .strict(),
-  nextActionLabelIds: z
+  agentActionLabelIds: z
     .object({
-      plan: z.string().trim().min(1),
+      spec: z.string().trim().min(1),
       implement: z.string().trim().min(1),
-      needsInput: z.string().trim().min(1),
     })
     .strict(),
 } as const;
@@ -36,7 +36,7 @@ export const LinearReadinessConfigSchema = z
     enabledRoutes: z
       .object({
         triage: z.boolean(),
-        plan: z.boolean(),
+        spec: z.boolean(),
         implement: z.boolean(),
       })
       .strict(),
@@ -46,7 +46,7 @@ export const LinearReadinessConfigSchema = z
 
 export type LinearReadinessMapping = Readonly<z.infer<typeof LinearReadinessMappingSchema>>;
 export type LinearReadinessConfig = Readonly<z.infer<typeof LinearReadinessConfigSchema>>;
-export type LinearReadinessRoute = "triage" | "plan" | "implement";
+export type LinearReadinessRoute = "triage" | "spec" | "implement";
 
 type ReadinessBase = Readonly<{
   snapshotGeneration: string;
@@ -68,20 +68,20 @@ export type LinearReadinessDecision =
   | (ReadinessBase &
       Readonly<{
         kind: "wait";
-        reason: "projection-repair" | "needs-input" | "blocked";
+        reason: "projection-repair" | "blocked";
       }>)
   | (ReadinessBase &
       Readonly<{
         kind: "ignore";
-        reason: "out-of-scope" | "already-claimed" | "human-review" | "terminal";
+        reason: "out-of-scope" | "already-claimed" | "needs-input" | "needs-review" | "terminal";
       }>)
   | (ReadinessBase &
       Readonly<{
         kind: "invalid";
         reason:
           | "incomplete-context"
-          | "missing-next-action"
-          | "conflicting-next-action"
+          | "missing-agent-action"
+          | "conflicting-agent-action"
           | "unknown-state";
       }>);
 
@@ -101,35 +101,39 @@ export function classifyLinearReadiness(input: {
     return { ...base, kind: "invalid", reason: "incomplete-context" };
   }
 
-  const action = presentNextActions(context, config);
+  const actions = presentAgentActions(context, config);
   const stateId = context.state.id;
   if (stateId === config.stateIds.backlog) {
-    if (action.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
+    if (actions.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
     return routeDecision("triage", config, snapshotGeneration);
   }
   if (stateId === config.stateIds.open) {
-    if (action.length === 0) {
-      return { ...base, kind: "invalid", reason: "missing-next-action" };
+    if (actions.length === 0) {
+      return { ...base, kind: "invalid", reason: "missing-agent-action" };
     }
-    if (action.length > 1) {
-      return { ...base, kind: "invalid", reason: "conflicting-next-action" };
-    }
-    if (action[0] === config.nextActionLabelIds.needsInput) {
-      return { ...base, kind: "wait", reason: "needs-input" };
+    if (actions.length > 1) {
+      return { ...base, kind: "invalid", reason: "conflicting-agent-action" };
     }
     if (hasUnresolvedBlocker(context, config)) {
       return { ...base, kind: "wait", reason: "blocked" };
     }
-    const route = action[0] === config.nextActionLabelIds.plan ? "plan" : "implement";
+    const route = actions[0] === config.agentActionLabelIds.spec ? "spec" : "implement";
     return routeDecision(route, config, snapshotGeneration);
   }
   if (stateId === config.stateIds.inProgress) {
+    if (actions.length > 1) return { ...base, kind: "wait", reason: "projection-repair" };
     return { ...base, kind: "ignore", reason: "already-claimed" };
   }
-  if (stateId === config.stateIds.inReview) {
-    return { ...base, kind: "ignore", reason: "human-review" };
+  if (stateId === config.stateIds.needsInput) {
+    if (actions.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
+    return { ...base, kind: "ignore", reason: "needs-input" };
+  }
+  if (stateId === config.stateIds.needsReview) {
+    if (actions.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
+    return { ...base, kind: "ignore", reason: "needs-review" };
   }
   if (terminalStateIds(config).has(stateId)) {
+    if (actions.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
     return { ...base, kind: "ignore", reason: "terminal" };
   }
   return { ...base, kind: "invalid", reason: "unknown-state" };
@@ -140,7 +144,7 @@ export function linearReadinessSnapshotGeneration(
   configInput: LinearReadinessConfig,
 ): string {
   const config = LinearReadinessConfigSchema.parse(configInput);
-  const relevantLabelIds = presentNextActions(context, config).toSorted();
+  const relevantLabelIds = presentAgentActions(context, config).toSorted();
   const blockers = context.blockedBy
     .map((issue) => ({ issueId: issue.id, stateId: issue.state.id }))
     .toSorted((left, right) =>
@@ -153,7 +157,8 @@ export function linearReadinessSnapshotGeneration(
     teamId: context.team.id,
     projectId: context.project?.id ?? null,
     stateId: context.state.id,
-    nextActionLabelIds: relevantLabelIds,
+    updatedAt: context.updatedAt,
+    agentActionLabelIds: relevantLabelIds,
     blockers,
     completeness: {
       labelsTruncated: context.completeness.labelsTruncated,
@@ -174,8 +179,8 @@ function routeDecision(
   return { kind: "dispatch", reason: "ready", route, snapshotGeneration };
 }
 
-function presentNextActions(context: LinearIssueContext, config: LinearReadinessConfig): string[] {
-  const configured = new Set(Object.values(config.nextActionLabelIds));
+function presentAgentActions(context: LinearIssueContext, config: LinearReadinessConfig): string[] {
+  const configured = new Set(Object.values(config.agentActionLabelIds));
   return [...new Set(context.labels.map((label) => label.id).filter((id) => configured.has(id)))];
 }
 
@@ -199,5 +204,5 @@ function validateUniqueReadinessIds(
   ctx: z.RefinementCtx,
 ): void {
   requireUnique(Object.values(config.stateIds), ctx, ["stateIds"]);
-  requireUnique(Object.values(config.nextActionLabelIds), ctx, ["nextActionLabelIds"]);
+  requireUnique(Object.values(config.agentActionLabelIds), ctx, ["agentActionLabelIds"]);
 }

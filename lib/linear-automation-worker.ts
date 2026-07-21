@@ -27,7 +27,7 @@ export const LINEAR_AUTOMATION_APP_ID = "harness-linear-automation";
 export const LINEAR_AUTOMATION_MAX_WORKER_CONCURRENCY = 1;
 export const LINEAR_AUTOMATION_ENABLED_ROUTES = Object.freeze({
   triage: true,
-  plan: false,
+  spec: false,
   implement: false,
 });
 export const LINEAR_AUTOMATION_READ_LIMITS = Object.freeze({
