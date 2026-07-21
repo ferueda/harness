@@ -41,7 +41,7 @@ docs should link here. Exact command ownership lives in
 | Repository self-contract | Packaged skills, command inventory, documentation structure, and private-path exclusion |
 | Distribution smoke       | Built package layout, installed entrypoint, generated shim, and basic public wiring     |
 | Factory system smoke     | Offline Factory CLI, Inngest delivery, and Grove recovery                               |
-| Linear automation smoke  | Offline Inngest Dev Server, Connect registration, routing, triage, and projection       |
+| Linear automation smoke  | Self-hosted Inngest, Connect registration, polling, routing, triage, and projection     |
 | Optional live            | Explicitly authorized external integration proof                                        |
 
 Use fast module and contract tests by default. Add broader proof only when the
@@ -98,11 +98,13 @@ System smokes should:
 
 Distribution smoke proves packaging and command wiring. Factory smoke runs local
 fakes in a temporary repository and store, then proves Inngest execution and
-recovery around Grove release. Linear automation smoke runs a real local Inngest
-Dev Server and Connect worker with fake Linear and agent boundaries, then proves
-the signed webhook-to-projection journey. Both clean on success and retain bounded
-diagnostics on failure. Live protocols require explicit authority, credentials,
-stop conditions, disposable targets, and cleanup; they are not routine CI coverage.
+recovery around Grove release. Linear automation smoke runs a real local
+self-hosted Inngest server and Connect worker with fake Linear and agent
+boundaries, then proves polling, revision routing, unchanged-revision
+deduplication, and the triage-to-projection journey. Both clean on success and
+retain bounded diagnostics on failure. Live protocols require explicit authority,
+credentials, stop conditions, disposable targets, and cleanup; they are not
+routine CI coverage.
 
 ## Verification Commands
 

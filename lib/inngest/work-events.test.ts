@@ -15,7 +15,7 @@ import {
 const data: WorkRequestData = {
   issueId: "issue-1",
   issueIdentifier: "FER-225",
-  causationEventId: "linear-webhook-v1:delivery-1",
+  causationEventId: "linear-issue-revision-v1:revision-1",
   snapshotGeneration: "a".repeat(64),
 };
 

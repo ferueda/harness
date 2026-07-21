@@ -126,7 +126,6 @@ const LinearAutomationTriageSchema = z
 
 const LinearAutomationConfigSchema = z
   .object({
-    organizationId: z.string().trim().min(1),
     readiness: LinearReadinessMappingSchema,
     triage: LinearAutomationTriageSchema,
   })

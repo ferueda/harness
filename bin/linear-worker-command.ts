@@ -10,7 +10,7 @@ export function addLinearWorkerCommand(program: Command): void {
     .command("linear")
     .description("Run independent Linear automations")
     .command("worker")
-    .description("Connect the Linear readiness and triage functions to Inngest")
+    .description("Connect the Linear poller, readiness, and triage functions to Inngest")
     .option("--workspace <path>", "target repo (default: nearest harness.json or Git root)")
     .action(async (options: LinearWorkerOptions) => {
       await runLinearAutomationWorker({ workspace: options.workspace });

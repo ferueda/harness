@@ -8,6 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "./agents.ts";
 import type { LinearAutomationSettings } from "./config.ts";
 import {
+  LINEAR_BACKLOG_POLL_FUNCTION_ID,
+  type LinearBacklogPollerLinear,
+} from "./linear-backlog-poller.ts";
+import {
   createLinearAutomationFunctions,
   LINEAR_AUTOMATION_APP_ID,
   LINEAR_AUTOMATION_ENABLED_ROUTES,
@@ -20,7 +24,6 @@ import { LINEAR_TRIAGE_FUNCTION_ID, type LinearTriageService } from "./linear-tr
 
 const settings: LinearAutomationSettings = {
   workspace: "/workspace/harness",
-  organizationId: "organization-1",
   readiness: {
     teamId: "team-1",
     projectId: "project-1",
@@ -53,13 +56,14 @@ function app() {
     throw new Error("Unexpected Linear call");
   };
   const linear = {
+    listIssueRevisions: never,
     getIssueContext: never,
     ensureComment: never,
     ensureDuplicateRelation: never,
     ensureBlockedByRelation: never,
     updateIssueLabels: never,
     updateIssueState: never,
-  } satisfies LinearTriageService;
+  } satisfies LinearTriageService & LinearBacklogPollerLinear;
   const agent = {
     name: "codex",
     run: async () => {
@@ -71,16 +75,14 @@ function app() {
     linear,
     agent,
     settings,
-    webhookSecret: "webhook-secret",
   });
 }
 
 describe("Linear automation worker", () => {
-  it("validates secrets and keeps local development minimal", () => {
+  it("validates self-hosted secrets and keeps SDK development minimal", () => {
     expect(
       parseLinearAutomationWorkerEnvironment({
         LINEAR_API_KEY: "linear-key",
-        LINEAR_WEBHOOK_SECRET: "webhook-secret",
         INNGEST_DEV: "1",
         HARNESS_WORKER_HOST: "127.0.0.1",
         HARNESS_WORKER_PORT: "8088",
@@ -89,7 +91,6 @@ describe("Linear automation worker", () => {
       }),
     ).toEqual({
       linearApiKey: "linear-key",
-      linearWebhookSecret: "webhook-secret",
       isDev: true,
       host: "127.0.0.1",
       port: 8088,
@@ -100,23 +101,44 @@ describe("Linear automation worker", () => {
     expect(() =>
       parseLinearAutomationWorkerEnvironment({
         LINEAR_API_KEY: "linear-key",
-        LINEAR_WEBHOOK_SECRET: "webhook-secret",
       }),
     ).toThrow(/INNGEST_EVENT_KEY is required unless INNGEST_DEV is enabled/);
     expect(() =>
       parseLinearAutomationWorkerEnvironment({
         LINEAR_API_KEY: "linear-key",
-        LINEAR_WEBHOOK_SECRET: "webhook-secret",
         INNGEST_DEV: "1",
         HARNESS_WORKER_PORT: "70000",
       }),
     ).toThrow(/HARNESS_WORKER_PORT must be an integer from 1 to 65535/);
+
+    expect(
+      parseLinearAutomationWorkerEnvironment({
+        LINEAR_API_KEY: "linear-key",
+        INNGEST_EVENT_KEY: "event-key",
+        INNGEST_SIGNING_KEY: "signing-key",
+        INNGEST_BASE_URL: "http://127.0.0.1:8288",
+      }),
+    ).toMatchObject({
+      linearApiKey: "linear-key",
+      inngestEventKey: "event-key",
+      inngestSigningKey: "signing-key",
+      inngestBaseUrl: "http://127.0.0.1:8288",
+      isDev: false,
+    });
+    expect(() =>
+      parseLinearAutomationWorkerEnvironment({
+        LINEAR_API_KEY: "linear-key",
+        INNGEST_EVENT_KEY: "event-key",
+        INNGEST_SIGNING_KEY: "signing-key",
+      }),
+    ).toThrow(/INNGEST_BASE_URL is required unless INNGEST_DEV is enabled/);
   });
 
-  it("registers only the router and triage consumer", () => {
+  it("registers exactly the poller, router, and triage consumer", () => {
     const functions = app().functions;
 
     expect(functions.map((fn) => fn.opts.id)).toEqual([
+      LINEAR_BACKLOG_POLL_FUNCTION_ID,
       LINEAR_READINESS_ROUTER_FUNCTION_ID,
       LINEAR_TRIAGE_FUNCTION_ID,
     ]);

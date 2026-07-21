@@ -4,6 +4,7 @@ import {
   findCommentMarker as findCommentMarkerOperation,
   findWorkflowState as findWorkflowStateOperation,
   getIssueContext,
+  listIssueRevisions as listIssueRevisionsOperation,
   normalizeLimits,
   type FindCommentMarkerInput,
   type FindWorkflowStateInput,
@@ -11,6 +12,8 @@ import {
   type LinearReadClient,
   type LinearReadLimits,
   type LinearWorkflowState,
+  type ListIssueRevisionsInput,
+  type ListIssueRevisionsResult,
 } from "./read.ts";
 import {
   createComment as createCommentOperation,
@@ -38,10 +41,13 @@ export type {
   LinearCommentActor,
   LinearIssueContext,
   LinearIssueReference,
+  LinearIssueRevision,
   LinearReadClient,
   LinearReadLimits,
   LinearUser,
   LinearWorkflowState,
+  ListIssueRevisionsInput,
+  ListIssueRevisionsResult,
 } from "./read.ts";
 export type {
   CreateCommentInput,
@@ -59,6 +65,7 @@ export interface LinearClientLike extends LinearReadClient, LinearWriteClient {}
 
 export type LinearService = Readonly<{
   getIssueContext: (issueRef: string) => Promise<LinearIssueContext>;
+  listIssueRevisions: (input: ListIssueRevisionsInput) => Promise<ListIssueRevisionsResult>;
   findCommentMarker: (input: FindCommentMarkerInput) => Promise<string | null>;
   findWorkflowState: (input: FindWorkflowStateInput) => Promise<LinearWorkflowState>;
   createComment: (input: CreateCommentInput) => Promise<Readonly<{ id: string }>>;
@@ -86,6 +93,7 @@ export function createLinearForClient(input: {
   const limits = normalizeLimits(input.limits);
   return {
     getIssueContext: (issueRef) => getIssueContext(input.client, limits, issueRef),
+    listIssueRevisions: (listInput) => listIssueRevisionsOperation(input.client, listInput),
     findCommentMarker: (markerInput) =>
       findCommentMarkerOperation(input.client, limits.comments, markerInput),
     findWorkflowState: (stateInput) => findWorkflowStateOperation(input.client, stateInput),
