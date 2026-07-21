@@ -1,0 +1,14 @@
+.git
+.harness
+.pnpm-store
+.agents
+dev
+docs
+node_modules
+dist
+logs
+scripts
+skills
+test
+automations
+*.log

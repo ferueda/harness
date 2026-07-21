@@ -194,6 +194,26 @@ test("createCodexAgent runs Codex with schema and review defaults", async () => 
   expect(calls.turnOptions?.signal).toBeInstanceOf(AbortSignal);
 });
 
+test("createCodexAgent passes an explicit environment without mutating it", async () => {
+  const workspace = createGitWorkspace();
+  const { calls, codexFactory } = createFakeCodex();
+  const environment = Object.freeze({ CODEX_HOME: "/codex", PATH: "/usr/bin" });
+
+  const result = await createCodexAgent({ codexFactory, environment }).run({
+    workspace,
+    prompt: "review this",
+    model: "gpt-test",
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
+    modelReasoningEffort: "high",
+    maxRuntimeMs: 1_000,
+  });
+
+  expect(result.ok).toBe(true);
+  expect(calls.codexOptions).toEqual({ env: environment });
+  expect(environment).toEqual({ CODEX_HOME: "/codex", PATH: "/usr/bin" });
+});
+
 test("createCodexAgent resumes a matching Codex session", async () => {
   const workspace = createGitWorkspace();
   const { calls, codexFactory } = createFakeCodex();

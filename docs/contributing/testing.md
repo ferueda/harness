@@ -42,6 +42,7 @@ docs should link here. Exact command ownership lives in
 | Distribution smoke       | Built package layout, installed entrypoint, generated shim, and basic public wiring     |
 | Factory system smoke     | Offline Factory CLI, Inngest delivery, and Grove recovery                               |
 | Linear automation smoke  | Self-hosted Inngest, Connect registration, polling, routing, triage, and projection     |
+| Linear Compose smoke     | Worker image, Compose health, restart, reconnection, and persistent local state         |
 | Optional live            | Explicitly authorized external integration proof                                        |
 
 Use fast module and contract tests by default. Add broader proof only when the
@@ -60,8 +61,9 @@ changed behavior crosses a boundary the cheaper layer cannot observe.
   its own test boundary.
 - Keep built-distribution coverage in `scripts/smoke-dist.ts`, Factory smokes in
   `scripts/smoke-factory.ts` and `scripts/smoke-factory-grove.ts`, the independent
-  Linear journey in `scripts/smoke-linear-automation.ts`, and gate-output behavior
-  in `test/gate-output.test.ts`.
+  Linear journey in `scripts/smoke-linear-automation.ts`, the container boundary in
+  `scripts/smoke-linear-automation-compose.ts`, and gate-output behavior in
+  `test/gate-output.test.ts`.
 - Keep target-repo fixtures isolated from the Harness checkout and user state.
 
 Use an existing location before inventing another test directory or suffix.
@@ -101,8 +103,10 @@ fakes in a temporary repository and store, then proves Inngest execution and
 recovery around Grove release. Linear automation smoke runs a real local
 self-hosted Inngest server and Connect worker with fake Linear and agent
 boundaries, then proves polling, revision routing, unchanged-revision
-deduplication, and the triage-to-projection journey. Both clean on success and
-retain bounded diagnostics on failure. Live protocols require explicit authority,
+deduplication, and the triage-to-projection journey. The Linear Compose smoke
+uses a blocked-egress network to prove the worker image, service health, restarts,
+reconnection, and persistent volume behavior without live traffic. These smokes
+clean their disposable state on success. Live protocols require explicit authority,
 credentials, stop conditions, disposable targets, and cleanup; they are not
 routine CI coverage.
 
@@ -124,9 +128,12 @@ pnpm exec vitest run test/docs-contracts.test.ts
 - `pnpm smoke:linear-automation` / `make smoke-linear-automation` runs the
   independent Linear automation journey. It is not part of Vitest, watch mode,
   pre-commit, or ordinary local `pnpm check`.
+- `pnpm smoke:linear-automation-compose` / `make smoke-linear-automation-compose`
+  runs the explicit Docker packaging smoke. It is not part of Vitest, pre-commit,
+  ordinary local `pnpm check`, or the CI gate.
 - `pnpm check` / `make check` is the normal local handoff gate.
-- `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs both system
-  smokes after the ordinary checks.
+- `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Factory and
+  Linear automation system smokes after the ordinary checks.
 - Approved plan-only changes use `make fix-plan` and `make check-plan`. CI runs
   the same focused check; it bypasses the full gate and Factory smoke.
 - Other docs-only behavior follows the normal command contract.

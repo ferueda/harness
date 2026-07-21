@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=${PNPM_HOME}:${PATH}
+WORKDIR /build
+
+RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,id=harness-pnpm,target=/pnpm/store \
+    SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 pnpm install --frozen-lockfile
+
+COPY bin ./bin
+COPY lib ./lib
+COPY providers ./providers
+COPY schemas ./schemas
+COPY workflows ./workflows
+COPY tsconfig.json tsconfig.build.json ./
+
+RUN pnpm build && pnpm prune --prod --ignore-scripts
+
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runtime
+
+ENV CODEX_HOME=/home/node/.codex
+ENV HOME=/home/node
+ENV NODE_ENV=production
+ENV PATH=/app/node_modules/.bin:${PATH}
+WORKDIR /app
+
+# Git is required by Harness's workspace guard and by Codex repository discovery.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/* \
+    && git config --system --add safe.directory /workspace \
+    && mkdir -p /home/node/.codex \
+    && chown node:node /home/node/.codex
+
+COPY --from=build --chown=node:node /build/package.json ./package.json
+COPY --from=build --chown=node:node /build/node_modules ./node_modules
+COPY --from=build --chown=node:node /build/dist ./dist
+COPY --from=build --chown=node:node /build/schemas ./schemas
+
+USER node
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=6 \
+    CMD ["node", "-e", "fetch('http://127.0.0.1:8080/ready').then((response)=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+
+CMD ["node", "dist/bin/harness.js", "linear", "worker", "--workspace", "/workspace"]

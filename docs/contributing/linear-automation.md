@@ -58,54 +58,82 @@ The initial worker composes one configured project. The standalone Linear read
 operation accepts explicit team, project, and state IDs so another worker can
 reuse it without adding a shared scheduler or project registry.
 
-## Start the SQLite pilot
+## Run the local Compose stack
 
-Generate local keys once in the target repository's ignored `.harness/`
-directory. Both the server and worker shells source the same protected file.
-Set `HARNESS_ROOT` to the Harness checkout, which owns the pinned Inngest CLI.
+The deployment contains one self-hosted Inngest service and one Harness worker.
+It is intentionally scoped to one configured target repository. Inngest keeps
+its SQLite database in a named volume, while the worker reads the target checkout
+through a read-only bind mount.
+
+Keep deployment secrets outside the target repository. The triage agent can read
+the workspace, so an ignored file inside that workspace is not a safe secret
+boundary. Create one protected environment file per Compose stack:
 
 ```sh
 export HARNESS_ROOT="/path/to/harness"
-export TARGET_ROOT="$PWD"
-mkdir -p .harness/inngest
-umask 077
-printf 'export INNGEST_EVENT_KEY=%s\nexport INNGEST_SIGNING_KEY=%s\n' \
-  "$(openssl rand -hex 32)" \
-  "$(openssl rand -hex 32)" \
-  > .harness/linear-automation.env
-. .harness/linear-automation.env
+export TARGET_ROOT="/path/to/target-repository"
+export LINEAR_AUTOMATION_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/harness/linear-automation/target.env"
 
-pnpm --dir "$HARNESS_ROOT" exec inngest start \
-  --host 127.0.0.1 \
-  --port 8288 \
-  --connect-gateway-port 8289 \
-  --sqlite-dir "$TARGET_ROOT/.harness/inngest" \
-  --event-key "$INNGEST_EVENT_KEY" \
-  --signing-key "$INNGEST_SIGNING_KEY"
+mkdir -p "$(dirname "$LINEAR_AUTOMATION_ENV")"
+umask 077
+{
+  printf 'COMPOSE_PROJECT_NAME=harness-linear-target\n'
+  printf 'HARNESS_LINEAR_WORKSPACE=%s\n' "$TARGET_ROOT"
+  printf 'INNGEST_DASHBOARD_PORT=8288\n'
+  printf 'LINEAR_API_KEY=%s\n' 'replace-with-linear-api-key'
+  printf 'INNGEST_EVENT_KEY=%s\n' "$(openssl rand -hex 32)"
+  printf 'INNGEST_SIGNING_KEY=%s\n' "$(openssl rand -hex 32)"
+} > "$LINEAR_AUTOMATION_ENV"
 ```
 
-In another shell, pass the same keys to the worker:
+The target path must be absolute and point to a normal Git checkout. A linked
+worktree whose `.git` file refers to an unmounted parent checkout is not a valid
+container workspace.
+
+Before the first worker start, initialize its dedicated Codex credential volume:
 
 ```sh
-export TARGET_ROOT="$PWD"
-. "$TARGET_ROOT/.harness/linear-automation.env"
-export LINEAR_API_KEY="..."
-export INNGEST_DEV=0
-export INNGEST_BASE_URL="http://127.0.0.1:8288"
-export INNGEST_CONNECT_GATEWAY_URL="ws://127.0.0.1:8289/v0/connect"
-
-harness linear worker --workspace "$TARGET_ROOT"
+docker compose \
+  --env-file "$LINEAR_AUTOMATION_ENV" \
+  --file "$HARNESS_ROOT/compose.linear-automation.yaml" \
+  run --rm --no-deps worker codex login --device-auth
 ```
 
-Run both blocks from the target repository root. Keep `.harness/` ignored so
-the local keys and SQLite state cannot be committed. The worker also accepts
-`HARNESS_WORKER_HOST` and `HARNESS_WORKER_PORT` for its health server, plus optional
-`HARNESS_WORKER_INSTANCE_ID` and `HARNESS_APP_VERSION` metadata.
+Then start both services and wait for their health checks:
 
-The worker exposes `/health` for process liveness and `/ready` for Connect
-readiness. Stop it and `inngest start` with their normal termination signals.
-The initial pilot uses SQLite and self-contained Redis snapshots. Docker
-Compose packaging is planned after the local workflow is validated.
+```sh
+docker compose \
+  --env-file "$LINEAR_AUTOMATION_ENV" \
+  --file "$HARNESS_ROOT/compose.linear-automation.yaml" \
+  up --build --detach --wait
+```
+
+The dashboard and Event API are available at `http://127.0.0.1:8288` by
+default. The Connect gateway and worker health port stay inside the Compose
+network.
+
+Use the same `--env-file` and `--file` prefix for routine operations:
+
+```sh
+# Status and health
+docker compose --env-file "$LINEAR_AUTOMATION_ENV" --file "$HARNESS_ROOT/compose.linear-automation.yaml" ps
+
+# Follow logs
+docker compose --env-file "$LINEAR_AUTOMATION_ENV" --file "$HARNESS_ROOT/compose.linear-automation.yaml" logs --follow
+
+# Stop containers while preserving SQLite and Codex credentials
+docker compose --env-file "$LINEAR_AUTOMATION_ENV" --file "$HARNESS_ROOT/compose.linear-automation.yaml" down
+```
+
+Do not add `--volumes` to normal shutdown. It deliberately deletes Inngest
+history and the dedicated Codex login. Both services use restart policies, and
+the Connect worker automatically reconnects after an Inngest restart. The
+worker's stop grace period is longer than the configured maximum triage runtime
+so an active agent step can drain.
+
+To run another target project, create another environment file with a distinct
+`COMPOSE_PROJECT_NAME`, workspace path, and dashboard port. Keep one configured
+project per Compose stack until app and function identities become project-aware.
 
 ## Function boundary
 
@@ -125,3 +153,9 @@ operator checks, but cron is the only automatic trigger.
 process, connects the worker, sends the explicit poll event, proves the full
 fake-boundary journey, checks unchanged-revision deduplication, and cleans up
 SQLite state on success. It does not call live Linear or a real model.
+
+`make smoke-linear-automation-compose` is the explicit Docker packaging smoke.
+It validates and builds the Compose model, starts both containers on a blocked-
+egress smoke network, checks service health, restarts each service, proves the
+worker reconnects and accepted event history survives, then removes all
+disposable containers and volumes. It also does not call live Linear or a model.

@@ -3,7 +3,10 @@ import type { Agent, AgentProviderOptions, AgentRunInput } from "../lib/agents.t
 
 export function createAgentProvider(options: AgentProviderOptions): Agent {
   if (options.provider === "codex") {
-    return createCodexAgent({ codexPathOverride: options.codexPathOverride });
+    return createCodexAgent({
+      codexPathOverride: options.codexPathOverride,
+      environment: options.codexEnvironment,
+    });
   }
 
   return createLazyCursorSdkAgent();

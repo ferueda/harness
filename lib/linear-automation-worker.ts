@@ -35,6 +35,20 @@ export const LINEAR_AUTOMATION_READ_LIMITS = Object.freeze({
   attachments: 50,
   children: 100,
 });
+const LINEAR_AUTOMATION_CODEX_ENV_KEYS = Object.freeze([
+  "CODEX_API_KEY",
+  "CODEX_CA_CERTIFICATE",
+  "CODEX_HOME",
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "NODE_EXTRA_CA_CERTS",
+  "PATH",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "TMPDIR",
+] as const);
 
 const WorkerEnvironmentSchema = z
   .object({
@@ -113,6 +127,17 @@ export function parseLinearAutomationWorkerEnvironment(
     instanceId: parsed.HARNESS_WORKER_INSTANCE_ID ?? hostname(),
     ...(parsed.HARNESS_APP_VERSION ? { appVersion: parsed.HARNESS_APP_VERSION } : {}),
   });
+}
+
+export function linearAutomationCodexEnvironment(
+  environment: NodeJS.ProcessEnv,
+): Readonly<Record<string, string>> {
+  const selected: Record<string, string> = {};
+  for (const key of LINEAR_AUTOMATION_CODEX_ENV_KEYS) {
+    const value = environment[key];
+    if (value !== undefined) selected[key] = value;
+  }
+  return Object.freeze(selected);
 }
 
 export function createLinearAutomationFunctions(input: {
@@ -208,7 +233,8 @@ export async function runLinearAutomationWorker(input: {
   environment?: NodeJS.ProcessEnv;
   log?: (message: string) => void;
 }): Promise<void> {
-  const environment = parseLinearAutomationWorkerEnvironment(input.environment ?? process.env);
+  const processEnvironment = input.environment ?? process.env;
+  const environment = parseLinearAutomationWorkerEnvironment(processEnvironment);
   const settings = resolveLinearAutomationSettings({ workspace: input.workspace });
   const client = new Inngest({
     id: LINEAR_AUTOMATION_APP_ID,
@@ -225,6 +251,7 @@ export async function runLinearAutomationWorker(input: {
   const agent = createAgentProvider({
     provider: settings.triage.agent,
     codexPathOverride: settings.triage.codexPathOverride,
+    codexEnvironment: linearAutomationCodexEnvironment(processEnvironment),
   });
   const app = createLinearAutomationFunctions({
     client,

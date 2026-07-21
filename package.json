@@ -30,6 +30,7 @@
     "smoke:dist": "node scripts/smoke-dist.ts",
     "smoke:factory": "node scripts/smoke-factory.ts && node scripts/smoke-factory-grove.ts",
     "smoke:linear-automation": "node scripts/smoke-linear-automation.ts",
+    "smoke:linear-automation-compose": "node scripts/smoke-linear-automation-compose.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -38,6 +39,7 @@
     "@cursor/sdk": "1.0.23",
     "@ferueda/grove": "1.4.4",
     "@linear/sdk": "88.2.0",
+    "@openai/codex": "0.144.6",
     "@openai/codex-sdk": "0.144.6",
     "commander": "15.0.0",
     "inngest": "4.13.0",

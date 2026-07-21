@@ -328,7 +328,7 @@ test("testing taxonomy documents required proof layers", () => {
   expect(content).toContain("do not replace `pnpm check`");
 });
 
-test("system smokes stay explicit locally and run only in the full CI gate", () => {
+test("system smoke commands preserve their intended local and CI boundaries", () => {
   const packageJson: unknown = JSON.parse(readRepoFile("package.json"));
   expect(isObject(packageJson) && isObject(packageJson.scripts)).toBe(true);
   if (!isObject(packageJson) || !isObject(packageJson.scripts)) return;
@@ -338,10 +338,14 @@ test("system smokes stay explicit locally and run only in the full CI gate", () 
   expect(packageJson.scripts["smoke:linear-automation"]).toBe(
     "node scripts/smoke-linear-automation.ts",
   );
+  expect(packageJson.scripts["smoke:linear-automation-compose"]).toBe(
+    "node scripts/smoke-linear-automation-compose.ts",
+  );
 
   const makefile = readRepoFile("Makefile");
   expect(makefile).toMatch(/^smoke-factory: ensure-node ##/m);
   expect(makefile).toMatch(/^smoke-linear-automation: ensure-node ##/m);
+  expect(makefile).toMatch(/^smoke-linear-automation-compose: ensure-node ##/m);
   const localCheck = readMakeTarget(makefile, "check");
   expect(localCheck).toContain("$(MAKE) smoke-dist");
   expect(localCheck).not.toContain("smoke-factory");
@@ -368,8 +372,10 @@ test("system smokes stay explicit locally and run only in the full CI gate", () 
   }
   expect(testing).toContain("pnpm smoke:factory");
   expect(testing).toContain("pnpm smoke:linear-automation");
+  expect(testing).toContain("pnpm smoke:linear-automation-compose");
   expect(testing).toContain("scripts/smoke-factory-grove.ts");
   expect(testing).toContain("scripts/smoke-linear-automation.ts");
+  expect(testing).toContain("scripts/smoke-linear-automation-compose.ts");
   expect(testing).toContain("make fix-plan");
   expect(testing).toContain("make check-plan");
   expect(testing).toContain("bypasses the full gate and Factory smoke");
