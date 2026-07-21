@@ -14,7 +14,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "check": "make check",
     "check:ci": "make check-ci",
     "check:plan": "oxfmt --check dev/plans && vitest run test/docs-contracts.test.ts",
@@ -28,7 +28,6 @@
     "lint:fix": "oxlint -c .oxlintrc.json --fix bin lib providers scripts workflows test vitest.config.ts",
     "prepare": "simple-git-hooks",
     "smoke:dist": "node scripts/smoke-dist.ts",
-    "smoke:factory": "node scripts/smoke-factory.ts && node scripts/smoke-factory-grove.ts",
     "smoke:linear-automation": "node scripts/smoke-linear-automation.ts",
     "smoke:linear-automation-compose": "node scripts/smoke-linear-automation-compose.ts",
     "test": "vitest run",
@@ -37,7 +36,6 @@
   },
   "dependencies": {
     "@cursor/sdk": "1.0.23",
-    "@ferueda/grove": "1.4.4",
     "@linear/sdk": "88.2.0",
     "@openai/codex": "0.144.6",
     "@openai/codex-sdk": "0.144.6",

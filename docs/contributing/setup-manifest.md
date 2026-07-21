@@ -9,14 +9,13 @@ artifact lifecycle, and directory ownership.
 
 ## Local requirements
 
-| Requirement                                   | Needed for                                       | Notes                                                                                                    |
-| --------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Node 24 or newer                              | Source CLI, tests, build, skill CLIs             | The source checkout runs TypeScript directly through Node type stripping.                                |
-| `pnpm` on `PATH`                              | Install, package scripts, gates                  | The Harness installer and repository gates use pnpm.                                                     |
-| POSIX shell with `bash`                       | `install`, generated shims, target-repo shim     | Shims use `#!/usr/bin/env bash` and `set -euo pipefail`.                                                 |
-| Git checkout of this harness repo             | Source install and development                   | The checkout can live anywhere; use generic paths such as `/path/to/harness`.                            |
-| Git remote credentials and authenticated `gh` | Explicit Factory plan/implementation publication | Publication may push one deterministic branch and find or create its PR. Merge remains human-controlled. |
-| Optional PATH entry for installed shim        | Interactive `harness ...` command                | See Install and update for the default shim path.                                                        |
+| Requirement                            | Needed for                                   | Notes                                                                         |
+| -------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------- |
+| Node 24 or newer                       | Source CLI, tests, build, and skill CLIs     | The source checkout runs TypeScript directly through Node type stripping.     |
+| `pnpm` on `PATH`                       | Install, package scripts, and gates          | The Harness installer and repository gates use pnpm.                          |
+| POSIX shell with `bash`                | `install`, generated shims, target-repo shim | Shims use `#!/usr/bin/env bash` and `set -euo pipefail`.                      |
+| Git checkout of this Harness repo      | Source install and development               | The checkout can live anywhere; use generic paths such as `/path/to/harness`. |
+| Optional PATH entry for installed shim | Interactive `harness ...` command            | See Install and update for the default shim path.                             |
 
 ## Linear automation worker
 
@@ -34,7 +33,7 @@ local gateway. SDK development mode uses `INNGEST_DEV=1` and does not require
 keys or a base URL. `HARNESS_WORKER_HOST` and `HARNESS_WORKER_PORT` default to
 `0.0.0.0:8080`. `HARNESS_WORKER_INSTANCE_ID` and `HARNESS_APP_VERSION` are
 optional deployment metadata. See [Linear automation](./linear-automation.md)
-for the SQLite pilot commands.
+for the self-hosted deployment commands.
 
 ## Install and update
 
@@ -67,20 +66,11 @@ create a worktree-local package store. `.pnpm-store/` is also ignored as defense
 in depth so transient cache files cannot become candidate source evidence.
 Manual executors run setup after their before-edit checkpoint is acknowledged.
 Workspace hosts may run the same repository-owned command as an acquire hook.
-Factory does not install dependencies. Readiness does not replace the final
-`make check` gate.
+Readiness does not replace the final `make check` gate.
 
-Grove's idempotent `postAcquire` hook runs `make setup-worktree`; setup failure
-fails acquisition. Keep its pool on a persistent worker
-filesystem, retain leases through nonterminal states, and release only with
-phase-matched terminal authority. Repair or quarantine uncertain leases; do not
-delete the pool or replace the path for the same phase generation.
-
-The hosted operation runner receives no paths or credentials. The host injects
-the trusted Factory store, repository identity, Grove pool, provider controls,
-and secrets. Immutable phase Git identity permits the same repository checkout
-at a different absolute Grove path; the recorded phase workspace is provenance,
-not cross-host authority.
+Keep the self-hosted Inngest database on a persistent worker filesystem or
+Compose volume. The worker itself is stateless apart from an optional dedicated
+Codex credential volume.
 
 ## Hook activation
 
@@ -101,53 +91,29 @@ Git hooks.
 
 ## Generated artifacts and ownership
 
-| Path                                                                                       | Created by                                                                                                                                                     | Repo boundary                                                              | Commit policy                        | Notes                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.git/hooks/pre-commit` in the harness checkout                                            | `pnpm install --frozen-lockfile`, `pnpm exec simple-git-hooks`                                                                                                 | Harness repo local Git metadata                                            | Do not commit                        | Runs staged format/lint fixes and `pnpm typecheck` before local commits.                                                                                                                                    |
-| `node_modules/` and defensive `.pnpm-store/` ignore in a Harness checkout or worktree      | `pnpm install --frozen-lockfile`, `make setup-worktree`                                                                                                        | Harness checkout or isolated executor worktree                             | Ignored; do not commit               | Repository-owned Make gates use the ordinary shared pnpm store and skip shared Git-hook mutation during setup.                                                                                              |
-| Host-chosen persistent Grove pool and `grove-state.json`                                   | `ensureFactoryGroveWorkspace`, Grove repair and release                                                                                                        | Hosted worker data                                                         | User data; do not commit             | Holds stable Factory phase lease paths and Grove cleanup/repair state. Preserve active work; terminal reset requires verified Factory event authority.                                                      |
-| `dist/` in the harness checkout                                                            | `pnpm build`, `make build`, `pnpm smoke:dist`, `make smoke-dist`, `make check`, `make check-v`, `make check-ci`, `pnpm check`, `pnpm check:v`, `pnpm check:ci` | Harness repo local build output                                            | Ignored; do not commit               | Built JavaScript used by smoke tests and future package paths.                                                                                                                                              |
-| OS temp `harness-gate-*` dirs or `GATE_LOG_DIR`                                            | Wrapped Make targets via `scripts/run-gate-step.ts`                                                                                                            | Harness repo local gate diagnostics                                        | Do not commit; review before sharing | Failed gate logs are kept for diagnosis. Successful logs are deleted unless `KEEP_GATE_LOGS=1`.                                                                                                             |
-| `logs/codex-proxy/` in the harness checkout                                                | `pnpm codex:proxy` / `scripts/codex-proxy.mjs`                                                                                                                 | Local Codex Responses API request audits                                   | Ignored; do not commit               | Contains Markdown request audits and, when `CODEX_PROXY_WRITE_RAW=1`, parsed request JSON. Treat as sensitive because captured prompts, tool definitions, and request metadata may include private context. |
-| `.harness/` in the harness checkout                                                        | Dogfooded `harness run ...`, `make smoke-dist`, `pnpm smoke:dist`, `make check`, `pnpm check`                                                                  | Harness repo local run state                                               | Ignored; do not commit               | Contains local workflow artifacts when running against this repo. Smoke and full check paths use dry-run `change-review` and leave ignored run directories.                                                 |
-| `harness.json` in a target repo                                                            | `harness init`                                                                                                                                                 | Target repo config                                                         | Target repo decides                  | Stores repo-local defaults such as base branch and default agent.                                                                                                                                           |
-| `.harness/bin/harness` in a target repo                                                    | `harness init`                                                                                                                                                 | Target repo local shim                                                     | Ignored; do not commit               | Points back to the harness checkout that initialized the repo.                                                                                                                                              |
-| `.harness/inbox/factory/*.json` in a workspace                                             | User-created files, future tracker adapters                                                                                                                    | Workspace-local factory intake queue                                       | Ignored; do not commit               | Pending local factory work items. `harness factory status` reads these files. `harness factory triage --item-file ...` can run one item without moving it.                                                  |
-| `.harness/inbox/factory/processed/*.json`                                                  | Historical experimental batch runs                                                                                                                             | Workspace-local factory intake history                                     | Ignored; do not commit               | Historical processed inbox items. Current factory station commands do not write this path.                                                                                                                  |
-| `.harness/inbox/factory/failed/*`                                                          | Historical experimental batch runs                                                                                                                             | Workspace-local factory intake failure state                               | Ignored; do not commit               | Historical failed inbox items and sibling `.error.json` summaries. Current factory station commands do not write this path.                                                                                 |
-| `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory/events/*.jsonl` | Live `harness factory` station commands                                                                                                                        | Durable factory lifecycle state                                            | User data; do not commit             | Canonical lifecycle event log keyed by work item. Linear status/comments are human projections; run `meta.json` is execution evidence. Legacy workspace-local `.harness/factory` is detected and ignored.   |
-| `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/factory/state/*.json`   | Lifecycle store helper after appending or loading lifecycle events                                                                                             | Durable factory lifecycle read model                                       | User data; do not commit             | Rebuildable cache derived from durable JSONL and atomically published under a per-work-item lock.                                                                                                           |
-| `.harness/runs/reviews/<run-id>/` in a workspace                                           | `harness run change-review`, `harness run plan-review`, dry-run review commands                                                                                | Workspace-local run state, either external target repo or harness checkout | Ignored; do not commit               | Holds context, prompts, reviewer JSON, streams, events, `summary.md`, and `meta.json`.                                                                                                                      |
-| `${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/runs/factory/<run-id>/` | Factory triage, planning, and implementation commands                                                                                                          | Durable factory run evidence                                               | User data; do not commit             | Holds phase identity, telemetry, immutable recovery evidence, implementation candidate/review manifests, and action results.                                                                                |
-| `.agents/skills/` in a target repo                                                         | `harness skills install`                                                                                                                                       | Target repo local skill installs                                           | Target repo decides                  | Live installs copy packaged skills into the target repo.                                                                                                                                                    |
-| `~/.codex/state_5.sqlite`                                                                  | Codex CLI                                                                                                                                                      | User-level Codex state                                                     | Do not commit                        | Source of truth for Codex session indexing.                                                                                                                                                                 |
-| `~/.codex/sqlite/state_5.sqlite`                                                           | Older or alternate Codex CLI state layout                                                                                                                      | User-level Codex state                                                     | Do not commit                        | Missing-root fallback for Codex session indexing.                                                                                                                                                           |
+| Path                                                                                  | Created by                                                                                                                                                     | Repo boundary                                                              | Commit policy                        | Notes                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.git/hooks/pre-commit` in the harness checkout                                       | `pnpm install --frozen-lockfile`, `pnpm exec simple-git-hooks`                                                                                                 | Harness repo local Git metadata                                            | Do not commit                        | Runs staged format/lint fixes and `pnpm typecheck` before local commits.                                                                                                                                    |
+| `node_modules/` and defensive `.pnpm-store/` ignore in a Harness checkout or worktree | `pnpm install --frozen-lockfile`, `make setup-worktree`                                                                                                        | Harness checkout or isolated executor worktree                             | Ignored; do not commit               | Repository-owned Make gates use the ordinary shared pnpm store and skip shared Git-hook mutation during setup.                                                                                              |
+| `dist/` in the harness checkout                                                       | `pnpm build`, `make build`, `pnpm smoke:dist`, `make smoke-dist`, `make check`, `make check-v`, `make check-ci`, `pnpm check`, `pnpm check:v`, `pnpm check:ci` | Harness repo local build output                                            | Ignored; do not commit               | Built JavaScript used by smoke tests and future package paths.                                                                                                                                              |
+| OS temp `harness-gate-*` dirs or `GATE_LOG_DIR`                                       | Wrapped Make targets via `scripts/run-gate-step.ts`                                                                                                            | Harness repo local gate diagnostics                                        | Do not commit; review before sharing | Failed gate logs are kept for diagnosis. Successful logs are deleted unless `KEEP_GATE_LOGS=1`.                                                                                                             |
+| `logs/codex-proxy/` in the harness checkout                                           | `pnpm codex:proxy` / `scripts/codex-proxy.mjs`                                                                                                                 | Local Codex Responses API request audits                                   | Ignored; do not commit               | Contains Markdown request audits and, when `CODEX_PROXY_WRITE_RAW=1`, parsed request JSON. Treat as sensitive because captured prompts, tool definitions, and request metadata may include private context. |
+| `.harness/` in the harness checkout                                                   | Dogfooded `harness run ...`, `make smoke-dist`, `pnpm smoke:dist`, `make check`, `pnpm check`                                                                  | Harness repo local run state                                               | Ignored; do not commit               | Contains local workflow artifacts when running against this repo. Smoke and full check paths use dry-run `change-review` and leave ignored run directories.                                                 |
+| `harness.json` in a target repo                                                       | `harness init`                                                                                                                                                 | Target repo config                                                         | Target repo decides                  | Stores repo-local defaults such as base branch and default agent.                                                                                                                                           |
+| `.harness/bin/harness` in a target repo                                               | `harness init`                                                                                                                                                 | Target repo local shim                                                     | Ignored; do not commit               | Points back to the harness checkout that initialized the repo.                                                                                                                                              |
+| `.harness/runs/reviews/<run-id>/` in a workspace                                      | `harness run change-review`, `harness run plan-review`, dry-run review commands                                                                                | Workspace-local run state, either external target repo or harness checkout | Ignored; do not commit               | Holds context, prompts, reviewer JSON, streams, events, `summary.md`, and `meta.json`.                                                                                                                      |
+| Protected Linear automation environment file outside a repo                           | Deployment operator                                                                                                                                            | Local deployment secrets                                                   | User data; do not commit             | Holds Linear, Inngest, and optional Codex keys with owner-only permissions. Stable IDs stay in target-repo `harness.json`.                                                                                  |
+| Compose volumes for Inngest SQLite and optional Codex credentials                     | `compose.linear-automation.yaml`                                                                                                                               | Local deployment state                                                     | User data; do not commit             | Preserves Inngest history and unattended Codex login across normal container restarts.                                                                                                                      |
+| `.agents/skills/` in a target repo                                                    | `harness skills install`                                                                                                                                       | Target repo local skill installs                                           | Target repo decides                  | Live installs copy packaged skills into the target repo.                                                                                                                                                    |
+| `~/.codex/state_5.sqlite`                                                             | Codex CLI                                                                                                                                                      | User-level Codex state                                                     | Do not commit                        | Source of truth for Codex session indexing.                                                                                                                                                                 |
+| `~/.codex/sqlite/state_5.sqlite`                                                      | Older or alternate Codex CLI state layout                                                                                                                      | User-level Codex state                                                     | Do not commit                        | Missing-root fallback for Codex session indexing.                                                                                                                                                           |
 
 Review artifacts are workspace-relative ignored local state: they live under an
 external target repo when reviewing another repo, and under this harness checkout
 when dogfooding reviews against harness itself.
 
-Factory station lifecycle and run artifacts live under the durable store,
-`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/`; target
-repositories keep workspace-local inbox files and committed material.
-Harness-owned schemas resolve from the harness checkout `schemas/` directory.
-Manual planning and implementation candidate/review/revision actions are shipped. Default
-`harness runs prune` targets review runs; factory
-run cleanup currently needs
-`--runs-dir <store>/projects/<repo-id>/runs/factory` or manual deletion until prune
-grows a factory-aware default.
-
-Factory inbox files are separate from future review-trigger inbox files.
-`harness factory status` is read-only. `harness factory triage --item-file ...`
-creates factory run artifacts for one work item and does not move pending inbox
-files. Current factory station
-commands do not batch-process every inbox file. `processed/` and `failed/` are
-historical local paths from earlier batch experiments; current station commands
-may report them in status output but do not mutate them.
-Triage first checks durable lifecycle history: a prior
-`triage.work_item.completed`
-exits before run creation and leaves the inbox item untouched unless the
-operator supplies `--rerun`.
+Harness-owned schemas resolve from the Harness checkout `schemas/` directory.
+`harness runs prune` targets workspace-local review runs.
 
 ## Provider auth assumptions
 
@@ -156,15 +122,9 @@ Cursor SDK review provider runs require `CURSOR_API_KEY` in the environment.
 Codex SDK provider follows local Codex CLI auth via `codex login`, or
 `CODEX_API_KEY` in the environment.
 
-Linear list, fetch, create, and Linear-backed station input use
-`LINEAR_API_KEY` for `harness factory linear list`,
-`harness factory linear fetch`, `harness factory linear create`,
-`harness factory triage --linear-issue TEAM-123`. Create is a constrained
-intake write (no `--apply`); adding `--apply` to Linear triage projects its
-guarded start and terminal status/comment updates. Linear-backed planning also
-requires live status validation; each mutation needs that invocation's
-`--apply`. Linear-backed implementation start, review continuation, and repair
-commands also require explicit `--apply` authorization.
+The Linear automation worker uses `LINEAR_API_KEY` to read and project issues in
+its configured team and project. Keep the key in the protected worker
+environment file, not `harness.json`.
 
 Do not write secrets into docs, plans, generated artifacts, committed
 `harness.json`, or checked-in config.

@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const ARCHITECTURE_DOC = "docs/contributing/architecture.md";
 const SCRIPT_COMMAND_SURFACE = "docs/contributing/script-command-surface.md";
 const SETUP_MANIFEST = "docs/contributing/setup-manifest.md";
 const TESTING_DOC = "docs/contributing/testing.md";
@@ -298,7 +297,7 @@ function activeDocAndPlanPaths(): string[] {
 }
 
 test("testing taxonomy documents required proof layers", () => {
-  expect(existsSync(join(REPO_ROOT, TESTING_DOC)), TESTING_DOC).toBe(true);
+  expect(existsSync(join(REPO_ROOT, TESTING_DOC))).toBe(true);
   const content = readRepoFile(TESTING_DOC);
   for (const heading of [
     "# Testing",
@@ -332,9 +331,7 @@ test("system smoke commands preserve their intended local and CI boundaries", ()
   const packageJson: unknown = JSON.parse(readRepoFile("package.json"));
   expect(isObject(packageJson) && isObject(packageJson.scripts)).toBe(true);
   if (!isObject(packageJson) || !isObject(packageJson.scripts)) return;
-  expect(packageJson.scripts["smoke:factory"]).toBe(
-    "node scripts/smoke-factory.ts && node scripts/smoke-factory-grove.ts",
-  );
+  expect(packageJson.scripts["smoke:factory"]).toBeUndefined();
   expect(packageJson.scripts["smoke:linear-automation"]).toBe(
     "node scripts/smoke-linear-automation.ts",
   );
@@ -343,16 +340,14 @@ test("system smoke commands preserve their intended local and CI boundaries", ()
   );
 
   const makefile = readRepoFile("Makefile");
-  expect(makefile).toMatch(/^smoke-factory: ensure-node ##/m);
+  expect(makefile).not.toMatch(/^smoke-factory:/m);
   expect(makefile).toMatch(/^smoke-linear-automation: ensure-node ##/m);
   expect(makefile).toMatch(/^smoke-linear-automation-compose: ensure-node ##/m);
   const localCheck = readMakeTarget(makefile, "check");
   expect(localCheck).toContain("$(MAKE) smoke-dist");
   expect(localCheck).not.toContain("smoke-factory");
   expect(localCheck).not.toContain("smoke-linear-automation");
-  expect(makefile).toMatch(
-    /^check-ci: check ##[^\n]*\n\t@\$\(MAKE\) smoke-factory smoke-linear-automation$/m,
-  );
+  expect(makefile).toMatch(/^check-ci: check ##[^\n]*\n\t@\$\(MAKE\) smoke-linear-automation$/m);
 
   const workflow = readRepoFile(".github/workflows/test.yml");
   expect(workflow).toContain("run: make check-plan");
@@ -361,24 +356,16 @@ test("system smoke commands preserve their intended local and CI boundaries", ()
   expect(workflow).toContain("steps.changes.outputs.plan_only != 'true'");
 
   const testing = readRepoFile(TESTING_DOC);
-  for (const lane of [
-    "Vitest",
-    "Distribution smoke",
-    "Factory system smoke",
-    "Linear automation smoke",
-    "Optional live",
-  ]) {
+  for (const lane of ["Vitest", "Distribution smoke", "Linear automation smoke", "Optional live"]) {
     expect(testing).toContain(lane);
   }
-  expect(testing).toContain("pnpm smoke:factory");
+  expect(testing).not.toContain("smoke:factory");
   expect(testing).toContain("pnpm smoke:linear-automation");
   expect(testing).toContain("pnpm smoke:linear-automation-compose");
-  expect(testing).toContain("scripts/smoke-factory-grove.ts");
   expect(testing).toContain("scripts/smoke-linear-automation.ts");
   expect(testing).toContain("scripts/smoke-linear-automation-compose.ts");
   expect(testing).toContain("make fix-plan");
   expect(testing).toContain("make check-plan");
-  expect(testing).toContain("bypasses the full gate and Factory smoke");
 });
 
 test("hook docs document activation and gate boundaries", () => {
@@ -431,9 +418,6 @@ test("gate output docs document runner wiring and local logs", () => {
   const testing = readRepoFile(TESTING_DOC);
   expect(testing).toContain("test/gate-output.test.ts");
   expect(testing).toContain("scripts/run-gate-step.ts");
-
-  const architecture = readRepoFile(ARCHITECTURE_DOC);
-  expect(architecture).toContain("scripts/run-gate-step.ts");
 });
 
 test("pre-commit hook config stays scoped to staged hygiene", () => {
@@ -634,32 +618,25 @@ test("readme stays a concise entrypoint", () => {
   expect(readme).not.toMatch(/^### [a-z0-9]+(?:-[a-z0-9]+)+$/m);
 });
 
-test("factory contributor and operator guidance stay linked from entrypoints", () => {
-  expect(existsSync(join(REPO_ROOT, "docs/contributing/factory.md"))).toBe(true);
-  const factoryGuide = readRepoFile("docs/contributing/factory.md");
-  expect(factoryGuide).toContain("# Factory Contributor Guide");
-  expect(factoryGuide).toContain("../../skills/factory-operator/SKILL.md");
-  expect(factoryGuide).toContain("## Grove workspace boundary");
-  expect(factoryGuide).toContain("lib/factory-grove-workspace.ts");
-  expect(factoryGuide).toContain("lib/factory-hosted-authority.ts");
-  expect(factoryGuide).toContain("lib/factory-hosted-operation.ts");
-  expect(factoryGuide).toContain("lib/factory-operation-reconciliation.ts");
-  expect(factoryGuide).toContain("lib/factory-inngest-adapter.ts");
-  expect(factoryGuide).toContain("identifier-only request");
-  expect(factoryGuide).toContain("Factory action identity");
-  expect(factoryGuide).toContain("Hosted authority precedes delivery");
-  const architecture = readRepoFile("docs/contributing/architecture.md");
-  expect(architecture).toContain("lib/factory-hosted-authority.ts");
-  expect(architecture).toContain("lib/factory-operation-reconciliation.ts");
-  expect(architecture).not.toContain("No scheduler or hosted operation runner ships today");
-  expect(readRepoFile("README.md")).toContain("docs/contributing/factory.md");
-  expect(readRepoFile("README.md")).toContain("skills/factory-operator/SKILL.md");
-  expect(readRepoFile("docs/contributing/index.md")).toContain("./factory.md");
-  expect(readRepoFile("docs/contributing/architecture.md")).toContain("./factory.md");
-  expect(readRepoFile("docs/contributing/script-command-surface.md")).toContain("./factory.md");
+test("retired Factory docs, commands, skill, and dependency stay absent", () => {
+  expect(existsSync(join(REPO_ROOT, "docs/contributing/factory.md"))).toBe(false);
+  expect(existsSync(join(REPO_ROOT, "skills/factory-operator/SKILL.md"))).toBe(false);
+  expect(existsSync(join(REPO_ROOT, "scripts/smoke-factory.ts"))).toBe(false);
+  expect(existsSync(join(REPO_ROOT, "scripts/smoke-factory-grove.ts"))).toBe(false);
+
+  const packageJson = readRepoFile("package.json");
+  const workspace = readRepoFile("pnpm-workspace.yaml");
+  const lockfile = readRepoFile("pnpm-lock.yaml");
+  for (const content of [packageJson, workspace, lockfile]) {
+    expect(content).not.toContain("@ferueda/grove");
+  }
+
+  for (const path of durableDocPaths()) {
+    expect(readRepoFile(path), `${path} still documents Factory`).not.toMatch(/\bfactory\b/i);
+  }
 });
 
-test("agent and Factory operator completion gates stay explicit", () => {
+test("agent completion gates stay explicit", () => {
   const agents = readRepoFile("AGENTS.md");
   expect(agents).toContain("Before handoff, pull-request publication");
   expect(agents).toContain("run `make check`");
@@ -667,12 +644,6 @@ test("agent and Factory operator completion gates stay explicit", () => {
   expect(agents).toContain("run `make fix` (`make fix-plan` for plan-only work)");
   expect(agents).toContain("then rerun the matching check");
   expect(agents).toContain("do not claim completion");
-
-  const operator = readRepoFile("skills/factory-operator/SKILL.md");
-  expect(operator).toContain("Before invoking reviewers");
-  expect(operator).toContain("pre-review `revise`");
-  expect(operator).toContain("does not consume a review round");
-  expect(operator).toContain("Do not fabricate a revision or review finding");
 });
 
 test("fresh worktree readiness stays explicit and offline", () => {
@@ -689,19 +660,7 @@ test("fresh worktree readiness stays explicit and offline", () => {
   const setupProse = setup.replace(/\s+/g, " ");
   expect(setup).toContain("## Isolated worktree readiness");
   expect(setupProse).toContain("ordinary shared pnpm store");
-  expect(setupProse).toContain("Factory does not install dependencies");
-  expect(setupProse).toContain("Grove's idempotent `postAcquire` hook");
-  expect(setupProse).toContain("persistent worker filesystem");
   expect(setupProse).toContain("does not replace the final `make check` gate");
-});
-
-test("factory lifecycle generated artifacts are documented", () => {
-  const setup = readRepoFile(SETUP_MANIFEST);
-  expect(setup).toContain("harness/store/projects/<repo-id>/factory/events/*.jsonl");
-  expect(setup).toContain("harness/store/projects/<repo-id>/factory/state/*.json");
-  expect(setup).toContain("Canonical lifecycle event log keyed by work item");
-  expect(setup).toContain("Rebuildable cache derived from durable JSONL");
-  expect(setup).toContain("Legacy workspace-local `.harness/factory` is detected and ignored");
 });
 
 test("docs are covered by format and format check scripts", () => {

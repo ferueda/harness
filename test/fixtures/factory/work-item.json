@@ -1,7 +1,0 @@
-{
-  "id": "local-1",
-  "source": "file",
-  "title": "Add keyboard shortcut for export",
-  "body": "Users should be able to trigger export without opening the menu.",
-  "labels": ["feature", "factory"]
-}

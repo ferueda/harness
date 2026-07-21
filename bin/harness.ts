@@ -5,9 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertCodexOnlyAgentOptions } from "./cli-validation.ts";
-import { addFactoryCommands } from "./factory-commands.ts";
 import { addLinearWorkerCommand } from "./linear-worker-command.ts";
-import { formatHarnessError } from "../lib/factory-cli-errors.ts";
 import {
   AGENT_APPROVAL_POLICIES,
   AGENT_MODEL_CATALOG,
@@ -154,10 +152,6 @@ function assertPlanFileExists(workspace: string, planPath: string): void {
 function buildProgram(): Command {
   const program = new Command();
   program.name("harness").description("Agent workflow harness").showHelpAfterError().exitOverride();
-  program.action(() => {
-    program.outputHelp();
-    process.exitCode = 1;
-  });
 
   program
     .command("init")
@@ -210,11 +204,6 @@ function buildProgram(): Command {
       console.log(JSON.stringify(result, null, 2));
     });
 
-  addFactoryCommands(program, {
-    positiveNumber,
-    defaultMaxRuntimeMs: DEFAULT_MAX_RUNTIME_MS,
-    writeVerboseWorkflowEvent,
-  });
   addLinearWorkerCommand(program);
 
   program
@@ -444,12 +433,18 @@ function writeVerboseWorkflowEvent(event: WorkflowEvent): void {
 
 async function main(): Promise<void> {
   try {
-    await buildProgram().parseAsync(process.argv);
+    const program = buildProgram();
+    if (process.argv.length === 2) {
+      program.outputHelp();
+      process.exitCode = 1;
+      return;
+    }
+    await program.parseAsync(process.argv);
   } catch (error) {
     if (error instanceof CommanderError) {
       process.exit(error.exitCode === 0 ? 0 : 2);
     }
-    console.error(formatHarnessError(error));
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }

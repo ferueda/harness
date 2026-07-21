@@ -3,14 +3,13 @@
 Harness is a personal toolkit for agent-assisted software work. It provides:
 
 - callable plan and implementation review workflows;
-- a durable, manually stepped Factory for triage, planning, implementation,
-  review, and pull-request handoff;
+- independent Linear automation through a self-hosted Inngest worker;
 - Cursor and Codex provider adapters;
 - packaged agent skills and background-task definitions.
 
 Harness runs against ordinary Git repositories. Target repositories keep their
-own code, configuration, and local review artifacts; Factory lifecycle state and
-evidence live in a separate durable store.
+own code, configuration, and local review artifacts. Linear remains the queue
+for issue automation; Inngest owns delivery and retries.
 
 ## Install
 
@@ -71,52 +70,18 @@ See the
 [change-review workflow skill](skills/change-review-workflow/SKILL.md) for
 review handoff, finding triage, and rerun guidance.
 
-## Run Factory
+## Run Linear Automation
 
-Factory is a durable state machine operated one command at a time. Each
-invocation reads current state, executes at most one pending action, persists
-the result, and exits. The caller decides when to run the next printed command.
+`harness linear worker` connects one target repository to a self-hosted Inngest
+server. A one-minute poll finds new Backlog revisions, reloads each issue from
+Linear, and sends issues that need classification to the independent triage
+operation. The triage result is written back through the standalone Linear
+module.
 
-Start from a Linear issue:
-
-```bash
-harness factory triage \
-  --workspace /path/to/repo \
-  --linear-issue TEAM-123 \
-  --apply
-```
-
-Or use a local work-item JSON file containing `id`, `source`, `title`, and
-`body`:
-
-```bash
-harness factory triage \
-  --workspace /path/to/repo \
-  --item-file .harness/inbox/factory/item.json
-```
-
-Inspect state without advancing it:
-
-```bash
-harness factory status --workspace /path/to/repo
-harness factory inspect --workspace /path/to/repo --linear-issue TEAM-123
-```
-
-Factory can route work through planning or directly to implementation. Planning
-and implementation preserve immutable candidates, run reviews, pause for
-explicit `revise` or `re-review` decisions when needed, publish reviewed pull
-requests, and wait for merge acknowledgement. Factory never merges a pull
-request. Linear and GitHub updates are explicit projections; `--apply` is
-required where shown by command help.
-
-Factory state and run evidence default to
-`${XDG_DATA_HOME:-~/.local/share}/harness/store/projects/<repo-id>/`. The target
-workspace remains the Git materialization and execution sandbox.
-
-Operators should follow the
-[Factory operator skill](skills/factory-operator/SKILL.md). Contributors should
-use the [Factory contributor guide](docs/contributing/factory.md). Generated
-help owns exact flags and recovery commands.
+The worker uses stable IDs and its triage profile from the target repository's
+`linearAutomation` configuration. Secrets stay in the environment. See the
+[Linear automation guide](docs/contributing/linear-automation.md) for the
+Compose setup, health checks, and smoke tests.
 
 ## Configure Agents
 
@@ -130,15 +95,13 @@ base branch only; add provider choices as needed:
 }
 ```
 
-Factory roles may override the provider and model under
-`factory.<station>.roles`. Run `harness models` for the supported model catalog.
-The independent `harness linear worker` reads its stable Linear IDs and triage
-profile from `linearAutomation`; see the
-[Linear automation guide](docs/contributing/linear-automation.md).
+Run `harness models` for the supported model catalog. The independent
+`harness linear worker` reads its stable Linear IDs and triage profile from
+`linearAutomation`.
 
 Cursor SDK runs require `CURSOR_API_KEY`. Codex follows local `codex login`
-authentication or `CODEX_API_KEY`. Linear commands require `LINEAR_API_KEY`;
-pull-request publication uses the authenticated `gh` CLI.
+authentication or `CODEX_API_KEY`. The Linear worker requires
+`LINEAR_API_KEY`.
 
 See the [setup manifest](docs/contributing/setup-manifest.md) for configuration,
 generated paths, and provider details.

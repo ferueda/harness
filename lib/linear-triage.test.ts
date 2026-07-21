@@ -142,7 +142,7 @@ function issueContext(
     id: input.id ?? "issue-1",
     identifier: input.identifier ?? "FER-218",
     title: "Triage Linear issues independently",
-    description: "Project one triage decision without Factory.",
+    description: "Project one triage decision.",
     url: "https://linear.app/example/FER-218",
     state: workflowState(input.stateId ?? readiness.stateIds.backlog),
     team: { id: input.teamId ?? readiness.teamId, key: "FER", name: "ferueda" },
