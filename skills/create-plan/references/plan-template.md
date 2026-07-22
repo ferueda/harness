@@ -38,6 +38,15 @@ Omit this section when none exist.
 - Inline a current-state fact only beside the decision it justifies.
 - Prefer the highest existing stable test seam proving acceptance; use a lower
   seam only for a distinct invariant or failure mode unobservable there.
+- Organize multiple changes as vertical outcome slices that can be verified and
+  that separate agents can own with limited overlap. Prefer slices that can be
+  reviewed, landed, or rolled back independently and can proceed in parallel
+  after the minimum shared setup. Expand shared setup only when a later slice
+  proves the need.
+- Do not divide a plan mechanically by repository layer or component type. If
+  an indivisible migration, cross-cutting safety fix, or minimum shared
+  prerequisite must remain horizontal, name its bounded scope and state briefly
+  why vertical delivery is impractical or unsafe.
 - Include excerpts only when the exact target shape is load-bearing.
 - Mention a verified executor skill beside a change only when it adds
   non-obvious guidance. Do not add a skills table by default.

@@ -142,6 +142,13 @@ test("planning skills use the compact capable-executor contract", () => {
   expect(createPlan).toContain(
     "Verify repository commands and external contracts before prescribing them",
   );
+  expect(createPlan).toContain("For multi-unit work, prefer vertical slices");
+  expect(createPlan).toMatch(/Keep shared setup\s+to the minimum required by the first slice/);
+  expect(createPlan).toMatch(/separate agents can own with limited overlap/);
+  expect(createPlan).toContain("reviewed, landed, or rolled back independently");
+  expect(createPlan).toContain(
+    "Do not divide work mechanically by repository layer or component type",
+  );
   expect(auditTemplate).toContain(
     "Verify repository commands and external contracts before prescribing them",
   );
@@ -152,6 +159,13 @@ test("planning skills use the compact capable-executor contract", () => {
   );
   expect(templateProse).toContain("Exact files or symbols make the intended ownership clear");
   expect(templateProse).toContain("No material implementation choice remains unresolved");
+  expect(templateProse).toContain(
+    "vertical outcome slices that can be verified and that separate agents can own with limited overlap",
+  );
+  expect(templateProse).toContain("can proceed in parallel after the minimum shared setup");
+  expect(templateProse).toContain(
+    "If an indivisible migration, cross-cutting safety fix, or minimum shared prerequisite must remain horizontal",
+  );
 
   const auditTemplateProse = normalizedProse(auditTemplate);
   expect(auditTemplateProse).toContain(

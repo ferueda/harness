@@ -66,6 +66,24 @@ Check these decisions only when the proposed change makes them material:
 - When it changes failure handling, state or data flow, privacy, or security,
   require the intended behavior beside the affected change.
 
+### Delivery Shape
+
+- For multi-unit work, prefer vertical slices where each unit completes one
+  coherent, observable behavior across the boundaries it needs and can be
+  verified when it lands. Prefer units that separate agents can own with limited
+  overlap, that can proceed in parallel after the minimum shared setup, and that
+  can be reviewed, landed, or rolled back independently.
+- Challenge needlessly horizontal phases such as completing all persistence,
+  then all services, then all interfaces when useful behavior could land end to
+  end. Keep shared setup to the minimum required by the first slice and expand
+  it only when a later slice proves the need.
+- Accept a horizontal step when the plan gives a short, evidence-backed reason
+  vertical delivery is impractical or unsafe, such as an indivisible migration,
+  a cross-cutting safety fix, or the smallest shared prerequisite.
+- Treat delivery shape as judgment, not a ban. Request restructuring only when
+  the horizontal breakdown needlessly delays observable proof, prevents focused
+  review, or creates avoidable dependency or collision risk.
+
 ## Review Dimensions
 
 Evaluate only relevant dimensions:
