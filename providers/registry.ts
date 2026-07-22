@@ -1,5 +1,5 @@
 import { createCodexAgent } from "./codex/codex-agent.ts";
-import type { Agent, AgentProviderOptions, AgentRunInput } from "../lib/agents.ts";
+import type { Agent, AgentProviderOptions, AgentRunInput } from "../lib/agent/contract.ts";
 
 export function createAgentProvider(options: AgentProviderOptions): Agent {
   if (options.provider === "codex") {

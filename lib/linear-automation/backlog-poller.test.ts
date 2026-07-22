@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   LINEAR_ISSUE_REVISION_EVENT_NAME,
   LinearPollRequestedEvent,
-} from "./inngest/linear-revision-events.ts";
+} from "./events/linear-revision-events.ts";
 import {
   createLinearBacklogPoller,
   LINEAR_BACKLOG_LIST_STEP_ID,
@@ -14,7 +14,7 @@ import {
   LINEAR_BACKLOG_POLL_RETRIES,
   LINEAR_BACKLOG_SEND_STEP_ID,
   type LinearBacklogPollerLinear,
-} from "./linear-backlog-poller.ts";
+} from "./backlog-poller.ts";
 
 const config = {
   teamId: "team-1",

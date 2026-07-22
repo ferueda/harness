@@ -2,8 +2,13 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Agent, AgentProviderName, AgentReasoningEffort, AgentRunResult } from "../agents.ts";
-import { errorMessage } from "../agent-invoke.ts";
+import type {
+  Agent,
+  AgentProviderName,
+  AgentReasoningEffort,
+  AgentRunResult,
+} from "../agent/contract.ts";
+import { errorMessage } from "../agent/invocation.ts";
 import { renderTriagePrompt, TRIAGE_POLICY_VERSION } from "./prompt.ts";
 import {
   TRIAGE_DECISION_SCHEMA_VERSION,

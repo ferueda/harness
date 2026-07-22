@@ -1,12 +1,12 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { ReviewOutputSchema } from "../lib/schemas.ts";
-import { assertCodexStrictSchema, loadSchema, schemaAccepts } from "../lib/schema-validation.ts";
+import { ReviewOutputSchema } from "../lib/review/schema.ts";
+import { assertCodexStrictSchema, loadSchema, schemaAccepts } from "../lib/agent/json-schema.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REVIEW_SCHEMA_PATH = join(REPO_ROOT, "schemas/review-output.schema.json");
-// Parity uses schemaAccepts — subset validator only (see lib/schema-validation.ts header).
+// Parity uses schemaAccepts — subset validator only (see lib/agent/json-schema.ts header).
 const REVIEW_SCHEMA = loadSchema({ schemaPath: REVIEW_SCHEMA_PATH })!;
 
 const FINDING_REQUIRED = [

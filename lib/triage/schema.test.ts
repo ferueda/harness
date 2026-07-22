@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { assertCodexStrictSchema, loadSchema, schemaAccepts } from "../schema-validation.ts";
+import { assertCodexStrictSchema, loadSchema, schemaAccepts } from "../agent/json-schema.ts";
 import {
   TRIAGE_DECISION_SCHEMA_VERSION,
   TriageDecisionSchema,

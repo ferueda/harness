@@ -8,9 +8,9 @@ import {
   cleanupOrphanedRunDir,
   createWorkflowContext,
   createWorkflowContextForTest,
-} from "../lib/workflow-context.ts";
-import type { AgentProviderOptions, AgentRunInput } from "../lib/agents.ts";
-import { SPEC_REVIEW_PROMPT } from "../lib/prompts/index.ts";
+} from "../lib/review/runtime.ts";
+import type { AgentProviderOptions, AgentRunInput } from "../lib/agent/contract.ts";
+import { SPEC_REVIEW_PROMPT } from "../lib/review/prompts/index.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));

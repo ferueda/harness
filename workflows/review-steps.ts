@@ -3,14 +3,14 @@ import type {
   ReviewSection,
   ReviewVerdict,
   WorkflowStepMetadata,
-} from "../lib/aggregate.ts";
+} from "../lib/review/aggregate.ts";
 import {
   DEFAULT_WORKFLOW_HEARTBEAT_MS,
   STEP_ID_BY_AGENT,
   type WorkflowEventSink,
-} from "../lib/workflow-events.ts";
-import type { ReviewAgentName } from "../lib/workflow-context.ts";
-import type { ReviewOutput } from "../lib/schemas.ts";
+} from "../lib/review/events.ts";
+import type { ReviewAgentName } from "../lib/review/runtime.ts";
+import type { ReviewOutput } from "../lib/review/schema.ts";
 
 type WorkflowRunMeta = {
   verdict?: string;

@@ -82,8 +82,44 @@ describe("automation import boundaries", () => {
     );
     expectBoundaryViolation(
       "lib/linear/forbidden.ts",
-      'import { renderSpecPrompt } from "../prompts/spec.ts";',
+      'import { SPEC_REVIEW_PROMPT } from "../review/prompts/spec-review.ts";',
       "domain and delivery policy belong outside lib/linear",
+    );
+  });
+
+  it("keeps shared Agent support independent of applications and providers", () => {
+    expect.hasAssertions();
+    expectAllowed(
+      "lib/agent/allowed.ts",
+      'import { readFile } from "node:fs/promises";\nvoid readFile;',
+    );
+    expectBoundaryViolation(
+      "lib/agent/forbidden.ts",
+      'import type { LinearService } from "../linear/client.ts";',
+      "must remain independent of services, domain operations, reviews, and concrete providers",
+    );
+    expectBoundaryViolation(
+      "lib/agent/forbidden.ts",
+      'import { Codex } from "@openai/codex-sdk";',
+      "must not depend on a concrete provider SDK",
+    );
+  });
+
+  it("keeps review execution independent of Linear automation and domain operations", () => {
+    expect.hasAssertions();
+    expectAllowed(
+      "lib/review/allowed.ts",
+      'import type { Agent } from "../agent/contract.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
+    );
+    expectBoundaryViolation(
+      "lib/review/forbidden.ts",
+      'import { classifyLinearReadiness } from "../linear-automation/readiness.ts";',
+      "must remain independent of automation, services, domain operations, and concrete providers",
+    );
+    expectBoundaryViolation(
+      "lib/review/forbidden.ts",
+      'import { triageIssue } from "../triage/triage.ts";',
+      "must remain independent of automation, services, domain operations, and concrete providers",
     );
   });
 
@@ -91,7 +127,7 @@ describe("automation import boundaries", () => {
     expect.hasAssertions();
     expectAllowed(
       "lib/spec/allowed.ts",
-      'import type { Agent } from "../agents.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
+      'import type { Agent } from "../agent/contract.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
     );
     expectBoundaryViolation(
       "lib/spec/forbidden.ts",
@@ -132,7 +168,7 @@ describe("automation import boundaries", () => {
     expect.hasAssertions();
     expectAllowed(
       "providers/codex/allowed.ts",
-      'import type { Agent } from "../../lib/agents.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
+      'import type { Agent } from "../../lib/agent/contract.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
     );
     expectBoundaryViolation(
       "providers/codex/forbidden.ts",

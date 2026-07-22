@@ -5,9 +5,9 @@ import {
   createLinearIssueRevisionObservedEvent,
   LinearIssueRevisionObservedEvent,
   linearIssueRevisionEventId,
-} from "./inngest/linear-revision-events.ts";
-import { WORK_REQUEST_EVENT_NAMES, WORK_REQUEST_EVENT_VERSION } from "./inngest/work-events.ts";
-import type { LinearReadinessConfig } from "./linear-readiness.ts";
+} from "./events/linear-revision-events.ts";
+import { WORK_REQUEST_EVENT_NAMES, WORK_REQUEST_EVENT_VERSION } from "./events/work-events.ts";
+import type { LinearReadinessConfig } from "./readiness.ts";
 import {
   createLinearReadinessRouter,
   LINEAR_READINESS_CONFIRM_STEP_ID,
@@ -16,8 +16,8 @@ import {
   LINEAR_READINESS_ROUTER_RETRIES,
   LINEAR_READINESS_SEND_STEP_ID,
   type LinearReadinessRouterLinear,
-} from "./linear-readiness-router.ts";
-import type { LinearIssueContext, LinearIssueReference } from "./linear/read.ts";
+} from "./readiness-router.ts";
+import type { LinearIssueContext, LinearIssueReference } from "../linear/read.ts";
 
 const UPDATED_AT = "2026-07-19T01:00:00.000Z";
 

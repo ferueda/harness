@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { LinearIssueContext } from "./linear/read.ts";
+import type { LinearIssueContext } from "../linear/read.ts";
 
 const LinearReadinessMappingShape = {
   teamId: z.string().trim().min(1),

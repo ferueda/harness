@@ -29,12 +29,68 @@
                 "message": "Linear service primitives must not depend on concrete providers."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:triage(?:/|$)|spec(?:/|$)|prompts(?:/|$)|inngest(?:/|$)|linear-)",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:agent(?:/|$)|config(?:/|$)|review(?:/|$)|triage(?:/|$)|spec(?:/|$)|repository(?:/|$)|linear-automation(?:/|$))",
                 "message": "Linear service primitives may only communicate with Linear; domain and delivery policy belong outside lib/linear."
               },
               {
                 "regex": "^\\.\\./(?:\\.\\./)*providers(?:/|$)",
                 "message": "Linear service primitives must not depend on concrete providers."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["lib/agent/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Agent contracts and support must not depend on delivery code."
+              },
+              {
+                "regex": "^@linear/sdk(?:/|$)",
+                "message": "Agent contracts and support must not depend on Linear."
+              },
+              {
+                "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
+                "message": "Shared Agent support must not depend on a concrete provider SDK."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:/|$)|repository(?:/|$)|review(?:/|$)|providers(?:/|$))",
+                "message": "Agent contracts and support must remain independent of services, domain operations, reviews, and concrete providers."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["lib/review/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Review execution must not depend on delivery code."
+              },
+              {
+                "regex": "^@linear/sdk(?:/|$)",
+                "message": "Review execution must not depend on Linear."
+              },
+              {
+                "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
+                "message": "Review execution depends on the shared Agent interface, not a concrete provider."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:/|$)|repository(?:/|$)|providers(?:/|$))",
+                "message": "Review execution must remain independent of automation, services, domain operations, and concrete providers."
               }
             ]
           }

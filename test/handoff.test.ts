@@ -3,7 +3,7 @@ import {
   assertNonEmptyHandoffStdin,
   assertNonEmptyHandoffText,
   assertPipedHandoffStdin,
-} from "../lib/handoff.ts";
+} from "../lib/review/handoff.ts";
 
 test("assertPipedHandoffStdin rejects tty stdin", () => {
   expect(() => assertPipedHandoffStdin(true)).toThrow(/requires piped stdin/);

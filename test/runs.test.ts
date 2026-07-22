@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
+import { parseRetentionDuration, pruneRuns } from "../lib/review/runs.ts";
 
 const FIXED_NOW = new Date("2026-06-24T00:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;

@@ -1,8 +1,8 @@
 import { extractJsonText, leadingBalancedJsonValue, stripJsonFences } from "./json-extract.ts";
-import { schemaAccepts, type JsonSchema, validateJsonSchema } from "./schema-validation.ts";
+import { schemaAccepts, type JsonSchema, validateJsonSchema } from "./json-schema.ts";
 
-export type { JsonSchema } from "./schema-validation.ts";
-export { loadSchema } from "./schema-validation.ts";
+export type { JsonSchema } from "./json-schema.ts";
+export { loadSchema } from "./json-schema.ts";
 
 function parseJsonText(jsonText: string): { value?: unknown; error?: string } {
   try {

@@ -1,4 +1,4 @@
-import type { AgentRunResult } from "./agents.ts";
+import type { AgentRunResult } from "./contract.ts";
 
 export type AgentSignalState = {
   signal: AbortSignal;

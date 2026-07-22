@@ -7,16 +7,16 @@ import {
   WORKFLOW_EVENTS_FILE,
   STEP_ID_BY_AGENT,
   type WorkflowEvent,
-} from "../lib/workflow-events.ts";
-import { createWorkflowContextForTest } from "../lib/workflow-context.ts";
-import type { ReviewAgentName } from "../lib/workflow-context.ts";
+} from "../lib/review/events.ts";
+import { createWorkflowContextForTest } from "../lib/review/runtime.ts";
+import type { ReviewAgentName } from "../lib/review/runtime.ts";
 import {
   CHANGE_REVIEW_STEPS,
   run as runChangeReview,
 } from "../workflows/change-review.workflow.ts";
 import { runReviewSteps } from "../workflows/review-steps.ts";
 import type { WorkflowContext } from "../workflows/review-steps.ts";
-import type { ReviewOutput } from "../lib/schemas.ts";
+import type { ReviewOutput } from "../lib/review/schema.ts";
 
 const PASS_REVIEW = {
   verdict: "pass",

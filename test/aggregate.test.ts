@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { aggregateVerdict, renderFailedSummary, renderSummary } from "../lib/aggregate.ts";
+import { aggregateVerdict, renderFailedSummary, renderSummary } from "../lib/review/aggregate.ts";
 test("aggregateVerdict prefers blocked over other verdicts", () => {
   expect(aggregateVerdict({ verdict: "blocked" }, { verdict: "pass" })).toBe("blocked");
 });

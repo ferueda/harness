@@ -3,7 +3,7 @@ import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
   SPEC_REVIEW_PROMPT,
-} from "../lib/prompts/index.ts";
+} from "../lib/review/prompts/index.ts";
 
 test("review prompts include scope placeholders and JSON output contract", () => {
   for (const prompt of [IMPLEMENTATION_REVIEW_PROMPT, QUALITY_REVIEW_PROMPT]) {

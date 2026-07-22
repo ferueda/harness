@@ -13,7 +13,7 @@ fail() {
 }
 
 shell_quote() {
-  # Match lib/config.ts shellQuote for generated shim arguments.
+  # Match lib/config/harness.ts shellQuote for generated shim arguments.
   local value="${1//\'/\'\"\'\"\'}"
   printf "'%s'" "$value"
 }
