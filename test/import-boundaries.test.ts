@@ -32,7 +32,7 @@ function lintFixture(relativePath: string, source: string): LintResult {
     writeFileSync(configPath, JSON.stringify({ ...CONFIG, $schema: undefined }));
     writeFileSync(fixturePath, source);
 
-    const result = spawnSync(OXLINT, ["-c", configPath, fixturePath], {
+    const result = spawnSync(OXLINT, ["-c", configPath, "--format=default", fixturePath], {
       cwd: workspace,
       encoding: "utf8",
     });
