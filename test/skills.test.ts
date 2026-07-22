@@ -173,6 +173,13 @@ test("planning skills use the compact capable-executor contract", () => {
   );
   expect(auditTemplateProse).toContain("Exact files or symbols make ownership clear");
   expect(auditTemplateProse).toContain("The plan contains no unresolved implementation decision");
+  expect(auditTemplateProse).toContain(
+    "vertical outcome slices that can be verified and that separate agents can own with limited overlap",
+  );
+  expect(auditTemplateProse).toContain("can proceed in parallel after the minimum shared setup");
+  expect(auditTemplateProse).toContain(
+    "If an indivisible migration, cross-cutting safety fix, or minimum shared prerequisite must remain horizontal",
+  );
 
   const coordinatorProse = normalizedProse(coordinator);
   expect(coordinatorProse).toContain("repository guidance constrains the work");
