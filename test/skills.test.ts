@@ -176,9 +176,13 @@ test("planning skills use the compact capable-executor contract", () => {
   expect(auditTemplateProse).toContain(
     "vertical outcome slices that can be verified and that separate agents can own with limited overlap",
   );
+  expect(auditTemplateProse).toContain("reviewed, landed, or rolled back independently");
   expect(auditTemplateProse).toContain("can proceed in parallel after the minimum shared setup");
   expect(auditTemplateProse).toContain(
     "If an indivisible migration, cross-cutting safety fix, or minimum shared prerequisite must remain horizontal",
+  );
+  expect(auditTemplateProse).toContain(
+    "state briefly why vertical delivery is impractical or unsafe",
   );
 
   const coordinatorProse = normalizedProse(coordinator);
