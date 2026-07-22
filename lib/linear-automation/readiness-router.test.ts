@@ -17,7 +17,7 @@ import {
   LINEAR_READINESS_SEND_STEP_ID,
   type LinearReadinessRouterLinear,
 } from "./readiness-router.ts";
-import type { LinearIssueContext, LinearIssueReference } from "../linear/read.ts";
+import type { LinearIssueContext, LinearIssueReference } from "../linear/types.ts";
 
 const UPDATED_AT = "2026-07-19T01:00:00.000Z";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LinearIssueContext, LinearIssueReference } from "../linear/read.ts";
+import type { LinearIssueContext, LinearIssueReference } from "../linear/types.ts";
 import {
   classifyLinearReadiness,
   LinearReadinessConfigSchema,

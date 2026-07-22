@@ -12,7 +12,7 @@ import {
   type LinearReadinessDecision,
 } from "./readiness.ts";
 import { LinearError } from "../linear/error.ts";
-import type { LinearIssueContext } from "../linear/read.ts";
+import type { LinearIssueContext } from "../linear/types.ts";
 
 export const LINEAR_READINESS_ROUTER_FUNCTION_ID = "route-linear-readiness-v1";
 export const LINEAR_READINESS_ROUTER_RETRIES = 3;

@@ -1,11 +1,7 @@
 import { LinearError } from "./error.ts";
-import {
-  findCommentMarker,
-  findIssueById,
-  type LinearReadClient,
-  type RawIssueRelation,
-} from "./read.ts";
+import { findCommentMarker, findIssueById } from "./lookups.ts";
 import { readLimited } from "./pagination.ts";
+import type { LinearReadClient, RawIssueRelation } from "./sdk-types.ts";
 
 type MaybeFetch<T> = T | PromiseLike<T> | null | undefined;
 type MutationEntity = { id?: unknown };

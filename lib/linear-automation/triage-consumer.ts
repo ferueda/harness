@@ -17,7 +17,7 @@ import type {
   LinearCommentActor,
   LinearIssueContext,
   LinearIssueReference,
-} from "../linear/read.ts";
+} from "../linear/types.ts";
 import {
   triageIssue,
   type TriageExecution,

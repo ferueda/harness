@@ -1,20 +1,22 @@
 import { LinearClient } from "@linear/sdk";
 import { LinearError } from "./error.ts";
+import { getIssueContext } from "./issue-context.ts";
+import { normalizeLimits } from "./limits.ts";
 import {
   findCommentMarker as findCommentMarkerOperation,
   findWorkflowState as findWorkflowStateOperation,
-  getIssueContext,
-  listIssueRevisions as listIssueRevisionsOperation,
-  normalizeLimits,
-  type FindCommentMarkerInput,
-  type FindWorkflowStateInput,
-  type LinearIssueContext,
-  type LinearReadClient,
-  type LinearReadLimits,
-  type LinearWorkflowState,
-  type ListIssueRevisionsInput,
-  type ListIssueRevisionsResult,
-} from "./read.ts";
+} from "./lookups.ts";
+import { listIssueRevisions as listIssueRevisionsOperation } from "./revisions.ts";
+import type { LinearReadClient } from "./sdk-types.ts";
+import type {
+  FindCommentMarkerInput,
+  FindWorkflowStateInput,
+  LinearIssueContext,
+  LinearReadLimits,
+  LinearWorkflowState,
+  ListIssueRevisionsInput,
+  ListIssueRevisionsResult,
+} from "./types.ts";
 import {
   createComment as createCommentOperation,
   ensureBlockedByRelation as ensureBlockedByRelationOperation,
@@ -42,13 +44,13 @@ export type {
   LinearIssueContext,
   LinearIssueReference,
   LinearIssueRevision,
-  LinearReadClient,
   LinearReadLimits,
   LinearUser,
   LinearWorkflowState,
   ListIssueRevisionsInput,
   ListIssueRevisionsResult,
-} from "./read.ts";
+} from "./types.ts";
+export type { LinearReadClient } from "./sdk-types.ts";
 export type {
   CreateCommentInput,
   EnsureBlockedByRelationInput,
