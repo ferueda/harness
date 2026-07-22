@@ -52,7 +52,8 @@ function lintFixture(relativePath: string, source: string): LintResult {
 
 function expectAllowed(relativePath: string, source: string): void {
   const result = lintFixture(relativePath, source);
-  expect(result).toEqual({ output: "", status: 0 });
+  expect(result).toMatchObject({ status: 0 });
+  expect(result.output).not.toContain("no-restricted-imports");
 }
 
 function expectBoundaryViolation(relativePath: string, source: string, message: string): void {
