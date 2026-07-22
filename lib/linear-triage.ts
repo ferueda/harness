@@ -164,7 +164,7 @@ export function createLinearTriageFunction(input: {
           input.linear.updateIssueLabels({
             issueId: event.data.issueId,
             addLabelIds: [],
-            removeLabelIds: Object.values(config.readiness.nextActionLabelIds),
+            removeLabelIds: Object.values(config.readiness.agentActionLabelIds),
           }),
         );
         await step.run(LINEAR_TRIAGE_RELATIONS_STEP_ID, () =>
@@ -183,12 +183,37 @@ export function createLinearTriageFunction(input: {
       await step.run(LINEAR_TRIAGE_RELATIONS_STEP_ID, () =>
         ensureBlockerRelations(input.linear, event.data.issueId, relations.blockerIssueIds),
       );
+
+      if (triage.decision.decision === "needs-input") {
+        await step.run(LINEAR_TRIAGE_LABELS_STEP_ID, () =>
+          input.linear.updateIssueLabels({
+            issueId: event.data.issueId,
+            addLabelIds: [],
+            removeLabelIds: Object.values(config.readiness.agentActionLabelIds),
+          }),
+        );
+        await step.run(LINEAR_TRIAGE_STATE_STEP_ID, () =>
+          input.linear.updateIssueState({
+            issueId: event.data.issueId,
+            expectedStateId: config.readiness.stateIds.backlog,
+            stateId: config.readiness.stateIds.needsInput,
+          }),
+        );
+
+        return {
+          outcome: "projected" as const,
+          decision: triage.decision.decision,
+          agentAction: triage.decision.agentAction,
+          issueId: event.data.issueId,
+        };
+      }
+
       const targetLabelId = decisionLabelId(triage.decision, config.readiness);
       await step.run(LINEAR_TRIAGE_LABELS_STEP_ID, () =>
         input.linear.updateIssueLabels({
           issueId: event.data.issueId,
           addLabelIds: [targetLabelId],
-          removeLabelIds: Object.values(config.readiness.nextActionLabelIds).filter(
+          removeLabelIds: Object.values(config.readiness.agentActionLabelIds).filter(
             (labelId) => labelId !== targetLabelId,
           ),
         }),
@@ -354,9 +379,8 @@ async function ensureBlockerRelations(
 }
 
 function decisionLabelId(decision: TriageDecision, config: LinearReadinessConfig): string {
-  if (decision.decision === "needs-input") return config.nextActionLabelIds.needsInput;
-  if (decision.agentAction === "plan") return config.nextActionLabelIds.plan;
-  if (decision.agentAction === "implement") return config.nextActionLabelIds.implement;
+  if (decision.agentAction === "spec") return config.agentActionLabelIds.spec;
+  if (decision.agentAction === "implement") return config.agentActionLabelIds.implement;
   throw new LinearError("invalid-response", "Ready-for-agent triage decision has no agent action.");
 }
 
@@ -407,13 +431,13 @@ function renderTriageComment(
 function decisionTitle(decision: TriageDecision): string {
   if (decision.decision === "duplicate") return "Duplicate";
   if (decision.decision === "needs-input") return "Needs input";
-  return decision.agentAction === "plan" ? "Ready for agent — Plan" : "Ready for agent — Implement";
+  return decision.agentAction === "spec" ? "Ready for agent — Spec" : "Ready for agent — Implement";
 }
 
 function rationaleTitle(decision: TriageDecision): string {
   if (decision.decision === "duplicate") return "Why Duplicate";
   if (decision.decision === "needs-input") return "Why Needs Input";
-  return decision.agentAction === "plan" ? "Why Plan" : "Why Implement";
+  return decision.agentAction === "spec" ? "Why Spec" : "Why Implement";
 }
 
 function evidenceSection(evidence: readonly TriageEvidence[]): string {

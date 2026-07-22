@@ -1,6 +1,6 @@
 import { TriageWorkItemContextSchema, type TriageWorkItemContext } from "./schema.ts";
 
-export const TRIAGE_POLICY_VERSION = "3";
+export const TRIAGE_POLICY_VERSION = "4";
 
 export function renderTriagePrompt(input: TriageWorkItemContext): string {
   const context = TriageWorkItemContextSchema.parse(input);
@@ -15,19 +15,19 @@ Apply this rubric in order:
    - A bounded item has one coherent, observable outcome and one acceptance boundary. A vertical outcome may span several layers or files.
    - An item is too broad when it contains outcomes that could be accepted, shipped, deferred, or rolled back independently.
    - Count independent outcomes, not unanswered questions or implementation steps. Several human decisions about one observable outcome do not make the item too broad; keep it bounded and classify those decisions in step 2.
-   - Example: one stale-issue automation with an undecided age threshold and close behavior is bounded and needs a product decision. Webhook ingress, triage, planning, implementation, and a dashboard are independent outcomes and need rescoping.
+   - Example: one stale-issue automation with an undecided age threshold and close behavior is bounded and needs a product decision. Webhook ingress, triage, specification, implementation, and a dashboard are independent outcomes and need rescoping.
    - For a too-broad item, return decision "needs-input", scope "too-broad", agentAction null, and inputReason "rescope".
    - Name the independent outcome seams in the rationale, recommend the smallest useful first slice, and ask exactly one question: whether to narrow this item to that slice and create separate work for the others.
 
 2. Separate agent-resolvable uncertainty from human-only uncertainty.
-   - Repository inspection, reproduction, diagnosis, technical research, and technical planning are agent work. They do not require human input when the desired outcome is clear.
+   - Repository inspection, reproduction, diagnosis, technical research, and technical specification are agent work. They do not require human input when the desired outcome is clear.
    - Product behavior, UX intent, scope authority, credentials, inaccessible facts, or another decision only a human can make require decision "needs-input".
    - Ask only the smallest concrete questions that block useful agent work.
 
 3. Choose the next agent action for bounded work.
    - Return decision "ready-for-agent" and agentAction "implement" when the issue is specified well enough for one safe implementation pass.
-   - Normal repository inspection to locate files, follow existing patterns, and write tests is part of implementation. It does not by itself require agentAction "plan".
-   - Return decision "ready-for-agent" and agentAction "plan" only when the next useful deliverable should be a diagnosis, design, migration strategy, or risk-reduction plan because editing now would be premature or unsafe.
+   - Normal repository inspection to locate files, follow existing patterns, and write tests is part of implementation. It does not by itself require agentAction "spec".
+   - Return decision "ready-for-agent" and agentAction "spec" only when the next useful deliverable should be a diagnosis, design, migration strategy, or risk-reduction specification because editing now would be premature or unsafe.
    - When the issue supplies an observable outcome, constraints, and an acceptance boundary, prefer agentAction "implement" if repository evidence supports a straightforward safe change.
    - agentAction is a recommendation, not a tracker phase.
 
@@ -51,7 +51,7 @@ Rationale rules:
 
 - Explain why the exact decision and agentAction are appropriate. Do not merely restate the issue or list the evidence.
 - For Implement, explain why the outcome and acceptance boundary support one safe implementation pass.
-- For Plan, explain what makes editing premature or unsafe and how the next planning deliverable reduces that risk.
+- For Spec, explain what makes editing premature or unsafe and how the next specification deliverable reduces that risk.
 - For Needs Input, explain which human-only decision or scope boundary blocks useful agent work.
 - For Duplicate, explain why the referenced work item represents the same outcome.
 

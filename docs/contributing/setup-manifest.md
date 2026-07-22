@@ -20,7 +20,7 @@ artifact lifecycle, and directory ownership.
 ## Linear automation worker
 
 `harness linear worker` reads stable project, team, workflow-state, and
-Next-action label IDs from the target repository's `linearAutomation` section.
+Agent-action label IDs from the target repository's `linearAutomation` section.
 The first consumer requires `triage.agent: "codex"` and also accepts a timeout
 plus optional model and reasoning overrides. Unsupported providers fail during
 startup configuration loading, before Connect accepts work. The section does

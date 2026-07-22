@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createWorkRequestedEvent,
   ImplementationWorkRequestedEvent,
-  PlanWorkRequestedEvent,
+  SpecWorkRequestedEvent,
   TriageWorkRequestedEvent,
   WORK_REQUEST_EVENT_ID_PREFIX,
   WORK_REQUEST_EVENT_NAMES,
@@ -25,8 +25,8 @@ describe("provider-neutral work events", () => {
       name: WORK_REQUEST_EVENT_NAMES.triage,
       version: WORK_REQUEST_EVENT_VERSION,
     });
-    expect(PlanWorkRequestedEvent).toMatchObject({
-      name: WORK_REQUEST_EVENT_NAMES.plan,
+    expect(SpecWorkRequestedEvent).toMatchObject({
+      name: WORK_REQUEST_EVENT_NAMES.spec,
       version: WORK_REQUEST_EVENT_VERSION,
     });
     expect(ImplementationWorkRequestedEvent).toMatchObject({
@@ -42,7 +42,7 @@ describe("provider-neutral work events", () => {
     ).toBe(false);
   });
 
-  it.each(["triage", "plan", "implement"] as const)(
+  it.each(["triage", "spec", "implement"] as const)(
     "creates a deterministic namespaced %s request",
     (route) => {
       const event = createWorkRequestedEvent(route, data);
@@ -61,17 +61,17 @@ describe("provider-neutral work events", () => {
   );
 
   it("changes identity for a different route, issue, or readiness generation", () => {
-    const original = workRequestEventId("plan", data);
+    const original = workRequestEventId("spec", data);
 
     expect(workRequestEventId("implement", data)).not.toBe(original);
-    expect(workRequestEventId("plan", { ...data, issueId: "issue-2" })).not.toBe(original);
+    expect(workRequestEventId("spec", { ...data, issueId: "issue-2" })).not.toBe(original);
     expect(
-      workRequestEventId("plan", {
+      workRequestEventId("spec", {
         ...data,
         snapshotGeneration: "b".repeat(64),
       }),
     ).not.toBe(original);
-    expect(workRequestEventId("plan", { ...data, causationEventId: "later-delivery" })).toBe(
+    expect(workRequestEventId("spec", { ...data, causationEventId: "later-delivery" })).toBe(
       original,
     );
   });

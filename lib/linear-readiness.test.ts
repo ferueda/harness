@@ -14,19 +14,19 @@ const config: LinearReadinessConfig = {
     backlog: "state-backlog",
     open: "state-open",
     inProgress: "state-in-progress",
-    inReview: "state-in-review",
+    needsInput: "state-needs-input",
+    needsReview: "state-needs-review",
     done: "state-done",
     canceled: "state-canceled",
     duplicate: "state-duplicate",
   },
-  nextActionLabelIds: {
-    plan: "label-plan",
+  agentActionLabelIds: {
+    spec: "label-spec",
     implement: "label-implement",
-    needsInput: "label-needs-input",
   },
   enabledRoutes: {
     triage: true,
-    plan: true,
+    spec: true,
     implement: true,
   },
 };
@@ -35,6 +35,7 @@ type ContextOptions = Readonly<{
   stateId?: string;
   teamId?: string;
   projectId?: string | null;
+  updatedAt?: string;
   actionLabelIds?: readonly string[];
   unrelatedLabelIds?: readonly string[];
   blockerStateIds?: readonly string[];
@@ -76,7 +77,7 @@ function context(options: ContextOptions = {}): LinearIssueContext {
     related: [],
     attachments: [],
     createdAt: "2026-07-19T00:00:00.000Z",
-    updatedAt: "2026-07-19T01:00:00.000Z",
+    updatedAt: options.updatedAt ?? "2026-07-19T01:00:00.000Z",
     completeness: {
       commentsTruncated: false,
       labelsTruncated: options.labelsTruncated ?? false,
@@ -126,38 +127,56 @@ describe("Linear readiness policy", () => {
     ["Backlog without action", context(), { kind: "dispatch", reason: "ready", route: "triage" }],
     [
       "Backlog with action",
-      context({ actionLabelIds: [config.nextActionLabelIds.plan] }),
+      context({ actionLabelIds: [config.agentActionLabelIds.spec] }),
       { kind: "wait", reason: "projection-repair" },
     ],
     [
-      "Open Plan",
+      "Open Spec",
       context({
         stateId: config.stateIds.open,
-        actionLabelIds: [config.nextActionLabelIds.plan],
+        actionLabelIds: [config.agentActionLabelIds.spec],
       }),
-      { kind: "dispatch", reason: "ready", route: "plan" },
+      { kind: "dispatch", reason: "ready", route: "spec" },
     ],
     [
       "Open Implement",
       context({
         stateId: config.stateIds.open,
-        actionLabelIds: [config.nextActionLabelIds.implement],
+        actionLabelIds: [config.agentActionLabelIds.implement],
       }),
       { kind: "dispatch", reason: "ready", route: "implement" },
     ],
     [
-      "Open Needs Input",
+      "Needs Input without action",
+      context({ stateId: config.stateIds.needsInput }),
+      { kind: "ignore", reason: "needs-input" },
+    ],
+    [
+      "Needs Input with action",
       context({
-        stateId: config.stateIds.open,
-        actionLabelIds: [config.nextActionLabelIds.needsInput],
+        stateId: config.stateIds.needsInput,
+        actionLabelIds: [config.agentActionLabelIds.spec],
       }),
-      { kind: "wait", reason: "needs-input" },
+      { kind: "wait", reason: "projection-repair" },
+    ],
+    [
+      "Needs Review without action",
+      context({ stateId: config.stateIds.needsReview }),
+      { kind: "ignore", reason: "needs-review" },
+    ],
+    [
+      "Needs Review with action",
+      context({
+        stateId: config.stateIds.needsReview,
+        actionLabelIds: [config.agentActionLabelIds.implement],
+      }),
+      { kind: "wait", reason: "projection-repair" },
     ],
     [
       "Open actionable with unresolved blocker",
       context({
         stateId: config.stateIds.open,
-        actionLabelIds: [config.nextActionLabelIds.plan],
+        actionLabelIds: [config.agentActionLabelIds.spec],
         blockerStateIds: [config.stateIds.open],
       }),
       { kind: "wait", reason: "blocked" },
@@ -166,23 +185,23 @@ describe("Linear readiness policy", () => {
       "Open actionable with resolved blocker",
       context({
         stateId: config.stateIds.open,
-        actionLabelIds: [config.nextActionLabelIds.plan],
+        actionLabelIds: [config.agentActionLabelIds.spec],
         blockerStateIds: [config.stateIds.done],
       }),
-      { kind: "dispatch", reason: "ready", route: "plan" },
+      { kind: "dispatch", reason: "ready", route: "spec" },
     ],
     [
       "Open without action",
       context({ stateId: config.stateIds.open }),
-      { kind: "invalid", reason: "missing-next-action" },
+      { kind: "invalid", reason: "missing-agent-action" },
     ],
     [
       "Open with conflicting actions",
       context({
         stateId: config.stateIds.open,
-        actionLabelIds: [config.nextActionLabelIds.plan, config.nextActionLabelIds.implement],
+        actionLabelIds: [config.agentActionLabelIds.spec, config.agentActionLabelIds.implement],
       }),
-      { kind: "invalid", reason: "conflicting-next-action" },
+      { kind: "invalid", reason: "conflicting-agent-action" },
     ],
     [
       "In Progress",
@@ -190,9 +209,20 @@ describe("Linear readiness policy", () => {
       { kind: "ignore", reason: "already-claimed" },
     ],
     [
-      "In Review",
-      context({ stateId: config.stateIds.inReview }),
-      { kind: "ignore", reason: "human-review" },
+      "In Progress with one claimed action",
+      context({
+        stateId: config.stateIds.inProgress,
+        actionLabelIds: [config.agentActionLabelIds.spec],
+      }),
+      { kind: "ignore", reason: "already-claimed" },
+    ],
+    [
+      "In Progress with conflicting actions",
+      context({
+        stateId: config.stateIds.inProgress,
+        actionLabelIds: [config.agentActionLabelIds.spec, config.agentActionLabelIds.implement],
+      }),
+      { kind: "wait", reason: "projection-repair" },
     ],
     ["Done", context({ stateId: config.stateIds.done }), { kind: "ignore", reason: "terminal" }],
     [
@@ -206,6 +236,30 @@ describe("Linear readiness policy", () => {
       { kind: "ignore", reason: "terminal" },
     ],
     [
+      "Done with an action",
+      context({
+        stateId: config.stateIds.done,
+        actionLabelIds: [config.agentActionLabelIds.spec],
+      }),
+      { kind: "wait", reason: "projection-repair" },
+    ],
+    [
+      "Canceled with an action",
+      context({
+        stateId: config.stateIds.canceled,
+        actionLabelIds: [config.agentActionLabelIds.implement],
+      }),
+      { kind: "wait", reason: "projection-repair" },
+    ],
+    [
+      "Duplicate with an action",
+      context({
+        stateId: config.stateIds.duplicate,
+        actionLabelIds: [config.agentActionLabelIds.spec],
+      }),
+      { kind: "wait", reason: "projection-repair" },
+    ],
+    [
       "unknown lifecycle",
       context({ stateId: "state-unknown" }),
       { kind: "invalid", reason: "unknown-state" },
@@ -214,7 +268,7 @@ describe("Linear readiness policy", () => {
     expect(classifyLinearReadiness({ context: issue, config })).toMatchObject(expected);
   });
 
-  it.each(["triage", "plan", "implement"] as const)(
+  it.each(["triage", "spec", "implement"] as const)(
     "waits when the %s route is disabled",
     (route) => {
       const issue =
@@ -222,7 +276,7 @@ describe("Linear readiness policy", () => {
           ? context()
           : context({
               stateId: config.stateIds.open,
-              actionLabelIds: [config.nextActionLabelIds[route]],
+              actionLabelIds: [config.agentActionLabelIds[route]],
             });
       const disabled = {
         ...config,
@@ -249,14 +303,13 @@ describe("Linear readiness policy", () => {
   it("keeps generation stable across unrelated data and collection order", () => {
     const original = context({
       stateId: config.stateIds.open,
-      actionLabelIds: [config.nextActionLabelIds.plan],
+      actionLabelIds: [config.agentActionLabelIds.spec],
       unrelatedLabelIds: ["label-z", "label-a"],
       blockerStateIds: [config.stateIds.open, config.stateIds.done],
     });
     const reordered = {
       ...original,
       title: "Renamed",
-      updatedAt: "2030-01-01T00:00:00.000Z",
       labels: original.labels.toReversed(),
       blockedBy: original.blockedBy.toReversed(),
       comments: [
@@ -281,7 +334,8 @@ describe("Linear readiness policy", () => {
     ["team", context({ teamId: "team-2" })],
     ["project", context({ projectId: "project-2" })],
     ["state", context({ stateId: config.stateIds.open })],
-    ["action", context({ actionLabelIds: [config.nextActionLabelIds.plan] })],
+    ["revision", context({ updatedAt: "2026-07-19T02:00:00.000Z" })],
+    ["action", context({ actionLabelIds: [config.agentActionLabelIds.spec] })],
     ["blocker", context({ blockerStateIds: [config.stateIds.open] })],
     ["completeness", context({ relationsTruncated: true })],
   ])("changes generation for relevant %s truth", (_label, changed) => {
@@ -300,9 +354,9 @@ describe("Linear readiness policy", () => {
     expect(
       LinearReadinessConfigSchema.safeParse({
         ...config,
-        nextActionLabelIds: {
-          ...config.nextActionLabelIds,
-          plan: config.nextActionLabelIds.implement,
+        agentActionLabelIds: {
+          ...config.agentActionLabelIds,
+          spec: config.agentActionLabelIds.implement,
         },
       }).success,
     ).toBe(false);

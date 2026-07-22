@@ -28,9 +28,9 @@ const READY_TO_IMPLEMENT = {
   blockedBy: [],
 } satisfies TriageDecision;
 
-const READY_TO_PLAN = {
+const READY_TO_SPEC = {
   ...READY_TO_IMPLEMENT,
-  agentAction: "plan",
+  agentAction: "spec",
   rationale: "Repository investigation should come before implementation.",
 } satisfies TriageDecision;
 
@@ -95,7 +95,7 @@ describe("triageIssue", () => {
 
   it.each([
     ["implement", READY_TO_IMPLEMENT],
-    ["plan", READY_TO_PLAN],
+    ["spec", READY_TO_SPEC],
   ])("returns a validated %s decision", async (_name, decision) => {
     const fake = fakeAgent({ ok: true, structuredOutput: decision, raw: {} });
 
@@ -173,7 +173,7 @@ describe("triageIssue", () => {
     expect(result).toMatchObject({
       ok: false,
       failureKind: "invalid-output",
-      error: expect.stringContaining("ready-for-agent requires implement or plan"),
+      error: expect.stringContaining("ready-for-agent requires implement or spec"),
     });
   });
 

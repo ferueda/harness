@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const TRIAGE_DECISION_SCHEMA_VERSION = "2";
+export const TRIAGE_DECISION_SCHEMA_VERSION = "3";
 
 const NonEmptyStringSchema = z.string().min(1);
 
@@ -104,7 +104,7 @@ export const TriageDecisionSchema = z
   .object({
     decision: z.enum(["ready-for-agent", "needs-input", "duplicate"]),
     scope: z.enum(["bounded", "too-broad"]),
-    agentAction: z.enum(["implement", "plan"]).nullable(),
+    agentAction: z.enum(["implement", "spec"]).nullable(),
     rationale: NonEmptyStringSchema,
     evidence: z.array(TriageEvidenceSchema).min(1),
     questions: z.array(NonEmptyStringSchema),
@@ -122,7 +122,7 @@ export const TriageDecisionSchema = z
         result.agentAction !== null,
         ctx,
         ["agentAction"],
-        "ready-for-agent requires implement or plan",
+        "ready-for-agent requires implement or spec",
       );
       requireEmpty(result.questions, ctx, ["questions"], "ready-for-agent must use questions: []");
       requireValue(

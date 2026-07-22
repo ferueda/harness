@@ -33,15 +33,15 @@ const settings: LinearAutomationSettings = {
       backlog: "state-backlog",
       open: "state-open",
       inProgress: "state-in-progress",
-      inReview: "state-in-review",
+      needsInput: "state-needs-input",
+      needsReview: "state-needs-review",
       done: "state-done",
       canceled: "state-canceled",
       duplicate: "state-duplicate",
     },
-    nextActionLabelIds: {
-      plan: "label-plan",
+    agentActionLabelIds: {
+      spec: "label-spec",
       implement: "label-implement",
-      needsInput: "label-needs-input",
     },
   },
   triage: {
@@ -212,7 +212,7 @@ describe("Linear automation worker", () => {
     ]);
     expect(app().readiness.enabledRoutes).toEqual({
       triage: true,
-      plan: false,
+      spec: false,
       implement: false,
     });
     expect(app().readiness.enabledRoutes).toBe(LINEAR_AUTOMATION_ENABLED_ROUTES);

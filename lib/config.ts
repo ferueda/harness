@@ -257,8 +257,8 @@ function freezeLinearAutomationSettings(input: {
   const readiness = Object.freeze({
     ...input.automation.readiness,
     stateIds: Object.freeze({ ...input.automation.readiness.stateIds }),
-    nextActionLabelIds: Object.freeze({
-      ...input.automation.readiness.nextActionLabelIds,
+    agentActionLabelIds: Object.freeze({
+      ...input.automation.readiness.agentActionLabelIds,
     }),
   });
   const triage = Object.freeze({
