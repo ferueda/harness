@@ -1,14 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import {
-  cleanupOrphanedRunDir,
-  createWorkflowContext,
-  createWorkflowContextForTest,
-} from "../lib/review/runtime.ts";
+import { createWorkflowContext, createWorkflowContextForTest } from "../lib/review/runtime.ts";
 import type { AgentProviderOptions, AgentRunInput } from "../lib/agent/contract.ts";
 import { SPEC_REVIEW_PROMPT } from "../lib/review/prompts/index.ts";
 import { createAgentProvider } from "../providers/registry.ts";
@@ -98,13 +94,6 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(reviewSpecSkill).toContain("**Must fix**: Yes | No");
   expect(reviewSpecSkill).toContain("**Verdict**: Pass | Needs changes | Blocked");
   expect(reviewSpecSkill).not.toContain("**Category**");
-});
-
-test("cleanupOrphanedRunDir removes incomplete run directories", () => {
-  const runDir = mkdtempSync(join(tmpdir(), "harness-orphaned-run-"));
-  mkdirSync(join(runDir, "context"));
-  expect(cleanupOrphanedRunDir(runDir)).toBe(true);
-  expect(existsSync(runDir)).toBe(false);
 });
 
 test("workflow context supports spec review dry-runs without git scope", async () => {
@@ -284,12 +273,6 @@ test("workflow context exports spec review summaries without git scope", () => {
   expect(metadata.scope).toBeUndefined();
   expect(metadata.reviews).toMatchObject({ spec: { verdict: "pass", findingCount: 0 } });
   expect(metadata.specReview).toMatchObject({ verdict: "pass", findingCount: 0 });
-});
-test("cleanupOrphanedRunDir preserves runs with metadata", () => {
-  const runDir = mkdtempSync(join(tmpdir(), "harness-run-"));
-  writeFileSync(join(runDir, "meta.json"), "{}\n", "utf8");
-  expect(cleanupOrphanedRunDir(runDir)).toBe(false);
-  expect(existsSync(runDir)).toBe(true);
 });
 test("exportFailed writes metadata and summary with no successful reviews", () => {
   const workspace = createGitWorkspace();

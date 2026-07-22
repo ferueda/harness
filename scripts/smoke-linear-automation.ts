@@ -31,7 +31,7 @@ import {
   LINEAR_TRIAGE_FUNCTION_ID,
   type LinearTriageService,
 } from "../lib/linear-automation/triage-consumer.ts";
-import type { LinearIssueContext } from "../lib/linear/read.ts";
+import type { LinearIssueContext } from "../lib/linear/types.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const INNGEST_CLI = join(ROOT, "node_modules/.bin/inngest");

@@ -1,194 +1,35 @@
 import { LinearError } from "./error.ts";
+import { assertPage, LINEAR_PAGE_SIZE, readLimited, type LinearPage } from "./pagination.ts";
 import {
-  assertPage,
-  LINEAR_PAGE_SIZE,
-  readLimited,
-  type LinearPage,
-  type PageVariables,
-} from "./pagination.ts";
+  comparePair,
+  invalidResponse,
+  isoDate,
+  normalizeState,
+  nullableString,
+  requiredString,
+  unique,
+} from "./read-values.ts";
+import type {
+  LinearReadClient,
+  RawAttachment,
+  RawComment,
+  RawIssue,
+  RawLabel,
+  RawProject,
+  RawTeam,
+  RawUser,
+} from "./sdk-types.ts";
+import type {
+  LinearCommentActor,
+  LinearIssueContext,
+  LinearIssueReference,
+  LinearReadLimits,
+  LinearUser,
+  LinearWorkflowState,
+} from "./types.ts";
 
 const ISSUE_IDENTIFIER_RE = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
-
-export type LinearReadLimits = Readonly<{
-  comments: number;
-  labels: number;
-  relations: number;
-  attachments: number;
-  children: number;
-}>;
-
-export type LinearUser = Readonly<{
-  id: string;
-  name: string;
-  displayName: string;
-}>;
-
-export type LinearCommentActor =
-  | Readonly<{ kind: "user"; id: string; name: string; displayName: string }>
-  | Readonly<{ kind: "bot"; id: string | null; name: string | null }>
-  | Readonly<{ kind: "external"; id: string; name: null }>
-  | null;
-
-export type LinearWorkflowState = Readonly<{
-  id: string;
-  name: string;
-  type: string;
-}>;
-
-export type LinearIssueReference = Readonly<{
-  id: string;
-  identifier: string;
-  title: string;
-  url: string;
-  state: LinearWorkflowState;
-}>;
-
-export type LinearIssueContext = Readonly<{
-  id: string;
-  identifier: string;
-  title: string;
-  description: string | null;
-  url: string;
-  state: LinearWorkflowState;
-  team: Readonly<{ id: string; key: string; name: string }>;
-  project: Readonly<{ id: string; name: string; url: string | null }> | null;
-  assignee: LinearUser | null;
-  creator: LinearUser | null;
-  labels: ReadonlyArray<Readonly<{ id: string; name: string }>>;
-  comments: ReadonlyArray<
-    Readonly<{
-      id: string;
-      body: string;
-      author: LinearCommentActor;
-      parentId: string | null;
-      quotedText: string | null;
-      createdAt: string;
-      updatedAt: string;
-    }>
-  >;
-  parent: LinearIssueReference | null;
-  children: ReadonlyArray<LinearIssueReference>;
-  duplicateOf: LinearIssueReference | null;
-  blockedBy: ReadonlyArray<LinearIssueReference>;
-  related: ReadonlyArray<LinearIssueReference>;
-  attachments: ReadonlyArray<
-    Readonly<{
-      id: string;
-      title: string;
-      subtitle: string | null;
-      url: string;
-      sourceType: string | null;
-      createdAt: string;
-      updatedAt: string;
-    }>
-  >;
-  createdAt: string;
-  updatedAt: string;
-  completeness: Readonly<{
-    commentsTruncated: boolean;
-    labelsTruncated: boolean;
-    relationsTruncated: boolean;
-    attachmentsTruncated: boolean;
-    childrenTruncated: boolean;
-  }>;
-}>;
-
-export type LinearIssueRevision = Readonly<{
-  id: string;
-  identifier: string;
-  updatedAt: string;
-}>;
-
-export type ListIssueRevisionsInput = Readonly<{
-  teamId: string;
-  projectId: string;
-  stateId: string;
-  limit: number;
-}>;
-
-export type ListIssueRevisionsResult = Readonly<{
-  revisions: ReadonlyArray<LinearIssueRevision>;
-  truncated: boolean;
-}>;
-
 type MaybeFetch<T> = T | PromiseLike<T> | null | undefined;
-
-export type RawWorkflowState = { id: string; name: string; type: string };
-type RawTeam = { id: string; key: string; name: string };
-type RawProject = { id: string; name: string; url?: string | null };
-type RawUser = { id: string; name: string; displayName: string };
-type RawLabel = { id: string; name: string };
-type RawBotActor = { id?: string | null; name?: string | null };
-
-export type RawComment = {
-  id: string;
-  body: string;
-  userId?: string | null;
-  externalUserId?: string | null;
-  botActor?: RawBotActor | null;
-  parentId?: string | null;
-  quotedText?: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-};
-
-export type RawIssueRelation = {
-  id: string;
-  type: string;
-  issueId?: string | null;
-  relatedIssueId?: string | null;
-};
-
-type RawAttachment = {
-  id: string;
-  title: string;
-  subtitle?: string | null;
-  url: string;
-  sourceType?: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-};
-
-export type RawIssue = {
-  id: string;
-  identifier: string;
-  title: string;
-  description?: string | null;
-  url: string;
-  stateId?: string | null;
-  teamId?: string | null;
-  projectId?: string | null;
-  assigneeId?: string | null;
-  creatorId?: string | null;
-  parentId?: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-  state?: MaybeFetch<RawWorkflowState>;
-  team?: MaybeFetch<RawTeam>;
-  project?: MaybeFetch<RawProject>;
-  comments: (variables: PageVariables) => PromiseLike<LinearPage<RawComment>>;
-  labels: (variables: PageVariables) => PromiseLike<LinearPage<RawLabel>>;
-  relations: (variables: PageVariables) => PromiseLike<LinearPage<RawIssueRelation>>;
-  inverseRelations: (variables: PageVariables) => PromiseLike<LinearPage<RawIssueRelation>>;
-  attachments: (variables: PageVariables) => PromiseLike<LinearPage<RawAttachment>>;
-  children: (variables: PageVariables) => PromiseLike<LinearPage<RawIssue>>;
-};
-
-export type LinearReadClient = {
-  issues: (variables?: unknown) => PromiseLike<LinearPage<RawIssue>>;
-  users: (variables?: unknown) => PromiseLike<LinearPage<RawUser>>;
-  workflowStates: (variables?: unknown) => PromiseLike<LinearPage<RawWorkflowState>>;
-};
-
-export type FindCommentMarkerInput = Readonly<{
-  issueId: string;
-  marker: string;
-}>;
-
-export type FindWorkflowStateInput = Readonly<{
-  teamId: string;
-  name: string;
-}>;
 
 export async function getIssueContext(
   client: LinearReadClient,
@@ -355,177 +196,6 @@ export async function getIssueContext(
   }
 }
 
-export function normalizeLimits(input: LinearReadLimits): LinearReadLimits {
-  const entries = Object.entries(input ?? {}) as Array<[keyof LinearReadLimits, unknown]>;
-  const requiredKeys: Array<keyof LinearReadLimits> = [
-    "comments",
-    "labels",
-    "relations",
-    "attachments",
-    "children",
-  ];
-  const values = Object.fromEntries(entries) as Partial<Record<keyof LinearReadLimits, unknown>>;
-  for (const key of requiredKeys) {
-    const value = values[key];
-    if (!Number.isInteger(value) || Number(value) < 1) {
-      throw new LinearError("invalid-config", `Linear ${key} limit must be a positive integer.`);
-    }
-  }
-  return Object.freeze({
-    comments: Number(values.comments),
-    labels: Number(values.labels),
-    relations: Number(values.relations),
-    attachments: Number(values.attachments),
-    children: Number(values.children),
-  });
-}
-
-export async function listIssueRevisions(
-  client: LinearReadClient,
-  input: ListIssueRevisionsInput,
-): Promise<ListIssueRevisionsResult> {
-  const teamId = nonEmptyInput(input.teamId, "teamId");
-  const projectId = nonEmptyInput(input.projectId, "projectId");
-  const stateId = nonEmptyInput(input.stateId, "stateId");
-  if (
-    !Number.isSafeInteger(input.limit) ||
-    input.limit < 1 ||
-    input.limit >= Number.MAX_SAFE_INTEGER
-  ) {
-    throw new LinearError(
-      "invalid-input",
-      "Linear revision limit must be a positive safe integer.",
-    );
-  }
-
-  try {
-    // Read one extra record so an exact limit is complete while limit + 1 is truncated.
-    const result = await readLimited(
-      input.limit + 1,
-      (variables) =>
-        client.issues({
-          filter: {
-            team: { id: { eq: teamId } },
-            project: { id: { eq: projectId } },
-            state: { id: { eq: stateId } },
-          },
-          ...variables,
-        }),
-      "issue revision list",
-    );
-    const revisions = result.nodes
-      .slice(0, input.limit)
-      .map(normalizeIssueRevision)
-      .sort(compareIssueRevisions);
-    return {
-      revisions,
-      truncated: result.nodes.length > input.limit,
-    };
-  } catch (error) {
-    if (error instanceof LinearError) throw error;
-    throw new LinearError("upstream", "Failed to list Linear issue revisions.", { cause: error });
-  }
-}
-
-export async function findCommentMarker(
-  client: LinearReadClient,
-  commentLimit: number,
-  input: FindCommentMarkerInput,
-): Promise<string | null> {
-  const issueId = nonEmptyInput(input.issueId, "issueId");
-  const marker = nonEmptyInput(input.marker, "marker");
-
-  try {
-    const issue = await findIssueById(client, issueId);
-    const comments = await readLimited(
-      commentLimit,
-      (variables) => issue.comments(variables),
-      "comments",
-    );
-    const match = comments.nodes.find((comment) =>
-      requiredString(comment.body, "comment body").includes(marker),
-    );
-    if (match) return requiredString(match.id, "comment id");
-    if (comments.truncated) {
-      throw new LinearError(
-        "incomplete",
-        `Linear comment scan for issue ${issueId} reached its configured limit.`,
-      );
-    }
-    return null;
-  } catch (error) {
-    if (error instanceof LinearError) throw error;
-    throw new LinearError("upstream", `Failed to find a Linear comment marker on ${issueId}.`, {
-      cause: error,
-    });
-  }
-}
-
-export async function findWorkflowState(
-  client: LinearReadClient,
-  input: FindWorkflowStateInput,
-): Promise<LinearWorkflowState> {
-  const teamId = nonEmptyInput(input.teamId, "teamId");
-  const name = nonEmptyInput(input.name, "name");
-
-  try {
-    const connection = await client.workflowStates({
-      filter: {
-        team: { id: { eq: teamId } },
-        name: { eq: name },
-      },
-      first: 2,
-    });
-    assertPage(connection, "workflow state lookup");
-    const matches = connection.nodes.filter(
-      (state) =>
-        requiredString(state.name, "workflow state name") === name &&
-        requiredString(state.id, "workflow state id") !== "",
-    );
-    if (matches.length === 0) {
-      throw new LinearError(
-        "not-found",
-        `Linear workflow state not found for team ${teamId}: ${name}.`,
-      );
-    }
-    if (matches.length > 1 || connection.pageInfo.hasNextPage) {
-      throw new LinearError(
-        "ambiguous-reference",
-        `Linear workflow state is ambiguous for team ${teamId}: ${name}.`,
-      );
-    }
-    return normalizeState(matches[0]);
-  } catch (error) {
-    if (error instanceof LinearError) throw error;
-    throw new LinearError(
-      "upstream",
-      `Failed to find Linear workflow state ${name} for team ${teamId}.`,
-      { cause: error },
-    );
-  }
-}
-
-export async function findIssueById(client: LinearReadClient, issueId: string): Promise<RawIssue> {
-  const connection = await client.issues({
-    filter: { id: { eq: issueId } },
-    first: 2,
-  });
-  assertPage(connection, "issue lookup");
-  const matches = connection.nodes.filter(
-    (issue) => requiredString(issue.id, "lookup issue id") === issueId,
-  );
-  if (matches.length === 0) {
-    throw new LinearError("not-found", `Linear issue not found: ${issueId}.`);
-  }
-  if (matches.length > 1 || connection.pageInfo.hasNextPage) {
-    throw new LinearError(
-      "ambiguous-reference",
-      `Linear issue reference is ambiguous: ${issueId}.`,
-    );
-  }
-  return matches[0];
-}
-
 async function findIssue(client: LinearReadClient, issueRef: string): Promise<RawIssue> {
   const parsed = ISSUE_IDENTIFIER_RE.exec(issueRef);
   const variables = parsed
@@ -644,22 +314,6 @@ function normalizeIssueReference(
   };
 }
 
-function normalizeIssueRevision(value: RawIssue): LinearIssueRevision {
-  return {
-    id: requiredString(value.id, "issue revision id"),
-    identifier: requiredString(value.identifier, "issue revision identifier"),
-    updatedAt: isoDate(value.updatedAt, "issue revision updatedAt"),
-  };
-}
-
-function normalizeState(value: RawWorkflowState): LinearWorkflowState {
-  return {
-    id: requiredString(value.id, "workflow state id"),
-    name: requiredString(value.name, "workflow state name"),
-    type: requiredString(value.type, "workflow state type"),
-  };
-}
-
 function normalizeTeam(value: RawTeam): LinearIssueContext["team"] {
   return {
     id: requiredString(value.id, "team id"),
@@ -721,28 +375,11 @@ function compareIssueReferences(left: LinearIssueReference, right: LinearIssueRe
   return comparePair(left.identifier, left.id, right.identifier, right.id);
 }
 
-function compareIssueRevisions(left: LinearIssueRevision, right: LinearIssueRevision): number {
-  return comparePair(left.identifier, left.id, right.identifier, right.id);
-}
-
 function compareAttachments(
   left: LinearIssueContext["attachments"][number],
   right: LinearIssueContext["attachments"][number],
 ): number {
   return comparePair(left.createdAt, left.id, right.createdAt, right.id);
-}
-
-function comparePair(
-  leftPrimary: string,
-  leftTie: string,
-  rightPrimary: string,
-  rightTie: string,
-): number {
-  return compareText(leftPrimary, rightPrimary) || compareText(leftTie, rightTie);
-}
-
-function compareText(left: string, right: string): number {
-  return left === right ? 0 : left < right ? -1 : 1;
 }
 
 function sameIssueIdentifier(identifier: string, teamKey: string, number: number): boolean {
@@ -772,36 +409,6 @@ function requiredRelationId(value: string | null | undefined, label: string): st
   return requiredString(value, label);
 }
 
-function requiredString(value: unknown, label: string): string {
-  if (typeof value !== "string") throw invalidResponse(`Linear response has invalid ${label}.`);
-  return value;
-}
-
-function nonEmptyInput(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new LinearError("invalid-input", `Linear ${label} must be a non-empty string.`);
-  }
-  return value.trim();
-}
-
-function nullableString(value: unknown, label: string): string | null {
-  if (value == null) return null;
-  return requiredString(value, label);
-}
-
-function isoDate(value: unknown, label: string): string {
-  if (!(value instanceof Date) && typeof value !== "string") {
-    throw invalidResponse(`Linear response has invalid ${label}.`);
-  }
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.valueOf())) throw invalidResponse(`Linear response has invalid ${label}.`);
-  return date.toISOString();
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
 function uniqueById<T extends { id: string }>(values: T[], label: string): T[] {
   const byId = new Map<string, T>();
   for (const value of values) {
@@ -809,8 +416,4 @@ function uniqueById<T extends { id: string }>(values: T[], label: string): T[] {
     if (!byId.has(id)) byId.set(id, value);
   }
   return [...byId.values()];
-}
-
-function invalidResponse(message: string): LinearError {
-  return new LinearError("invalid-response", message);
 }

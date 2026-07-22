@@ -1,20 +1,21 @@
 import { LinearClient } from "@linear/sdk";
 import { LinearError } from "./error.ts";
+import { getIssueContext } from "./issue-context.ts";
 import {
   findCommentMarker as findCommentMarkerOperation,
   findWorkflowState as findWorkflowStateOperation,
-  getIssueContext,
-  listIssueRevisions as listIssueRevisionsOperation,
-  normalizeLimits,
-  type FindCommentMarkerInput,
-  type FindWorkflowStateInput,
-  type LinearIssueContext,
-  type LinearReadClient,
-  type LinearReadLimits,
-  type LinearWorkflowState,
-  type ListIssueRevisionsInput,
-  type ListIssueRevisionsResult,
-} from "./read.ts";
+} from "./lookups.ts";
+import { listIssueRevisions as listIssueRevisionsOperation } from "./revisions.ts";
+import type { LinearReadClient } from "./sdk-types.ts";
+import type {
+  FindCommentMarkerInput,
+  FindWorkflowStateInput,
+  LinearIssueContext,
+  LinearReadLimits,
+  LinearWorkflowState,
+  ListIssueRevisionsInput,
+  ListIssueRevisionsResult,
+} from "./types.ts";
 import {
   createComment as createCommentOperation,
   ensureBlockedByRelation as ensureBlockedByRelationOperation,
@@ -42,13 +43,13 @@ export type {
   LinearIssueContext,
   LinearIssueReference,
   LinearIssueRevision,
-  LinearReadClient,
   LinearReadLimits,
   LinearUser,
   LinearWorkflowState,
   ListIssueRevisionsInput,
   ListIssueRevisionsResult,
-} from "./read.ts";
+} from "./types.ts";
+export type { LinearReadClient } from "./sdk-types.ts";
 export type {
   CreateCommentInput,
   EnsureBlockedByRelationInput,
@@ -108,4 +109,29 @@ export function createLinearForClient(input: {
     ensureBlockedByRelation: (relationInput) =>
       ensureBlockedByRelationOperation(input.client, limits.relations, relationInput),
   };
+}
+
+function normalizeLimits(input: LinearReadLimits): LinearReadLimits {
+  const entries = Object.entries(input ?? {}) as Array<[keyof LinearReadLimits, unknown]>;
+  const requiredKeys: Array<keyof LinearReadLimits> = [
+    "comments",
+    "labels",
+    "relations",
+    "attachments",
+    "children",
+  ];
+  const values = Object.fromEntries(entries) as Partial<Record<keyof LinearReadLimits, unknown>>;
+  for (const key of requiredKeys) {
+    const value = values[key];
+    if (!Number.isInteger(value) || Number(value) < 1) {
+      throw new LinearError("invalid-config", `Linear ${key} limit must be a positive integer.`);
+    }
+  }
+  return Object.freeze({
+    comments: Number(values.comments),
+    labels: Number(values.labels),
+    relations: Number(values.relations),
+    attachments: Number(values.attachments),
+    children: Number(values.children),
+  });
 }

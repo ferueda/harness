@@ -22,7 +22,7 @@ import {
   LINEAR_TRIAGE_STATE_STEP_ID,
   type LinearTriageService,
 } from "./triage-consumer.ts";
-import type { LinearIssueContext, LinearIssueReference } from "../linear/read.ts";
+import type { LinearIssueContext, LinearIssueReference } from "../linear/types.ts";
 import type { TriageDecision } from "../triage/schema.ts";
 import {
   completedStepsBefore,

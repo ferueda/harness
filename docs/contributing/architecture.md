@@ -153,7 +153,9 @@ file should live with the subsystem whose contract it extends.
 `change-review` and `plan-review` use an immutable workflow context and callable
 workflow definitions. Reviewers run through the shared provider interface and
 write structured results beneath the run directory. Aggregation owns the final
-verdict; provider adapters do not.
+verdict; provider adapters do not. Within `lib/review/`, `runtime.ts` composes a
+run, `reviewer.ts` owns prompt and provider execution, and `run-report.ts` owns
+durable summaries, metadata, stream records, and incomplete-run cleanup.
 
 ### Domain operation boundary
 
@@ -167,7 +169,9 @@ tested with a fake agent without starting a worker.
 The Linear module resolves SDK relations, pagination, and failures behind a
 small application interface. It returns plain data and does not import Inngest,
 triage policy, prompts, or providers. Domain code owns route names and how a
-decision maps to Linear status and labels.
+decision maps to Linear status and labels. `client.ts` is the consumer facade,
+`types.ts` is the public JSON-safe read contract, and issue context, revisions,
+and lookups remain separate operations behind that facade.
 
 ### Provider boundary
 
