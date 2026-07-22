@@ -76,8 +76,13 @@ describe("automation import boundaries", () => {
     );
     expectBoundaryViolation(
       "lib/linear/forbidden.ts",
-      'import { Inngest } from "inngest";',
+      'import { connect } from "inngest/connect";',
       "Linear service primitives must not depend on delivery code",
+    );
+    expectBoundaryViolation(
+      "lib/linear/forbidden.ts",
+      'import { renderSpecPrompt } from "../prompts/spec.ts";',
+      "domain and delivery policy belong outside lib/linear",
     );
   });
 
@@ -101,6 +106,11 @@ describe("automation import boundaries", () => {
       "lib/spec/forbidden.ts",
       'import { createAgentProvider } from "../../providers/registry.ts";',
       "use injected service, provider, and repository interfaces",
+    );
+    expectBoundaryViolation(
+      "lib/spec/forbidden.ts",
+      'import { execFile } from "child_process";',
+      "instead of running Git or GitHub commands",
     );
   });
 

@@ -19,19 +19,17 @@
         "no-restricted-imports": [
           "error",
           {
-            "paths": [
-              {
-                "name": "inngest",
-                "message": "Linear service primitives must not depend on delivery code."
-              }
-            ],
             "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Linear service primitives must not depend on delivery code."
+              },
               {
                 "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
                 "message": "Linear service primitives must not depend on concrete providers."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:triage(?:/|$)|spec(?:/|$)|inngest(?:/|$)|linear-)",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:triage(?:/|$)|spec(?:/|$)|prompts(?:/|$)|inngest(?:/|$)|linear-)",
                 "message": "Linear service primitives may only communicate with Linear; domain and delivery policy belong outside lib/linear."
               },
               {
@@ -51,15 +49,19 @@
           {
             "paths": [
               {
-                "name": "inngest",
-                "message": "Domain operations must not depend on delivery code."
+                "name": "node:child_process",
+                "message": "Domain operations must use injected repository or publication primitives instead of running Git or GitHub commands."
               },
               {
-                "name": "node:child_process",
+                "name": "child_process",
                 "message": "Domain operations must use injected repository or publication primitives instead of running Git or GitHub commands."
               }
             ],
             "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Domain operations must not depend on delivery code."
+              },
               {
                 "regex": "^@linear/sdk(?:/|$)",
                 "message": "Domain operations receive normalized input instead of importing Linear."
@@ -83,13 +85,11 @@
         "no-restricted-imports": [
           "error",
           {
-            "paths": [
-              {
-                "name": "inngest",
-                "message": "Repository primitives must not depend on delivery code."
-              }
-            ],
             "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Repository primitives must not depend on delivery code."
+              },
               {
                 "regex": "^@linear/sdk(?:/|$)",
                 "message": "Repository primitives must not depend on tracker code."
@@ -109,13 +109,11 @@
         "no-restricted-imports": [
           "error",
           {
-            "paths": [
-              {
-                "name": "inngest",
-                "message": "Provider adapters must not depend on delivery code."
-              }
-            ],
             "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Provider adapters must not depend on delivery code."
+              },
               {
                 "regex": "^@linear/sdk(?:/|$)",
                 "message": "Provider adapters must not depend on Linear."
