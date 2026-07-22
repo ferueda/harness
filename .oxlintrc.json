@@ -11,5 +11,121 @@
     "vitest/expect-expect": "error",
     "vitest/no-conditional-tests": "error",
     "vitest/no-disabled-tests": "error"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["lib/linear/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Linear service primitives must not depend on delivery code."
+              },
+              {
+                "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
+                "message": "Linear service primitives must not depend on concrete providers."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*(?:triage(?:/|$)|spec(?:/|$)|prompts(?:/|$)|inngest(?:/|$)|linear-)",
+                "message": "Linear service primitives may only communicate with Linear; domain and delivery policy belong outside lib/linear."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*providers(?:/|$)",
+                "message": "Linear service primitives must not depend on concrete providers."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["lib/triage/**/*.ts", "lib/spec/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Domain operations must use injected repository or publication primitives instead of running Git or GitHub commands."
+              },
+              {
+                "name": "child_process",
+                "message": "Domain operations must use injected repository or publication primitives instead of running Git or GitHub commands."
+              }
+            ],
+            "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Domain operations must not depend on delivery code."
+              },
+              {
+                "regex": "^@linear/sdk(?:/|$)",
+                "message": "Domain operations receive normalized input instead of importing Linear."
+              },
+              {
+                "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
+                "message": "Domain operations depend on the shared Agent interface, not a concrete provider."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|repository(?:/|$)|github(?:/|$)|providers(?:/|$))",
+                "message": "Domain operations own policy only; use injected service, provider, and repository interfaces."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["lib/repository/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Repository primitives must not depend on delivery code."
+              },
+              {
+                "regex": "^@linear/sdk(?:/|$)",
+                "message": "Repository primitives must not depend on tracker code."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:/|$)|implementation(?:/|$))",
+                "message": "Repository primitives own isolated execution and publication, not tracker or domain policy."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["providers/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "Provider adapters must not depend on delivery code."
+              },
+              {
+                "regex": "^@linear/sdk(?:/|$)",
+                "message": "Provider adapters must not depend on Linear."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*(?:lib/)?(?:linear(?:/|-)|triage(?:/|$)|spec(?:/|$))",
+                "message": "Provider adapters translate provider behavior and must not import tracker or domain operations."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }
