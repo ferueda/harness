@@ -7,7 +7,7 @@ describe("triage prompt", () => {
     const context = validContext();
     const prompt = renderTriagePrompt(context);
 
-    expect(TRIAGE_POLICY_VERSION).toBe("4");
+    expect(TRIAGE_POLICY_VERSION).toBe("5");
     expect(prompt).toContain(JSON.stringify(context, null, 2));
     expect(prompt).toContain('"commentsTruncated": true');
     expect(prompt).toContain('"childrenTruncated": false');
@@ -29,7 +29,7 @@ describe("triage prompt", () => {
       "Several human decisions about one observable outcome do not make the item too broad",
     );
     expect(prompt).toContain(
-      "one stale-issue automation with an undecided age threshold and close behavior is bounded",
+      "one stale-issue automation with an undecided age threshold and close behavior is bounded and can route to Spec",
     );
     expect(prompt).toContain(
       "Webhook ingress, triage, specification, implementation, and a dashboard are independent outcomes",
@@ -39,14 +39,69 @@ describe("triage prompt", () => {
     expect(prompt).toContain("ask exactly one question");
   });
 
-  it("distinguishes agent work from human-only uncertainty", () => {
+  it("grounds bounded work in current repository intent without creating a ceremonial gate", () => {
+    const prompt = renderTriagePrompt(validContext());
+
+    expect(prompt).toContain("2. Ground bounded work in current repository intent.");
+    expect(prompt).toContain(
+      "Start with repository guidance such as AGENTS.md and README.md, then follow its links",
+    );
+    expect(prompt).toContain(
+      "docs/project-intent.md, root VISION.md, PRODUCT.md, and decision docs are common examples, not required paths",
+    );
+    expect(prompt).toContain(
+      "documented audience and goals, non-goals, hard invariants, ownership and source-of-truth boundaries",
+    );
+    expect(prompt).toContain(
+      "Treat roadmaps, plans, proposals, and archived docs as context unless repository guidance marks them as current authority.",
+    );
+    expect(prompt).toContain(
+      "When an accepted issue explicitly proposes changing current intent, treat that as a direction change",
+    );
+    expect(prompt).toContain(
+      "Do not require an intent citation for narrow work where intent is not material.",
+    );
+    expect(prompt).toContain("Missing intent alone does not require human input.");
+  });
+
+  it("teaches intent-alignment close calls", () => {
+    const prompt = renderTriagePrompt(validContext());
+
+    expect(prompt).toContain("Intent close calls:");
+    expect(prompt).toContain(
+      "links a nonstandard intent source that supports a bounded change, use and cite it",
+    );
+    expect(prompt).toContain(
+      "current intent rules out the proposed mechanism but permits compliant alternatives",
+    );
+    expect(prompt).toContain(
+      "two current authoritative sources materially conflict and no useful investigation can begin",
+    );
+    expect(prompt).toContain(
+      "no intent source exists for a narrow, well-specified local fix, choose Implement",
+    );
+    expect(prompt).toContain(
+      "an archived roadmap or old plan conflicts with current intent, current intent wins",
+    );
+  });
+
+  it("distinguishes agent work from prerequisite human input", () => {
     const prompt = renderTriagePrompt(validContext());
 
     expect(prompt).toContain(
-      "Repository inspection, reproduction, diagnosis, technical research, and technical specification are agent work.",
+      "Repository inspection, reproduction, diagnosis, technical research, intent-aligned option discovery, and technical specification are agent work.",
     );
     expect(prompt).toContain(
-      "Product behavior, UX intent, scope authority, credentials, inaccessible facts",
+      "A later human choice or approval does not make input a prerequisite.",
+    );
+    expect(prompt).toContain(
+      "For bounded work, choose Needs Input only when at least one prerequisite blocks all useful agent work, including Spec",
+    );
+    expect(prompt).toContain(
+      "The desired outcome or success boundary is unknown or contradictory.",
+    );
+    expect(prompt).toContain(
+      "A human must establish, reconcile, or explicitly override project direction before useful work can begin.",
     );
     expect(prompt).toContain('decision "ready-for-agent" and agentAction "implement"');
     expect(prompt).toContain('decision "ready-for-agent" and agentAction "spec"');
@@ -54,10 +109,19 @@ describe("triage prompt", () => {
       "Normal repository inspection to locate files, follow existing patterns, and write tests is part of implementation.",
     );
     expect(prompt).toContain(
+      "Technical uncertainty that current code or tests can resolve within one normal implementation pass remains Implement.",
+    );
+    expect(prompt).toContain(
+      "Choose Spec only when investigation or risk reduction must be completed before editing can safely begin.",
+    );
+    expect(prompt).toContain(
       "only when the next useful deliverable should be a diagnosis, design, migration strategy, or risk-reduction specification",
     );
     expect(prompt).toContain(
-      'prefer agentAction "implement" if repository evidence supports a straightforward safe change',
+      "A useful Spec may research options, recommend one, and leave explicit decisions for later human review.",
+    );
+    expect(prompt).toContain(
+      'prefer agentAction "implement" if repository and intent evidence support a straightforward safe change',
     );
     expect(prompt).toContain("agentAction is a recommendation, not a tracker phase");
   });
@@ -84,16 +148,19 @@ describe("triage prompt", () => {
     expect(prompt).toContain("Explain why the exact decision and agentAction are appropriate.");
     expect(prompt).toContain("Do not merely restate the issue or list the evidence.");
     expect(prompt).toContain(
-      "For Implement, explain why the outcome and acceptance boundary support one safe implementation pass.",
+      "For Implement, explain why the outcome, acceptance boundary, and any material intent constraints support one safe implementation pass.",
     );
     expect(prompt).toContain(
-      "For Spec, explain what makes editing premature or unsafe and how the next specification deliverable reduces that risk.",
+      "For Spec, explain what useful artifact should be produced, how it reduces risk, and which material intent constraints or later reviewer decisions it should address.",
     );
     expect(prompt).toContain(
-      "For Needs Input, explain which human-only decision or scope boundary blocks useful agent work.",
+      "For Needs Input, explain which exact human prerequisite blocks all useful Implement and Spec work.",
     );
     expect(prompt).toContain(
       "For Duplicate, explain why the referenced work item represents the same outcome.",
+    );
+    expect(prompt).toContain(
+      "When intent materially affects the route, name the source and constraint in the rationale",
     );
   });
 
