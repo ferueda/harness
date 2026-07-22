@@ -44,6 +44,9 @@ such as `/path/to/repo`, `harness.json`, and `.harness/runs/reviews/<run-id>/`.
   workflow policy.
 - Durable delivery systems may retry, schedule, and observe work, but domain
   policy belongs in the independent operation that makes the decision.
+- Repository and compute primitives own isolated execution, publication, and
+  cleanup. They return serializable handles and must not own tracker lifecycle
+  or domain policy.
 - External systems that already own queue or lifecycle state remain the source
   of truth. Harness must not mirror that state in a second lifecycle store.
 - Runtime schemas and exported schemas must stay aligned when either side
@@ -65,8 +68,24 @@ decisions and structured results. Service and provider primitives communicate
 with external systems without knowing which operation or delivery host called
 them.
 
+Durable functions stay thin by owning temporal coordination only: reload
+current truth, validate or claim work, call an operation, publish its artifact,
+project the result, and emit the next event or end. They may branch, retry, and
+serialize work, but they must not hide prompt policy, SDK pagination, Git
+commands, or tracker mappings inside the function body.
+
+Resume work at meaningful side-effect boundaries. Provider sessions,
+repository runs, and publication identities should be serializable and stable
+when a retry needs to reconstruct them. Scratch state may be replaced; durable
+work and review artifacts may not.
+
 Standalone operations may be connected when a real workflow needs it, but they
 should not require an artificial shared state machine.
+
+Start each operation with its own concrete input and result contract. Extract a
+shared automation framework only after multiple real consumers prove the same
+abstraction. Do not introduce station registries, generic operation engines, or
+a central lifecycle to prepare for hypothetical work.
 
 The current Linear automation follows this shape directly: a self-hosted
 Inngest poller emits revision-scoped events, a readiness operation reloads
