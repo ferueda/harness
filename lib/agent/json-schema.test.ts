@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { assertCodexStrictSchema, validateJsonSchema } from "./schema-validation.ts";
+import { assertCodexStrictSchema, validateJsonSchema } from "./json-schema.ts";
 
 test("validateJsonSchema enforces minItems", () => {
   const schema = { type: "array", minItems: 1 } as const;

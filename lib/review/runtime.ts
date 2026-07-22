@@ -19,16 +19,16 @@ import type {
   AgentRunInput,
   AgentRunResult,
   AgentSandboxMode,
-} from "./agents.ts";
-import { DEFAULT_AGENT_MODELS, DEFAULT_CODEX_REASONING_EFFORT } from "./agents.ts";
-import type { AgentStreamFormat, AgentStreamLogSummary } from "./agent-stream-log.ts";
+} from "../agent/contract.ts";
+import { DEFAULT_AGENT_MODELS, DEFAULT_CODEX_REASONING_EFFORT } from "../agent/contract.ts";
+import type { AgentStreamFormat, AgentStreamLogSummary } from "../agent/stream-log.ts";
 import {
   WORKFLOW_EVENTS_FILE,
   createCompositeEventSink,
   createFileEventSink,
   noopEventSink,
   type WorkflowEventSink,
-} from "./workflow-events.ts";
+} from "./events.ts";
 import {
   buildDiffRef,
   buildInlinedHandoffSection,
@@ -37,14 +37,14 @@ import {
   fillTemplate,
   prepareGitScope,
   writeRunContext,
-} from "./context.ts";
+} from "./run-context.ts";
 import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
   SPEC_REVIEW_PROMPT,
 } from "./prompts/index.ts";
-import type { ContextArtifact } from "./context.ts";
-import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schemas.ts";
+import type { ContextArtifact } from "./run-context.ts";
+import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schema.ts";
 
 type WorkflowRunOptions = {
   workspace: string;
@@ -106,7 +106,7 @@ type PromptContextArtifacts = {
   handoff: ContextArtifact;
 };
 
-const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const IS_BUILT_OUTPUT = basename(MODULE_ROOT) === "dist";
 const HARNESS_ROOT = IS_BUILT_OUTPUT ? resolve(MODULE_ROOT, "..") : MODULE_ROOT;
 const SCHEMA_PATH = join(HARNESS_ROOT, "schemas/review-output.schema.json");

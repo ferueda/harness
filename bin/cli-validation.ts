@@ -3,7 +3,7 @@ import type {
   AgentProviderName,
   AgentReasoningEffort,
   AgentSandboxMode,
-} from "../lib/agents.ts";
+} from "../lib/agent/contract.ts";
 
 export function assertCodexOnlyAgentOptions(
   agentProvider: AgentProviderName,

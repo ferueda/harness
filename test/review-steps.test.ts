@@ -1,7 +1,11 @@
 import { expect, test } from "vitest";
-import type { ReviewSection, ReviewVerdict, WorkflowStepMetadata } from "../lib/aggregate.ts";
-import type { ReviewOutput } from "../lib/schemas.ts";
-import type { ReviewAgentName } from "../lib/workflow-context.ts";
+import type {
+  ReviewSection,
+  ReviewVerdict,
+  WorkflowStepMetadata,
+} from "../lib/review/aggregate.ts";
+import type { ReviewOutput } from "../lib/review/schema.ts";
+import type { ReviewAgentName } from "../lib/review/runtime.ts";
 import {
   normalizeChangeReviewSteps,
   run as runChangeReview,

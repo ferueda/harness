@@ -1,5 +1,5 @@
-import type { WorkflowStepMetadata } from "../lib/aggregate.ts";
-import type { ReviewAgentName } from "../lib/workflow-context.ts";
+import type { WorkflowStepMetadata } from "../lib/review/aggregate.ts";
+import type { ReviewAgentName } from "../lib/review/runtime.ts";
 import { runReviewSteps, type ReviewStep, type WorkflowContext } from "./review-steps.ts";
 
 export const meta = { name: "change-review" };

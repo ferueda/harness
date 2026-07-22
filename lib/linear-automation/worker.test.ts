@@ -5,12 +5,12 @@ import {
   type WorkerConnection,
 } from "inngest/connect";
 import { describe, expect, it, vi } from "vitest";
-import type { Agent } from "./agents.ts";
+import type { Agent } from "../agent/contract.ts";
 import type { LinearAutomationSettings } from "./config.ts";
 import {
   LINEAR_BACKLOG_POLL_FUNCTION_ID,
   type LinearBacklogPollerLinear,
-} from "./linear-backlog-poller.ts";
+} from "./backlog-poller.ts";
 import {
   createLinearAutomationFunctions,
   LINEAR_AUTOMATION_APP_ID,
@@ -20,9 +20,9 @@ import {
   parseLinearAutomationWorkerEnvironment,
   startLinearAutomationWorker,
   verifyLinearAutomationCodexAuthentication,
-} from "./linear-automation-worker.ts";
-import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "./linear-readiness-router.ts";
-import { LINEAR_TRIAGE_FUNCTION_ID, type LinearTriageService } from "./linear-triage.ts";
+} from "./worker.ts";
+import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "./readiness-router.ts";
+import { LINEAR_TRIAGE_FUNCTION_ID, type LinearTriageService } from "./triage-consumer.ts";
 
 const settings: LinearAutomationSettings = {
   workspace: "/workspace/harness",

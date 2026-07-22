@@ -8,14 +8,8 @@ import {
   type AgentProviderName,
   type AgentReasoningEffort,
   type AgentSandboxMode,
-} from "./agents.ts";
-import {
-  HarnessConfigSchema,
-  formatZodError,
-  type HarnessConfig,
-  type LinearAutomationConfig,
-} from "./schemas.ts";
-import type { LinearReadinessMapping } from "./linear-readiness.ts";
+} from "../agent/contract.ts";
+import { HarnessConfigSchema, formatZodError, type HarnessConfig } from "./schema.ts";
 
 const CONFIG_FILE = "harness.json";
 export const HARNESS_GITIGNORE_ENTRY = ".harness/";
@@ -71,60 +65,12 @@ export type HarnessConfigSnapshot = Readonly<{
   config: HarnessConfig;
 }>;
 
-export type LinearAutomationSettings = Readonly<{
-  workspace: string;
-  readiness: LinearReadinessMapping;
-  triage: Readonly<{
-    agent: AgentProviderName;
-    model: string;
-    modelReasoningEffort: AgentReasoningEffort;
-    maxRuntimeMs: number;
-    codexPathOverride?: string;
-  }>;
-}>;
-
 export function loadHarnessConfigSnapshot(
   workspaceInput?: string,
   cwd = process.cwd(),
 ): HarnessConfigSnapshot {
   const workspace = resolveHarnessWorkspace(workspaceInput, cwd);
   return Object.freeze({ workspace, config: readHarnessConfig(workspace) });
-}
-
-export function resolveLinearAutomationSettings(
-  options: { workspace?: string },
-  cwd = process.cwd(),
-): LinearAutomationSettings {
-  return resolveLinearAutomationSettingsFromSnapshot(
-    loadHarnessConfigSnapshot(options.workspace, cwd),
-  );
-}
-
-export function resolveLinearAutomationSettingsFromSnapshot(
-  snapshot: HarnessConfigSnapshot,
-): LinearAutomationSettings {
-  const { workspace, config } = snapshot;
-  const automation = config.linearAutomation;
-  if (!automation) {
-    throw new Error(
-      "linearAutomation is required in harness.json for the Linear worker. Configure readiness IDs and triage.",
-    );
-  }
-
-  const agentConfig = config.agents?.codex ?? {};
-  const model = automation.triage.model ?? agentConfig.model ?? DEFAULT_AGENT_MODELS.codex;
-  const modelReasoningEffort =
-    automation.triage.modelReasoningEffort ??
-    config.agents?.codex?.modelReasoningEffort ??
-    DEFAULT_CODEX_REASONING_EFFORT;
-
-  return freezeLinearAutomationSettings({
-    workspace,
-    automation,
-    model,
-    modelReasoningEffort,
-    codexPathOverride: config.agents?.codex?.executable,
-  });
 }
 
 export function resolveHarnessOptions<T extends HarnessOptions>(
@@ -245,33 +191,6 @@ function readHarnessConfig(workspace: string): HarnessConfig {
   }
 
   return result.data;
-}
-
-function freezeLinearAutomationSettings(input: {
-  workspace: string;
-  automation: LinearAutomationConfig;
-  model: string;
-  modelReasoningEffort: AgentReasoningEffort;
-  codexPathOverride?: string;
-}): LinearAutomationSettings {
-  const readiness = Object.freeze({
-    ...input.automation.readiness,
-    stateIds: Object.freeze({ ...input.automation.readiness.stateIds }),
-    agentActionLabelIds: Object.freeze({
-      ...input.automation.readiness.agentActionLabelIds,
-    }),
-  });
-  const triage = Object.freeze({
-    ...input.automation.triage,
-    model: input.model,
-    modelReasoningEffort: input.modelReasoningEffort,
-    ...(input.codexPathOverride ? { codexPathOverride: input.codexPathOverride } : {}),
-  });
-  return Object.freeze({
-    workspace: input.workspace,
-    readiness,
-    triage,
-  });
 }
 
 function resolveGitRoot(cwd: string): string {

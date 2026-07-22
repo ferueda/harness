@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
-import * as agentSignals from "../../lib/agent-signals.ts";
+import * as agentSignals from "../../lib/agent/signals.ts";
 import { createCodexAgent } from "./codex-agent.ts";
 import type { CodexOptions, ThreadEvent, ThreadOptions, TurnOptions } from "@openai/codex-sdk";
 

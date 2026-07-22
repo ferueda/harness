@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
-import type { AgentRunResult, AgentWorkspaceGuardMode } from "./agents.ts";
-import { errorArtifact, errorMessage } from "./agent-invoke.ts";
+import type { AgentRunResult, AgentWorkspaceGuardMode } from "./contract.ts";
+import { errorArtifact, errorMessage } from "./invocation.ts";
 
 export type WorkspaceStatusMeta = {
   before: string;

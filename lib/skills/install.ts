@@ -1,9 +1,9 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveHarnessWorkspace } from "./config.ts";
+import { resolveHarnessWorkspace } from "../config/harness.ts";
 
-const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const HARNESS_ROOT = basename(MODULE_ROOT) === "dist" ? resolve(MODULE_ROOT, "..") : MODULE_ROOT;
 const PACKAGED_SKILLS_DIR = resolve(HARNESS_ROOT, "skills");
 const LOCAL_SKILLS_DIR = ".agents/skills";

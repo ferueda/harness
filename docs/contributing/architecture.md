@@ -124,25 +124,24 @@ real consumers expose the same stable contract.
 
 ## Source map
 
-| Area                                                         | Responsibility                                                                                                  |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `bin/`                                                       | CLI entrypoint, generated help, and the persistent Linear worker command                                        |
-| `lib/config.ts`, `lib/context.ts`, `lib/workflow-context.ts` | Workspace and configuration resolution, review context, provider wiring, aggregation, and standalone run export |
-| `workflows/`, `lib/prompts/`                                 | Provider-neutral review workflow definitions, shared review execution, and prompt contracts                     |
-| `lib/linear/`                                                | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
-| `lib/triage/`                                                | Triage prompt, structured decision schema, and provider-independent operation                                   |
-| `lib/linear-backlog-poller.ts`                               | Explicitly scoped issue revision polling                                                                        |
-| `lib/linear-readiness.ts`, `lib/linear-readiness-router.ts`  | Deterministic readiness policy and its read-only Inngest delivery adapter                                       |
-| `lib/linear-triage.ts`                                       | Inngest consumer that composes triage policy with guarded Linear projections                                    |
-| `lib/linear-automation-worker.ts`                            | Connect composition, fixed function registration, startup validation, concurrency, and health endpoints         |
-| `lib/inngest/`                                               | Typed, provider-neutral event contracts                                                                         |
-| `providers/`                                                 | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation             |
-| `skills/`                                                    | Packaged skills installed into target repositories                                                              |
-| `.agents/skills/`                                            | Development-only skills for this Harness checkout                                                               |
-| `schemas/`                                                   | Exported JSON schemas that stay aligned with runtime validation                                                 |
-| `scripts/`                                                   | Build, distribution, smoke, and gate infrastructure                                                             |
-| `automations/`                                               | Background task definitions                                                                                     |
-| `dev/plans/`                                                 | Active implementation plans and their index; not current architecture truth                                     |
+| Area                     | Responsibility                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `bin/`                   | CLI entrypoint, generated help, and the persistent Linear worker command                                        |
+| `lib/agent/`             | Provider-neutral Agent contract, invocation support, structured output, streams, sessions, and workspace guards |
+| `providers/`             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation             |
+| `lib/config/`            | `harness.json` composition, workspace resolution, local initialization, and review option resolution            |
+| `lib/review/`            | Review runtime, prompt context, aggregation, events, schemas, artifacts, handoffs, and run management           |
+| `workflows/`             | Callable provider-neutral change-review and plan-review definitions                                             |
+| `lib/linear/`            | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
+| `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
+| `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
+| `lib/skills/`            | Packaged-skill installation support                                                                             |
+| `skills/`                | Packaged skills installed into target repositories                                                              |
+| `.agents/skills/`        | Development-only skills for this Harness checkout                                                               |
+| `schemas/`               | Exported JSON schemas that stay aligned with runtime validation                                                 |
+| `scripts/`               | Build, distribution, smoke, and gate infrastructure                                                             |
+| `automations/`           | Background task definitions                                                                                     |
+| `dev/plans/`             | Active implementation plans and their index; not current architecture truth                                     |
 
 Prefer these ownership clusters over a file-by-file mental model. A new source
 file should live with the subsystem whose contract it extends.
@@ -185,9 +184,11 @@ leaving Linear as the queue.
 
 ### Schema boundary
 
-Runtime validation lives beside the operation or in `lib/schemas.ts`. Exported
-schemas live in `schemas/`. When a public structured contract changes, check the
-runtime schema, exported schema, prompt, and consumer together.
+Runtime validation lives with its owner: operation schemas beside their
+operation, review output under `lib/review/`, composed Harness configuration
+under `lib/config/`, and feature configuration under the owning application.
+Exported schemas live in `schemas/`. When a public structured contract changes,
+check the runtime schema, exported schema, prompt, and consumer together.
 
 ## Artifact map
 

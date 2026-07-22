@@ -9,25 +9,28 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { Inngest } from "inngest";
 import { connect } from "inngest/connect";
-import type { Agent } from "../lib/agents.ts";
-import type { LinearAutomationSettings } from "../lib/config.ts";
+import type { Agent } from "../lib/agent/contract.ts";
+import type { LinearAutomationSettings } from "../lib/linear-automation/config.ts";
 import {
   LinearPollRequestedEvent,
   linearIssueRevisionEventId,
-} from "../lib/inngest/linear-revision-events.ts";
+} from "../lib/linear-automation/events/linear-revision-events.ts";
 import {
   createLinearAutomationFunctions,
   LINEAR_AUTOMATION_APP_ID,
   startLinearAutomationWorker,
   type LinearAutomationWorker,
-} from "../lib/linear-automation-worker.ts";
+} from "../lib/linear-automation/worker.ts";
 import {
   LINEAR_BACKLOG_POLL_FUNCTION_ID,
   LINEAR_BACKLOG_POLL_LIMIT,
   type LinearBacklogPollerLinear,
-} from "../lib/linear-backlog-poller.ts";
-import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "../lib/linear-readiness-router.ts";
-import { LINEAR_TRIAGE_FUNCTION_ID, type LinearTriageService } from "../lib/linear-triage.ts";
+} from "../lib/linear-automation/backlog-poller.ts";
+import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "../lib/linear-automation/readiness-router.ts";
+import {
+  LINEAR_TRIAGE_FUNCTION_ID,
+  type LinearTriageService,
+} from "../lib/linear-automation/triage-consumer.ts";
 import type { LinearIssueContext } from "../lib/linear/read.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

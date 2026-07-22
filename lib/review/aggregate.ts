@@ -1,4 +1,4 @@
-import type { ReviewOutput } from "./schemas.ts";
+import type { ReviewOutput } from "./schema.ts";
 
 export type ReviewVerdict = "pass" | "needs_changes" | "blocked";
 

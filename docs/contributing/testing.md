@@ -111,7 +111,7 @@ cleanup; they are not routine CI coverage.
 During iteration, run the narrowest relevant path, for example:
 
 ```bash
-pnpm exec vitest run lib/linear-readiness.test.ts
+pnpm exec vitest run lib/linear-automation/readiness.test.ts
 pnpm exec vitest run providers/codex/codex-agent.test.ts
 pnpm exec vitest run test/docs-contracts.test.ts
 ```

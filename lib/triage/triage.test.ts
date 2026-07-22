@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { Agent, AgentProviderName, AgentRunInput, AgentRunResult } from "../agents.ts";
+import type { Agent, AgentProviderName, AgentRunInput, AgentRunResult } from "../agent/contract.ts";
 import { renderTriagePrompt, TRIAGE_POLICY_VERSION } from "./prompt.ts";
 import {
   TRIAGE_DECISION_SCHEMA_VERSION,

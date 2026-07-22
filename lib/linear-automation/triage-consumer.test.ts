@@ -1,16 +1,13 @@
 import { Inngest } from "inngest";
 import { InngestTestEngine } from "@inngest/test";
 import { describe, expect, it, vi } from "vitest";
-import type { Agent, AgentRunInput, AgentRunResult } from "./agents.ts";
+import type { Agent, AgentRunInput, AgentRunResult } from "../agent/contract.ts";
 import {
   TriageWorkRequestedEvent,
   workRequestEventId,
   type WorkRequestData,
-} from "./inngest/work-events.ts";
-import {
-  linearReadinessSnapshotGeneration,
-  type LinearReadinessConfig,
-} from "./linear-readiness.ts";
+} from "./events/work-events.ts";
+import { linearReadinessSnapshotGeneration, type LinearReadinessConfig } from "./readiness.ts";
 import {
   createLinearTriageFunction,
   LINEAR_TRIAGE_AGENT_STEP_ID,
@@ -24,15 +21,15 @@ import {
   LINEAR_TRIAGE_RETRIES,
   LINEAR_TRIAGE_STATE_STEP_ID,
   type LinearTriageService,
-} from "./linear-triage.ts";
-import type { LinearIssueContext, LinearIssueReference } from "./linear/read.ts";
-import type { TriageDecision } from "./triage/schema.ts";
+} from "./triage-consumer.ts";
+import type { LinearIssueContext, LinearIssueReference } from "../linear/read.ts";
+import type { TriageDecision } from "../triage/schema.ts";
 import {
   completedStepsBefore,
   fakeLinear,
   projectionState,
   statefulLinear,
-} from "../test/linear-triage-test-fixtures.ts";
+} from "../../test/linear-triage-test-fixtures.ts";
 
 const readiness: LinearReadinessConfig = {
   teamId: "team-1",

@@ -11,17 +11,14 @@ import {
   type WorkerConnection,
 } from "inngest/connect";
 import { z } from "zod";
-import type { Agent } from "./agents.ts";
+import type { Agent } from "../agent/contract.ts";
 import { resolveLinearAutomationSettings, type LinearAutomationSettings } from "./config.ts";
-import {
-  createLinearBacklogPoller,
-  type LinearBacklogPollerLinear,
-} from "./linear-backlog-poller.ts";
-import { createLinearReadinessRouter } from "./linear-readiness-router.ts";
-import type { LinearReadinessConfig } from "./linear-readiness.ts";
-import { createLinearTriageFunction, type LinearTriageService } from "./linear-triage.ts";
-import { createLinear, type LinearService } from "./linear/client.ts";
-import { createAgentProvider } from "../providers/registry.ts";
+import { createLinearBacklogPoller, type LinearBacklogPollerLinear } from "./backlog-poller.ts";
+import { createLinearReadinessRouter } from "./readiness-router.ts";
+import type { LinearReadinessConfig } from "./readiness.ts";
+import { createLinearTriageFunction, type LinearTriageService } from "./triage-consumer.ts";
+import { createLinear, type LinearService } from "../linear/client.ts";
+import { createAgentProvider } from "../../providers/registry.ts";
 
 export const LINEAR_AUTOMATION_APP_ID = "harness-linear-automation";
 export const LINEAR_AUTOMATION_MAX_WORKER_CONCURRENCY = 1;

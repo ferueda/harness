@@ -37,7 +37,7 @@ test("installPackagedSkill restores existing skill when forced replace fails", a
     };
   });
 
-  const { installPackagedSkill } = await import("../lib/skills.ts");
+  const { installPackagedSkill } = await import("../lib/skills/install.ts");
 
   expect(() => installPackagedSkill("change-review-workflow", { workspace, force: true })).toThrow(
     /simulated replace failure/,

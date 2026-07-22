@@ -1,35 +1,35 @@
 import type { Inngest, InngestFunction } from "inngest";
 import { z } from "zod";
-import { AGENT_REASONING_EFFORTS, type Agent } from "./agents.ts";
+import { AGENT_REASONING_EFFORTS, type Agent } from "../agent/contract.ts";
 import {
   TriageWorkRequestedEvent,
   workRequestEventId,
   type WorkRequestData,
-} from "./inngest/work-events.ts";
+} from "./events/work-events.ts";
 import {
   classifyLinearReadiness,
   LinearReadinessConfigSchema,
   type LinearReadinessConfig,
-} from "./linear-readiness.ts";
-import type { LinearService } from "./linear/client.ts";
-import { LinearError } from "./linear/error.ts";
+} from "./readiness.ts";
+import type { LinearService } from "../linear/client.ts";
+import { LinearError } from "../linear/error.ts";
 import type {
   LinearCommentActor,
   LinearIssueContext,
   LinearIssueReference,
-} from "./linear/read.ts";
+} from "../linear/read.ts";
 import {
   triageIssue,
   type TriageExecution,
   type TriageIssueResult,
   type TriageProvenance,
-} from "./triage/triage.ts";
+} from "../triage/triage.ts";
 import type {
   TriageDecision,
   TriageEvidence,
   TriageWorkItemContext,
   TriageWorkItemReference,
-} from "./triage/schema.ts";
+} from "../triage/schema.ts";
 
 export const LINEAR_TRIAGE_FUNCTION_ID = "triage-linear-issue-v1";
 export const LINEAR_TRIAGE_RETRIES = 3;

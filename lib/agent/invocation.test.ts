@@ -4,7 +4,7 @@ import {
   errorMessage,
   raceWithTimeout,
   STREAM_SETTLE_TIMEOUT_MS,
-} from "./agent-invoke.ts";
+} from "./invocation.ts";
 
 test("errorMessage returns message for Error and string for unknown", () => {
   expect(errorMessage(new Error("boom"))).toBe("boom");

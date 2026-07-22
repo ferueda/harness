@@ -1,11 +1,11 @@
-import type { JsonSchema } from "../../../lib/schema-validation.ts";
+import type { JsonSchema } from "../../../lib/agent/json-schema.ts";
 
-export { extractJsonFromText } from "../../../lib/json-extract.ts";
+export { extractJsonFromText } from "../../../lib/agent/json-extract.ts";
 export {
   loadSchema,
   parseStructuredOutput,
   type JsonSchema,
-} from "../../../lib/structured-output.ts";
+} from "../../../lib/agent/structured-output.ts";
 
 export function wrapPrompt(prompt: string, schema: JsonSchema | undefined): string {
   if (!schema) return prompt;

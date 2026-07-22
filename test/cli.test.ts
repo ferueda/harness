@@ -12,12 +12,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { CURSOR_SDK_MODEL_MODES } from "../lib/agents.ts";
+import { CURSOR_SDK_MODEL_MODES } from "../lib/agent/contract.ts";
 import {
   HARNESS_GITIGNORE_ENTRY,
   HARNESS_RECOMMENDED_COMMAND,
   HARNESS_SHIM_RELATIVE_PATH,
-} from "../lib/config.ts";
+} from "../lib/config/harness.ts";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HARNESS_BIN = join(REPO_ROOT, "bin/harness.ts");
 

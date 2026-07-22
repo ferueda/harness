@@ -21,9 +21,11 @@ import {
   initHarnessConfig,
   loadHarnessConfigSnapshot,
   resolveHarnessOptions,
+} from "../lib/config/harness.ts";
+import {
   resolveLinearAutomationSettings,
   resolveLinearAutomationSettingsFromSnapshot,
-} from "../lib/config.ts";
+} from "../lib/linear-automation/config.ts";
 const TEST_HARNESS_ENTRYPOINT = "/opt/harness/dist/bin/harness.js";
 
 function initOptions(options: Partial<InitHarnessOptions> = {}): InitHarnessOptions {

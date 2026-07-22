@@ -9,7 +9,7 @@ import {
   LINEAR_TRIAGE_RESOLVE_STEP_ID,
   LINEAR_TRIAGE_STATE_STEP_ID,
   type LinearTriageService,
-} from "../lib/linear-triage.ts";
+} from "../lib/linear-automation/triage-consumer.ts";
 import type { LinearIssueContext } from "../lib/linear/read.ts";
 
 export function fakeLinear(input: {

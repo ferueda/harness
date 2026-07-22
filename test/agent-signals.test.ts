@@ -3,7 +3,7 @@ import {
   createAbortedAgentResult,
   createAgentAbortRace,
   createAgentSignalState,
-} from "../lib/agent-signals.ts";
+} from "../lib/agent/signals.ts";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

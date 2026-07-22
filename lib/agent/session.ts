@@ -1,4 +1,4 @@
-import type { AgentProviderName, AgentRunResult, AgentSessionRef } from "./agents.ts";
+import type { AgentProviderName, AgentRunResult, AgentSessionRef } from "./contract.ts";
 
 type AgentSessionValidationError = Extract<AgentRunResult, { ok: false }>;
 type AgentSessionRawKind = "codex-thread" | "cursor-agent";

@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { runLinearAutomationWorker } from "../lib/linear-automation-worker.ts";
+import { runLinearAutomationWorker } from "../lib/linear-automation/worker.ts";
 
 type LinearWorkerOptions = {
   workspace?: string;

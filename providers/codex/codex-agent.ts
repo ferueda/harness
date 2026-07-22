@@ -14,21 +14,21 @@ import {
   type AgentRunInput,
   type AgentRunResult,
   type AgentSessionRef,
-} from "../../lib/agents.ts";
+} from "../../lib/agent/contract.ts";
 import {
   createAgentSessionRef,
   normalizeAgentSessionForProvider,
-} from "../../lib/agent-session.ts";
-import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent-stream-log.ts";
+} from "../../lib/agent/session.ts";
+import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent/stream-log.ts";
 import {
   createAbortedAgentResult,
   createAgentAbortRace,
   createAgentSignalState,
-} from "../../lib/agent-signals.ts";
-import { errorArtifact, errorMessage, raceWithTimeout } from "../../lib/agent-invoke.ts";
-import { readWorkspaceStatus, withWorkspaceGuard } from "../../lib/review-guard.ts";
-import { parseStructuredOutput } from "../../lib/structured-output.ts";
-import { assertCodexStrictSchema, loadSchema } from "../../lib/schema-validation.ts";
+} from "../../lib/agent/signals.ts";
+import { errorArtifact, errorMessage, raceWithTimeout } from "../../lib/agent/invocation.ts";
+import { readWorkspaceStatus, withWorkspaceGuard } from "../../lib/agent/workspace-guard.ts";
+import { parseStructuredOutput } from "../../lib/agent/structured-output.ts";
+import { assertCodexStrictSchema, loadSchema } from "../../lib/agent/json-schema.ts";
 
 type CodexThread = {
   id: string | null;

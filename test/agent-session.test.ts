@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { createAgentSessionRef, normalizeAgentSessionForProvider } from "../lib/agent-session.ts";
+import { createAgentSessionRef, normalizeAgentSessionForProvider } from "../lib/agent/session.ts";
 
 test("createAgentSessionRef normalizes nonblank provider ids", () => {
   expect(createAgentSessionRef("cursor", " agent-123 ")).toEqual({

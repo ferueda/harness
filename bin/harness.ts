@@ -16,7 +16,7 @@ import {
   type AgentProviderName,
   type AgentReasoningEffort,
   type AgentSandboxMode,
-} from "../lib/agents.ts";
+} from "../lib/agent/contract.ts";
 import {
   CHANGE_REVIEW_STEPS,
   isChangeReviewStep,
@@ -24,16 +24,16 @@ import {
   type ChangeReviewStepId,
 } from "../workflows/change-review.workflow.ts";
 import { run as runPlanReview } from "../workflows/plan-review.workflow.ts";
-import { initHarnessConfig, resolveHarnessOptions } from "../lib/config.ts";
+import { initHarnessConfig, resolveHarnessOptions } from "../lib/config/harness.ts";
 import {
   assertNonEmptyHandoffStdin,
   assertPipedHandoffStdin,
   HANDOFF_STDIN_CONFLICT_ERROR,
-} from "../lib/handoff.ts";
-import { parseRetentionDuration, pruneRuns } from "../lib/runs.ts";
-import { installPackagedSkill } from "../lib/skills.ts";
-import type { WorkflowEvent } from "../lib/workflow-events.ts";
-import { cleanupOrphanedRunDir, createWorkflowContext } from "../lib/workflow-context.ts";
+} from "../lib/review/handoff.ts";
+import { parseRetentionDuration, pruneRuns } from "../lib/review/runs.ts";
+import { installPackagedSkill } from "../lib/skills/install.ts";
+import type { WorkflowEvent } from "../lib/review/events.ts";
+import { cleanupOrphanedRunDir, createWorkflowContext } from "../lib/review/runtime.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 
 type InitOptions = {

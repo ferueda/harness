@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { LinearIssueContext, LinearIssueReference } from "./linear/read.ts";
+import type { LinearIssueContext, LinearIssueReference } from "../linear/read.ts";
 import {
   classifyLinearReadiness,
   LinearReadinessConfigSchema,
   linearReadinessSnapshotGeneration,
   type LinearReadinessConfig,
-} from "./linear-readiness.ts";
+} from "./readiness.ts";
 
 const config: LinearReadinessConfig = {
   teamId: "team-1",

@@ -7,7 +7,7 @@ import {
   buildInlinedHandoffSection,
   buildPlanRef,
   writeRunContext,
-} from "../lib/context.ts";
+} from "../lib/review/run-context.ts";
 test("buildDiffRef writes diff and returns only a file reference", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
   const runDir = join(workspace, ".harness/runs/reviews/run-1");

@@ -8,13 +8,13 @@ import {
   CURSOR_SDK_MODEL_MODES,
   type AgentRunResult,
   type AgentWorkspaceGuardMode,
-} from "../../lib/agents.ts";
-import type * as ReviewGuard from "../../lib/review-guard.ts";
+} from "../../lib/agent/contract.ts";
+import type * as ReviewGuard from "../../lib/agent/workspace-guard.ts";
 import { createCursorSdkAgent, type CursorSdkAgentFactoryOptions } from "./cursor-sdk-agent.ts";
 
 let mockPostRunStatusFailure = false;
 
-vi.mock("../../lib/review-guard.ts", async (importOriginal) => {
+vi.mock("../../lib/agent/workspace-guard.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof ReviewGuard>();
   return {
     ...actual,

@@ -3,10 +3,10 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { applyWorkspaceGuard, readWorkspaceStatus, withWorkspaceGuard } from "./review-guard.ts";
+import { applyWorkspaceGuard, readWorkspaceStatus, withWorkspaceGuard } from "./workspace-guard.ts";
 
 function createGitWorkspace() {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-review-guard-"));
+  const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-guard-"));
   execFileSync("git", ["init", "-b", "main"], { cwd: workspace, stdio: "ignore" });
   execFileSync("git", ["config", "user.email", "harness@example.com"], { cwd: workspace });
   execFileSync("git", ["config", "user.name", "Harness Test"], { cwd: workspace });

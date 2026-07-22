@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import { parseStructuredOutput, type JsonSchema } from "./structured-output.ts";
 
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
-const REVIEW_SCHEMA_PATH = join(MODULE_ROOT, "../schemas/review-output.schema.json");
+const REVIEW_SCHEMA_PATH = join(MODULE_ROOT, "../../schemas/review-output.schema.json");
 const REVIEW_SCHEMA = JSON.parse(readFileSync(REVIEW_SCHEMA_PATH, "utf8")) as JsonSchema;
 
 const MINIMAL_REVIEW = {

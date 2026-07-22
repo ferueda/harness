@@ -3,10 +3,10 @@ import { z } from "zod";
 import {
   createLinearIssueRevisionObservedEvent,
   LinearPollRequestedEvent,
-} from "./inngest/linear-revision-events.ts";
-import { LinearError } from "./linear/error.ts";
-import type { LinearService } from "./linear/client.ts";
-import type { ListIssueRevisionsResult } from "./linear/read.ts";
+} from "./events/linear-revision-events.ts";
+import { LinearError } from "../linear/error.ts";
+import type { LinearService } from "../linear/client.ts";
+import type { ListIssueRevisionsResult } from "../linear/read.ts";
 
 export const LINEAR_BACKLOG_POLL_FUNCTION_ID = "poll-linear-backlog-v1";
 export const LINEAR_BACKLOG_POLL_RETRIES = 3;

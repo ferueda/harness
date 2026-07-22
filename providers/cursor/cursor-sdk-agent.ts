@@ -6,26 +6,30 @@ import type {
   RunResult as CursorSdkRunResult,
   SDKAgent as CursorSdkAgentInstance,
 } from "@cursor/sdk";
-import { CURSOR_SDK_MODEL_MODES, DEFAULT_AGENT_MODELS } from "../../lib/agents.ts";
+import { CURSOR_SDK_MODEL_MODES, DEFAULT_AGENT_MODELS } from "../../lib/agent/contract.ts";
 import {
   createAgentSessionRef,
   normalizeAgentSessionForProvider,
-} from "../../lib/agent-session.ts";
+} from "../../lib/agent/session.ts";
 import type {
   Agent,
   AgentRunInput,
   AgentRunResult,
   AgentSessionRef,
   CursorSdkModelMode,
-} from "../../lib/agents.ts";
-import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent-stream-log.ts";
+} from "../../lib/agent/contract.ts";
+import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent/stream-log.ts";
 import {
   createAbortedAgentResult,
   createAgentAbortRace,
   createAgentSignalState,
-} from "../../lib/agent-signals.ts";
-import { errorArtifact, errorMessage, STREAM_SETTLE_TIMEOUT_MS } from "../../lib/agent-invoke.ts";
-import { readWorkspaceStatus, withWorkspaceGuard } from "../../lib/review-guard.ts";
+} from "../../lib/agent/signals.ts";
+import {
+  errorArtifact,
+  errorMessage,
+  STREAM_SETTLE_TIMEOUT_MS,
+} from "../../lib/agent/invocation.ts";
+import { readWorkspaceStatus, withWorkspaceGuard } from "../../lib/agent/workspace-guard.ts";
 import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
 
 type CreateCursorSdkAgent = (options: CursorSdkAgentOptions) => Promise<CursorSdkAgentInstance>;
