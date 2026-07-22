@@ -101,10 +101,12 @@ async function allocatePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolveReady, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolveReady);
+    // The Connect gateway binds on all interfaces, so probe the same scope. A
+    // loopback-only probe can select a port already occupied on another interface.
+    server.listen(0, resolveReady);
   });
   const address = server.address();
-  assert(address && typeof address === "object", "failed to allocate a loopback port");
+  assert(address && typeof address === "object", "failed to allocate an available port");
   await new Promise<void>((resolveClose, reject) => {
     server.close((error) => {
       if (error) reject(error);
