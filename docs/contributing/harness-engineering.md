@@ -51,6 +51,40 @@ regress. Add lint or structural checks when the mistake is static. Wrap
 repeatable workflows in scripts only when the command makes the next correct
 action clearer.
 
+## Build an automation capability
+
+Use the [automation construction contract](./architecture.md#automation-construction-contract)
+before adding a new Linear or Inngest path.
+
+Start with one vertical slice and only the primitives it calls. In order:
+
+1. Normalize the external input through a standalone service primitive.
+2. Define one operation-specific input, result, policy, and provenance contract.
+3. Add an isolated repository or compute primitive only if the operation must
+   write, execute, or publish an artifact.
+4. Keep tracker projection separate from the operation.
+5. Compose the flow with a short durable consumer whose steps match meaningful
+   external side effects.
+
+Before handoff, check the dependency direction:
+
+- service primitives do not import domain operations, providers, or Inngest;
+- domain operations depend on the provider interface, not a concrete adapter,
+  and do not import Linear, Inngest, Git, or GitHub code;
+- repository primitives do not import domain or tracker policy;
+- projection code does not render prompts or schedule work;
+- Inngest consumers reload current truth and coordinate the other parts rather
+  than implementing them inline;
+- event payloads carry identifiers and provenance, not copied lifecycle state;
+- retryable sessions, workspaces, branches, comments, and publications have
+  stable identities where duplication would matter;
+- a human handoff ends the function and waits for a later external event.
+
+Keep schemas local to the operation at first. Do not add a generic operation
+base class, station registry, central route engine, or second work-state store
+for future consumers. Once two real consumers repeat the same code, extract the
+smallest proven shared boundary.
+
 ## Gate output contract
 
 Repo gates are quiet on success by default. Wrapped Make steps print concise

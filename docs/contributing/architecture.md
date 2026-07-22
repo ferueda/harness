@@ -60,6 +60,57 @@ The current worker registers three independent functions: polling, readiness
 routing, and triage. Spec and implementation requests are typed but remain
 disabled until they have their own consumers.
 
+### Automation construction contract
+
+Build a new automation capability from the smallest set of these parts that its
+first real flow needs:
+
+| Part                         | Owns                                                                                        | Must not own                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Service primitive            | One external system's auth, SDK quirks, pagination, errors, and plain JSON-safe data        | Prompts, providers, Inngest, or domain workflow policy            |
+| Domain operation             | Prompt or decision policy, normalized input, strict result validation, and provenance       | Tracker lifecycle, delivery retries, or concrete provider wiring  |
+| Repository/compute primitive | Isolated execution, resumable workspace handles, change inspection, publication, cleanup    | Linear, Inngest, Spec, implementation, or other domain policy     |
+| Projection adapter           | Guarded mapping from one domain result to external-system writes                            | Prompt policy, delivery scheduling, or a shared lifecycle engine  |
+| Execution consumer           | Triggering, fresh reads, claims, durable steps, retries, ordering, coordination, and traces | SDK pagination, prompt rendering, Git commands, or domain choices |
+| Event contract               | Minimal typed identifiers and stable work identity                                          | A cached replacement for current external truth                   |
+
+Dependencies point inward from the execution consumer:
+
+```text
+execution consumer
+  -> domain operation -> provider interface
+  -> projection adapter -> service primitive
+  -> repository/compute primitive
+```
+
+Concrete provider adapters, delivery hosts, and external SDK objects stay at
+the edges. Inputs, outputs, event payloads, and resumable handles crossing a
+durable step must be serializable.
+
+An Inngest function is thin when its code reads as temporal coordination:
+
+```text
+receive identity
+  -> reload current truth
+  -> validate and claim
+  -> call one domain operation
+  -> validate and publish artifacts
+  -> project the result
+  -> emit the next event or end
+```
+
+Thin does not mean no branching. Delivery code may branch on a validated
+operation result, retry side effects, serialize by work ID, and stop stale work.
+It should not decide what a good Spec is, render a prompt, traverse an SDK, run
+Git directly, or inline status and label policy. A projection adapter may start
+co-located with one consumer, but keep its mapping explicit and Inngest-free so
+it can move behind a small interface when another consumer needs it.
+
+Human handoffs end a run. Linear later produces a new readiness snapshot when a
+human returns the issue to an actionable state; a function does not wait for a
+human inside one long-lived execution. Add shared abstractions only after two
+real consumers expose the same stable contract.
+
 ## Ownership boundaries
 
 | Owner             | Owns                                                                                                      | Does not own                                             |
