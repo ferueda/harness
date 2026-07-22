@@ -79,6 +79,7 @@ function createFakeCodex({
         usage: {
           input_tokens: 1,
           cached_input_tokens: 0,
+          cache_write_input_tokens: 0,
           output_tokens: 2,
           reasoning_output_tokens: 0,
         },
@@ -131,6 +132,7 @@ function codexSuccessStream(finalResponse: string): ThreadEvent[] {
       usage: {
         input_tokens: 1,
         cached_input_tokens: 0,
+        cache_write_input_tokens: 0,
         output_tokens: 2,
         reasoning_output_tokens: 0,
       },
@@ -175,6 +177,7 @@ test("createCodexAgent runs Codex with schema and review defaults", async () => 
   expect(result.usage).toEqual({
     input_tokens: 1,
     cached_input_tokens: 0,
+    cache_write_input_tokens: 0,
     output_tokens: 2,
     reasoning_output_tokens: 0,
   });
@@ -398,6 +401,7 @@ test("createCodexAgent streams Codex thread events to logPath", async () => {
   expect(result.usage).toEqual({
     input_tokens: 1,
     cached_input_tokens: 0,
+    cache_write_input_tokens: 0,
     output_tokens: 2,
     reasoning_output_tokens: 0,
   });
@@ -441,6 +445,7 @@ test("createCodexAgent uses the last completed agent_message as the streamed fin
         usage: {
           input_tokens: 1,
           cached_input_tokens: 0,
+          cache_write_input_tokens: 0,
           output_tokens: 2,
           reasoning_output_tokens: 0,
         },
@@ -1046,6 +1051,7 @@ test("createCodexAgent does not return success when a turn resolves after extern
             usage: {
               input_tokens: 1,
               cached_input_tokens: 0,
+              cache_write_input_tokens: 0,
               output_tokens: 2,
               reasoning_output_tokens: 0,
             },
