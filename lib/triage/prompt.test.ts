@@ -7,7 +7,7 @@ describe("triage prompt", () => {
     const context = validContext();
     const prompt = renderTriagePrompt(context);
 
-    expect(TRIAGE_POLICY_VERSION).toBe("5");
+    expect(TRIAGE_POLICY_VERSION).toBe("6");
     expect(prompt).toContain(JSON.stringify(context, null, 2));
     expect(prompt).toContain('"commentsTruncated": true');
     expect(prompt).toContain('"childrenTruncated": false');
@@ -37,6 +37,33 @@ describe("triage prompt", () => {
     expect(prompt).toContain('decision "needs-input", scope "too-broad"');
     expect(prompt).toContain("recommend the smallest useful first slice");
     expect(prompt).toContain("ask exactly one question");
+  });
+
+  it("separates bounded scope from vertical delivery shape", () => {
+    const prompt = renderTriagePrompt(validContext());
+
+    expect(prompt).toContain("Keep outcome scope separate from delivery shape.");
+    expect(prompt).toContain(
+      "each one completes a coherent, observable behavior across the boundaries it needs",
+    );
+    expect(prompt).toContain("Keep shared setup to the minimum required by the first slice");
+    expect(prompt).toContain(
+      "separate agents can own with limited overlap, that can proceed in parallel",
+    );
+    expect(prompt).toContain("reviewed, landed, or rolled back independently");
+    expect(prompt).toContain("choose Implement even if the proposed breakdown is horizontal");
+    expect(prompt).toContain(
+      "Do not choose Needs Input or mark the item too broad solely because its implementation steps are horizontal.",
+    );
+    expect(prompt).toContain(
+      "Choose Spec only when investigation or sequencing design must happen before edits can safely begin.",
+    );
+    expect(prompt).toContain(
+      "Accept a horizontal step when vertical delivery is impractical or unsafe",
+    );
+    expect(prompt).toContain("build all storage, then all services, then all interfaces");
+    expect(prompt).toContain("A sequence of independently testable behaviors is well shaped.");
+    expect(prompt).toContain("A required atomic schema migration may remain horizontal");
   });
 
   it("grounds bounded work in current repository intent without creating a ceremonial gate", () => {

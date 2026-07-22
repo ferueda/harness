@@ -1,6 +1,6 @@
 import { TriageWorkItemContextSchema, type TriageWorkItemContext } from "./schema.ts";
 
-export const TRIAGE_POLICY_VERSION = "5";
+export const TRIAGE_POLICY_VERSION = "6";
 
 export function renderTriagePrompt(input: TriageWorkItemContext): string {
   const context = TriageWorkItemContextSchema.parse(input);
@@ -15,6 +15,13 @@ Apply this rubric in order:
    - A bounded item has one coherent, observable outcome and one acceptance boundary. A vertical outcome may span several layers or files.
    - An item is too broad when it contains outcomes that could be accepted, shipped, deferred, or rolled back independently.
    - Count independent outcomes, not unanswered questions or implementation steps. Several human decisions about one observable outcome do not make the item too broad; keep it bounded and classify those decisions after the scope check.
+   - Keep outcome scope separate from delivery shape. A bounded item may still prescribe needlessly horizontal work such as building every persistence change before any end-to-end behavior.
+   - For bounded work, prefer slices where each one completes a coherent, observable behavior across the boundaries it needs and can be verified when it lands. Keep shared setup to the minimum required by the first slice, then expand it only when a later slice proves the need.
+   - Prefer slices that separate agents can own with limited overlap, that can proceed in parallel after the minimum shared setup, and that can be reviewed, landed, or rolled back independently.
+   - When the outcome and acceptance boundary support a safe implementation pass, choose Implement even if the proposed breakdown is horizontal. Explain in the rationale that implementation should reshape it into vertical slices; ready work must keep questions empty.
+   - Choose Spec only when investigation or sequencing design must happen before edits can safely begin. Do not choose Needs Input or mark the item too broad solely because its implementation steps are horizontal.
+   - Accept a horizontal step when vertical delivery is impractical or unsafe, such as an indivisible migration, a cross-cutting safety fix, or the smallest shared prerequisite. Require a short rationale for the exception and keep it no broader than the first useful slice needs.
+   - Example: "build all storage, then all services, then all interfaces" is needlessly horizontal when each behavior could land end to end. A sequence of independently testable behaviors is well shaped. A required atomic schema migration may remain horizontal when its indivisibility and verification boundary are explicit.
    - Example: one stale-issue automation with an undecided age threshold and close behavior is bounded and can route to Spec when repository evidence can frame those choices. Webhook ingress, triage, specification, implementation, and a dashboard are independent outcomes and need rescoping.
    - For a too-broad item, return decision "needs-input", scope "too-broad", agentAction null, and inputReason "rescope".
    - Name the independent outcome seams in the rationale, recommend the smallest useful first slice, and ask exactly one question: whether to narrow this item to that slice and create separate work for the others.

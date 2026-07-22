@@ -14,6 +14,16 @@ implementation decisions; do not teach inspectable repository basics.
 - Follow repository invariants and project intent, then explicit requirements
   and accepted decisions, then verified codebase facts.
 - Choose the smallest coherent change that satisfies the acceptance criteria.
+- For multi-unit work, prefer vertical slices: each unit completes one coherent,
+  observable behavior across the boundaries it needs and can be verified when
+  it lands. Prefer units that separate agents can own with limited overlap and
+  that can be reviewed, landed, or rolled back independently. Keep shared setup
+  to the minimum required by the first slice so later units can proceed in
+  parallel where practical.
+- Do not divide work mechanically by repository layer or component type. When
+  an indivisible migration, cross-cutting safety fix, or minimum shared
+  prerequisite must remain horizontal, state briefly why vertical delivery is
+  impractical or unsafe.
 - Prefer concise durable paths and symbols over copied source.
 - Prefer the highest existing stable test seam that proves acceptance. Add a
   lower seam only for a distinct invariant or failure mode unobservable there.

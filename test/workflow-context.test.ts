@@ -68,6 +68,16 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(SPEC_REVIEW_PROMPT).toContain("Unsupported work already proposed by the plan");
   expect(SPEC_REVIEW_PROMPT).toContain("Review content, not template completeness");
   expect(SPEC_REVIEW_PROMPT).toContain("highest existing stable seam proving acceptance");
+  expect(SPEC_REVIEW_PROMPT).toContain("For multi-unit work, prefer vertical slices");
+  expect(SPEC_REVIEW_PROMPT).toContain("separate agents can own with limited overlap");
+  expect(SPEC_REVIEW_PROMPT).toContain("reviewed, landed, or rolled back independently");
+  expect(SPEC_REVIEW_PROMPT).toContain(
+    "Challenge needlessly horizontal phases such as completing all persistence, then all services, then all interfaces",
+  );
+  expect(SPEC_REVIEW_PROMPT).toContain(
+    "Accept a horizontal step when the plan gives a short, evidence-backed reason",
+  );
+  expect(SPEC_REVIEW_PROMPT).toContain("Treat delivery shape as judgment, not a ban");
   expect(SPEC_REVIEW_PROMPT).toContain("A finding may use `must_fix: true` only for");
   expect(SPEC_REVIEW_PROMPT).toContain("Reviewer-proposed optional hardening");
   expect(SPEC_REVIEW_PROMPT).toContain("smallest exact missing evidence or human question");
@@ -82,6 +92,16 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(reviewSpecSkill).toContain("Unsupported work already proposed by the plan");
   expect(reviewSpecSkill).toContain("Plan Contract");
   expect(reviewSpecSkill).toContain("highest existing stable seam proving acceptance");
+  expect(reviewSpecSkill).toContain("For multi-unit work, prefer vertical slices");
+  expect(reviewSpecSkill).toMatch(/separate agents can own with limited\s+overlap/);
+  expect(reviewSpecSkill).toContain("reviewed, landed, or rolled back independently");
+  expect(reviewSpecSkill).toContain(
+    "Challenge needlessly horizontal phases such as completing all persistence",
+  );
+  expect(reviewSpecSkill).toContain(
+    "Accept a horizontal step when the plan gives a short, evidence-backed reason",
+  );
+  expect(reviewSpecSkill).toContain("Treat delivery shape as judgment, not a ban");
   expect(reviewSpecSkill).toContain("Finding Contract");
   expect(reviewSpecSkill).toContain("work-item authority");
   expect(reviewSpecSkill).toContain("unmarked proposals, comments, and metadata");
