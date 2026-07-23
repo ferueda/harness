@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { RepositoryError } from "./error.ts";
+import { RepositoryError, type RepositoryErrorCode } from "./error.ts";
 import type { RepositoryChange, RepositoryChangeStatus } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -106,17 +106,19 @@ export async function resolveRemoteBase(input: {
 }
 
 export async function inspectGitChanges(workspace: string): Promise<readonly RepositoryChange[]> {
-  const output = await runGit(workspace, [
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-    "--ignore-submodules=none",
-  ]);
+  const output = await runGit(
+    workspace,
+    ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"],
+    "inspect_failed",
+  );
   return parsePorcelain(output);
 }
 
-export async function runGit(workspace: string, args: readonly string[]): Promise<string> {
+export async function runGit(
+  workspace: string,
+  args: readonly string[],
+  errorCode: RepositoryErrorCode = "controller_failed",
+): Promise<string> {
   try {
     const { stdout } = await execFileAsync("git", [...args], {
       cwd: workspace,
@@ -130,7 +132,7 @@ export async function runGit(workspace: string, args: readonly string[]): Promis
     const stderr = String(record.stderr ?? "").trim();
     throw new RepositoryError(
       stderr || (error instanceof Error ? error.message : String(error)),
-      "controller_failed",
+      errorCode,
       { cause: error },
     );
   }
@@ -141,9 +143,16 @@ function baseCandidates(baseRef: string): readonly string[] {
   if (!ref) {
     throw new RepositoryError("Repository base ref must not be empty.", "invalid_input");
   }
-  if (ref.startsWith("refs/") || FULL_GIT_SHA.test(ref)) return [ref];
-  if (ref.startsWith("origin/")) return [`refs/remotes/${ref}`, ref];
-  return [`refs/remotes/origin/${ref}`, ref];
+  if (FULL_GIT_SHA.test(ref)) return [ref];
+  if (ref.startsWith("refs/remotes/origin/")) return [ref];
+  if (ref.startsWith("origin/")) return [`refs/remotes/${ref}`];
+  if (ref.startsWith("refs/")) {
+    throw new RepositoryError(
+      "Repository base must be a remote origin branch or an exact commit SHA.",
+      "invalid_input",
+    );
+  }
+  return [`refs/remotes/origin/${ref}`];
 }
 
 function parsePorcelain(output: string): readonly RepositoryChange[] {

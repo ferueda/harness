@@ -5,7 +5,8 @@ import {
   transitionSlot,
   writeLeaseFirstState,
 } from "@ferueda/grove";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import {
   existsSync,
   mkdtempSync,
@@ -108,6 +109,15 @@ test("repository runs resolve an exact base, reacquire dirty work, and inspect p
   expect(git(run.workspace, ["rev-parse", "HEAD"])).toBe(base.baseSha);
   const newerBase = await repository.resolveBase({ baseRef: "main" });
   expect(newerBase.baseSha).not.toBe(base.baseSha);
+
+  git(fixture.source, ["branch", "stale", "main"]);
+  git(fixture.source, ["push", "origin", "stale"]);
+  await repository.resolveBase({ baseRef: "stale" });
+  git(fixture.controller, ["branch", "stale", "refs/remotes/origin/stale"]);
+  git(fixture.source, ["push", "origin", "--delete", "stale"]);
+  await expect(repository.resolveBase({ baseRef: "stale" })).rejects.toMatchObject({
+    code: "controller_failed",
+  });
 });
 
 test("repository cleanup reuses a bounded warm pool while preserving ignored dependencies", async () => {
@@ -136,6 +146,26 @@ test("repository cleanup reuses a bounded warm pool while preserving ignored dep
 
   writeFileSync(join(first.workspace, "README.md"), "# disposable\n", "utf8");
   writeFileSync(join(first.workspace, "agent-output.txt"), "remove me\n", "utf8");
+  const active = spawn(
+    process.execPath,
+    ["-e", 'process.stdout.write("ready"); setInterval(() => {}, 1_000);'],
+    {
+      cwd: first.workspace,
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
+  await once(active.stdout, "data");
+  try {
+    await expect(repository.cleanupRun(first)).rejects.toMatchObject({
+      code: "cleanup_failed",
+    });
+    expect(readFileSync(join(first.workspace, "agent-output.txt"), "utf8")).toBe("remove me\n");
+  } finally {
+    const activeExit = once(active, "exit");
+    active.kill("SIGTERM");
+    await activeExit;
+  }
+
   expect(await repository.cleanupRun(first)).toEqual({ status: "released" });
   expect(await repository.cleanupRun(first)).toEqual({ status: "already-clean" });
 
@@ -310,6 +340,27 @@ test("repository rejects credential-bearing remotes and overlapping storage", as
       poolDirectory: join(fixture.controller, "pool"),
     }),
   ).toThrow(RepositoryError);
+});
+
+test("failed Git inspection reports the inspection boundary", async () => {
+  const fixture = createFixture();
+  const repository = createTestRepository(fixture);
+  const base = await repository.resolveBase({ baseRef: "main" });
+  const run = await repository.prepareRun({
+    id: "run-inspection-error",
+    base,
+    branch: "codex/inspection-error",
+  });
+  const unavailable = `${run.workspace}-unavailable`;
+  renameSync(run.workspace, unavailable);
+  try {
+    await expect(repository.inspectChanges(run)).rejects.toMatchObject({
+      code: "inspect_failed",
+    });
+  } finally {
+    renameSync(unavailable, run.workspace);
+  }
+  expect(await repository.cleanupRun(run)).toEqual({ status: "released" });
 });
 
 type Fixture = Readonly<{
