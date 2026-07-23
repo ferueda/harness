@@ -369,6 +369,7 @@ function pushInput(fixture: Fixture) {
     workspace: fixture.workspace,
     remote: "https://github.com/ferueda/harness.git",
     branch: BRANCH,
+    commitSha: git(fixture.workspace, ["rev-parse", "HEAD"]),
     token: TOKEN,
   };
 }

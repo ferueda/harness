@@ -88,6 +88,25 @@ describe("GitHub pull request client", () => {
     expect(String(error)).not.toContain(encoded);
     expect(String(error)).toContain("[REDACTED]");
   });
+
+  it("normalizes and redacts response body failures", async () => {
+    const client = createGitHubPullRequestClient({
+      token: TOKEN,
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.error(new Error(`stream failed ${TOKEN}`));
+            },
+          }),
+        ),
+    });
+
+    const error = await client.listPullRequests(LOOKUP).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "github-failed" });
+    expect(String(error)).not.toContain(TOKEN);
+    expect(String(error)).toContain("[REDACTED]");
+  });
 });
 
 function pullRequestResponse(

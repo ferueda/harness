@@ -123,7 +123,15 @@ async function requestJson(input: {
     );
   }
 
-  const responseBody = await response.text();
+  let responseBody: string;
+  try {
+    responseBody = await response.text();
+  } catch (error) {
+    throw new GitHubPublicationError(
+      "github-failed",
+      `GitHub response body failed: ${redactSecrets(errorMessage(error), [input.token])}`,
+    );
+  }
   if (!response.ok) {
     const diagnostic = redactSecrets(responseBody.slice(-2_000), [input.token]).trim();
     throw new GitHubPublicationError(

@@ -58,15 +58,17 @@ export type GitHubPullRequestClient = Readonly<{
   ): Promise<GitHubPullRequestRecord>;
 }>;
 
-export type GitPushInput = Readonly<{
+export type GitRemoteBranchInput = Readonly<{
   workspace: string;
   remote: string;
   branch: string;
   token: string;
 }>;
 
+export type GitPushInput = GitRemoteBranchInput & Readonly<{ commitSha: string }>;
+
 export type GitPushTransport = Readonly<{
-  readRemoteBranch(input: GitPushInput): Promise<string | null>;
+  readRemoteBranch(input: GitRemoteBranchInput): Promise<string | null>;
   pushBranch(input: GitPushInput): Promise<void>;
 }>;
 

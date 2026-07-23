@@ -1,10 +1,15 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { errorMessage, GitHubPublicationError, redactSecrets } from "./error.ts";
-import type { GitHubPublicationAuthor, GitPushInput, GitPushTransport } from "./types.ts";
+import type {
+  GitHubPublicationAuthor,
+  GitPushInput,
+  GitPushTransport,
+  GitRemoteBranchInput,
+} from "./types.ts";
 import { inspectGitChanges } from "../repository/git.ts";
 import type {
   RepositoryChange,
@@ -45,7 +50,7 @@ esac
 `;
 
 export type AuthenticatedGitExecutor = (input: {
-  workspace: string;
+  cwd: string;
   args: readonly string[];
   environment: Readonly<Record<string, string>>;
 }) => Promise<string>;
@@ -60,7 +65,7 @@ export function createAuthenticatedGitTransport(
   const environment = options.environment ?? process.env;
 
   return Object.freeze({
-    async readRemoteBranch(input: GitPushInput): Promise<string | null> {
+    async readRemoteBranch(input: GitRemoteBranchInput): Promise<string | null> {
       const output = await runAuthenticatedGit({
         ...input,
         executor,
@@ -75,7 +80,14 @@ export function createAuthenticatedGitTransport(
         ...input,
         executor,
         environment,
-        args: ["push", "--porcelain", "--", input.remote, `HEAD:refs/heads/${input.branch}`],
+        args: [
+          "push",
+          "--porcelain",
+          "--",
+          input.remote,
+          `${input.commitSha}:refs/heads/${input.branch}`,
+        ],
+        includeWorkspaceObjects: true,
       });
     },
   });
@@ -436,21 +448,46 @@ function parseRemoteHead(output: string, branch: string): string | null {
 }
 
 async function runAuthenticatedGit(
-  input: GitPushInput & {
+  input: GitRemoteBranchInput & {
     args: readonly string[];
     executor: AuthenticatedGitExecutor;
     environment: NodeJS.ProcessEnv;
+    commitSha?: string;
+    includeWorkspaceObjects?: boolean;
   },
 ): Promise<string> {
   const helperDirectory = await mkdtemp(join(tmpdir(), "harness-github-askpass-"));
   const helperPath = join(helperDirectory, "askpass.sh");
+  const gitDirectory = join(helperDirectory, "repository.git");
   try {
+    if (
+      input.includeWorkspaceObjects &&
+      (!input.commitSha || !FULL_GIT_SHA.test(input.commitSha))
+    ) {
+      throw new GitHubPublicationError(
+        "invalid-input",
+        "Authenticated Git requires an exact commit SHA.",
+      );
+    }
+    await initializeIsolatedGitRepository(helperDirectory, gitDirectory, input.environment);
+    if (input.includeWorkspaceObjects) {
+      const objectDirectory = await readObjectDirectory(input.workspace);
+      if (containsCommandControl(objectDirectory)) {
+        throw new GitHubPublicationError(
+          "invalid-input",
+          "Repository object directory contains unsupported control characters.",
+        );
+      }
+      const alternateFile = join(gitDirectory, "objects", "info", "alternates");
+      await mkdir(join(gitDirectory, "objects", "info"), { recursive: true });
+      await writeFile(alternateFile, `${objectDirectory}\n`, { encoding: "utf8", flag: "wx" });
+    }
     await writeFile(helperPath, ASKPASS_SOURCE, { encoding: "utf8", flag: "wx", mode: 0o700 });
     await chmod(helperPath, 0o700);
     const environment = authenticatedGitEnvironment(input.environment, helperPath, input.token);
     return await input.executor({
-      workspace: input.workspace,
-      args: [...GIT_CONFIG_ARGS, ...input.args],
+      cwd: gitDirectory,
+      args: [...GIT_CONFIG_ARGS, "--git-dir=.", ...input.args],
       environment,
     });
   } catch (error) {
@@ -463,18 +500,43 @@ async function runAuthenticatedGit(
   }
 }
 
-function authenticatedGitEnvironment(
+async function initializeIsolatedGitRepository(
+  cwd: string,
+  gitDirectory: string,
   source: NodeJS.ProcessEnv,
-  helperPath: string,
-  token: string,
+): Promise<void> {
+  await execFileAsync(
+    "git",
+    [...GIT_CONFIG_ARGS, "init", "--bare", "--quiet", "--", gitDirectory],
+    {
+      cwd,
+      encoding: "utf8",
+      env: { ...unauthenticatedGitEnvironment(source) },
+      maxBuffer: 8 * 1024 * 1024,
+    },
+  );
+}
+
+async function readObjectDirectory(workspace: string): Promise<string> {
+  const commonDirectory = (
+    await runLocalGit(workspace, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+  ).trim();
+  if (!isAbsolute(commonDirectory)) {
+    throw new GitHubPublicationError(
+      "git-failed",
+      "Git returned a non-absolute common repository directory.",
+    );
+  }
+  return realpath(join(commonDirectory, "objects"));
+}
+
+function unauthenticatedGitEnvironment(
+  source: NodeJS.ProcessEnv,
 ): Readonly<Record<string, string>> {
   const environment: Record<string, string> = {
-    GIT_ASKPASS: helperPath,
-    GIT_ASKPASS_REQUIRE: "force",
     GIT_CONFIG_GLOBAL: NULL_DEVICE,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
-    HARNESS_GITHUB_TOKEN: token,
   };
   for (const key of AUTH_ENVIRONMENT_KEYS) {
     const value = source[key];
@@ -483,13 +545,27 @@ function authenticatedGitEnvironment(
   return Object.freeze(environment);
 }
 
+function authenticatedGitEnvironment(
+  source: NodeJS.ProcessEnv,
+  helperPath: string,
+  token: string,
+): Readonly<Record<string, string>> {
+  const environment: Record<string, string> = {
+    ...unauthenticatedGitEnvironment(source),
+    GIT_ASKPASS: helperPath,
+    GIT_ASKPASS_REQUIRE: "force",
+    HARNESS_GITHUB_TOKEN: token,
+  };
+  return Object.freeze(environment);
+}
+
 async function executeGit(input: {
-  workspace: string;
+  cwd: string;
   args: readonly string[];
   environment: Readonly<Record<string, string>>;
 }): Promise<string> {
   const { stdout } = await execFileAsync("git", [...input.args], {
-    cwd: input.workspace,
+    cwd: input.cwd,
     encoding: "utf8",
     env: { ...input.environment },
     maxBuffer: 8 * 1024 * 1024,

@@ -173,6 +173,7 @@ async function ensureRemoteBranch(input: {
     workspace: input.workspace,
     remote: input.remote,
     branch: input.branch,
+    commitSha: input.headSha,
     token: input.token,
   };
   const remoteSha = await input.gitTransport.readRemoteBranch(pushInput);
