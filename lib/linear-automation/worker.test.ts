@@ -7,16 +7,14 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "../agent/contract.ts";
 import type { LinearAutomationSettings } from "./config.ts";
-import {
-  LINEAR_BACKLOG_POLL_FUNCTION_ID,
-  type LinearBacklogPollerLinear,
-} from "./backlog-poller.ts";
+import { LINEAR_ISSUE_POLL_FUNCTION_ID, type LinearIssuePollerLinear } from "./issue-poller.ts";
 import {
   createLinearAutomationFunctions,
   LINEAR_AUTOMATION_APP_ID,
   LINEAR_AUTOMATION_ENABLED_ROUTES,
   LINEAR_AUTOMATION_MAX_WORKER_CONCURRENCY,
   linearAutomationCodexEnvironment,
+  linearAutomationObservedStateIds,
   parseLinearAutomationWorkerEnvironment,
   startLinearAutomationWorker,
   verifyLinearAutomationCodexAuthentication,
@@ -65,7 +63,7 @@ function app() {
     ensureBlockedByRelation: never,
     updateIssueLabels: never,
     updateIssueState: never,
-  } satisfies LinearTriageService & LinearBacklogPollerLinear;
+  } satisfies LinearTriageService & LinearIssuePollerLinear;
   const agent = {
     name: "codex",
     run: async () => {
@@ -206,7 +204,7 @@ describe("Linear automation worker", () => {
     const functions = app().functions;
 
     expect(functions.map((fn) => fn.opts.id)).toEqual([
-      LINEAR_BACKLOG_POLL_FUNCTION_ID,
+      LINEAR_ISSUE_POLL_FUNCTION_ID,
       LINEAR_READINESS_ROUTER_FUNCTION_ID,
       LINEAR_TRIAGE_FUNCTION_ID,
     ]);
@@ -216,6 +214,23 @@ describe("Linear automation worker", () => {
       implement: false,
     });
     expect(app().readiness.enabledRoutes).toBe(LINEAR_AUTOMATION_ENABLED_ROUTES);
+    expect(linearAutomationObservedStateIds(app().readiness)).toEqual({
+      backlog: settings.readiness.stateIds.backlog,
+    });
+  });
+
+  it("observes Open only when a composed route can consume it", () => {
+    const readiness = app().readiness;
+
+    expect(
+      linearAutomationObservedStateIds({
+        ...readiness,
+        enabledRoutes: { ...readiness.enabledRoutes, spec: true },
+      }),
+    ).toEqual({
+      backlog: settings.readiness.stateIds.backlog,
+      open: settings.readiness.stateIds.open,
+    });
   });
 
   it("reports liveness separately from Connect readiness and closes cleanly", async () => {

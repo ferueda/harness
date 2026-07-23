@@ -6,18 +6,26 @@ or a Linear webhook.
 
 ```text
 one-minute Inngest cron
-  -> list configured project Backlog revisions
-  -> linear/issue.revision-observed
-  -> reload complete Linear context
-  -> classify readiness
-  -> work/triage.requested
-  -> triage decision and Linear projection
+  -> list the configured project's observed states
+     -> Backlog: linear/issue.revision-observed
+     -> Open: linear/issue.readiness-check.requested
+  -> reload complete Linear context and classify readiness
+     -> work/triage.requested
+     -> work/spec.requested or work/implementation.requested
 ```
 
 Linear remains the queue. A Backlog issue without an Agent action label needs
 triage. Successful triage moves it out of Backlog. Work identity includes the
 issue revision, so repeated observation of one revision converges while a later
 human change can request new work.
+
+Open is observed only when the worker composition enables Spec or Implement and
+registers the matching consumer. Each poll cycle gives an Open readiness check
+new delivery identity because blocker state can change without changing the
+blocked issue's revision. The router reloads current labels, state, and blockers,
+then emits a work request whose identity comes from that current readiness
+snapshot. Repeated checks of an unchanged snapshot therefore converge, while a
+resolved blocker produces new work.
 
 ## Workflow contract
 
@@ -81,9 +89,10 @@ secrets.
 }
 ```
 
-The initial worker composes one configured project. The standalone Linear read
-operation accepts explicit team, project, and state IDs so another worker can
-reuse it without adding a shared scheduler or project registry.
+The initial worker composes one configured project. Its route map controls both
+which consumers exist and which states the poller observes. The standalone
+Linear read operation accepts explicit team, project, and state IDs so another
+worker can reuse it without adding a shared scheduler or project registry.
 
 ## Run the local Compose stack
 
@@ -178,13 +187,15 @@ project per Compose stack until app and function identities become project-aware
 
 The worker registers exactly three functions:
 
-- the poller lists at most 250 matching issue revisions every minute and fails
-  visibly if that bound is exceeded;
+- the poller lists at most 250 issue revisions per observed state every minute
+  and fails the whole poll visibly if any state exceeds that bound;
 - the readiness router reloads complete current context and emits a
   provider-neutral work request; and
 - the triage consumer invokes the configured agent and projects the decision.
 
-Spec and Implement routes remain disabled. The poller accepts an explicit
+Spec and Implement routes remain disabled, so the current composition observes
+Backlog only. Enabling either route adds Open observation in the same composition
+change that registers its consumer. The poller accepts an explicit
 `linear/poll.requested` event for deterministic smoke coverage and immediate
 operator checks, but cron is the only automatic trigger.
 
