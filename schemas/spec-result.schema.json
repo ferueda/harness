@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpecResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "artifactPath", "summary", "evidence", "reviewerDecisions", "questions"],
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": ["ready-for-review", "needs-input"]
+    },
+    "artifactPath": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "summary"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["tracker", "code", "docs", "test", "repo-state"]
+          },
+          "path": {
+            "type": ["string", "null"],
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "reviewerDecisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "options", "recommendation", "rationale"],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["option", "tradeoffs"],
+              "properties": {
+                "option": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "tradeoffs": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "recommendation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

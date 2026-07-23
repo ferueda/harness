@@ -134,6 +134,7 @@ real consumers expose the same stable contract.
 | `workflows/`             | Callable provider-neutral change-review and plan-review definitions                                             |
 | `lib/linear/`            | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
 | `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
+| `lib/spec/`              | Spec prompt, structured result schema, issue-key artifact validation, and provider-independent operation        |
 | `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
 | `lib/skills/`            | Packaged-skill installation support                                                                             |
 | `skills/`                | Packaged skills installed into target repositories                                                              |
@@ -161,8 +162,10 @@ durable summaries, metadata, stream records, and incomplete-run cleanup.
 
 Domain operations accept plain serializable input and return validated
 structured output. They own policy and prompt rendering, but they know nothing
-about Inngest scheduling. The triage operation follows this boundary and can be
-tested with a fake agent without starting a worker.
+about Inngest scheduling. Triage is read-only. Spec receives an isolated
+writable workspace, writes one issue-keyed plan, and validates the claimed
+artifact without publishing it. Both operations can be tested with a fake agent
+without starting a worker.
 
 ### Service boundary
 
