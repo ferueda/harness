@@ -184,6 +184,7 @@ function validateSpecArtifact(
       return `Invalid Spec artifact: ${claimedPath} must be a regular file.`;
     }
 
+    // A regular final file can still escape through a symlinked parent directory.
     const realCandidate = realpathSync(candidate);
     const realRelative = relative(workspaceRoot, realCandidate);
     if (realRelative === ".." || realRelative.startsWith(`..${sep}`) || isAbsolute(realRelative)) {

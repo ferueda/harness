@@ -262,6 +262,25 @@ describe("specIssue", () => {
     });
   });
 
+  it("rejects an artifact reached through a symlinked parent directory", async () => {
+    const workspace = createWorkspace();
+    const outside = createWorkspace();
+    writeFileSync(join(outside, "FER-273.md"), "# Outside\n", "utf8");
+    mkdirSync(join(workspace, "dev"), { recursive: true });
+    symlinkSync(outside, join(workspace, "dev/plans"));
+
+    const result = await run(
+      fakeAgent({ ok: true, structuredOutput: READY_FOR_REVIEW, raw: {} }).agent,
+      workspace,
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      failureKind: "invalid-artifact",
+      error: expect.stringContaining("resolves outside the supplied workspace"),
+    });
+  });
+
   it.each([
     ["provider", { ok: false, error: "Codex failed", exitCode: 1 } satisfies AgentRunResult],
     ["timeout", { ok: false, error: "Agent timed out", exitCode: 124 } satisfies AgentRunResult],
