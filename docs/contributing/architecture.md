@@ -128,6 +128,7 @@ real consumers expose the same stable contract.
 | ------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `bin/`                   | CLI entrypoint, generated help, and the persistent Linear worker command                                        |
 | `lib/agent/`             | Provider-neutral Agent contract, invocation support, structured output, streams, sessions, and workspace guards |
+| `lib/work-item/`         | Source-neutral normalized work-item, evidence, and portable-path schemas shared by proven operations            |
 | `providers/`             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation             |
 | `lib/config/`            | `harness.json` composition, workspace resolution, local initialization, and review option resolution            |
 | `lib/review/`            | Review runtime, prompt context, aggregation, events, schemas, artifacts, handoffs, and run management           |

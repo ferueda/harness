@@ -1,109 +1,28 @@
 import { z } from "zod";
+import {
+  createWorkItemContextSchemas,
+  PortableRelativePathSchema,
+  WorkItemCommentSchema,
+  WorkItemEvidenceSchema,
+  WorkItemLinkSchema,
+} from "../work-item/schema.ts";
 
 export const SPEC_RESULT_SCHEMA_VERSION = "1";
 
 const NonEmptyStringSchema = z.string().min(1);
-
-const PortableRelativePathSchema = NonEmptyStringSchema.superRefine((value, ctx) => {
-  const segments = value.split("/");
-  if (
-    value.includes("\\") ||
-    value.startsWith("/") ||
-    /^[A-Za-z]:/.test(value) ||
-    value.startsWith("//") ||
-    segments.some((segment) => segment === "" || segment === "." || segment === "..")
-  ) {
-    ctx.addIssue({ code: "custom", message: "must be a portable repository-relative path" });
-  }
-});
 
 export const SpecIssueReferenceSchema = NonEmptyStringSchema.regex(
   /^[A-Z][A-Z0-9]*-\d+$/,
   "must be an uppercase issue reference such as FER-273",
 );
 
-export const SpecWorkItemReferenceSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    reference: SpecIssueReferenceSchema,
-    title: NonEmptyStringSchema,
-    url: z.url().nullable(),
-    state: NonEmptyStringSchema,
-  })
-  .strict();
+const SpecWorkItemSchemas = createWorkItemContextSchemas(SpecIssueReferenceSchema);
 
-export const SpecCommentSchema = z
-  .object({
-    author: NonEmptyStringSchema.nullable(),
-    body: NonEmptyStringSchema,
-    createdAt: z.iso.datetime(),
-  })
-  .strict();
-
-export const SpecLinkSchema = z
-  .object({
-    title: NonEmptyStringSchema,
-    url: z.url(),
-  })
-  .strict();
-
-export const SpecWorkItemContextSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    reference: SpecIssueReferenceSchema,
-    title: NonEmptyStringSchema,
-    description: NonEmptyStringSchema.nullable(),
-    url: z.url().nullable(),
-    state: NonEmptyStringSchema,
-    labels: z.array(NonEmptyStringSchema),
-    comments: z.array(SpecCommentSchema),
-    parent: SpecWorkItemReferenceSchema.nullable(),
-    children: z.array(SpecWorkItemReferenceSchema),
-    duplicateOf: SpecWorkItemReferenceSchema.nullable(),
-    blockedBy: z.array(SpecWorkItemReferenceSchema),
-    related: z.array(SpecWorkItemReferenceSchema),
-    links: z.array(SpecLinkSchema),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-    completeness: z
-      .object({
-        commentsTruncated: z.boolean(),
-        labelsTruncated: z.boolean(),
-        relationsTruncated: z.boolean(),
-        linksTruncated: z.boolean(),
-        childrenTruncated: z.boolean(),
-      })
-      .strict(),
-  })
-  .strict();
-
-export const SpecEvidenceSchema = z
-  .object({
-    kind: z.enum(["tracker", "code", "docs", "test", "repo-state"]),
-    path: PortableRelativePathSchema.nullable(),
-    summary: NonEmptyStringSchema,
-  })
-  .strict()
-  .superRefine((evidence, ctx) => {
-    if (evidence.kind === "tracker" && evidence.path !== null) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["path"],
-        message: "tracker evidence must use path: null",
-      });
-    }
-
-    if (
-      (evidence.kind === "code" || evidence.kind === "docs" || evidence.kind === "test") &&
-      evidence.path === null
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["path"],
-        message: `${evidence.kind} evidence requires a repository-relative path`,
-      });
-    }
-  });
+export const SpecWorkItemReferenceSchema = SpecWorkItemSchemas.reference;
+export const SpecCommentSchema = WorkItemCommentSchema;
+export const SpecLinkSchema = WorkItemLinkSchema;
+export const SpecWorkItemContextSchema = SpecWorkItemSchemas.context;
+export const SpecEvidenceSchema = WorkItemEvidenceSchema;
 
 export const SpecReviewerOptionSchema = z
   .object({
