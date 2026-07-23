@@ -67,14 +67,15 @@ but remain disabled until they have their own consumers.
 Build a new automation capability from the smallest set of these parts that its
 first real flow needs:
 
-| Part                         | Owns                                                                                        | Must not own                                                      |
-| ---------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Service primitive            | One external system's auth, SDK quirks, pagination, errors, and plain JSON-safe data        | Prompts, providers, Inngest, or domain workflow policy            |
-| Domain operation             | Prompt or decision policy, normalized input, strict result validation, and provenance       | Tracker lifecycle, delivery retries, or concrete provider wiring  |
-| Repository/compute primitive | Isolated execution, resumable workspace handles, change inspection, publication, cleanup    | Linear, Inngest, Spec, implementation, or other domain policy     |
-| Projection adapter           | Guarded mapping from one domain result to external-system writes                            | Prompt policy, delivery scheduling, or a shared lifecycle engine  |
-| Execution consumer           | Triggering, fresh reads, claims, durable steps, retries, ordering, coordination, and traces | SDK pagination, prompt rendering, Git commands, or domain choices |
-| Event contract               | Minimal typed identifiers and stable work identity                                          | A cached replacement for current external truth                   |
+| Part                         | Owns                                                                                        | Must not own                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Service primitive            | One external system's auth, SDK quirks, pagination, errors, and plain JSON-safe data        | Prompts, providers, Inngest, or domain workflow policy               |
+| Domain operation             | Prompt or decision policy, normalized input, strict result validation, and provenance       | Tracker lifecycle, delivery retries, or concrete provider wiring     |
+| Repository/compute primitive | Isolated execution, resumable workspace handles, change inspection, and cleanup             | Publication, Linear, Inngest, Spec, implementation, or domain policy |
+| Publication primitive        | Approved changes, authenticated commit/push, external artifact identity, and retry recovery | Workspace creation, cleanup, tracker lifecycle, or domain policy     |
+| Projection adapter           | Guarded mapping from one domain result to external-system writes                            | Prompt policy, delivery scheduling, or a shared lifecycle engine     |
+| Execution consumer           | Triggering, fresh reads, claims, durable steps, retries, ordering, coordination, and traces | SDK pagination, prompt rendering, Git commands, or domain choices    |
+| Event contract               | Minimal typed identifiers and stable work identity                                          | A cached replacement for current external truth                      |
 
 Dependencies point inward from the execution consumer:
 
@@ -83,6 +84,7 @@ execution consumer
   -> domain operation -> provider interface
   -> projection adapter -> service primitive
   -> repository/compute primitive
+  -> publication primitive
 ```
 
 Concrete provider adapters, delivery hosts, and external SDK objects stay at
@@ -139,6 +141,7 @@ real consumers expose the same stable contract.
 | `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
 | `lib/spec/`              | Spec prompt, structured result schema, issue-key artifact validation, and provider-independent operation        |
 | `lib/repository/`        | Grove-backed writable repository leases, safe setup, change inspection, and reset cleanup                       |
+| `lib/github/`            | GitHub remote parsing, credential-safe commit and push, exact PR publication, and retry recovery                |
 | `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
 | `lib/skills/`            | Packaged-skill installation support                                                                             |
 | `skills/`                | Packaged skills installed into target repositories                                                              |
@@ -199,6 +202,20 @@ GitHub credentials are not passed to target-repository scripts. Reset cleanup
 removes tracked and ordinary untracked work while retaining ignored dependency
 caches such as `node_modules`. The module does not commit, push, open pull
 requests, update Linear, or choose Spec and implementation policy.
+
+### GitHub publication boundary
+
+The GitHub module accepts a validated `RepositoryRun` and an approved path/status
+set. It creates or recognizes one marked commit, pushes one explicit branch
+without force, and finds or creates one exact pull request. Recovery observes
+the local commit, remote branch SHA, and GitHub PR identity; it does not add a
+publication database or retry state machine.
+
+The token stays inside the service and is exposed only to primitive-owned
+authenticated Git and REST calls after local run validation. GitHub publication
+does not create or clean workspaces, validate Spec content, update Linear, or
+depend on Inngest. The durable consumer owns retries and calls repository
+cleanup only after publication succeeds.
 
 ### Delivery boundary
 

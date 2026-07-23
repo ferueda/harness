@@ -164,6 +164,34 @@
       }
     },
     {
+      "files": ["lib/github/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^inngest(?:/|$)",
+                "message": "GitHub publication primitives must not depend on delivery code."
+              },
+              {
+                "regex": "^@linear/sdk(?:/|$)",
+                "message": "GitHub publication primitives must not depend on tracker code."
+              },
+              {
+                "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
+                "message": "GitHub publication primitives must not depend on agent providers."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:/|$)|implementation(?:/|$)|providers(?:/|$))",
+                "message": "GitHub publication owns commit, push, and pull requests, not tracker, delivery, provider, or domain policy."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["providers/**/*.ts"],
       "rules": {
         "no-restricted-imports": [

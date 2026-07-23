@@ -169,6 +169,24 @@ describe("automation import boundaries", () => {
     );
   });
 
+  it("keeps GitHub publication independent of tracker and domain policy", () => {
+    expect.hasAssertions();
+    expectAllowed(
+      "lib/github/allowed.ts",
+      'import type { RepositoryRun } from "../repository/types.ts";\ntype Run = RepositoryRun;\nexport type { Run };',
+    );
+    expectBoundaryViolation(
+      "lib/github/forbidden.ts",
+      'import type { LinearService } from "../linear/client.ts";',
+      "not tracker, delivery, provider, or domain policy",
+    );
+    expectBoundaryViolation(
+      "lib/github/forbidden.ts",
+      'import { specIssue } from "../spec/spec.ts";',
+      "not tracker, delivery, provider, or domain policy",
+    );
+  });
+
   it("keeps provider adapters independent of tracker and domain operations", () => {
     expect.hasAssertions();
     expectAllowed(

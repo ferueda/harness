@@ -61,9 +61,11 @@ Start with one vertical slice and only the primitives it calls. In order:
 1. Normalize the external input through a standalone service primitive.
 2. Define one operation-specific input, result, policy, and provenance contract.
 3. Add an isolated repository or compute primitive only if the operation must
-   write, execute, or publish an artifact.
-4. Keep tracker projection separate from the operation.
-5. Compose the flow with a short durable consumer whose steps match meaningful
+   write or execute an artifact.
+4. Add a separate publication primitive only when approved workspace changes
+   must become a commit, branch, pull request, or another external artifact.
+5. Keep tracker projection separate from the operation.
+6. Compose the flow with a short durable consumer whose steps match meaningful
    external side effects.
 
 Before handoff, check the dependency direction:
@@ -72,6 +74,8 @@ Before handoff, check the dependency direction:
 - domain operations depend on the provider interface, not a concrete adapter,
   and do not import Linear, Inngest, Git, or GitHub code;
 - repository primitives do not import domain or tracker policy;
+- publication primitives do not create workspaces or import domain, tracker, or
+  delivery policy;
 - projection code does not render prompts or schedule work;
 - Inngest consumers reload current truth and coordinate the other parts rather
   than implementing them inline;

@@ -44,9 +44,10 @@ such as `/path/to/repo`, `harness.json`, and `.harness/runs/reviews/<run-id>/`.
   workflow policy.
 - Durable delivery systems may retry, schedule, and observe work, but domain
   policy belongs in the independent operation that makes the decision.
-- Repository and compute primitives own isolated execution, publication, and
-  cleanup. They return serializable handles and must not own tracker lifecycle
-  or domain policy.
+- Repository and compute primitives own isolated execution and cleanup.
+  Publication primitives own authenticated materialization into external
+  source-control systems. Both return serializable handles and must not own
+  tracker lifecycle or domain policy.
 - External systems that already own queue or lifecycle state remain the source
   of truth. Harness must not mirror that state in a second lifecycle store.
 - Runtime schemas and exported schemas must stay aligned when either side
