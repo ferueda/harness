@@ -1,104 +1,22 @@
 import { z } from "zod";
+import {
+  createWorkItemContextSchemas,
+  WorkItemCommentSchema,
+  WorkItemEvidenceSchema,
+  WorkItemLinkSchema,
+} from "../work-item/schema.ts";
 
 export const TRIAGE_DECISION_SCHEMA_VERSION = "3";
 
 const NonEmptyStringSchema = z.string().min(1);
 
-const PortableRelativePathSchema = NonEmptyStringSchema.superRefine((value, ctx) => {
-  const segments = value.split("/");
-  if (
-    value.includes("\\") ||
-    value.startsWith("/") ||
-    /^[A-Za-z]:/.test(value) ||
-    value.startsWith("//") ||
-    segments.some((segment) => segment === "" || segment === "." || segment === "..")
-  ) {
-    ctx.addIssue({ code: "custom", message: "must be a portable repository-relative path" });
-  }
-});
+const TriageWorkItemSchemas = createWorkItemContextSchemas(NonEmptyStringSchema);
 
-export const TriageWorkItemReferenceSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    reference: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
-    url: z.url().nullable(),
-    state: NonEmptyStringSchema,
-  })
-  .strict();
-
-export const TriageCommentSchema = z
-  .object({
-    author: NonEmptyStringSchema.nullable(),
-    body: NonEmptyStringSchema,
-    createdAt: z.iso.datetime(),
-  })
-  .strict();
-
-export const TriageLinkSchema = z
-  .object({
-    title: NonEmptyStringSchema,
-    url: z.url(),
-  })
-  .strict();
-
-export const TriageWorkItemContextSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    reference: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
-    description: NonEmptyStringSchema.nullable(),
-    url: z.url().nullable(),
-    state: NonEmptyStringSchema,
-    labels: z.array(NonEmptyStringSchema),
-    comments: z.array(TriageCommentSchema),
-    parent: TriageWorkItemReferenceSchema.nullable(),
-    children: z.array(TriageWorkItemReferenceSchema),
-    duplicateOf: TriageWorkItemReferenceSchema.nullable(),
-    blockedBy: z.array(TriageWorkItemReferenceSchema),
-    related: z.array(TriageWorkItemReferenceSchema),
-    links: z.array(TriageLinkSchema),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-    completeness: z
-      .object({
-        commentsTruncated: z.boolean(),
-        labelsTruncated: z.boolean(),
-        relationsTruncated: z.boolean(),
-        linksTruncated: z.boolean(),
-        childrenTruncated: z.boolean(),
-      })
-      .strict(),
-  })
-  .strict();
-
-export const TriageEvidenceSchema = z
-  .object({
-    kind: z.enum(["tracker", "code", "docs", "test", "repo-state"]),
-    path: PortableRelativePathSchema.nullable(),
-    summary: NonEmptyStringSchema,
-  })
-  .strict()
-  .superRefine((evidence, ctx) => {
-    if (evidence.kind === "tracker" && evidence.path !== null) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["path"],
-        message: "tracker evidence must use path: null",
-      });
-    }
-
-    if (
-      (evidence.kind === "code" || evidence.kind === "docs" || evidence.kind === "test") &&
-      evidence.path === null
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["path"],
-        message: `${evidence.kind} evidence requires a repository-relative path`,
-      });
-    }
-  });
+export const TriageWorkItemReferenceSchema = TriageWorkItemSchemas.reference;
+export const TriageCommentSchema = WorkItemCommentSchema;
+export const TriageLinkSchema = WorkItemLinkSchema;
+export const TriageWorkItemContextSchema = TriageWorkItemSchemas.context;
+export const TriageEvidenceSchema = WorkItemEvidenceSchema;
 
 export const TriageDecisionSchema = z
   .object({

@@ -80,4 +80,9 @@ Completed plans are **removed from the tree** after land. Use merged PRs and `gi
 
 ---
 
-**New plans:** `YYMMDD-short-slug.md` in this directory — reconcile here before adding. Todo-like backlog spikes live in Linear; this directory is for approved implementation plans and handoffs. **When done:** remove the plan file and update this README shipped table; do not keep an `archive/` copy.
+**New plans:** manual planning-workflow plans use `YYMMDD-short-slug.md`; the
+Linear Spec operation uses the exact issue key, such as `FER-273.md`. Reconcile
+either kind here before adding it. Todo-like backlog spikes live in Linear; this
+directory is for approved implementation plans and handoffs. **When done:**
+remove the plan file and update this README shipped table; do not keep an
+`archive/` copy.
