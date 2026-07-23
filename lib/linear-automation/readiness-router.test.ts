@@ -2,6 +2,10 @@ import { Inngest } from "inngest";
 import { InngestTestEngine, mockCtx } from "@inngest/test";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createLinearIssueReadinessCheckRequestedEvent,
+  LinearIssueReadinessCheckRequestedEvent,
+} from "./events/linear-readiness-events.ts";
+import {
   createLinearIssueRevisionObservedEvent,
   LinearIssueRevisionObservedEvent,
   linearIssueRevisionEventId,
@@ -147,6 +151,16 @@ function revisionEvent(updatedAt = UPDATED_AT) {
   });
 }
 
+function readinessCheckEvent(pollCycleId = "poll-cycle-1") {
+  return createLinearIssueReadinessCheckRequestedEvent(
+    {
+      issueId: "issue-1",
+      issueIdentifier: "FER-225",
+    },
+    pollCycleId,
+  );
+}
+
 function sentEvent(output: Awaited<ReturnType<InngestTestEngine["execute"]>>) {
   const call = vi.mocked(output.ctx.step.sendEvent).mock.calls[0];
   if (!call) throw new Error("Expected a sent work event");
@@ -166,7 +180,7 @@ describe("Linear readiness router", () => {
       id: LINEAR_READINESS_ROUTER_FUNCTION_ID,
       concurrency: 1,
       retries: LINEAR_READINESS_ROUTER_RETRIES,
-      triggers: [LinearIssueRevisionObservedEvent],
+      triggers: [LinearIssueRevisionObservedEvent, LinearIssueReadinessCheckRequestedEvent],
     });
   });
 
@@ -210,9 +224,10 @@ describe("Linear readiness router", () => {
   ] as const)("refetches before an enabled %s dispatch", async (route, labelId, eventName) => {
     const current = issueContext({ stateId: readiness.stateIds.open, actionLabelId: labelId });
     const linear = fakeLinear(current, current);
+    const event = readinessCheckEvent();
     const output = await new InngestTestEngine({
       function: router(linear.service),
-      events: [revisionEvent()],
+      events: [event],
     }).execute();
 
     expect(output.error).toBeUndefined();
@@ -222,7 +237,21 @@ describe("Linear readiness router", () => {
       LINEAR_READINESS_CONFIRM_STEP_ID,
       expect.any(Function),
     );
-    expect(sentEvent(output)).toMatchObject({ name: eventName });
+    expect(sentEvent(output)).toMatchObject({
+      name: eventName,
+      data: { causationEventId: event.id },
+    });
+  });
+
+  it("does not turn an Open readiness check into a new Backlog triage request", async () => {
+    const linear = fakeLinear(issueContext());
+    const output = await new InngestTestEngine({
+      function: router(linear.service),
+      events: [readinessCheckEvent()],
+    }).execute();
+
+    expect(output.result).toMatchObject({ outcome: "ignore", reason: "not-open" });
+    expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
   it.each(["2026-07-19T00:59:00.000Z", "2026-07-19T01:01:00.000Z"])(
@@ -268,7 +297,7 @@ describe("Linear readiness router", () => {
         ...readiness,
         enabledRoutes: { ...readiness.enabledRoutes, spec: false },
       }),
-      events: [revisionEvent()],
+      events: [readinessCheckEvent()],
     }).execute();
 
     expect(output.result).toMatchObject({ outcome: "wait", reason: "route-disabled" });
@@ -285,7 +314,7 @@ describe("Linear readiness router", () => {
     const linear = fakeLinear(initial, changed);
     const output = await new InngestTestEngine({
       function: router(linear.service),
-      events: [revisionEvent()],
+      events: [readinessCheckEvent()],
     }).execute();
 
     expect(output.result).toEqual({
@@ -295,6 +324,39 @@ describe("Linear readiness router", () => {
     });
     expect(linear.getIssueContext).toHaveBeenCalledTimes(2);
     expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
+  });
+
+  it("rechecks blocker truth without relying on the blocked issue revision", async () => {
+    const blocked = issueContext({
+      stateId: readiness.stateIds.open,
+      actionLabelId: readiness.agentActionLabelIds.spec,
+      blockerStateId: readiness.stateIds.inProgress,
+    });
+    const unblocked = issueContext({
+      stateId: readiness.stateIds.open,
+      actionLabelId: readiness.agentActionLabelIds.spec,
+      blockerStateId: readiness.stateIds.done,
+    });
+    const blockedOutput = await new InngestTestEngine({
+      function: router(fakeLinear(blocked).service),
+      events: [readinessCheckEvent("poll-cycle-1")],
+    }).execute();
+    const unblockedOutput = await new InngestTestEngine({
+      function: router(fakeLinear(unblocked, unblocked).service),
+      events: [readinessCheckEvent("poll-cycle-2")],
+    }).execute();
+    const repeatedOutput = await new InngestTestEngine({
+      function: router(fakeLinear(unblocked, unblocked).service),
+      events: [readinessCheckEvent("poll-cycle-3")],
+    }).execute();
+
+    expect(blockedOutput.result).toMatchObject({ outcome: "wait", reason: "blocked" });
+    expect(blockedOutput.ctx.step.sendEvent).not.toHaveBeenCalled();
+    expect(unblockedOutput.result).toMatchObject({ outcome: "dispatched", route: "spec" });
+    expect(sentEvent(unblockedOutput).id).toBe(sentEvent(repeatedOutput).id);
+    expect(sentEvent(unblockedOutput).data.causationEventId).not.toBe(
+      sentEvent(repeatedOutput).data.causationEventId,
+    );
   });
 
   it("ignores a claimed issue without reusing an earlier route", async () => {

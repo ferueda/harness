@@ -13,7 +13,11 @@ import {
 import { z } from "zod";
 import type { Agent } from "../agent/contract.ts";
 import { resolveLinearAutomationSettings, type LinearAutomationSettings } from "./config.ts";
-import { createLinearBacklogPoller, type LinearBacklogPollerLinear } from "./backlog-poller.ts";
+import {
+  createLinearIssuePoller,
+  type LinearIssuePollerConfig,
+  type LinearIssuePollerLinear,
+} from "./issue-poller.ts";
 import { createLinearReadinessRouter } from "./readiness-router.ts";
 import type { LinearReadinessConfig } from "./readiness.ts";
 import { createLinearTriageFunction, type LinearTriageService } from "./triage-consumer.ts";
@@ -175,7 +179,7 @@ async function checkCodexLogin(
 
 export function createLinearAutomationFunctions(input: {
   client: Inngest.Any;
-  linear: LinearTriageService & LinearBacklogPollerLinear;
+  linear: LinearTriageService & LinearIssuePollerLinear;
   agent: Agent;
   settings: LinearAutomationSettings;
 }): LinearAutomationFunctions {
@@ -184,13 +188,13 @@ export function createLinearAutomationFunctions(input: {
     ...input.settings.readiness,
     enabledRoutes: LINEAR_AUTOMATION_ENABLED_ROUTES,
   });
-  const poller = createLinearBacklogPoller({
+  const poller = createLinearIssuePoller({
     client: input.client,
     linear: input.linear,
     config: {
       teamId: readiness.teamId,
       projectId: readiness.projectId,
-      stateId: readiness.stateIds.backlog,
+      stateIds: linearAutomationObservedStateIds(readiness),
     },
   });
   const router = createLinearReadinessRouter({
@@ -217,6 +221,17 @@ export function createLinearAutomationFunctions(input: {
     client: input.client,
     functions: Object.freeze([poller, router, triage]),
     readiness,
+  });
+}
+
+export function linearAutomationObservedStateIds(
+  readiness: LinearReadinessConfig,
+): LinearIssuePollerConfig["stateIds"] {
+  return Object.freeze({
+    backlog: readiness.stateIds.backlog,
+    ...(readiness.enabledRoutes.spec || readiness.enabledRoutes.implement
+      ? { open: readiness.stateIds.open }
+      : {}),
   });
 }
 

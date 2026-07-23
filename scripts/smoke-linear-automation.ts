@@ -22,10 +22,10 @@ import {
   type LinearAutomationWorker,
 } from "../lib/linear-automation/worker.ts";
 import {
-  LINEAR_BACKLOG_POLL_FUNCTION_ID,
-  LINEAR_BACKLOG_POLL_LIMIT,
-  type LinearBacklogPollerLinear,
-} from "../lib/linear-automation/backlog-poller.ts";
+  LINEAR_ISSUE_POLL_FUNCTION_ID,
+  LINEAR_ISSUE_POLL_LIMIT,
+  type LinearIssuePollerLinear,
+} from "../lib/linear-automation/issue-poller.ts";
 import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "../lib/linear-automation/readiness-router.ts";
 import {
   LINEAR_TRIAGE_FUNCTION_ID,
@@ -244,7 +244,7 @@ function issueContext(): LinearIssueContext {
   };
 }
 
-function fakeLinear(): LinearTriageService & LinearBacklogPollerLinear {
+function fakeLinear(): LinearTriageService & LinearIssuePollerLinear {
   return {
     listIssueRevisions: async (input) => {
       projection.pollInputs.push(input);
@@ -450,7 +450,7 @@ try {
     "--app-id",
     LINEAR_AUTOMATION_APP_ID,
   ]);
-  assert(registered.includes(LINEAR_BACKLOG_POLL_FUNCTION_ID), "poller registration missing");
+  assert(registered.includes(LINEAR_ISSUE_POLL_FUNCTION_ID), "poller registration missing");
   assert(registered.includes(LINEAR_READINESS_ROUTER_FUNCTION_ID), "router registration missing");
   assert(registered.includes(LINEAR_TRIAGE_FUNCTION_ID), "triage registration missing");
 
@@ -486,7 +486,7 @@ try {
           teamId: settings.readiness.teamId,
           projectId: settings.readiness.projectId,
           stateId: settings.readiness.stateIds.backlog,
-          limit: LINEAR_BACKLOG_POLL_LIMIT,
+          limit: LINEAR_ISSUE_POLL_LIMIT,
         }),
     ),
     "poller used unexpected Linear scope",

@@ -1,8 +1,11 @@
 import type { Inngest, InngestFunction } from "inngest";
 import {
+  LINEAR_ISSUE_READINESS_CHECK_EVENT_NAME,
+  LinearIssueReadinessCheckRequestedEvent,
+} from "./events/linear-readiness-events.ts";
+import {
+  LINEAR_ISSUE_REVISION_EVENT_NAME,
   LinearIssueRevisionObservedEvent,
-  linearIssueRevisionEventId,
-  type LinearIssueRevisionData,
 } from "./events/linear-revision-events.ts";
 import { createWorkRequestedEvent } from "./events/work-events.ts";
 import {
@@ -38,6 +41,12 @@ type LoadedReadiness =
   | Readonly<{ kind: "current"; observed: ObservedReadiness }>
   | Readonly<{ kind: "stale"; issueId: string }>;
 
+type ReadinessObservation = Readonly<{
+  issueId: string;
+  issueIdentifier: string;
+  expectedUpdatedAt?: string;
+}>;
+
 export function createLinearReadinessRouter(input: {
   client: Inngest.Any;
   linear: LinearReadinessRouterLinear;
@@ -50,11 +59,22 @@ export function createLinearReadinessRouter(input: {
       id: LINEAR_READINESS_ROUTER_FUNCTION_ID,
       concurrency: 1,
       retries: LINEAR_READINESS_ROUTER_RETRIES,
-      triggers: [LinearIssueRevisionObservedEvent],
+      triggers: [LinearIssueRevisionObservedEvent, LinearIssueReadinessCheckRequestedEvent],
     },
     async ({ event, step }) => {
+      const observation: ReadinessObservation =
+        event.name === LINEAR_ISSUE_REVISION_EVENT_NAME
+          ? {
+              issueId: event.data.issueId,
+              issueIdentifier: event.data.issueIdentifier,
+              expectedUpdatedAt: event.data.updatedAt,
+            }
+          : {
+              issueId: event.data.issueId,
+              issueIdentifier: event.data.issueIdentifier,
+            };
       const loaded = await step.run(LINEAR_READINESS_LOAD_STEP_ID, () =>
-        loadReadiness(input.linear, event.data, config.readiness),
+        loadReadiness(input.linear, observation, config.readiness),
       );
       if (loaded.kind === "stale") {
         return {
@@ -65,6 +85,18 @@ export function createLinearReadinessRouter(input: {
       }
 
       const { observed } = loaded;
+      if (
+        event.name === LINEAR_ISSUE_READINESS_CHECK_EVENT_NAME &&
+        observed.decision.kind === "dispatch" &&
+        observed.decision.route === "triage"
+      ) {
+        return {
+          outcome: "ignore" as const,
+          reason: "not-open" as const,
+          issueId: observed.issueId,
+          snapshotGeneration: observed.decision.snapshotGeneration,
+        };
+      }
       if (observed.decision.kind !== "dispatch") {
         return {
           outcome: observed.decision.kind,
@@ -78,7 +110,7 @@ export function createLinearReadinessRouter(input: {
         observed.decision.route === "triage"
           ? observed
           : await step.run(LINEAR_READINESS_CONFIRM_STEP_ID, async () => {
-              const confirmed = await loadReadiness(input.linear, event.data, config.readiness);
+              const confirmed = await loadReadiness(input.linear, observation, config.readiness);
               return confirmed.kind === "current" ? confirmed.observed : null;
             });
       if (!ready) {
@@ -100,7 +132,7 @@ export function createLinearReadinessRouter(input: {
       const request = createWorkRequestedEvent(route, {
         issueId: ready.issueId,
         issueIdentifier: ready.issueIdentifier,
-        causationEventId: linearIssueRevisionEventId(event.data),
+        causationEventId: event.id,
         snapshotGeneration: ready.decision.snapshotGeneration,
       });
       await step.sendEvent(LINEAR_READINESS_SEND_STEP_ID, request);
@@ -118,23 +150,23 @@ export function createLinearReadinessRouter(input: {
 
 async function loadReadiness(
   linear: LinearReadinessRouterLinear,
-  revision: LinearIssueRevisionData,
+  observation: ReadinessObservation,
   config: LinearReadinessConfig,
 ): Promise<LoadedReadiness> {
-  const context = await linear.getIssueContext(revision.issueId);
-  if (context.id !== revision.issueId) {
+  const context = await linear.getIssueContext(observation.issueId);
+  if (context.id !== observation.issueId) {
     throw new LinearError(
       "invalid-response",
-      `Linear readiness read returned issue ${context.id}, expected ${revision.issueId}.`,
+      `Linear readiness read returned issue ${context.id}, expected ${observation.issueId}.`,
     );
   }
-  if (context.identifier !== revision.issueIdentifier) {
+  if (context.identifier !== observation.issueIdentifier) {
     throw new LinearError(
       "invalid-response",
-      `Linear readiness read returned ${context.identifier}, expected ${revision.issueIdentifier}.`,
+      `Linear readiness read returned ${context.identifier}, expected ${observation.issueIdentifier}.`,
     );
   }
-  if (context.updatedAt !== revision.updatedAt) {
+  if (observation.expectedUpdatedAt && context.updatedAt !== observation.expectedUpdatedAt) {
     return { kind: "stale", issueId: context.id };
   }
   return {
