@@ -8,7 +8,7 @@ describe("Spec prompt", () => {
     const artifactPath = "dev/plans/FER-273.md";
     const prompt = renderSpecPrompt({ workItem, artifactPath });
 
-    expect(SPEC_POLICY_VERSION).toBe("1");
+    expect(SPEC_POLICY_VERSION).toBe("2");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`Write the complete Spec at exactly ${artifactPath}`);
     expect(prompt).toContain(`artifactPath must be exactly "${artifactPath}"`);
@@ -16,7 +16,7 @@ describe("Spec prompt", () => {
     expect(renderSpecPrompt({ workItem, artifactPath })).toBe(prompt);
   });
 
-  it("grounds the Spec in repository authority and evidence", () => {
+  it("grounds and reconciles the Spec in authority order before structuring it", () => {
     const prompt = renderSpecPrompt({
       workItem: validContext(),
       artifactPath: "dev/plans/FER-273.md",
@@ -24,8 +24,13 @@ describe("Spec prompt", () => {
 
     expect(prompt).toContain("Read repository guidance such as AGENTS.md and README.md");
     expect(prompt).toContain("authoritative project intent or vision source");
-    expect(prompt).toContain("Inspect the relevant code, tests, docs, active plans");
+    expect(prompt).toContain(
+      "repository invariants and current project intent; explicit requirements and accepted decisions; verified codebase facts",
+    );
+    expect(prompt).toContain("Separate current behavior from requested behavior");
+    expect(prompt).toContain("Research first");
     expect(prompt).toContain("Prefer one coherent recommended direction");
+    expect(prompt).toContain("Mention a verified skill or aid beside a concrete change only");
     expect(prompt).toContain("A ready Spec requires repository evidence");
   });
 
@@ -36,10 +41,52 @@ describe("Spec prompt", () => {
     });
 
     expect(prompt).toContain("Reserve Needs Input for a true prerequisite");
-    expect(prompt).toContain("A later approval, a reviewable product choice");
+    expect(prompt).toContain("missing decision materially changes scope or architecture");
+    expect(prompt).toContain("A later approval or human-authority product choice");
+    expect(prompt).toContain("do not leave raw alternatives or unresolved implementation choices");
     expect(prompt).toContain("at least two unique options with tradeoffs");
     expect(prompt).toContain("recommendation that exactly matches an option");
+    expect(prompt).toContain("must not be asked to resolve a reviewer decision");
     expect(prompt).toContain("reviewerDecisions must be []");
+  });
+
+  it("keeps the artifact decision-focused, right-sized, and portable", () => {
+    const prompt = renderSpecPrompt({
+      workItem: validContext(),
+      artifactPath: "dev/plans/FER-273.md",
+    });
+
+    expect(prompt).toContain("Right-size the artifact");
+    expect(prompt).toContain("Capture decisions, not code");
+    expect(prompt).toContain("Do not pre-write implementation code or shell-command choreography");
+    expect(prompt).toContain("label it as directional rather than an implementation specification");
+    expect(prompt).toContain(
+      "Do not embed provider-specific or tool-specific executor instructions",
+    );
+    expect(prompt).toContain("Explicitly defer ordinary execution-time discovery");
+  });
+
+  it("shapes multi-unit work vertically and explains necessary horizontal units", () => {
+    const prompt = renderSpecPrompt({
+      workItem: validContext(),
+      artifactPath: "dev/plans/FER-273.md",
+    });
+
+    expect(prompt).toContain("Prefer vertical slices");
+    expect(prompt).toContain("separate agents can own with limited overlap");
+    expect(prompt).toContain("Do not divide work mechanically by repository layer");
+    expect(prompt).toContain("vertical delivery is impractical or unsafe");
+  });
+
+  it("selects the highest stable proof seam", () => {
+    const prompt = renderSpecPrompt({
+      workItem: validContext(),
+      artifactPath: "dev/plans/FER-273.md",
+    });
+
+    expect(prompt).toContain("highest existing stable test seam that proves acceptance");
+    expect(prompt).toContain("distinct invariant or failure mode");
+    expect(prompt).toContain("repository's canonical gate");
   });
 
   it("keeps the agent inside the operation boundary", () => {
