@@ -204,6 +204,7 @@ check the runtime schema, exported schema, prompt, and consumer together.
 | ------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | `.harness/runs/reviews/<run-id>/`                | Review context, prompts, structured results, streams, summaries, metadata, and events |
 | `.harness/bin/harness`                           | Ignored target-repo shim pointing to the Harness checkout that initialized it         |
+| `dev/plans/<ISSUE-KEY>.md`                       | Tracked Spec artifact written in an isolated workspace; publication remains separate  |
 | Self-hosted Inngest SQLite volume                | Local delivery history, retry state, function metadata, and traces                    |
 | Protected worker environment file outside a repo | Linear, Inngest, and optional Codex credentials for one deployment                    |
 | Dedicated worker Codex credential volume         | Optional unattended ChatGPT-backed Codex login, separate from the host account        |
