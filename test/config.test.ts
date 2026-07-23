@@ -150,6 +150,36 @@ test("resolveHarnessOptions applies provider model defaults", () => {
   expect(codexOptions.modelReasoningEffort).toBe("high");
 });
 
+test("harness config validates repository run setup and applies the small pool default", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-repository-config-"));
+  writeHarnessJson(workspace, {
+    repositoryRuns: {
+      remote: "https://github.com/example/project.git",
+      setup: {
+        command: ["pnpm", "install", "--frozen-lockfile"],
+        timeoutMs: 600_000,
+      },
+    },
+  });
+
+  expect(loadHarnessConfigSnapshot(workspace, "/").config.repositoryRuns).toEqual({
+    remote: "https://github.com/example/project.git",
+    maxTrees: 2,
+    setup: {
+      command: ["pnpm", "install", "--frozen-lockfile"],
+      timeoutMs: 600_000,
+    },
+  });
+
+  writeHarnessJson(workspace, {
+    repositoryRuns: {
+      remote: "https://github.com/example/project.git",
+      setup: { command: [], timeoutMs: 600_000 },
+    },
+  });
+  expect(() => loadHarnessConfigSnapshot(workspace, "/")).toThrow(/repositoryRuns\.setup\.command/);
+});
+
 test("resolveLinearAutomationSettings resolves one immutable worker snapshot", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
   writeHarnessJson(workspace, {

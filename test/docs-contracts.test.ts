@@ -618,18 +618,11 @@ test("readme stays a concise entrypoint", () => {
   expect(readme).not.toMatch(/^### [a-z0-9]+(?:-[a-z0-9]+)+$/m);
 });
 
-test("retired Factory docs, commands, skill, and dependency stay absent", () => {
+test("retired Factory docs, commands, and skill stay absent", () => {
   expect(existsSync(join(REPO_ROOT, "docs/contributing/factory.md"))).toBe(false);
   expect(existsSync(join(REPO_ROOT, "skills/factory-operator/SKILL.md"))).toBe(false);
   expect(existsSync(join(REPO_ROOT, "scripts/smoke-factory.ts"))).toBe(false);
   expect(existsSync(join(REPO_ROOT, "scripts/smoke-factory-grove.ts"))).toBe(false);
-
-  const packageJson = readRepoFile("package.json");
-  const workspace = readRepoFile("pnpm-workspace.yaml");
-  const lockfile = readRepoFile("pnpm-lock.yaml");
-  for (const content of [packageJson, workspace, lockfile]) {
-    expect(content).not.toContain("@ferueda/grove");
-  }
 
   for (const path of durableDocPaths()) {
     expect(readRepoFile(path), `${path} still documents Factory`).not.toMatch(/\bfactory\b/i);

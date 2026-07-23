@@ -55,11 +55,19 @@ spec needing revision returns as Open + Spec.
 ## Configure the target repository
 
 The target repository's `harness.json` owns stable team, project, state, and
-Agent action label IDs plus the triage execution profile. It contains no
-secrets.
+Agent action label IDs, the triage execution profile, and repository-run setup.
+It contains no secrets.
 
 ```json
 {
+  "repositoryRuns": {
+    "remote": "https://github.com/example/project.git",
+    "maxTrees": 2,
+    "setup": {
+      "command": ["pnpm", "install", "--frozen-lockfile", "--prefer-offline"],
+      "timeoutMs": 900000
+    }
+  },
   "linearAutomation": {
     "readiness": {
       "teamId": "team-id",
@@ -98,8 +106,16 @@ worker can reuse it without adding a shared scheduler or project registry.
 
 The deployment contains one self-hosted Inngest service and one Harness worker.
 It is intentionally scoped to one configured target repository. Inngest keeps
-its SQLite database in a named volume, while the worker reads the target checkout
-through a read-only bind mount.
+its SQLite database in a named volume, while the worker reads the target
+checkout through a read-only bind mount.
+
+Write-capable operations use a separate persistent repository-data volume. It
+contains a writable controller clone plus Grove's reusable worktrees; the
+read-only source bind is never fetched, checked out, or cleaned. Grove reset
+keeps ignored `node_modules`, and a separate package-manager-cache volume keeps
+downloaded packages. The setup command runs after every acquisition so those
+warm dependencies are reconciled with the checked-out lockfile before an agent
+receives the workspace.
 
 Keep deployment secrets outside the target repository. The triage agent can read
 the workspace, so an ignored file inside that workspace is not a safe secret
@@ -169,15 +185,16 @@ docker compose --env-file "$LINEAR_AUTOMATION_ENV" --file "$HARNESS_ROOT/compose
 # Follow logs
 docker compose --env-file "$LINEAR_AUTOMATION_ENV" --file "$HARNESS_ROOT/compose.linear-automation.yaml" logs --follow
 
-# Stop containers while preserving SQLite and Codex credentials
+# Stop containers while preserving SQLite, repository data, caches, and Codex credentials
 docker compose --env-file "$LINEAR_AUTOMATION_ENV" --file "$HARNESS_ROOT/compose.linear-automation.yaml" down
 ```
 
 Do not add `--volumes` to normal shutdown. It deliberately deletes Inngest
-history and the dedicated Codex login. Both services use restart policies, and
-the Connect worker automatically reconnects after an Inngest restart. The
-worker's stop grace period is longer than the configured maximum triage runtime
-so an active agent step can drain.
+history, repository leases and warm dependencies, package-manager caches, and
+the dedicated Codex login. Both services use restart policies, and the Connect
+worker automatically reconnects after an Inngest restart. The worker's stop
+grace period is longer than the configured maximum triage runtime so an active
+agent step can drain.
 
 To run another target project, create another environment file with a distinct
 `COMPOSE_PROJECT_NAME`, workspace path, and dashboard port. Keep one configured
@@ -216,5 +233,9 @@ SQLite state on success. It does not call live Linear or a real model.
 `make smoke-linear-automation-compose` is the explicit Docker packaging smoke.
 It validates and builds the Compose model, starts both containers on a blocked-
 egress smoke network, checks service health, restarts each service, proves the
-worker reconnects and accepted event history survives, then removes all
-disposable containers and volumes. It also does not call live Linear or a model.
+worker reconnects and accepted event history survives, and runs a real Grove
+repository lease across worker restart. The repository probe verifies
+post-acquire setup, secret-free setup environment, dirty-work recovery, change
+inspection, reset cleanup, warm ignored dependency reuse, and persistent named
+volumes. The smoke then removes all disposable containers and volumes. It does
+not call live Linear, GitHub, or a model.

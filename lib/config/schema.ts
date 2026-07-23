@@ -6,6 +6,7 @@ import {
   AGENT_SANDBOX_MODES,
 } from "../agent/contract.ts";
 import { LinearAutomationConfigSchema } from "../linear-automation/config-schema.ts";
+import { RepositoryRunsConfigSchema } from "../repository/config-schema.ts";
 
 export const HarnessConfigSchema = z
   .object({
@@ -33,6 +34,7 @@ export const HarnessConfigSchema = z
       .passthrough()
       .optional(),
     linearAutomation: LinearAutomationConfigSchema.optional(),
+    repositoryRuns: RepositoryRunsConfigSchema.optional(),
   })
   .passthrough()
   .superRefine((config, ctx) => {

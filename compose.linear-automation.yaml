@@ -38,6 +38,8 @@ services:
     environment:
       CODEX_API_KEY: ${CODEX_API_KEY:-}
       CODEX_HOME: /home/node/.codex
+      COREPACK_HOME: /opt/corepack
+      HARNESS_REPOSITORY_ROOT: /home/node/.harness/repositories
       HARNESS_WORKER_HOST: 0.0.0.0
       HARNESS_WORKER_PORT: "8080"
       HOME: /home/node
@@ -47,6 +49,7 @@ services:
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?set INNGEST_EVENT_KEY}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?set INNGEST_SIGNING_KEY}
       LINEAR_API_KEY: ${LINEAR_API_KEY:?set LINEAR_API_KEY}
+      PNPM_CONFIG_STORE_DIR: /home/node/.cache/pnpm/store
     init: true
     networks:
       - linear-automation
@@ -60,6 +63,8 @@ services:
         target: /workspace
         read_only: true
       - codex-home:/home/node/.codex
+      - package-manager-cache:/home/node/.cache/pnpm
+      - repository-data:/home/node/.harness/repositories
 
 networks:
   linear-automation:
@@ -67,3 +72,5 @@ networks:
 volumes:
   codex-home:
   inngest-data:
+  package-manager-cache:
+  repository-data:

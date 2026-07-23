@@ -151,8 +151,12 @@
                 "message": "Repository primitives must not depend on tracker code."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:/|$)|implementation(?:/|$))",
-                "message": "Repository primitives own isolated execution and publication, not tracker or domain policy."
+                "regex": "^@octokit(?:/|$)",
+                "message": "Repository workspace primitives must not own GitHub publication."
+              },
+              {
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:/|$)|implementation(?:/|$)|github(?:/|$)|providers(?:/|$))",
+                "message": "Repository primitives own isolated execution and cleanup, not tracker, publication, provider, or domain policy."
               }
             ]
           }

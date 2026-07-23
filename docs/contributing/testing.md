@@ -37,6 +37,7 @@ docs should link here. Exact command ownership lives in
 | Static and module        | Types, parsers, validators, mappers, policies, and helpers                              |
 | Workflow and operation   | Review behavior, domain decisions, idempotency, and guarded external projections        |
 | Provider adapter         | SDK/CLI translation, streaming, sessions, schemas, timeout, and abort behavior          |
+| Repository integration   | Real local Git/Grove leases, setup, resume, inspection, warm reuse, and reset cleanup   |
 | CLI integration          | Argument parsing, command selection, structured output, and separate-process behavior   |
 | Repository self-contract | Packaged skills, command inventory, documentation structure, and private-path exclusion |
 | Distribution smoke       | Built package layout, installed entrypoint, generated shim, and basic public wiring     |
@@ -63,6 +64,8 @@ changed behavior crosses a boundary the cheaper layer cannot observe.
   in `scripts/smoke-linear-automation-compose.ts`, and gate-output behavior in
   `test/gate-output.test.ts`.
 - Keep target-repo fixtures isolated from the Harness checkout and user state.
+- Exercise repository lifecycle behavior with real temporary Git remotes and
+  Grove state. Mock neither Git nor Grove transitions.
 
 Use an existing location before inventing another test directory or suffix.
 
