@@ -49,6 +49,23 @@ test("repository runs resolve an exact base, reacquire dirty work, and inspect p
   const fixture = createFixture();
   const repository = createTestRepository(fixture);
   const base = await repository.resolveBase({ baseRef: "main" });
+  await expect(repository.resolveBase({ baseRef: "origin/main" })).resolves.toEqual({
+    ...base,
+    baseRef: "origin/main",
+  });
+  await expect(repository.resolveBase({ baseRef: "refs/remotes/origin/main" })).resolves.toEqual({
+    ...base,
+    baseRef: "refs/remotes/origin/main",
+  });
+  await expect(repository.resolveBase({ baseRef: base.baseSha })).resolves.toEqual({
+    ...base,
+    baseRef: base.baseSha,
+  });
+  for (const baseRef of ["main~1", "origin/main^", "refs/remotes/origin/main~1"]) {
+    await expect(repository.resolveBase({ baseRef })).rejects.toMatchObject({
+      code: "invalid_input",
+    });
+  }
   const run = await repository.prepareRun({
     id: "run-inspect",
     base,
@@ -154,15 +171,15 @@ test("repository cleanup reuses a bounded warm pool while preserving ignored dep
       stdio: ["ignore", "pipe", "inherit"],
     },
   );
-  await once(active.stdout, "data");
+  const activeExit = once(active, "exit");
   try {
+    await once(active.stdout, "data");
     await expect(repository.cleanupRun(first)).rejects.toMatchObject({
       code: "cleanup_failed",
     });
     expect(readFileSync(join(first.workspace, "agent-output.txt"), "utf8")).toBe("remove me\n");
   } finally {
-    const activeExit = once(active, "exit");
-    active.kill("SIGTERM");
+    if (active.exitCode === null) active.kill("SIGTERM");
     await activeExit;
   }
 

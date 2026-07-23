@@ -88,6 +88,9 @@ export async function resolveRemoteBase(input: {
 
   const candidates = baseCandidates(input.baseRef);
   for (const candidate of candidates) {
+    if (!FULL_GIT_SHA.test(candidate)) {
+      await runGit(input.controllerWorkspace, ["check-ref-format", candidate], "invalid_input");
+    }
     try {
       const sha = await runGit(input.controllerWorkspace, [
         "rev-parse",

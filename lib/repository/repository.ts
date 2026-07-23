@@ -1,5 +1,6 @@
 import {
   createGrove,
+  isReleaseResult,
   type Grove,
   type GroveLease,
   type GroveLeaseTarget,
@@ -399,10 +400,6 @@ function isWithin(parent: string, child: string): boolean {
 
 function isGroveLease(value: unknown): value is GroveLease {
   return typeof value === "object" && value !== null && "leaseId" in value && "state" in value;
-}
-
-function isReleaseResult(value: unknown): value is ReleaseResult {
-  return typeof value === "object" && value !== null && "status" in value && "leaseId" in value;
 }
 
 export type {
