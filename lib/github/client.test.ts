@@ -39,7 +39,9 @@ describe("GitHub pull request client", () => {
     expect(String(url)).toContain("state=all");
     expect(String(url)).toContain("head=ferueda%3Acodex%2FFER-286");
     expect(String(url)).toContain("base=main");
-    expect(new Headers(options?.headers).get("authorization")).toBe(`Bearer ${TOKEN}`);
+    const headers = new Headers(options?.headers);
+    expect(headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
+    expect(headers.get("x-github-api-version")).toBe("2026-03-10");
   });
 
   it("sends the minimal create payload", async () => {

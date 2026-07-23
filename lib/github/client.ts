@@ -112,7 +112,7 @@ async function requestJson(input: {
         Authorization: `Bearer ${input.token}`,
         "Content-Type": "application/json",
         "User-Agent": "harness",
-        "X-GitHub-Api-Version": "2022-11-28",
+        "X-GitHub-Api-Version": "2026-03-10",
       },
       ...(input.body ? { body: JSON.stringify(input.body) } : {}),
     });
