@@ -14,6 +14,16 @@ const SMOKE_OVERRIDE = join(ROOT, "compose.linear-automation.smoke.yaml");
 const POLL_EVENT_NAME = "linear/poll.requested";
 const EVENT_KEY = "0123456789abcdef0123456789abcdef";
 const SIGNING_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const REPOSITORY_SETUP_SCRIPT = [
+  'const fs = require("node:fs");',
+  'const path = require("node:path");',
+  'const target = path.join(process.cwd(), "node_modules/.compose-setup.json");',
+  "fs.mkdirSync(path.dirname(target), { recursive: true });",
+  "let previous = { calls: 0 };",
+  'try { previous = JSON.parse(fs.readFileSync(target, "utf8")); } catch {}',
+  "const forbidden = Object.keys(process.env).filter((key) => /^(?:LINEAR|INNGEST|GITHUB|CODEX)_/.test(key));",
+  "fs.writeFileSync(target, JSON.stringify({ calls: previous.calls + 1, forbidden }));",
+].join("\n");
 const fixtureRoot = mkdtempSync(join(tmpdir(), "harness-linear-compose-smoke-"));
 const workspace = join(fixtureRoot, "workspace");
 const environmentFile = join(fixtureRoot, "compose.env");
@@ -169,6 +179,10 @@ function getEventRuns(eventId: string): EventRun[] {
 
 function prepareFixture(dashboardPort: number): void {
   run("git", ["init", "--quiet", "--initial-branch", "main", workspace], 30_000);
+  run("git", ["-C", workspace, "config", "user.email", "harness@example.com"], 30_000);
+  run("git", ["-C", workspace, "config", "user.name", "Harness Smoke"], 30_000);
+  writeFileSync(join(workspace, ".gitignore"), "node_modules/\n", "utf8");
+  writeFileSync(join(workspace, "README.md"), "# Compose repository fixture\n", "utf8");
   writeFileSync(
     join(workspace, "harness.json"),
     `${JSON.stringify(
@@ -206,6 +220,8 @@ function prepareFixture(dashboardPort: number): void {
     )}\n`,
     "utf8",
   );
+  run("git", ["-C", workspace, "add", "."], 30_000);
+  run("git", ["-C", workspace, "commit", "--quiet", "-m", "Initialize fixture"], 30_000);
   writeFileSync(
     environmentFile,
     [
@@ -285,16 +301,85 @@ try {
     'import { constants } from "node:fs";',
     'if (process.getuid?.() === 0) throw new Error("worker runs as root");',
     "await access(process.env.CODEX_HOME, constants.W_OK);",
+    "await access(process.env.HARNESS_REPOSITORY_ROOT, constants.W_OK);",
+    "await access(process.env.PNPM_CONFIG_STORE_DIR.replace(/\\/store$/, ''), constants.W_OK);",
     'execFileSync("codex", ["--version"], { stdio: "inherit" });',
+    'execFileSync("pnpm", ["--version"], { stdio: "inherit" });',
   ].join("\n");
   compose(
     ["exec", "--no-TTY", "worker", "node", "--input-type=module", "--eval", runtimeProbe],
     30_000,
   );
 
+  station = "repository run before restart";
+  const prepareRepositoryProbe = [
+    'import { mkdir, writeFile } from "node:fs/promises";',
+    'import { join } from "node:path";',
+    'import { createRepository } from "./dist/lib/repository/repository.js";',
+    'const root = join(process.env.HARNESS_REPOSITORY_ROOT, "compose-smoke");',
+    "const repository = createRepository({",
+    '  remote: "/workspace",',
+    '  controllerWorkspace: join(root, "controller"),',
+    '  poolDirectory: join(root, "grove"),',
+    "  maxTrees: 2,",
+    `  setup: { command: [process.execPath, "--eval", ${JSON.stringify(REPOSITORY_SETUP_SCRIPT)}], timeoutMs: 30_000 },`,
+    "  setupEnvironment: process.env,",
+    "});",
+    'const base = await repository.resolveBase({ baseRef: "main" });',
+    'const run = await repository.prepareRun({ id: "compose-smoke-run", base, branch: "codex/compose-smoke" });',
+    'await writeFile(join(run.workspace, "agent-output.txt"), "durable work\\n");',
+    'await mkdir(join(run.workspace, "node_modules"), { recursive: true });',
+    'await writeFile(join(run.workspace, "node_modules/.warm-marker"), "warm\\n");',
+    'await writeFile(join(root, "run.json"), JSON.stringify(run));',
+  ].join("\n");
+  compose(
+    ["exec", "--no-TTY", "worker", "node", "--input-type=module", "--eval", prepareRepositoryProbe],
+    60_000,
+  );
+
   station = "worker restart";
   compose(["restart", "worker"], 180_000);
   await waitForHealthy("worker");
+
+  station = "repository run recovery and warm reuse";
+  const recoverRepositoryProbe = [
+    'import { access, readFile, writeFile } from "node:fs/promises";',
+    'import { join } from "node:path";',
+    'import { createRepository } from "./dist/lib/repository/repository.js";',
+    'const root = join(process.env.HARNESS_REPOSITORY_ROOT, "compose-smoke");',
+    'const original = JSON.parse(await readFile(join(root, "run.json"), "utf8"));',
+    "const repository = createRepository({",
+    '  remote: "/workspace",',
+    '  controllerWorkspace: join(root, "controller"),',
+    '  poolDirectory: join(root, "grove"),',
+    "  maxTrees: 2,",
+    `  setup: { command: [process.execPath, "--eval", ${JSON.stringify(REPOSITORY_SETUP_SCRIPT)}], timeoutMs: 30_000 },`,
+    "  setupEnvironment: process.env,",
+    "});",
+    "const base = { remote: original.remote, baseRef: original.baseRef, baseSha: original.baseSha };",
+    "const resumed = await repository.prepareRun({ id: original.id, base, branch: original.branch });",
+    'if (resumed.workspace !== original.workspace) throw new Error("repository path changed after restart");',
+    'await access(join(resumed.workspace, "agent-output.txt"));',
+    'await access(join(resumed.workspace, "node_modules/.warm-marker"));',
+    'const setupAfterResume = JSON.parse(await readFile(join(resumed.workspace, "node_modules/.compose-setup.json"), "utf8"));',
+    'if (setupAfterResume.calls !== 2 || setupAfterResume.forbidden.length !== 0) throw new Error("repository setup did not rerun safely");',
+    "const changes = await repository.inspectChanges(resumed);",
+    'if (!changes.some((change) => change.path === "agent-output.txt" && change.status === "untracked")) throw new Error("repository changes were not inspected");',
+    "await repository.cleanupRun(resumed);",
+    'const reused = await repository.prepareRun({ id: "compose-smoke-reused", base, branch: "codex/compose-smoke-reused" });',
+    'if (reused.workspace !== resumed.workspace) throw new Error("warm Grove slot was not reused");',
+    'await access(join(reused.workspace, "node_modules/.warm-marker"));',
+    'try { await access(join(reused.workspace, "agent-output.txt")); throw new Error("agent output survived reset"); } catch (error) { if (error?.message === "agent output survived reset") throw error; }',
+    'const setupAfterReuse = JSON.parse(await readFile(join(reused.workspace, "node_modules/.compose-setup.json"), "utf8"));',
+    'if (setupAfterReuse.calls !== 3) throw new Error("warm setup count was not preserved");',
+    "await repository.cleanupRun(reused);",
+    'await writeFile(join(process.env.PNPM_CONFIG_STORE_DIR.replace(/\\/store$/, ""), ".compose-cache-marker"), "cached\\n");',
+    'try { await access("/workspace/agent-output.txt"); throw new Error("read-only source was mutated"); } catch (error) { if (error?.message === "read-only source was mutated") throw error; }',
+  ].join("\n");
+  compose(
+    ["exec", "--no-TTY", "worker", "node", "--input-type=module", "--eval", recoverRepositoryProbe],
+    120_000,
+  );
 
   station = "durable event acceptance";
   const eventId = sendPollEvent(`linear-compose-smoke-${process.pid}`);
@@ -320,6 +405,14 @@ try {
   assert(
     preservedVolumes.some((volume) => volume.endsWith("_codex-home")),
     "Codex volume was not preserved by normal shutdown",
+  );
+  assert(
+    preservedVolumes.some((volume) => volume.endsWith("_repository-data")),
+    "repository data volume was not preserved by normal shutdown",
+  );
+  assert(
+    preservedVolumes.some((volume) => volume.endsWith("_package-manager-cache")),
+    "package manager cache volume was not preserved by normal shutdown",
   );
 
   cleanup();

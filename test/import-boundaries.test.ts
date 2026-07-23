@@ -160,7 +160,12 @@ describe("automation import boundaries", () => {
     expectBoundaryViolation(
       "lib/repository/forbidden.ts",
       'import type { LinearService } from "../linear/client.ts";',
-      "not tracker or domain policy",
+      "not tracker, publication, provider, or domain policy",
+    );
+    expectBoundaryViolation(
+      "lib/repository/forbidden.ts",
+      'import { publishRun } from "../github/publication.ts";',
+      "not tracker, publication, provider, or domain policy",
     );
   });
 

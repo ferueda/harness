@@ -83,6 +83,11 @@ The worker uses stable IDs and its triage profile from the target repository's
 [Linear automation guide](docs/contributing/linear-automation.md) for the
 Compose setup, health checks, and smoke tests.
 
+Write-capable consumers use the standalone Grove-backed repository primitive.
+It leases reusable writable worktrees, reruns repository setup against warm
+ignored dependencies, and resets completed work without owning commits, pull
+requests, or Linear policy.
+
 ## Configure Agents
 
 `harness.json` stores target-repository defaults. `harness init` starts with the

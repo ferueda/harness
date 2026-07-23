@@ -138,6 +138,7 @@ real consumers expose the same stable contract.
 | `lib/linear/`            | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
 | `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
 | `lib/spec/`              | Spec prompt, structured result schema, issue-key artifact validation, and provider-independent operation        |
+| `lib/repository/`        | Grove-backed writable repository leases, safe setup, change inspection, and reset cleanup                       |
 | `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
 | `lib/skills/`            | Packaged-skill installation support                                                                             |
 | `skills/`                | Packaged skills installed into target repositories                                                              |
@@ -185,6 +186,20 @@ Workflows and operations depend on the shared provider interface. Provider
 auth, SDK or CLI invocation, streaming, session continuation, model policy, and
 sandbox details stay under `providers/` or provider-scoped configuration.
 
+### Repository boundary
+
+The repository module adapts Grove behind plain `RepositoryBase` and
+`RepositoryRun` handles. It resolves mutable base refs to exact commits, gives
+each durable work ID a writable branch lease, runs the target repository's
+configured setup command after acquisition, reports plain Git changes, and
+returns successful worktrees to a reusable pool.
+
+Setup runs with a fixed environment allowlist, so Linear, Inngest, Codex, and
+GitHub credentials are not passed to target-repository scripts. Reset cleanup
+removes tracked and ordinary untracked work while retaining ignored dependency
+caches such as `node_modules`. The module does not commit, push, open pull
+requests, update Linear, or choose Spec and implementation policy.
+
 ### Delivery boundary
 
 Inngest functions reload external truth before deciding or projecting. Event
@@ -210,6 +225,8 @@ check the runtime schema, exported schema, prompt, and consumer together.
 | Self-hosted Inngest SQLite volume                | Local delivery history, retry state, function metadata, and traces                    |
 | Protected worker environment file outside a repo | Linear, Inngest, and optional Codex credentials for one deployment                    |
 | Dedicated worker Codex credential volume         | Optional unattended ChatGPT-backed Codex login, separate from the host account        |
+| Repository data volume                           | Writable controller clones, Grove leases, worktrees, and warm ignored dependencies    |
+| Package-manager cache volume                     | Reusable package downloads shared by setup runs for one Compose deployment            |
 
 Review artifacts are ignored workspace-local state. Self-hosted deployment
 state and credentials are external user data. Neither belongs in Git.

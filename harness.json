@@ -12,6 +12,14 @@
       "approvalPolicy": "never"
     }
   },
+  "repositoryRuns": {
+    "remote": "https://github.com/ferueda/harness.git",
+    "maxTrees": 2,
+    "setup": {
+      "command": ["pnpm", "install", "--frozen-lockfile", "--prefer-offline"],
+      "timeoutMs": 900000
+    }
+  },
   "linearAutomation": {
     "readiness": {
       "teamId": "e24149c2-1d82-47c7-b886-7f0a8829261b",
