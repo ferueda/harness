@@ -56,6 +56,11 @@ const LINEAR_AUTOMATION_CODEX_ENV_KEYS = Object.freeze([
   "TMPDIR",
 ] as const);
 const execFileAsync = promisify(execFile);
+const OptionalNonBlankStringSchema = z.preprocess(
+  blankStringAsUndefined,
+  z.string().trim().min(1).optional(),
+);
+const OptionalEmailSchema = z.preprocess(blankStringAsUndefined, z.email().optional());
 
 const WorkerEnvironmentSchema = z
   .object({
@@ -68,10 +73,10 @@ const WorkerEnvironmentSchema = z
     HARNESS_WORKER_PORT: z.string().regex(/^\d+$/).default("8080"),
     HARNESS_WORKER_INSTANCE_ID: z.string().trim().min(1).optional(),
     HARNESS_APP_VERSION: z.string().trim().min(1).optional(),
-    HARNESS_REPOSITORY_ROOT: z.string().trim().min(1).optional(),
-    GITHUB_TOKEN: z.string().trim().min(1).optional(),
-    GIT_AUTHOR_NAME: z.string().trim().min(1).optional(),
-    GIT_AUTHOR_EMAIL: z.email().optional(),
+    HARNESS_REPOSITORY_ROOT: OptionalNonBlankStringSchema,
+    GITHUB_TOKEN: OptionalNonBlankStringSchema,
+    GIT_AUTHOR_NAME: OptionalNonBlankStringSchema,
+    GIT_AUTHOR_EMAIL: OptionalEmailSchema,
   })
   .passthrough()
   .superRefine((environment, ctx) => {
@@ -92,6 +97,10 @@ const WorkerEnvironmentSchema = z
       });
     }
   });
+
+function blankStringAsUndefined(value: unknown): unknown {
+  return typeof value === "string" && value.trim() === "" ? undefined : value;
+}
 
 export type LinearAutomationWorkerEnvironment = Readonly<{
   linearApiKey: string;

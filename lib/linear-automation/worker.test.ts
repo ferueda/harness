@@ -248,6 +248,20 @@ describe("Linear automation worker", () => {
       appVersion: "commit-1",
     });
 
+    expect(
+      parseLinearAutomationWorkerEnvironment({
+        LINEAR_API_KEY: "linear-key",
+        INNGEST_DEV: "1",
+        HARNESS_REPOSITORY_ROOT: "",
+        GITHUB_TOKEN: " ",
+        GIT_AUTHOR_NAME: "",
+        GIT_AUTHOR_EMAIL: " ",
+      }),
+    ).toMatchObject({
+      linearApiKey: "linear-key",
+      isDev: true,
+    });
+
     expect(() =>
       parseLinearAutomationWorkerEnvironment({
         LINEAR_API_KEY: "linear-key",
