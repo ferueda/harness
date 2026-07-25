@@ -67,6 +67,7 @@ const LINEAR_AUTOMATION = {
       spec: "label-spec",
       implement: "label-implement",
     },
+    agentReadyLabelId: "label-agent-ready",
   },
   triage: {
     agent: "codex",
@@ -262,6 +263,20 @@ test("resolveLinearAutomationSettings rejects missing or invalid worker config",
   });
   expect(() => resolveLinearAutomationSettings({ workspace: invalid }, "/")).toThrow(
     /linearAutomation\.readiness\.stateIds: IDs must be unique/,
+  );
+
+  const duplicateAgentReady = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(duplicateAgentReady, {
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      readiness: {
+        ...LINEAR_AUTOMATION.readiness,
+        agentReadyLabelId: LINEAR_AUTOMATION.readiness.agentActionLabelIds.spec,
+      },
+    },
+  });
+  expect(() => resolveLinearAutomationSettings({ workspace: duplicateAgentReady }, "/")).toThrow(
+    /agentReadyLabelId: Agent Ready ID must differ/,
   );
 
   const legacyOrganization = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));

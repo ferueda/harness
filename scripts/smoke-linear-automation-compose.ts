@@ -206,6 +206,7 @@ function prepareFixture(dashboardPort: number): void {
               spec: "label-spec",
               implement: "label-implement",
             },
+            agentReadyLabelId: "label-agent-ready",
           },
           triage: {
             agent: "codex",

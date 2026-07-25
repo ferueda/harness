@@ -38,6 +38,7 @@ export const LINEAR_TRIAGE_AGENT_STEP_ID = "run-linear-triage-agent-v1";
 export const LINEAR_TRIAGE_CONFIRM_STEP_ID = "confirm-linear-triage-v1";
 export const LINEAR_TRIAGE_RESOLVE_STEP_ID = "resolve-linear-triage-relations-v1";
 export const LINEAR_TRIAGE_COMMENT_STEP_ID = "project-linear-triage-comment-v1";
+export const LINEAR_TRIAGE_PROJECT_CONFIRM_STEP_ID = "confirm-linear-triage-projection-v1";
 export const LINEAR_TRIAGE_RELATIONS_STEP_ID = "project-linear-triage-relations-v1";
 export const LINEAR_TRIAGE_LABELS_STEP_ID = "project-linear-triage-labels-v1";
 export const LINEAR_TRIAGE_STATE_STEP_ID = "project-linear-triage-state-v1";
@@ -115,7 +116,7 @@ export function createLinearTriageFunction(input: {
         return { outcome: "ignored" as const, reason: observed.reason };
       }
 
-      const workItem = toTriageWorkItemContext(observed.context);
+      const workItem = toTriageWorkItemContext(observed.context, config.readiness);
       const triage = await step.run(LINEAR_TRIAGE_AGENT_STEP_ID, async () => {
         const result = await triageIssue({
           workItem,
@@ -159,12 +160,25 @@ export function createLinearTriageFunction(input: {
         }),
       );
 
+      const projection = await step.run(LINEAR_TRIAGE_PROJECT_CONFIRM_STEP_ID, () =>
+        loadEligibleIssue(input.linear, event.data, config.readiness, {
+          requireCompleteComments: false,
+        }),
+      );
+      if (projection.kind === "ineligible") {
+        return {
+          outcome: "stale" as const,
+          reason: projection.reason,
+          issueId: event.data.issueId,
+        };
+      }
+
       if (triage.decision.decision === "duplicate") {
         await step.run(LINEAR_TRIAGE_LABELS_STEP_ID, () =>
           input.linear.updateIssueLabels({
             issueId: event.data.issueId,
             addLabelIds: [],
-            removeLabelIds: Object.values(config.readiness.agentActionLabelIds),
+            removeLabelIds: triageLabelIdsToRemove(config.readiness, projection.context),
           }),
         );
         await step.run(LINEAR_TRIAGE_RELATIONS_STEP_ID, () =>
@@ -189,7 +203,7 @@ export function createLinearTriageFunction(input: {
           input.linear.updateIssueLabels({
             issueId: event.data.issueId,
             addLabelIds: [],
-            removeLabelIds: Object.values(config.readiness.agentActionLabelIds),
+            removeLabelIds: triageLabelIdsToRemove(config.readiness, projection.context),
           }),
         );
         await step.run(LINEAR_TRIAGE_STATE_STEP_ID, () =>
@@ -213,8 +227,10 @@ export function createLinearTriageFunction(input: {
         input.linear.updateIssueLabels({
           issueId: event.data.issueId,
           addLabelIds: [targetLabelId],
-          removeLabelIds: Object.values(config.readiness.agentActionLabelIds).filter(
-            (labelId) => labelId !== targetLabelId,
+          removeLabelIds: triageLabelIdsToRemove(
+            config.readiness,
+            projection.context,
+            targetLabelId,
           ),
         }),
       );
@@ -240,13 +256,14 @@ async function loadEligibleIssue(
   linear: Pick<LinearTriageService, "getIssueContext">,
   event: WorkRequestData,
   config: LinearReadinessConfig,
+  options: Readonly<{ requireCompleteComments: boolean }> = { requireCompleteComments: true },
 ): Promise<ObservedTriage> {
   const context = await linear.getIssueContext(event.issueId);
   if (context.id !== event.issueId || context.identifier !== event.issueIdentifier) {
     return { kind: "ineligible", reason: "issue-mismatch" };
   }
   if (
-    context.completeness.commentsTruncated ||
+    (options.requireCompleteComments && context.completeness.commentsTruncated) ||
     context.completeness.labelsTruncated ||
     context.completeness.relationsTruncated ||
     context.completeness.attachmentsTruncated ||
@@ -268,7 +285,10 @@ async function loadEligibleIssue(
   return { kind: "eligible", context };
 }
 
-function toTriageWorkItemContext(context: LinearIssueContext): TriageWorkItemContext {
+function toTriageWorkItemContext(
+  context: LinearIssueContext,
+  config: LinearReadinessConfig,
+): TriageWorkItemContext {
   return {
     id: context.id,
     reference: context.identifier,
@@ -276,7 +296,9 @@ function toTriageWorkItemContext(context: LinearIssueContext): TriageWorkItemCon
     description: context.description,
     url: context.url,
     state: context.state.name,
-    labels: context.labels.map((label) => label.name),
+    labels: context.labels
+      .filter((label) => label.id !== config.agentReadyLabelId)
+      .map((label) => label.name),
     comments: context.comments.map((comment) => ({
       author: commentAuthor(comment.author),
       body: comment.body,
@@ -382,6 +404,20 @@ function decisionLabelId(decision: TriageDecision, config: LinearReadinessConfig
   if (decision.agentAction === "spec") return config.agentActionLabelIds.spec;
   if (decision.agentAction === "implement") return config.agentActionLabelIds.implement;
   throw new LinearError("invalid-response", "Ready-for-agent triage decision has no agent action.");
+}
+
+function triageLabelIdsToRemove(
+  config: LinearReadinessConfig,
+  context: LinearIssueContext,
+  retainedActionLabelId?: string,
+): string[] {
+  const labelIds = Object.values(config.agentActionLabelIds).filter(
+    (labelId) => labelId !== retainedActionLabelId,
+  );
+  if (context.labels.some((label) => label.id === config.agentReadyLabelId)) {
+    labelIds.push(config.agentReadyLabelId);
+  }
+  return labelIds;
 }
 
 function requiredReference(reference: string | null): string {

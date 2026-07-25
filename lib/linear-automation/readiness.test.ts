@@ -24,6 +24,7 @@ const config: LinearReadinessConfig = {
     spec: "label-spec",
     implement: "label-implement",
   },
+  agentReadyLabelId: "label-agent-ready",
   enabledRoutes: {
     triage: true,
     spec: true,
@@ -37,6 +38,7 @@ type ContextOptions = Readonly<{
   projectId?: string | null;
   updatedAt?: string;
   actionLabelIds?: readonly string[];
+  agentReady?: boolean;
   unrelatedLabelIds?: readonly string[];
   blockerStateIds?: readonly string[];
   labelsTruncated?: boolean;
@@ -45,7 +47,11 @@ type ContextOptions = Readonly<{
 
 function context(options: ContextOptions = {}): LinearIssueContext {
   const stateId = options.stateId ?? config.stateIds.backlog;
-  const labels = [...(options.actionLabelIds ?? []), ...(options.unrelatedLabelIds ?? [])];
+  const labels = [
+    ...(options.actionLabelIds ?? []),
+    ...(options.agentReady ? [config.agentReadyLabelId] : []),
+    ...(options.unrelatedLabelIds ?? []),
+  ];
   return {
     id: "issue-1",
     identifier: "FER-225",
@@ -126,23 +132,46 @@ describe("Linear readiness policy", () => {
     ],
     ["Backlog without action", context(), { kind: "dispatch", reason: "ready", route: "triage" }],
     [
+      "Backlog with Agent Ready",
+      context({ agentReady: true }),
+      { kind: "dispatch", reason: "ready", route: "triage" },
+    ],
+    [
       "Backlog with action",
       context({ actionLabelIds: [config.agentActionLabelIds.spec] }),
       { kind: "wait", reason: "projection-repair" },
     ],
     [
-      "Open Spec",
+      "Open Spec without Agent Ready",
       context({
         stateId: config.stateIds.open,
         actionLabelIds: [config.agentActionLabelIds.spec],
       }),
+      { kind: "wait", reason: "awaiting-agent-ready" },
+    ],
+    [
+      "Open Spec with Agent Ready",
+      context({
+        stateId: config.stateIds.open,
+        actionLabelIds: [config.agentActionLabelIds.spec],
+        agentReady: true,
+      }),
       { kind: "dispatch", reason: "ready", route: "spec" },
     ],
     [
-      "Open Implement",
+      "Open Implement without Agent Ready",
       context({
         stateId: config.stateIds.open,
         actionLabelIds: [config.agentActionLabelIds.implement],
+      }),
+      { kind: "wait", reason: "awaiting-agent-ready" },
+    ],
+    [
+      "Open Implement with Agent Ready",
+      context({
+        stateId: config.stateIds.open,
+        actionLabelIds: [config.agentActionLabelIds.implement],
+        agentReady: true,
       }),
       { kind: "dispatch", reason: "ready", route: "implement" },
     ],
@@ -160,6 +189,11 @@ describe("Linear readiness policy", () => {
       { kind: "wait", reason: "projection-repair" },
     ],
     [
+      "Needs Input with Agent Ready",
+      context({ stateId: config.stateIds.needsInput, agentReady: true }),
+      { kind: "wait", reason: "projection-repair" },
+    ],
+    [
       "Needs Review without action",
       context({ stateId: config.stateIds.needsReview }),
       { kind: "ignore", reason: "needs-review" },
@@ -173,10 +207,16 @@ describe("Linear readiness policy", () => {
       { kind: "wait", reason: "projection-repair" },
     ],
     [
+      "Needs Review with Agent Ready",
+      context({ stateId: config.stateIds.needsReview, agentReady: true }),
+      { kind: "wait", reason: "projection-repair" },
+    ],
+    [
       "Open actionable with unresolved blocker",
       context({
         stateId: config.stateIds.open,
         actionLabelIds: [config.agentActionLabelIds.spec],
+        agentReady: true,
         blockerStateIds: [config.stateIds.open],
       }),
       { kind: "wait", reason: "blocked" },
@@ -186,13 +226,14 @@ describe("Linear readiness policy", () => {
       context({
         stateId: config.stateIds.open,
         actionLabelIds: [config.agentActionLabelIds.spec],
+        agentReady: true,
         blockerStateIds: [config.stateIds.done],
       }),
       { kind: "dispatch", reason: "ready", route: "spec" },
     ],
     [
       "Open without action",
-      context({ stateId: config.stateIds.open }),
+      context({ stateId: config.stateIds.open, agentReady: true }),
       { kind: "invalid", reason: "missing-agent-action" },
     ],
     [
@@ -200,6 +241,7 @@ describe("Linear readiness policy", () => {
       context({
         stateId: config.stateIds.open,
         actionLabelIds: [config.agentActionLabelIds.spec, config.agentActionLabelIds.implement],
+        agentReady: true,
       }),
       { kind: "invalid", reason: "conflicting-agent-action" },
     ],
@@ -215,6 +257,15 @@ describe("Linear readiness policy", () => {
         actionLabelIds: [config.agentActionLabelIds.spec],
       }),
       { kind: "ignore", reason: "already-claimed" },
+    ],
+    [
+      "In Progress with Agent Ready",
+      context({
+        stateId: config.stateIds.inProgress,
+        actionLabelIds: [config.agentActionLabelIds.spec],
+        agentReady: true,
+      }),
+      { kind: "wait", reason: "projection-repair" },
     ],
     [
       "In Progress with conflicting actions",
@@ -241,6 +292,11 @@ describe("Linear readiness policy", () => {
         stateId: config.stateIds.done,
         actionLabelIds: [config.agentActionLabelIds.spec],
       }),
+      { kind: "wait", reason: "projection-repair" },
+    ],
+    [
+      "Done with Agent Ready",
+      context({ stateId: config.stateIds.done, agentReady: true }),
       { kind: "wait", reason: "projection-repair" },
     ],
     [
@@ -277,6 +333,7 @@ describe("Linear readiness policy", () => {
           : context({
               stateId: config.stateIds.open,
               actionLabelIds: [config.agentActionLabelIds[route]],
+              agentReady: true,
             });
       const disabled = {
         ...config,
@@ -304,6 +361,7 @@ describe("Linear readiness policy", () => {
     const original = context({
       stateId: config.stateIds.open,
       actionLabelIds: [config.agentActionLabelIds.spec],
+      agentReady: true,
       unrelatedLabelIds: ["label-z", "label-a"],
       blockerStateIds: [config.stateIds.open, config.stateIds.done],
     });
@@ -336,6 +394,7 @@ describe("Linear readiness policy", () => {
     ["state", context({ stateId: config.stateIds.open })],
     ["revision", context({ updatedAt: "2026-07-19T02:00:00.000Z" })],
     ["action", context({ actionLabelIds: [config.agentActionLabelIds.spec] })],
+    ["Agent Ready", context({ agentReady: true })],
     ["blocker", context({ blockerStateIds: [config.stateIds.open] })],
     ["completeness", context({ relationsTruncated: true })],
   ])("changes generation for relevant %s truth", (_label, changed) => {
@@ -358,6 +417,12 @@ describe("Linear readiness policy", () => {
           ...config.agentActionLabelIds,
           spec: config.agentActionLabelIds.implement,
         },
+      }).success,
+    ).toBe(false);
+    expect(
+      LinearReadinessConfigSchema.safeParse({
+        ...config,
+        agentReadyLabelId: config.agentActionLabelIds.spec,
       }).success,
     ).toBe(false);
   });

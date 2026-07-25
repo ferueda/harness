@@ -78,8 +78,9 @@ Linear, and sends issues that need classification to the independent triage
 operation. The triage result is written back through the standalone Linear
 module.
 
-The worker uses stable IDs and its triage profile from the target repository's
-`linearAutomation` configuration. Secrets stay in the environment. See the
+The worker uses stable workflow, action, and Agent Ready label IDs plus its
+triage profile from the target repository's `linearAutomation` configuration.
+Secrets stay in the environment. See the
 [Linear automation guide](docs/contributing/linear-automation.md) for the
 Compose setup, health checks, and smoke tests.
 

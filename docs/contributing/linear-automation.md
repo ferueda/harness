@@ -15,9 +15,10 @@ one-minute Inngest cron
 ```
 
 Linear remains the queue. A Backlog issue without an Agent action label needs
-triage. Successful triage moves it out of Backlog. Work identity includes the
-issue revision, so repeated observation of one revision converges while a later
-human change can request new work.
+triage, whether or not a stale Agent Ready label is present. Successful triage
+removes Agent Ready and moves the issue out of Backlog. Work identity includes
+the issue revision, so repeated observation of one revision converges while a
+later human change can request new work.
 
 Open is observed only when the worker composition enables Spec or Implement and
 registers the matching consumer. Each poll cycle gives an Open readiness check
@@ -30,33 +31,35 @@ resolved blocker produces new work.
 ## Workflow contract
 
 Statuses say who owns the next move. Agent action labels say what an agent
-should do, and only apply when an issue is ready or claimed for agent work.
+should do. The independent Agent Ready label is a one-use human permission for
+Open Spec or Implement work; it never gates Backlog triage.
 
-| Status                       | Agent action                     | Meaning                                    |
-| ---------------------------- | -------------------------------- | ------------------------------------------ |
-| Backlog                      | None                             | Awaiting triage                            |
-| Open                         | Exactly one of Spec or Implement | Ready for an agent                         |
-| In Progress                  | None, Spec, or Implement         | Human work or claimed agent work is active |
-| Needs Input                  | None                             | A prerequisite human answer is missing     |
-| Needs Review                 | None                             | An agent artifact awaits human judgment    |
-| Done, Canceled, or Duplicate | None                             | Terminal                                   |
+| Status                       | Agent action                     | Agent Ready | Meaning                                       |
+| ---------------------------- | -------------------------------- | ----------- | --------------------------------------------- |
+| Backlog                      | None                             | Ignored     | Awaiting automatic triage                     |
+| Open                         | Exactly one of Spec or Implement | Absent      | Classified and waiting for human release      |
+| Open                         | Exactly one of Spec or Implement | Present     | Dispatchable when unblocked and route-enabled |
+| In Progress                  | None, Spec, or Implement         | Absent      | Human work or claimed agent work is active    |
+| Needs Input                  | None                             | Absent      | A prerequisite human answer is missing        |
+| Needs Review                 | None                             | Absent      | An agent artifact awaits human judgment       |
+| Done, Canceled, or Duplicate | None                             | Absent      | Terminal                                      |
 
 An unresolved Linear blocker is separate from both status and action. It keeps
 an otherwise actionable issue waiting.
 
 After answering a Needs Input issue, a human moves it to Backlog to request
-triage again. The resulting Linear revision gives that request new identity; a
-comment alone does not start triage. When reviewing an artifact, a human either
-returns it to Open with one action or moves it to a terminal status. Apply the
-Spec or Implement label before moving the issue to Open so the ready snapshot is
-complete. For example, an approved spec returns as Open + Implement, while a
-spec needing revision returns as Open + Spec.
+triage again. Agent Ready is not required. The resulting Linear revision gives
+that request new identity; a comment alone does not start triage. When reviewing
+an artifact, a human either returns it to Open with one action or moves it to a
+terminal status. Apply the Spec or Implement label before moving the issue to
+Open, then add Agent Ready when that specific work may start. For example, an
+approved spec becomes Open + Implement and waits until a human adds Agent Ready.
 
 ## Configure the target repository
 
-The target repository's `harness.json` owns stable team, project, state, and
-Agent action label IDs, the triage execution profile, and repository-run setup.
-It contains no secrets.
+The target repository's `harness.json` owns stable team, project, state, Agent
+action label, and Agent Ready label IDs, the triage execution profile, and
+repository-run setup. It contains no secrets.
 
 ```json
 {
@@ -85,7 +88,8 @@ It contains no secrets.
       "agentActionLabelIds": {
         "spec": "spec-label-id",
         "implement": "implement-label-id"
-      }
+      },
+      "agentReadyLabelId": "agent-ready-label-id"
     },
     "triage": {
       "agent": "codex",
@@ -221,9 +225,11 @@ operator checks, but cron is the only automatic trigger.
 The code configuration does not rename or delete workspace labels. During the
 deployment cutover, stop and drain the worker, rename the **Next action** group
 to **Agent action**, rename its **Plan** label to **Spec** without changing that
-label's ID, and remove the old **Needs Input** label. Confirm that the Needs
-Input and Needs Review workflow statuses match the configured IDs before
-restarting the worker. There is no compatibility path for the old config shape.
+label's ID, and remove the old **Needs Input** label. Create one independent
+workspace-level **Agent Ready** label and record its ID in `harness.json`.
+Confirm that the Needs Input and Needs Review workflow statuses match the
+configured IDs before restarting the worker. There is no compatibility path for
+the old config shape.
 
 `make smoke-linear-automation` starts a disposable real `inngest start`
 process, connects the worker, sends the explicit poll event, proves the full

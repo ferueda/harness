@@ -42,6 +42,7 @@ const readiness: LinearReadinessConfig = {
     spec: "label-spec",
     implement: "label-implement",
   },
+  agentReadyLabelId: "label-agent-ready",
   enabledRoutes: {
     triage: true,
     spec: true,
@@ -89,6 +90,7 @@ function issueContext(
     updatedAt?: string;
     stateId?: string;
     actionLabelId?: string;
+    agentReady?: boolean;
     blockerStateId?: string;
   } = {},
 ): LinearIssueContext {
@@ -107,9 +109,12 @@ function issueContext(
     },
     assignee: null,
     creator: null,
-    labels: input.actionLabelId
-      ? [{ id: input.actionLabelId, name: `Label ${input.actionLabelId}` }]
-      : [],
+    labels: [
+      ...(input.actionLabelId
+        ? [{ id: input.actionLabelId, name: `Label ${input.actionLabelId}` }]
+        : []),
+      ...(input.agentReady ? [{ id: readiness.agentReadyLabelId, name: "Agent Ready" }] : []),
+    ],
     comments: [],
     parent: null,
     children: [],
@@ -185,7 +190,7 @@ describe("Linear readiness router", () => {
   });
 
   it("routes a matching Backlog revision to triage", async () => {
-    const linear = fakeLinear(issueContext());
+    const linear = fakeLinear(issueContext({ agentReady: true }));
     const event = revisionEvent();
     const output = await new InngestTestEngine({
       function: router(linear.service),
@@ -222,7 +227,11 @@ describe("Linear readiness router", () => {
     ["spec", readiness.agentActionLabelIds.spec, WORK_REQUEST_EVENT_NAMES.spec],
     ["implement", readiness.agentActionLabelIds.implement, WORK_REQUEST_EVENT_NAMES.implement],
   ] as const)("refetches before an enabled %s dispatch", async (route, labelId, eventName) => {
-    const current = issueContext({ stateId: readiness.stateIds.open, actionLabelId: labelId });
+    const current = issueContext({
+      stateId: readiness.stateIds.open,
+      actionLabelId: labelId,
+      agentReady: true,
+    });
     const linear = fakeLinear(current, current);
     const event = readinessCheckEvent();
     const output = await new InngestTestEngine({
@@ -241,6 +250,23 @@ describe("Linear readiness router", () => {
       name: eventName,
       data: { causationEventId: event.id },
     });
+  });
+
+  it("waits for manual approval before dispatching an Open action", async () => {
+    const current = issueContext({
+      stateId: readiness.stateIds.open,
+      actionLabelId: readiness.agentActionLabelIds.spec,
+    });
+    const output = await new InngestTestEngine({
+      function: router(fakeLinear(current).service),
+      events: [readinessCheckEvent()],
+    }).execute();
+
+    expect(output.result).toMatchObject({
+      outcome: "wait",
+      reason: "awaiting-agent-ready",
+    });
+    expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
   it("does not turn an Open readiness check into a new Backlog triage request", async () => {
@@ -290,6 +316,7 @@ describe("Linear readiness router", () => {
     const current = issueContext({
       stateId: readiness.stateIds.open,
       actionLabelId: readiness.agentActionLabelIds.spec,
+      agentReady: true,
     });
     const linear = fakeLinear(current);
     const output = await new InngestTestEngine({
@@ -305,12 +332,16 @@ describe("Linear readiness router", () => {
     expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
-  it("drops an actionable snapshot that changes before dispatch", async () => {
+  it("drops an actionable snapshot when Agent Ready is removed before dispatch", async () => {
     const initial = issueContext({
       stateId: readiness.stateIds.open,
       actionLabelId: readiness.agentActionLabelIds.spec,
+      agentReady: true,
     });
-    const changed = issueContext({ stateId: readiness.stateIds.needsInput });
+    const changed = issueContext({
+      stateId: readiness.stateIds.open,
+      actionLabelId: readiness.agentActionLabelIds.spec,
+    });
     const linear = fakeLinear(initial, changed);
     const output = await new InngestTestEngine({
       function: router(linear.service),
@@ -330,11 +361,13 @@ describe("Linear readiness router", () => {
     const blocked = issueContext({
       stateId: readiness.stateIds.open,
       actionLabelId: readiness.agentActionLabelIds.spec,
+      agentReady: true,
       blockerStateId: readiness.stateIds.inProgress,
     });
     const unblocked = issueContext({
       stateId: readiness.stateIds.open,
       actionLabelId: readiness.agentActionLabelIds.spec,
+      agentReady: true,
       blockerStateId: readiness.stateIds.done,
     });
     const blockedOutput = await new InngestTestEngine({

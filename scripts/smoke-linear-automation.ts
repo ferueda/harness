@@ -70,6 +70,7 @@ const settings: LinearAutomationSettings = {
       spec: "label-spec",
       implement: "label-implement",
     },
+    agentReadyLabelId: "label-agent-ready",
   },
   triage: {
     agent: "codex",
@@ -81,7 +82,8 @@ const settings: LinearAutomationSettings = {
 
 const projection = {
   stateId: settings.readiness.stateIds.backlog,
-  labelIds: new Set<string>(),
+  // A stale permission must not gate Backlog triage or survive its projection.
+  labelIds: new Set<string>([settings.readiness.agentReadyLabelId]),
   comments: [] as string[],
   agentRuns: 0,
   contextReads: 0,
@@ -467,6 +469,7 @@ try {
     () =>
       projection.stateId === settings.readiness.stateIds.open &&
       projection.labelIds.has(settings.readiness.agentActionLabelIds.implement) &&
+      !projection.labelIds.has(settings.readiness.agentReadyLabelId) &&
       projection.comments.length === 1,
   );
   assert(projection.agentRuns === 1, "triage agent did not run exactly once");

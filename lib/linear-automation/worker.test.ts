@@ -41,6 +41,7 @@ const settings: LinearAutomationSettings = {
       spec: "label-spec",
       implement: "label-implement",
     },
+    agentReadyLabelId: "label-agent-ready",
   },
   triage: {
     agent: "codex",

@@ -261,8 +261,11 @@ request only when current Linear state requires it. Revision-bound request
 identity lets a later Backlog revision request triage again without duplicating
 work for an unchanged revision. The triage consumer invokes the configured
 Codex profile and applies its rationale, Agent action label, and target status
-through the standalone Linear service. Human handoffs use Needs Input and Needs
-Review statuses; Spec and Implement labels only describe agent work.
+through the standalone Linear service. Backlog triage remains automatic and
+removes stale Agent Ready permission from every outcome. Human handoffs use
+Needs Input and Needs Review statuses; Spec and Implement labels describe the
+next agent action, while Agent Ready separately grants human permission to
+dispatch Open work after its consumer is enabled.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.
