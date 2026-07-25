@@ -43,18 +43,15 @@ import { toLinearWorkItemContext } from "./work-item.ts";
 export const LINEAR_SPEC_FUNCTION_ID = "spec-linear-issue-v1";
 export const LINEAR_SPEC_RETRIES = 3;
 export const LINEAR_SPEC_LOAD_STEP_ID = "load-linear-spec-v1";
-export const LINEAR_SPEC_CLAIM_STEP_ID = "claim-linear-spec-v1";
-export const LINEAR_SPEC_PERMISSION_STEP_ID = "consume-linear-spec-permission-v1";
+export const LINEAR_SPEC_CLAIM_STEP_ID = "claim-linear-spec-v2";
 export const LINEAR_SPEC_BASE_STEP_ID = "resolve-linear-spec-base-v1";
 export const LINEAR_SPEC_PREPARE_STEP_ID = "prepare-linear-spec-run-v1";
 export const LINEAR_SPEC_AGENT_STEP_ID = "run-linear-spec-agent-v1";
 export const LINEAR_SPEC_CONFIRM_STEP_ID = "confirm-linear-spec-authority-v1";
 export const LINEAR_SPEC_INSPECT_STEP_ID = "inspect-linear-spec-changes-v1";
 export const LINEAR_SPEC_PUBLISH_STEP_ID = "publish-linear-spec-v1";
-export const LINEAR_SPEC_COMMENT_STEP_ID = "project-linear-spec-comment-v1";
 export const LINEAR_SPEC_FAILURE_COMMENT_STEP_ID = "project-linear-spec-failure-v1";
-export const LINEAR_SPEC_LABELS_STEP_ID = "project-linear-spec-labels-v1";
-export const LINEAR_SPEC_STATE_STEP_ID = "project-linear-spec-state-v1";
+export const LINEAR_SPEC_PROJECT_STEP_ID = "project-linear-spec-outcome-v1";
 export const LINEAR_SPEC_CLEANUP_STEP_ID = "cleanup-linear-spec-run-v1";
 
 export type LinearSpecService = Pick<
@@ -152,18 +149,7 @@ export function createLinearSpecFunction(input: {
       }
 
       await step.run(LINEAR_SPEC_CLAIM_STEP_ID, () =>
-        input.linear.updateIssueState({
-          issueId: event.data.issueId,
-          expectedStateId: config.readiness.stateIds.open,
-          stateId: config.readiness.stateIds.inProgress,
-        }),
-      );
-      await step.run(LINEAR_SPEC_PERMISSION_STEP_ID, () =>
-        input.linear.updateIssueLabels({
-          issueId: event.data.issueId,
-          addLabelIds: [],
-          removeLabelIds: [config.readiness.agentReadyLabelId],
-        }),
+        claimSpec(input.linear, event.data.issueId, config.readiness),
       );
 
       const identity = specWorkIdentity(event.data);
@@ -305,29 +291,19 @@ export function createLinearSpecFunction(input: {
               pullRequestUrl: pullRequest?.url,
             })
           : inspected.comment;
-      await step.run(LINEAR_SPEC_COMMENT_STEP_ID, () =>
-        input.linear.ensureComment({
-          issueId: event.data.issueId,
-          marker: inspected.marker,
-          body: comment,
-        }),
-      );
-      await step.run(LINEAR_SPEC_LABELS_STEP_ID, () =>
-        input.linear.updateIssueLabels({
-          issueId: event.data.issueId,
-          addLabelIds: [],
-          removeLabelIds: [config.readiness.agentActionLabelIds.spec],
-        }),
-      );
       const targetStateId =
         result.decision.outcome === "ready-for-review"
           ? config.readiness.stateIds.needsReview
           : config.readiness.stateIds.needsInput;
-      await step.run(LINEAR_SPEC_STATE_STEP_ID, () =>
-        input.linear.updateIssueState({
+      await step.run(LINEAR_SPEC_PROJECT_STEP_ID, () =>
+        projectSpecOutcome({
+          linear: input.linear,
           issueId: event.data.issueId,
-          expectedStateId: config.readiness.stateIds.inProgress,
-          stateId: targetStateId,
+          marker: inspected.marker,
+          comment,
+          specLabelId: config.readiness.agentActionLabelIds.spec,
+          inProgressStateId: config.readiness.stateIds.inProgress,
+          targetStateId,
         }),
       );
       await step.run(LINEAR_SPEC_CLEANUP_STEP_ID, () => input.repository.cleanupRun(run));
@@ -339,6 +315,49 @@ export function createLinearSpecFunction(input: {
       };
     },
   );
+}
+
+async function claimSpec(
+  linear: LinearSpecService,
+  issueId: string,
+  readiness: LinearReadinessConfig,
+): Promise<void> {
+  await linear.updateIssueState({
+    issueId,
+    expectedStateId: readiness.stateIds.open,
+    stateId: readiness.stateIds.inProgress,
+  });
+  await linear.updateIssueLabels({
+    issueId,
+    addLabelIds: [],
+    removeLabelIds: [readiness.agentReadyLabelId],
+  });
+}
+
+async function projectSpecOutcome(input: {
+  linear: LinearSpecService;
+  issueId: string;
+  marker: string;
+  comment: string;
+  specLabelId: string;
+  inProgressStateId: string;
+  targetStateId: string;
+}): Promise<void> {
+  await input.linear.ensureComment({
+    issueId: input.issueId,
+    marker: input.marker,
+    body: input.comment,
+  });
+  await input.linear.updateIssueLabels({
+    issueId: input.issueId,
+    addLabelIds: [],
+    removeLabelIds: [input.specLabelId],
+  });
+  await input.linear.updateIssueState({
+    issueId: input.issueId,
+    expectedStateId: input.inProgressStateId,
+    stateId: input.targetStateId,
+  });
 }
 
 export function specWorkIdentity(event: WorkRequestData): Readonly<{

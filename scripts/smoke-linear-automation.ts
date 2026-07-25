@@ -650,7 +650,9 @@ try {
   );
   assert(projection.specAgentRuns === 1, "Spec agent did not run exactly once");
   assert(
-    projection.comments[1]?.includes("https://github.com/ferueda/harness/pull/999"),
+    projection.comments[1]
+      ?.split("\n")
+      .some((line) => line === "**Pull request:** https://github.com/ferueda/harness/pull/999"),
     "Spec rationale comment did not include the pull request",
   );
 

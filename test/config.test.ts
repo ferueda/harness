@@ -242,7 +242,7 @@ test("resolveLinearAutomationSettings prefers triage model overrides", () => {
   });
 });
 
-test("resolveLinearAutomationSettings enables the locked Spec profile with repository runs", () => {
+test("resolveLinearAutomationSettings requires and preserves the Spec execution profile", () => {
   const workspace = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
   writeHarnessJson(workspace, {
     base: "develop",
@@ -255,18 +255,18 @@ test("resolveLinearAutomationSettings enables the locked Spec profile with repos
       ...LINEAR_AUTOMATION,
       spec: {
         agent: "codex",
-        model: "gpt-5.6-sol",
-        modelReasoningEffort: "high",
-        maxRuntimeMs: 1_800_000,
+        model: "gpt-5.6-terra",
+        modelReasoningEffort: "medium",
+        maxRuntimeMs: 120_000,
       },
     },
   });
 
   expect(resolveLinearAutomationSettings({ workspace }, "/").spec).toEqual({
     agent: "codex",
-    model: "gpt-5.6-sol",
-    modelReasoningEffort: "high",
-    maxRuntimeMs: 1_800_000,
+    model: "gpt-5.6-terra",
+    modelReasoningEffort: "medium",
+    maxRuntimeMs: 120_000,
     baseRef: "develop",
     repositoryRuns: {
       remote: "https://github.com/example/project.git",
@@ -297,8 +297,8 @@ test("Spec profile stays optional and fails fast without its repository config",
     /repositoryRuns is required/,
   );
 
-  const invalidProfile = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
-  writeHarnessJson(invalidProfile, {
+  const incompleteProfile = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(incompleteProfile, {
     repositoryRuns: {
       remote: "https://github.com/example/project.git",
       setup: { command: ["pnpm", "install"], timeoutMs: 600_000 },
@@ -307,13 +307,12 @@ test("Spec profile stays optional and fails fast without its repository config",
       ...LINEAR_AUTOMATION,
       spec: {
         agent: "codex",
-        model: "gpt-5.6-terra",
         modelReasoningEffort: "medium",
         maxRuntimeMs: 120_000,
       },
     },
   });
-  expect(() => resolveLinearAutomationSettings({ workspace: invalidProfile }, "/")).toThrow(
+  expect(() => resolveLinearAutomationSettings({ workspace: incompleteProfile }, "/")).toThrow(
     /linearAutomation\.spec\.model/,
   );
 });

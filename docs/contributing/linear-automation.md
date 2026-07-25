@@ -109,9 +109,10 @@ repository-run setup. It contains no secrets.
 
 `linearAutomation.spec` is optional and is the Spec route's enable switch. When
 it is absent, the worker remains triage-only and does not require
-`repositoryRuns` or GitHub credentials. When present, its fixed profile requires
-`repositoryRuns`, registers the Spec consumer, and adds Open observation in the
-same worker composition.
+`repositoryRuns` or GitHub credentials. When present, every Spec execution
+field is required explicitly; there are no model, reasoning, or timeout
+fallbacks. The profile also requires `repositoryRuns`, registers the Spec
+consumer, and adds Open observation in the same worker composition.
 
 The initial worker composes one configured project. Its route map controls both
 which consumers exist and which states the poller observes. The standalone

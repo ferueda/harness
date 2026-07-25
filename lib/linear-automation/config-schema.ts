@@ -14,9 +14,9 @@ const LinearAutomationTriageSchema = z
 const LinearAutomationSpecSchema = z
   .object({
     agent: z.literal("codex"),
-    model: z.literal("gpt-5.6-sol"),
-    modelReasoningEffort: z.literal("high"),
-    maxRuntimeMs: z.literal(1_800_000),
+    model: z.string().trim().min(1),
+    modelReasoningEffort: z.enum(AGENT_REASONING_EFFORTS),
+    maxRuntimeMs: z.number().int().positive(),
   })
   .strict();
 

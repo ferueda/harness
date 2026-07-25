@@ -28,7 +28,6 @@ import {
   LINEAR_SPEC_CLAIM_STEP_ID,
   LINEAR_SPEC_FUNCTION_ID,
   LINEAR_SPEC_LOAD_STEP_ID,
-  LINEAR_SPEC_PERMISSION_STEP_ID,
   LINEAR_SPEC_PREPARE_STEP_ID,
   LINEAR_SPEC_RETRIES,
   specCommentMarker,
@@ -710,7 +709,7 @@ describe("independent Linear Spec consumer", () => {
     expect([...linear.state.comments.keys()][0]).toBe(specCommentMarker(event, "failure"));
   });
 
-  it("claims before consuming Agent Ready", async () => {
+  it("claims and consumes Agent Ready in one durable step", async () => {
     const context = issueContext();
     const linear = fakeLinear(context);
     const repository = fakeRepository(workspace, []);
@@ -727,12 +726,12 @@ describe("independent Linear Spec consumer", () => {
     }).execute();
     expect(output.error).toBeUndefined();
     expect(
-      output.ctx.step.run.mock.calls.map((call) => call[0]).indexOf(LINEAR_SPEC_CLAIM_STEP_ID),
-    ).toBeLessThan(
-      output.ctx.step.run.mock.calls
-        .map((call) => call[0])
-        .indexOf("consume-linear-spec-permission-v1"),
-    );
+      output.ctx.step.run.mock.calls.filter((call) => call[0] === LINEAR_SPEC_CLAIM_STEP_ID),
+    ).toHaveLength(1);
+    expect(linear.state.order.slice(1, 3)).toEqual([
+      `state:${readiness.stateIds.inProgress}`,
+      `labels:${readiness.agentReadyLabelId}`,
+    ]);
   });
 });
 
@@ -743,7 +742,6 @@ async function completedSpecStepsBefore(
   const ids = [
     LINEAR_SPEC_LOAD_STEP_ID,
     LINEAR_SPEC_CLAIM_STEP_ID,
-    LINEAR_SPEC_PERMISSION_STEP_ID,
     LINEAR_SPEC_BASE_STEP_ID,
     LINEAR_SPEC_PREPARE_STEP_ID,
   ];

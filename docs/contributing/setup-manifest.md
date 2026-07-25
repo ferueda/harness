@@ -22,13 +22,14 @@ artifact lifecycle, and directory ownership.
 `harness linear worker` reads stable project, team, workflow-state, Agent-action
 label, and Agent Ready permission IDs from the target repository's
 `linearAutomation` section. Triage requires `triage.agent: "codex"` and accepts
-a timeout plus optional model and reasoning overrides. The optional locked
-`linearAutomation.spec` profile enables Spec work. It requires
-`repositoryRuns`, which defines the credential-free GitHub remote, pool size,
-and idempotent setup command used by write-capable consumers. Unsupported
-providers, invalid repository setup, and unusable publication remotes fail
-during startup configuration loading, before Connect accepts work. These
-sections do not contain secrets.
+a timeout plus optional model and reasoning overrides. The optional
+`linearAutomation.spec` profile enables Spec work and requires its model,
+reasoning effort, and timeout explicitly. It also requires `repositoryRuns`,
+which defines the credential-free GitHub remote, pool size, and idempotent
+setup command used by write-capable consumers. Unsupported providers,
+incomplete execution profiles, invalid repository setup, and unusable
+publication remotes fail during startup configuration loading, before Connect
+accepts work. These sections do not contain secrets.
 
 The worker requires `LINEAR_API_KEY`. Self-hosted Inngest requires
 `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `INNGEST_DEV=0`, and

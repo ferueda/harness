@@ -78,10 +78,13 @@ identities must make replay converge without a new workflow store.
    `RepositoryBase`; prepare or resume the run in the following step using the
    frozen base SHA, even if the remote base advances during a retry. Keep
    provider execution, post-agent confirmation, diff inspection, publication,
-   each Linear mutation, and cleanup in separate durable steps. For either
-   successful outcome, use this exact cutover order: publish first only for
-   ready-for-review; ensure the marked outcome comment; clear only `Spec`; guard
-   `In Progress → Needs Review|Needs Input`; then clean the run. Deterministic
+   the claim, final Linear projection, and cleanup in separate durable steps.
+   Group each ordered set of idempotent Linear mutations within its one
+   retry-safe step rather than presenting each mutation as a separate workflow
+   phase. For either successful outcome, use this exact cutover order: publish
+   first only for ready-for-review; ensure the marked outcome comment; clear
+   only `Spec`; guard `In Progress → Needs Review|Needs Input`; then clean the
+   run. Deterministic
    validation failures add one marked diagnostic comment and retain the claimed
    run; provider, timeout, cancellation, GitHub, Linear, and repository
    transport failures use Inngest retries, with an exhaustion comment from
@@ -103,7 +106,7 @@ identities must make replay converge without a new workflow store.
 4. `lib/linear-automation/config-schema.ts`,
    `lib/linear-automation/config.ts`, `lib/linear-automation/worker.ts`,
    `lib/linear-automation/worker.test.ts`, and `test/config.test.ts` — add an
-   optional fixed Codex `linearAutomation.spec` profile whose presence is the
+   optional explicit Codex `linearAutomation.spec` profile whose presence is the
    enablement signal. When absent, keep `spec: false`, do not register the
    consumer or observe `Open`, and keep triage-only configurations valid without
    repository or GitHub settings. When present, compose the Spec consumer
@@ -115,8 +118,9 @@ identities must make replay converge without a new workflow store.
    Parse `repositoryRuns.remote` as a credential-free github.com SSH or HTTPS
    remote before consumer registration; invalid or credential-bearing remotes
    fail startup. Test disabled startup plus enabled missing-config, invalid
-   remote, and valid construction. Lock Spec execution to `gpt-5.6-sol`, high
-   reasoning, and
+   remote, and valid construction. Require the Spec model, reasoning effort,
+   and maximum runtime explicitly with no defaults; configure the initial
+   profile as `gpt-5.6-sol`, high reasoning, and
    `maxRuntimeMs: 1_800_000`; keep the worker's 35-minute shutdown grace period
    longer than the largest enabled 30-minute agent run.
    Keep GitHub, Linear, and Inngest credentials out of the Codex environment.
@@ -125,7 +129,7 @@ identities must make replay converge without a new workflow store.
 5. `harness.json`, `compose.linear-automation.yaml`,
    `scripts/smoke-linear-automation.ts`, `bin/linear-worker-command.ts`,
    `test/cli.test.ts`, and contributor docs — activate the controlled
-   `gpt-5.6-sol`/high Spec route in the same change, pass required worker-only
+   configured Spec route in the same change, pass required worker-only
    environment values through Compose, and extend the offline Linear journey
    through claim, Spec publication, final projection, and cleanup using fake
    provider/repository/GitHub boundaries. Update the public worker command help

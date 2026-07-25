@@ -21,9 +21,9 @@ export type LinearAutomationSettings = Readonly<{
   }>;
   spec?: Readonly<{
     agent: "codex";
-    model: "gpt-5.6-sol";
-    modelReasoningEffort: "high";
-    maxRuntimeMs: 1_800_000;
+    model: string;
+    modelReasoningEffort: AgentReasoningEffort;
+    maxRuntimeMs: number;
     baseRef: string;
     repositoryRuns: RepositoryRunsConfig;
   }>;
