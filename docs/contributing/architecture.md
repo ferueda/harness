@@ -251,9 +251,10 @@ state and credentials are external user data. Neither belongs in Git.
 ## Current execution model
 
 `harness linear worker` loads one `linearAutomation` configuration snapshot at
-startup and registers the poller, readiness router, and triage consumer through
-Inngest Connect. The worker caps total concurrency at one and exposes `/health`
-plus Connect-backed `/ready` endpoints.
+startup and registers the poller, readiness router, triage consumer, and any
+configured work consumer through Inngest Connect. The current Harness
+configuration composes the independent Spec consumer. The worker caps total
+concurrency at one and exposes `/health` plus Connect-backed `/ready` endpoints.
 
 The one-minute poller lists revisions for one configured project's Backlog.
 The readiness router reloads the complete issue context and emits a triage
@@ -265,7 +266,10 @@ through the standalone Linear service. Backlog triage remains automatic and
 removes stale Agent Ready permission from every outcome. Human handoffs use
 Needs Input and Needs Review statuses; Spec and Implement labels describe the
 next agent action, while Agent Ready separately grants human permission to
-dispatch Open work after its consumer is enabled.
+dispatch Open work after its consumer is enabled. The Spec consumer claims
+Open work before consuming Agent Ready, writes only in a persistent isolated
+repository run, publishes through the standalone GitHub boundary, and clears
+the Spec action only after its marked handoff comment exists.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

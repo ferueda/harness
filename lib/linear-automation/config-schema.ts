@@ -11,10 +11,20 @@ const LinearAutomationTriageSchema = z
   })
   .strict();
 
+const LinearAutomationSpecSchema = z
+  .object({
+    agent: z.literal("codex"),
+    model: z.literal("gpt-5.6-sol"),
+    modelReasoningEffort: z.literal("high"),
+    maxRuntimeMs: z.literal(1_800_000),
+  })
+  .strict();
+
 export const LinearAutomationConfigSchema = z
   .object({
     readiness: LinearReadinessMappingSchema,
     triage: LinearAutomationTriageSchema,
+    spec: LinearAutomationSpecSchema.optional(),
   })
   .strict();
 

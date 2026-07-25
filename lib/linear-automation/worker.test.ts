@@ -6,21 +6,25 @@ import {
 } from "inngest/connect";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "../agent/contract.ts";
+import type { GitHubPublicationService } from "../github/types.ts";
+import type { RepositoryService } from "../repository/types.ts";
 import type { LinearAutomationSettings } from "./config.ts";
 import { LINEAR_ISSUE_POLL_FUNCTION_ID, type LinearIssuePollerLinear } from "./issue-poller.ts";
 import {
   createLinearAutomationFunctions,
   LINEAR_AUTOMATION_APP_ID,
-  LINEAR_AUTOMATION_ENABLED_ROUTES,
   LINEAR_AUTOMATION_MAX_WORKER_CONCURRENCY,
   linearAutomationCodexEnvironment,
+  linearAutomationGitHubRepository,
   linearAutomationObservedStateIds,
+  linearAutomationRepositoryPaths,
   parseLinearAutomationWorkerEnvironment,
   startLinearAutomationWorker,
   verifyLinearAutomationCodexAuthentication,
 } from "./worker.ts";
 import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "./readiness-router.ts";
 import { LINEAR_TRIAGE_FUNCTION_ID, type LinearTriageService } from "./triage-consumer.ts";
+import { LINEAR_SPEC_FUNCTION_ID } from "./spec-consumer.ts";
 
 const settings: LinearAutomationSettings = {
   workspace: "/workspace/harness",
@@ -79,6 +83,84 @@ function app() {
   });
 }
 
+function specApp() {
+  const base = app();
+  const repository = {
+    resolveBase: async () => {
+      throw new Error("Unexpected repository call");
+    },
+    prepareRun: async () => {
+      throw new Error("Unexpected repository call");
+    },
+    inspectChanges: async () => {
+      throw new Error("Unexpected repository call");
+    },
+    cleanupRun: async () => {
+      throw new Error("Unexpected repository call");
+    },
+  } satisfies RepositoryService;
+  const github = {
+    publishPullRequest: async () => {
+      throw new Error("Unexpected GitHub call");
+    },
+  } satisfies GitHubPublicationService;
+  const specSettings: LinearAutomationSettings = {
+    ...settings,
+    spec: {
+      agent: "codex",
+      model: "gpt-5.6-sol",
+      modelReasoningEffort: "high",
+      maxRuntimeMs: 1_800_000,
+      baseRef: "main",
+      repositoryRuns: {
+        remote: "https://github.com/ferueda/harness.git",
+        maxTrees: 2,
+        setup: { command: ["pnpm", "install"], timeoutMs: 60_000 },
+      },
+    },
+  };
+  return createLinearAutomationFunctions({
+    client: base.client,
+    linear: {
+      listIssueRevisions: async () => {
+        throw new Error("Unexpected Linear call");
+      },
+      getIssueContext: async () => {
+        throw new Error("Unexpected Linear call");
+      },
+      ensureComment: async () => {
+        throw new Error("Unexpected Linear call");
+      },
+      ensureDuplicateRelation: async () => {
+        throw new Error("Unexpected Linear call");
+      },
+      ensureBlockedByRelation: async () => {
+        throw new Error("Unexpected Linear call");
+      },
+      updateIssueLabels: async () => {
+        throw new Error("Unexpected Linear call");
+      },
+      updateIssueState: async () => {
+        throw new Error("Unexpected Linear call");
+      },
+    },
+    agent: {
+      name: "codex",
+      run: async () => {
+        throw new Error("Unexpected agent call");
+      },
+    },
+    settings: specSettings,
+    repository,
+    github,
+    githubRepository: {
+      owner: "ferueda",
+      repository: "harness",
+      httpsRemote: "https://github.com/ferueda/harness.git",
+    },
+  });
+}
+
 describe("Linear automation worker", () => {
   it("only exposes the required process environment to Codex", () => {
     expect(
@@ -90,6 +172,7 @@ describe("Linear automation worker", () => {
         LINEAR_API_KEY: "linear-secret",
         INNGEST_EVENT_KEY: "event-secret",
         INNGEST_SIGNING_KEY: "signing-secret",
+        GITHUB_TOKEN: "github-secret",
         UNRELATED_SECRET: "other-secret",
       }),
     ).toEqual({
@@ -199,6 +282,30 @@ describe("Linear automation worker", () => {
         INNGEST_SIGNING_KEY: "signing-key",
       }),
     ).toThrow(/INNGEST_BASE_URL is required unless INNGEST_DEV is enabled/);
+
+    expect(() =>
+      parseLinearAutomationWorkerEnvironment(
+        { LINEAR_API_KEY: "linear-key", INNGEST_DEV: "1" },
+        { specEnabled: true },
+      ),
+    ).toThrow(/HARNESS_REPOSITORY_ROOT is required/);
+    expect(
+      parseLinearAutomationWorkerEnvironment(
+        {
+          LINEAR_API_KEY: "linear-key",
+          INNGEST_DEV: "1",
+          HARNESS_REPOSITORY_ROOT: "/var/lib/harness",
+          GITHUB_TOKEN: "github-key",
+          GIT_AUTHOR_NAME: "Harness Agent",
+          GIT_AUTHOR_EMAIL: "agent@example.com",
+        },
+        { specEnabled: true },
+      ).spec,
+    ).toEqual({
+      repositoryRoot: "/var/lib/harness",
+      githubToken: "github-key",
+      gitAuthor: { name: "Harness Agent", email: "agent@example.com" },
+    });
   });
 
   it("registers exactly the poller, router, and triage consumer", () => {
@@ -214,7 +321,6 @@ describe("Linear automation worker", () => {
       spec: false,
       implement: false,
     });
-    expect(app().readiness.enabledRoutes).toBe(LINEAR_AUTOMATION_ENABLED_ROUTES);
     expect(linearAutomationObservedStateIds(app().readiness)).toEqual({
       backlog: settings.readiness.stateIds.backlog,
     });
@@ -232,6 +338,57 @@ describe("Linear automation worker", () => {
       backlog: settings.readiness.stateIds.backlog,
       open: settings.readiness.stateIds.open,
     });
+  });
+
+  it("registers Spec and observes Open only when the Spec profile is composed", () => {
+    const composed = specApp();
+    expect(composed.functions.map((fn) => fn.opts.id)).toEqual([
+      LINEAR_ISSUE_POLL_FUNCTION_ID,
+      LINEAR_READINESS_ROUTER_FUNCTION_ID,
+      LINEAR_TRIAGE_FUNCTION_ID,
+      LINEAR_SPEC_FUNCTION_ID,
+    ]);
+    expect(composed.readiness.enabledRoutes.spec).toBe(true);
+    expect(linearAutomationObservedStateIds(composed.readiness)).toEqual({
+      backlog: settings.readiness.stateIds.backlog,
+      open: settings.readiness.stateIds.open,
+    });
+  });
+
+  it("derives stable isolated repository paths and rejects relative roots", () => {
+    const first = linearAutomationRepositoryPaths({
+      repositoryRoot: "/var/lib/harness",
+      remote: "https://github.com/ferueda/harness.git",
+    });
+    expect(first).toEqual(
+      linearAutomationRepositoryPaths({
+        repositoryRoot: "/var/lib/harness",
+        remote: "https://github.com/ferueda/harness.git",
+      }),
+    );
+    expect(first.controllerWorkspace).toMatch(/\/[0-9a-f]{16}\/controller$/);
+    expect(first.poolDirectory).toMatch(/\/[0-9a-f]{16}\/pool$/);
+    expect(() =>
+      linearAutomationRepositoryPaths({
+        repositoryRoot: "relative",
+        remote: "https://github.com/ferueda/harness.git",
+      }),
+    ).toThrow(/absolute/);
+  });
+
+  it("fails Spec startup for invalid or credential-bearing publication remotes", () => {
+    expect(
+      linearAutomationGitHubRepository("https://github.com/ferueda/harness.git"),
+    ).toMatchObject({
+      owner: "ferueda",
+      repository: "harness",
+    });
+    expect(() =>
+      linearAutomationGitHubRepository("https://token@github.com/ferueda/harness.git"),
+    ).toThrow(/credential-free/);
+    expect(() =>
+      linearAutomationGitHubRepository("https://gitlab.com/ferueda/harness.git"),
+    ).toThrow(/credential-free/);
   });
 
   it("reports liveness separately from Connect readiness and closes cleanly", async () => {

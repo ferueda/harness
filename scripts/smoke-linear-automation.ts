@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createServer } from "node:net";
@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { Inngest } from "inngest";
 import { connect } from "inngest/connect";
 import type { Agent } from "../lib/agent/contract.ts";
+import type { GitHubPublicationService } from "../lib/github/types.ts";
 import type { LinearAutomationSettings } from "../lib/linear-automation/config.ts";
 import {
   LinearPollRequestedEvent,
@@ -31,7 +32,9 @@ import {
   LINEAR_TRIAGE_FUNCTION_ID,
   type LinearTriageService,
 } from "../lib/linear-automation/triage-consumer.ts";
+import { LINEAR_SPEC_FUNCTION_ID } from "../lib/linear-automation/spec-consumer.ts";
 import type { LinearIssueContext } from "../lib/linear/types.ts";
+import type { RepositoryService } from "../lib/repository/types.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const INNGEST_CLI = join(ROOT, "node_modules/.bin/inngest");
@@ -78,6 +81,18 @@ const settings: LinearAutomationSettings = {
     modelReasoningEffort: "medium",
     maxRuntimeMs: 30_000,
   },
+  spec: {
+    agent: "codex",
+    model: "gpt-5.6-sol",
+    modelReasoningEffort: "high",
+    maxRuntimeMs: 1_800_000,
+    baseRef: "main",
+    repositoryRuns: {
+      remote: "https://github.com/ferueda/harness.git",
+      maxTrees: 2,
+      setup: { command: ["true"], timeoutMs: 30_000 },
+    },
+  },
 };
 
 const projection = {
@@ -85,7 +100,10 @@ const projection = {
   // A stale permission must not gate Backlog triage or survive its projection.
   labelIds: new Set<string>([settings.readiness.agentReadyLabelId]),
   comments: [] as string[],
-  agentRuns: 0,
+  triageAgentRuns: 0,
+  specAgentRuns: 0,
+  publications: 0,
+  repositoryCleanups: 0,
   contextReads: 0,
   pollInputs: [] as Array<{
     teamId: string;
@@ -213,10 +231,10 @@ function issueContext(): LinearIssueContext {
   const stateId = projection.stateId;
   return {
     id: "issue-smoke",
-    identifier: "FER-SMOKE",
+    identifier: "FER-267",
     title: "Prove the independent triage journey",
     description: "A bounded issue with enough detail to implement directly.",
-    url: "https://linear.app/example/FER-SMOKE",
+    url: "https://linear.app/example/FER-267",
     state: { id: stateId, name: stateId, type: "unstarted" },
     team: { id: settings.readiness.teamId, key: "FER", name: "Harness" },
     project: {
@@ -251,13 +269,16 @@ function fakeLinear(): LinearTriageService & LinearIssuePollerLinear {
     listIssueRevisions: async (input) => {
       projection.pollInputs.push(input);
       return {
-        revisions: [
-          {
-            id: "issue-smoke",
-            identifier: "FER-SMOKE",
-            updatedAt: REVISION_UPDATED_AT,
-          },
-        ],
+        revisions:
+          projection.stateId === input.stateId
+            ? [
+                {
+                  id: "issue-smoke",
+                  identifier: "FER-267",
+                  updatedAt: REVISION_UPDATED_AT,
+                },
+              ]
+            : [],
         truncated: false,
       };
     },
@@ -300,8 +321,31 @@ function fakeLinear(): LinearTriageService & LinearIssuePollerLinear {
 
 const agent: Agent = {
   name: "codex",
-  run: async () => {
-    projection.agentRuns += 1;
+  run: async (input) => {
+    if (input.schemaPath?.endsWith("spec-result.schema.json")) {
+      projection.specAgentRuns += 1;
+      mkdirSync(join(input.workspace, "dev/plans"), { recursive: true });
+      writeFileSync(join(input.workspace, "dev/plans/FER-267.md"), "# FER-267 Spec\n", "utf8");
+      return {
+        ok: true,
+        structuredOutput: {
+          outcome: "ready-for-review",
+          artifactPath: "dev/plans/FER-267.md",
+          summary: "The smoke Spec composes the existing primitives.",
+          evidence: [
+            {
+              kind: "code",
+              path: "lib/linear-automation/spec-consumer.ts",
+              summary: "The consumer owns durable coordination.",
+            },
+          ],
+          reviewerDecisions: [],
+          questions: [],
+        },
+        raw: { source: "linear-automation-spec-smoke" },
+      };
+    }
+    projection.triageAgentRuns += 1;
     return {
       ok: true,
       structuredOutput: {
@@ -322,6 +366,49 @@ const agent: Agent = {
         blockedBy: [],
       },
       raw: { source: "linear-automation-smoke" },
+    };
+  },
+};
+
+const repositoryWorkspace = join(fixtureRoot, "repository-run");
+const repository: RepositoryService = {
+  resolveBase: async ({ baseRef }) => ({
+    remote: settings.spec!.repositoryRuns.remote,
+    baseRef,
+    baseSha: "a".repeat(40),
+  }),
+  prepareRun: async ({ id, base, branch }) => {
+    mkdirSync(repositoryWorkspace, { recursive: true });
+    return {
+      version: 1,
+      id,
+      workspace: repositoryWorkspace,
+      remote: base.remote,
+      baseRef: base.baseRef,
+      baseSha: base.baseSha,
+      branch,
+    };
+  },
+  inspectChanges: async () => [{ path: "dev/plans/FER-267.md", status: "untracked" as const }],
+  cleanupRun: async () => {
+    projection.repositoryCleanups += 1;
+    return { status: "released" };
+  },
+};
+
+const github: GitHubPublicationService = {
+  publishPullRequest: async (input) => {
+    projection.publications += 1;
+    return {
+      url: "https://github.com/ferueda/harness/pull/999",
+      number: 999,
+      owner: "ferueda",
+      repository: "harness",
+      baseBranch: input.baseBranch,
+      headBranch: input.run.branch,
+      headSha: "b".repeat(40),
+      state: "open",
+      merged: false,
     };
   },
 };
@@ -419,6 +506,13 @@ try {
     linear: fakeLinear(),
     agent,
     settings,
+    repository,
+    github,
+    githubRepository: {
+      owner: "ferueda",
+      repository: "harness",
+      httpsRemote: "https://github.com/ferueda/harness.git",
+    },
   });
 
   station = "Inngest Connect registration";
@@ -455,6 +549,7 @@ try {
   assert(registered.includes(LINEAR_ISSUE_POLL_FUNCTION_ID), "poller registration missing");
   assert(registered.includes(LINEAR_READINESS_ROUTER_FUNCTION_ID), "router registration missing");
   assert(registered.includes(LINEAR_TRIAGE_FUNCTION_ID), "triage registration missing");
+  assert(registered.includes(LINEAR_SPEC_FUNCTION_ID), "Spec registration missing");
 
   station = "polled Backlog triage journey";
   const pollInputsBeforeJourney = projection.pollInputs.length;
@@ -472,7 +567,7 @@ try {
       !projection.labelIds.has(settings.readiness.agentReadyLabelId) &&
       projection.comments.length === 1,
   );
-  assert(projection.agentRuns === 1, "triage agent did not run exactly once");
+  assert(projection.triageAgentRuns === 1, "triage agent did not run exactly once");
   assert(
     projection.comments[0]?.includes("**Why Implement:**"),
     "triage rationale comment missing",
@@ -496,7 +591,7 @@ try {
   );
   const revisionEventId = linearIssueRevisionEventId({
     issueId: "issue-smoke",
-    issueIdentifier: "FER-SMOKE",
+    issueIdentifier: "FER-267",
     updatedAt: REVISION_UPDATED_AT,
   });
   await waitUntil(
@@ -532,7 +627,32 @@ try {
     projection.contextReads === contextReadsAfterProjection,
     `unchanged revision ${revisionEventId} was routed twice`,
   );
-  assert(projection.agentRuns === 1, "unchanged revision reran triage");
+  assert(projection.triageAgentRuns === 1, "unchanged revision reran triage");
+
+  station = "Open Spec publication journey";
+  projection.labelIds.delete(settings.readiness.agentActionLabelIds.implement);
+  projection.labelIds.add(settings.readiness.agentActionLabelIds.spec);
+  projection.labelIds.add(settings.readiness.agentReadyLabelId);
+  const specPoll = await client.send(
+    LinearPollRequestedEvent.create({}, { id: "linear-automation-smoke-poll-spec" }),
+  );
+  assert(specPoll.ids.length === 1, "Spec poll event was not accepted");
+  await waitForEventRuns(apiHost, specPoll.ids[0]!);
+  await waitUntil(
+    "Spec publication and projection",
+    () =>
+      projection.stateId === settings.readiness.stateIds.needsReview &&
+      !projection.labelIds.has(settings.readiness.agentActionLabelIds.spec) &&
+      !projection.labelIds.has(settings.readiness.agentReadyLabelId) &&
+      projection.comments.length === 2 &&
+      projection.publications === 1 &&
+      projection.repositoryCleanups === 1,
+  );
+  assert(projection.specAgentRuns === 1, "Spec agent did not run exactly once");
+  assert(
+    projection.comments[1]?.includes("https://github.com/ferueda/harness/pull/999"),
+    "Spec rationale comment did not include the pull request",
+  );
 
   station = "clean shutdown";
   await stop();

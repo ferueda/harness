@@ -96,10 +96,22 @@ repository-run setup. It contains no secrets.
       "model": "gpt-5.6-sol",
       "modelReasoningEffort": "high",
       "maxRuntimeMs": 1800000
+    },
+    "spec": {
+      "agent": "codex",
+      "model": "gpt-5.6-sol",
+      "modelReasoningEffort": "high",
+      "maxRuntimeMs": 1800000
     }
   }
 }
 ```
+
+`linearAutomation.spec` is optional and is the Spec route's enable switch. When
+it is absent, the worker remains triage-only and does not require
+`repositoryRuns` or GitHub credentials. When present, its fixed profile requires
+`repositoryRuns`, registers the Spec consumer, and adds Open observation in the
+same worker composition.
 
 The initial worker composes one configured project. Its route map controls both
 which consumers exist and which states the poller observes. The standalone
@@ -138,14 +150,19 @@ umask 077
   printf 'INNGEST_DASHBOARD_PORT=8288\n'
   printf 'LINEAR_API_KEY=%s\n' 'replace-with-linear-api-key'
   printf 'CODEX_API_KEY=%s\n' 'replace-with-codex-api-key'
+  printf 'GITHUB_TOKEN=%s\n' 'replace-with-github-token'
+  printf 'GIT_AUTHOR_NAME=%s\n' 'Harness Agent'
+  printf 'GIT_AUTHOR_EMAIL=%s\n' 'agent@example.com'
   printf 'INNGEST_EVENT_KEY=%s\n' "$(openssl rand -hex 32)"
   printf 'INNGEST_SIGNING_KEY=%s\n' "$(openssl rand -hex 32)"
 } > "$LINEAR_AUTOMATION_ENV"
 ```
 
 `CODEX_API_KEY` is the recommended auth path for an unattended worker. Compose
-passes it only to the worker, and Harness forwards it only to the Codex child
-process. The protected environment file remains outside the target repository.
+passes all worker credentials only to the worker, and Harness forwards only the
+Codex credential subset to the Codex child process. `GITHUB_TOKEN` and the
+explicit commit author remain in the publication boundary. The protected
+environment file remains outside the target repository.
 
 If you prefer ChatGPT-backed Codex login, omit `CODEX_API_KEY` from the file and
 initialize the worker's dedicated credential volume once:
@@ -197,8 +214,8 @@ Do not add `--volumes` to normal shutdown. It deliberately deletes Inngest
 history, repository leases and warm dependencies, package-manager caches, and
 the dedicated Codex login. Both services use restart policies, and the Connect
 worker automatically reconnects after an Inngest restart. The worker's stop
-grace period is longer than the configured maximum triage runtime so an active
-agent step can drain.
+grace period is longer than the configured maximum triage or Spec runtime so an
+active agent step can drain.
 
 To run another target project, create another environment file with a distinct
 `COMPOSE_PROJECT_NAME`, workspace path, and dashboard port. Keep one configured
@@ -206,17 +223,22 @@ project per Compose stack until app and function identities become project-aware
 
 ## Function boundary
 
-The worker registers exactly three functions:
+The configured Harness worker registers four functions:
 
 - the poller lists at most 250 issue revisions per observed state every minute
   and fails the whole poll visibly if any state exceeds that bound;
 - the readiness router reloads complete current context and emits a
   provider-neutral work request; and
-- the triage consumer invokes the configured agent and projects the decision.
+- the triage consumer invokes the configured agent and projects the decision;
+  and
+- the optional Spec consumer claims one released issue, writes in an isolated
+  Grove run, publishes one exact pull request, and projects Needs Review or
+  Needs Input.
 
-Spec and Implement routes remain disabled, so the current composition observes
-Backlog only. Enabling either route adds Open observation in the same composition
-change that registers its consumer. The poller accepts an explicit
+The current Harness configuration enables Spec and leaves Implement disabled,
+so the poller observes Backlog and Open. A triage-only target omits
+`linearAutomation.spec`, registers three functions, and observes Backlog only.
+The poller accepts an explicit
 `linear/poll.requested` event for deterministic smoke coverage and immediate
 operator checks, but cron is the only automatic trigger.
 
@@ -232,9 +254,10 @@ configured IDs before restarting the worker. There is no compatibility path for
 the old config shape.
 
 `make smoke-linear-automation` starts a disposable real `inngest start`
-process, connects the worker, sends the explicit poll event, proves the full
-fake-boundary journey, checks unchanged-revision deduplication, and cleans up
-SQLite state on success. It does not call live Linear or a real model.
+process, connects the worker, sends explicit poll events, proves the full
+fake-boundary triage and Spec publication journeys, checks unchanged-revision
+deduplication, and cleans up SQLite state on success. It does not call live
+Linear, GitHub, or a real model.
 
 `make smoke-linear-automation-compose` is the explicit Docker packaging smoke.
 It validates and builds the Compose model, starts both containers on a blocked-
