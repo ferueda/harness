@@ -228,7 +228,7 @@ export function createLinearSpecFunction(input: {
             provenance: result.provenance,
           });
           const reservedUrl = reservedPullRequestUrl(config.githubRepository);
-          renderSpecOutcomeComment({
+          const comment = renderSpecOutcomeComment({
             marker,
             decision: result.decision,
             provenance: result.provenance,
@@ -240,6 +240,7 @@ export function createLinearSpecFunction(input: {
             marker,
             pullRequest,
             reservedUrl,
+            comment,
           };
         } catch (error) {
           return { ok: false as const, error: errorMessage(error) };
@@ -257,6 +258,7 @@ export function createLinearSpecFunction(input: {
       }
 
       let pullRequest: PublishedPullRequest | null = null;
+      let comment = inspected.comment;
       if (result.decision.outcome === "ready-for-review") {
         const published = await step.run(LINEAR_SPEC_PUBLISH_STEP_ID, () =>
           input.github.publishPullRequest({
@@ -280,17 +282,9 @@ export function createLinearSpecFunction(input: {
           );
           return failedResult(event.data, "invalid-publication");
         }
+        comment = comment.replace(inspected.reservedUrl, () => published.url);
       }
 
-      const comment =
-        result.decision.outcome === "ready-for-review"
-          ? renderSpecOutcomeComment({
-              marker: inspected.marker,
-              decision: result.decision,
-              provenance: result.provenance,
-              pullRequestUrl: pullRequest?.url,
-            })
-          : inspected.comment;
       const targetStateId =
         result.decision.outcome === "ready-for-review"
           ? config.readiness.stateIds.needsReview
