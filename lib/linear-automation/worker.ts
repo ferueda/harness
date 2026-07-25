@@ -229,16 +229,20 @@ async function checkCodexLogin(
 export function createLinearAutomationFunctions(input: {
   client: Inngest.Any;
   linear: LinearTriageService & LinearIssuePollerLinear & LinearSpecService;
-  agent: Agent;
+  triageAgent: Agent;
+  specAgent?: Agent;
   settings: LinearAutomationSettings;
   repository?: RepositoryService;
   github?: GitHubPublicationService;
   githubRepository?: ReturnType<typeof parseGitHubRemote>;
 }): LinearAutomationFunctions {
   const specEnabled = Boolean(input.settings.spec);
-  if (specEnabled && (!input.repository || !input.github || !input.githubRepository)) {
+  if (
+    specEnabled &&
+    (!input.specAgent || !input.repository || !input.github || !input.githubRepository)
+  ) {
     throw new Error(
-      "The enabled Linear Spec route requires repository and GitHub publication services.",
+      "The enabled Linear Spec route requires its agent, repository, and GitHub publication services.",
     );
   }
   const readiness = Object.freeze({
@@ -266,7 +270,7 @@ export function createLinearAutomationFunctions(input: {
   const triage = createLinearTriageFunction({
     client: input.client,
     linear: input.linear,
-    agent: input.agent,
+    agent: input.triageAgent,
     config: {
       readiness,
       workspace: input.settings.workspace,
@@ -278,11 +282,15 @@ export function createLinearAutomationFunctions(input: {
     },
   });
   const spec =
-    input.settings.spec && input.repository && input.github && input.githubRepository
+    input.settings.spec &&
+    input.specAgent &&
+    input.repository &&
+    input.github &&
+    input.githubRepository
       ? createLinearSpecFunction({
           client: input.client,
           linear: input.linear,
-          agent: input.agent,
+          agent: input.specAgent,
           repository: input.repository,
           github: input.github,
           config: {
@@ -368,12 +376,10 @@ export async function runLinearAutomationWorker(input: {
   const environment = settings.spec
     ? parseLinearAutomationWorkerEnvironment(processEnvironment, { specEnabled: true })
     : baseEnvironment;
-  if (settings.triage.agent === "codex") {
-    await verifyLinearAutomationCodexAuthentication({
-      environment: processEnvironment,
-      codexExecutable: settings.triage.codexPathOverride,
-    });
-  }
+  await verifyLinearAutomationCodexAuthentication({
+    environment: processEnvironment,
+    codexExecutable: settings.codexPathOverride,
+  });
   const client = new Inngest({
     id: LINEAR_AUTOMATION_APP_ID,
     eventKey: environment.inngestEventKey,
@@ -386,11 +392,19 @@ export async function runLinearAutomationWorker(input: {
     apiKey: environment.linearApiKey,
     limits: LINEAR_AUTOMATION_READ_LIMITS,
   });
-  const agent = createAgentProvider({
+  const codexEnvironment = linearAutomationCodexEnvironment(processEnvironment);
+  const triageAgent = createAgentProvider({
     provider: settings.triage.agent,
-    codexPathOverride: settings.triage.codexPathOverride,
-    codexEnvironment: linearAutomationCodexEnvironment(processEnvironment),
+    codexPathOverride: settings.codexPathOverride,
+    codexEnvironment,
   });
+  const specAgent = settings.spec
+    ? createAgentProvider({
+        provider: settings.spec.agent,
+        codexPathOverride: settings.codexPathOverride,
+        codexEnvironment,
+      })
+    : undefined;
   let repository: RepositoryService | undefined;
   let github: GitHubPublicationService | undefined;
   let githubRepository: ReturnType<typeof parseGitHubRemote> | undefined;
@@ -413,7 +427,8 @@ export async function runLinearAutomationWorker(input: {
   const app = createLinearAutomationFunctions({
     client,
     linear,
-    agent,
+    triageAgent,
+    specAgent,
     settings,
     repository,
     github,

@@ -110,7 +110,8 @@ identities must make replay converge without a new workflow store.
    enablement signal. When absent, keep `spec: false`, do not register the
    consumer or observe `Open`, and keep triage-only configurations valid without
    repository or GitHub settings. When present, compose the Spec consumer
-   atomically with its repository and GitHub services. Require an absolute
+   atomically with its own configured agent plus its repository and GitHub
+   services. Require an absolute
    `HARNESS_REPOSITORY_ROOT`, `repositoryRuns`, `GITHUB_TOKEN`,
    `GIT_AUTHOR_NAME`, and `GIT_AUTHOR_EMAIL` before enabling the route. Derive
    deterministic controller/pool paths from the configured remote, use the
@@ -128,11 +129,12 @@ identities must make replay converge without a new workflow store.
 
 5. `harness.json`, `compose.linear-automation.yaml`,
    `scripts/smoke-linear-automation.ts`, `bin/linear-worker-command.ts`,
-   `test/cli.test.ts`, and contributor docs — activate the controlled
-   configured Spec route in the same change, pass required worker-only
+   `test/cli.test.ts`, and contributor docs — activate the configured Spec
+   route in the same change, pass required worker-only
    environment values through Compose, and extend the offline Linear journey
-   through claim, Spec publication, final projection, and cleanup using fake
-   provider/repository/GitHub boundaries. Update the public worker command help
+   through claim, Spec publication, final projection, and cleanup using
+   separate fake triage and Spec agents plus repository/GitHub boundaries.
+   Update the public worker command help
    and its focused assertion, plus only current operator and architecture
    descriptions that otherwise misstate the registered functions, observed
    states, required secrets, or lifecycle.

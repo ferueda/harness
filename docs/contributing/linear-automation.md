@@ -230,11 +230,11 @@ The configured Harness worker registers four functions:
   and fails the whole poll visibly if any state exceeds that bound;
 - the readiness router reloads complete current context and emits a
   provider-neutral work request; and
-- the triage consumer invokes the configured agent and projects the decision;
+- the triage consumer invokes its configured agent and projects the decision;
   and
-- the optional Spec consumer claims one released issue, writes in an isolated
-  Grove run, publishes one exact pull request, and projects Needs Review or
-  Needs Input.
+- the optional Spec consumer invokes its own configured agent, claims one
+  released issue, writes in an isolated Grove run, publishes one exact pull
+  request, and projects Needs Review or Needs Input.
 
 The current Harness configuration enables Spec and leaves Implement disabled,
 so the poller observes Backlog and Open. A triage-only target omits

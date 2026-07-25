@@ -78,12 +78,12 @@ function app() {
   return createLinearAutomationFunctions({
     client,
     linear,
-    agent,
+    triageAgent: agent,
     settings,
   });
 }
 
-function specApp() {
+function specApp(options: Readonly<{ includeSpecAgent?: boolean }> = {}) {
   const base = app();
   const repository = {
     resolveBase: async () => {
@@ -144,12 +144,22 @@ function specApp() {
         throw new Error("Unexpected Linear call");
       },
     },
-    agent: {
+    triageAgent: {
       name: "codex",
       run: async () => {
-        throw new Error("Unexpected agent call");
+        throw new Error("Unexpected triage agent call");
       },
     },
+    ...(options.includeSpecAgent === false
+      ? {}
+      : {
+          specAgent: {
+            name: "codex",
+            run: async () => {
+              throw new Error("Unexpected Spec agent call");
+            },
+          } satisfies Agent,
+        }),
     settings: specSettings,
     repository,
     github,
@@ -367,6 +377,12 @@ describe("Linear automation worker", () => {
       backlog: settings.readiness.stateIds.backlog,
       open: settings.readiness.stateIds.open,
     });
+  });
+
+  it("requires a separately composed agent when Spec is enabled", () => {
+    expect(() => specApp({ includeSpecAgent: false })).toThrow(
+      /requires its agent, repository, and GitHub publication services/,
+    );
   });
 
   it("derives stable isolated repository paths and rejects relative roots", () => {

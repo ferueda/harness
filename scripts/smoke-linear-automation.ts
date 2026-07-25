@@ -319,32 +319,9 @@ function fakeLinear(): LinearTriageService & LinearIssuePollerLinear {
   };
 }
 
-const agent: Agent = {
+const triageAgent: Agent = {
   name: "codex",
-  run: async (input) => {
-    if (input.schemaPath?.endsWith("spec-result.schema.json")) {
-      projection.specAgentRuns += 1;
-      mkdirSync(join(input.workspace, "dev/plans"), { recursive: true });
-      writeFileSync(join(input.workspace, "dev/plans/FER-267.md"), "# FER-267 Spec\n", "utf8");
-      return {
-        ok: true,
-        structuredOutput: {
-          outcome: "ready-for-review",
-          artifactPath: "dev/plans/FER-267.md",
-          summary: "The smoke Spec composes the existing primitives.",
-          evidence: [
-            {
-              kind: "code",
-              path: "lib/linear-automation/spec-consumer.ts",
-              summary: "The consumer owns durable coordination.",
-            },
-          ],
-          reviewerDecisions: [],
-          questions: [],
-        },
-        raw: { source: "linear-automation-spec-smoke" },
-      };
-    }
+  run: async () => {
     projection.triageAgentRuns += 1;
     return {
       ok: true,
@@ -366,6 +343,33 @@ const agent: Agent = {
         blockedBy: [],
       },
       raw: { source: "linear-automation-smoke" },
+    };
+  },
+};
+
+const specAgent: Agent = {
+  name: "codex",
+  run: async (input) => {
+    projection.specAgentRuns += 1;
+    mkdirSync(join(input.workspace, "dev/plans"), { recursive: true });
+    writeFileSync(join(input.workspace, "dev/plans/FER-267.md"), "# FER-267 Spec\n", "utf8");
+    return {
+      ok: true,
+      structuredOutput: {
+        outcome: "ready-for-review",
+        artifactPath: "dev/plans/FER-267.md",
+        summary: "The smoke Spec composes the existing primitives.",
+        evidence: [
+          {
+            kind: "code",
+            path: "lib/linear-automation/spec-consumer.ts",
+            summary: "The consumer owns durable coordination.",
+          },
+        ],
+        reviewerDecisions: [],
+        questions: [],
+      },
+      raw: { source: "linear-automation-spec-smoke" },
     };
   },
 };
@@ -504,7 +508,8 @@ try {
   const app = createLinearAutomationFunctions({
     client,
     linear: fakeLinear(),
-    agent,
+    triageAgent,
+    specAgent,
     settings,
     repository,
     github,

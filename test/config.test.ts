@@ -208,12 +208,12 @@ test("resolveLinearAutomationSettings resolves one immutable worker snapshot", (
 
   expect(settings).toEqual({
     workspace,
+    codexPathOverride: "/opt/codex-worker",
     readiness: LINEAR_AUTOMATION.readiness,
     triage: {
       ...LINEAR_AUTOMATION.triage,
       model: "gpt-worker",
       modelReasoningEffort: "medium",
-      codexPathOverride: "/opt/codex-worker",
     },
   });
   expect(Object.isFrozen(settings)).toBe(true);

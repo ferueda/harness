@@ -37,7 +37,8 @@ self-hosted Inngest cron
   -> guarded Linear comment, label, and status writes
 ```
 
-These paths share provider and configuration primitives, but not lifecycle
+These paths share provider construction and configuration primitives, but each
+consumer receives its own adapter and owns its lifecycle
 state. Reviews are explicit CLI runs. Linear is the issue queue and source of
 truth for automation; Inngest owns delivery, retries, scheduling, and traces.
 

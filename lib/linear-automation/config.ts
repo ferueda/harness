@@ -1,7 +1,6 @@
 import {
   DEFAULT_AGENT_MODELS,
   DEFAULT_CODEX_REASONING_EFFORT,
-  type AgentProviderName,
   type AgentReasoningEffort,
 } from "../agent/contract.ts";
 import { loadHarnessConfigSnapshot, type HarnessConfigSnapshot } from "../config/harness.ts";
@@ -11,13 +10,13 @@ import type { RepositoryRunsConfig } from "../repository/config-schema.ts";
 
 export type LinearAutomationSettings = Readonly<{
   workspace: string;
+  codexPathOverride?: string;
   readiness: LinearReadinessMapping;
   triage: Readonly<{
-    agent: AgentProviderName;
+    agent: "codex";
     model: string;
     modelReasoningEffort: AgentReasoningEffort;
     maxRuntimeMs: number;
-    codexPathOverride?: string;
   }>;
   spec?: Readonly<{
     agent: "codex";
@@ -92,7 +91,6 @@ function freezeLinearAutomationSettings(input: {
     ...input.automation.triage,
     model: input.model,
     modelReasoningEffort: input.modelReasoningEffort,
-    ...(input.codexPathOverride ? { codexPathOverride: input.codexPathOverride } : {}),
   });
   const spec =
     input.automation.spec && input.repositoryRuns
@@ -110,6 +108,7 @@ function freezeLinearAutomationSettings(input: {
       : undefined;
   return Object.freeze({
     workspace: input.workspace,
+    ...(input.codexPathOverride ? { codexPathOverride: input.codexPathOverride } : {}),
     readiness,
     triage,
     ...(spec ? { spec } : {}),
