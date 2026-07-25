@@ -12,6 +12,7 @@ import { connect } from "inngest/connect";
 import type { Agent } from "../lib/agent/contract.ts";
 import type { GitHubPublicationService } from "../lib/github/types.ts";
 import type { LinearAutomationSettings } from "../lib/linear-automation/config.ts";
+import { linearIssueReadinessCheckEventId } from "../lib/linear-automation/events/linear-readiness-events.ts";
 import {
   LinearPollRequestedEvent,
   linearIssueRevisionEventId,
@@ -619,6 +620,22 @@ try {
   assert(repeated.ids.length === 1, "repeated poll event was not accepted");
   await waitForEventRuns(apiHost, repeated.ids[0]!);
   assert(projection.pollInputs.length > pollInputsBeforeRepeat, "repeated poll did not run");
+  const readinessCheckEventId = linearIssueReadinessCheckEventId(
+    { issueId: "issue-smoke", issueIdentifier: "FER-267" },
+    "linear-automation-smoke-poll-2",
+  );
+  await waitUntil(
+    "Open readiness-check event",
+    () => publishedInternalEventIds(readinessCheckEventId).length > 0,
+  );
+  const readinessRuns = await waitForEventRuns(
+    apiHost,
+    publishedInternalEventIds(readinessCheckEventId)[0]!,
+  );
+  assert(
+    readinessRuns.length === 1 && readinessRuns[0]?.status === "COMPLETED",
+    "repeated poll readiness check did not complete exactly once",
+  );
   const revisionRuns = (
     await Promise.all(
       publishedInternalEventIds(revisionEventId).map((eventId) => getEventRuns(apiHost, eventId)),
@@ -629,8 +646,8 @@ try {
     "unchanged revision did not retain exactly one completed readiness run",
   );
   assert(
-    projection.contextReads === contextReadsAfterProjection,
-    `unchanged revision ${revisionEventId} was routed twice`,
+    projection.contextReads === contextReadsAfterProjection + 1,
+    "repeated Open poll did not perform exactly one fresh readiness check",
   );
   assert(projection.triageAgentRuns === 1, "unchanged revision reran triage");
 
