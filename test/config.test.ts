@@ -208,12 +208,12 @@ test("resolveLinearAutomationSettings resolves one immutable worker snapshot", (
 
   expect(settings).toEqual({
     workspace,
+    codexPathOverride: "/opt/codex-worker",
     readiness: LINEAR_AUTOMATION.readiness,
     triage: {
       ...LINEAR_AUTOMATION.triage,
       model: "gpt-worker",
       modelReasoningEffort: "medium",
-      codexPathOverride: "/opt/codex-worker",
     },
   });
   expect(Object.isFrozen(settings)).toBe(true);
@@ -240,6 +240,81 @@ test("resolveLinearAutomationSettings prefers triage model overrides", () => {
     model: "gpt-triage",
     modelReasoningEffort: "xhigh",
   });
+});
+
+test("resolveLinearAutomationSettings requires and preserves the Spec execution profile", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(workspace, {
+    base: "develop",
+    repositoryRuns: {
+      remote: "https://github.com/example/project.git",
+      maxTrees: 3,
+      setup: { command: ["pnpm", "install"], timeoutMs: 600_000 },
+    },
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      spec: {
+        agent: "codex",
+        model: "gpt-5.6-terra",
+        modelReasoningEffort: "medium",
+        maxRuntimeMs: 120_000,
+      },
+    },
+  });
+
+  expect(resolveLinearAutomationSettings({ workspace }, "/").spec).toEqual({
+    agent: "codex",
+    model: "gpt-5.6-terra",
+    modelReasoningEffort: "medium",
+    maxRuntimeMs: 120_000,
+    baseRef: "develop",
+    repositoryRuns: {
+      remote: "https://github.com/example/project.git",
+      maxTrees: 3,
+      setup: { command: ["pnpm", "install"], timeoutMs: 600_000 },
+    },
+  });
+});
+
+test("Spec profile stays optional and fails fast without its repository config", () => {
+  const triageOnly = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(triageOnly, { linearAutomation: LINEAR_AUTOMATION });
+  expect(resolveLinearAutomationSettings({ workspace: triageOnly }, "/").spec).toBeUndefined();
+
+  const missingRepository = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(missingRepository, {
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      spec: {
+        agent: "codex",
+        model: "gpt-5.6-sol",
+        modelReasoningEffort: "high",
+        maxRuntimeMs: 1_800_000,
+      },
+    },
+  });
+  expect(() => resolveLinearAutomationSettings({ workspace: missingRepository }, "/")).toThrow(
+    /repositoryRuns is required/,
+  );
+
+  const incompleteProfile = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(incompleteProfile, {
+    repositoryRuns: {
+      remote: "https://github.com/example/project.git",
+      setup: { command: ["pnpm", "install"], timeoutMs: 600_000 },
+    },
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      spec: {
+        agent: "codex",
+        modelReasoningEffort: "medium",
+        maxRuntimeMs: 120_000,
+      },
+    },
+  });
+  expect(() => resolveLinearAutomationSettings({ workspace: incompleteProfile }, "/")).toThrow(
+    /linearAutomation\.spec\.model/,
+  );
 });
 
 test("resolveLinearAutomationSettings rejects missing or invalid worker config", () => {

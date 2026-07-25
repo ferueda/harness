@@ -1,22 +1,30 @@
 import {
   DEFAULT_AGENT_MODELS,
   DEFAULT_CODEX_REASONING_EFFORT,
-  type AgentProviderName,
   type AgentReasoningEffort,
 } from "../agent/contract.ts";
 import { loadHarnessConfigSnapshot, type HarnessConfigSnapshot } from "../config/harness.ts";
 import type { LinearAutomationConfig } from "./config-schema.ts";
 import type { LinearReadinessMapping } from "./readiness.ts";
+import type { RepositoryRunsConfig } from "../repository/config-schema.ts";
 
 export type LinearAutomationSettings = Readonly<{
   workspace: string;
+  codexPathOverride?: string;
   readiness: LinearReadinessMapping;
   triage: Readonly<{
-    agent: AgentProviderName;
+    agent: "codex";
     model: string;
     modelReasoningEffort: AgentReasoningEffort;
     maxRuntimeMs: number;
-    codexPathOverride?: string;
+  }>;
+  spec?: Readonly<{
+    agent: "codex";
+    model: string;
+    modelReasoningEffort: AgentReasoningEffort;
+    maxRuntimeMs: number;
+    baseRef: string;
+    repositoryRuns: RepositoryRunsConfig;
   }>;
 }>;
 
@@ -39,6 +47,11 @@ export function resolveLinearAutomationSettingsFromSnapshot(
       "linearAutomation is required in harness.json for the Linear worker. Configure readiness IDs and triage.",
     );
   }
+  if (automation.spec && !config.repositoryRuns) {
+    throw new Error(
+      "repositoryRuns is required when linearAutomation.spec enables the Spec consumer.",
+    );
+  }
 
   const agentConfig = config.agents?.codex ?? {};
   const model = automation.triage.model ?? agentConfig.model ?? DEFAULT_AGENT_MODELS.codex;
@@ -53,6 +66,8 @@ export function resolveLinearAutomationSettingsFromSnapshot(
     model,
     modelReasoningEffort,
     codexPathOverride: agentConfig.executable,
+    baseRef: config.base ?? "main",
+    repositoryRuns: config.repositoryRuns,
   });
 }
 
@@ -62,6 +77,8 @@ function freezeLinearAutomationSettings(input: {
   model: string;
   modelReasoningEffort: AgentReasoningEffort;
   codexPathOverride?: string;
+  baseRef: string;
+  repositoryRuns?: RepositoryRunsConfig;
 }): LinearAutomationSettings {
   const readiness = Object.freeze({
     ...input.automation.readiness,
@@ -74,11 +91,26 @@ function freezeLinearAutomationSettings(input: {
     ...input.automation.triage,
     model: input.model,
     modelReasoningEffort: input.modelReasoningEffort,
-    ...(input.codexPathOverride ? { codexPathOverride: input.codexPathOverride } : {}),
   });
+  const spec =
+    input.automation.spec && input.repositoryRuns
+      ? Object.freeze({
+          ...input.automation.spec,
+          baseRef: input.baseRef,
+          repositoryRuns: Object.freeze({
+            ...input.repositoryRuns,
+            setup: Object.freeze({
+              ...input.repositoryRuns.setup,
+              command: [...input.repositoryRuns.setup.command],
+            }),
+          }),
+        })
+      : undefined;
   return Object.freeze({
     workspace: input.workspace,
+    ...(input.codexPathOverride ? { codexPathOverride: input.codexPathOverride } : {}),
     readiness,
     triage,
+    ...(spec ? { spec } : {}),
   });
 }

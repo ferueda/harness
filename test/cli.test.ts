@@ -162,7 +162,7 @@ test("harness linear worker help exposes only workspace selection", () => {
   const result = runHarness(["linear", "worker", "--help"]);
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/harness linear worker/);
-  expect(result.stdout).toMatch(/poller, readiness, and triage functions/);
+  expect(result.stdout).toMatch(/polling, readiness, triage, and optional Spec work/);
   expect(result.stdout).toMatch(/--workspace/);
   expect(result.stdout).not.toMatch(/--model|--agent|--port/);
 });

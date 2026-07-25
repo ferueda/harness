@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import type { AddressInfo } from "node:net";
+import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { Inngest, type InngestFunction } from "inngest";
 import {
@@ -21,16 +23,17 @@ import {
 import { createLinearReadinessRouter } from "./readiness-router.ts";
 import type { LinearReadinessConfig } from "./readiness.ts";
 import { createLinearTriageFunction, type LinearTriageService } from "./triage-consumer.ts";
+import { createLinearSpecFunction, type LinearSpecService } from "./spec-consumer.ts";
 import { createLinear, type LinearService } from "../linear/client.ts";
+import { createGitHubPublication } from "../github/publication.ts";
+import { parseGitHubRemote } from "../github/remote.ts";
+import type { GitHubPublicationService } from "../github/types.ts";
+import { createRepository } from "../repository/repository.ts";
+import type { RepositoryService } from "../repository/types.ts";
 import { createAgentProvider } from "../../providers/registry.ts";
 
 export const LINEAR_AUTOMATION_APP_ID = "harness-linear-automation";
 export const LINEAR_AUTOMATION_MAX_WORKER_CONCURRENCY = 1;
-export const LINEAR_AUTOMATION_ENABLED_ROUTES = Object.freeze({
-  triage: true,
-  spec: false,
-  implement: false,
-});
 export const LINEAR_AUTOMATION_READ_LIMITS = Object.freeze({
   comments: 200,
   labels: 100,
@@ -53,6 +56,11 @@ const LINEAR_AUTOMATION_CODEX_ENV_KEYS = Object.freeze([
   "TMPDIR",
 ] as const);
 const execFileAsync = promisify(execFile);
+const OptionalNonBlankStringSchema = z.preprocess(
+  blankStringAsUndefined,
+  z.string().trim().min(1).optional(),
+);
+const OptionalEmailSchema = z.preprocess(blankStringAsUndefined, z.email().optional());
 
 const WorkerEnvironmentSchema = z
   .object({
@@ -65,6 +73,10 @@ const WorkerEnvironmentSchema = z
     HARNESS_WORKER_PORT: z.string().regex(/^\d+$/).default("8080"),
     HARNESS_WORKER_INSTANCE_ID: z.string().trim().min(1).optional(),
     HARNESS_APP_VERSION: z.string().trim().min(1).optional(),
+    HARNESS_REPOSITORY_ROOT: OptionalNonBlankStringSchema,
+    GITHUB_TOKEN: OptionalNonBlankStringSchema,
+    GIT_AUTHOR_NAME: OptionalNonBlankStringSchema,
+    GIT_AUTHOR_EMAIL: OptionalEmailSchema,
   })
   .passthrough()
   .superRefine((environment, ctx) => {
@@ -86,6 +98,10 @@ const WorkerEnvironmentSchema = z
     }
   });
 
+function blankStringAsUndefined(value: unknown): unknown {
+  return typeof value === "string" && value.trim() === "" ? undefined : value;
+}
+
 export type LinearAutomationWorkerEnvironment = Readonly<{
   linearApiKey: string;
   inngestEventKey?: string;
@@ -96,6 +112,11 @@ export type LinearAutomationWorkerEnvironment = Readonly<{
   port: number;
   instanceId: string;
   appVersion?: string;
+  spec?: Readonly<{
+    repositoryRoot: string;
+    githubToken: string;
+    gitAuthor: Readonly<{ name: string; email: string }>;
+  }>;
 }>;
 
 export type LinearAutomationFunctions = Readonly<{
@@ -113,11 +134,38 @@ export type LinearAutomationWorker = Readonly<{
 
 export function parseLinearAutomationWorkerEnvironment(
   environment: NodeJS.ProcessEnv,
+  options: Readonly<{ specEnabled?: boolean }> = {},
 ): LinearAutomationWorkerEnvironment {
   const parsed = WorkerEnvironmentSchema.parse(environment);
   const port = Number(parsed.HARNESS_WORKER_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("HARNESS_WORKER_PORT must be an integer from 1 to 65535.");
+  }
+  let spec: LinearAutomationWorkerEnvironment["spec"];
+  if (options.specEnabled) {
+    const required = [
+      ["HARNESS_REPOSITORY_ROOT", parsed.HARNESS_REPOSITORY_ROOT],
+      ["GITHUB_TOKEN", parsed.GITHUB_TOKEN],
+      ["GIT_AUTHOR_NAME", parsed.GIT_AUTHOR_NAME],
+      ["GIT_AUTHOR_EMAIL", parsed.GIT_AUTHOR_EMAIL],
+    ] as const;
+    const missing = required.find(([, value]) => !value);
+    if (missing) {
+      throw new Error(`${missing[0]} is required when linearAutomation.spec is enabled.`);
+    }
+    if (!isAbsolute(parsed.HARNESS_REPOSITORY_ROOT ?? "")) {
+      throw new Error(
+        "HARNESS_REPOSITORY_ROOT must be an absolute path when linearAutomation.spec is enabled.",
+      );
+    }
+    spec = Object.freeze({
+      repositoryRoot: parsed.HARNESS_REPOSITORY_ROOT as string,
+      githubToken: parsed.GITHUB_TOKEN as string,
+      gitAuthor: Object.freeze({
+        name: parsed.GIT_AUTHOR_NAME as string,
+        email: parsed.GIT_AUTHOR_EMAIL as string,
+      }),
+    });
   }
 
   return Object.freeze({
@@ -130,6 +178,7 @@ export function parseLinearAutomationWorkerEnvironment(
     port,
     instanceId: parsed.HARNESS_WORKER_INSTANCE_ID ?? hostname(),
     ...(parsed.HARNESS_APP_VERSION ? { appVersion: parsed.HARNESS_APP_VERSION } : {}),
+    ...(spec ? { spec } : {}),
   });
 }
 
@@ -179,14 +228,30 @@ async function checkCodexLogin(
 
 export function createLinearAutomationFunctions(input: {
   client: Inngest.Any;
-  linear: LinearTriageService & LinearIssuePollerLinear;
-  agent: Agent;
+  linear: LinearTriageService & LinearIssuePollerLinear & LinearSpecService;
+  triageAgent: Agent;
+  specAgent?: Agent;
   settings: LinearAutomationSettings;
+  repository?: RepositoryService;
+  github?: GitHubPublicationService;
+  githubRepository?: ReturnType<typeof parseGitHubRemote>;
 }): LinearAutomationFunctions {
-  // The route map follows the consumers in this composition, not target-repo config.
+  const specEnabled = Boolean(input.settings.spec);
+  if (
+    specEnabled &&
+    (!input.specAgent || !input.repository || !input.github || !input.githubRepository)
+  ) {
+    throw new Error(
+      "The enabled Linear Spec route requires its agent, repository, and GitHub publication services.",
+    );
+  }
   const readiness = Object.freeze({
     ...input.settings.readiness,
-    enabledRoutes: LINEAR_AUTOMATION_ENABLED_ROUTES,
+    enabledRoutes: Object.freeze({
+      triage: true,
+      spec: specEnabled,
+      implement: false,
+    }),
   });
   const poller = createLinearIssuePoller({
     client: input.client,
@@ -205,7 +270,7 @@ export function createLinearAutomationFunctions(input: {
   const triage = createLinearTriageFunction({
     client: input.client,
     linear: input.linear,
-    agent: input.agent,
+    agent: input.triageAgent,
     config: {
       readiness,
       workspace: input.settings.workspace,
@@ -216,10 +281,34 @@ export function createLinearAutomationFunctions(input: {
       },
     },
   });
+  const spec =
+    input.settings.spec &&
+    input.specAgent &&
+    input.repository &&
+    input.github &&
+    input.githubRepository
+      ? createLinearSpecFunction({
+          client: input.client,
+          linear: input.linear,
+          agent: input.specAgent,
+          repository: input.repository,
+          github: input.github,
+          config: {
+            readiness,
+            baseRef: input.settings.spec.baseRef,
+            execution: {
+              model: input.settings.spec.model,
+              modelReasoningEffort: input.settings.spec.modelReasoningEffort,
+              maxRuntimeMs: input.settings.spec.maxRuntimeMs,
+            },
+            githubRepository: input.githubRepository,
+          },
+        })
+      : null;
 
   return Object.freeze({
     client: input.client,
-    functions: Object.freeze([poller, router, triage]),
+    functions: Object.freeze([poller, router, triage, ...(spec ? [spec] : [])]),
     readiness,
   });
 }
@@ -282,14 +371,15 @@ export async function runLinearAutomationWorker(input: {
   log?: (message: string) => void;
 }): Promise<void> {
   const processEnvironment = input.environment ?? process.env;
-  const environment = parseLinearAutomationWorkerEnvironment(processEnvironment);
+  const baseEnvironment = parseLinearAutomationWorkerEnvironment(processEnvironment);
   const settings = resolveLinearAutomationSettings({ workspace: input.workspace });
-  if (settings.triage.agent === "codex") {
-    await verifyLinearAutomationCodexAuthentication({
-      environment: processEnvironment,
-      codexExecutable: settings.triage.codexPathOverride,
-    });
-  }
+  const environment = settings.spec
+    ? parseLinearAutomationWorkerEnvironment(processEnvironment, { specEnabled: true })
+    : baseEnvironment;
+  await verifyLinearAutomationCodexAuthentication({
+    environment: processEnvironment,
+    codexExecutable: settings.codexPathOverride,
+  });
   const client = new Inngest({
     id: LINEAR_AUTOMATION_APP_ID,
     eventKey: environment.inngestEventKey,
@@ -302,16 +392,47 @@ export async function runLinearAutomationWorker(input: {
     apiKey: environment.linearApiKey,
     limits: LINEAR_AUTOMATION_READ_LIMITS,
   });
-  const agent = createAgentProvider({
+  const codexEnvironment = linearAutomationCodexEnvironment(processEnvironment);
+  const triageAgent = createAgentProvider({
     provider: settings.triage.agent,
-    codexPathOverride: settings.triage.codexPathOverride,
-    codexEnvironment: linearAutomationCodexEnvironment(processEnvironment),
+    codexPathOverride: settings.codexPathOverride,
+    codexEnvironment,
   });
+  const specAgent = settings.spec
+    ? createAgentProvider({
+        provider: settings.spec.agent,
+        codexPathOverride: settings.codexPathOverride,
+        codexEnvironment,
+      })
+    : undefined;
+  let repository: RepositoryService | undefined;
+  let github: GitHubPublicationService | undefined;
+  let githubRepository: ReturnType<typeof parseGitHubRemote> | undefined;
+  if (settings.spec && environment.spec) {
+    githubRepository = linearAutomationGitHubRepository(settings.spec.repositoryRuns.remote);
+    const paths = linearAutomationRepositoryPaths({
+      repositoryRoot: environment.spec.repositoryRoot,
+      remote: settings.spec.repositoryRuns.remote,
+    });
+    repository = createRepository({
+      ...settings.spec.repositoryRuns,
+      controllerWorkspace: paths.controllerWorkspace,
+      poolDirectory: paths.poolDirectory,
+    });
+    github = createGitHubPublication({
+      token: environment.spec.githubToken,
+      author: environment.spec.gitAuthor,
+    });
+  }
   const app = createLinearAutomationFunctions({
     client,
     linear,
-    agent,
+    triageAgent,
+    specAgent,
     settings,
+    repository,
+    github,
+    githubRepository,
   });
   const worker = await startLinearAutomationWorker({
     app,
@@ -323,6 +444,24 @@ export async function runLinearAutomationWorker(input: {
     `Linear automation worker connected (${app.functions.length} functions; health ${worker.healthUrl}).`,
   );
   await worker.closed;
+}
+
+export function linearAutomationRepositoryPaths(input: {
+  repositoryRoot: string;
+  remote: string;
+}): Readonly<{ controllerWorkspace: string; poolDirectory: string }> {
+  if (!isAbsolute(input.repositoryRoot)) {
+    throw new Error("Linear automation repository root must be absolute.");
+  }
+  const namespace = createHash("sha256").update(input.remote.trim()).digest("hex").slice(0, 16);
+  return Object.freeze({
+    controllerWorkspace: join(input.repositoryRoot, namespace, "controller"),
+    poolDirectory: join(input.repositoryRoot, namespace, "pool"),
+  });
+}
+
+export function linearAutomationGitHubRepository(remote: string) {
+  return parseGitHubRemote(remote);
 }
 
 function createHealthServer(readConnectionState: () => ConnectionState): Server {

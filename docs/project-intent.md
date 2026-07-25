@@ -91,9 +91,11 @@ a central lifecycle to prepare for hypothetical work.
 The current Linear automation follows this shape directly: a self-hosted
 Inngest poller emits revision-scoped events, a readiness operation reloads
 Linear truth and chooses a route, and an independent triage consumer projects
-its decision through the standalone Linear module. Linear Backlog remains the
-durable work queue; the delivery layer keeps no second cursor or lifecycle
-store.
+its decision through the standalone Linear module. The optional independent
+Spec consumer composes the provider-neutral Spec operation, isolated repository
+runs, and GitHub publication behind a thin durable function. Linear Backlog and
+Open readiness remain the durable work queues; the delivery layer keeps no
+second cursor or lifecycle store.
 
 Target repositories remain execution sandboxes and Git materialization points:
 they own `harness.json`, the harness shim, source, tests, local skill installs,

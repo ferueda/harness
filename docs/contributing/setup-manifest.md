@@ -21,13 +21,15 @@ artifact lifecycle, and directory ownership.
 
 `harness linear worker` reads stable project, team, workflow-state, Agent-action
 label, and Agent Ready permission IDs from the target repository's
-`linearAutomation` section.
-The first consumer requires `triage.agent: "codex"` and also accepts a timeout
-plus optional model and reasoning overrides. `repositoryRuns` defines the
-credential-free Git remote, pool size, and idempotent setup command used by
-write-capable consumers. Unsupported providers and invalid repository setup
-fail during startup configuration loading, before Connect accepts work. These
-sections do not contain secrets.
+`linearAutomation` section. Triage requires `triage.agent: "codex"` and accepts
+a timeout plus optional model and reasoning overrides. The optional
+`linearAutomation.spec` profile enables Spec work and requires its model,
+reasoning effort, and timeout explicitly. It also requires `repositoryRuns`,
+which defines the credential-free GitHub remote, pool size, and idempotent
+setup command used by write-capable consumers. Unsupported providers,
+incomplete execution profiles, invalid repository setup, and unusable
+publication remotes fail during startup configuration loading, before Connect
+accepts work. These sections do not contain secrets.
 
 The worker requires `LINEAR_API_KEY`. Self-hosted Inngest requires
 `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `INNGEST_DEV=0`, and
@@ -37,6 +39,11 @@ keys or a base URL. `HARNESS_WORKER_HOST` and `HARNESS_WORKER_PORT` default to
 `0.0.0.0:8080`. `HARNESS_WORKER_INSTANCE_ID` and `HARNESS_APP_VERSION` are
 optional deployment metadata. See [Linear automation](./linear-automation.md)
 for the self-hosted deployment commands.
+
+When Spec is enabled, the worker also requires an absolute
+`HARNESS_REPOSITORY_ROOT`, `GITHUB_TOKEN`, `GIT_AUTHOR_NAME`, and
+`GIT_AUTHOR_EMAIL`. They remain worker-only and are not forwarded to the Codex
+agent process.
 
 ## Install and update
 
@@ -109,7 +116,7 @@ Git hooks.
 | `harness.json` in a target repo                                                                     | `harness init`                                                                                                                                                 | Target repo config                                                         | Target repo decides                  | Stores repo-local defaults such as base branch and default agent.                                                                                                                                           |
 | `.harness/bin/harness` in a target repo                                                             | `harness init`                                                                                                                                                 | Target repo local shim                                                     | Ignored; do not commit               | Points back to the harness checkout that initialized the repo.                                                                                                                                              |
 | `.harness/runs/reviews/<run-id>/` in a workspace                                                    | `harness run change-review`, `harness run plan-review`, dry-run review commands                                                                                | Workspace-local run state, either external target repo or harness checkout | Ignored; do not commit               | Holds context, prompts, reviewer JSON, streams, events, `summary.md`, and `meta.json`.                                                                                                                      |
-| Protected Linear automation environment file outside a repo                                         | Deployment operator                                                                                                                                            | Local deployment secrets                                                   | User data; do not commit             | Holds Linear, Inngest, and optional Codex keys with owner-only permissions. Stable IDs stay in target-repo `harness.json`.                                                                                  |
+| Protected Linear automation environment file outside a repo                                         | Deployment operator                                                                                                                                            | Local deployment secrets                                                   | User data; do not commit             | Holds Linear, Inngest, optional Codex, and enabled GitHub publication values with owner-only permissions. Stable IDs stay in target-repo `harness.json`.                                                    |
 | Compose volumes for Inngest SQLite, repository data, package caches, and optional Codex credentials | `compose.linear-automation.yaml`                                                                                                                               | Local deployment state                                                     | User data; do not commit             | Preserves Inngest history, Grove leases and warm ignored dependencies, package downloads, and unattended Codex login across normal container restarts.                                                      |
 | `.agents/skills/` in a target repo                                                                  | `harness skills install`                                                                                                                                       | Target repo local skill installs                                           | Target repo decides                  | Live installs copy packaged skills into the target repo.                                                                                                                                                    |
 | `~/.codex/state_5.sqlite`                                                                           | Codex CLI                                                                                                                                                      | User-level Codex state                                                     | Do not commit                        | Source of truth for Codex session indexing.                                                                                                                                                                 |

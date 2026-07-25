@@ -11,10 +11,20 @@ const LinearAutomationTriageSchema = z
   })
   .strict();
 
+const LinearAutomationSpecSchema = z
+  .object({
+    agent: z.literal("codex"),
+    model: z.string().trim().min(1),
+    modelReasoningEffort: z.enum(AGENT_REASONING_EFFORTS),
+    maxRuntimeMs: z.number().int().positive(),
+  })
+  .strict();
+
 export const LinearAutomationConfigSchema = z
   .object({
     readiness: LinearReadinessMappingSchema,
     triage: LinearAutomationTriageSchema,
+    spec: LinearAutomationSpecSchema.optional(),
   })
   .strict();
 

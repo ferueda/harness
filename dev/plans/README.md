@@ -2,7 +2,7 @@
 
 ## Active queue
 
-No active plans.
+- [FER-267 — Deliver the independent Linear Spec consumer](260725-fer-267-spec-consumer.md)
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
