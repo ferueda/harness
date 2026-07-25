@@ -23,6 +23,7 @@ const LinearReadinessMappingShape = {
       implement: z.string().trim().min(1),
     })
     .strict(),
+  agentReadyLabelId: z.string().trim().min(1),
 } as const;
 
 export const LinearReadinessMappingSchema = z
@@ -68,7 +69,7 @@ export type LinearReadinessDecision =
   | (ReadinessBase &
       Readonly<{
         kind: "wait";
-        reason: "projection-repair" | "blocked";
+        reason: "projection-repair" | "awaiting-agent-ready" | "blocked";
       }>)
   | (ReadinessBase &
       Readonly<{
@@ -102,6 +103,7 @@ export function classifyLinearReadiness(input: {
   }
 
   const actions = presentAgentActions(context, config);
+  const agentReady = hasAgentReady(context, config);
   const stateId = context.state.id;
   if (stateId === config.stateIds.backlog) {
     if (actions.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
@@ -114,6 +116,9 @@ export function classifyLinearReadiness(input: {
     if (actions.length > 1) {
       return { ...base, kind: "invalid", reason: "conflicting-agent-action" };
     }
+    if (!agentReady) {
+      return { ...base, kind: "wait", reason: "awaiting-agent-ready" };
+    }
     if (hasUnresolvedBlocker(context, config)) {
       return { ...base, kind: "wait", reason: "blocked" };
     }
@@ -121,19 +126,27 @@ export function classifyLinearReadiness(input: {
     return routeDecision(route, config, snapshotGeneration);
   }
   if (stateId === config.stateIds.inProgress) {
-    if (actions.length > 1) return { ...base, kind: "wait", reason: "projection-repair" };
+    if (actions.length > 1 || agentReady) {
+      return { ...base, kind: "wait", reason: "projection-repair" };
+    }
     return { ...base, kind: "ignore", reason: "already-claimed" };
   }
   if (stateId === config.stateIds.needsInput) {
-    if (actions.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
+    if (actions.length > 0 || agentReady) {
+      return { ...base, kind: "wait", reason: "projection-repair" };
+    }
     return { ...base, kind: "ignore", reason: "needs-input" };
   }
   if (stateId === config.stateIds.needsReview) {
-    if (actions.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
+    if (actions.length > 0 || agentReady) {
+      return { ...base, kind: "wait", reason: "projection-repair" };
+    }
     return { ...base, kind: "ignore", reason: "needs-review" };
   }
   if (terminalStateIds(config).has(stateId)) {
-    if (actions.length > 0) return { ...base, kind: "wait", reason: "projection-repair" };
+    if (actions.length > 0 || agentReady) {
+      return { ...base, kind: "wait", reason: "projection-repair" };
+    }
     return { ...base, kind: "ignore", reason: "terminal" };
   }
   return { ...base, kind: "invalid", reason: "unknown-state" };
@@ -145,6 +158,7 @@ export function linearReadinessSnapshotGeneration(
 ): string {
   const config = LinearReadinessConfigSchema.parse(configInput);
   const relevantLabelIds = presentAgentActions(context, config).toSorted();
+  const agentReady = hasAgentReady(context, config);
   const blockers = context.blockedBy
     .map((issue) => ({ issueId: issue.id, stateId: issue.state.id }))
     .toSorted((left, right) =>
@@ -159,6 +173,7 @@ export function linearReadinessSnapshotGeneration(
     stateId: context.state.id,
     updatedAt: context.updatedAt,
     agentActionLabelIds: relevantLabelIds,
+    agentReady,
     blockers,
     completeness: {
       labelsTruncated: context.completeness.labelsTruncated,
@@ -184,6 +199,10 @@ function presentAgentActions(context: LinearIssueContext, config: LinearReadines
   return [...new Set(context.labels.map((label) => label.id).filter((id) => configured.has(id)))];
 }
 
+function hasAgentReady(context: LinearIssueContext, config: LinearReadinessConfig): boolean {
+  return context.labels.some((label) => label.id === config.agentReadyLabelId);
+}
+
 function hasUnresolvedBlocker(context: LinearIssueContext, config: LinearReadinessConfig): boolean {
   const terminal = terminalStateIds(config);
   return context.blockedBy.some((issue) => !terminal.has(issue.state.id));
@@ -205,4 +224,11 @@ function validateUniqueReadinessIds(
 ): void {
   requireUnique(Object.values(config.stateIds), ctx, ["stateIds"]);
   requireUnique(Object.values(config.agentActionLabelIds), ctx, ["agentActionLabelIds"]);
+  if (Object.values(config.agentActionLabelIds).includes(config.agentReadyLabelId)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["agentReadyLabelId"],
+      message: "Agent Ready ID must differ from Agent action label IDs",
+    });
+  }
 }

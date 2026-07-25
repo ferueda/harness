@@ -19,8 +19,9 @@ artifact lifecycle, and directory ownership.
 
 ## Linear automation worker
 
-`harness linear worker` reads stable project, team, workflow-state, and
-Agent-action label IDs from the target repository's `linearAutomation` section.
+`harness linear worker` reads stable project, team, workflow-state, Agent-action
+label, and Agent Ready permission IDs from the target repository's
+`linearAutomation` section.
 The first consumer requires `triage.agent: "codex"` and also accepts a timeout
 plus optional model and reasoning overrides. `repositoryRuns` defines the
 credential-free Git remote, pool size, and idempotent setup command used by

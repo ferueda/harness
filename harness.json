@@ -37,7 +37,8 @@
       "agentActionLabelIds": {
         "spec": "2e19103e-810d-4dc7-941d-7f79ef33b053",
         "implement": "774146a5-9974-47f4-82bb-c3a368ba6902"
-      }
+      },
+      "agentReadyLabelId": "7b9e942a-f7fc-4a3a-829c-980cb72d6715"
     },
     "triage": {
       "agent": "codex",

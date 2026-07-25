@@ -16,6 +16,7 @@ import {
   LINEAR_TRIAGE_FUNCTION_ID,
   LINEAR_TRIAGE_LABELS_STEP_ID,
   LINEAR_TRIAGE_LOAD_STEP_ID,
+  LINEAR_TRIAGE_PROJECT_CONFIRM_STEP_ID,
   LINEAR_TRIAGE_RELATIONS_STEP_ID,
   LINEAR_TRIAGE_RESOLVE_STEP_ID,
   LINEAR_TRIAGE_RETRIES,
@@ -48,6 +49,7 @@ const readiness: LinearReadinessConfig = {
     spec: "label-spec",
     implement: "label-implement",
   },
+  agentReadyLabelId: "label-agent-ready",
   enabledRoutes: {
     triage: true,
     spec: false,
@@ -132,6 +134,7 @@ function issueContext(
     teamId?: string;
     projectId?: string | null;
     actionLabelId?: string;
+    agentReady?: boolean;
     updatedAt?: string;
     completeness?: Partial<LinearIssueContext["completeness"]>;
   } = {},
@@ -159,6 +162,7 @@ function issueContext(
       ...(input.actionLabelId
         ? [{ id: input.actionLabelId, name: `Action ${input.actionLabelId}` }]
         : []),
+      ...(input.agentReady ? [{ id: readiness.agentReadyLabelId, name: "Agent Ready" }] : []),
     ],
     comments: [
       {
@@ -276,6 +280,7 @@ describe("independent Linear triage function", () => {
       "read:issue-1",
       "read:FER-300",
       "comment",
+      "read:issue-1",
       "blocker",
       "labels",
       "state",
@@ -319,8 +324,8 @@ describe("independent Linear triage function", () => {
     expect(output.ctx.step.sendEvent).not.toHaveBeenCalled();
   });
 
-  it("projects Spec as one agent action label followed by Open", async () => {
-    const context = issueContext();
+  it("projects Spec without carrying stale Agent Ready permission into Open", async () => {
+    const context = issueContext({ agentReady: true });
     const linear = fakeLinear({ roots: [context, context] });
     const agent = fakeAgent(success(READY_TO_SPEC));
     const output = await new InngestTestEngine({
@@ -329,11 +334,18 @@ describe("independent Linear triage function", () => {
     }).execute();
 
     expect(output.error).toBeUndefined();
-    expect(linear.order).toEqual(["read:issue-1", "read:issue-1", "comment", "labels", "state"]);
+    expect(linear.order).toEqual([
+      "read:issue-1",
+      "read:issue-1",
+      "comment",
+      "read:issue-1",
+      "labels",
+      "state",
+    ]);
     expect(linear.updateIssueLabels).toHaveBeenCalledWith({
       issueId: context.id,
       addLabelIds: [readiness.agentActionLabelIds.spec],
-      removeLabelIds: [readiness.agentActionLabelIds.implement],
+      removeLabelIds: [readiness.agentActionLabelIds.implement, readiness.agentReadyLabelId],
     });
     expect(linear.updateIssueState).toHaveBeenCalledWith({
       issueId: context.id,
@@ -344,6 +356,7 @@ describe("independent Linear triage function", () => {
     expect(linear.ensureComment.mock.calls[0]?.[0].body).toContain(
       "**Why Spec:** The next useful deliverable is a technical spec.",
     );
+    expect(agent.run.mock.calls[0]?.[0].prompt).not.toContain("Agent Ready");
   });
 
   it("projects Needs Input by clearing agent actions before moving to its status", async () => {
@@ -356,7 +369,14 @@ describe("independent Linear triage function", () => {
     }).execute();
 
     expect(output.error).toBeUndefined();
-    expect(linear.order).toEqual(["read:issue-1", "read:issue-1", "comment", "labels", "state"]);
+    expect(linear.order).toEqual([
+      "read:issue-1",
+      "read:issue-1",
+      "comment",
+      "read:issue-1",
+      "labels",
+      "state",
+    ]);
     expect(linear.updateIssueLabels).toHaveBeenCalledWith({
       issueId: context.id,
       addLabelIds: [],
@@ -398,6 +418,7 @@ describe("independent Linear triage function", () => {
       "read:issue-1",
       "read:FER-400",
       "comment",
+      "read:issue-1",
       "labels",
       "duplicate",
     ]);
@@ -509,6 +530,51 @@ describe("independent Linear triage function", () => {
     expect(linear.ensureComment).not.toHaveBeenCalled();
     expect(linear.updateIssueLabels).not.toHaveBeenCalled();
     expect(linear.updateIssueState).not.toHaveBeenCalled();
+  });
+
+  it("preserves Agent Ready granted after confirmation and before projection", async () => {
+    const initial = issueContext();
+    const manuallyReleased = issueContext({
+      stateId: readiness.stateIds.open,
+      actionLabelId: readiness.agentActionLabelIds.implement,
+      agentReady: true,
+      updatedAt: "2026-07-20T10:01:00.000Z",
+    });
+    const linear = fakeLinear({ roots: [initial, initial, manuallyReleased] });
+    const agent = fakeAgent(success(READY_TO_IMPLEMENT));
+    const output = await new InngestTestEngine({
+      function: triageFunction(linear.service, agent.agent),
+      events: [workEvent(initial)],
+    }).execute();
+
+    expect(output.result).toEqual({
+      outcome: "stale",
+      reason: "not-triage-ready",
+      issueId: initial.id,
+    });
+    expect(linear.order).toEqual(["read:issue-1", "read:issue-1", "comment", "read:issue-1"]);
+    expect(linear.updateIssueLabels).not.toHaveBeenCalled();
+    expect(linear.updateIssueState).not.toHaveBeenCalled();
+  });
+
+  it("completes projection when its own comment reaches the comment read limit", async () => {
+    const initial = issueContext();
+    const afterComment = issueContext({ completeness: { commentsTruncated: true } });
+    const linear = fakeLinear({ roots: [initial, initial, afterComment] });
+    const agent = fakeAgent(success(READY_TO_IMPLEMENT));
+    const output = await new InngestTestEngine({
+      function: triageFunction(linear.service, agent.agent),
+      events: [workEvent(initial)],
+    }).execute();
+
+    expect(output.result).toEqual({
+      outcome: "projected",
+      decision: "ready-for-agent",
+      agentAction: "implement",
+      issueId: initial.id,
+    });
+    expect(linear.updateIssueLabels).toHaveBeenCalledOnce();
+    expect(linear.updateIssueState).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -669,6 +735,7 @@ describe("independent Linear triage function", () => {
       LINEAR_TRIAGE_LOAD_STEP_ID,
       LINEAR_TRIAGE_CONFIRM_STEP_ID,
       LINEAR_TRIAGE_RESOLVE_STEP_ID,
+      LINEAR_TRIAGE_PROJECT_CONFIRM_STEP_ID,
     ]) {
       expect(output.ctx.step.run).toHaveBeenCalledWith(stepId, expect.any(Function));
     }
