@@ -8,12 +8,15 @@ import {
 } from "@ferueda/grove";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { RepositoryRunsConfigSchema } from "./config-schema.ts";
+import { createRepositoryCheckpoint } from "./checkpoint.ts";
 import { normalizeRepositoryError, RepositoryError } from "./error.ts";
 import { ensureController, inspectGitChanges, resolveRemoteBase } from "./git.ts";
 import { runRepositorySetup } from "./setup.ts";
 import type {
   CreateRepositoryOptions,
   RepositoryBase,
+  RepositoryCheckpoint,
+  RepositoryCheckpointInput,
   RepositoryCleanupResult,
   RepositoryRun,
   RepositoryService,
@@ -140,6 +143,26 @@ export function createRepository(options: CreateRepositoryOptions): RepositorySe
     }
   }
 
+  async function checkpointRun(input: RepositoryCheckpointInput): Promise<RepositoryCheckpoint> {
+    try {
+      const grove = await getGrove();
+      const lease = await grove.inspect(input.run.id);
+      if (!lease) {
+        throw new RepositoryError(`Repository run is not leased: ${input.run.id}`, "run_conflict");
+      }
+      assertRunLease(lease, input.run, controllerWorkspace, poolDirectory);
+      if (lease.state !== "leased") {
+        throw new RepositoryError(
+          `Repository run ${input.run.id} cannot checkpoint from Grove state ${lease.state}.`,
+          "run_conflict",
+        );
+      }
+      return await createRepositoryCheckpoint(input);
+    } catch (error) {
+      throw normalizeRepositoryError("checkpoint", error);
+    }
+  }
+
   async function cleanupRun(run: RepositoryRun): Promise<RepositoryCleanupResult> {
     try {
       const grove = await getGrove();
@@ -187,7 +210,13 @@ export function createRepository(options: CreateRepositoryOptions): RepositorySe
     }
   }
 
-  return Object.freeze({ resolveBase, prepareRun, inspectChanges, cleanupRun });
+  return Object.freeze({
+    resolveBase,
+    prepareRun,
+    inspectChanges,
+    checkpointRun,
+    cleanupRun,
+  });
 }
 
 type RunIdentity = Readonly<{
@@ -407,6 +436,8 @@ export type {
   RepositoryBase,
   RepositoryChange,
   RepositoryChangeStatus,
+  RepositoryCheckpoint,
+  RepositoryCheckpointInput,
   RepositoryCleanupResult,
   RepositoryRun,
   RepositoryService,

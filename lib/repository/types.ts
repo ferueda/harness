@@ -35,10 +35,30 @@ export type RepositoryCleanupResult = Readonly<{
   status: "released" | "already-clean";
 }>;
 
+export type RepositoryCheckpoint = Readonly<{
+  version: 1;
+  id: string;
+  runId: string;
+  baseSha: string;
+  parentRevision: string;
+  revision: string;
+  branch: string;
+  changes: readonly RepositoryChange[];
+}>;
+
+export type RepositoryCheckpointInput = Readonly<{
+  id: string;
+  run: RepositoryRun;
+  expectedParentRevision: string;
+  expectedChanges: readonly RepositoryChange[];
+  message: string;
+}>;
+
 export type RepositoryService = Readonly<{
   resolveBase(input: { baseRef: string }): Promise<RepositoryBase>;
   prepareRun(input: { id: string; base: RepositoryBase; branch: string }): Promise<RepositoryRun>;
   inspectChanges(run: RepositoryRun): Promise<readonly RepositoryChange[]>;
+  checkpointRun(input: RepositoryCheckpointInput): Promise<RepositoryCheckpoint>;
   cleanupRun(run: RepositoryRun): Promise<RepositoryCleanupResult>;
 }>;
 

@@ -95,6 +95,9 @@ function specApp(options: Readonly<{ includeSpecAgent?: boolean }> = {}) {
     inspectChanges: async () => {
       throw new Error("Unexpected repository call");
     },
+    checkpointRun: async () => {
+      throw new Error("Unexpected repository call");
+    },
     cleanupRun: async () => {
       throw new Error("Unexpected repository call");
     },
