@@ -254,6 +254,9 @@ function fakeRepository(
         order.push("inspect");
         return changes;
       }),
+      checkpointRun: vi.fn<RepositoryService["checkpointRun"]>(async () => {
+        throw new Error("Unexpected repository checkpoint call");
+      }),
       cleanupRun: vi.fn<RepositoryService["cleanupRun"]>(async () => {
         order.push("cleanup");
         return { status: "released" as const };

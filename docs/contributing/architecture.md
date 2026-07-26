@@ -72,7 +72,7 @@ first real flow needs:
 | ---------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | Service primitive            | One external system's auth, SDK quirks, pagination, errors, and plain JSON-safe data        | Prompts, providers, Inngest, or domain workflow policy               |
 | Domain operation             | Prompt or decision policy, normalized input, strict result validation, and provenance       | Tracker lifecycle, delivery retries, or concrete provider wiring     |
-| Repository/compute primitive | Isolated execution, resumable workspace handles, change inspection, and cleanup             | Publication, Linear, Inngest, Spec, implementation, or domain policy |
+| Repository/compute primitive | Isolated workspaces, change inspection, local checkpoints, and cleanup                      | Publication, Linear, Inngest, Spec, implementation, or domain policy |
 | Publication primitive        | Approved changes, authenticated commit/push, external artifact identity, and retry recovery | Workspace creation, cleanup, tracker lifecycle, or domain policy     |
 | Projection adapter           | Guarded mapping from one domain result to external-system writes                            | Prompt policy, delivery scheduling, or a shared lifecycle engine     |
 | Execution consumer           | Triggering, fresh reads, claims, durable steps, retries, ordering, coordination, and traces | SDK pagination, prompt rendering, Git commands, or domain choices    |
@@ -141,7 +141,7 @@ real consumers expose the same stable contract.
 | `lib/linear/`            | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
 | `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
 | `lib/spec/`              | Spec prompt, structured result schema, issue-key artifact validation, and provider-independent operation        |
-| `lib/repository/`        | Grove-backed writable repository leases, safe setup, change inspection, and reset cleanup                       |
+| `lib/repository/`        | Grove leases, safe setup, change inspection, local checkpoints, and reset cleanup                               |
 | `lib/github/`            | GitHub remote parsing, credential-safe commit and push, exact PR publication, and retry recovery                |
 | `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
 | `lib/skills/`            | Packaged-skill installation support                                                                             |
@@ -201,8 +201,10 @@ returns successful worktrees to a reusable pool.
 Setup runs with a fixed environment allowlist, so Linear, Inngest, Codex, and
 GitHub credentials are not passed to target-repository scripts. Reset cleanup
 removes tracked and ordinary untracked work while retaining ignored dependency
-caches such as `node_modules`. The module does not commit, push, open pull
-requests, update Linear, or choose Spec and implementation policy.
+caches such as `node_modules`. A checkpoint turns one exact caller-approved
+change set into a marked immutable local commit while keeping the lease active;
+its durable identity contains no workspace path. The module does not push, open
+pull requests, update Linear, or choose Spec and implementation policy.
 
 ### GitHub publication boundary
 

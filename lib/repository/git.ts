@@ -117,21 +117,57 @@ export async function inspectGitChanges(workspace: string): Promise<readonly Rep
   return parsePorcelain(output);
 }
 
+export async function inspectStagedGitChanges(
+  workspace: string,
+  parentRevision: string,
+): Promise<readonly RepositoryChange[]> {
+  const output = await runGit(
+    workspace,
+    ["diff", "--cached", "--name-status", "-z", "-M", "-C", "--no-ext-diff", parentRevision],
+    "checkpoint_failed",
+  );
+  return parseNameStatus(output);
+}
+
+export async function inspectCommittedGitChanges(
+  workspace: string,
+  parentRevision: string,
+  revision: string,
+): Promise<readonly RepositoryChange[]> {
+  const output = await runGit(
+    workspace,
+    ["diff", "--name-status", "-z", "-M", "-C", "--no-ext-diff", parentRevision, revision],
+    "checkpoint_failed",
+  );
+  return parseNameStatus(output);
+}
+
 export async function runGit(
   workspace: string,
   args: readonly string[],
   errorCode: RepositoryErrorCode = "controller_failed",
+  options: {
+    acceptedExitCodes?: readonly number[];
+    environment?: Readonly<Record<string, string>>;
+  } = {},
 ): Promise<string> {
   try {
     const { stdout } = await execFileAsync("git", [...args], {
       cwd: workspace,
       encoding: "utf8",
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...options.environment },
       maxBuffer: 8 * 1024 * 1024,
     });
     return stdout.trimEnd();
   } catch (error) {
-    const record = error as Error & { stderr?: string | Buffer };
+    const record = error as Error & {
+      code?: unknown;
+      stdout?: string | Buffer;
+      stderr?: string | Buffer;
+    };
+    if (typeof record.code === "number" && options.acceptedExitCodes?.includes(record.code)) {
+      return String(record.stdout ?? "").trimEnd();
+    }
     const stderr = String(record.stderr ?? "").trim();
     throw new RepositoryError(
       stderr || (error instanceof Error ? error.message : String(error)),
@@ -198,4 +234,41 @@ function changeStatus(xy: string): RepositoryChangeStatus {
   if (xy.includes("D")) return "deleted";
   if (xy.includes("A")) return "added";
   return "modified";
+}
+
+function parseNameStatus(output: string): readonly RepositoryChange[] {
+  if (!output) return Object.freeze([]);
+
+  const fields = output.split("\0");
+  const changes: RepositoryChange[] = [];
+  for (let index = 0; index < fields.length;) {
+    const code = fields[index++];
+    if (!code) continue;
+    const status = nameStatus(code);
+    if (status === "renamed" || status === "copied") {
+      const previousPath = fields[index++];
+      const path = fields[index++];
+      if (!previousPath || !path) throw invalidNameStatus();
+      changes.push(Object.freeze({ path, previousPath, status }));
+      continue;
+    }
+    const path = fields[index++];
+    if (!path) throw invalidNameStatus();
+    changes.push(Object.freeze({ path, status }));
+  }
+  return Object.freeze(changes);
+}
+
+function nameStatus(code: string): RepositoryChangeStatus {
+  if (code.startsWith("R")) return "renamed";
+  if (code.startsWith("C")) return "copied";
+  if (code === "A") return "added";
+  if (code === "D") return "deleted";
+  if (code === "U") return "conflicted";
+  if (code === "M" || code === "T") return "modified";
+  throw invalidNameStatus();
+}
+
+function invalidNameStatus(): RepositoryError {
+  return new RepositoryError("Git returned an invalid change record.", "checkpoint_failed");
 }

@@ -395,6 +395,9 @@ const repository: RepositoryService = {
     };
   },
   inspectChanges: async () => [{ path: "dev/plans/FER-267.md", status: "untracked" as const }],
+  checkpointRun: async () => {
+    throw new Error("Unexpected repository checkpoint call");
+  },
   cleanupRun: async () => {
     projection.repositoryCleanups += 1;
     return { status: "released" };

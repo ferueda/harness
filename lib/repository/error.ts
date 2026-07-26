@@ -7,6 +7,7 @@ export const REPOSITORY_ERROR_CODES = [
   "pool_exhausted",
   "setup_failed",
   "inspect_failed",
+  "checkpoint_failed",
   "cleanup_failed",
 ] as const;
 
@@ -23,7 +24,7 @@ export class RepositoryError extends Error {
 }
 
 export function normalizeRepositoryError(
-  operation: "prepare" | "inspect" | "cleanup",
+  operation: "prepare" | "inspect" | "checkpoint" | "cleanup",
   error: unknown,
 ): RepositoryError {
   if (error instanceof RepositoryError) return error;
@@ -50,7 +51,9 @@ export function normalizeRepositoryError(
       ? "controller_failed"
       : operation === "inspect"
         ? "inspect_failed"
-        : "cleanup_failed";
+        : operation === "checkpoint"
+          ? "checkpoint_failed"
+          : "cleanup_failed";
   return new RepositoryError(`Repository ${operation} failed: ${message}`, code, {
     cause: error,
   });
