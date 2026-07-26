@@ -559,7 +559,10 @@ describe("independent Linear triage function", () => {
 
   it("completes projection when its own comment reaches the comment read limit", async () => {
     const initial = issueContext();
-    const afterComment = issueContext({ completeness: { commentsTruncated: true } });
+    const afterComment = issueContext({
+      updatedAt: "2026-07-20T10:01:00.000Z",
+      completeness: { commentsTruncated: true },
+    });
     const linear = fakeLinear({ roots: [initial, initial, afterComment] });
     const agent = fakeAgent(success(READY_TO_IMPLEMENT));
     const output = await new InngestTestEngine({
@@ -575,6 +578,33 @@ describe("independent Linear triage function", () => {
     });
     expect(linear.updateIssueLabels).toHaveBeenCalledOnce();
     expect(linear.updateIssueState).toHaveBeenCalledOnce();
+  });
+
+  it("does not treat its own rationale comment revision as stale", async () => {
+    const initial = issueContext();
+    const afterComment = issueContext({ updatedAt: "2026-07-20T10:01:00.000Z" });
+    const linear = fakeLinear({ roots: [initial, initial, afterComment] });
+    const agent = fakeAgent(success(READY_TO_IMPLEMENT));
+    const output = await new InngestTestEngine({
+      function: triageFunction(linear.service, agent.agent),
+      events: [workEvent(initial)],
+    }).execute();
+
+    expect(output.result).toMatchObject({
+      outcome: "projected",
+      decision: "ready-for-agent",
+      agentAction: "implement",
+    });
+    expect(linear.updateIssueLabels).toHaveBeenCalledWith({
+      issueId: initial.id,
+      addLabelIds: [readiness.agentActionLabelIds.implement],
+      removeLabelIds: [readiness.agentActionLabelIds.spec],
+    });
+    expect(linear.updateIssueState).toHaveBeenCalledWith({
+      issueId: initial.id,
+      expectedStateId: readiness.stateIds.backlog,
+      stateId: readiness.stateIds.open,
+    });
   });
 
   it.each([
