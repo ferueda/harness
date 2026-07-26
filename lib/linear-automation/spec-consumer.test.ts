@@ -183,7 +183,11 @@ function fakeLinear(initial: LinearIssueContext) {
     ) {
       throw new Error("state conflict");
     }
-    state.context = { ...state.context, state: workflowState(input.stateId) };
+    state.context = {
+      ...state.context,
+      state: workflowState(input.stateId),
+      updatedAt: "2026-07-25T10:01:00.000Z",
+    };
     return { changed: true, stateId: input.stateId };
   });
   const updateIssueLabels = vi.fn<LinearSpecService["updateIssueLabels"]>(async (input) => {
@@ -193,6 +197,7 @@ function fakeLinear(initial: LinearIssueContext) {
     state.context = {
       ...state.context,
       labels: [...state.context.labels.filter((label) => !removed.has(label.id)), ...added],
+      updatedAt: "2026-07-25T10:02:00.000Z",
     };
     return {
       submitted: true,
@@ -203,6 +208,10 @@ function fakeLinear(initial: LinearIssueContext) {
   const ensureComment = vi.fn<LinearSpecService["ensureComment"]>(async (input) => {
     state.order.push("comment");
     if (!state.comments.has(input.marker)) state.comments.set(input.marker, input.body);
+    state.context = {
+      ...state.context,
+      updatedAt: "2026-07-25T10:03:00.000Z",
+    };
     return { created: true, id: `comment-${state.comments.size}` };
   });
   return {

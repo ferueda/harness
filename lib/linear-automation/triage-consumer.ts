@@ -158,6 +158,7 @@ export function createLinearTriageFunction(input: {
       const projection = await step.run(LINEAR_TRIAGE_PROJECT_CONFIRM_STEP_ID, () =>
         loadEligibleIssue(input.linear, event.data, config.readiness, {
           requireCompleteComments: false,
+          requireOriginalSnapshot: false,
         }),
       );
       if (projection.kind === "ineligible") {
@@ -251,7 +252,13 @@ async function loadEligibleIssue(
   linear: Pick<LinearTriageService, "getIssueContext">,
   event: WorkRequestData,
   config: LinearReadinessConfig,
-  options: Readonly<{ requireCompleteComments: boolean }> = { requireCompleteComments: true },
+  options: Readonly<{
+    requireCompleteComments: boolean;
+    requireOriginalSnapshot: boolean;
+  }> = {
+    requireCompleteComments: true,
+    requireOriginalSnapshot: true,
+  },
 ): Promise<ObservedTriage> {
   const context = await linear.getIssueContext(event.issueId);
   if (context.id !== event.issueId || context.identifier !== event.issueIdentifier) {
@@ -274,7 +281,12 @@ async function loadEligibleIssue(
   ) {
     return { kind: "ineligible", reason: "not-triage-ready" };
   }
-  if (readiness.snapshotGeneration !== event.snapshotGeneration) {
+  // The rationale comment advances Linear's updatedAt. The final read still
+  // guards lifecycle authority, but must not reject the worker's own write.
+  if (
+    options.requireOriginalSnapshot &&
+    readiness.snapshotGeneration !== event.snapshotGeneration
+  ) {
     return { kind: "ineligible", reason: "stale-snapshot" };
   }
   return { kind: "eligible", context };
