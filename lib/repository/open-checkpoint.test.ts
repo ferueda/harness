@@ -291,6 +291,56 @@ test("rejects altered checkpoint trailers and preserves the altered commit", asy
   });
 });
 
+test("rejects annotated-tag and symbolic checkpoint refs without rewriting them", async () => {
+  const fixture = createFixture();
+  const created = await createCheckpoint(fixture, "open-indirect-ref");
+  const repository = createTestRepository(fixture);
+  const checkpointRef = checkpointRefFor(created.run.workspace);
+  git(created.run.workspace, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.com",
+    "tag",
+    "-a",
+    "indirect-checkpoint",
+    created.checkpoint.revision,
+    "-m",
+    "Indirect checkpoint ref",
+  ]);
+  const tagObject = git(created.run.workspace, ["rev-parse", "refs/tags/indirect-checkpoint"]);
+  git(created.run.workspace, ["update-ref", checkpointRef, tagObject]);
+
+  await expect(
+    repository.openCheckpoint({
+      checkpoint: created.checkpoint,
+      baseRef: created.base.baseRef,
+    }),
+  ).rejects.toMatchObject({ code: "run_conflict" });
+  expect(git(created.run.workspace, ["rev-parse", checkpointRef])).toBe(tagObject);
+  expect(git(created.run.workspace, ["cat-file", "-t", checkpointRef])).toBe("tag");
+  expect(repositoryState(created.run.workspace)).toEqual({
+    head: created.checkpoint.revision,
+    status: "",
+  });
+
+  git(created.run.workspace, ["update-ref", "-d", checkpointRef]);
+  git(created.run.workspace, ["symbolic-ref", checkpointRef, `refs/heads/${created.run.branch}`]);
+  await expect(
+    repository.openCheckpoint({
+      checkpoint: created.checkpoint,
+      baseRef: created.base.baseRef,
+    }),
+  ).rejects.toMatchObject({ code: "run_conflict" });
+  expect(git(created.run.workspace, ["symbolic-ref", checkpointRef])).toBe(
+    `refs/heads/${created.run.branch}`,
+  );
+  expect(repositoryState(created.run.workspace)).toEqual({
+    head: created.checkpoint.revision,
+    status: "",
+  });
+});
+
 type Fixture = Readonly<{
   root: string;
   remote: string;

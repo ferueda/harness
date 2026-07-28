@@ -340,13 +340,27 @@ async function readCheckpointRef(identity: CheckpointIdentity): Promise<string |
 }
 
 async function readCheckpointRevision(workspace: string, ref: string): Promise<string | null> {
-  const revision = await runGit(
+  const symbolicTarget = await runGit(
     workspace,
-    ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
+    ["symbolic-ref", "--quiet", ref],
     "checkpoint_failed",
     { acceptedExitCodes: [1] },
   );
-  return revision || null;
+  if (symbolicTarget) {
+    throw conflict("Repository checkpoint ref must directly name its checkpoint commit.");
+  }
+  const revision = await runGit(
+    workspace,
+    ["rev-parse", "--verify", "--quiet", ref],
+    "checkpoint_failed",
+    { acceptedExitCodes: [1] },
+  );
+  if (!revision) return null;
+  const objectType = await runGit(workspace, ["cat-file", "-t", revision], "checkpoint_failed");
+  if (objectType !== "commit") {
+    throw conflict("Repository checkpoint ref must directly name its checkpoint commit.");
+  }
+  return revision;
 }
 
 async function ensureCheckpointRef(identity: CheckpointIdentity, revision: string): Promise<void> {
