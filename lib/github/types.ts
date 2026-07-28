@@ -1,4 +1,4 @@
-import type { RepositoryChange, RepositoryRun } from "../repository/types.ts";
+import type { RepositoryChange, RepositoryCheckpoint, RepositoryRun } from "../repository/types.ts";
 
 export type GitHubRepositoryIdentity = Readonly<{
   owner: string;
@@ -27,8 +27,19 @@ export type PublishPullRequestInput = Readonly<{
   body: string;
 }>;
 
+export type PublishCheckpointPullRequestInput = Readonly<{
+  run: RepositoryRun;
+  checkpoint: RepositoryCheckpoint;
+  baseBranch: string;
+  title: string;
+  body: string;
+}>;
+
 export type GitHubPublicationService = Readonly<{
   publishPullRequest(input: PublishPullRequestInput): Promise<PublishedPullRequest>;
+  publishCheckpointPullRequest(
+    input: PublishCheckpointPullRequestInput,
+  ): Promise<PublishedPullRequest>;
 }>;
 
 export type GitHubPullRequestRecord = Readonly<{

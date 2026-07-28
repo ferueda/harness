@@ -1,12 +1,15 @@
 import { z } from "zod";
 import { createGitHubPullRequestClient } from "./client.ts";
-import { GitHubPublicationError } from "./error.ts";
+import { errorMessage, GitHubPublicationError } from "./error.ts";
 import {
   assertBranchName,
   createAuthenticatedGitTransport,
   preparePublicationCommit,
 } from "./git.ts";
 import { parseGitHubRemote } from "./remote.ts";
+import { verifyRepositoryCheckpoint } from "../repository/checkpoint.ts";
+import { RepositoryError } from "../repository/error.ts";
+import type { RepositoryCheckpoint, RepositoryRun } from "../repository/types.ts";
 import type {
   CreateGitHubPublicationOptions,
   GitHubPublicationAuthor,
@@ -16,8 +19,11 @@ import type {
   GitHubPullRequestRecord,
   GitPushTransport,
   PublishedPullRequest,
+  PublishCheckpointPullRequestInput,
   PublishPullRequestInput,
 } from "./types.ts";
+
+const FullGitShaSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
 
 const ChangeSchema = z
   .object({
@@ -35,22 +41,47 @@ const ChangeSchema = z
   })
   .strict();
 
+const RepositoryRunSchema = z
+  .object({
+    version: z.literal(1),
+    id: z.string().min(1),
+    workspace: z.string().min(1),
+    remote: z.string().min(1),
+    baseRef: z.string().min(1),
+    baseSha: FullGitShaSchema,
+    branch: z.string().min(1),
+  })
+  .strict();
+
+const RepositoryCheckpointSchema = z
+  .object({
+    version: z.literal(1),
+    id: z.string().min(1),
+    runId: z.string().min(1),
+    baseSha: FullGitShaSchema,
+    parentRevision: FullGitShaSchema,
+    revision: FullGitShaSchema,
+    branch: z.string().min(1),
+    changes: z.array(ChangeSchema).min(1),
+  })
+  .strict();
+
 const PublishPullRequestInputSchema = z
   .object({
-    run: z
-      .object({
-        version: z.literal(1),
-        id: z.string().min(1),
-        workspace: z.string().min(1),
-        remote: z.string().min(1),
-        baseRef: z.string().min(1),
-        baseSha: z.string().regex(/^[0-9a-f]{40,64}$/),
-        branch: z.string().min(1),
-      })
-      .strict(),
+    run: RepositoryRunSchema,
     expectedChanges: z.array(ChangeSchema).min(1),
     baseBranch: z.string().min(1),
     commitMessage: z.string().min(1),
+    title: z.string().trim().min(1),
+    body: z.string(),
+  })
+  .strict();
+
+const PublishCheckpointPullRequestInputSchema = z
+  .object({
+    run: RepositoryRunSchema,
+    checkpoint: RepositoryCheckpointSchema,
+    baseBranch: z.string().min(1),
     title: z.string().trim().min(1),
     body: z.string(),
   })
@@ -101,12 +132,7 @@ export function createGitHubPublicationForClient(input: {
     async publishPullRequest(request: PublishPullRequestInput): Promise<PublishedPullRequest> {
       const parsed = PublishPullRequestInputSchema.safeParse(request);
       if (!parsed.success) {
-        throw new GitHubPublicationError(
-          "invalid-input",
-          `GitHub publication input is invalid: ${parsed.error.issues
-            .map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`)
-            .join("; ")}`,
-        );
+        throw invalidPublicationInput(parsed.error);
       }
 
       const repository = parseGitHubRemote(parsed.data.run.remote);
@@ -117,48 +143,124 @@ export function createGitHubPublicationForClient(input: {
         author: author.data,
         commitMessage: parsed.data.commitMessage,
       });
-
-      await ensureRemoteBranch({
+      return publishExactPullRequest({
+        client: input.client,
         gitTransport: input.gitTransport,
         token,
-        workspace: parsed.data.run.workspace,
-        remote: repository.httpsRemote,
-        branch: parsed.data.run.branch,
+        repository,
+        run: parsed.data.run,
+        baseBranch: parsed.data.baseBranch,
+        title: parsed.data.title,
+        body: parsed.data.body,
         headSha,
       });
+    },
 
-      const lookup = Object.freeze({
-        repository,
-        baseBranch: parsed.data.baseBranch,
-        headBranch: parsed.data.run.branch,
-      });
-      const existing = await findExactPullRequest(input.client, lookup, headSha);
-      if (existing) return toPublishedPullRequest(existing);
-
-      try {
-        const created = await input.client.createPullRequest({
-          ...lookup,
-          title: parsed.data.title,
-          body: parsed.data.body,
-        });
-        assertExactPullRequest(created, lookup, headSha);
-        return toPublishedPullRequest(created);
-      } catch (creationError) {
-        try {
-          const recovered = await findExactPullRequest(input.client, lookup, headSha);
-          if (recovered) return toPublishedPullRequest(recovered);
-        } catch (lookupError) {
-          if (
-            lookupError instanceof GitHubPublicationError &&
-            lookupError.code === "github-conflict"
-          ) {
-            throw lookupError;
-          }
-        }
-        throw creationError;
+    async publishCheckpointPullRequest(
+      request: PublishCheckpointPullRequestInput,
+    ): Promise<PublishedPullRequest> {
+      const parsed = PublishCheckpointPullRequestInputSchema.safeParse(request);
+      if (!parsed.success) {
+        throw invalidPublicationInput(parsed.error);
       }
+
+      const repository = parseGitHubRemote(parsed.data.run.remote);
+      await assertBranchName(parsed.data.baseBranch, "base branch");
+      await assertPublishableCheckpoint(parsed.data.run, parsed.data.checkpoint);
+      return publishExactPullRequest({
+        client: input.client,
+        gitTransport: input.gitTransport,
+        token,
+        repository,
+        run: parsed.data.run,
+        baseBranch: parsed.data.baseBranch,
+        title: parsed.data.title,
+        body: parsed.data.body,
+        headSha: parsed.data.checkpoint.revision,
+      });
     },
   });
+}
+
+async function assertPublishableCheckpoint(
+  run: RepositoryRun,
+  checkpoint: RepositoryCheckpoint,
+): Promise<void> {
+  try {
+    await verifyRepositoryCheckpoint(run, checkpoint);
+  } catch (error) {
+    const code =
+      error instanceof RepositoryError
+        ? error.code === "invalid_input"
+          ? "invalid-input"
+          : error.code === "run_conflict"
+            ? "run-conflict"
+            : "git-failed"
+        : "git-failed";
+    throw new GitHubPublicationError(
+      code,
+      `Repository checkpoint cannot be published: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+async function publishExactPullRequest(input: {
+  client: GitHubPullRequestClient;
+  gitTransport: GitPushTransport;
+  token: string;
+  repository: GitHubPullRequestLookup["repository"];
+  run: RepositoryRun;
+  baseBranch: string;
+  title: string;
+  body: string;
+  headSha: string;
+}): Promise<PublishedPullRequest> {
+  await ensureRemoteBranch({
+    gitTransport: input.gitTransport,
+    token: input.token,
+    workspace: input.run.workspace,
+    remote: input.repository.httpsRemote,
+    branch: input.run.branch,
+    headSha: input.headSha,
+  });
+
+  const lookup = Object.freeze({
+    repository: input.repository,
+    baseBranch: input.baseBranch,
+    headBranch: input.run.branch,
+  });
+  const existing = await findExactPullRequest(input.client, lookup, input.headSha);
+  if (existing) return toPublishedPullRequest(existing);
+
+  try {
+    const created = await input.client.createPullRequest({
+      ...lookup,
+      title: input.title,
+      body: input.body,
+    });
+    assertExactPullRequest(created, lookup, input.headSha);
+    return toPublishedPullRequest(created);
+  } catch (creationError) {
+    try {
+      const recovered = await findExactPullRequest(input.client, lookup, input.headSha);
+      if (recovered) return toPublishedPullRequest(recovered);
+    } catch (lookupError) {
+      if (lookupError instanceof GitHubPublicationError && lookupError.code === "github-conflict") {
+        throw lookupError;
+      }
+    }
+    throw creationError;
+  }
+}
+
+function invalidPublicationInput(error: z.ZodError): GitHubPublicationError {
+  return new GitHubPublicationError(
+    "invalid-input",
+    `GitHub publication input is invalid: ${error.issues
+      .map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`)
+      .join("; ")}`,
+  );
 }
 
 async function ensureRemoteBranch(input: {
@@ -257,5 +359,6 @@ export type {
   GitHubPublicationAuthor,
   GitHubPublicationService,
   PublishedPullRequest,
+  PublishCheckpointPullRequestInput,
   PublishPullRequestInput,
 } from "./types.ts";

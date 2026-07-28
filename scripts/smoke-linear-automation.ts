@@ -422,6 +422,9 @@ const github: GitHubPublicationService = {
       merged: false,
     };
   },
+  publishCheckpointPullRequest: async () => {
+    throw new Error("Unexpected checkpoint publication");
+  },
 };
 
 async function stop(): Promise<void> {

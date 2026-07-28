@@ -109,6 +109,9 @@ function specApp(options: Readonly<{ includeSpecAgent?: boolean }> = {}) {
     publishPullRequest: async () => {
       throw new Error("Unexpected GitHub call");
     },
+    publishCheckpointPullRequest: async () => {
+      throw new Error("Unexpected GitHub checkpoint call");
+    },
   } satisfies GitHubPublicationService;
   const specSettings: LinearAutomationSettings = {
     ...settings,
