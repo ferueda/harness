@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpecRevisionResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "rationale", "responses", "questions"],
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": ["updated", "unchanged", "needs-input"]
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "responses": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["findingId", "disposition", "rationale", "evidence"],
+        "properties": {
+          "findingId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "disposition": {
+            "type": "string",
+            "enum": ["accepted", "adapted", "declined"]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "path", "lineStart", "lineEnd", "summary"],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": ["work-item", "artifact", "code", "docs", "test", "repo-state"]
+                },
+                "path": {
+                  "type": ["string", "null"],
+                  "minLength": 1
+                },
+                "lineStart": {
+                  "type": ["integer", "null"],
+                  "minimum": 1
+                },
+                "lineEnd": {
+                  "type": ["integer", "null"],
+                  "minimum": 1
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    }
+  }
+}
