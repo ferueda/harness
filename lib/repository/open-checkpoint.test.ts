@@ -341,6 +341,78 @@ test("rejects annotated-tag and symbolic checkpoint refs without rewriting them"
   });
 });
 
+test("rejects replacement commits and grafts without changing their altered workspace", async () => {
+  const fixture = createFixture();
+  const created = await createCheckpoint(fixture, "open-replacement");
+  const repository = createTestRepository(fixture);
+  const originalRevision = created.checkpoint.revision;
+  const originalMessage = git(created.run.workspace, [
+    "show",
+    "-s",
+    "--format=%B",
+    originalRevision,
+  ]);
+  writeFileSync(join(created.run.workspace, "spec.md"), "# Replaced content\n", "utf8");
+  git(created.run.workspace, ["add", "spec.md"]);
+  git(created.run.workspace, [
+    "-c",
+    "user.name=Harness",
+    "-c",
+    "user.email=harness@localhost",
+    "commit",
+    "--amend",
+    "--no-gpg-sign",
+    "--no-verify",
+    "--cleanup=verbatim",
+    "--author=Harness <harness@localhost>",
+    "-m",
+    originalMessage,
+  ]);
+  const replacementRevision = git(created.run.workspace, ["rev-parse", "HEAD"]);
+  git(created.run.workspace, ["replace", originalRevision, replacementRevision]);
+  git(created.run.workspace, [
+    "update-ref",
+    `refs/heads/${created.run.branch}`,
+    originalRevision,
+    replacementRevision,
+  ]);
+  expect(repositoryState(created.run.workspace)).toEqual({
+    head: originalRevision,
+    status: "",
+  });
+
+  await expect(
+    repository.openCheckpoint({
+      checkpoint: created.checkpoint,
+      baseRef: created.base.baseRef,
+    }),
+  ).rejects.toMatchObject({ code: "run_conflict" });
+  expect(git(created.run.workspace, ["rev-parse", `refs/replace/${originalRevision}`])).toBe(
+    replacementRevision,
+  );
+  expect(readFile(join(created.run.workspace, "spec.md"))).toBe("# Replaced content\n");
+  expect(repositoryState(created.run.workspace)).toEqual({
+    head: originalRevision,
+    status: "",
+  });
+
+  git(created.run.workspace, ["replace", "-d", originalRevision]);
+  const graftsPath = git(created.run.workspace, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-path",
+    "info/grafts",
+  ]);
+  writeFileSync(graftsPath, `${originalRevision} ${created.base.baseSha}\n`, "utf8");
+  await expect(
+    repository.openCheckpoint({
+      checkpoint: created.checkpoint,
+      baseRef: created.base.baseRef,
+    }),
+  ).rejects.toMatchObject({ code: "run_conflict" });
+  expect(readFile(graftsPath)).toBe(`${originalRevision} ${created.base.baseSha}\n`);
+});
+
 type Fixture = Readonly<{
   root: string;
   remote: string;

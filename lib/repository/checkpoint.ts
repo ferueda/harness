@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { realpath } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { RepositoryError } from "./error.ts";
 import {
@@ -158,6 +158,7 @@ export async function verifyRepositoryCheckpoint(
     throw conflict("Repository checkpoint does not match the repository run identity.");
   }
 
+  await assertNoObjectOverrides(run.workspace);
   const headRevision = await assertWorkspace(run);
   if (headRevision !== checkpoint.revision) {
     throw conflict("Repository run HEAD does not match the checkpoint revision.");
@@ -165,6 +166,34 @@ export async function verifyRepositoryCheckpoint(
   await assertCleanWorkspace(run.workspace);
   await assertCheckpointHistory(run, checkpoint);
   await assertStoredCheckpoint(run, checkpoint);
+}
+
+async function assertNoObjectOverrides(workspace: string): Promise<void> {
+  const replacementRefBase = process.env.GIT_REPLACE_REF_BASE?.trim() || "refs/replace";
+  const [replacementRefs, graftsPath] = await Promise.all([
+    runGit(
+      workspace,
+      ["for-each-ref", "--format=%(refname)", replacementRefBase],
+      "checkpoint_failed",
+    ),
+    runGit(
+      workspace,
+      ["rev-parse", "--path-format=absolute", "--git-path", "info/grafts"],
+      "checkpoint_failed",
+    ),
+  ]);
+  let grafts = "";
+  try {
+    grafts = await readFile(graftsPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const hasActiveGraft = grafts
+    .split("\n")
+    .some((line) => line.trim() !== "" && !line.trimStart().startsWith("#"));
+  if (replacementRefs || hasActiveGraft) {
+    throw conflict("Repository checkpoint verification does not allow replacement objects.");
+  }
 }
 
 function checkpointIdentity(input: RepositoryCheckpointInput): CheckpointIdentity {
