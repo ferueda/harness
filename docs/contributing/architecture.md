@@ -214,11 +214,13 @@ open pull requests, update Linear, or choose Spec and implementation policy.
 
 ### GitHub publication boundary
 
-The GitHub module accepts a validated `RepositoryRun` and an approved path/status
-set. It creates or recognizes one marked commit, pushes one explicit branch
-without force, and finds or creates one exact pull request. Recovery observes
-the local commit, remote branch SHA, and GitHub PR identity; it does not add a
-publication database or retry state machine.
+The GitHub module accepts either a validated `RepositoryRun` plus an approved
+path/status set or one exact approved `RepositoryCheckpoint`. The first path
+creates or recognizes one marked commit. The checkpoint path verifies and
+publishes the existing immutable revision without changing it. Both paths push
+one explicit branch without force and find or create one exact pull request.
+Recovery observes the local commit, remote branch SHA, and GitHub PR identity;
+it does not add a publication database or retry state machine.
 
 The token stays inside the service and is exposed only to primitive-owned
 authenticated Git and REST calls after local run validation. GitHub publication

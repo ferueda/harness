@@ -281,7 +281,19 @@ function fakeGitHub(overrides: Partial<PublishedPullRequest> = {}) {
     merged: false,
     ...overrides,
   }));
-  return { service: { publishPullRequest: publish }, publish };
+  const publishCheckpoint = vi.fn<GitHubPublicationService["publishCheckpointPullRequest"]>(
+    async () => {
+      throw new Error("Unexpected checkpoint publication");
+    },
+  );
+  return {
+    service: {
+      publishPullRequest: publish,
+      publishCheckpointPullRequest: publishCheckpoint,
+    },
+    publish,
+    publishCheckpoint,
+  };
 }
 
 function fakeAgent(workspace: string, result: AgentRunResult, hook?: () => void) {
