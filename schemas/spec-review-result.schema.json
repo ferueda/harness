@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpecReviewResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "rationale", "evidence", "findings"],
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": ["approved", "changes-requested", "insufficient-context"]
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "path", "lineStart", "lineEnd", "summary"],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": ["work-item", "artifact", "code", "docs", "test", "repo-state"]
+          },
+          "path": {
+            "type": ["string", "null"],
+            "minLength": 1
+          },
+          "lineStart": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "lineEnd": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterion", "artifactLocation", "evidence", "problem", "requiredOutcome"],
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "enum": [
+              "project-intent",
+              "requirements",
+              "code-reality",
+              "scope",
+              "architecture",
+              "delivery-shape",
+              "verification",
+              "risk",
+              "simplicity"
+            ]
+          },
+          "artifactLocation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["section", "lineStart", "lineEnd"],
+            "properties": {
+              "section": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "lineStart": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "lineEnd": {
+                "type": ["integer", "null"],
+                "minimum": 1
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "path", "lineStart", "lineEnd", "summary"],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": ["work-item", "artifact", "code", "docs", "test", "repo-state"]
+                },
+                "path": {
+                  "type": ["string", "null"],
+                  "minLength": 1
+                },
+                "lineStart": {
+                  "type": ["integer", "null"],
+                  "minimum": 1
+                },
+                "lineEnd": {
+                  "type": ["integer", "null"],
+                  "minimum": 1
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              }
+            }
+          },
+          "problem": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "requiredOutcome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        }
+      }
+    }
+  }
+}
