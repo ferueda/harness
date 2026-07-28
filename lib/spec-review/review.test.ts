@@ -13,6 +13,7 @@ import {
   SPEC_REVIEW_RESULT_SCHEMA_VERSION,
   type SpecReviewArtifact,
   type SpecReviewDecisionDraft,
+  type SpecReviewFinding,
   type SpecReviewFindingDraft,
   type SpecReviewWorkItemContext,
 } from "./schema.ts";
@@ -20,6 +21,7 @@ import {
   reviewSpec,
   SPEC_REVIEW_RESULT_SCHEMA_PATH,
   type SpecReviewFailureKind,
+  type SpecReviewResult,
 } from "./review.ts";
 
 const REVISION = "a".repeat(40);
@@ -87,6 +89,13 @@ const CHANGES_REQUESTED: SpecReviewDecisionDraft = {
   rationale: "One ownership boundary must change.",
   evidence: [],
   findings: [FINDING],
+};
+
+const INSUFFICIENT_CONTEXT: SpecReviewDecisionDraft = {
+  outcome: "insufficient-context",
+  rationale: "The required project intent source is unavailable.",
+  evidence: [],
+  findings: [],
 };
 
 const temporaryPaths: string[] = [];
@@ -195,9 +204,7 @@ describe("reviewSpec", () => {
         findings: [{ ...FINDING, id: expect.stringMatching(/^spec-review-finding-[0-9a-f]{64}$/) }],
       },
     });
-    expect(first.ok && second.ok && first.decision.findings[0]?.id).toBe(
-      second.ok && second.decision.findings[0]?.id,
-    );
+    expect(firstFinding(first).id).toBe(firstFinding(second).id);
   });
 
   it("binds finding identity to the reviewed revision", async () => {
@@ -216,9 +223,7 @@ describe("reviewSpec", () => {
       { ...ARTIFACT, revision: "b".repeat(40) },
     );
 
-    expect(first.ok && second.ok && first.decision.findings[0]?.id).not.toBe(
-      second.ok && second.decision.findings[0]?.id,
-    );
+    expect(firstFinding(first).id).not.toBe(firstFinding(second).id);
   });
 
   it("binds finding identity to the reviewed artifact path", async () => {
@@ -253,9 +258,60 @@ describe("reviewSpec", () => {
       execution: execution(),
     });
 
-    expect(first.ok && second.ok && first.decision.findings[0]?.id).not.toBe(
-      second.ok && second.decision.findings[0]?.id,
+    expect(firstFinding(first).id).not.toBe(firstFinding(second).id);
+  });
+
+  it("keeps finding identity stable across Unicode evidence order changes", async () => {
+    const firstWorkspace = createWorkspace();
+    const secondWorkspace = createWorkspace();
+    writeArtifact(firstWorkspace);
+    writeArtifact(secondWorkspace);
+    const unicodeFinding = {
+      ...FINDING,
+      evidence: [
+        {
+          ...FINDING.evidence[0],
+          summary: "The café boundary is documented.",
+        },
+        {
+          ...FINDING.evidence[0],
+          summary: "The cafe\u0301 boundary is documented.",
+        },
+      ],
+    };
+    const reorderedFinding = {
+      ...unicodeFinding,
+      evidence: [...unicodeFinding.evidence].reverse(),
+    };
+
+    const first = await run(
+      firstWorkspace,
+      fakeAgent({
+        ok: true,
+        structuredOutput: {
+          ...CHANGES_REQUESTED,
+          findings: [unicodeFinding],
+        },
+        raw: {},
+      }).agent,
     );
+    const second = await run(
+      secondWorkspace,
+      fakeAgent({
+        ok: true,
+        structuredOutput: {
+          ...CHANGES_REQUESTED,
+          findings: [reorderedFinding],
+        },
+        raw: {},
+      }).agent,
+    );
+
+    const firstResult = firstFinding(first);
+    const secondResult = firstFinding(second);
+    expect(firstResult.evidence).toEqual(unicodeFinding.evidence);
+    expect(secondResult.evidence).toEqual(reorderedFinding.evidence);
+    expect(firstResult.id).toBe(secondResult.id);
   });
 
   it("rejects duplicate canonical findings", async () => {
@@ -331,6 +387,33 @@ describe("reviewSpec", () => {
       failureKind: "invalid-output",
       error: expect.stringContaining(`expected ${ARTIFACT.path}`),
     });
+  });
+
+  it("maps reviewer-reported missing authority to insufficient-context", async () => {
+    const workspace = createWorkspace();
+    writeArtifact(workspace);
+
+    const result = await run(
+      workspace,
+      fakeAgent({
+        ok: true,
+        structuredOutput: INSUFFICIENT_CONTEXT,
+        raw: {},
+        session: { provider: "codex", id: "discarded-reviewer-session" },
+      }).agent,
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      failureKind: "insufficient-context",
+      error: `Spec reviewer lacks required context: ${INSUFFICIENT_CONTEXT.rationale}`,
+      provenance: {
+        promptSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+        schemaSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+        artifactSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("discarded-reviewer-session");
   });
 
   it.each([
@@ -529,6 +612,21 @@ function execution() {
     modelReasoningEffort: "high",
     maxRuntimeMs: 120_000,
   } as const;
+}
+
+function firstFinding(result: SpecReviewResult): SpecReviewFinding {
+  expect(result).toMatchObject({
+    ok: true,
+    decision: {
+      outcome: "changes-requested",
+    },
+  });
+  if (!result.ok || result.decision.outcome !== "changes-requested") {
+    throw new Error("Expected a changes-requested Spec review result.");
+  }
+  const finding = result.decision.findings[0];
+  if (!finding) throw new Error("Expected a Spec review finding.");
+  return finding;
 }
 
 function createWorkspace(): string {

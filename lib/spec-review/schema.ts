@@ -2,7 +2,7 @@ import { z } from "zod";
 import { SpecWorkItemContextSchema } from "../spec/schema.ts";
 import { PortableRelativePathSchema } from "../work-item/schema.ts";
 
-export const SPEC_REVIEW_RESULT_SCHEMA_VERSION = "1";
+export const SPEC_REVIEW_RESULT_SCHEMA_VERSION = "2";
 export const SPEC_REVIEW_MAX_FINDINGS = 12;
 export const SPEC_REVIEW_MAX_CITATIONS = 8;
 
@@ -97,7 +97,7 @@ export const SpecReviewFindingDraftSchema = z
 
 export const SpecReviewDecisionDraftSchema = z
   .object({
-    outcome: z.enum(["approved", "changes-requested"]),
+    outcome: z.enum(["approved", "changes-requested", "insufficient-context"]),
     rationale: DetailSchema,
     evidence: z.array(SpecReviewCitationSchema).max(SPEC_REVIEW_MAX_CITATIONS),
     findings: z.array(SpecReviewFindingDraftSchema).max(SPEC_REVIEW_MAX_FINDINGS),
@@ -126,14 +126,21 @@ export const SpecReviewDecisionDraftSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["evidence"],
-        message: "changes-requested keeps top-level evidence empty",
+        message: `${decision.outcome} keeps top-level evidence empty`,
       });
     }
-    if (decision.findings.length === 0) {
+    if (decision.outcome === "changes-requested" && decision.findings.length === 0) {
       ctx.addIssue({
         code: "custom",
         path: ["findings"],
         message: "changes-requested requires at least one finding",
+      });
+    }
+    if (decision.outcome === "insufficient-context" && decision.findings.length !== 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["findings"],
+        message: "insufficient-context requires zero findings",
       });
     }
   });

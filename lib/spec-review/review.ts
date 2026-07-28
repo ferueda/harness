@@ -54,7 +54,7 @@ export type SpecReviewProvenance = Readonly<{
   promptVersion: string;
   resultSchemaVersion: string;
   promptSha256: string | null;
-  schemaSha256: string;
+  schemaSha256: string | null;
   artifactSha256: string | null;
 }>;
 
@@ -88,15 +88,20 @@ export async function reviewSpec(input: {
   agent: Agent;
   execution: SpecReviewExecution;
 }): Promise<SpecReviewResult> {
+  const resultSchema = inspectResultSchema();
   const parsedWorkItem = SpecReviewWorkItemContextSchema.safeParse(input.workItem);
   const parsedArtifact = SpecReviewArtifactSchema.safeParse(input.artifact);
   let provenance = createProvenance({
     provider: input.agent.name,
     execution: input.execution,
     prompt: null,
+    schemaSha256: resultSchema.ok ? resultSchema.sha256 : null,
     artifactSha256: null,
   });
 
+  if (!resultSchema.ok) {
+    return failure("provider", resultSchema.error, provenance);
+  }
   if (!parsedWorkItem.success) {
     return failure(
       "insufficient-context",
@@ -192,6 +197,14 @@ export async function reviewSpec(input: {
     );
   }
 
+  if (draft.data.outcome === "insufficient-context") {
+    return failure(
+      "insufficient-context",
+      `Spec reviewer lacks required context: ${draft.data.rationale}`,
+      provenance,
+    );
+  }
+
   const citationError = validateArtifactCitations(draft.data, artifact.path);
   if (citationError) {
     return failure("invalid-output", citationError, provenance);
@@ -229,6 +242,7 @@ function createProvenance(input: {
   provider: AgentProviderName;
   execution: SpecReviewExecution;
   prompt: string | null;
+  schemaSha256: string | null;
   artifactSha256: string | null;
 }): SpecReviewProvenance {
   return {
@@ -239,9 +253,25 @@ function createProvenance(input: {
     promptVersion: SPEC_REVIEW_PROMPT_VERSION,
     resultSchemaVersion: SPEC_REVIEW_RESULT_SCHEMA_VERSION,
     promptSha256: input.prompt === null ? null : sha256(input.prompt),
-    schemaSha256: sha256(readFileSync(SPEC_REVIEW_RESULT_SCHEMA_PATH)),
+    schemaSha256: input.schemaSha256,
     artifactSha256: input.artifactSha256,
   };
+}
+
+function inspectResultSchema():
+  | Readonly<{ ok: true; sha256: string }>
+  | Readonly<{ ok: false; error: string }> {
+  try {
+    return {
+      ok: true,
+      sha256: sha256(readFileSync(SPEC_REVIEW_RESULT_SCHEMA_PATH)),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Spec review result schema is unavailable: ${errorMessage(error)}`,
+    };
+  }
 }
 
 function validateArtifactCitations(
@@ -294,6 +324,17 @@ function addTrustedFindingIds(
 }
 
 function canonicalFinding(finding: SpecReviewFindingDraft): string {
+  const evidence = finding.evidence
+    .map((citation) => ({
+      source: citation.source,
+      path: citation.path,
+      lineStart: citation.lineStart,
+      lineEnd: citation.lineEnd,
+      summary: citation.summary,
+    }))
+    // Finding identity must not depend on process locale or provider citation order.
+    .toSorted((left, right) => compareCanonicalJson(left, right));
+
   // Explicit field order makes identity independent of object construction order.
   return JSON.stringify({
     criterion: finding.criterion,
@@ -302,16 +343,18 @@ function canonicalFinding(finding: SpecReviewFindingDraft): string {
       lineStart: finding.artifactLocation.lineStart,
       lineEnd: finding.artifactLocation.lineEnd,
     },
-    evidence: finding.evidence.map((citation) => ({
-      source: citation.source,
-      path: citation.path,
-      lineStart: citation.lineStart,
-      lineEnd: citation.lineEnd,
-      summary: citation.summary,
-    })),
+    evidence,
     problem: finding.problem,
     requiredOutcome: finding.requiredOutcome,
   });
+}
+
+function compareCanonicalJson(left: object, right: object): number {
+  const leftJson = JSON.stringify(left);
+  const rightJson = JSON.stringify(right);
+  if (leftJson < rightJson) return -1;
+  if (leftJson > rightJson) return 1;
+  return 0;
 }
 
 function failureKind(result: Extract<AgentRunResult, { ok: false }>): SpecReviewFailureKind {

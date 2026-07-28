@@ -68,10 +68,18 @@ const CHANGES_REQUESTED = {
   findings: [FINDING],
 } as const;
 
+const INSUFFICIENT_CONTEXT = {
+  outcome: "insufficient-context",
+  rationale: "The repository names an intent source that is unavailable in this workspace.",
+  evidence: [],
+  findings: [],
+} as const;
+
 describe("Spec review schemas", () => {
   it.each([
     ["approval", APPROVED],
     ["changes requested", CHANGES_REQUESTED],
+    ["insufficient context", INSUFFICIENT_CONTEXT],
   ])("accepts a valid %s model decision", (_name, decision) => {
     expect(SpecReviewDecisionDraftSchema.safeParse(decision).success).toBe(true);
   });
@@ -81,6 +89,11 @@ describe("Spec review schemas", () => {
     ["approval with findings", { ...APPROVED, findings: [FINDING] }],
     ["changes without findings", { ...CHANGES_REQUESTED, findings: [] }],
     ["changes with top-level evidence", { ...CHANGES_REQUESTED, evidence: [ARTIFACT_CITATION] }],
+    [
+      "insufficient context with evidence",
+      { ...INSUFFICIENT_CONTEXT, evidence: [ARTIFACT_CITATION] },
+    ],
+    ["insufficient context with findings", { ...INSUFFICIENT_CONTEXT, findings: [FINDING] }],
   ])("rejects %s", (_name, decision) => {
     expect(SpecReviewDecisionDraftSchema.safeParse(decision).success).toBe(false);
   });
@@ -175,12 +188,13 @@ describe("Spec review schemas", () => {
 
     expect(SpecReviewDecisionSchema.safeParse(trusted).success).toBe(true);
     expect(SpecReviewDecisionDraftSchema.safeParse(trusted).success).toBe(false);
+    expect(SpecReviewDecisionSchema.safeParse(INSUFFICIENT_CONTEXT).success).toBe(false);
   });
 });
 
 describe("exported Spec review result JSON schema", () => {
   it("is Codex-strict and requires every provider field", () => {
-    expect(SPEC_REVIEW_RESULT_SCHEMA_VERSION).toBe("1");
+    expect(SPEC_REVIEW_RESULT_SCHEMA_VERSION).toBe("2");
     expect(() => assertCodexStrictSchema(JSON_SCHEMA)).not.toThrow();
     expect(JSON_SCHEMA.required).toEqual(["outcome", "rationale", "evidence", "findings"]);
   });
@@ -188,6 +202,7 @@ describe("exported Spec review result JSON schema", () => {
   it.each([
     ["approval", APPROVED],
     ["changes requested", CHANGES_REQUESTED],
+    ["insufficient context", INSUFFICIENT_CONTEXT],
   ])("stays structurally aligned with Zod for %s", (_name, decision) => {
     expect(schemaAccepts(JSON_SCHEMA, decision)).toBe(true);
     expect(SpecReviewDecisionDraftSchema.safeParse(decision).success).toBe(true);

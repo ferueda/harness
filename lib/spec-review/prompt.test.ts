@@ -12,8 +12,8 @@ describe("Spec review prompt", () => {
     const artifact = { path: "dev/plans/FER-282.md", revision: "a".repeat(40) };
     const prompt = renderSpecReviewPrompt({ workItem, artifact });
 
-    expect(SPEC_REVIEW_RUBRIC_VERSION).toBe("1");
-    expect(SPEC_REVIEW_PROMPT_VERSION).toBe("1");
+    expect(SPEC_REVIEW_RUBRIC_VERSION).toBe("2");
+    expect(SPEC_REVIEW_PROMPT_VERSION).toBe("2");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`Review exactly ${artifact.path}`);
     expect(prompt).toContain(`trusted revision ${artifact.revision}`);
@@ -28,17 +28,24 @@ describe("Spec review prompt", () => {
     );
     expect(prompt).toContain("Review the Spec as a decision record");
     expect(prompt).toContain("Do not demand template sections");
+    expect(prompt).toContain("accepted, current, locked, or superseding");
+    expect(prompt).toContain("unmarked proposals, comments, metadata");
+    expect(prompt).toContain("matching SKILL.md files");
     expect(prompt).toContain("resolves planning-time choices");
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("vertical, independently useful units");
     expect(prompt).toContain("highest stable credible proof seam");
     expect(prompt).toContain("speculative hardening, generic frameworks");
+    expect(prompt).toContain("Trace every proposed change and test");
+    expect(prompt).toContain("post-change owner, exact removals, cutover order");
+    expect(prompt).toContain("failure handling, state or data flow, privacy, security");
   });
 
   it("keeps findings material, cited, and outcome-focused", () => {
     const prompt = render();
 
-    expect(prompt).toContain("Request changes only for a material");
+    expect(prompt).toContain("Every returned finding requests a change");
+    expect(prompt).toContain("Reviewer-proposed optional hardening, alternative architectures");
     expect(prompt).toContain("artifactLocation identifies where the Spec is deficient");
     expect(prompt).toContain("An artifact citation path must be exactly");
     expect(prompt).toContain("Do not write replacement Spec text");
@@ -54,6 +61,8 @@ describe("Spec review prompt", () => {
     expect(prompt).toContain("do not run Git");
     expect(prompt).toContain("Do not add finding IDs, artifact identity, revision");
     expect(prompt).toContain("Trusted code adds those after validation");
+    expect(prompt).toContain('Return "insufficient-context"');
+    expect(prompt).toContain("narrow bug fix or local refactor");
   });
 });
 

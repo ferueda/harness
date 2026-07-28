@@ -7,7 +7,7 @@
   "properties": {
     "outcome": {
       "type": "string",
-      "enum": ["approved", "changes-requested"]
+      "enum": ["approved", "changes-requested", "insufficient-context"]
     },
     "rationale": {
       "type": "string",
