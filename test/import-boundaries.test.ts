@@ -149,6 +149,20 @@ describe("automation import boundaries", () => {
       'import { execFile } from "child_process";',
       "instead of running Git or GitHub commands",
     );
+    expectAllowed(
+      "lib/spec-review/allowed.ts",
+      'import type { Agent } from "../agent/contract.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
+    );
+    expectBoundaryViolation(
+      "lib/spec-review/forbidden.ts",
+      'import { createRepositoryWorkspace } from "../repository/workspace.ts";',
+      "use injected service, provider, and repository interfaces",
+    );
+    expectBoundaryViolation(
+      "lib/spec-review/forbidden.ts",
+      'import { LinearClient } from "@linear/sdk";',
+      "receive normalized input instead of importing Linear",
+    );
   });
 
   it("keeps repository primitives independent of tracker and domain policy", () => {

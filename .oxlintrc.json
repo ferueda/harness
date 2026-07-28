@@ -29,7 +29,7 @@
                 "message": "Linear service primitives must not depend on concrete providers."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:agent(?:/|$)|config(?:/|$)|review(?:/|$)|triage(?:/|$)|spec(?:/|$)|repository(?:/|$)|linear-automation(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:agent(?:/|$)|config(?:/|$)|review(?:/|$)|triage(?:/|$)|spec(?:-review)?(?:/|$)|repository(?:/|$)|linear-automation(?:/|$))",
                 "message": "Linear service primitives may only communicate with Linear; domain and delivery policy belong outside lib/linear."
               },
               {
@@ -61,7 +61,7 @@
                 "message": "Shared Agent support must not depend on a concrete provider SDK."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:/|$)|repository(?:/|$)|review(?:/|$)|providers(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|repository(?:/|$)|review(?:/|$)|providers(?:/|$))",
                 "message": "Agent contracts and support must remain independent of services, domain operations, reviews, and concrete providers."
               }
             ]
@@ -89,7 +89,7 @@
                 "message": "Review execution depends on the shared Agent interface, not a concrete provider."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:/|$)|repository(?:/|$)|providers(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|repository(?:/|$)|providers(?:/|$))",
                 "message": "Review execution must remain independent of automation, services, domain operations, and concrete providers."
               }
             ]
@@ -98,7 +98,7 @@
       }
     },
     {
-      "files": ["lib/triage/**/*.ts", "lib/spec/**/*.ts"],
+      "files": ["lib/triage/**/*.ts", "lib/spec/**/*.ts", "lib/spec-review/**/*.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -155,7 +155,7 @@
                 "message": "Repository workspace primitives must not own GitHub publication."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:/|$)|implementation(?:/|$)|github(?:/|$)|providers(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|github(?:/|$)|providers(?:/|$))",
                 "message": "Repository primitives own isolated execution and cleanup, not tracker, publication, provider, or domain policy."
               }
             ]
@@ -183,7 +183,7 @@
                 "message": "GitHub publication primitives must not depend on agent providers."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:/|$)|implementation(?:/|$)|providers(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|providers(?:/|$))",
                 "message": "GitHub publication owns commit, push, and pull requests, not tracker, delivery, provider, or domain policy."
               }
             ]
@@ -207,7 +207,7 @@
                 "message": "Provider adapters must not depend on Linear."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:lib/)?(?:linear(?:/|-)|triage(?:/|$)|spec(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:lib/)?(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$))",
                 "message": "Provider adapters translate provider behavior and must not import tracker or domain operations."
               }
             ]
