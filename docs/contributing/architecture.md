@@ -141,6 +141,7 @@ real consumers expose the same stable contract.
 | `lib/linear/`            | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
 | `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
 | `lib/spec/`              | Spec prompt, structured result schema, issue-key artifact validation, and provider-independent operation        |
+| `lib/spec-review/`       | Independent read-only Spec rubric, finding schema, trusted identity, and provider-independent review operation  |
 | `lib/repository/`        | Grove leases, safe setup, change inspection, local checkpoints, and reset cleanup                               |
 | `lib/github/`            | GitHub remote parsing, credential-safe commit and push, exact PR publication, and retry recovery                |
 | `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
@@ -172,8 +173,10 @@ Domain operations accept plain serializable input and return validated
 structured output. They own policy and prompt rendering, but they know nothing
 about Inngest scheduling. Triage is read-only. Spec receives an isolated
 writable workspace, writes one issue-keyed plan, and validates the claimed
-artifact without publishing it. Both operations can be tested with a fake agent
-without starting a worker.
+artifact without publishing it. Spec review receives an exact trusted artifact
+revision, runs a fresh read-only reviewer, and binds validated findings to that
+identity without running Git or exposing the reviewer session. These operations
+can be tested with a fake agent without starting a worker.
 
 ### Service boundary
 

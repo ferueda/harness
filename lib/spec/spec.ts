@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   Agent,
@@ -9,14 +9,16 @@ import type {
   AgentRunResult,
 } from "../agent/contract.ts";
 import { errorMessage } from "../agent/invocation.ts";
+import { inspectSpecArtifact, specArtifactPath } from "./artifact.ts";
 import { renderSpecPrompt, SPEC_POLICY_VERSION } from "./prompt.ts";
 import {
   SPEC_RESULT_SCHEMA_VERSION,
   SpecDecisionSchema,
-  SpecIssueReferenceSchema,
   type SpecDecision,
   type SpecWorkItemContext,
 } from "./schema.ts";
+
+export { specArtifactPath } from "./artifact.ts";
 
 const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const HARNESS_ROOT = basename(MODULE_ROOT) === "dist" ? resolve(MODULE_ROOT, "..") : MODULE_ROOT;
@@ -132,16 +134,16 @@ export async function specIssue(input: {
   }
 
   if (decision.data.outcome === "ready-for-review") {
-    const artifactError = validateSpecArtifact(
-      input.workspace,
-      artifactPath,
-      decision.data.artifactPath,
-    );
-    if (artifactError) {
+    const artifact = inspectSpecArtifact({
+      workspace: input.workspace,
+      expectedPath: artifactPath,
+      claimedPath: decision.data.artifactPath,
+    });
+    if (!artifact.ok) {
       return {
         ok: false,
         failureKind: "invalid-artifact",
-        error: artifactError,
+        error: artifact.error,
         provenance: resultProvenance,
       };
     }
@@ -152,53 +154,6 @@ export async function specIssue(input: {
     decision: decision.data,
     provenance: resultProvenance,
   };
-}
-
-export function specArtifactPath(reference: string): string {
-  return `dev/plans/${SpecIssueReferenceSchema.parse(reference)}.md`;
-}
-
-function validateSpecArtifact(
-  workspace: string,
-  expectedPath: string,
-  claimedPath: string,
-): string | null {
-  if (claimedPath !== expectedPath) {
-    return `Invalid Spec artifact: expected ${expectedPath}, received ${claimedPath}.`;
-  }
-
-  try {
-    const workspaceRoot = realpathSync(workspace);
-    const candidate = resolve(workspaceRoot, claimedPath);
-    const candidateRelative = relative(workspaceRoot, candidate);
-    if (
-      candidateRelative === ".." ||
-      candidateRelative.startsWith(`..${sep}`) ||
-      isAbsolute(candidateRelative)
-    ) {
-      return `Invalid Spec artifact: ${claimedPath} resolves outside the supplied workspace.`;
-    }
-
-    const stat = lstatSync(candidate);
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      return `Invalid Spec artifact: ${claimedPath} must be a regular file.`;
-    }
-
-    // A regular final file can still escape through a symlinked parent directory.
-    const realCandidate = realpathSync(candidate);
-    const realRelative = relative(workspaceRoot, realCandidate);
-    if (realRelative === ".." || realRelative.startsWith(`..${sep}`) || isAbsolute(realRelative)) {
-      return `Invalid Spec artifact: ${claimedPath} resolves outside the supplied workspace.`;
-    }
-
-    if (readFileSync(realCandidate, "utf8").trim() === "") {
-      return `Invalid Spec artifact: ${claimedPath} is empty.`;
-    }
-  } catch (error) {
-    return `Invalid Spec artifact ${claimedPath}: ${errorMessage(error)}`;
-  }
-
-  return null;
 }
 
 function baseProvenance(

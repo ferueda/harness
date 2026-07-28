@@ -1,9 +1,10 @@
 // Harness JSON Schema subset — not a full JSON Schema validator.
-// Supports: type, enum, required, properties, additionalProperties, items, minLength, minItems.
+// Supports: type, enum, required, properties, additionalProperties, items,
+// minLength, maxLength, minItems, maxItems, minimum, maximum.
 
 import { readFileSync } from "node:fs";
 
-type JsonTypeName = "string" | "number" | "boolean" | "object" | "array" | "null";
+type JsonTypeName = "string" | "number" | "integer" | "boolean" | "object" | "array" | "null";
 
 export type JsonSchema = {
   type?: JsonTypeName | JsonTypeName[];
@@ -13,7 +14,11 @@ export type JsonSchema = {
   additionalProperties?: boolean | JsonSchema;
   items?: JsonSchema;
   minLength?: number;
+  maxLength?: number;
   minItems?: number;
+  maxItems?: number;
+  minimum?: number;
+  maximum?: number;
 };
 
 export function loadSchema(options: {
@@ -46,7 +51,7 @@ export function validateJsonSchema(
       : [schema.type]
     : undefined;
 
-  if (types && !types.includes(jsonTypeOf(value))) {
+  if (types && !types.some((type) => jsonTypeMatches(type, value))) {
     return `${path}: expected ${types.join("|")}, got ${jsonTypeOf(value)}`;
   }
 
@@ -56,6 +61,20 @@ export function validateJsonSchema(
     value.length < schema.minLength
   ) {
     return `${path}: expected string length >= ${schema.minLength}`;
+  }
+  if (
+    typeof value === "string" &&
+    schema.maxLength !== undefined &&
+    value.length > schema.maxLength
+  ) {
+    return `${path}: expected string length <= ${schema.maxLength}`;
+  }
+
+  if (typeof value === "number" && schema.minimum !== undefined && value < schema.minimum) {
+    return `${path}: expected number >= ${schema.minimum}`;
+  }
+  if (typeof value === "number" && schema.maximum !== undefined && value > schema.maximum) {
+    return `${path}: expected number <= ${schema.maximum}`;
   }
 
   if (schema.type === "object" || (types && types.includes("object"))) {
@@ -93,6 +112,9 @@ export function validateJsonSchema(
     if (!Array.isArray(value)) return `${path}: expected array`;
     if (schema.minItems !== undefined && value.length < schema.minItems) {
       return `${path}: expected array length >= ${schema.minItems}`;
+    }
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+      return `${path}: expected array length <= ${schema.maxItems}`;
     }
     if (schema.items) {
       for (let index = 0; index < value.length; index += 1) {
@@ -151,6 +173,11 @@ function jsonTypeOf(value: unknown): JsonTypeName {
     default:
       return "object";
   }
+}
+
+function jsonTypeMatches(type: JsonTypeName, value: unknown): boolean {
+  if (type === "integer") return typeof value === "number" && Number.isInteger(value);
+  return type === jsonTypeOf(value);
 }
 
 function isObjectSchema(schema: JsonSchema): boolean {
