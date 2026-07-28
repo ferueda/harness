@@ -8,7 +8,11 @@ import {
 } from "@ferueda/grove";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { RepositoryRunsConfigSchema } from "./config-schema.ts";
-import { createRepositoryCheckpoint } from "./checkpoint.ts";
+import {
+  createRepositoryCheckpoint,
+  validateRepositoryCheckpoint,
+  verifyRepositoryCheckpoint,
+} from "./checkpoint.ts";
 import { normalizeRepositoryError, RepositoryError } from "./error.ts";
 import { ensureController, inspectGitChanges, resolveRemoteBase } from "./git.ts";
 import { runRepositorySetup } from "./setup.ts";
@@ -18,6 +22,7 @@ import type {
   RepositoryCheckpoint,
   RepositoryCheckpointInput,
   RepositoryCleanupResult,
+  RepositoryOpenCheckpointInput,
   RepositoryRun,
   RepositoryService,
 } from "./types.ts";
@@ -163,6 +168,54 @@ export function createRepository(options: CreateRepositoryOptions): RepositorySe
     }
   }
 
+  async function openCheckpoint(input: RepositoryOpenCheckpointInput): Promise<RepositoryRun> {
+    try {
+      const checkpoint = validateRepositoryCheckpoint(input.checkpoint);
+      const baseRef = input.baseRef.trim();
+      const base = Object.freeze({
+        remote: config.remote,
+        baseRef,
+        baseSha: checkpoint.baseSha,
+      });
+      assertBase(base, config.remote);
+
+      const grove = await getGrove();
+      const lease = await grove.inspect(checkpoint.runId);
+      if (!lease) {
+        throw new RepositoryError(
+          `Repository run is not leased: ${checkpoint.runId}`,
+          "run_conflict",
+        );
+      }
+      // Checkpoints stay path-free; only the matching active Grove lease may
+      // supply the local workspace used to reconstruct a RepositoryRun.
+      const run = Object.freeze({
+        version: RUN_VERSION,
+        id: checkpoint.runId,
+        workspace: lease.path,
+        remote: config.remote,
+        baseRef,
+        baseSha: checkpoint.baseSha,
+        branch: checkpoint.branch,
+      }) satisfies RepositoryRun;
+      if (lease.ownerId !== ownerId) {
+        throw new RepositoryError(`Repository lease owner mismatch for ${run.id}.`, "run_conflict");
+      }
+      assertRunLease(lease, run, controllerWorkspace, poolDirectory);
+      if (lease.state !== "leased") {
+        throw new RepositoryError(
+          `Repository run ${run.id} cannot open from Grove state ${lease.state}.`,
+          "run_conflict",
+        );
+      }
+      assertTarget(lease.target, runIdentity({ id: run.id, base, branch: run.branch }));
+      await verifyRepositoryCheckpoint(run, checkpoint);
+      return run;
+    } catch (error) {
+      throw normalizeRepositoryError("checkpoint", error);
+    }
+  }
+
   async function cleanupRun(run: RepositoryRun): Promise<RepositoryCleanupResult> {
     try {
       const grove = await getGrove();
@@ -215,6 +268,7 @@ export function createRepository(options: CreateRepositoryOptions): RepositorySe
     prepareRun,
     inspectChanges,
     checkpointRun,
+    openCheckpoint,
     cleanupRun,
   });
 }
@@ -439,6 +493,7 @@ export type {
   RepositoryCheckpoint,
   RepositoryCheckpointInput,
   RepositoryCleanupResult,
+  RepositoryOpenCheckpointInput,
   RepositoryRun,
   RepositoryService,
 } from "./types.ts";
