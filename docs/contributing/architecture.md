@@ -206,8 +206,11 @@ GitHub credentials are not passed to target-repository scripts. Reset cleanup
 removes tracked and ordinary untracked work while retaining ignored dependency
 caches such as `node_modules`. A checkpoint turns one exact caller-approved
 change set into a marked immutable local commit while keeping the lease active;
-its durable identity contains no workspace path. The module does not push, open
-pull requests, update Linear, or choose Spec and implementation policy.
+its durable identity contains no workspace path. A later process may reopen that
+checkpoint only while the same Grove lease remains active and its clean
+workspace still matches the exact checkpoint revision and metadata. Reopening
+never repairs, resets, or checks out the worktree. The module does not push,
+open pull requests, update Linear, or choose Spec and implementation policy.
 
 ### GitHub publication boundary
 

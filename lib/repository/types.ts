@@ -54,11 +54,17 @@ export type RepositoryCheckpointInput = Readonly<{
   message: string;
 }>;
 
+export type RepositoryOpenCheckpointInput = Readonly<{
+  checkpoint: RepositoryCheckpoint;
+  baseRef: string;
+}>;
+
 export type RepositoryService = Readonly<{
   resolveBase(input: { baseRef: string }): Promise<RepositoryBase>;
   prepareRun(input: { id: string; base: RepositoryBase; branch: string }): Promise<RepositoryRun>;
   inspectChanges(run: RepositoryRun): Promise<readonly RepositoryChange[]>;
   checkpointRun(input: RepositoryCheckpointInput): Promise<RepositoryCheckpoint>;
+  openCheckpoint(input: RepositoryOpenCheckpointInput): Promise<RepositoryRun>;
   cleanupRun(run: RepositoryRun): Promise<RepositoryCleanupResult>;
 }>;
 

@@ -79,7 +79,7 @@ export async function createRepositoryCheckpoint(
   input: RepositoryCheckpointInput,
 ): Promise<RepositoryCheckpoint> {
   const identity = checkpointIdentity(input);
-  const headRevision = await assertWorkspace(identity);
+  const headRevision = await assertWorkspace(identity.run);
   await assertExpectedParent(identity);
 
   const existingRevision = await findExistingCheckpoint(identity, headRevision);
@@ -114,6 +114,57 @@ export async function createRepositoryCheckpoint(
   await assertCleanWorkspace(identity.run.workspace);
   await ensureCheckpointRef(identity, revision);
   return checkpointResult(identity, revision);
+}
+
+export function validateRepositoryCheckpoint(
+  checkpoint: RepositoryCheckpoint,
+): RepositoryCheckpoint {
+  if (
+    checkpoint.version !== CHECKPOINT_VERSION ||
+    !ID.test(checkpoint.id) ||
+    !ID.test(checkpoint.runId) ||
+    !FULL_GIT_SHA.test(checkpoint.baseSha) ||
+    !FULL_GIT_SHA.test(checkpoint.parentRevision) ||
+    !FULL_GIT_SHA.test(checkpoint.revision) ||
+    !checkpoint.branch.trim() ||
+    hasCommandControl(checkpoint.branch) ||
+    !Array.isArray(checkpoint.changes)
+  ) {
+    throw invalid("Repository checkpoint identity is invalid.");
+  }
+  return Object.freeze({
+    version: CHECKPOINT_VERSION,
+    id: checkpoint.id,
+    runId: checkpoint.runId,
+    baseSha: checkpoint.baseSha,
+    parentRevision: checkpoint.parentRevision,
+    revision: checkpoint.revision,
+    branch: checkpoint.branch,
+    changes: freezeExpectedChanges(checkpoint.changes),
+  });
+}
+
+export async function verifyRepositoryCheckpoint(
+  run: RepositoryRun,
+  input: RepositoryCheckpoint,
+): Promise<void> {
+  assertRunIdentity(run);
+  const checkpoint = validateRepositoryCheckpoint(input);
+  if (
+    checkpoint.runId !== run.id ||
+    checkpoint.baseSha !== run.baseSha ||
+    checkpoint.branch !== run.branch
+  ) {
+    throw conflict("Repository checkpoint does not match the repository run identity.");
+  }
+
+  const headRevision = await assertWorkspace(run);
+  if (headRevision !== checkpoint.revision) {
+    throw conflict("Repository run HEAD does not match the checkpoint revision.");
+  }
+  await assertCleanWorkspace(run.workspace);
+  await assertCheckpointHistory(run, checkpoint);
+  await assertStoredCheckpoint(run, checkpoint);
 }
 
 function checkpointIdentity(input: RepositoryCheckpointInput): CheckpointIdentity {
@@ -164,8 +215,7 @@ function assertRunIdentity(run: RepositoryRun): void {
   }
 }
 
-async function assertWorkspace(identity: CheckpointIdentity): Promise<string> {
-  const { run } = identity;
+async function assertWorkspace(run: RepositoryRun): Promise<string> {
   const [workspace, root, branch, remote, headRevision] = await Promise.all([
     realpath(run.workspace),
     runGit(run.workspace, ["rev-parse", "--show-toplevel"], "checkpoint_failed").then(realpath),
@@ -180,6 +230,66 @@ async function assertWorkspace(identity: CheckpointIdentity): Promise<string> {
   }
   await runGit(run.workspace, ["check-ref-format", "--branch", run.branch], "checkpoint_failed");
   return headRevision;
+}
+
+async function assertCheckpointHistory(
+  run: RepositoryRun,
+  checkpoint: RepositoryCheckpoint,
+): Promise<void> {
+  await Promise.all([
+    runGit(
+      run.workspace,
+      ["rev-parse", "--verify", `${run.baseSha}^{commit}`],
+      "checkpoint_failed",
+    ),
+    runGit(
+      run.workspace,
+      ["rev-parse", "--verify", `${checkpoint.parentRevision}^{commit}`],
+      "checkpoint_failed",
+    ),
+    runGit(
+      run.workspace,
+      ["rev-parse", "--verify", `${checkpoint.revision}^{commit}`],
+      "checkpoint_failed",
+    ),
+  ]);
+  await assertAncestor(run.workspace, run.baseSha, checkpoint.parentRevision);
+  if (checkpoint.parentRevision !== run.baseSha) {
+    await assertAcceptedCheckpointRevision(run, checkpoint.parentRevision);
+  }
+}
+
+async function assertStoredCheckpoint(
+  run: RepositoryRun,
+  checkpoint: RepositoryCheckpoint,
+): Promise<void> {
+  // Both the immutable local ref and commit metadata must bind the durable
+  // checkpoint identity to this exact commit and approved change set.
+  const [referencedRevision, details] = await Promise.all([
+    readCheckpointRevision(run.workspace, checkpointRef(checkpoint.id)),
+    readCommitDetails(run.workspace, checkpoint.revision),
+  ]);
+  const metadata = parseCheckpointMetadata(details.message);
+  if (
+    referencedRevision !== checkpoint.revision ||
+    details.parents.length !== 1 ||
+    details.parents[0] !== checkpoint.parentRevision ||
+    !hasHarnessAuthor(details) ||
+    !metadata ||
+    metadata.checkpointId !== checkpoint.id ||
+    metadata.runId !== checkpoint.runId ||
+    metadata.baseSha !== checkpoint.baseSha ||
+    metadata.branch !== checkpoint.branch ||
+    metadata.changesSha256 !== hashChanges(checkpoint.changes)
+  ) {
+    throw conflict(`Repository checkpoint ${checkpoint.id} no longer matches its durable record.`);
+  }
+  const committedChanges = await inspectCommittedGitChanges(
+    run.workspace,
+    checkpoint.parentRevision,
+    checkpoint.revision,
+  );
+  assertCommittedChanges(committedChanges, checkpoint.changes, "committed");
 }
 
 async function assertExpectedParent(identity: CheckpointIdentity): Promise<void> {
@@ -302,7 +412,7 @@ function nulFields(output: string): readonly string[] {
 
 async function assertCleanWorkspace(workspace: string): Promise<void> {
   if ((await inspectGitChanges(workspace)).length !== 0) {
-    throw conflict("Repository checkpoint retry found unrelated workspace changes.");
+    throw conflict("Repository checkpoint workspace contains uncommitted changes.");
   }
 }
 

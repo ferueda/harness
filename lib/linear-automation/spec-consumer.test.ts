@@ -257,6 +257,9 @@ function fakeRepository(
       checkpointRun: vi.fn<RepositoryService["checkpointRun"]>(async () => {
         throw new Error("Unexpected repository checkpoint call");
       }),
+      openCheckpoint: vi.fn<RepositoryService["openCheckpoint"]>(async () => {
+        throw new Error("Unexpected repository open checkpoint call");
+      }),
       cleanupRun: vi.fn<RepositoryService["cleanupRun"]>(async () => {
         order.push("cleanup");
         return { status: "released" as const };

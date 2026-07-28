@@ -398,6 +398,9 @@ const repository: RepositoryService = {
   checkpointRun: async () => {
     throw new Error("Unexpected repository checkpoint call");
   },
+  openCheckpoint: async () => {
+    throw new Error("Unexpected repository open checkpoint call");
+  },
   cleanupRun: async () => {
     projection.repositoryCleanups += 1;
     return { status: "released" };
