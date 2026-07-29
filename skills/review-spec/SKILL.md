@@ -102,9 +102,24 @@ Evaluate only relevant dimensions:
 - **Edge Cases**: missing values or files, limits, timeouts, races, environment
   drift.
 - **Testing**: prefer the highest existing stable seam proving acceptance;
-  require a lower seam only for a distinct invariant or failure mode unobservable
-  there. Use a focused behavioral check and the canonical repository gate without
-  repetition.
+  require the cheapest credible acceptance-level proof and add another seam only
+  for a distinct boundary or failure mode.
+
+### Outcome Proof
+
+- Connect each material outcome or forbidden effect to an exact proof action and
+  expected observable evidence. The canonical repository gate proves general
+  health; it does not replace behavioral proof.
+- Require material proof limits to be explicit. A mock, fake, intercepted
+  request, or source-only check does not prove behavior beyond its seam.
+- For asynchronous work, require the terminal state or downstream effect.
+  Acceptance or enqueueing alone is insufficient.
+- For live proof, require explicit authority, prerequisites, disposable data,
+  assertions, stop conditions, redaction, cleanup, and remaining uncertainty.
+- Accept focused proof plus the repository gate when it proves the outcome. Do
+  not demand repeated layers without a distinct failure mode.
+- Require unavailable material proof to be reported with its concrete blocker,
+  and require handoff evidence to name observed results and skipped checks.
 
 ### Intent Source Gate
 

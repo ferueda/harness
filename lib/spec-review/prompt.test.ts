@@ -12,8 +12,8 @@ describe("Spec review prompt", () => {
     const artifact = { path: "dev/plans/FER-282.md", revision: "a".repeat(40) };
     const prompt = renderSpecReviewPrompt({ workItem, artifact });
 
-    expect(SPEC_REVIEW_RUBRIC_VERSION).toBe("2");
-    expect(SPEC_REVIEW_PROMPT_VERSION).toBe("2");
+    expect(SPEC_REVIEW_RUBRIC_VERSION).toBe("3");
+    expect(SPEC_REVIEW_PROMPT_VERSION).toBe("3");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`Review exactly ${artifact.path}`);
     expect(prompt).toContain(`trusted revision ${artifact.revision}`);
@@ -34,11 +34,26 @@ describe("Spec review prompt", () => {
     expect(prompt).toContain("resolves planning-time choices");
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("vertical, independently useful units");
-    expect(prompt).toContain("highest stable credible proof seam");
+    expect(prompt).toContain("cheapest credible proof action");
     expect(prompt).toContain("speculative hardening, generic frameworks");
     expect(prompt).toContain("Trace every proposed change and test");
     expect(prompt).toContain("post-change owner, exact removals, cutover order");
     expect(prompt).toContain("failure handling, state or data flow, privacy, security");
+  });
+
+  it("requires material outcome proof without redundant layers", () => {
+    const prompt = render();
+
+    expect(prompt).toContain("every material outcome or forbidden effect");
+    expect(prompt).toContain("expected observable evidence");
+    expect(prompt).toContain("does not replace acceptance-level behavioral proof");
+    expect(prompt).toContain("Approve focused proof plus the gate when it is sufficient");
+    expect(prompt).toContain("mocks, fakes, intercepted requests, or source-only checks");
+    expect(prompt).toContain("terminal state or downstream effect");
+    expect(prompt).toContain("Acceptance or enqueueing alone is insufficient");
+    expect(prompt).toContain("explicit authority, prerequisites, disposable data");
+    expect(prompt).toContain("stop conditions, redaction, cleanup");
+    expect(prompt).toContain("skipped checks with reasons, concrete blockers");
   });
 
   it("keeps findings material, cited, and outcome-focused", () => {

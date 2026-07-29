@@ -12,7 +12,7 @@ describe("Spec revision prompt", () => {
     const artifact = { path: "dev/plans/FER-283.md", revision: REVISION };
     const prompt = renderSpecRevisionPrompt({ workItem, artifact, review });
 
-    expect(SPEC_REVISION_POLICY_VERSION).toBe("1");
+    expect(SPEC_REVISION_POLICY_VERSION).toBe("2");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`"reviewedRevision": "${REVISION}"`);
     expect(prompt).toContain(`"rubricVersion": "2"`);
@@ -35,6 +35,11 @@ describe("Spec revision prompt", () => {
     expect(prompt).toContain("Research and resolve inspectable questions yourself");
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("decisions rather than prewritten implementation");
+    expect(prompt).toContain("every material outcome tied to an observable result");
+    expect(prompt).toContain("exact proof action, and expected evidence");
+    expect(prompt).toContain("terminal-state proof for asynchronous work");
+    expect(prompt).toContain("safe live-proof requirements");
+    expect(prompt).toContain("without adding redundant layers");
   });
 
   it("defines bounded artifact and finding behavior", () => {

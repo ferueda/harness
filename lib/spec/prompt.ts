@@ -1,6 +1,6 @@
 import { SpecWorkItemContextSchema, type SpecWorkItemContext } from "./schema.ts";
 
-export const SPEC_POLICY_VERSION = "2";
+export const SPEC_POLICY_VERSION = "3";
 
 export function renderSpecPrompt(input: {
   workItem: SpecWorkItemContext;
@@ -49,8 +49,13 @@ Apply this policy in order:
    - Keep an indivisible migration, cross-cutting safety fix, or minimum shared prerequisite horizontal only when vertical delivery is impractical or unsafe. State the reason and keep that unit no broader than necessary.
 
 6. Choose focused proof.
-   - Prefer the highest existing stable test seam that proves acceptance. Add a lower seam only for a distinct invariant or failure mode that the higher seam cannot observe.
-   - Keep verification to focused behavioral checks and the repository's canonical gate. Do not duplicate covered commands or prescribe unverified command names.
+   - For each material outcome or forbidden effect, name the observable result, exact proof action, and expected evidence.
+   - Prefer the highest existing stable test seam that proves acceptance. Add another seam only for a distinct boundary, invariant, or failure mode that the cheaper seam cannot observe.
+   - Keep acceptance-level behavioral proof separate from the repository's canonical gate. The gate proves general health; it does not replace focused proof. Do not duplicate covered commands or prescribe unverified command names.
+   - State material limits of mocks, fakes, intercepted requests, or source-only checks. For asynchronous work, prove the terminal state or downstream effect; acceptance or enqueueing alone is insufficient.
+   - For live proof, require explicit authority, prerequisites, disposable data, assertions, stop conditions, redaction, cleanup, and remaining uncertainty.
+   - Record unavailable material proof with its concrete blocker. Require handoff evidence to report exact observed results, skipped checks with reasons, and remaining unknowns.
+   - Use a short list for simple work. Use an outcome-to-proof table only when several outcomes or proof layers would otherwise be unclear.
 
 7. Write the artifact when ready for review.
    - Write the complete Spec at exactly ${input.artifactPath}.

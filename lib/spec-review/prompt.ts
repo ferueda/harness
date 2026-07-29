@@ -5,8 +5,8 @@ import {
   type SpecReviewWorkItemContext,
 } from "./schema.ts";
 
-export const SPEC_REVIEW_RUBRIC_VERSION = "2";
-export const SPEC_REVIEW_PROMPT_VERSION = "2";
+export const SPEC_REVIEW_RUBRIC_VERSION = "3";
+export const SPEC_REVIEW_PROMPT_VERSION = "3";
 
 export function renderSpecReviewPrompt(input: {
   workItem: SpecReviewWorkItemContext;
@@ -41,7 +41,7 @@ Evaluate whether the Spec:
 4. chooses the smallest coherent change and avoids speculative hardening, generic frameworks, unrelated cleanup, and unrequired compatibility;
 5. uses vertical, independently useful units where appropriate and explains unavoidable horizontal work;
 6. captures decisions, boundaries, ownership, dependencies, risks, and test scenarios without pre-writing code, replacement Spec prose, or shell-command choreography;
-7. connects material outcomes to the highest stable credible proof seam;
+7. connects every material outcome or forbidden effect to the cheapest credible proof action and expected observable evidence;
 8. is right-sized, portable, and executable without the author's hidden context.
 
 Trace every proposed change and test to an accepted requirement, a repository invariant, or a verified risk. Unsupported work already proposed by the Spec is a scope defect.
@@ -50,6 +50,15 @@ Check these details only when the proposed change makes them material:
 
 - For replaced, redirected, split, deprecated, or removed behavior: the post-change owner, exact removals, cutover order, and required compatibility.
 - For changed failure handling, state or data flow, privacy, security, reliability, performance, or edge cases: the intended behavior and credible proof beside the affected change.
+
+### Outcome-proof contract
+
+- The canonical repository gate proves general health; it does not replace acceptance-level behavioral proof.
+- Require another proof layer only for a distinct boundary or failure mode that the cheaper seam cannot observe. Approve focused proof plus the gate when it is sufficient.
+- Require material limits of mocks, fakes, intercepted requests, or source-only checks to be explicit.
+- For asynchronous work, require observation of the terminal state or downstream effect. Acceptance or enqueueing alone is insufficient.
+- For live proof, require explicit authority, prerequisites, disposable data, assertions, stop conditions, redaction, cleanup, and remaining uncertainty.
+- Require unavailable material proof and handoff evidence to state exact observed results, skipped checks with reasons, concrete blockers, and remaining unknowns.
 
 ## Findings
 

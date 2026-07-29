@@ -79,7 +79,7 @@ it("returns a typed provider failure when the result schema cannot be read", asy
       provider: "codex",
       model: "gpt-5.6-sol",
       modelReasoningEffort: "high",
-      policyVersion: "1",
+      policyVersion: "2",
       resultSchemaVersion: "1",
       reviewRubricVersion: null,
       promptSha256: null,

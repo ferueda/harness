@@ -27,6 +27,12 @@ implementation decisions; do not teach inspectable repository basics.
 - Prefer concise durable paths and symbols over copied source.
 - Prefer the highest existing stable test seam that proves acceptance. Add a
   lower seam only for a distinct invariant or failure mode unobservable there.
+- For each material outcome or forbidden effect, name the proof action and
+  expected observable evidence. Keep behavioral proof separate from the
+  repository gate, and state material limits of mocks, fakes, or source-only
+  checks. For asynchronous work, acceptance or enqueueing is not terminal proof.
+- Require explicit authority and safe setup, assertions, stop conditions,
+  cleanup, and remaining uncertainty for live proof.
 - Ask the user before writing when a missing decision materially changes scope
   or architecture. Do not carry unresolved implementation choices into a plan.
 
@@ -67,6 +73,10 @@ or symbols and the decisions that matter. Keep relevant facts and tests beside
 the change they justify. Add a section, excerpt, checklist, or command only when
 it changes an executor decision or proves a distinct criterion, invariant, or
 verified regression risk.
+
+Verification must connect material outcomes to exact proof actions and expected
+evidence. Record material proof limits and any unavailable proof honestly. Use a
+short list unless several outcomes or proof layers need a table.
 
 **Done when:** a capable executor can implement the outcome from the plan and
 repository without prior chat.

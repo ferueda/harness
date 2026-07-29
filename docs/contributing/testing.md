@@ -30,6 +30,31 @@ docs should link here. Exact command ownership lives in
 - Keep tests quiet on success. Expected failures and subprocess output should be
   asserted and produce bounded diagnostics when they fail.
 
+## Outcome Proof in Plans and Handoffs
+
+Connect each material outcome or forbidden effect to the cheapest credible proof:
+
+- Name the observable result, the proof action, and the expected observable
+  evidence.
+- Keep acceptance-level behavioral proof separate from the canonical repository
+  gate. The gate proves general health; it does not replace focused proof.
+- Add another layer only for a distinct boundary or failure mode the cheaper seam
+  cannot observe, and state material limits of mocks, fakes, intercepted requests,
+  or source-only checks.
+- When completion is asynchronous, prove the terminal state or downstream effect.
+  Acceptance or enqueueing alone is insufficient.
+- For live proof, require explicit authority, prerequisites, disposable data,
+  assertions, stop conditions, redaction, cleanup, and remaining uncertainty.
+- Report exact observed results, skipped checks with reasons, and unresolved
+  material behavior at handoff.
+
+Use a short list for simple work. Use an outcome-to-proof table only when several
+outcomes or proof layers would otherwise be unclear.
+
+Prompt changes to this contract can use the fixed
+[outcome-proof forward-evaluation scenarios](../../test/fixtures/outcome-proof-eval.md).
+Provider-backed runs remain opt-in and outside deterministic CI.
+
 ## Layers
 
 | Layer                    | Use for                                                                                 |

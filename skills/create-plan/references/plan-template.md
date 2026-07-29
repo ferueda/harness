@@ -24,7 +24,7 @@ constraints.
 
 ## Verify
 
-- The smallest focused behavioral check.
+- `<focused proof action>` → `<expected observable evidence>`.
 - The repository's canonical validation command.
 
 ## Boundaries
@@ -38,6 +38,17 @@ Omit this section when none exist.
 - Inline a current-state fact only beside the decision it justifies.
 - Prefer the highest existing stable test seam proving acceptance; use a lower
   seam only for a distinct invariant or failure mode unobservable there.
+- Connect each material outcome or forbidden effect to an exact proof action and
+  expected observable evidence. Keep the repository gate separate from
+  acceptance-level behavioral proof.
+- State material limits of mocks, fakes, intercepted requests, or source-only
+  checks. For asynchronous work, prove the terminal state or downstream effect;
+  acceptance or enqueueing alone is insufficient.
+- Require explicit authority, prerequisites, disposable data, assertions, stop
+  conditions, redaction, cleanup, and remaining uncertainty for live proof.
+- Report unavailable material proof with its concrete blocker. Use a short list
+  for simple work and an outcome-to-proof table only when multiple outcomes or
+  proof layers would otherwise be unclear.
 - Organize multiple changes as vertical outcome slices that can be verified and
   that separate agents can own with limited overlap. Prefer slices that can be
   reviewed, landed, or rolled back independently and can proceed in parallel
