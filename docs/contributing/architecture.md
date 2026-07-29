@@ -142,6 +142,7 @@ real consumers expose the same stable contract.
 | `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
 | `lib/spec/`              | Initial and resumed Spec operations, strict result schemas, and issue-key artifact validation                   |
 | `lib/spec-review/`       | Independent read-only Spec rubric, finding schema, trusted identity, and provider-independent review operation  |
+| `lib/implementation/`    | Implementation source selection, prompt/result policy, plan integrity, provenance, and author-session capture   |
 | `lib/repository/`        | Grove leases, safe setup, change inspection, local checkpoints, and reset cleanup                               |
 | `lib/github/`            | GitHub remote parsing, credential-safe checkpoint push, exact PR publication, and retry recovery                |
 | `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
@@ -175,8 +176,14 @@ about Inngest scheduling. Triage is read-only. Spec receives an isolated
 writable workspace, writes one issue-keyed plan, and validates the claimed
 artifact without publishing it. Spec review receives an exact trusted artifact
 revision, runs a fresh read-only reviewer, and binds validated findings to that
-identity without running Git or exposing the reviewer session. These operations
-can be tested with a fake agent without starting a worker.
+identity without running Git or exposing the reviewer session. Implementation
+receives one canonical merged plan or complete normalized work item in an
+already-prepared writable workspace, owns its prompt and result policy, verifies
+that selected plan authority remains unchanged, and returns the original author
+session for a later revision. Linear/Inngest coordination, review, repository
+inspection and checkpoints, and publication remain outside the implementation
+operation. These operations can be tested with a fake agent without starting a
+worker.
 
 ### Service boundary
 

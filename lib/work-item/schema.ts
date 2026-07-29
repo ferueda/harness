@@ -101,3 +101,11 @@ export function createWorkItemContextSchemas(referenceSchema: z.ZodType<string>)
 
   return { reference, context } as const;
 }
+
+const WorkItemSchemas = createWorkItemContextSchemas(NonEmptyStringSchema);
+
+export const WorkItemReferenceSchema = WorkItemSchemas.reference;
+export const WorkItemContextSchema = WorkItemSchemas.context;
+
+export type WorkItemReference = z.infer<typeof WorkItemReferenceSchema>;
+export type WorkItemContext = z.infer<typeof WorkItemContextSchema>;

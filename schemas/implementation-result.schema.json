@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ImplementationResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "outcome",
+    "summary",
+    "proof",
+    "remainingUncertainty",
+    "questions"
+  ],
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": ["implemented", "needs-input"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proof": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "status", "observedResult"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "skipped"]
+          },
+          "observedResult": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "remainingUncertainty": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

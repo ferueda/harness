@@ -29,7 +29,7 @@
                 "message": "Linear service primitives must not depend on concrete providers."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:agent(?:/|$)|config(?:/|$)|review(?:/|$)|triage(?:/|$)|spec(?:-review)?(?:/|$)|repository(?:/|$)|linear-automation(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:agent(?:/|$)|config(?:/|$)|review(?:/|$)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|repository(?:/|$)|linear-automation(?:/|$))",
                 "message": "Linear service primitives may only communicate with Linear; domain and delivery policy belong outside lib/linear."
               },
               {
@@ -61,7 +61,7 @@
                 "message": "Shared Agent support must not depend on a concrete provider SDK."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|repository(?:/|$)|review(?:/|$)|providers(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|repository(?:/|$)|review(?:/|$)|providers(?:/|$))",
                 "message": "Agent contracts and support must remain independent of services, domain operations, reviews, and concrete providers."
               }
             ]
@@ -89,7 +89,7 @@
                 "message": "Review execution depends on the shared Agent interface, not a concrete provider."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|repository(?:/|$)|providers(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|repository(?:/|$)|providers(?:/|$))",
                 "message": "Review execution must remain independent of automation, services, domain operations, and concrete providers."
               }
             ]
@@ -98,7 +98,12 @@
       }
     },
     {
-      "files": ["lib/triage/**/*.ts", "lib/spec/**/*.ts", "lib/spec-review/**/*.ts"],
+      "files": [
+        "lib/triage/**/*.ts",
+        "lib/spec/**/*.ts",
+        "lib/spec-review/**/*.ts",
+        "lib/implementation/**/*.ts"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -207,7 +212,7 @@
                 "message": "Provider adapters must not depend on Linear."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:lib/)?(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:lib/)?(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$))",
                 "message": "Provider adapters translate provider behavior and must not import tracker or domain operations."
               }
             ]
