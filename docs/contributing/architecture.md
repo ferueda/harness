@@ -143,7 +143,7 @@ real consumers expose the same stable contract.
 | `lib/spec/`              | Initial and resumed Spec operations, strict result schemas, and issue-key artifact validation                   |
 | `lib/spec-review/`       | Independent read-only Spec rubric, finding schema, trusted identity, and provider-independent review operation  |
 | `lib/repository/`        | Grove leases, safe setup, change inspection, local checkpoints, and reset cleanup                               |
-| `lib/github/`            | GitHub remote parsing, credential-safe commit and push, exact PR publication, and retry recovery                |
+| `lib/github/`            | GitHub remote parsing, credential-safe checkpoint push, exact PR publication, and retry recovery                |
 | `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
 | `lib/skills/`            | Packaged-skill installation support                                                                             |
 | `skills/`                | Packaged skills installed into target repositories                                                              |
@@ -214,13 +214,12 @@ open pull requests, update Linear, or choose Spec and implementation policy.
 
 ### GitHub publication boundary
 
-The GitHub module accepts either a validated `RepositoryRun` plus an approved
-path/status set or one exact approved `RepositoryCheckpoint`. The first path
-creates or recognizes one marked commit. The checkpoint path verifies and
-publishes the existing immutable revision without changing it. Both paths push
-one explicit branch without force and find or create one exact pull request.
-Recovery observes the local commit, remote branch SHA, and GitHub PR identity;
-it does not add a publication database or retry state machine.
+The GitHub module accepts a validated `RepositoryRun` plus one exact
+`RepositoryCheckpoint` selected by its caller. It verifies and publishes the existing immutable
+revision without changing it, pushes one explicit branch without force, and
+finds or creates one exact pull request. Recovery observes the local checkpoint,
+remote branch SHA, and GitHub PR identity; it does not add a publication
+database or retry state machine.
 
 The token stays inside the service and is exposed only to primitive-owned
 authenticated Git and REST calls after local run validation. GitHub publication
@@ -278,9 +277,13 @@ removes stale Agent Ready permission from every outcome. Human handoffs use
 Needs Input and Needs Review statuses; Spec and Implement labels describe the
 next agent action, while Agent Ready separately grants human permission to
 dispatch Open work after its consumer is enabled. The Spec consumer claims
-Open work before consuming Agent Ready, writes only in a persistent isolated
-repository run, publishes through the standalone GitHub boundary, and clears
-the Spec action only after its marked handoff comment exists.
+Open work before consuming Agent Ready, then coordinates the standalone author,
+review, revision, repository, GitHub, and Linear operations. It runs no more
+than three independent reviews and two resumed author revisions, binds every
+round to the exact reviewed checkpoint, and publishes either the approved
+checkpoint or an explicitly unapproved latest checkpoint after exhaustion. It
+clears the Spec action only after its marked handoff comment exists and attempts
+repository cleanup on every terminal path.
 
 For planned work, use `dev/plans/README.md`. Add future behavior here only after
 it becomes a current repository relationship.

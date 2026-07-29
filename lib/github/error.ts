@@ -1,7 +1,6 @@
 export const GITHUB_PUBLICATION_ERROR_CODES = [
   "invalid-input",
   "run-conflict",
-  "changes-mismatch",
   "git-failed",
   "remote-conflict",
   "invalid-response",

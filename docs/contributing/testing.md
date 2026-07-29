@@ -110,10 +110,10 @@ explicit authority, credentials, stop conditions, disposable targets, and
 cleanup; they are not routine CI coverage.
 
 GitHub publication uses temporary repositories, a local bare remote, and an
-injected HTTP transport in Vitest. This proves commit, push, response-loss, and
-PR idempotency without live GitHub access. A live push/PR smoke is reserved for
-explicitly authorized protocol verification and must clean its disposable
-branch and pull request.
+injected HTTP transport in Vitest. This proves exact checkpoint publication,
+push and response-loss recovery, and PR idempotency without live GitHub access.
+A live push/PR smoke is reserved for explicitly authorized protocol verification
+and must clean its disposable branch and pull request.
 
 ## Verification Commands
 

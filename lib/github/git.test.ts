@@ -86,6 +86,27 @@ describe("authenticated Git transport", () => {
     expect(String(error)).toContain("[REDACTED]");
   });
 
+  it("rejects truncated commit hashes before authenticated Git runs", async () => {
+    let called = false;
+    const transport = createAuthenticatedGitTransport({
+      executor: async () => {
+        called = true;
+        return "";
+      },
+    });
+
+    await expect(
+      transport.pushBranch({
+        workspace: process.cwd(),
+        remote: "https://github.com/ferueda/harness.git",
+        branch: "codex/FER-286",
+        commitSha: "a".repeat(41),
+        token: "github-secret",
+      }),
+    ).rejects.toMatchObject({ code: "git-failed" });
+    expect(called).toBe(false);
+  });
+
   it("does not load hostile configuration from the worktree", async () => {
     const root = await mkdtemp(join(tmpdir(), "harness-github-hostile-config-"));
     try {
