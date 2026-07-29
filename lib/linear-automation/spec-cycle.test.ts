@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SpecReviewProvenance } from "../spec-review/review.ts";
 import type { SpecReviewFinding } from "../spec-review/schema.ts";
 import {
-  SPEC_CYCLE_MAX_REVISIONS,
+  SPEC_CYCLE_LAST_REVIEW_ROUND,
   SPEC_CYCLE_REVIEW_ROUNDS,
   createInitialSpecCheckpointIdentity,
   createSpecCycleRoundIdentity,
@@ -18,7 +18,7 @@ const CHECKPOINT_B = "2".repeat(40);
 describe("Spec cycle policy", () => {
   it("locks the cycle to three reviews and two revision attempts", () => {
     expect(SPEC_CYCLE_REVIEW_ROUNDS).toEqual([0, 1, 2]);
-    expect(SPEC_CYCLE_MAX_REVISIONS).toBe(2);
+    expect(SPEC_CYCLE_LAST_REVIEW_ROUND).toBe(2);
   });
 
   it("replays the same checkpoint-bound round with identical identities", () => {

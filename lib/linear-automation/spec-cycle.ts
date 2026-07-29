@@ -11,7 +11,8 @@ import type { SpecSessionReference } from "../spec/spec.ts";
 import { WORK_REQUEST_EVENT_ID_PREFIX } from "./events/work-events.ts";
 
 export const SPEC_CYCLE_REVIEW_ROUNDS = [0, 1, 2] as const;
-export const SPEC_CYCLE_MAX_REVISIONS = 2;
+export const SPEC_CYCLE_LAST_REVIEW_ROUND =
+  SPEC_CYCLE_REVIEW_ROUNDS[SPEC_CYCLE_REVIEW_ROUNDS.length - 1];
 
 export type SpecCycleReviewRound = (typeof SPEC_CYCLE_REVIEW_ROUNDS)[number];
 

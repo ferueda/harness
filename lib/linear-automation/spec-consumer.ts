@@ -24,7 +24,7 @@ import { specIssue, type SpecExecution, type SpecIssueResult } from "../spec/spe
 import {
   createInitialSpecCheckpointIdentity,
   createSpecCycleRoundIdentity,
-  SPEC_CYCLE_MAX_REVISIONS,
+  SPEC_CYCLE_LAST_REVIEW_ROUND,
   SPEC_CYCLE_REVIEW_ROUNDS,
   toSpecRevisionAuthorSession,
   toSpecRevisionReview,
@@ -440,7 +440,7 @@ async function executeSpecCycle(input: {
       approved = true;
       break;
     }
-    if (reviewRound === SPEC_CYCLE_MAX_REVISIONS) break;
+    if (reviewRound === SPEC_CYCLE_LAST_REVIEW_ROUND) break;
     const requestedArtifact = reviewed.result.artifact;
     const requestedProvenance = reviewed.result.provenance;
 
@@ -516,6 +516,8 @@ async function executeSpecCycle(input: {
 
     const inspected = await input.step.run(round.inspectRevisionStepId, async () => {
       try {
+        // openCheckpoint reconstructs this run from the checkpoint's active
+        // Grove lease, so the revision wrote to this same workspace.
         return {
           ok: true as const,
           changes: validateSpecRevisionWorkspaceChanges({
