@@ -319,9 +319,16 @@ function validateFindingResponses(
   const unknown = responseIds.filter((id) => !expected.has(id));
   const missing = expectedIds.filter((id) => !uniqueResponseIds.has(id));
   if (unknown.length > 0 || missing.length > 0) {
-    return `Invalid Spec revision output: finding response set mismatch (unknown: ${unknown.join(", ") || "none"}; missing: ${missing.join(", ") || "none"}).`;
+    return `Invalid Spec revision output: finding response set mismatch (unknown: ${formatFindingIds(unknown)}; missing: ${formatFindingIds(missing)}).`;
   }
   return null;
+}
+
+function formatFindingIds(ids: readonly string[]): string {
+  if (ids.length === 0) return "0";
+  const prefixLength = "spec-review-finding-".length;
+  const compactIds = ids.map((id) => id.slice(prefixLength, prefixLength + 8));
+  return `${ids.length} [${compactIds.join(", ")}]`;
 }
 
 function validateArtifactCitations(

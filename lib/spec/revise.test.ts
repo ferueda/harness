@@ -338,27 +338,17 @@ describe("reviseSpec", () => {
     expect(result).toMatchObject({ ok: false, failureKind: "invalid-session" });
   });
 
-  it.each([
-    [
-      "unknown",
-      {
-        ...UNCHANGED,
-        responses: [
-          {
-            ...DECLINED_RESPONSE,
-            findingId: `spec-review-finding-${"c".repeat(64)}`,
-          },
-        ],
-      },
-    ],
-    [
-      "duplicate",
-      {
-        ...UNCHANGED,
-        responses: [DECLINED_RESPONSE, DECLINED_RESPONSE],
-      },
-    ],
-  ])("rejects a %s finding response set", async (_name, decision) => {
+  it("keeps mismatched finding response diagnostics compact", async () => {
+    const unknownId = `spec-review-finding-${"c".repeat(64)}`;
+    const decision = {
+      ...UNCHANGED,
+      responses: [
+        {
+          ...DECLINED_RESPONSE,
+          findingId: unknownId,
+        },
+      ],
+    };
     const workspace = createWorkspace();
     writeArtifact(workspace);
     const result = await run(
@@ -374,7 +364,37 @@ describe("reviseSpec", () => {
     expect(result).toMatchObject({
       ok: false,
       failureKind: "invalid-output",
-      error: expect.stringContaining("finding response"),
+      error: expect.stringMatching(
+        new RegExp(
+          `finding response set mismatch \\(unknown: 1 \\[cccccccc\\]; missing: 1 \\[${FINDING_ID.slice("spec-review-finding-".length, "spec-review-finding-".length + 8)}\\]\\)`,
+        ),
+      ),
+    });
+    if (result.ok) throw new Error("expected mismatched finding responses to fail");
+    expect(result.error).not.toContain(unknownId);
+    expect(result.error).not.toContain(FINDING_ID);
+  });
+
+  it("rejects duplicate finding responses", async () => {
+    const workspace = createWorkspace();
+    writeArtifact(workspace);
+    const result = await run(
+      workspace,
+      fakeAgent({
+        ok: true,
+        structuredOutput: {
+          ...UNCHANGED,
+          responses: [DECLINED_RESPONSE, DECLINED_RESPONSE],
+        },
+        raw: {},
+        session: { provider: "codex", id: "thread-next" },
+      }).agent,
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      failureKind: "invalid-output",
+      error: expect.stringContaining("duplicate finding responses"),
     });
   });
 
