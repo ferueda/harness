@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Inngest } from "inngest";
@@ -10,7 +10,7 @@ import type { LinearIssueContext, LinearWorkflowState } from "../linear/types.ts
 import type {
   RepositoryBase,
   RepositoryChange,
-  RepositoryRun,
+  RepositoryCheckpoint,
   RepositoryService,
 } from "../repository/types.ts";
 import type { SpecDecision } from "../spec/schema.ts";
@@ -23,18 +23,15 @@ import { linearReadinessSnapshotGeneration, type LinearReadinessConfig } from ".
 import {
   createLinearSpecFunction,
   ensureSpecFailureComment,
-  LINEAR_SPEC_AGENT_STEP_ID,
-  LINEAR_SPEC_BASE_STEP_ID,
-  LINEAR_SPEC_CLAIM_STEP_ID,
   LINEAR_SPEC_FUNCTION_ID,
-  LINEAR_SPEC_LOAD_STEP_ID,
-  LINEAR_SPEC_PREPARE_STEP_ID,
   LINEAR_SPEC_RETRIES,
   specCommentMarker,
   specWorkIdentity,
   type LinearSpecService,
 } from "./spec-consumer.ts";
 
+const ISSUE = "FER-320";
+const ARTIFACT = `dev/plans/${ISSUE}.md`;
 const readiness: LinearReadinessConfig = {
   teamId: "team-1",
   projectId: "project-1",
@@ -58,13 +55,13 @@ const readiness: LinearReadinessConfig = {
 
 const readyDecision: Extract<SpecDecision, { outcome: "ready-for-review" }> = {
   outcome: "ready-for-review",
-  artifactPath: "dev/plans/FER-267.md",
+  artifactPath: ARTIFACT,
   summary: "The Spec composes the existing primitives.",
   evidence: [
     {
       kind: "code",
-      path: "lib/linear-automation/worker.ts",
-      summary: "The worker owns runtime composition.",
+      path: "lib/linear-automation/spec-consumer.ts",
+      summary: "The consumer owns durable coordination.",
     },
   ],
   reviewerDecisions: [],
@@ -84,21 +81,24 @@ function client() {
   return new Inngest({ id: "linear-spec-test", eventKey: "test" });
 }
 
+function workflowState(id: string): LinearWorkflowState {
+  return { id, name: id, type: id === readiness.stateIds.inProgress ? "started" : "unstarted" };
+}
+
 function issueContext(
   input: Partial<{
     stateId: string;
     labels: LinearIssueContext["labels"];
     title: string;
-    blockedBy: LinearIssueContext["blockedBy"];
     completeness: Partial<LinearIssueContext["completeness"]>;
   }> = {},
 ): LinearIssueContext {
   return {
-    id: "issue-267",
-    identifier: "FER-267",
-    title: input.title ?? "Run the independent Spec consumer",
-    description: "Compose completed primitives.",
-    url: "https://linear.app/example/FER-267",
+    id: "issue-320",
+    identifier: ISSUE,
+    title: input.title ?? "Run the bounded Spec review cycle",
+    description: "Compose the existing Spec primitives into one bounded durable cycle.",
+    url: `https://linear.app/example/${ISSUE}`,
     state: workflowState(input.stateId ?? readiness.stateIds.open),
     team: { id: readiness.teamId, key: "FER", name: "ferueda" },
     project: {
@@ -125,18 +125,18 @@ function issueContext(
         },
         parentId: null,
         quotedText: null,
-        createdAt: "2026-07-25T10:00:00.000Z",
-        updatedAt: "2026-07-25T10:00:00.000Z",
+        createdAt: "2026-07-28T10:00:00.000Z",
+        updatedAt: "2026-07-28T10:00:00.000Z",
       },
     ],
     parent: null,
     children: [],
     duplicateOf: null,
-    blockedBy: input.blockedBy ?? [],
+    blockedBy: [],
     related: [],
     attachments: [],
-    createdAt: "2026-07-25T09:00:00.000Z",
-    updatedAt: "2026-07-25T10:00:00.000Z",
+    createdAt: "2026-07-28T09:00:00.000Z",
+    updatedAt: "2026-07-28T10:00:00.000Z",
     completeness: {
       commentsTruncated: false,
       labelsTruncated: false,
@@ -146,10 +146,6 @@ function issueContext(
       ...input.completeness,
     },
   };
-}
-
-function workflowState(id: string): LinearWorkflowState {
-  return { id, name: id, type: id === readiness.stateIds.inProgress ? "started" : "unstarted" };
 }
 
 function workEvent(context: LinearIssueContext, overrides: Partial<WorkRequestData> = {}) {
@@ -163,14 +159,12 @@ function workEvent(context: LinearIssueContext, overrides: Partial<WorkRequestDa
   return SpecWorkRequestedEvent.create(data, { id: workRequestEventId("spec", data) });
 }
 
-type LinearState = {
-  context: LinearIssueContext;
-  comments: Map<string, string>;
-  order: string[];
-};
-
 function fakeLinear(initial: LinearIssueContext) {
-  const state: LinearState = { context: initial, comments: new Map(), order: [] };
+  const state = {
+    context: initial,
+    comments: new Map<string, string>(),
+    order: [] as string[],
+  };
   const getIssueContext = vi.fn<LinearSpecService["getIssueContext"]>(async () => {
     state.order.push("load");
     return structuredClone(state.context);
@@ -183,36 +177,30 @@ function fakeLinear(initial: LinearIssueContext) {
     ) {
       throw new Error("state conflict");
     }
-    state.context = {
-      ...state.context,
-      state: workflowState(input.stateId),
-      updatedAt: "2026-07-25T10:01:00.000Z",
-    };
-    return { changed: true, stateId: input.stateId };
+    const changed = state.context.state.id !== input.stateId;
+    state.context = { ...state.context, state: workflowState(input.stateId) };
+    return { changed, stateId: input.stateId };
   });
   const updateIssueLabels = vi.fn<LinearSpecService["updateIssueLabels"]>(async (input) => {
     state.order.push(`labels:${input.removeLabelIds.join(",")}`);
     const removed = new Set(input.removeLabelIds);
-    const added = input.addLabelIds.map((id) => ({ id, name: id }));
-    state.context = {
-      ...state.context,
-      labels: [...state.context.labels.filter((label) => !removed.has(label.id)), ...added],
-      updatedAt: "2026-07-25T10:02:00.000Z",
-    };
+    const remaining = state.context.labels.filter((label) => !removed.has(label.id));
+    const current = new Set(remaining.map((label) => label.id));
+    const added = input.addLabelIds
+      .filter((id) => !current.has(id))
+      .map((id) => ({ id, name: id }));
+    state.context = { ...state.context, labels: [...remaining, ...added] };
     return {
-      submitted: true,
+      submitted: added.length > 0 || remaining.length !== state.context.labels.length,
       addedLabelIds: input.addLabelIds,
       removedLabelIds: input.removeLabelIds,
     };
   });
   const ensureComment = vi.fn<LinearSpecService["ensureComment"]>(async (input) => {
     state.order.push("comment");
-    if (!state.comments.has(input.marker)) state.comments.set(input.marker, input.body);
-    state.context = {
-      ...state.context,
-      updatedAt: "2026-07-25T10:03:00.000Z",
-    };
-    return { created: true, id: `comment-${state.comments.size}` };
+    const created = !state.comments.has(input.marker);
+    if (created) state.comments.set(input.marker, input.body);
+    return { created, id: `comment-${state.comments.size}` };
   });
   return {
     state,
@@ -220,106 +208,245 @@ function fakeLinear(initial: LinearIssueContext) {
   };
 }
 
-function fakeRepository(
-  workspace: string,
-  changes: readonly RepositoryChange[],
-): { service: RepositoryService; order: string[] } {
-  const order: string[] = [];
+type RepositoryFixture = ReturnType<typeof fakeRepository>;
+
+function fakeRepository(workspace: string) {
   const base: RepositoryBase = {
     remote: "https://github.com/ferueda/harness.git",
     baseRef: "main",
     baseSha: "a".repeat(40),
   };
-  const run: RepositoryRun = {
-    version: 1,
-    id: "placeholder",
-    workspace,
-    remote: base.remote,
-    baseRef: base.baseRef,
-    baseSha: base.baseSha,
-    branch: "placeholder",
+  const state = {
+    pendingChanges: [] as RepositoryChange[],
+    checkpoints: [] as RepositoryCheckpoint[],
+    order: [] as string[],
   };
+  const service: RepositoryService = {
+    resolveBase: vi.fn<RepositoryService["resolveBase"]>(async () => {
+      state.order.push("base");
+      return base;
+    }),
+    prepareRun: vi.fn<RepositoryService["prepareRun"]>(async (input) => {
+      state.order.push("prepare");
+      return {
+        version: 1,
+        id: input.id,
+        workspace,
+        remote: input.base.remote,
+        baseRef: input.base.baseRef,
+        baseSha: input.base.baseSha,
+        branch: input.branch,
+      };
+    }),
+    inspectChanges: vi.fn<RepositoryService["inspectChanges"]>(async () => {
+      state.order.push("inspect");
+      return structuredClone(state.pendingChanges);
+    }),
+    checkpointRun: vi.fn<RepositoryService["checkpointRun"]>(async (input) => {
+      state.order.push(`checkpoint:${input.expectedParentRevision.slice(0, 4)}`);
+      expect(input.expectedChanges).toEqual(state.pendingChanges);
+      const revision = String.fromCharCode(98 + state.checkpoints.length).repeat(40);
+      const checkpoint: RepositoryCheckpoint = {
+        version: 1,
+        id: input.id,
+        runId: input.run.id,
+        baseSha: input.run.baseSha,
+        parentRevision: input.expectedParentRevision,
+        revision,
+        branch: input.run.branch,
+        changes: structuredClone(input.expectedChanges),
+      };
+      state.checkpoints.push(checkpoint);
+      state.pendingChanges = [];
+      return checkpoint;
+    }),
+    openCheckpoint: vi.fn<RepositoryService["openCheckpoint"]>(async (input) => {
+      state.order.push(`open:${input.checkpoint.revision.slice(0, 4)}`);
+      if (state.pendingChanges.length > 0) throw new Error("checkpoint workspace is dirty");
+      return {
+        version: 1,
+        id: input.checkpoint.runId,
+        workspace,
+        remote: base.remote,
+        baseRef: input.baseRef,
+        baseSha: input.checkpoint.baseSha,
+        branch: input.checkpoint.branch,
+      };
+    }),
+    cleanupRun: vi.fn<RepositoryService["cleanupRun"]>(async () => {
+      state.order.push("cleanup");
+      return { status: "released" };
+    }),
+  };
+  return { state, service };
+}
+
+function approvedReview(): AgentRunResult {
   return {
-    order,
-    service: {
-      resolveBase: vi.fn<RepositoryService["resolveBase"]>(async () => {
-        order.push("base");
-        return base;
-      }),
-      prepareRun: vi.fn<RepositoryService["prepareRun"]>(async (input) => {
-        order.push("prepare");
-        return { ...run, id: input.id, branch: input.branch };
-      }),
-      inspectChanges: vi.fn<RepositoryService["inspectChanges"]>(async () => {
-        order.push("inspect");
-        return changes;
-      }),
-      checkpointRun: vi.fn<RepositoryService["checkpointRun"]>(async () => {
-        throw new Error("Unexpected repository checkpoint call");
-      }),
-      openCheckpoint: vi.fn<RepositoryService["openCheckpoint"]>(async () => {
-        throw new Error("Unexpected repository open checkpoint call");
-      }),
-      cleanupRun: vi.fn<RepositoryService["cleanupRun"]>(async () => {
-        order.push("cleanup");
-        return { status: "released" as const };
-      }),
+    ok: true,
+    structuredOutput: {
+      outcome: "approved",
+      rationale: "The Spec is scoped and executable.",
+      evidence: [
+        {
+          source: "artifact",
+          path: ARTIFACT,
+          lineStart: 1,
+          lineEnd: 1,
+          summary: "The plan defines a bounded delivery.",
+        },
+      ],
+      findings: [],
     },
+    raw: {},
+  };
+}
+
+function changesReview(problem = "Clarify the verification boundary."): AgentRunResult {
+  return {
+    ok: true,
+    structuredOutput: {
+      outcome: "changes-requested",
+      rationale: "One material gap remains.",
+      evidence: [],
+      findings: [
+        {
+          criterion: "verification",
+          artifactLocation: { section: "Verify", lineStart: 20, lineEnd: 22 },
+          evidence: [
+            {
+              source: "artifact",
+              path: ARTIFACT,
+              lineStart: 20,
+              lineEnd: 22,
+              summary: "The current verification is too broad.",
+            },
+          ],
+          problem,
+          requiredOutcome: "Name the focused behavioral proof.",
+        },
+      ],
+    },
+    raw: {},
+  };
+}
+
+function fakeAgents(input: {
+  workspace: string;
+  repository: RepositoryFixture;
+  reviews: AgentRunResult[];
+  revisions?: Array<"updated" | "unchanged" | "needs-input">;
+  authorDecision?: SpecDecision;
+  reviewHook?: (index: number) => void;
+}) {
+  let reviewIndex = 0;
+  let revisionIndex = 0;
+  const authorRun = vi.fn<Agent["run"]>(async (runInput) => {
+    if (!runInput.session) {
+      const decision = input.authorDecision ?? readyDecision;
+      if (decision.outcome === "ready-for-review") {
+        mkdirSync(join(input.workspace, "dev/plans"), { recursive: true });
+        writeFileSync(join(input.workspace, decision.artifactPath), "# Initial Spec\n", "utf8");
+        input.repository.state.pendingChanges = [
+          { path: decision.artifactPath, status: "untracked" },
+        ];
+      }
+      return {
+        ok: true,
+        structuredOutput: decision,
+        raw: {},
+        session: { provider: "codex", id: "author-session-0" },
+      };
+    }
+
+    const outcome = input.revisions?.[revisionIndex++] ?? "updated";
+    const findingIds = [
+      ...new Set(runInput.prompt.match(/spec-review-finding-[0-9a-f]{64}/g) ?? []),
+    ];
+    if (outcome === "updated") {
+      writeFileSync(
+        join(input.workspace, ARTIFACT),
+        `${readFileSync(join(input.workspace, ARTIFACT), "utf8")}\n## Revised\n`,
+        "utf8",
+      );
+      input.repository.state.pendingChanges = [{ path: ARTIFACT, status: "modified" }];
+    }
+    return {
+      ok: true,
+      structuredOutput: {
+        outcome,
+        rationale:
+          outcome === "needs-input"
+            ? "A product choice is required."
+            : "The author resolved the review.",
+        responses: findingIds.map((findingId) => ({
+          findingId,
+          disposition: outcome === "updated" ? "accepted" : "declined",
+          rationale:
+            outcome === "updated"
+              ? "Updated the verification section."
+              : "Repository evidence supports the current choice.",
+          evidence:
+            outcome === "updated"
+              ? []
+              : [
+                  {
+                    source: "code",
+                    path: "lib/linear-automation/spec-consumer.ts",
+                    lineStart: 1,
+                    lineEnd: 1,
+                    summary: "The existing boundary supports the decision.",
+                  },
+                ],
+        })),
+        questions: outcome === "needs-input" ? ["Which product boundary should win?"] : [],
+      },
+      raw: {},
+      session: { provider: "codex", id: `author-session-${revisionIndex}` },
+    };
+  });
+  const reviewRun = vi.fn<Agent["run"]>(async () => {
+    input.reviewHook?.(reviewIndex);
+    return input.reviews[reviewIndex++] ?? approvedReview();
+  });
+  return {
+    authorAgent: { name: "codex", run: authorRun } satisfies Agent,
+    reviewAgent: { name: "codex", run: reviewRun } satisfies Agent,
+    authorRun,
+    reviewRun,
   };
 }
 
 function fakeGitHub(overrides: Partial<PublishedPullRequest> = {}) {
-  const publish = vi.fn<GitHubPublicationService["publishPullRequest"]>(async () => ({
-    url: "https://github.com/ferueda/harness/pull/250",
-    number: 250,
-    owner: "ferueda",
-    repository: "harness",
-    baseBranch: "main",
-    headBranch: "harness/spec/FER-267-abc",
-    headSha: "b".repeat(40),
-    state: "open" as const,
-    merged: false,
-    ...overrides,
-  }));
-  const publishCheckpoint = vi.fn<GitHubPublicationService["publishCheckpointPullRequest"]>(
-    async () => {
-      throw new Error("Unexpected checkpoint publication");
-    },
-  );
-  return {
-    service: {
-      publishPullRequest: publish,
-      publishCheckpointPullRequest: publishCheckpoint,
-    },
-    publish,
-    publishCheckpoint,
-  };
-}
-
-function fakeAgent(workspace: string, result: AgentRunResult, hook?: () => void) {
-  const run = vi.fn<Agent["run"]>(async () => {
-    hook?.();
-    if (result.ok && (result.structuredOutput as SpecDecision).outcome === "ready-for-review") {
-      mkdirSync(join(workspace, "dev/plans"), { recursive: true });
-      writeFileSync(join(workspace, "dev/plans/FER-267.md"), "# FER-267\n", "utf8");
-    }
-    return result;
+  const calls: Array<{ title: string; body: string; checkpoint: RepositoryCheckpoint }> = [];
+  const publishCheckpointPullRequest = vi.fn<
+    GitHubPublicationService["publishCheckpointPullRequest"]
+  >(async (input) => {
+    calls.push({ title: input.title, body: input.body, checkpoint: input.checkpoint });
+    return {
+      url: "https://github.com/ferueda/harness/pull/320",
+      number: 320,
+      owner: "ferueda",
+      repository: "harness",
+      baseBranch: input.baseBranch,
+      headBranch: input.run.branch,
+      headSha: input.checkpoint.revision,
+      state: "open",
+      merged: false,
+      ...overrides,
+    };
   });
-  return { agent: { name: "codex", run } satisfies Agent, run };
-}
-
-function success(decision: SpecDecision): AgentRunResult {
   return {
-    ok: true,
-    structuredOutput: decision,
-    raw: {},
-    session: { provider: "codex", id: "thread-267" },
+    service: { publishCheckpointPullRequest },
+    publish: publishCheckpointPullRequest,
+    calls,
   };
 }
 
 function specFunction(input: {
   linear: LinearSpecService;
-  agent: Agent;
+  authorAgent: Agent;
+  reviewAgent: Agent;
   repository: RepositoryService;
   github: GitHubPublicationService;
 }) {
@@ -343,23 +470,43 @@ function specFunction(input: {
   });
 }
 
-describe("independent Linear Spec consumer", () => {
+async function execute(input: {
+  context: LinearIssueContext;
+  linear: ReturnType<typeof fakeLinear>;
+  agents: ReturnType<typeof fakeAgents>;
+  repository: RepositoryFixture;
+  github: ReturnType<typeof fakeGitHub>;
+}) {
+  return new InngestTestEngine({
+    function: specFunction({
+      linear: input.linear.service,
+      authorAgent: input.agents.authorAgent,
+      reviewAgent: input.agents.reviewAgent,
+      repository: input.repository.service,
+      github: input.github.service,
+    }),
+    events: [workEvent(input.context)],
+  }).execute();
+}
+
+describe("bounded Linear Spec consumer", () => {
   let workspace: string;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "harness-spec-consumer-"));
+    workspace = mkdtempSync(join(tmpdir(), "harness-spec-cycle-"));
   });
 
-  it("locks the trigger, retries, and issue-level concurrency", () => {
-    const linear = fakeLinear(issueContext());
-    const repository = fakeRepository(workspace, []);
-    const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(needsInputDecision));
+  it("locks trigger, retries, and issue-level concurrency", () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({ workspace, repository, reviews: [approvedReview()] });
     const fn = specFunction({
       linear: linear.service,
+      authorAgent: agents.authorAgent,
+      reviewAgent: agents.reviewAgent,
       repository: repository.service,
-      github: github.service,
-      agent: agent.agent,
+      github: fakeGitHub().service,
     });
     expect(fn.opts).toMatchObject({
       id: LINEAR_SPEC_FUNCTION_ID,
@@ -369,351 +516,293 @@ describe("independent Linear Spec consumer", () => {
     });
   });
 
-  it("publishes one ready Spec before projecting Needs Review and cleaning", async () => {
+  it("authors, checkpoints, independently approves, publishes, projects, and cleans", async () => {
     const context = issueContext();
     const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, [
-      { path: "dev/plans/FER-267.md", status: "untracked" },
-    ]);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({ workspace, repository, reviews: [approvedReview()] });
     const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(readyDecision));
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
+    const output = await execute({ context, linear, agents, repository, github });
 
     expect(output.error).toBeUndefined();
     expect(output.result).toMatchObject({
       outcome: "ready-for-review",
-      pullRequestUrl: "https://github.com/ferueda/harness/pull/250",
+      reviewOutcome: "approved",
+      pullRequestUrl: "https://github.com/ferueda/harness/pull/320",
+      cleanup: "cleaned",
     });
+    expect(agents.authorRun).toHaveBeenCalledOnce();
+    expect(agents.reviewRun).toHaveBeenCalledOnce();
+    expect(repository.state.checkpoints).toHaveLength(1);
+    expect(github.calls[0]?.checkpoint.revision).toBe(repository.state.checkpoints[0]?.revision);
     expect(linear.state.context.state.id).toBe(readiness.stateIds.needsReview);
     expect(linear.state.context.labels.map((label) => label.id)).toEqual(["label-unrelated"]);
-    expect(linear.state.comments.size).toBe(1);
-    expect([...linear.state.comments.values()][0]).toContain("/pull/250");
-    expect(github.publish).toHaveBeenCalledOnce();
-    expect(repository.order).toEqual(["base", "prepare", "inspect", "cleanup"]);
-    expect(linear.state.order).toEqual([
-      "load",
-      `state:${readiness.stateIds.inProgress}`,
-      `labels:${readiness.agentReadyLabelId}`,
-      "load",
-      "comment",
-      `labels:${readiness.agentActionLabelIds.spec}`,
-      `state:${readiness.stateIds.needsReview}`,
-    ]);
+    expect(linear.state.order.indexOf(`state:${readiness.stateIds.needsReview}`)).toBeLessThan(
+      linear.state.order.lastIndexOf(`labels:${readiness.agentActionLabelIds.spec}`),
+    );
   });
 
-  it("projects Needs Input without a pull request and requires a clean workspace", async () => {
+  it("keeps complete Linear context inside agent steps, not durable load output", async () => {
     const context = issueContext();
     const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, []);
-    const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(needsInputDecision));
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
-
-    expect(output.result).toMatchObject({ outcome: "needs-input" });
-    expect(linear.state.context.state.id).toBe(readiness.stateIds.needsInput);
-    expect([...linear.state.comments.values()][0]).toContain(needsInputDecision.questions[0]);
-    expect(github.publish).not.toHaveBeenCalled();
-    expect(repository.order.at(-1)).toBe("cleanup");
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({ workspace, repository, reviews: [approvedReview()] });
+    const output = await execute({
+      context,
+      linear,
+      agents,
+      repository,
+      github: fakeGitHub(),
+    });
+    const firstStep = await Object.values(output.state)[0];
+    const serialized = JSON.stringify(firstStep);
+    expect(serialized).toContain("sourceFingerprint");
+    expect(serialized).not.toContain(context.description);
+    expect(serialized).not.toContain("comments");
+    expect(agents.authorRun.mock.calls[0]?.[0].prompt).toContain(context.title);
+    expect(agents.reviewRun.mock.calls[0]?.[0].prompt).toContain(context.title);
   });
 
-  it.each([
-    ["commentsTruncated"],
-    ["labelsTruncated"],
-    ["relationsTruncated"],
-    ["attachmentsTruncated"],
-    ["childrenTruncated"],
-  ] as const)("fails closed before claim when %s is true", async (flag) => {
-    const context = issueContext({ completeness: { [flag]: true } });
+  it("projects initial Needs Input before creating a checkpoint", async () => {
+    const context = issueContext();
     const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, []);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({
+      workspace,
+      repository,
+      reviews: [],
+      authorDecision: needsInputDecision,
+    });
     const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(needsInputDecision));
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
-    expect(output.result).toEqual({ outcome: "ignored", reason: "incomplete-context" });
-    expect(agent.run).not.toHaveBeenCalled();
-    expect(linear.state.order).toEqual(["load"]);
+    const output = await execute({ context, linear, agents, repository, github });
+
+    expect(output.result).toMatchObject({ outcome: "needs-input", cleanup: "cleaned" });
+    expect(repository.state.checkpoints).toHaveLength(0);
+    expect(agents.reviewRun).not.toHaveBeenCalled();
+    expect(github.publish).not.toHaveBeenCalled();
+    expect(linear.state.context.state.id).toBe(readiness.stateIds.needsInput);
   });
 
-  it.each([
-    [
-      "source",
-      (linear: ReturnType<typeof fakeLinear>) => {
+  it("creates one exact child checkpoint after an updated revision", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({
+      workspace,
+      repository,
+      reviews: [changesReview(), approvedReview()],
+      revisions: ["updated"],
+    });
+    const github = fakeGitHub();
+    const output = await execute({ context, linear, agents, repository, github });
+
+    expect(output.result).toMatchObject({ reviewOutcome: "approved" });
+    expect(repository.state.checkpoints).toHaveLength(2);
+    expect(repository.state.checkpoints[1]?.parentRevision).toBe(
+      repository.state.checkpoints[0]?.revision,
+    );
+    expect(agents.authorRun.mock.calls[1]?.[0].session).toMatchObject({
+      provider: "codex",
+      id: "author-session-0",
+    });
+    expect(github.calls[0]?.checkpoint.revision).toBe(repository.state.checkpoints[1]?.revision);
+  });
+
+  it("supports two updated revisions before the final approval", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({
+      workspace,
+      repository,
+      reviews: [changesReview("Gap one."), changesReview("Gap two."), approvedReview()],
+      revisions: ["updated", "updated"],
+    });
+    const github = fakeGitHub();
+    const output = await execute({ context, linear, agents, repository, github });
+
+    expect(output.result).toMatchObject({ reviewOutcome: "approved" });
+    expect(repository.state.checkpoints).toHaveLength(3);
+    expect(agents.reviewRun).toHaveBeenCalledTimes(3);
+    expect(agents.authorRun).toHaveBeenCalledTimes(3);
+    expect(github.calls[0]?.checkpoint.revision).toBe(repository.state.checkpoints[2]?.revision);
+  });
+
+  it("counts an unchanged revision without creating an empty checkpoint", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({
+      workspace,
+      repository,
+      reviews: [changesReview(), approvedReview()],
+      revisions: ["unchanged"],
+    });
+    const output = await execute({
+      context,
+      linear,
+      agents,
+      repository,
+      github: fakeGitHub(),
+    });
+
+    expect(output.result).toMatchObject({ reviewOutcome: "approved" });
+    expect(repository.state.checkpoints).toHaveLength(1);
+    expect(agents.reviewRun).toHaveBeenCalledTimes(2);
+    expect(agents.authorRun).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops a revision at Needs Input without publication", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({
+      workspace,
+      repository,
+      reviews: [changesReview()],
+      revisions: ["needs-input"],
+    });
+    const github = fakeGitHub();
+    const output = await execute({ context, linear, agents, repository, github });
+
+    expect(output.result).toMatchObject({ outcome: "needs-input", cleanup: "cleaned" });
+    expect(linear.state.context.state.id).toBe(readiness.stateIds.needsInput);
+    expect(github.publish).not.toHaveBeenCalled();
+    expect([...linear.state.comments.values()][0]).toContain("Which product boundary should win?");
+  });
+
+  it("publishes the latest checkpoint as explicitly unapproved after three reviews", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({
+      workspace,
+      repository,
+      reviews: [changesReview("Gap one."), changesReview("Gap two."), changesReview("Gap three.")],
+      revisions: ["updated", "unchanged"],
+    });
+    const github = fakeGitHub();
+    const output = await execute({ context, linear, agents, repository, github });
+
+    expect(output.result).toMatchObject({
+      outcome: "ready-for-review",
+      reviewOutcome: "exhausted",
+    });
+    expect(agents.reviewRun).toHaveBeenCalledTimes(3);
+    expect(agents.authorRun).toHaveBeenCalledTimes(3);
+    expect(github.calls[0]?.title).toContain("[UNAPPROVED]");
+    expect(github.calls[0]?.body).toContain("Gap three.");
+    expect([...linear.state.comments.values()][0]).toContain("spec-review-finding-");
+    expect(linear.state.context.state.id).toBe(readiness.stateIds.needsReview);
+  });
+
+  it("reopens and cleans when Linear authority changes during review", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({
+      workspace,
+      repository,
+      reviews: [approvedReview()],
+      reviewHook: () => {
         linear.state.context = { ...linear.state.context, title: "Changed by a human" };
       },
-    ],
-    [
-      "label",
-      (linear: ReturnType<typeof fakeLinear>) => {
-        linear.state.context = {
-          ...linear.state.context,
-          labels: [
-            ...linear.state.context.labels,
-            { id: readiness.agentActionLabelIds.implement, name: "Implement" },
-          ],
-        };
-      },
-    ],
-    [
-      "blocker",
-      (linear: ReturnType<typeof fakeLinear>) => {
-        linear.state.context = {
-          ...linear.state.context,
-          blockedBy: [
-            {
-              id: "blocker-1",
-              identifier: "FER-100",
-              title: "Blocking issue",
-              url: "https://linear.app/example/FER-100",
-              state: workflowState(readiness.stateIds.open),
-            },
-          ],
-        };
-      },
-    ],
-  ] as const)("retains the claimed run when %s authority drifts", async (_name, drift) => {
-    const context = issueContext();
-    const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, []);
+    });
     const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(needsInputDecision), () => drift(linear));
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
+    const output = await execute({ context, linear, agents, repository, github });
 
-    expect(output.result).toMatchObject({ outcome: "failed", reason: "stale-authority" });
-    expect(linear.state.context.state.id).toBe(readiness.stateIds.inProgress);
+    expect(output.result).toMatchObject({
+      outcome: "failed",
+      reason: "stale-authority",
+      cleanup: "cleaned",
+    });
+    expect(linear.state.context.state.id).toBe(readiness.stateIds.open);
+    expect(linear.state.context.labels.map((label) => label.id)).toContain(
+      readiness.agentActionLabelIds.spec,
+    );
     expect(github.publish).not.toHaveBeenCalled();
-    expect(repository.order).not.toContain("cleanup");
-    expect(linear.state.comments.size).toBe(1);
+    expect(repository.state.order).toContain("cleanup");
   });
 
-  it("marks an invalid workspace without publication or cleanup", async () => {
+  it("preserves a newer human lifecycle change during recovery", async () => {
     const context = issueContext();
     const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, [
-      { path: "lib/unrelated.ts", status: "modified" },
-    ]);
-    const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(readyDecision));
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
-    expect(output.result).toMatchObject({ outcome: "failed", reason: "invalid-workspace" });
-    expect(github.publish).not.toHaveBeenCalled();
-    expect(repository.order).not.toContain("cleanup");
-    expect([...linear.state.comments.keys()][0]).toBe(
-      specCommentMarker(workEvent(context).data, "failure"),
+    const repository = fakeRepository(workspace);
+    const humanLabels = [{ id: "label-human", name: "Human owned" }];
+    const agents = fakeAgents({
+      workspace,
+      repository,
+      reviews: [approvedReview()],
+      reviewHook: () => {
+        linear.state.context = {
+          ...linear.state.context,
+          state: workflowState(readiness.stateIds.needsReview),
+          labels: humanLabels,
+        };
+      },
+    });
+    const output = await execute({
+      context,
+      linear,
+      agents,
+      repository,
+      github: fakeGitHub(),
+    });
+
+    expect(output.result).toMatchObject({
+      outcome: "failed",
+      reason: "stale-authority",
+      cleanup: "cleaned",
+    });
+    expect(linear.state.context.state.id).toBe(readiness.stateIds.needsReview);
+    expect(linear.state.context.labels).toEqual(humanLabels);
+  });
+
+  it("rejects a publication that does not match the reviewed checkpoint", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({ workspace, repository, reviews: [approvedReview()] });
+    const github = fakeGitHub({ headSha: "f".repeat(40) });
+    const output = await execute({ context, linear, agents, repository, github });
+
+    expect(output.result).toMatchObject({
+      outcome: "failed",
+      reason: "invalid-publication",
+      cleanup: "cleaned",
+    });
+    expect(linear.state.context.state.id).toBe(readiness.stateIds.open);
+    expect(linear.state.context.labels.map((label) => label.id)).toContain(
+      readiness.agentActionLabelIds.spec,
     );
   });
 
-  it("preflights an oversized ready comment before publication", async () => {
+  it("ignores a repeated completed delivery and keeps stable root identities", async () => {
     const context = issueContext();
     const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, [
-      { path: "dev/plans/FER-267.md", status: "untracked" },
-    ]);
+    const repository = fakeRepository(workspace);
+    const agents = fakeAgents({ workspace, repository, reviews: [approvedReview()] });
     const github = fakeGitHub();
-    const oversized: typeof readyDecision = {
-      ...readyDecision,
-      reviewerDecisions: [
-        {
-          question: "Which option should the reviewer approve?",
-          options: [
-            { option: "Approve", tradeoffs: "Ships the pilot." },
-            { option: "Wait", tradeoffs: "Delays the pilot." },
-          ],
-          recommendation: "Approve",
-          rationale: "r".repeat(9_000),
-        },
-      ],
-    };
-    const agent = fakeAgent(workspace, success(oversized));
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
-
-    expect(output.result).toMatchObject({ outcome: "failed", reason: "invalid-workspace" });
-    expect(github.publish).not.toHaveBeenCalled();
-    expect(repository.order).not.toContain("cleanup");
-  });
-
-  it("throws retryable provider failures inside the agent step", async () => {
-    const context = issueContext();
-    const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, []);
-    const github = fakeGitHub();
-    const agent = fakeAgent(workspace, {
-      ok: false,
-      error: "provider unavailable",
-      exitCode: 1,
-    });
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
-    expect(output.error).toMatchObject({
-      message: expect.stringContaining("provider unavailable"),
-    });
-    expect(output.ctx.step.run).toHaveBeenCalledWith(
-      LINEAR_SPEC_AGENT_STEP_ID,
-      expect.any(Function),
-    );
-  });
-
-  it("reuses the durable base SHA when preparation retries after the remote advances", async () => {
-    const context = issueContext();
-    const linear = fakeLinear(context);
-    let resolveCalls = 0;
-    const preparedBaseShas: string[] = [];
-    const repository = fakeRepository(workspace, []);
-    let prepareCalls = 0;
-    const repositoryService: RepositoryService = {
-      ...repository.service,
-      resolveBase: vi.fn<RepositoryService["resolveBase"]>(async () => {
-        resolveCalls += 1;
-        return {
-          remote: "https://github.com/ferueda/harness.git",
-          baseRef: "main",
-          baseSha: (resolveCalls === 1 ? "a" : "b").repeat(40),
-        };
-      }),
-      prepareRun: vi.fn<RepositoryService["prepareRun"]>(async (input) => {
-        prepareCalls += 1;
-        preparedBaseShas.push(input.base.baseSha);
-        if (prepareCalls === 1) throw new Error("prepare response lost");
-        return {
-          version: 1,
-          id: input.id,
-          workspace,
-          remote: input.base.remote,
-          baseRef: input.base.baseRef,
-          baseSha: input.base.baseSha,
-          branch: input.branch,
-        };
-      }),
-    };
-    const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(needsInputDecision));
     const fn = specFunction({
       linear: linear.service,
-      repository: repositoryService,
-      github: github.service,
-      agent: agent.agent,
-    });
-    const event = workEvent(context);
-    const failed = await new InngestTestEngine({ function: fn, events: [event] }).execute();
-    expect(failed.error).toMatchObject({
-      message: expect.stringContaining("prepare response lost"),
-    });
-
-    const retried = await new InngestTestEngine({
-      function: fn,
-      events: [event],
-      steps: await completedSpecStepsBefore(failed.state, LINEAR_SPEC_PREPARE_STEP_ID),
-    }).execute();
-    expect(retried.error).toBeUndefined();
-    expect(retried.result).toMatchObject({ outcome: "needs-input" });
-    expect(resolveCalls).toBe(1);
-    expect(preparedBaseShas).toEqual(["a".repeat(40), "a".repeat(40)]);
-  });
-
-  it.each([
-    [{ state: "closed" as const }, "invalid-publication"],
-    [{ merged: true }, "invalid-publication"],
-  ])("retains the run for a non-reviewable recovered PR", async (overrides, reason) => {
-    const context = issueContext();
-    const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, [
-      { path: "dev/plans/FER-267.md", status: "untracked" },
-    ]);
-    const github = fakeGitHub(overrides);
-    const agent = fakeAgent(workspace, success(readyDecision));
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
-    expect(output.result).toMatchObject({ outcome: "failed", reason });
-    expect(linear.state.context.state.id).toBe(readiness.stateIds.inProgress);
-    expect(repository.order).not.toContain("cleanup");
-  });
-
-  it("ignores a repeated completed delivery and keeps stable identities", async () => {
-    const context = issueContext();
-    const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, []);
-    const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(needsInputDecision));
-    const fn = specFunction({
-      linear: linear.service,
+      authorAgent: agents.authorAgent,
+      reviewAgent: agents.reviewAgent,
       repository: repository.service,
       github: github.service,
-      agent: agent.agent,
     });
     const event = workEvent(context);
     const identity = specWorkIdentity(event.data);
     const first = await new InngestTestEngine({ function: fn, events: [event] }).execute();
     const repeated = await new InngestTestEngine({ function: fn, events: [event] }).execute();
 
-    expect(first.result).toMatchObject({ outcome: "needs-input" });
+    expect(first.result).toMatchObject({ reviewOutcome: "approved" });
     expect(repeated.result).toEqual({ outcome: "ignored", reason: "not-spec-ready" });
-    expect(agent.run).toHaveBeenCalledOnce();
+    expect(agents.authorRun).toHaveBeenCalledOnce();
     expect(identity.workId).toBe(workRequestEventId("spec", event.data));
-    expect(identity.branch).toMatch(/^harness\/spec\/FER-267-[0-9a-f]{12}$/);
+    expect(identity.branch).toMatch(/^harness\/spec\/FER-320-[0-9a-f]{12}$/);
   });
 
-  it("projects one bounded exhaustion comment and no lifecycle mutation on replay", async () => {
+  it("keeps failure comments bounded and idempotent", async () => {
     const context = issueContext({ stateId: readiness.stateIds.inProgress });
     const linear = fakeLinear(context);
     const event = workEvent(issueContext()).data;
@@ -735,49 +824,4 @@ describe("independent Linear Spec consumer", () => {
     expect(linear.service.updateIssueLabels).not.toHaveBeenCalled();
     expect([...linear.state.comments.keys()][0]).toBe(specCommentMarker(event, "failure"));
   });
-
-  it("claims and consumes Agent Ready in one durable step", async () => {
-    const context = issueContext();
-    const linear = fakeLinear(context);
-    const repository = fakeRepository(workspace, []);
-    const github = fakeGitHub();
-    const agent = fakeAgent(workspace, success(needsInputDecision));
-    const output = await new InngestTestEngine({
-      function: specFunction({
-        linear: linear.service,
-        repository: repository.service,
-        github: github.service,
-        agent: agent.agent,
-      }),
-      events: [workEvent(context)],
-    }).execute();
-    expect(output.error).toBeUndefined();
-    expect(
-      output.ctx.step.run.mock.calls.filter((call) => call[0] === LINEAR_SPEC_CLAIM_STEP_ID),
-    ).toHaveLength(1);
-    expect(linear.state.order.slice(1, 3)).toEqual([
-      `state:${readiness.stateIds.inProgress}`,
-      `labels:${readiness.agentReadyLabelId}`,
-    ]);
-  });
 });
-
-async function completedSpecStepsBefore(
-  state: Record<string, Promise<unknown>>,
-  failedStepId: string,
-) {
-  const ids = [
-    LINEAR_SPEC_LOAD_STEP_ID,
-    LINEAR_SPEC_CLAIM_STEP_ID,
-    LINEAR_SPEC_BASE_STEP_ID,
-    LINEAR_SPEC_PREPARE_STEP_ID,
-  ];
-  const completed = ids.slice(0, ids.indexOf(failedStepId));
-  const values = Object.values(state);
-  return Promise.all(
-    completed.map(async (id, index) => {
-      const value = await values[index];
-      return { id, handler: () => value };
-    }),
-  );
-}

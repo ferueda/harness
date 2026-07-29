@@ -60,7 +60,6 @@ const OptionalNonBlankStringSchema = z.preprocess(
   blankStringAsUndefined,
   z.string().trim().min(1).optional(),
 );
-const OptionalEmailSchema = z.preprocess(blankStringAsUndefined, z.email().optional());
 
 const WorkerEnvironmentSchema = z
   .object({
@@ -75,8 +74,6 @@ const WorkerEnvironmentSchema = z
     HARNESS_APP_VERSION: z.string().trim().min(1).optional(),
     HARNESS_REPOSITORY_ROOT: OptionalNonBlankStringSchema,
     GITHUB_TOKEN: OptionalNonBlankStringSchema,
-    GIT_AUTHOR_NAME: OptionalNonBlankStringSchema,
-    GIT_AUTHOR_EMAIL: OptionalEmailSchema,
   })
   .passthrough()
   .superRefine((environment, ctx) => {
@@ -115,7 +112,6 @@ export type LinearAutomationWorkerEnvironment = Readonly<{
   spec?: Readonly<{
     repositoryRoot: string;
     githubToken: string;
-    gitAuthor: Readonly<{ name: string; email: string }>;
   }>;
 }>;
 
@@ -146,8 +142,6 @@ export function parseLinearAutomationWorkerEnvironment(
     const required = [
       ["HARNESS_REPOSITORY_ROOT", parsed.HARNESS_REPOSITORY_ROOT],
       ["GITHUB_TOKEN", parsed.GITHUB_TOKEN],
-      ["GIT_AUTHOR_NAME", parsed.GIT_AUTHOR_NAME],
-      ["GIT_AUTHOR_EMAIL", parsed.GIT_AUTHOR_EMAIL],
     ] as const;
     const missing = required.find(([, value]) => !value);
     if (missing) {
@@ -161,10 +155,6 @@ export function parseLinearAutomationWorkerEnvironment(
     spec = Object.freeze({
       repositoryRoot: parsed.HARNESS_REPOSITORY_ROOT as string,
       githubToken: parsed.GITHUB_TOKEN as string,
-      gitAuthor: Object.freeze({
-        name: parsed.GIT_AUTHOR_NAME as string,
-        email: parsed.GIT_AUTHOR_EMAIL as string,
-      }),
     });
   }
 
@@ -230,7 +220,8 @@ export function createLinearAutomationFunctions(input: {
   client: Inngest.Any;
   linear: LinearTriageService & LinearIssuePollerLinear & LinearSpecService;
   triageAgent: Agent;
-  specAgent?: Agent;
+  specAuthorAgent?: Agent;
+  specReviewAgent?: Agent;
   settings: LinearAutomationSettings;
   repository?: RepositoryService;
   github?: GitHubPublicationService;
@@ -239,10 +230,14 @@ export function createLinearAutomationFunctions(input: {
   const specEnabled = Boolean(input.settings.spec);
   if (
     specEnabled &&
-    (!input.specAgent || !input.repository || !input.github || !input.githubRepository)
+    (!input.specAuthorAgent ||
+      !input.specReviewAgent ||
+      !input.repository ||
+      !input.github ||
+      !input.githubRepository)
   ) {
     throw new Error(
-      "The enabled Linear Spec route requires its agent, repository, and GitHub publication services.",
+      "The enabled Linear Spec route requires its author and review agents, repository, and GitHub publication services.",
     );
   }
   const readiness = Object.freeze({
@@ -283,14 +278,16 @@ export function createLinearAutomationFunctions(input: {
   });
   const spec =
     input.settings.spec &&
-    input.specAgent &&
+    input.specAuthorAgent &&
+    input.specReviewAgent &&
     input.repository &&
     input.github &&
     input.githubRepository
       ? createLinearSpecFunction({
           client: input.client,
           linear: input.linear,
-          agent: input.specAgent,
+          authorAgent: input.specAuthorAgent,
+          reviewAgent: input.specReviewAgent,
           repository: input.repository,
           github: input.github,
           config: {
@@ -398,7 +395,14 @@ export async function runLinearAutomationWorker(input: {
     codexPathOverride: settings.codexPathOverride,
     codexEnvironment,
   });
-  const specAgent = settings.spec
+  const specAuthorAgent = settings.spec
+    ? createAgentProvider({
+        provider: settings.spec.agent,
+        codexPathOverride: settings.codexPathOverride,
+        codexEnvironment,
+      })
+    : undefined;
+  const specReviewAgent = settings.spec
     ? createAgentProvider({
         provider: settings.spec.agent,
         codexPathOverride: settings.codexPathOverride,
@@ -421,14 +425,14 @@ export async function runLinearAutomationWorker(input: {
     });
     github = createGitHubPublication({
       token: environment.spec.githubToken,
-      author: environment.spec.gitAuthor,
     });
   }
   const app = createLinearAutomationFunctions({
     client,
     linear,
     triageAgent,
-    specAgent,
+    specAuthorAgent,
+    specReviewAgent,
     settings,
     repository,
     github,

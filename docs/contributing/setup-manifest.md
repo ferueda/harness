@@ -41,9 +41,8 @@ optional deployment metadata. See [Linear automation](./linear-automation.md)
 for the self-hosted deployment commands.
 
 When Spec is enabled, the worker also requires an absolute
-`HARNESS_REPOSITORY_ROOT`, `GITHUB_TOKEN`, `GIT_AUTHOR_NAME`, and
-`GIT_AUTHOR_EMAIL`. They remain worker-only and are not forwarded to the Codex
-agent process.
+`HARNESS_REPOSITORY_ROOT` and `GITHUB_TOKEN`. They remain worker-only and are
+not forwarded to the Codex agent process.
 
 ## Install and update
 

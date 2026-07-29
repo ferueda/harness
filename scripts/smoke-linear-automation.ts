@@ -35,7 +35,12 @@ import {
 } from "../lib/linear-automation/triage-consumer.ts";
 import { LINEAR_SPEC_FUNCTION_ID } from "../lib/linear-automation/spec-consumer.ts";
 import type { LinearIssueContext } from "../lib/linear/types.ts";
-import type { RepositoryService } from "../lib/repository/types.ts";
+import type {
+  RepositoryChange,
+  RepositoryCheckpoint,
+  RepositoryRun,
+  RepositoryService,
+} from "../lib/repository/types.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const INNGEST_CLI = join(ROOT, "node_modules/.bin/inngest");
@@ -102,7 +107,8 @@ const projection = {
   labelIds: new Set<string>([settings.readiness.agentReadyLabelId]),
   comments: [] as string[],
   triageAgentRuns: 0,
-  specAgentRuns: 0,
+  specAuthorRuns: 0,
+  specReviewRuns: 0,
   publications: 0,
   repositoryCleanups: 0,
   contextReads: 0,
@@ -140,8 +146,9 @@ async function allocatePort(): Promise<number> {
 async function waitUntil(
   description: string,
   predicate: () => boolean | Promise<boolean>,
+  maxAttempts = 120,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (await predicate()) return;
     if (inngestServer?.exitCode !== null) {
       throw new Error(`Inngest server exited ${inngestServer?.exitCode}`);
@@ -348,12 +355,13 @@ const triageAgent: Agent = {
   },
 };
 
-const specAgent: Agent = {
+const specAuthorAgent: Agent = {
   name: "codex",
   run: async (input) => {
-    projection.specAgentRuns += 1;
+    projection.specAuthorRuns += 1;
     mkdirSync(join(input.workspace, "dev/plans"), { recursive: true });
     writeFileSync(join(input.workspace, "dev/plans/FER-267.md"), "# FER-267 Spec\n", "utf8");
+    repositoryPendingChanges = [{ path: "dev/plans/FER-267.md", status: "untracked" }];
     return {
       ok: true,
       structuredOutput: {
@@ -371,11 +379,47 @@ const specAgent: Agent = {
         questions: [],
       },
       raw: { source: "linear-automation-spec-smoke" },
+      session: { provider: "codex", id: "linear-automation-spec-smoke-author" },
+    };
+  },
+};
+
+const specReviewAgent: Agent = {
+  name: "codex",
+  run: async () => {
+    projection.specReviewRuns += 1;
+    if (projection.specReviewRuns === 1) {
+      return {
+        ok: false,
+        error: "transient Spec review smoke failure",
+        exitCode: 1,
+      };
+    }
+    return {
+      ok: true,
+      structuredOutput: {
+        outcome: "approved",
+        rationale: "The smoke Spec is scoped and executable.",
+        evidence: [
+          {
+            source: "artifact",
+            path: "dev/plans/FER-267.md",
+            lineStart: 1,
+            lineEnd: 1,
+            summary: "The Spec contains one bounded delivery.",
+          },
+        ],
+        findings: [],
+      },
+      raw: { source: "linear-automation-spec-review-smoke" },
     };
   },
 };
 
 const repositoryWorkspace = join(fixtureRoot, "repository-run");
+let repositoryRun: RepositoryRun | undefined;
+let repositoryCheckpoint: RepositoryCheckpoint | undefined;
+let repositoryPendingChanges: RepositoryChange[] = [];
 const repository: RepositoryService = {
   resolveBase: async ({ baseRef }) => ({
     remote: settings.spec!.repositoryRuns.remote,
@@ -384,7 +428,7 @@ const repository: RepositoryService = {
   }),
   prepareRun: async ({ id, base, branch }) => {
     mkdirSync(repositoryWorkspace, { recursive: true });
-    return {
+    repositoryRun = {
       version: 1,
       id,
       workspace: repositoryWorkspace,
@@ -393,13 +437,36 @@ const repository: RepositoryService = {
       baseSha: base.baseSha,
       branch,
     };
+    return repositoryRun;
   },
-  inspectChanges: async () => [{ path: "dev/plans/FER-267.md", status: "untracked" as const }],
-  checkpointRun: async () => {
-    throw new Error("Unexpected repository checkpoint call");
+  inspectChanges: async () => structuredClone(repositoryPendingChanges),
+  checkpointRun: async (input) => {
+    assert(
+      JSON.stringify(input.expectedChanges) === JSON.stringify(repositoryPendingChanges),
+      "checkpoint changes did not match the smoke workspace",
+    );
+    repositoryCheckpoint = {
+      version: 1,
+      id: input.id,
+      runId: input.run.id,
+      baseSha: input.run.baseSha,
+      parentRevision: input.expectedParentRevision,
+      revision: "b".repeat(40),
+      branch: input.run.branch,
+      changes: structuredClone(input.expectedChanges),
+    };
+    repositoryPendingChanges = [];
+    return repositoryCheckpoint;
   },
-  openCheckpoint: async () => {
-    throw new Error("Unexpected repository open checkpoint call");
+  openCheckpoint: async (input) => {
+    assert(repositoryRun !== undefined, "repository run was not prepared");
+    assert(repositoryCheckpoint !== undefined, "repository checkpoint was not created");
+    assert(
+      input.checkpoint.revision === repositoryCheckpoint.revision,
+      "opened checkpoint did not match",
+    );
+    assert(repositoryPendingChanges.length === 0, "opened checkpoint workspace was dirty");
+    return repositoryRun;
   },
   cleanupRun: async () => {
     projection.repositoryCleanups += 1;
@@ -408,7 +475,7 @@ const repository: RepositoryService = {
 };
 
 const github: GitHubPublicationService = {
-  publishPullRequest: async (input) => {
+  publishCheckpointPullRequest: async (input) => {
     projection.publications += 1;
     return {
       url: "https://github.com/ferueda/harness/pull/999",
@@ -417,13 +484,10 @@ const github: GitHubPublicationService = {
       repository: "harness",
       baseBranch: input.baseBranch,
       headBranch: input.run.branch,
-      headSha: "b".repeat(40),
+      headSha: input.checkpoint.revision,
       state: "open",
       merged: false,
     };
-  },
-  publishCheckpointPullRequest: async () => {
-    throw new Error("Unexpected checkpoint publication");
   },
 };
 
@@ -519,7 +583,8 @@ try {
     client,
     linear: fakeLinear(),
     triageAgent,
-    specAgent,
+    specAuthorAgent,
+    specReviewAgent,
     settings,
     repository,
     github,
@@ -680,8 +745,13 @@ try {
       projection.comments.length === 2 &&
       projection.publications === 1 &&
       projection.repositoryCleanups === 1,
+    600,
   );
-  assert(projection.specAgentRuns === 1, "Spec agent did not run exactly once");
+  assert(projection.specAuthorRuns === 1, "Spec author did not run exactly once");
+  assert(
+    projection.specReviewRuns === 2,
+    "Spec reviewer did not retry exactly once after a transient failure",
+  );
   assert(
     projection.comments[1]
       ?.split("\n")

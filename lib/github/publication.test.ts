@@ -1,9 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { preparePublicationCommit } from "./git.ts";
 import { createGitHubPublicationForClient } from "./publication.ts";
 import type {
   GitHubPullRequestClient,
@@ -12,14 +11,10 @@ import type {
 } from "./types.ts";
 import { createRepositoryCheckpoint } from "../repository/checkpoint.ts";
 import { inspectGitChanges } from "../repository/git.ts";
-import type { RepositoryChange, RepositoryCheckpoint, RepositoryRun } from "../repository/types.ts";
+import type { RepositoryCheckpoint, RepositoryRun } from "../repository/types.ts";
 
-const AUTHOR = Object.freeze({ name: "Harness", email: "harness@example.com" });
 const TOKEN = "github-secret";
 const BRANCH = "codex/FER-286";
-const EXPECTED_CHANGES = Object.freeze([
-  Object.freeze({ path: "dev/plans/FER-286.md", status: "untracked" as const }),
-]);
 const roots: string[] = [];
 
 afterEach(() => {
@@ -27,195 +22,12 @@ afterEach(() => {
 });
 
 describe("GitHub publication", () => {
-  it("commits, pushes, creates one PR, and converges on retry", async () => {
-    const fixture = createFixture();
-    writeSpec(fixture.workspace);
-    const transport = localTransport(fixture);
-    const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    const first = await publication.publishPullRequest(request(fixture));
-    const second = await publication.publishPullRequest(request(fixture));
-
-    expect(second).toEqual(first);
-    expect(Object.isFrozen(first)).toBe(true);
-    expect(git(fixture.workspace, ["rev-list", "--count", `${fixture.baseSha}..HEAD`])).toBe("1");
-    expect(git(fixture.workspace, ["show", "-s", "--format=%B", "HEAD"])).toContain(
-      `Harness-Run-ID: ${fixture.run.id}`,
-    );
-    expect(git(fixture.remote, ["rev-parse", `refs/heads/${BRANCH}`])).toBe(first.headSha);
-    expect(transport.counts()).toEqual({ reads: 2, pushes: 1 });
-    expect(github.counts()).toEqual({ lists: 2, creates: 1 });
-  });
-
-  it("rejects changed paths before committing or using remote services", async () => {
-    const fixture = createFixture();
-    writeFileSync(join(fixture.workspace, "unexpected.txt"), "unexpected\n", "utf8");
-    const transport = localTransport(fixture);
-    const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    await expect(publication.publishPullRequest(request(fixture))).rejects.toMatchObject({
-      code: "changes-mismatch",
-    });
-    expect(git(fixture.workspace, ["rev-parse", "HEAD"])).toBe(fixture.baseSha);
-    expect(transport.counts()).toEqual({ reads: 0, pushes: 0 });
-    expect(github.counts()).toEqual({ lists: 0, creates: 0 });
-  });
-
-  it("rejects an unmarked agent-created commit", async () => {
-    const fixture = createFixture();
-    writeSpec(fixture.workspace);
-    git(fixture.workspace, ["add", "."]);
-    git(fixture.workspace, ["commit", "-m", "Agent-created commit"]);
-    const transport = localTransport(fixture);
-    const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    await expect(publication.publishPullRequest(request(fixture))).rejects.toMatchObject({
-      code: "run-conflict",
-    });
-    expect(transport.counts()).toEqual({ reads: 0, pushes: 0 });
-  });
-
-  it("publishes a renamed file from the caller-approved workspace snapshot", async () => {
-    const fixture = createFixture();
-    renameSync(join(fixture.workspace, "README.md"), join(fixture.workspace, "README-renamed.md"));
-    const expectedChanges = await inspectGitChanges(fixture.workspace);
-    const transport = localTransport(fixture);
-    const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    await expect(
-      publication.publishPullRequest(request(fixture, expectedChanges)),
-    ).resolves.toMatchObject({ number: 286 });
-    expect(
-      git(fixture.workspace, ["diff", "--name-status", "-M", fixture.baseSha, "HEAD"]),
-    ).toContain("README-renamed.md");
-  });
-
-  it("fails closed when the remote branch points to another commit", async () => {
-    const fixture = createFixture();
-    git(fixture.source, ["checkout", "-b", BRANCH, fixture.baseSha]);
-    writeFileSync(join(fixture.source, "other.txt"), "other\n", "utf8");
-    git(fixture.source, ["add", "other.txt"]);
-    git(fixture.source, ["commit", "-m", "Conflicting publication"]);
-    git(fixture.source, ["push", fixture.remote, `HEAD:refs/heads/${BRANCH}`]);
-    writeSpec(fixture.workspace);
-    const transport = localTransport(fixture);
-    const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    await expect(publication.publishPullRequest(request(fixture))).rejects.toMatchObject({
-      code: "remote-conflict",
-    });
-    expect(transport.counts()).toEqual({ reads: 1, pushes: 0 });
-    expect(github.counts()).toEqual({ lists: 0, creates: 0 });
-  });
-
-  it("recovers when push succeeds before its response is lost", async () => {
-    const fixture = createFixture();
-    writeSpec(fixture.workspace);
-    const transport = localTransport(fixture, { loseFirstPushResponse: true });
-    const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    await expect(publication.publishPullRequest(request(fixture))).resolves.toMatchObject({
-      number: 286,
-    });
-    expect(transport.counts()).toEqual({ reads: 2, pushes: 1 });
-    expect(github.counts()).toEqual({ lists: 1, creates: 1 });
-  });
-
-  it("performs one lookup after an ambiguous PR creation failure", async () => {
-    const fixture = createFixture();
-    writeSpec(fixture.workspace);
-    const transport = localTransport(fixture);
-    const github = fakeGitHub(fixture, { loseCreateResponse: true });
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    await expect(publication.publishPullRequest(request(fixture))).resolves.toMatchObject({
-      number: 286,
-    });
-    expect(github.counts()).toEqual({ lists: 2, creates: 1 });
-  });
-
-  it.each([
-    { state: "open" as const, merged: false },
-    { state: "closed" as const, merged: false },
-    { state: "closed" as const, merged: true },
-  ])("returns one existing $state PR without replacing it", async ({ state, merged }) => {
-    const fixture = createFixture();
-    writeSpec(fixture.workspace);
-    const headSha = await preparePublicationCommit({
-      run: fixture.run,
-      expectedChanges: EXPECTED_CHANGES,
-      author: AUTHOR,
-      commitMessage: "Add FER-286 spec",
-    });
-    const transport = localTransport(fixture);
-    await transport.value.pushBranch(pushInput(fixture));
-    const github = fakeGitHub(fixture, {
-      initialRecords: [pullRequestRecord(headSha, { state, merged })],
-    });
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    const result = await publication.publishPullRequest(request(fixture));
-
-    expect(result).toMatchObject({ state, merged, headSha });
-    expect(github.counts()).toEqual({ lists: 1, creates: 0 });
-  });
-
-  it("rejects multiple matching pull requests", async () => {
-    const fixture = createFixture();
-    writeSpec(fixture.workspace);
-    const headSha = await preparePublicationCommit({
-      run: fixture.run,
-      expectedChanges: EXPECTED_CHANGES,
-      author: AUTHOR,
-      commitMessage: "Add FER-286 spec",
-    });
-    const transport = localTransport(fixture);
-    await transport.value.pushBranch(pushInput(fixture));
-    const github = fakeGitHub(fixture, {
-      initialRecords: [pullRequestRecord(headSha), { ...pullRequestRecord(headSha), number: 287 }],
-    });
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    await expect(publication.publishPullRequest(request(fixture))).rejects.toMatchObject({
-      code: "github-conflict",
-    });
-  });
-
-  it("rejects a pull request whose head SHA does not match", async () => {
-    const fixture = createFixture();
-    writeSpec(fixture.workspace);
-    const headSha = await preparePublicationCommit({
-      run: fixture.run,
-      expectedChanges: EXPECTED_CHANGES,
-      author: AUTHOR,
-      commitMessage: "Add FER-286 spec",
-    });
-    const transport = localTransport(fixture);
-    await transport.value.pushBranch(pushInput(fixture));
-    const github = fakeGitHub(fixture, {
-      initialRecords: [
-        pullRequestRecord(headSha.replace(/^./, headSha.startsWith("a") ? "b" : "a")),
-      ],
-    });
-    const publication = createPublication(fixture, transport.value, github.client);
-
-    await expect(publication.publishPullRequest(request(fixture))).rejects.toMatchObject({
-      code: "github-conflict",
-    });
-  });
-
   it("publishes an approved checkpoint without changing its revision", async () => {
     const fixture = createFixture();
     const checkpoint = await createCheckpoint(fixture, "checkpoint:approved");
     const transport = localTransport(fixture);
     const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
+    const publication = createPublication(transport.value, github.client);
     const commitCount = git(fixture.workspace, ["rev-list", "--count", "HEAD"]);
 
     const first = await publication.publishCheckpointPullRequest(
@@ -239,7 +51,7 @@ describe("GitHub publication", () => {
     const checkpoint = await createCheckpoint(fixture, "checkpoint:recovery");
     const transport = localTransport(fixture, { loseFirstPushResponse: true });
     const github = fakeGitHub(fixture, { loseCreateResponse: true });
-    const publication = createPublication(fixture, transport.value, github.client);
+    const publication = createPublication(transport.value, github.client);
 
     await expect(
       publication.publishCheckpointPullRequest(checkpointRequest(fixture, checkpoint)),
@@ -247,6 +59,86 @@ describe("GitHub publication", () => {
 
     expect(transport.counts()).toEqual({ reads: 2, pushes: 1 });
     expect(github.counts()).toEqual({ lists: 2, creates: 1 });
+  });
+
+  it.each([
+    { state: "open" as const, merged: false },
+    { state: "closed" as const, merged: false },
+    { state: "closed" as const, merged: true },
+  ])(
+    "returns one existing $state checkpoint PR without replacing it",
+    async ({ state, merged }) => {
+      const fixture = createFixture();
+      const checkpoint = await createCheckpoint(fixture, "checkpoint:existing");
+      const transport = localTransport(fixture);
+      await transport.value.pushBranch({
+        workspace: fixture.workspace,
+        remote: fixture.run.remote,
+        branch: fixture.run.branch,
+        commitSha: checkpoint.revision,
+        token: TOKEN,
+      });
+      const github = fakeGitHub(fixture, {
+        initialRecords: [pullRequestRecord(checkpoint.revision, { state, merged })],
+      });
+      const publication = createPublication(transport.value, github.client);
+
+      const result = await publication.publishCheckpointPullRequest(
+        checkpointRequest(fixture, checkpoint),
+      );
+
+      expect(result).toMatchObject({ state, merged, headSha: checkpoint.revision });
+      expect(github.counts()).toEqual({ lists: 1, creates: 0 });
+    },
+  );
+
+  it("rejects multiple pull requests for one checkpoint branch", async () => {
+    const fixture = createFixture();
+    const checkpoint = await createCheckpoint(fixture, "checkpoint:multiple-prs");
+    const transport = localTransport(fixture);
+    await transport.value.pushBranch({
+      workspace: fixture.workspace,
+      remote: fixture.run.remote,
+      branch: fixture.run.branch,
+      commitSha: checkpoint.revision,
+      token: TOKEN,
+    });
+    const github = fakeGitHub(fixture, {
+      initialRecords: [
+        pullRequestRecord(checkpoint.revision),
+        { ...pullRequestRecord(checkpoint.revision), number: 287 },
+      ],
+    });
+    const publication = createPublication(transport.value, github.client);
+
+    await expect(
+      publication.publishCheckpointPullRequest(checkpointRequest(fixture, checkpoint)),
+    ).rejects.toMatchObject({ code: "github-conflict" });
+  });
+
+  it("rejects a pull request whose head SHA differs from its checkpoint", async () => {
+    const fixture = createFixture();
+    const checkpoint = await createCheckpoint(fixture, "checkpoint:wrong-pr-head");
+    const transport = localTransport(fixture);
+    await transport.value.pushBranch({
+      workspace: fixture.workspace,
+      remote: fixture.run.remote,
+      branch: fixture.run.branch,
+      commitSha: checkpoint.revision,
+      token: TOKEN,
+    });
+    const differentSha = checkpoint.revision.replace(
+      /^./,
+      checkpoint.revision.startsWith("a") ? "b" : "a",
+    );
+    const github = fakeGitHub(fixture, {
+      initialRecords: [pullRequestRecord(differentSha)],
+    });
+    const publication = createPublication(transport.value, github.client);
+
+    await expect(
+      publication.publishCheckpointPullRequest(checkpointRequest(fixture, checkpoint)),
+    ).rejects.toMatchObject({ code: "github-conflict" });
   });
 
   it("publishes the latest approved checkpoint in a revision chain", async () => {
@@ -260,7 +152,7 @@ describe("GitHub publication", () => {
     const second = await createCheckpoint(fixture, "checkpoint:chain:second", first.revision);
     const transport = localTransport(fixture);
     const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
+    const publication = createPublication(transport.value, github.client);
 
     const result = await publication.publishCheckpointPullRequest(
       checkpointRequest(fixture, second),
@@ -328,7 +220,7 @@ describe("GitHub publication", () => {
     const altered = alter(fixture, checkpoint);
     const transport = localTransport(fixture);
     const github = fakeGitHub(fixture);
-    const publication = createPublication(fixture, transport.value, github.client);
+    const publication = createPublication(transport.value, github.client);
     const headSha = git(fixture.workspace, ["rev-parse", "HEAD"]);
 
     await expect(
@@ -342,9 +234,7 @@ describe("GitHub publication", () => {
 });
 
 type Fixture = Readonly<{
-  root: string;
   remote: string;
-  source: string;
   workspace: string;
   baseSha: string;
   run: RepositoryRun;
@@ -381,34 +271,15 @@ function createFixture(): Fixture {
     baseSha,
     branch: BRANCH,
   });
-  return Object.freeze({ root, remote, source, workspace, baseSha, run });
+  return Object.freeze({ remote, workspace, baseSha, run });
 }
 
-function createPublication(
-  fixture: Fixture,
-  gitTransport: GitPushTransport,
-  client: GitHubPullRequestClient,
-) {
+function createPublication(gitTransport: GitPushTransport, client: GitHubPullRequestClient) {
   return createGitHubPublicationForClient({
     token: TOKEN,
-    author: AUTHOR,
     gitTransport,
     client,
   });
-}
-
-function request(
-  fixture: Fixture,
-  expectedChanges: readonly RepositoryChange[] = EXPECTED_CHANGES,
-) {
-  return {
-    run: fixture.run,
-    expectedChanges,
-    baseBranch: "main",
-    commitMessage: "Add FER-286 spec",
-    title: "Add FER-286 spec",
-    body: "Generated by Harness",
-  };
 }
 
 function checkpointRequest(fixture: Fixture, checkpoint: RepositoryCheckpoint) {
@@ -523,16 +394,6 @@ function pullRequestRecord(
     headBranch: BRANCH,
     headSha,
   });
-}
-
-function pushInput(fixture: Fixture) {
-  return {
-    workspace: fixture.workspace,
-    remote: "https://github.com/ferueda/harness.git",
-    branch: BRANCH,
-    commitSha: git(fixture.workspace, ["rev-parse", "HEAD"]),
-    token: TOKEN,
-  };
 }
 
 function configureAuthor(workspace: string): void {

@@ -152,8 +152,6 @@ umask 077
   printf 'LINEAR_API_KEY=%s\n' 'replace-with-linear-api-key'
   printf 'CODEX_API_KEY=%s\n' 'replace-with-codex-api-key'
   printf 'GITHUB_TOKEN=%s\n' 'replace-with-github-token'
-  printf 'GIT_AUTHOR_NAME=%s\n' 'Harness Agent'
-  printf 'GIT_AUTHOR_EMAIL=%s\n' 'agent@example.com'
   printf 'INNGEST_EVENT_KEY=%s\n' "$(openssl rand -hex 32)"
   printf 'INNGEST_SIGNING_KEY=%s\n' "$(openssl rand -hex 32)"
 } > "$LINEAR_AUTOMATION_ENV"
@@ -161,9 +159,9 @@ umask 077
 
 `CODEX_API_KEY` is the recommended auth path for an unattended worker. Compose
 passes all worker credentials only to the worker, and Harness forwards only the
-Codex credential subset to the Codex child process. `GITHUB_TOKEN` and the
-explicit commit author remain in the publication boundary. The protected
-environment file remains outside the target repository.
+Codex credential subset to the Codex child process. `GITHUB_TOKEN` stays in the
+checkpoint publication boundary. The protected environment file remains outside
+the target repository.
 
 If you prefer ChatGPT-backed Codex login, omit `CODEX_API_KEY` from the file and
 initialize the worker's dedicated credential volume once:
@@ -232,9 +230,17 @@ The configured Harness worker registers four functions:
   provider-neutral work request; and
 - the triage consumer invokes its configured agent and projects the decision;
   and
-- the optional Spec consumer invokes its own configured agent, claims one
-  released issue, writes in an isolated Grove run, publishes one exact pull
-  request, and projects Needs Review or Needs Input.
+- the optional Spec consumer claims one released issue, uses separate author
+  and read-only reviewer sessions, and runs at most three reviews and two
+  author revisions in one isolated Grove run.
+
+Only an updated revision creates a child checkpoint. An unchanged revision
+keeps the reviewed checkpoint, while Needs Input stops without publication.
+Approval publishes the exact approved checkpoint. If the third review still
+requests changes, the consumer publishes the latest exact checkpoint as
+explicitly unapproved so a human can review the Spec and unresolved findings.
+Every terminal path attempts repository cleanup; a failed cleanup adds bounded
+operator evidence instead of changing the already projected Linear outcome.
 
 The current Harness configuration enables Spec and leaves Implement disabled,
 so the poller observes Backlog and Open. A triage-only target omits
@@ -257,8 +263,8 @@ the old config shape.
 `make smoke-linear-automation` starts a disposable real `inngest start`
 process, connects the worker, sends explicit poll events, proves the full
 fake-boundary triage and Spec publication journeys, checks unchanged-revision
-deduplication, and cleans up SQLite state on success. It does not call live
-Linear, GitHub, or a real model.
+deduplication, retries one transient Spec-review failure, and cleans up SQLite
+state on success. It does not call live Linear, GitHub, or a real model.
 
 `make smoke-linear-automation-compose` is the explicit Docker packaging smoke.
 It validates and builds the Compose model, starts both containers on a blocked-

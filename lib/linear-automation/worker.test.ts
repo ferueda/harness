@@ -83,7 +83,12 @@ function app() {
   });
 }
 
-function specApp(options: Readonly<{ includeSpecAgent?: boolean }> = {}) {
+function specApp(
+  options: Readonly<{
+    includeSpecAuthorAgent?: boolean;
+    includeSpecReviewAgent?: boolean;
+  }> = {},
+) {
   const base = app();
   const repository = {
     resolveBase: async () => {
@@ -106,9 +111,6 @@ function specApp(options: Readonly<{ includeSpecAgent?: boolean }> = {}) {
     },
   } satisfies RepositoryService;
   const github = {
-    publishPullRequest: async () => {
-      throw new Error("Unexpected GitHub call");
-    },
     publishCheckpointPullRequest: async () => {
       throw new Error("Unexpected GitHub checkpoint call");
     },
@@ -159,13 +161,23 @@ function specApp(options: Readonly<{ includeSpecAgent?: boolean }> = {}) {
         throw new Error("Unexpected triage agent call");
       },
     },
-    ...(options.includeSpecAgent === false
+    ...(options.includeSpecAuthorAgent === false
       ? {}
       : {
-          specAgent: {
+          specAuthorAgent: {
             name: "codex",
             run: async () => {
-              throw new Error("Unexpected Spec agent call");
+              throw new Error("Unexpected Spec author agent call");
+            },
+          } satisfies Agent,
+        }),
+    ...(options.includeSpecReviewAgent === false
+      ? {}
+      : {
+          specReviewAgent: {
+            name: "codex",
+            run: async () => {
+              throw new Error("Unexpected Spec review agent call");
             },
           } satisfies Agent,
         }),
@@ -273,8 +285,6 @@ describe("Linear automation worker", () => {
         INNGEST_DEV: "1",
         HARNESS_REPOSITORY_ROOT: "",
         GITHUB_TOKEN: " ",
-        GIT_AUTHOR_NAME: "",
-        GIT_AUTHOR_EMAIL: " ",
       }),
     ).toMatchObject({
       linearApiKey: "linear-key",
@@ -329,15 +339,12 @@ describe("Linear automation worker", () => {
           INNGEST_DEV: "1",
           HARNESS_REPOSITORY_ROOT: "/var/lib/harness",
           GITHUB_TOKEN: "github-key",
-          GIT_AUTHOR_NAME: "Harness Agent",
-          GIT_AUTHOR_EMAIL: "agent@example.com",
         },
         { specEnabled: true },
       ).spec,
     ).toEqual({
       repositoryRoot: "/var/lib/harness",
       githubToken: "github-key",
-      gitAuthor: { name: "Harness Agent", email: "agent@example.com" },
     });
   });
 
@@ -388,9 +395,12 @@ describe("Linear automation worker", () => {
     });
   });
 
-  it("requires a separately composed agent when Spec is enabled", () => {
-    expect(() => specApp({ includeSpecAgent: false })).toThrow(
-      /requires its agent, repository, and GitHub publication services/,
+  it("requires separately composed author and review agents when Spec is enabled", () => {
+    expect(() => specApp({ includeSpecAuthorAgent: false })).toThrow(
+      /requires its author and review agents, repository, and GitHub publication services/,
+    );
+    expect(() => specApp({ includeSpecReviewAgent: false })).toThrow(
+      /requires its author and review agents, repository, and GitHub publication services/,
     );
   });
 

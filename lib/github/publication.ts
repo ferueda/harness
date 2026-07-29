@@ -1,18 +1,13 @@
 import { z } from "zod";
 import { createGitHubPullRequestClient } from "./client.ts";
 import { errorMessage, GitHubPublicationError } from "./error.ts";
-import {
-  assertBranchName,
-  createAuthenticatedGitTransport,
-  preparePublicationCommit,
-} from "./git.ts";
+import { assertBranchName, createAuthenticatedGitTransport } from "./git.ts";
 import { parseGitHubRemote } from "./remote.ts";
 import { verifyRepositoryCheckpoint } from "../repository/checkpoint.ts";
 import { RepositoryError } from "../repository/error.ts";
 import type { RepositoryCheckpoint, RepositoryRun } from "../repository/types.ts";
 import type {
   CreateGitHubPublicationOptions,
-  GitHubPublicationAuthor,
   GitHubPublicationService,
   GitHubPullRequestClient,
   GitHubPullRequestLookup,
@@ -20,7 +15,6 @@ import type {
   GitPushTransport,
   PublishedPullRequest,
   PublishCheckpointPullRequestInput,
-  PublishPullRequestInput,
 } from "./types.ts";
 
 const FullGitShaSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
@@ -66,17 +60,6 @@ const RepositoryCheckpointSchema = z
   })
   .strict();
 
-const PublishPullRequestInputSchema = z
-  .object({
-    run: RepositoryRunSchema,
-    expectedChanges: z.array(ChangeSchema).min(1),
-    baseBranch: z.string().min(1),
-    commitMessage: z.string().min(1),
-    title: z.string().trim().min(1),
-    body: z.string(),
-  })
-  .strict();
-
 const PublishCheckpointPullRequestInputSchema = z
   .object({
     run: RepositoryRunSchema,
@@ -87,27 +70,14 @@ const PublishCheckpointPullRequestInputSchema = z
   })
   .strict();
 
-const AuthorSchema = z
-  .object({
-    name: z.string().trim().min(1),
-    email: z.email(),
-  })
-  .strict();
-
 export function createGitHubPublication(
   options: CreateGitHubPublicationOptions,
 ): GitHubPublicationService {
   const token = options.token?.trim();
-  const author = AuthorSchema.safeParse(options.author);
-  if (!token || !author.success) {
-    throw new GitHubPublicationError(
-      "invalid-input",
-      "GitHub publication requires a token and an explicit commit author name and email.",
-    );
-  }
+  if (!token)
+    throw new GitHubPublicationError("invalid-input", "GitHub publication requires a token.");
   return createGitHubPublicationForClient({
     token,
-    author: Object.freeze(author.data),
     client: createGitHubPullRequestClient({ token, fetch: options.fetch }),
     gitTransport: createAuthenticatedGitTransport(),
   });
@@ -115,47 +85,14 @@ export function createGitHubPublication(
 
 export function createGitHubPublicationForClient(input: {
   token: string;
-  author: GitHubPublicationAuthor;
   client: GitHubPullRequestClient;
   gitTransport: GitPushTransport;
 }): GitHubPublicationService {
   const token = input.token.trim();
-  const author = AuthorSchema.safeParse(input.author);
-  if (!token || !author.success) {
-    throw new GitHubPublicationError(
-      "invalid-input",
-      "GitHub publication requires a token and an explicit commit author name and email.",
-    );
-  }
+  if (!token)
+    throw new GitHubPublicationError("invalid-input", "GitHub publication requires a token.");
 
   return Object.freeze({
-    async publishPullRequest(request: PublishPullRequestInput): Promise<PublishedPullRequest> {
-      const parsed = PublishPullRequestInputSchema.safeParse(request);
-      if (!parsed.success) {
-        throw invalidPublicationInput(parsed.error);
-      }
-
-      const repository = parseGitHubRemote(parsed.data.run.remote);
-      await assertBranchName(parsed.data.baseBranch, "base branch");
-      const headSha = await preparePublicationCommit({
-        run: parsed.data.run,
-        expectedChanges: parsed.data.expectedChanges,
-        author: author.data,
-        commitMessage: parsed.data.commitMessage,
-      });
-      return publishExactPullRequest({
-        client: input.client,
-        gitTransport: input.gitTransport,
-        token,
-        repository,
-        run: parsed.data.run,
-        baseBranch: parsed.data.baseBranch,
-        title: parsed.data.title,
-        body: parsed.data.body,
-        headSha,
-      });
-    },
-
     async publishCheckpointPullRequest(
       request: PublishCheckpointPullRequestInput,
     ): Promise<PublishedPullRequest> {
@@ -356,9 +293,7 @@ export { GitHubPublicationError } from "./error.ts";
 export type { GitHubPublicationErrorCode } from "./error.ts";
 export type {
   CreateGitHubPublicationOptions,
-  GitHubPublicationAuthor,
   GitHubPublicationService,
   PublishedPullRequest,
   PublishCheckpointPullRequestInput,
-  PublishPullRequestInput,
 } from "./types.ts";
