@@ -1,6 +1,6 @@
 // Harness JSON Schema subset — not a full JSON Schema validator.
-// Supports: type, enum, required, properties, additionalProperties, items,
-// minLength, maxLength, minItems, maxItems, minimum, maximum.
+// Supports: type, enum, anyOf, required, properties, additionalProperties,
+// items, minLength, maxLength, minItems, maxItems, minimum, maximum.
 
 import { readFileSync } from "node:fs";
 
@@ -8,7 +8,8 @@ type JsonTypeName = "string" | "number" | "integer" | "boolean" | "object" | "ar
 
 export type JsonSchema = {
   type?: JsonTypeName | JsonTypeName[];
-  enum?: unknown[];
+  enum?: readonly unknown[];
+  anyOf?: readonly JsonSchema[];
   required?: string[];
   properties?: Record<string, JsonSchema>;
   additionalProperties?: boolean | JsonSchema;
@@ -40,6 +41,13 @@ export function validateJsonSchema(
   path: string,
 ): string | undefined {
   if (!schema || typeof schema !== "object") return undefined;
+
+  if (
+    schema.anyOf &&
+    !schema.anyOf.some((variant) => validateJsonSchema(value, variant, path) === undefined)
+  ) {
+    return `${path}: did not match any allowed schema`;
+  }
 
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) {
     return `${path}: expected one of ${JSON.stringify(schema.enum)}`;
@@ -151,6 +159,10 @@ export function assertCodexStrictSchema(schema: JsonSchema, path = "$"): void {
 
   if (schema.items) {
     assertCodexStrictSchema(schema.items, `${path}[]`);
+  }
+
+  for (const [index, variant] of (schema.anyOf ?? []).entries()) {
+    assertCodexStrictSchema(variant, `${path}.anyOf[${index}]`);
   }
 
   if (typeof schema.additionalProperties === "object") {

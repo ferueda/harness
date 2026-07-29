@@ -52,7 +52,14 @@ test("spec review prompt includes plan context without diff scope placeholders",
   );
   expect(SPEC_REVIEW_PROMPT).toContain("Review content, not template completeness");
   expect(SPEC_REVIEW_PROMPT).toContain("highest existing stable seam proving acceptance");
-  expect(SPEC_REVIEW_PROMPT).toContain("canonical repository gate without repetition");
+  expect(SPEC_REVIEW_PROMPT).toContain("exact proof action and expected observable evidence");
+  expect(SPEC_REVIEW_PROMPT).toContain(
+    "canonical repository gate proves general health; it does not replace behavioral proof",
+  );
+  expect(SPEC_REVIEW_PROMPT).toContain("Acceptance or enqueueing alone is insufficient");
+  expect(SPEC_REVIEW_PROMPT).toContain("Do not demand repeated layers");
+  expect(SPEC_REVIEW_PROMPT).toContain("explicit authority, prerequisites, disposable data");
+  expect(SPEC_REVIEW_PROMPT).toContain("observed results and skipped checks");
   expect(SPEC_REVIEW_PROMPT).toContain("## Authority");
   expect(SPEC_REVIEW_PROMPT).toContain("clearly labeled as task or work-item authority");
   expect(SPEC_REVIEW_PROMPT).toContain(

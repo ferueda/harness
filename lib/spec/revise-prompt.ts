@@ -2,7 +2,7 @@ import { SpecReviewArtifactSchema, type SpecReviewArtifact } from "../spec-revie
 import { SpecWorkItemContextSchema, type SpecWorkItemContext } from "./schema.ts";
 import { SpecRevisionReviewSchema, type SpecRevisionReview } from "./revise-schema.ts";
 
-export const SPEC_REVISION_POLICY_VERSION = "1";
+export const SPEC_REVISION_POLICY_VERSION = "2";
 
 export function renderSpecRevisionPrompt(input: {
   workItem: SpecWorkItemContext;
@@ -25,6 +25,7 @@ Your resumed session is useful context, but it is not the source of truth. Recon
 - Re-read the relevant repository guidance, artifact, code, tests, and documentation before deciding. Research and resolve inspectable questions yourself.
 - Treat reviewer findings as advisory evidence, not authority. Accept a correct concern, adapt it when another authority-aligned resolution is better, and decline it only with concrete evidence.
 - Preserve the smallest coherent change, vertical and independently useful delivery where practical, decisions rather than prewritten implementation, and the highest stable credible proof seam.
+- When a finding concerns verification, keep every material outcome tied to an observable result, exact proof action, and expected evidence at the cheapest credible seam. Preserve material proof limits, terminal-state proof for asynchronous work, safe live-proof requirements, and honest handoff evidence without adding redundant layers.
 - Do not add speculative hardening, generic frameworks, unrelated cleanup, or compatibility that current authority does not require.
 - Do not run Git, create branches or commits, publish anything, or change Linear or other external systems.
 

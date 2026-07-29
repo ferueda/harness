@@ -68,6 +68,9 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(SPEC_REVIEW_PROMPT).toContain("Unsupported work already proposed by the plan");
   expect(SPEC_REVIEW_PROMPT).toContain("Review content, not template completeness");
   expect(SPEC_REVIEW_PROMPT).toContain("highest existing stable seam proving acceptance");
+  expect(SPEC_REVIEW_PROMPT).toContain("exact proof action and expected observable evidence");
+  expect(SPEC_REVIEW_PROMPT).toContain("Acceptance or enqueueing alone is insufficient");
+  expect(SPEC_REVIEW_PROMPT).toContain("Do not demand repeated layers");
   expect(SPEC_REVIEW_PROMPT).toContain("For multi-unit work, prefer vertical slices");
   expect(SPEC_REVIEW_PROMPT).toContain("separate agents can own with limited overlap");
   expect(SPEC_REVIEW_PROMPT).toContain("reviewed, landed, or rolled back independently");
@@ -92,6 +95,10 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
   expect(reviewSpecSkill).toContain("Unsupported work already proposed by the plan");
   expect(reviewSpecSkill).toContain("Plan Contract");
   expect(reviewSpecSkill).toContain("highest existing stable seam proving acceptance");
+  expect(reviewSpecSkill).toContain("exact proof action and");
+  expect(reviewSpecSkill).toMatch(/expected observable\s+evidence/);
+  expect(reviewSpecSkill).toContain("Acceptance or enqueueing alone is insufficient");
+  expect(reviewSpecSkill).toMatch(/Do\s+not demand repeated layers/);
   expect(reviewSpecSkill).toContain("For multi-unit work, prefer vertical slices");
   expect(reviewSpecSkill).toMatch(/separate agents can own with limited\s+overlap/);
   expect(reviewSpecSkill).toContain("reviewed, landed, or rolled back independently");

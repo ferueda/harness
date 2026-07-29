@@ -21,23 +21,64 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["kind", "path", "summary"],
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": ["tracker", "code", "docs", "test", "repo-state"]
+        "anyOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "path", "summary"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["tracker"]
+              },
+              "path": {
+                "type": "null"
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           },
-          "path": {
-            "type": ["string", "null"],
-            "minLength": 1
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "path", "summary"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["code", "docs", "test"]
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           },
-          "summary": {
-            "type": "string",
-            "minLength": 1
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "path", "summary"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["repo-state"]
+              },
+              "path": {
+                "type": ["string", "null"],
+                "minLength": 1
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
-        }
+        ]
       }
     },
     "reviewerDecisions": {

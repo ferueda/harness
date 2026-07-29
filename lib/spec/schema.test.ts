@@ -144,7 +144,7 @@ describe("Spec work-item context schema", () => {
 
 describe("exported Spec result JSON schema", () => {
   it("is strict and defines every required provider field", () => {
-    expect(SPEC_RESULT_SCHEMA_VERSION).toBe("1");
+    expect(SPEC_RESULT_SCHEMA_VERSION).toBe("2");
     expect(() => assertCodexStrictSchema(JSON_SCHEMA)).not.toThrow();
     expect(JSON_SCHEMA.additionalProperties).toBe(false);
     expect(JSON_SCHEMA.required).toEqual([
@@ -190,6 +190,38 @@ describe("exported Spec result JSON schema", () => {
       },
     ],
   ])("rejects %s in both schemas", (_name, payload) => {
+    expect(schemaAccepts(JSON_SCHEMA, payload)).toBe(false);
+    expect(SpecDecisionSchema.safeParse(payload).success).toBe(false);
+  });
+
+  it.each([
+    [
+      "test evidence without a path",
+      {
+        ...READY_FOR_REVIEW,
+        evidence: [
+          {
+            kind: "test",
+            path: null,
+            summary: "The focused command passed.",
+          },
+        ],
+      },
+    ],
+    [
+      "tracker evidence with a path",
+      {
+        ...READY_FOR_REVIEW,
+        evidence: [
+          {
+            kind: "tracker",
+            path: "FER-273",
+            summary: "The issue requests a Spec.",
+          },
+        ],
+      },
+    ],
+  ])("rejects provider-visible evidence mismatch: %s", (_name, payload) => {
     expect(schemaAccepts(JSON_SCHEMA, payload)).toBe(false);
     expect(SpecDecisionSchema.safeParse(payload).success).toBe(false);
   });

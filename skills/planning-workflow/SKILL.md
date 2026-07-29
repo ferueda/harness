@@ -63,9 +63,12 @@ changes. Harness does not edit plans automatically.
 Plans target a capable, context-limited executor with repository access. The
 default shape is `Goal`, `Changes`, and `Verify`, with `Boundaries` only for a
 concrete scope risk. Keep facts and tests beside the change they justify,
-prefer the highest existing stable test seam, and return material unresolved
-choices to the user instead of preserving them in the plan. Review content and
-decisions, not template completeness.
+prefer the highest existing stable test seam, and connect each material outcome
+to an exact proof action and expected observable evidence. Keep behavioral proof
+separate from the repository gate, prove terminal state for asynchronous
+outcomes, and return material unresolved choices or unavailable proof to the
+user instead of preserving ambiguity in the plan. Review content and decisions,
+not template completeness.
 
 **Done when:** plan approved or direct-implement path confirmed.
 

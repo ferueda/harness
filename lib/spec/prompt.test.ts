@@ -8,7 +8,7 @@ describe("Spec prompt", () => {
     const artifactPath = "dev/plans/FER-273.md";
     const prompt = renderSpecPrompt({ workItem, artifactPath });
 
-    expect(SPEC_POLICY_VERSION).toBe("2");
+    expect(SPEC_POLICY_VERSION).toBe("3");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`Write the complete Spec at exactly ${artifactPath}`);
     expect(prompt).toContain(`artifactPath must be exactly "${artifactPath}"`);
@@ -78,15 +78,26 @@ describe("Spec prompt", () => {
     expect(prompt).toContain("vertical delivery is impractical or unsafe");
   });
 
-  it("selects the highest stable proof seam", () => {
+  it("connects outcomes to proportional observable proof", () => {
     const prompt = renderSpecPrompt({
       workItem: validContext(),
       artifactPath: "dev/plans/FER-273.md",
     });
 
+    expect(prompt).toContain("material outcome or forbidden effect");
+    expect(prompt).toContain("observable result, exact proof action, and expected evidence");
     expect(prompt).toContain("highest existing stable test seam that proves acceptance");
-    expect(prompt).toContain("distinct invariant or failure mode");
+    expect(prompt).toContain("distinct boundary, invariant, or failure mode");
     expect(prompt).toContain("repository's canonical gate");
+    expect(prompt).toContain("does not replace focused proof");
+    expect(prompt).toContain("mocks, fakes, intercepted requests, or source-only checks");
+    expect(prompt).toContain("terminal state or downstream effect");
+    expect(prompt).toContain("acceptance or enqueueing alone is insufficient");
+    expect(prompt).toContain("explicit authority, prerequisites, disposable data");
+    expect(prompt).toContain("stop conditions, redaction, cleanup");
+    expect(prompt).toContain("Record unavailable material proof");
+    expect(prompt).toContain("exact observed results, skipped checks with reasons");
+    expect(prompt).toContain("outcome-to-proof table only when");
   });
 
   it("keeps the agent inside the operation boundary", () => {

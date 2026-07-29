@@ -209,6 +209,76 @@ test("planning skills use the compact capable-executor contract", () => {
   expect(coordinator).not.toContain("**Done when:** plan phases complete or scoped change landed.");
 });
 
+test("planning guidance connects material outcomes to proportional proof", () => {
+  const createPlan = readFileSync(join(REPO_ROOT, "skills/create-plan/SKILL.md"), "utf8");
+  const template = readFileSync(
+    join(REPO_ROOT, "skills/create-plan/references/plan-template.md"),
+    "utf8",
+  );
+  const auditTemplate = readFileSync(
+    join(REPO_ROOT, "skills/audit/references/plan-template.md"),
+    "utf8",
+  );
+  const reviewSpec = readFileSync(join(REPO_ROOT, "skills/review-spec/SKILL.md"), "utf8");
+  const testingGuide = readFileSync(join(REPO_ROOT, "docs/contributing/testing.md"), "utf8");
+
+  for (const authoring of [createPlan, template, auditTemplate, testingGuide]) {
+    const prose = normalizedProse(authoring);
+    expect(prose).toContain("material outcome or forbidden effect");
+    expect(prose).toContain("proof action");
+    expect(prose).toContain("expected observable evidence");
+    expect(prose).toContain("repository gate");
+    expect(prose.toLowerCase()).toContain("acceptance or enqueueing");
+    expect(prose).toContain("explicit authority");
+    expect(prose).toContain("stop conditions");
+    expect(prose).toContain("cleanup");
+  }
+
+  const reviewProse = normalizedProse(reviewSpec);
+  expect(reviewProse).toContain("cheapest credible acceptance-level proof");
+  expect(reviewProse).toContain("canonical repository gate proves general health");
+  expect(reviewProse).toContain("does not replace behavioral proof");
+  expect(reviewProse).toContain("terminal state or downstream effect");
+  expect(reviewProse.toLowerCase()).toContain("do not demand repeated layers");
+  expect(reviewProse).toContain("observed results and skipped checks");
+});
+
+test("outcome-proof forward-evaluation fixtures keep the five fixed scenarios", () => {
+  const fixture = readFileSync(join(REPO_ROOT, "test/fixtures/outcome-proof-eval.md"), "utf8");
+  const testingGuide = readFileSync(join(REPO_ROOT, "docs/contributing/testing.md"), "utf8");
+
+  for (const heading of [
+    "## Focused module change",
+    "## Cross-boundary workflow",
+    "## Asynchronous completion",
+    "## Live provider behavior",
+    "## Docs-only local change",
+  ]) {
+    expect(fixture).toContain(heading);
+  }
+
+  expect(fixture).toContain("Do not use only the candidate reviewer");
+  expect(fixture.match(/\*\*Reviewer fixture:\*\*/g)).toHaveLength(5);
+  expect(fixture.match(/\*\*Revision expectation:\*\*/g)).toHaveLength(5);
+  expect(fixture).toContain("GPT-5.6 Luna with medium reasoning");
+  expect(fixture).toContain("exactly three");
+  expect(fixture).toContain("complete five-scenario rounds");
+  expect(fixture).toContain("accepted response or enqueue event as sufficient proof");
+  expect(fixture).toContain("explicit authority");
+  expect(fixture).toContain("Do not place the live call in CI");
+  const fixtureProse = normalizedProse(fixture);
+  expect(fixtureProse).toContain(
+    "A scenario passes one round only when its authoring, review, and revision outputs",
+  );
+  expect(fixtureProse).toContain("pass in all three rounds");
+  expect(fixtureProse).toContain(
+    "at least four of the five scenarios pass in each of the three rounds",
+  );
+  expect(fixtureProse).toContain("baseline performance does not change the candidate pass rule");
+  expect(testingGuide).toContain("../../test/fixtures/outcome-proof-eval.md");
+  expect(testingGuide).toContain("Provider-backed runs remain opt-in");
+});
+
 test("handoffs preserve accepted authority without duplicating inspectable sources", () => {
   const handoff = readFileSync(join(REPO_ROOT, "skills/handoff-work/SKILL.md"), "utf8");
   const prose = normalizedProse(handoff);

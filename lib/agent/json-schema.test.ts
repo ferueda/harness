@@ -28,6 +28,18 @@ test("validateJsonSchema enforces upper and numeric bounds", () => {
   );
 });
 
+test("validateJsonSchema accepts one matching anyOf variant", () => {
+  const schema = {
+    anyOf: [{ type: "string", enum: ["code"] }, { type: "null" }],
+  } as const;
+
+  expect(validateJsonSchema("code", schema, "$.path")).toBeUndefined();
+  expect(validateJsonSchema(null, schema, "$.path")).toBeUndefined();
+  expect(validateJsonSchema("docs", schema, "$.path")).toBe(
+    "$.path: did not match any allowed schema",
+  );
+});
+
 test("assertCodexStrictSchema rejects object properties omitted from required", () => {
   expect(() =>
     assertCodexStrictSchema({
@@ -64,6 +76,24 @@ test("assertCodexStrictSchema checks nested object schemas", () => {
       },
     }),
   ).toThrow("$.findings[]: properties missing from required: rationale");
+});
+
+test("assertCodexStrictSchema checks object schemas inside anyOf", () => {
+  expect(() =>
+    assertCodexStrictSchema({
+      anyOf: [
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["kind"],
+          properties: {
+            kind: { type: "string" },
+            path: { type: "string" },
+          },
+        },
+      ],
+    }),
+  ).toThrow("$.anyOf[0]: properties missing from required: path");
 });
 
 test("assertCodexStrictSchema rejects object schemas that allow additional properties", () => {
