@@ -2,7 +2,10 @@ import { z } from "zod";
 
 export const IMPLEMENTATION_RESULT_SCHEMA_VERSION = "1";
 
-const NonEmptyStringSchema = z.string().min(1);
+const NonEmptyStringSchema = z
+  .string()
+  .min(1)
+  .regex(/\S/, "must contain at least one non-whitespace character");
 
 export const ImplementationProofSchema = z
   .object({

@@ -1,6 +1,6 @@
 // Harness JSON Schema subset — not a full JSON Schema validator.
 // Supports: type, enum, anyOf, required, properties, additionalProperties,
-// items, minLength, maxLength, minItems, maxItems, minimum, maximum.
+// items, minLength, maxLength, pattern, minItems, maxItems, minimum, maximum.
 
 import { readFileSync } from "node:fs";
 
@@ -16,6 +16,7 @@ export type JsonSchema = {
   items?: JsonSchema;
   minLength?: number;
   maxLength?: number;
+  pattern?: string;
   minItems?: number;
   maxItems?: number;
   minimum?: number;
@@ -76,6 +77,12 @@ export function validateJsonSchema(
     value.length > schema.maxLength
   ) {
     return `${path}: expected string length <= ${schema.maxLength}`;
+  }
+  if (typeof value === "string" && schema.pattern !== undefined) {
+    const expression = new RegExp(schema.pattern);
+    if (!expression.test(value)) {
+      return `${path}: expected string to match ${schema.pattern}`;
+    }
   }
 
   if (typeof value === "number" && schema.minimum !== undefined && value < schema.minimum) {

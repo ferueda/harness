@@ -132,7 +132,7 @@
                 "message": "Domain operations depend on the shared Agent interface, not a concrete provider."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|repository(?:/|$)|github(?:/|$)|providers(?:/|$))",
+                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|repository(?:/|$)|github(?:/|$)|review(?:/|$)|providers(?:/|$))",
                 "message": "Domain operations own policy only; use injected service, provider, and repository interfaces."
               }
             ]

@@ -68,6 +68,17 @@ describe("implementation decision schema", () => {
   ])("rejects needs-input with %s", (_name, decision) => {
     expect(ImplementationDecisionSchema.safeParse(decision).success).toBe(false);
   });
+
+  it.each([
+    ["summary", { ...IMPLEMENTED, summary: " \n" }],
+    ["proof action", { ...IMPLEMENTED, proof: [{ ...IMPLEMENTED.proof[0], action: "\t" }] }],
+    ["proof result", { ...IMPLEMENTED, proof: [{ ...IMPLEMENTED.proof[0], observedResult: " " }] }],
+    ["uncertainty", { ...limitedImplementation(), remainingUncertainty: ["  "] }],
+    ["question", { ...NEEDS_INPUT, questions: ["\n"] }],
+  ])("rejects whitespace-only %s", (_name, decision) => {
+    expect(schemaAccepts(JSON_SCHEMA, decision)).toBe(false);
+    expect(ImplementationDecisionSchema.safeParse(decision).success).toBe(false);
+  });
 });
 
 describe("exported implementation result JSON schema", () => {

@@ -97,6 +97,20 @@ describe("implementation source inspection", () => {
     });
   });
 
+  it("rejects a malformed explicit plan issue reference", () => {
+    const workspace = temporaryWorkspace();
+    const source = {
+      kind: "plan",
+      issueReference: "fer-323",
+      path: "dev/plans/fer-323.md",
+    } as ImplementationSource;
+
+    expect(inspectImplementationSource({ workspace, source })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("must be an uppercase issue reference"),
+    });
+  });
+
   it("rejects an empty or symlinked canonical plan", () => {
     const emptyWorkspace = temporaryWorkspace();
     writePlan(emptyWorkspace, "dev/plans/FER-323.md", " \n");
@@ -114,6 +128,18 @@ describe("implementation source inspection", () => {
     expect(inspectPlan(linkedWorkspace)).toMatchObject({
       ok: false,
       error: expect.stringContaining("must be a regular file"),
+    });
+  });
+
+  it("rejects a canonical plan reached through a parent symlink outside the workspace", () => {
+    const workspace = temporaryWorkspace();
+    const external = temporaryWorkspace();
+    writePlan(external, "plans/FER-323.md", "# External plan\n");
+    symlinkSync(external, join(workspace, "dev"), "dir");
+
+    expect(inspectPlan(workspace)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("resolves outside the supplied workspace"),
     });
   });
 

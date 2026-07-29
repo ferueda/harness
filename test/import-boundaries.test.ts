@@ -189,6 +189,21 @@ describe("automation import boundaries", () => {
     );
     expectBoundaryViolation(
       "lib/implementation/forbidden.ts",
+      'import { createWorkflowContext } from "../review/runtime.ts";',
+      "use injected service, provider, and repository interfaces",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { connect } from "inngest/connect";',
+      "must not depend on delivery code",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { createGitHubPublication } from "../github/publication.ts";',
+      "use injected service, provider, and repository interfaces",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
       'import { LinearClient } from "@linear/sdk";',
       "receive normalized input instead of importing Linear",
     );

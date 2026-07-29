@@ -28,6 +28,15 @@ test("validateJsonSchema enforces upper and numeric bounds", () => {
   );
 });
 
+test("validateJsonSchema enforces string patterns", () => {
+  expect(validateJsonSchema(" \n", { type: "string", pattern: "\\S" }, "$.summary")).toBe(
+    "$.summary: expected string to match \\S",
+  );
+  expect(
+    validateJsonSchema("Implemented the change.", { type: "string", pattern: "\\S" }, "$.summary"),
+  ).toBeUndefined();
+});
+
 test("validateJsonSchema accepts one matching anyOf variant", () => {
   const schema = {
     anyOf: [{ type: "string", enum: ["code"] }, { type: "null" }],

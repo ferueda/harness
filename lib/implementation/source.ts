@@ -44,6 +44,7 @@ export const ImplementationPlanSourceSchema = z
   })
   .strict()
   .superRefine((source, ctx) => {
+    if (!ImplementationIssueReferenceSchema.safeParse(source.issueReference).success) return;
     if (source.path === implementationPlanPath(source.issueReference)) return;
     ctx.addIssue({
       code: "custom",
