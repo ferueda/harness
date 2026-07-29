@@ -2,7 +2,7 @@
 
 ## Active queue
 
-- [FER-320 — Run a bounded Spec review and revision cycle](260728-fer-320-spec-review-cycle.md)
+No active plans.
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
