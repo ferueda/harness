@@ -7,7 +7,7 @@ import {
   WorkItemLinkSchema,
 } from "../work-item/schema.ts";
 
-export const SPEC_RESULT_SCHEMA_VERSION = "1";
+export const SPEC_RESULT_SCHEMA_VERSION = "2";
 
 const NonEmptyStringSchema = z.string().min(1);
 
