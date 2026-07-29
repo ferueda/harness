@@ -140,7 +140,7 @@ real consumers expose the same stable contract.
 | `workflows/`             | Callable provider-neutral change-review and plan-review definitions                                             |
 | `lib/linear/`            | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
 | `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
-| `lib/spec/`              | Spec prompt, structured result schema, issue-key artifact validation, and provider-independent operation        |
+| `lib/spec/`              | Initial and resumed Spec operations, strict result schemas, and issue-key artifact validation                   |
 | `lib/spec-review/`       | Independent read-only Spec rubric, finding schema, trusted identity, and provider-independent review operation  |
 | `lib/repository/`        | Grove leases, safe setup, change inspection, local checkpoints, and reset cleanup                               |
 | `lib/github/`            | GitHub remote parsing, credential-safe commit and push, exact PR publication, and retry recovery                |

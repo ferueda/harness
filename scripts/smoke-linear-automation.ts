@@ -655,8 +655,10 @@ try {
     "unchanged revision did not retain exactly one completed readiness run",
   );
   assert(
-    projection.contextReads === contextReadsAfterProjection + 1,
-    "repeated Open poll did not perform exactly one fresh readiness check",
+    projection.contextReads >= contextReadsAfterProjection + 1,
+    // The real minute cron remains active during this live smoke and can cross
+    // this station, adding another valid read alongside the explicit poll.
+    "repeated Open poll did not perform a fresh readiness check",
   );
   assert(projection.triageAgentRuns === 1, "unchanged revision reran triage");
 
