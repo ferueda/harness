@@ -1,14 +1,14 @@
-import type { TriageWorkItemContext, TriageWorkItemReference } from "../triage/schema.ts";
 import type {
   LinearCommentActor,
   LinearIssueContext,
   LinearIssueReference,
 } from "../linear/types.ts";
+import type { WorkItemContext, WorkItemReference } from "../work-item/schema.ts";
 
 export function toLinearWorkItemContext(
   context: LinearIssueContext,
   agentReadyLabelId: string,
-): TriageWorkItemContext {
+): WorkItemContext {
   return {
     id: context.id,
     reference: context.identifier,
@@ -45,7 +45,7 @@ export function toLinearWorkItemContext(
   };
 }
 
-function toWorkItemReference(reference: LinearIssueReference): TriageWorkItemReference {
+function toWorkItemReference(reference: LinearIssueReference): WorkItemReference {
   return {
     id: reference.id,
     reference: reference.identifier,

@@ -1,6 +1,6 @@
 // Harness JSON Schema subset — not a full JSON Schema validator.
 // Supports: type, enum, anyOf, required, properties, additionalProperties,
-// items, minLength, maxLength, minItems, maxItems, minimum, maximum.
+// items, minLength, maxLength, pattern, minItems, maxItems, minimum, maximum.
 
 import { readFileSync } from "node:fs";
 
@@ -16,6 +16,7 @@ export type JsonSchema = {
   items?: JsonSchema;
   minLength?: number;
   maxLength?: number;
+  pattern?: string;
   minItems?: number;
   maxItems?: number;
   minimum?: number;
@@ -76,6 +77,13 @@ export function validateJsonSchema(
     value.length > schema.maxLength
   ) {
     return `${path}: expected string length <= ${schema.maxLength}`;
+  }
+  if (typeof value === "string" && schema.pattern !== undefined) {
+    const pattern = inspectStringPattern(schema.pattern, path);
+    if (!pattern.ok) return pattern.error;
+    if (!pattern.expression.test(value)) {
+      return `${path}: expected string to match ${schema.pattern}`;
+    }
   }
 
   if (typeof value === "number" && schema.minimum !== undefined && value < schema.minimum) {
@@ -140,6 +148,11 @@ export function schemaAccepts(schema: JsonSchema, value: unknown): boolean {
 }
 
 export function assertCodexStrictSchema(schema: JsonSchema, path = "$"): void {
+  if (schema.pattern !== undefined) {
+    const pattern = inspectStringPattern(schema.pattern, path);
+    if (!pattern.ok) throw new Error(pattern.error);
+  }
+
   const properties = schema.properties ?? {};
   if (isObjectSchema(schema) && Object.keys(properties).length > 0) {
     if (schema.additionalProperties !== false) {
@@ -195,4 +208,18 @@ function jsonTypeMatches(type: JsonTypeName, value: unknown): boolean {
 function isObjectSchema(schema: JsonSchema): boolean {
   const types = schema.type ? (Array.isArray(schema.type) ? schema.type : [schema.type]) : [];
   return types.includes("object") || schema.properties !== undefined;
+}
+
+function inspectStringPattern(
+  pattern: string,
+  path: string,
+): Readonly<{ ok: true; expression: RegExp }> | Readonly<{ ok: false; error: string }> {
+  try {
+    return { ok: true, expression: new RegExp(pattern) };
+  } catch {
+    return {
+      ok: false,
+      error: `${path}: invalid string pattern ${JSON.stringify(pattern)}`,
+    };
+  }
 }

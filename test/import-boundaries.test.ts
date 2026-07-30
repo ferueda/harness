@@ -77,6 +77,11 @@ describe("automation import boundaries", () => {
     );
     expectBoundaryViolation(
       "lib/linear/forbidden.ts",
+      'import { implementWorkItem } from "../implementation/implementation.ts";',
+      "domain and delivery policy belong outside lib/linear",
+    );
+    expectBoundaryViolation(
+      "lib/linear/forbidden.ts",
       'import { connect } from "inngest/connect";',
       "Linear service primitives must not depend on delivery code",
     );
@@ -100,6 +105,11 @@ describe("automation import boundaries", () => {
     );
     expectBoundaryViolation(
       "lib/agent/forbidden.ts",
+      'import type { ImplementationResult } from "../implementation/implementation.ts";',
+      "must remain independent of services, domain operations, reviews, and concrete providers",
+    );
+    expectBoundaryViolation(
+      "lib/agent/forbidden.ts",
       'import { Codex } from "@openai/codex-sdk";',
       "must not depend on a concrete provider SDK",
     );
@@ -119,6 +129,11 @@ describe("automation import boundaries", () => {
     expectBoundaryViolation(
       "lib/review/forbidden.ts",
       'import { triageIssue } from "../triage/triage.ts";',
+      "must remain independent of automation, services, domain operations, and concrete providers",
+    );
+    expectBoundaryViolation(
+      "lib/review/forbidden.ts",
+      'import { implementWorkItem } from "../implementation/implementation.ts";',
       "must remain independent of automation, services, domain operations, and concrete providers",
     );
   });
@@ -162,6 +177,45 @@ describe("automation import boundaries", () => {
       "lib/spec-review/forbidden.ts",
       'import { LinearClient } from "@linear/sdk";',
       "receive normalized input instead of importing Linear",
+    );
+    expectAllowed(
+      "lib/implementation/allowed.ts",
+      'import type { Agent } from "../agent/contract.ts";\nimport type { WorkItemContext } from "../work-item/schema.ts";\ntype Inputs = Agent | WorkItemContext;\nexport type { Inputs };',
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { createRepository } from "../repository/repository.ts";',
+      "use injected service, provider, and repository interfaces",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { createWorkflowContext } from "../review/runtime.ts";',
+      "use injected service, provider, and repository interfaces",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { connect } from "inngest/connect";',
+      "must not depend on delivery code",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { createGitHubPublication } from "../github/publication.ts";',
+      "use injected service, provider, and repository interfaces",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { LinearClient } from "@linear/sdk";',
+      "receive normalized input instead of importing Linear",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { createAgentProvider } from "../../providers/registry.ts";',
+      "use injected service, provider, and repository interfaces",
+    );
+    expectBoundaryViolation(
+      "lib/implementation/forbidden.ts",
+      'import { execFile } from "node:child_process";',
+      "instead of running Git or GitHub commands",
     );
   });
 
@@ -210,6 +264,11 @@ describe("automation import boundaries", () => {
     expectBoundaryViolation(
       "providers/codex/forbidden.ts",
       'import { triageIssue } from "../../lib/triage/triage.ts";',
+      "must not import tracker or domain operations",
+    );
+    expectBoundaryViolation(
+      "providers/codex/forbidden.ts",
+      'import { implementWorkItem } from "../../lib/implementation/implementation.ts";',
       "must not import tracker or domain operations",
     );
   });
