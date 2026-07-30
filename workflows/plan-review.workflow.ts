@@ -30,15 +30,16 @@ export function run(ctx: WorkflowContext) {
   const startedAt = Date.now();
   return runReviewSteps(ctx, "Plan Review Summary", reviewSteps, buildStepMetadata()).then(
     (result) => {
+      const metadata = result.metadata;
       ctx.eventSink?.({
         type: "run:end",
         runId: runId ?? "",
         runDir: ctx.runDir,
         workspace: ctx.workspace,
-        status: result.status === "failed" ? "failed" : "completed",
+        status: metadata.status === "failed" ? "failed" : "completed",
         durationMs: Date.now() - startedAt,
       });
-      return result;
+      return metadata;
     },
     (error: unknown) => {
       ctx.eventSink?.({

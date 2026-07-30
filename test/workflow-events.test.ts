@@ -24,6 +24,18 @@ const PASS_REVIEW = {
   findings: [],
 } satisfies ReviewOutput;
 
+const CHANGE_REVIEW_IDENTITY = {
+  runId: "run-123",
+  runDir: "/tmp/run-123",
+  workspace: "/tmp/workspace",
+  scope: {
+    baseRef: "main",
+    headRef: "HEAD",
+    mergeBase: "a".repeat(40),
+    headSha: "b".repeat(40),
+  },
+} as const;
+
 type DeferredReview = {
   promise: Promise<ReviewOutput>;
   resolve(review: ReviewOutput): void;
@@ -205,7 +217,9 @@ test("runReviewSteps emits start, heartbeat, and end events", async () => {
   resolveReview(PASS_REVIEW);
   await vi.runOnlyPendingTimersAsync();
 
-  await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  await expect(run).resolves.toMatchObject({
+    metadata: { status: "completed", verdict: "pass" },
+  });
   expect(events.map((event) => event.type)).toEqual([
     "step:start",
     "step:heartbeat",
@@ -256,7 +270,7 @@ test("runReviewSteps emits failed step events", async () => {
 
   await expect(
     runReviewSteps(ctx, "Change Review Summary", [{ agentName: "review-implementation" }]),
-  ).resolves.toMatchObject({ status: "failed" });
+  ).resolves.toMatchObject({ metadata: { status: "failed" } });
   expect(events).toContainEqual(
     expect.objectContaining({
       type: "step:end",
@@ -290,7 +304,7 @@ test("spec review steps emit review-spec events and outputs", async () => {
 
   await expect(
     runReviewSteps(ctx, "Plan Review Summary", [{ agentName: "review-spec" }]),
-  ).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  ).resolves.toMatchObject({ metadata: { status: "completed", verdict: "pass" } });
   expect(events).toEqual([
     expect.objectContaining({
       type: "step:start",
@@ -314,7 +328,7 @@ test("spec review steps emit review-spec events and outputs", async () => {
 test("selected change-review steps emit events only for executed reviewers", async () => {
   const events: WorkflowEvent[] = [];
   const ctx: WorkflowContext = {
-    runId: "run-123",
+    ...CHANGE_REVIEW_IDENTITY,
     eventSink(event) {
       events.push(event);
     },
@@ -351,7 +365,7 @@ test("parallel review steps emit start and end events for mixed outcomes", async
   const implementation = createDeferredReview();
   const quality = createDeferredReview();
   const ctx: WorkflowContext = {
-    runId: "run-123",
+    ...CHANGE_REVIEW_IDENTITY,
     eventSink(event) {
       events.push(event);
     },

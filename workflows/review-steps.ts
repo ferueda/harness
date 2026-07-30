@@ -12,16 +12,24 @@ import {
 import type { ReviewAgentName } from "../lib/review/runtime.ts";
 import type { ReviewOutput } from "../lib/review/schema.ts";
 
-type WorkflowRunMeta = {
+export type WorkflowRunMeta = {
   verdict?: string;
   status?: string;
   [key: string]: unknown;
 };
 
+type WorkflowReviewScope = Readonly<{
+  baseRef: string;
+  headRef: string;
+  mergeBase: string;
+  headSha: string;
+}>;
+
 export type WorkflowContext = {
   runId?: string;
   runDir?: string;
   workspace?: string;
+  scope?: WorkflowReviewScope;
   eventSink?: WorkflowEventSink;
   heartbeatMs?: number;
   agent(name: ReviewAgentName): Promise<ReviewOutput>;
@@ -45,12 +53,18 @@ export type ReviewStep = {
   agentName: ReviewAgentName;
 };
 
+export type ReviewStepRunResult = Readonly<{
+  metadata: WorkflowRunMeta;
+  reviews: readonly ReviewSection[];
+  failedReviews: readonly FailedReview[];
+}>;
+
 export async function runReviewSteps(
   ctx: WorkflowContext,
   title: string,
   steps: ReviewStep[],
   stepMetadata?: WorkflowStepMetadata,
-): Promise<WorkflowRunMeta> {
+): Promise<ReviewStepRunResult> {
   const reviewTasks = steps.map((step) => ({
     ...step,
     ...ctx.reviewInfo(step.agentName),
@@ -76,15 +90,23 @@ export async function runReviewSteps(
   }
 
   if (failedReviews.length > 0) {
-    return ctx.exportFailed({ title, reviews, failedReviews, steps: stepMetadata });
+    return {
+      metadata: ctx.exportFailed({ title, reviews, failedReviews, steps: stepMetadata }),
+      reviews,
+      failedReviews,
+    };
   }
 
-  return ctx.export({
-    title,
+  return {
+    metadata: ctx.export({
+      title,
+      reviews,
+      verdict: ctx.aggregate(...reviews.map(({ review }) => review)),
+      steps: stepMetadata,
+    }),
     reviews,
-    verdict: ctx.aggregate(...reviews.map(({ review }) => review)),
-    steps: stepMetadata,
-  });
+    failedReviews,
+  };
 }
 
 type ReviewTask = ReviewStep & {

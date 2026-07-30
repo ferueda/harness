@@ -751,6 +751,8 @@ test("harness run change-review dry-run works through the CLI", () => {
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
   expect(output.prompts.simplify).toBeUndefined();
+  expect(output.reviewOutputs).toBeUndefined();
+  expect(output.reviewFailures).toBeUndefined();
   expect(existsSync(join(output.runDir, "context/diff.patch"))).toBe(true);
 
   const implementationPrompt = readFileSync(output.prompts.implementation, "utf8");

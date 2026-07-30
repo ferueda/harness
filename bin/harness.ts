@@ -19,6 +19,7 @@ import {
 } from "../lib/agent/contract.ts";
 import {
   CHANGE_REVIEW_STEPS,
+  changeReviewCliMetadata,
   isChangeReviewStep,
   run as runChangeReview,
   type ChangeReviewStepId,
@@ -404,7 +405,7 @@ function addReviewCommand(
       const onRunAbort = () => runAbort.abort();
       process.once("SIGINT", onRunAbort);
       process.once("SIGTERM", onRunAbort);
-      let meta;
+      let result;
       try {
         const ctx = createWorkflowContext({
           ...resolvedOptions,
@@ -413,7 +414,7 @@ function addReviewCommand(
           eventSink: options.verbose ? writeVerboseWorkflowEvent : undefined,
         });
         try {
-          meta = await workflow(ctx, { steps: options.steps });
+          result = await workflow(ctx, { steps: options.steps });
         } catch (error) {
           cleanupOrphanedRunDir(ctx.runDir);
           throw error;
@@ -422,6 +423,7 @@ function addReviewCommand(
         process.off("SIGINT", onRunAbort);
         process.off("SIGTERM", onRunAbort);
       }
+      const meta = changeReviewCliMetadata(result);
       console.log(JSON.stringify(meta, null, 2));
       process.exitCode = meta.verdict === "pass" || meta.status === "dry_run" ? 0 : 1;
     });

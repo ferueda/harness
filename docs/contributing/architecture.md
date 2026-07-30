@@ -164,9 +164,13 @@ file should live with the subsystem whose contract it extends.
 `change-review` and `plan-review` use an immutable workflow context and callable
 workflow definitions. Reviewers run through the shared provider interface and
 write structured results beneath the run directory. Aggregation owns the final
-verdict; provider adapters do not. Within `lib/review/`, `runtime.ts` composes a
-run, `reviewer.ts` owns prompt and provider execution, and `run-report.ts` owns
-durable summaries, metadata, stream records, and incomplete-run cleanup.
+verdict; provider adapters do not. Programmatic `change-review` callers receive
+the complete validated reviewer outputs and typed reviewer failures bound to
+the exact run and Git scope. Durable metadata and CLI JSON keep the compact
+review summaries used by people and existing tools. Within `lib/review/`,
+`runtime.ts` composes a run, `reviewer.ts` owns prompt and provider execution,
+and `run-report.ts` owns durable summaries, metadata, stream records, and
+incomplete-run cleanup.
 
 ### Domain operation boundary
 

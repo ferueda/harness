@@ -1,6 +1,17 @@
-import type { WorkflowStepMetadata } from "../lib/review/aggregate.ts";
+import type {
+  FailedReview,
+  ReviewScope,
+  ReviewVerdict,
+  WorkflowStepMetadata,
+} from "../lib/review/aggregate.ts";
 import type { ReviewAgentName } from "../lib/review/runtime.ts";
-import { runReviewSteps, type ReviewStep, type WorkflowContext } from "./review-steps.ts";
+import type { ReviewOutput } from "../lib/review/schema.ts";
+import {
+  runReviewSteps,
+  type ReviewStep,
+  type ReviewStepRunResult,
+  type WorkflowContext,
+} from "./review-steps.ts";
 
 export const meta = { name: "change-review" };
 
@@ -11,22 +22,70 @@ type ChangeReviewOptions = {
   steps?: ChangeReviewStepId[];
 };
 
+export type ChangeReviewOutputs = Readonly<{
+  implementation?: ReviewOutput;
+  quality?: ReviewOutput;
+}>;
+
+type ChangeReviewIdentity = Readonly<{
+  runId: string;
+  runDir: string;
+  workspace: string;
+  scope: Readonly<ReviewScope>;
+}>;
+
+type ChangeReviewResultBase = ChangeReviewIdentity &
+  Readonly<{
+    reviewOutputs: ChangeReviewOutputs;
+  }>;
+
+type WorkflowMetadata = Readonly<{
+  [key: string]: unknown;
+}>;
+
+export type ChangeReviewResult =
+  | (WorkflowMetadata &
+      ChangeReviewResultBase &
+      Readonly<{
+        status: "completed";
+        verdict: ReviewVerdict;
+        reviewFailures: readonly [];
+      }>)
+  | (WorkflowMetadata &
+      ChangeReviewResultBase &
+      Readonly<{
+        status: "failed";
+        verdict?: never;
+        reviewFailures: readonly [FailedReview, ...FailedReview[]];
+      }>)
+  | (WorkflowMetadata &
+      Omit<ChangeReviewResultBase, "reviewOutputs"> &
+      Readonly<{
+        status: "dry_run";
+        verdict?: never;
+        reviewOutputs: Readonly<{ implementation?: never; quality?: never }>;
+        reviewFailures: readonly [];
+      }>);
+
 const STEP_AGENTS = {
   implementation: "review-implementation",
   quality: "code-quality-review",
 } satisfies Record<ChangeReviewStepId, ReviewAgentName>;
 
-export function run(ctx: WorkflowContext, options: ChangeReviewOptions = {}) {
+export function run(
+  ctx: WorkflowContext,
+  options: ChangeReviewOptions = {},
+): Promise<ChangeReviewResult> {
+  const identity = requireChangeReviewIdentity(ctx);
   const selectedSteps = normalizeChangeReviewSteps(options.steps);
   const reviewSteps = selectedSteps.map(
     (id): ReviewStep => ({
       agentName: STEP_AGENTS[id],
     }),
   );
-  const runId = ctx.eventSink ? requiredRunId(ctx) : undefined;
   ctx.eventSink?.({
     type: "run:start",
-    runId: runId ?? "",
+    runId: identity.runId,
     runDir: ctx.runDir,
     workspace: ctx.workspace,
     status: "running",
@@ -39,10 +98,11 @@ export function run(ctx: WorkflowContext, options: ChangeReviewOptions = {}) {
     reviewSteps,
     buildStepMetadata(selectedSteps),
   ).then(
-    (result) => {
+    (stepResult) => {
+      const result = buildChangeReviewResult(identity, stepResult);
       ctx.eventSink?.({
         type: "run:end",
-        runId: runId ?? "",
+        runId: identity.runId,
         runDir: ctx.runDir,
         workspace: ctx.workspace,
         status: result.status === "failed" ? "failed" : "completed",
@@ -53,7 +113,7 @@ export function run(ctx: WorkflowContext, options: ChangeReviewOptions = {}) {
     (error: unknown) => {
       ctx.eventSink?.({
         type: "run:end",
-        runId: runId ?? "",
+        runId: identity.runId,
         runDir: ctx.runDir,
         workspace: ctx.workspace,
         status: "failed",
@@ -65,9 +125,96 @@ export function run(ctx: WorkflowContext, options: ChangeReviewOptions = {}) {
   );
 }
 
-function requiredRunId(ctx: WorkflowContext): string {
-  if (ctx.runId) return ctx.runId;
-  throw new Error("WorkflowContext.runId is required when emitting workflow events");
+export function changeReviewCliMetadata(result: ChangeReviewResult): WorkflowMetadata {
+  const {
+    reviewOutputs: _reviewOutputs,
+    reviewFailures: _reviewFailures,
+    runDir,
+    ...metadata
+  } = result;
+  return result.status === "dry_run" ? { ...metadata, runDir } : metadata;
+}
+
+function requireChangeReviewIdentity(ctx: WorkflowContext): ChangeReviewIdentity {
+  if (!ctx.runId) throw new Error("Change review requires WorkflowContext.runId");
+  if (!ctx.runDir) throw new Error("Change review requires WorkflowContext.runDir");
+  if (!ctx.workspace) throw new Error("Change review requires WorkflowContext.workspace");
+  if (!ctx.scope) throw new Error("Change review requires an exact Git scope");
+  return {
+    runId: ctx.runId,
+    runDir: ctx.runDir,
+    workspace: ctx.workspace,
+    scope: {
+      baseRef: ctx.scope.baseRef,
+      headRef: ctx.scope.headRef,
+      mergeBase: ctx.scope.mergeBase,
+      headSha: ctx.scope.headSha,
+    },
+  };
+}
+
+function buildChangeReviewResult(
+  identity: ChangeReviewIdentity,
+  stepResult: ReviewStepRunResult,
+): ChangeReviewResult {
+  const { status, verdict, ...metadata } = stepResult.metadata;
+  if (status === "dry_run") {
+    return {
+      ...metadata,
+      ...identity,
+      status,
+      reviewOutputs: {},
+      reviewFailures: [],
+    };
+  }
+
+  const reviewOutputs = collectReviewOutputs(stepResult);
+  if (status === "completed") {
+    if (!isReviewVerdict(verdict)) {
+      throw new Error(`Change review completed with invalid verdict: ${String(verdict)}`);
+    }
+    if (stepResult.failedReviews.length > 0) {
+      throw new Error("Change review completed with reviewer failures");
+    }
+    return {
+      ...metadata,
+      ...identity,
+      status,
+      verdict,
+      reviewOutputs,
+      reviewFailures: [],
+    };
+  }
+
+  if (status === "failed") {
+    const [firstFailure, ...remainingFailures] = stepResult.failedReviews;
+    if (!firstFailure) throw new Error("Change review failed without a reviewer failure");
+    return {
+      ...metadata,
+      ...identity,
+      status,
+      reviewOutputs,
+      reviewFailures: [firstFailure, ...remainingFailures],
+    };
+  }
+
+  throw new Error(`Change review returned unsupported status: ${String(status)}`);
+}
+
+function collectReviewOutputs(stepResult: ReviewStepRunResult): ChangeReviewOutputs {
+  const outputs: {
+    implementation?: ReviewOutput;
+    quality?: ReviewOutput;
+  } = {};
+  for (const section of stepResult.reviews) {
+    if (section.key === "implementation") outputs.implementation = section.review;
+    if (section.key === "codeQuality") outputs.quality = section.review;
+  }
+  return outputs;
+}
+
+function isReviewVerdict(value: unknown): value is ReviewVerdict {
+  return value === "pass" || value === "needs_changes" || value === "blocked";
 }
 
 export function normalizeChangeReviewSteps(

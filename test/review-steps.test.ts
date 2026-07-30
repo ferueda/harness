@@ -7,6 +7,7 @@ import type {
 import type { ReviewOutput } from "../lib/review/schema.ts";
 import type { ReviewAgentName } from "../lib/review/runtime.ts";
 import {
+  changeReviewCliMetadata,
   normalizeChangeReviewSteps,
   run as runChangeReview,
 } from "../workflows/change-review.workflow.ts";
@@ -23,6 +24,16 @@ const PASS_REVIEW = {
   verdict: "pass",
   summary: "ok",
   findings: [],
+} satisfies ReviewOutput;
+
+const IMPLEMENTATION_REVIEW = {
+  ...PASS_REVIEW,
+  summary: "implementation ok",
+} satisfies ReviewOutput;
+
+const QUALITY_REVIEW = {
+  ...PASS_REVIEW,
+  summary: "quality ok",
 } satisfies ReviewOutput;
 
 function createDeferredReview(): DeferredReview {
@@ -49,6 +60,15 @@ function createContext(deferred: Record<ReviewAgentName, DeferredReview>) {
   let exportedFailures: unknown[] | undefined;
   let exportedSteps: WorkflowStepMetadata | undefined;
   const ctx: WorkflowContext = {
+    runId: "review-run",
+    runDir: "/tmp/review-run",
+    workspace: "/tmp/workspace",
+    scope: {
+      baseRef: "main",
+      headRef: "HEAD",
+      mergeBase: "a".repeat(40),
+      headSha: "b".repeat(40),
+    },
     agent(name) {
       started.push(name);
       return deferred[name].promise;
@@ -81,7 +101,7 @@ function createContext(deferred: Record<ReviewAgentName, DeferredReview>) {
       exportedReviews = reviews;
       exportedFailures = failedReviews;
       exportedSteps = steps;
-      return { status: "failed" };
+      return { status: "failed", failedReviews };
     },
   };
   return {
@@ -105,9 +125,13 @@ test("change-review starts all review steps by default before any review resolve
   const run = runChangeReview(harness.ctx);
 
   expect(harness.started).toEqual(["review-implementation", "code-quality-review"]);
-  deferred["code-quality-review"].resolve(PASS_REVIEW);
-  deferred["review-implementation"].resolve(PASS_REVIEW);
-  await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  deferred["code-quality-review"].resolve(QUALITY_REVIEW);
+  deferred["review-implementation"].resolve(IMPLEMENTATION_REVIEW);
+  const result = await run;
+  expect(result).toMatchObject({ status: "completed", verdict: "pass" });
+  expect(result.reviewOutputs.implementation).toBe(IMPLEMENTATION_REVIEW);
+  expect(result.reviewOutputs.quality).toBe(QUALITY_REVIEW);
+  expect(result.reviewFailures).toEqual([]);
   expect(harness.exportedReviews?.map((review) => review.key)).toEqual([
     "implementation",
     "codeQuality",
@@ -168,8 +192,10 @@ test("change-review normalizes duplicate selected steps", async () => {
   const run = runChangeReview(harness.ctx, { steps: ["implementation", "implementation"] });
 
   expect(harness.started).toEqual(["review-implementation"]);
-  deferred["review-implementation"].resolve(PASS_REVIEW);
-  await expect(run).resolves.toMatchObject({ status: "completed", verdict: "pass" });
+  deferred["review-implementation"].resolve(IMPLEMENTATION_REVIEW);
+  const result = await run;
+  expect(result).toMatchObject({ status: "completed", verdict: "pass" });
+  expect(result.reviewOutputs).toEqual({ implementation: IMPLEMENTATION_REVIEW });
   expect(harness.exportedReviews?.map((review) => review.key)).toEqual(["implementation"]);
   expect(harness.exportedSteps).toMatchObject({
     requestedSteps: ["implementation"],
@@ -194,7 +220,19 @@ test("change-review exports failed selected reviews after all selected reviewers
   expect(harness.exportedFailures).toBeUndefined();
   deferred["review-implementation"].resolve(PASS_REVIEW);
 
-  await expect(run).resolves.toMatchObject({ status: "failed" });
+  const result = await run;
+  expect(result).toMatchObject({ status: "failed" });
+  expect(result.reviewOutputs.implementation).toBe(PASS_REVIEW);
+  expect(result.reviewOutputs.quality).toBeUndefined();
+  expect(result.reviewFailures).toEqual([
+    { key: "codeQuality", stage: "quality", error: "quality broke" },
+  ]);
+  expect(changeReviewCliMetadata(result)).not.toHaveProperty("reviewOutputs");
+  expect(changeReviewCliMetadata(result)).not.toHaveProperty("reviewFailures");
+  expect(changeReviewCliMetadata(result)).toHaveProperty("failedReviews", [
+    { key: "codeQuality", stage: "quality", error: "quality broke" },
+  ]);
+  expect(changeReviewCliMetadata(result)).not.toHaveProperty("runDir");
   expect(harness.exportedReviews?.map((review) => review.key)).toEqual(["implementation"]);
   expect(harness.exportedFailures).toEqual([
     { key: "codeQuality", stage: "quality", error: "quality broke" },
@@ -214,7 +252,13 @@ test("change-review preserves successful later reviews when an earlier selected 
   deferred["review-implementation"].reject(new Error("implementation broke"));
   deferred["code-quality-review"].resolve(PASS_REVIEW);
 
-  await expect(run).resolves.toMatchObject({ status: "failed" });
+  const result = await run;
+  expect(result).toMatchObject({ status: "failed" });
+  expect(result.reviewOutputs.quality).toBe(PASS_REVIEW);
+  expect(result.reviewOutputs.implementation).toBeUndefined();
+  expect(result.reviewFailures).toEqual([
+    { key: "implementation", stage: "implementation", error: "implementation broke" },
+  ]);
   expect(harness.exportedReviews?.map((review) => review.key)).toEqual(["codeQuality"]);
   expect(harness.exportedFailures).toEqual([
     { key: "implementation", stage: "implementation", error: "implementation broke" },
@@ -229,7 +273,13 @@ test("change-review supports all selected reviewers failing", async () => {
   deferred["review-implementation"].reject(new Error("implementation broke"));
   deferred["code-quality-review"].reject(new Error("quality broke"));
 
-  await expect(run).resolves.toMatchObject({ status: "failed" });
+  const result = await run;
+  expect(result).toMatchObject({ status: "failed" });
+  expect(result.reviewOutputs).toEqual({});
+  expect(result.reviewFailures).toEqual([
+    { key: "implementation", stage: "implementation", error: "implementation broke" },
+    { key: "codeQuality", stage: "quality", error: "quality broke" },
+  ]);
   expect(harness.exportedReviews).toEqual([]);
   expect(harness.exportedFailures).toEqual([
     { key: "implementation", stage: "implementation", error: "implementation broke" },
