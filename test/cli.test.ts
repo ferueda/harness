@@ -747,7 +747,13 @@ test("harness run change-review dry-run works through the CLI", () => {
   expect(output.requestedSteps).toEqual(["implementation", "quality"]);
   expect(output.partial).toBe(false);
   expect(output.workspace).toBe(workspace);
-  expect(output.scope).toMatchObject({ baseRef: "HEAD", headRef: "HEAD" });
+  expect(output.scope).toMatchObject({
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    headBranch: "main",
+    diffChars: expect.any(Number),
+    diffLines: expect.any(Number),
+  });
   expect(output.prompts.implementation).toMatch(/implementation-review\.prompt\.md$/);
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
   expect(output.prompts.simplify).toBeUndefined();

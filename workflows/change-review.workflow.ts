@@ -158,10 +158,11 @@ function buildChangeReviewResult(
   stepResult: ReviewStepRunResult,
 ): ChangeReviewResult {
   const { status, verdict, ...metadata } = stepResult.metadata;
+  const resultIdentity = mergeMetadataScope(identity, stepResult.metadata.scope);
   if (status === "dry_run") {
     return {
       ...metadata,
-      ...identity,
+      ...resultIdentity,
       status,
       reviewOutputs: {},
       reviewFailures: [],
@@ -178,7 +179,7 @@ function buildChangeReviewResult(
     }
     return {
       ...metadata,
-      ...identity,
+      ...resultIdentity,
       status,
       verdict,
       reviewOutputs,
@@ -191,7 +192,7 @@ function buildChangeReviewResult(
     if (!firstFailure) throw new Error("Change review failed without a reviewer failure");
     return {
       ...metadata,
-      ...identity,
+      ...resultIdentity,
       status,
       reviewOutputs,
       reviewFailures: [firstFailure, ...remainingFailures],
@@ -199,6 +200,15 @@ function buildChangeReviewResult(
   }
 
   throw new Error(`Change review returned unsupported status: ${String(status)}`);
+}
+
+function mergeMetadataScope(
+  identity: ChangeReviewIdentity,
+  metadataScope: unknown,
+): ChangeReviewIdentity {
+  if (!isRecord(metadataScope)) return identity;
+  // Keep legacy scope statistics while the trusted context owns the exact Git identity.
+  return { ...identity, scope: { ...metadataScope, ...identity.scope } };
 }
 
 function collectReviewOutputs(stepResult: ReviewStepRunResult): ChangeReviewOutputs {
@@ -211,6 +221,10 @@ function collectReviewOutputs(stepResult: ReviewStepRunResult): ChangeReviewOutp
     if (section.key === "codeQuality") outputs.quality = section.review;
   }
   return outputs;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isReviewVerdict(value: unknown): value is ReviewVerdict {

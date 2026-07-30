@@ -1,5 +1,6 @@
 import type {
   FailedReview,
+  ReviewScope,
   ReviewSection,
   ReviewVerdict,
   WorkflowStepMetadata,
@@ -18,18 +19,11 @@ export type WorkflowRunMeta = {
   [key: string]: unknown;
 };
 
-type WorkflowReviewScope = Readonly<{
-  baseRef: string;
-  headRef: string;
-  mergeBase: string;
-  headSha: string;
-}>;
-
 export type WorkflowContext = {
   runId?: string;
   runDir?: string;
   workspace?: string;
-  scope?: WorkflowReviewScope;
+  scope?: Readonly<ReviewScope>;
   eventSink?: WorkflowEventSink;
   heartbeatMs?: number;
   agent(name: ReviewAgentName): Promise<ReviewOutput>;
