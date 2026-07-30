@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { createWorkflowContext, createWorkflowContextForTest } from "../lib/review/runtime.ts";
 import type { AgentProviderOptions, AgentRunInput } from "../lib/agent/contract.ts";
+import type { ReviewOutput } from "../lib/review/schema.ts";
 import { SPEC_REVIEW_PROMPT } from "../lib/review/prompts/index.ts";
 import { createAgentProvider } from "../providers/registry.ts";
+import { run as runChangeReview } from "../workflows/change-review.workflow.ts";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -38,6 +40,22 @@ function reviewFinding(must_fix: boolean) {
     rationale: "The test needs a complete finding shape.",
     must_fix,
   };
+}
+
+const IMPLEMENTATION_PASS = {
+  verdict: "pass",
+  summary: "implementation ok",
+  findings: [],
+} satisfies ReviewOutput;
+
+const QUALITY_PASS = {
+  verdict: "pass",
+  summary: "quality ok",
+  findings: [],
+} satisfies ReviewOutput;
+
+function reviewerOutputForPrompt(prompt: string): ReviewOutput {
+  return prompt.includes("implementation reviewer") ? IMPLEMENTATION_PASS : QUALITY_PASS;
 }
 
 test("spec review prompt stays aligned with review-spec dimensions and schema verdicts", () => {
@@ -155,6 +173,114 @@ test("workflow context supports spec review dry-runs without git scope", async (
   expect(prompt).toContain("context/plan.md");
   expect(prompt).not.toContain("Diff file:");
   expect(prompt).not.toContain("{{DIFF_REF}}");
+});
+
+test("callable change-review returns full reviews bound to its exact run and Git head", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const expectedHead = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspace,
+    encoding: "utf8",
+  }).trim();
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          const structuredOutput = reviewerOutputForPrompt(input.prompt);
+          return { ok: true, structuredOutput, raw: { structuredOutput } };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  const result = await runChangeReview(ctx);
+
+  expect(result.status).toBe("completed");
+  expect(result.runId).toBe(ctx.runId);
+  expect(result.runDir).toBe(ctx.runDir);
+  expect(result.workspace).toBe(workspace);
+  expect(result.scope.headSha).toBe(expectedHead);
+  expect(result.reviewOutputs).toEqual({
+    implementation: IMPLEMENTATION_PASS,
+    quality: QUALITY_PASS,
+  });
+  expect(result.reviewFailures).toEqual([]);
+  expect(existsSync(join(result.runDir, "meta.json"))).toBe(true);
+});
+
+test("callable change-review keeps a completed sibling when one reviewer fails", async () => {
+  const workspace = createGitWorkspace();
+  const runsDir = mkdtempSync(join(tmpdir(), "harness-runs-"));
+  const expectedHead = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspace,
+    encoding: "utf8",
+  }).trim();
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run(input) {
+          if (!input.prompt.includes("implementation reviewer")) {
+            throw new Error("quality unavailable");
+          }
+          return {
+            ok: true,
+            structuredOutput: IMPLEMENTATION_PASS,
+            raw: { structuredOutput: IMPLEMENTATION_PASS },
+          };
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  const result = await runChangeReview(ctx);
+
+  expect(result.status).toBe("failed");
+  expect(result.runDir).toBe(ctx.runDir);
+  expect(result.scope.headSha).toBe(expectedHead);
+  expect(result.reviewOutputs).toEqual({ implementation: IMPLEMENTATION_PASS });
+  expect(result.reviewFailures).toEqual([
+    { key: "codeQuality", stage: "quality", error: "quality unavailable" },
+  ]);
+});
+
+test("callable change-review dry-run exposes no synthetic reviews or failures", async () => {
+  const workspace = createGitWorkspace();
+  const ctx = createWorkflowContextForTest({
+    workspace,
+    baseRef: "HEAD",
+    headRef: "HEAD",
+    runsDir: mkdtempSync(join(tmpdir(), "harness-runs-")),
+    dryRun: true,
+    agentProviderFactory(options) {
+      return {
+        name: options.provider,
+        async run() {
+          throw new Error("dry-run should not call provider");
+        },
+      };
+    },
+    maxRuntimeMs: 1_000,
+  });
+
+  const result = await runChangeReview(ctx);
+
+  expect(result.status).toBe("dry_run");
+  expect("verdict" in result).toBe(false);
+  expect(result.reviewOutputs).toEqual({});
+  expect(result.reviewFailures).toEqual([]);
+  expect(result.runDir).toBe(ctx.runDir);
 });
 
 test("workflow context rejects contradictory reviewer verdicts after preserving raw evidence", async () => {
