@@ -2,7 +2,7 @@
 
 ## Active queue
 
-- [FER-324 programmatic change-review results](260729-fer-324-programmatic-change-review.md)
+No active plans.
 
 The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
 
