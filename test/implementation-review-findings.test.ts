@@ -174,6 +174,38 @@ describe("implementation review finding adapter", () => {
     },
   );
 
+  it("rejects overlong content and more than 24 actionable findings", () => {
+    expect(
+      createImplementationRevisionReview({
+        reviewedRevision: REVISION,
+        reviews: {
+          implementation: reviewOutput([finding({ title: "x".repeat(501) })]),
+          quality: reviewOutput([]),
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("title: Too big"),
+    });
+
+    expect(
+      createImplementationRevisionReview({
+        reviewedRevision: REVISION,
+        reviews: {
+          implementation: reviewOutput(
+            Array.from({ length: 25 }, (_, index) =>
+              finding({ title: `Actionable finding ${index + 1}` }),
+            ),
+          ),
+          quality: reviewOutput([]),
+        },
+      }),
+    ).toEqual({
+      ok: false,
+      error: "Implementation revision accepts at most 24 actionable findings.",
+    });
+  });
+
   it("rejects duplicate actionable findings from one reviewer", () => {
     const duplicate = finding({ must_fix: true });
     const result = createImplementationRevisionReview({
