@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
-import type { ImplementationReviewFinding, ImplementationReviewer } from "./revise-schema.ts";
+import type {
+  ImplementationReviewFindingContent,
+  ImplementationReviewer,
+} from "./revise-schema.ts";
 
 export function createImplementationReviewFindingId(input: {
   reviewedRevision: string;
   reviewer: ImplementationReviewer;
-  finding: Omit<ImplementationReviewFinding, "id" | "reviewer">;
+  finding: ImplementationReviewFindingContent;
 }): string {
   return `implementation-review-finding-${sha256(
     JSON.stringify({
@@ -16,8 +19,8 @@ export function createImplementationReviewFindingId(input: {
 }
 
 export function canonicalImplementationReviewFinding(
-  finding: Omit<ImplementationReviewFinding, "id" | "reviewer">,
-): Readonly<Omit<ImplementationReviewFinding, "id" | "reviewer">> {
+  finding: ImplementationReviewFindingContent,
+): Readonly<ImplementationReviewFindingContent> {
   return {
     title: finding.title,
     severity: finding.severity,

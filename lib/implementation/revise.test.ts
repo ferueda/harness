@@ -177,6 +177,26 @@ describe("reviseImplementation", () => {
     expect(inputs).toHaveLength(0);
   });
 
+  it("rejects blank trusted finding content before invoking the agent", async () => {
+    const workspace = temporaryWorkspace();
+    const inputs: AgentRunInput[] = [];
+    const review = trustedReview();
+    const result = await reviseImplementation({
+      ...validInput(workspace, review, fakeAgent(inputs, providerFailure())),
+      review: {
+        ...review,
+        findings: [{ ...review.findings[0]!, issue: "   " }],
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      failureKind: "invalid-review",
+      error: expect.stringContaining("must contain non-whitespace content"),
+    });
+    expect(inputs).toHaveLength(0);
+  });
+
   it.each([
     ["missing", undefined],
     ["wrong provider", { version: 1, provider: "cursor", id: "cursor-323" }],

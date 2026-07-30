@@ -33,18 +33,21 @@ export const ImplementationReviewFindingIdSchema = z
     "must be a trusted implementation review finding ID",
   );
 
-export const ImplementationReviewFindingSchema = z
+export const ImplementationReviewFindingContentSchema = z
   .object({
-    id: ImplementationReviewFindingIdSchema,
-    reviewer: ImplementationReviewerSchema,
-    title: z.string(),
+    title: z.string().min(1).max(500).regex(/\S/, "must contain non-whitespace content"),
     severity: z.enum(["Critical", "High", "Medium", "Low"]),
-    location: z.string(),
-    issue: z.string(),
-    recommendation: z.string(),
-    rationale: z.string(),
+    location: z.string().min(1).max(1_000).regex(/\S/, "must contain non-whitespace content"),
+    issue: z.string().min(1).max(4_000).regex(/\S/, "must contain non-whitespace content"),
+    recommendation: z.string().min(1).max(4_000).regex(/\S/, "must contain non-whitespace content"),
+    rationale: z.string().min(1).max(4_000).regex(/\S/, "must contain non-whitespace content"),
   })
   .strict();
+
+export const ImplementationReviewFindingSchema = ImplementationReviewFindingContentSchema.extend({
+  id: ImplementationReviewFindingIdSchema,
+  reviewer: ImplementationReviewerSchema,
+}).strict();
 
 export const ImplementationRevisionReviewSchema = z
   .object({
@@ -203,6 +206,9 @@ export type ImplementationRevisionAuthorSession = z.infer<
   typeof ImplementationRevisionAuthorSessionSchema
 >;
 export type ImplementationReviewer = z.infer<typeof ImplementationReviewerSchema>;
+export type ImplementationReviewFindingContent = z.infer<
+  typeof ImplementationReviewFindingContentSchema
+>;
 export type ImplementationReviewFinding = z.infer<typeof ImplementationReviewFindingSchema>;
 export type ImplementationRevisionReview = z.infer<typeof ImplementationRevisionReviewSchema>;
 export type ImplementationRevisionEvidence = z.infer<typeof ImplementationRevisionEvidenceSchema>;

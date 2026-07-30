@@ -117,6 +117,63 @@ describe("implementation review finding adapter", () => {
     });
   });
 
+  it("rejects blocked or internally inconsistent reviewer coverage", () => {
+    expect(
+      createImplementationRevisionReview({
+        reviewedRevision: REVISION,
+        reviews: {
+          implementation: { ...reviewOutput([finding()]), verdict: "blocked" },
+          quality: reviewOutput([]),
+        },
+      }),
+    ).toEqual({
+      ok: false,
+      error: "Implementation revision cannot use a blocked implementation review.",
+    });
+    expect(
+      createImplementationRevisionReview({
+        reviewedRevision: REVISION,
+        reviews: {
+          implementation: { ...reviewOutput([finding()]), verdict: "pass" },
+          quality: reviewOutput([]),
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("pass cannot contain actionable findings"),
+    });
+    expect(
+      createImplementationRevisionReview({
+        reviewedRevision: REVISION,
+        reviews: {
+          implementation: { ...reviewOutput([]), verdict: "needs_changes" },
+          quality: reviewOutput([]),
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("needs_changes requires an actionable finding"),
+    });
+  });
+
+  it.each(["title", "location", "issue", "recommendation", "rationale"] as const)(
+    "rejects an actionable finding with blank %s",
+    (field) => {
+      const result = createImplementationRevisionReview({
+        reviewedRevision: REVISION,
+        reviews: {
+          implementation: reviewOutput([finding({ [field]: "   " })]),
+          quality: reviewOutput([]),
+        },
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        error: expect.stringContaining(`${field}: must contain non-whitespace content`),
+      });
+    },
+  );
+
   it("rejects duplicate actionable findings from one reviewer", () => {
     const duplicate = finding({ must_fix: true });
     const result = createImplementationRevisionReview({
