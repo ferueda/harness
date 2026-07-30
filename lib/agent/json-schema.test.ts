@@ -37,6 +37,12 @@ test("validateJsonSchema enforces string patterns", () => {
   ).toBeUndefined();
 });
 
+test("validateJsonSchema returns a controlled error for malformed string patterns", () => {
+  expect(validateJsonSchema("value", { type: "string", pattern: "[" }, "$.summary")).toBe(
+    '$.summary: invalid string pattern "["',
+  );
+});
+
 test("validateJsonSchema accepts one matching anyOf variant", () => {
   const schema = {
     anyOf: [{ type: "string", enum: ["code"] }, { type: "null" }],
@@ -115,4 +121,17 @@ test("assertCodexStrictSchema rejects object schemas that allow additional prope
       },
     }),
   ).toThrow("$: object schemas must set additionalProperties=false");
+});
+
+test("assertCodexStrictSchema rejects malformed nested string patterns", () => {
+  expect(() =>
+    assertCodexStrictSchema({
+      type: "object",
+      additionalProperties: false,
+      required: ["summary"],
+      properties: {
+        summary: { type: "string", pattern: "[" },
+      },
+    }),
+  ).toThrow('$.summary: invalid string pattern "["');
 });

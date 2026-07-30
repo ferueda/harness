@@ -79,8 +79,9 @@ export function validateJsonSchema(
     return `${path}: expected string length <= ${schema.maxLength}`;
   }
   if (typeof value === "string" && schema.pattern !== undefined) {
-    const expression = new RegExp(schema.pattern);
-    if (!expression.test(value)) {
+    const pattern = inspectStringPattern(schema.pattern, path);
+    if (!pattern.ok) return pattern.error;
+    if (!pattern.expression.test(value)) {
       return `${path}: expected string to match ${schema.pattern}`;
     }
   }
@@ -147,6 +148,11 @@ export function schemaAccepts(schema: JsonSchema, value: unknown): boolean {
 }
 
 export function assertCodexStrictSchema(schema: JsonSchema, path = "$"): void {
+  if (schema.pattern !== undefined) {
+    const pattern = inspectStringPattern(schema.pattern, path);
+    if (!pattern.ok) throw new Error(pattern.error);
+  }
+
   const properties = schema.properties ?? {};
   if (isObjectSchema(schema) && Object.keys(properties).length > 0) {
     if (schema.additionalProperties !== false) {
@@ -202,4 +208,18 @@ function jsonTypeMatches(type: JsonTypeName, value: unknown): boolean {
 function isObjectSchema(schema: JsonSchema): boolean {
   const types = schema.type ? (Array.isArray(schema.type) ? schema.type : [schema.type]) : [];
   return types.includes("object") || schema.properties !== undefined;
+}
+
+function inspectStringPattern(
+  pattern: string,
+  path: string,
+): Readonly<{ ok: true; expression: RegExp }> | Readonly<{ ok: false; error: string }> {
+  try {
+    return { ok: true, expression: new RegExp(pattern) };
+  } catch {
+    return {
+      ok: false,
+      error: `${path}: invalid string pattern ${JSON.stringify(pattern)}`,
+    };
+  }
 }
