@@ -11,6 +11,7 @@ import {
   type ReviewStep,
   type ReviewStepRunResult,
   type WorkflowContext,
+  type WorkflowRunMeta,
 } from "./review-steps.ts";
 
 export const meta = { name: "change-review" };
@@ -39,26 +40,22 @@ type ChangeReviewResultBase = ChangeReviewIdentity &
     reviewOutputs: ChangeReviewOutputs;
   }>;
 
-type WorkflowMetadata = Readonly<{
-  [key: string]: unknown;
-}>;
-
 export type ChangeReviewResult =
-  | (WorkflowMetadata &
+  | (Readonly<WorkflowRunMeta> &
       ChangeReviewResultBase &
       Readonly<{
         status: "completed";
         verdict: ReviewVerdict;
         reviewFailures: readonly [];
       }>)
-  | (WorkflowMetadata &
+  | (Readonly<WorkflowRunMeta> &
       ChangeReviewResultBase &
       Readonly<{
         status: "failed";
         verdict?: never;
         reviewFailures: readonly [FailedReview, ...FailedReview[]];
       }>)
-  | (WorkflowMetadata &
+  | (Readonly<WorkflowRunMeta> &
       Omit<ChangeReviewResultBase, "reviewOutputs"> &
       Readonly<{
         status: "dry_run";
@@ -125,7 +122,7 @@ export function run(
   );
 }
 
-export function changeReviewCliMetadata(result: ChangeReviewResult): WorkflowMetadata {
+export function changeReviewCliMetadata(result: ChangeReviewResult): Readonly<WorkflowRunMeta> {
   const {
     reviewOutputs: _reviewOutputs,
     reviewFailures: _reviewFailures,
