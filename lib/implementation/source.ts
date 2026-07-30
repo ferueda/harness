@@ -69,18 +69,22 @@ export type ImplementationPlanSource = z.infer<typeof ImplementationPlanSourceSc
 export type ImplementationLinearSource = z.infer<typeof ImplementationLinearSourceSchema>;
 export type ImplementationSource = z.infer<typeof ImplementationSourceSchema>;
 
+export type ImplementationPlanSourceAuthority = Readonly<{
+  source: ImplementationPlanSource;
+  issueReference: string;
+  sourceSha256: string;
+  planContent: string;
+}>;
+
+export type ImplementationLinearSourceAuthority = Readonly<{
+  source: ImplementationLinearSource;
+  issueReference: string;
+  sourceSha256: string;
+}>;
+
 export type ImplementationSourceAuthority =
-  | Readonly<{
-      source: ImplementationPlanSource;
-      issueReference: string;
-      sourceSha256: string;
-      planContent: string;
-    }>
-  | Readonly<{
-      source: ImplementationLinearSource;
-      issueReference: string;
-      sourceSha256: string;
-    }>;
+  | ImplementationPlanSourceAuthority
+  | ImplementationLinearSourceAuthority;
 
 export type ImplementationSourceResult<T> =
   | Readonly<{ ok: true; value: T }>

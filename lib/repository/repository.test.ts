@@ -137,6 +137,8 @@ test("repository runs resolve an exact base, reacquire dirty work, and inspect p
   });
 });
 
+// Real Grove setup starts several Git processes and can exceed the shared
+// 30-second budget when the full suite runs in parallel.
 test("repository cleanup reuses a bounded warm pool while preserving ignored dependencies", async () => {
   const fixture = createFixture();
   const repository = createTestRepository(fixture, { maxTrees: 2 });
@@ -199,7 +201,7 @@ test("repository cleanup reuses a bounded warm pool while preserving ignored dep
 
   expect(await afterRestart.cleanupRun(reused)).toEqual({ status: "released" });
   expect(await afterRestart.cleanupRun(second)).toEqual({ status: "released" });
-});
+}, 60_000);
 
 test("setup failure keeps the same lease and retries with a secret-free environment", async () => {
   const fixture = createFixture();
