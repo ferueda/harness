@@ -274,6 +274,36 @@ describe("reviseImplementation", () => {
     });
   });
 
+  it("rejects finding responses returned outside the supplied order", async () => {
+    const workspace = temporaryWorkspace();
+    const review = trustedReviewWithTwoFindings();
+    const responses = review.findings.map((finding) => ({
+      findingId: finding.id,
+      disposition: "declined" as const,
+      rationale: "The current implementation already handles the concern.",
+      evidence: [codeEvidence()],
+    }));
+    const result = await run(workspace, review, {
+      ok: true,
+      structuredOutput: {
+        outcome: "unchanged",
+        rationale: "Both findings are already addressed.",
+        responses: responses.reverse(),
+        proof: [proof()],
+        remainingUncertainty: [],
+        questions: [],
+      },
+      raw: {},
+      session: { provider: "codex", id: "thread-next" },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      failureKind: "invalid-output",
+      error: expect.stringContaining("must follow the supplied order"),
+    });
+  });
+
   it("rejects selected-source evidence that does not match the source mode", async () => {
     const workspace = temporaryWorkspace();
     const review = trustedReview();
@@ -365,6 +395,33 @@ function trustedReview(): ImplementationRevisionReview {
   return {
     reviewedRevision: REVISION,
     findings: [
+      {
+        id: createImplementationReviewFindingId({
+          reviewedRevision: REVISION,
+          reviewer: finding.reviewer,
+          finding,
+        }),
+        ...finding,
+      },
+    ],
+  };
+}
+
+function trustedReviewWithTwoFindings(): ImplementationRevisionReview {
+  const review = trustedReview();
+  const finding = {
+    reviewer: "quality" as const,
+    title: "Keep the revision focused",
+    severity: "Medium" as const,
+    location: "lib/implementation/revise.ts:230",
+    issue: "The revision could include unrelated changes.",
+    recommendation: "Inspect the resulting workspace before accepting it.",
+    rationale: "The caller owns workspace-effect acceptance.",
+  };
+  return {
+    ...review,
+    findings: [
+      ...review.findings,
       {
         id: createImplementationReviewFindingId({
           reviewedRevision: REVISION,

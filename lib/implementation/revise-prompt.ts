@@ -1,4 +1,4 @@
-import type { ImplementationSourceAuthority } from "./source.ts";
+import type { ImplementationPlanSourceAuthority, ImplementationSourceAuthority } from "./source.ts";
 import {
   ImplementationRevisionReviewSchema,
   type ImplementationRevisionReview,
@@ -11,21 +11,7 @@ export function renderImplementationRevisionPrompt(input: {
   review: ImplementationRevisionReview;
 }): string {
   const review = ImplementationRevisionReviewSchema.parse(input.review);
-  const selectedSource =
-    "planContent" in input.authority
-      ? {
-          kind: "plan",
-          issueReference: input.authority.issueReference,
-          path: input.authority.source.path,
-          content: input.authority.planContent,
-        }
-      : {
-          kind: "linear",
-          workItem: input.authority.source.workItem,
-        };
-
-  const selectedSourcePath =
-    input.authority.source.kind === "plan" ? `"${input.authority.source.path}"` : "null";
+  const { selectedSource, selectedSourcePath } = revisionSourceContext(input.authority);
 
   return `# Revise Implementation
 
@@ -78,4 +64,31 @@ Selected implementation source:
 ${JSON.stringify(selectedSource, null, 2)}
 \`\`\`
 `;
+}
+
+function revisionSourceContext(authority: ImplementationSourceAuthority) {
+  if (isPlanAuthority(authority)) {
+    return {
+      selectedSource: {
+        kind: "plan",
+        issueReference: authority.issueReference,
+        path: authority.source.path,
+        content: authority.planContent,
+      },
+      selectedSourcePath: `"${authority.source.path}"`,
+    } as const;
+  }
+  return {
+    selectedSource: {
+      kind: "linear",
+      workItem: authority.source.workItem,
+    },
+    selectedSourcePath: "null",
+  } as const;
+}
+
+function isPlanAuthority(
+  authority: ImplementationSourceAuthority,
+): authority is ImplementationPlanSourceAuthority {
+  return authority.source.kind === "plan";
 }

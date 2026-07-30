@@ -267,6 +267,10 @@ function validateFindingResponses(
   if (unknown.length > 0 || missing.length > 0) {
     return `Invalid implementation revision output: finding response set mismatch (unknown: ${formatFindingIds(unknown)}; missing: ${formatFindingIds(missing)}).`;
   }
+  const outOfOrderIndex = responseIds.findIndex((id, index) => id !== expectedIds[index]);
+  if (outOfOrderIndex >= 0) {
+    return `Invalid implementation revision output: finding responses must follow the supplied order (first mismatch at index ${outOfOrderIndex}).`;
+  }
   return null;
 }
 
