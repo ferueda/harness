@@ -3,7 +3,7 @@ import { SpecIssueReferenceSchema } from "../spec/schema.ts";
 import {
   WORK_REQUEST_EVENT_ID_PREFIX,
   workRequestEventId,
-  type WorkRequestData,
+  type ImplementationWorkRequestData,
 } from "./events/work-events.ts";
 
 const WORK_REQUEST_ID = new RegExp(`^${WORK_REQUEST_EVENT_ID_PREFIX}[0-9a-f]{64}$`);
@@ -19,7 +19,7 @@ export type ImplementationCycleIdentity = Readonly<{
 
 type ImplementationReviewRound = 0 | 1;
 
-export function implementationWorkIdentity(event: WorkRequestData): Readonly<{
+export function implementationWorkIdentity(event: ImplementationWorkRequestData): Readonly<{
   workId: string;
   branch: string;
 }> {
@@ -69,7 +69,7 @@ export function implementationCycleIdentity(input: {
 }
 
 export function implementationCommentMarker(
-  event: WorkRequestData,
+  event: ImplementationWorkRequestData,
   outcome: "needs-input" | "zero-change" | "published" | "failure" | "cleanup-failure",
 ): string {
   return `<!-- harness:linear-implementation:${workRequestEventId("implement", event)}:${outcome} -->`;

@@ -85,6 +85,9 @@ function app(options: Readonly<{ settings?: LinearAutomationSettings }> = {}) {
         prepareRun: async () => {
           throw new Error("Unexpected repository call");
         },
+        recoverRun: async () => {
+          throw new Error("Unexpected repository call");
+        },
         inspectChanges: async () => {
           throw new Error("Unexpected repository call");
         },
@@ -141,6 +144,9 @@ function specApp(
       throw new Error("Unexpected repository call");
     },
     prepareRun: async () => {
+      throw new Error("Unexpected repository call");
+    },
+    recoverRun: async () => {
       throw new Error("Unexpected repository call");
     },
     inspectChanges: async () => {

@@ -1,8 +1,8 @@
 import type { LinearService } from "../linear/client.ts";
-import type { WorkRequestData } from "./events/work-events.ts";
+import type { ImplementationWorkRequestData } from "./events/work-events.ts";
 import type { LinearReadinessConfig } from "./readiness.ts";
 import {
-  confirmClaimedImplementation,
+  confirmImplementationSourceContext,
   isCurrentImplementationClaim,
   type ImplementationAuthority,
 } from "./implementation-authority.ts";
@@ -43,22 +43,34 @@ export async function consumeImplementationAgentReady(
 
 export async function projectImplementationOutcome(input: {
   linear: LinearImplementationProjectionService;
+  authority: ImplementationAuthority;
   issueId: string;
   marker: string;
   comment: string;
   readiness: LinearReadinessConfig;
   targetStateId: string;
-}): Promise<void> {
+}): Promise<Readonly<{ kind: "projected" }> | Readonly<{ kind: "stale"; reason: string }>> {
+  const context = await input.linear.getIssueContext(input.issueId);
+  const source = confirmImplementationSourceContext(context, input.authority, input.readiness);
+  if (source.kind === "stale") return source;
+  if (
+    context.state.id !== input.readiness.stateIds.inProgress &&
+    context.state.id !== input.targetStateId
+  ) {
+    return { kind: "stale", reason: "issue is no longer in a projectable implementation state" };
+  }
   await input.linear.ensureComment({
     issueId: input.issueId,
     marker: input.marker,
     body: input.comment,
   });
-  await input.linear.updateIssueState({
-    issueId: input.issueId,
-    expectedStateId: input.readiness.stateIds.inProgress,
-    stateId: input.targetStateId,
-  });
+  if (context.state.id === input.readiness.stateIds.inProgress) {
+    await input.linear.updateIssueState({
+      issueId: input.issueId,
+      expectedStateId: input.readiness.stateIds.inProgress,
+      stateId: input.targetStateId,
+    });
+  }
   await input.linear.updateIssueLabels({
     issueId: input.issueId,
     addLabelIds: [],
@@ -67,23 +79,18 @@ export async function projectImplementationOutcome(input: {
       input.readiness.agentReadyLabelId,
     ],
   });
+  return { kind: "projected" };
 }
 
 export async function beginImplementationFailureRecovery(input: {
   linear: LinearImplementationProjectionService;
   issueId: string;
   readiness: LinearReadinessConfig;
-  authority?: ImplementationAuthority;
+  authority: ImplementationAuthority;
 }): Promise<Readonly<{ reopen: boolean; removeAgentReady: boolean }>> {
   const context = await input.linear.getIssueContext(input.issueId);
-  if (input.authority) {
-    const confirmed = await confirmClaimedImplementation(
-      input.linear,
-      input.authority,
-      input.readiness,
-    );
-    if (confirmed.kind === "stale") return { reopen: false, removeAgentReady: false };
-  }
+  const confirmed = confirmImplementationSourceContext(context, input.authority, input.readiness);
+  if (confirmed.kind === "stale") return { reopen: false, removeAgentReady: false };
   if (isCurrentImplementationClaim(context, input.readiness, { allowAgentReady: true })) {
     return { reopen: true, removeAgentReady: true };
   }
@@ -129,7 +136,7 @@ export async function finishImplementationRecovery(input: {
 
 export async function ensureImplementationFailureComment(input: {
   linear: Pick<LinearImplementationProjectionService, "ensureComment">;
-  event: WorkRequestData;
+  event: ImplementationWorkRequestData;
   error: string;
   bestEffort?: boolean;
 }): Promise<void> {
@@ -147,7 +154,7 @@ export async function ensureImplementationFailureComment(input: {
 
 export async function ensureImplementationCleanupFailureComment(input: {
   linear: Pick<LinearImplementationProjectionService, "ensureComment">;
-  event: WorkRequestData;
+  event: ImplementationWorkRequestData;
   error: string;
   bestEffort?: boolean;
 }): Promise<void> {

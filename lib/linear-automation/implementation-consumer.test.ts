@@ -14,14 +14,23 @@ import type { ImplementationRevisionDecision } from "../implementation/revise-sc
 import {
   createLinearImplementationFunction,
   type ImplementationReviewRunner,
+  type LinearImplementationFunctionConfig,
   type LinearImplementationService,
 } from "./implementation-consumer.ts";
 import {
   ImplementationWorkRequestedEvent,
+  type ImplementationWorkRequestData,
   workRequestEventId,
-  type WorkRequestData,
 } from "./events/work-events.ts";
 import { linearReadinessSnapshotGeneration, type LinearReadinessConfig } from "./readiness.ts";
+import {
+  implementationSourceFingerprint,
+  loadEligibleImplementation,
+} from "./implementation-authority.ts";
+import {
+  beginImplementationFailureRecovery,
+  projectImplementationOutcome,
+} from "./implementation-projection.ts";
 
 const ISSUE = "FER-326";
 const roots: string[] = [];
@@ -85,18 +94,22 @@ function issueContext(_input: { needsInput?: boolean } = {}): LinearIssueContext
 function workEvent(
   context: LinearIssueContext,
 ): ReturnType<typeof ImplementationWorkRequestedEvent.create> {
-  const data: WorkRequestData = {
+  const data: ImplementationWorkRequestData = {
     issueId: context.id,
     issueIdentifier: context.identifier,
     causationEventId: "linear-revision-1",
     snapshotGeneration: linearReadinessSnapshotGeneration(context, readiness),
+    sourceFingerprint: implementationSourceFingerprint(context, readiness),
   };
   return ImplementationWorkRequestedEvent.create(data, {
     id: workRequestEventId("implement", data),
   });
 }
 
-function fakeLinear(initial: LinearIssueContext) {
+function fakeLinear(
+  initial: LinearIssueContext,
+  options: { failStateOnce?: boolean; failLabelsOnce?: boolean } = {},
+) {
   const state = { context: initial, comments: new Map<string, string>() };
   const service: LinearImplementationService = {
     getIssueContext: vi.fn<LinearImplementationService["getIssueContext"]>(async () =>
@@ -104,6 +117,10 @@ function fakeLinear(initial: LinearIssueContext) {
     ),
     updateIssueState: vi.fn<LinearImplementationService["updateIssueState"]>(
       async (input: Parameters<LinearImplementationService["updateIssueState"]>[0]) => {
+        if (options.failStateOnce) {
+          options.failStateOnce = false;
+          throw new Error("state response lost");
+        }
         if (
           state.context.state.id !== input.expectedStateId &&
           state.context.state.id !== input.stateId
@@ -119,6 +136,10 @@ function fakeLinear(initial: LinearIssueContext) {
     ),
     updateIssueLabels: vi.fn<LinearImplementationService["updateIssueLabels"]>(
       async (input: Parameters<LinearImplementationService["updateIssueLabels"]>[0]) => {
+        if (options.failLabelsOnce) {
+          options.failLabelsOnce = false;
+          throw new Error("label response lost");
+        }
         const removed = new Set(input.removeLabelIds);
         const labels = state.context.labels.filter((label) => !removed.has(label.id));
         const current = new Set(labels.map((label) => label.id));
@@ -177,6 +198,7 @@ function fakeRepository(
       baseSha: run.baseSha,
     })),
     prepareRun: vi.fn<RepositoryService["prepareRun"]>(async () => run),
+    recoverRun: vi.fn<RepositoryService["recoverRun"]>(async () => run),
     inspectChanges: vi.fn<RepositoryService["inspectChanges"]>(async () => changes()),
     checkpointRun: vi.fn<RepositoryService["checkpointRun"]>(async (input) =>
       checkpoint(input.id.includes("initial") ? "initial" : input.id, input.expectedParentRevision),
@@ -382,6 +404,9 @@ async function execute(input: {
   linear: LinearImplementationService;
   review: ImplementationReviewRunner;
   github: GitHubPublicationService;
+  configOverrides?: Partial<
+    Pick<LinearImplementationFunctionConfig, "baseRef" | "githubRepository">
+  >;
 }) {
   const client = new Inngest({ id: "implementation-test", eventKey: "test" });
   const fn = createLinearImplementationFunction({
@@ -393,9 +418,9 @@ async function execute(input: {
     github: input.github,
     config: {
       readiness,
-      baseRef: "main",
+      baseRef: input.configOverrides?.baseRef ?? "main",
       execution: { model: "gpt-test", modelReasoningEffort: "medium", maxRuntimeMs: 120_000 },
-      githubRepository: {
+      githubRepository: input.configOverrides?.githubRepository ?? {
         owner: "example",
         repository: "project",
         httpsRemote: "https://github.com/example/project.git",
@@ -437,6 +462,40 @@ describe("Linear implementation consumer", () => {
     expect(repository.service.cleanupRun).toHaveBeenCalledTimes(1);
   });
 
+  it("uses normalized publication settings", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
+    roots.push(workspace);
+    const linear = fakeLinear(issueContext());
+    let changed = false;
+    const repository = fakeRepository(workspace, () =>
+      changed ? [{ path: "implementation.txt", status: "added" }] : [],
+    );
+    const publication = github();
+    const output = await execute({
+      context: issueContext(),
+      agent: implementationAgent(workspace, false, () => {
+        changed = true;
+      }),
+      repository: repository.service,
+      linear: linear.service,
+      review: vi.fn<ImplementationReviewRunner>(async () => reviewPass()),
+      github: publication,
+      configOverrides: {
+        baseRef: " main ",
+        githubRepository: {
+          owner: " example ",
+          repository: " project ",
+          httpsRemote: "https://github.com/example/project.git",
+        },
+      },
+    });
+
+    expect(output.result).toMatchObject({ outcome: "published" });
+    expect(publication.publishCheckpointPullRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ baseBranch: "main" }),
+    );
+  });
+
   it("stops for human input without checkpoint or publication", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
     roots.push(workspace);
@@ -456,6 +515,89 @@ describe("Linear implementation consumer", () => {
     expect(linear.state.context.state.id).toBe(readiness.stateIds.needsInput);
     expect(repository.service.checkpointRun).not.toHaveBeenCalled();
     expect(review).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["state", { failStateOnce: true }],
+    ["labels", { failLabelsOnce: true }],
+  ] as const)(
+    "resumes terminal projection after a lost %s response",
+    async (_boundary, options) => {
+      const context = issueContext();
+      const linear = fakeLinear(context, options);
+      const event = workEvent(context);
+      const loaded = await loadEligibleImplementation(linear.service, event.data, readiness);
+      if (loaded.kind !== "eligible") throw new Error("expected an implementation-ready issue");
+      linear.state.context = {
+        ...linear.state.context,
+        state: { ...linear.state.context.state, id: readiness.stateIds.inProgress },
+        labels: linear.state.context.labels.filter(
+          (label) => label.id !== readiness.agentReadyLabelId,
+        ),
+      };
+      const input = {
+        linear: linear.service,
+        authority: loaded.authority,
+        issueId: context.id,
+        marker: "<!-- harness:test-terminal-projection -->",
+        comment: "terminal outcome",
+        readiness,
+        targetStateId: readiness.stateIds.needsReview,
+      };
+
+      await expect(projectImplementationOutcome(input)).rejects.toThrow(/response lost/);
+      await expect(projectImplementationOutcome(input)).resolves.toEqual({ kind: "projected" });
+      expect(linear.state.context.state.id).toBe(readiness.stateIds.needsReview);
+      expect(linear.state.context.labels).toHaveLength(0);
+      expect(linear.state.comments).toHaveProperty("size", 1);
+    },
+  );
+
+  it("does not repair a claim after the implementation source changes", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const authority = {
+      issueId: context.id,
+      issueIdentifier: context.identifier,
+      sourceFingerprint: implementationSourceFingerprint(context, readiness),
+    };
+    linear.state.context = {
+      ...context,
+      state: { ...context.state, id: readiness.stateIds.inProgress },
+      title: "A changed implementation request",
+    };
+
+    await expect(
+      beginImplementationFailureRecovery({
+        linear: linear.service,
+        issueId: context.id,
+        readiness,
+        authority,
+      }),
+    ).resolves.toEqual({ reopen: false, removeAgentReady: false });
+  });
+
+  it("repairs an unchanged claimed issue after an implementation failure", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    const authority = {
+      issueId: context.id,
+      issueIdentifier: context.identifier,
+      sourceFingerprint: implementationSourceFingerprint(context, readiness),
+    };
+    linear.state.context = {
+      ...context,
+      state: { ...context.state, id: readiness.stateIds.inProgress },
+    };
+
+    await expect(
+      beginImplementationFailureRecovery({
+        linear: linear.service,
+        issueId: context.id,
+        readiness,
+        authority,
+      }),
+    ).resolves.toEqual({ reopen: true, removeAgentReady: true });
   });
 
   it("checkpoints updated revisions and publishes the second review revision", async () => {

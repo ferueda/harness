@@ -5,7 +5,7 @@ import {
   CompleteImplementationWorkItemSchema,
   type ImplementationLinearSource,
 } from "../implementation/source.ts";
-import type { WorkRequestData } from "./events/work-events.ts";
+import type { ImplementationWorkRequestData } from "./events/work-events.ts";
 import { classifyLinearReadiness, type LinearReadinessConfig } from "./readiness.ts";
 import { toLinearWorkItemContext } from "./work-item.ts";
 
@@ -34,7 +34,7 @@ export type ConfirmedImplementation =
 
 export async function loadEligibleImplementation(
   linear: ImplementationAuthorityLinear,
-  event: WorkRequestData,
+  event: ImplementationWorkRequestData,
   readiness: LinearReadinessConfig,
 ): Promise<LoadedImplementation> {
   const context = await linear.getIssueContext(event.issueId);
@@ -46,7 +46,11 @@ export async function loadEligibleImplementation(
   if (decision.kind !== "dispatch" || decision.route !== "implement") {
     return { kind: "ineligible", reason: "not-implementation-ready" };
   }
-  if (decision.snapshotGeneration !== event.snapshotGeneration) {
+  const currentSourceFingerprint = implementationSourceFingerprint(context, readiness);
+  if (
+    decision.snapshotGeneration !== event.snapshotGeneration ||
+    event.sourceFingerprint !== currentSourceFingerprint
+  ) {
     return { kind: "ineligible", reason: "stale-snapshot" };
   }
   return {
@@ -54,7 +58,7 @@ export async function loadEligibleImplementation(
     authority: {
       issueId: context.id,
       issueIdentifier: context.identifier,
-      sourceFingerprint: sourceFingerprint(context, readiness.agentReadyLabelId),
+      sourceFingerprint: event.sourceFingerprint,
     },
   };
 }
@@ -80,6 +84,33 @@ export async function confirmClaimedImplementation(
   readiness: LinearReadinessConfig,
 ): Promise<ConfirmedImplementation> {
   return confirmContext(await linear.getIssueContext(authority.issueId), authority, readiness);
+}
+
+export async function confirmImplementationSource(
+  linear: ImplementationAuthorityLinear,
+  authority: ImplementationAuthority,
+  readiness: LinearReadinessConfig,
+): Promise<ConfirmedImplementation> {
+  return confirmImplementationSourceContext(
+    await linear.getIssueContext(authority.issueId),
+    authority,
+    readiness,
+  );
+}
+
+export function confirmImplementationSourceContext(
+  context: LinearIssueContext,
+  authority: ImplementationAuthority,
+  readiness: LinearReadinessConfig,
+): ConfirmedImplementation {
+  return confirmSourceContext(context, authority, readiness);
+}
+
+export function implementationSourceFingerprint(
+  context: LinearIssueContext,
+  readiness: LinearReadinessConfig,
+): string {
+  return sourceFingerprint(context, readiness);
 }
 
 export function isCurrentImplementationClaim(
@@ -108,6 +139,19 @@ function confirmContext(
   authority: ImplementationAuthority,
   readiness: LinearReadinessConfig,
 ): ConfirmedImplementation {
+  const source = confirmSourceContext(context, authority, readiness);
+  if (source.kind === "stale") return source;
+  if (!isCurrentImplementationClaim(context, readiness)) {
+    return { kind: "stale", reason: "issue is no longer claimed for implementation" };
+  }
+  return source;
+}
+
+function confirmSourceContext(
+  context: LinearIssueContext,
+  authority: ImplementationAuthority,
+  readiness: LinearReadinessConfig,
+): ConfirmedImplementation {
   if (!isComplete(context)) return { kind: "stale", reason: "context is incomplete" };
   if (
     context.id !== authority.issueId ||
@@ -117,17 +161,23 @@ function confirmContext(
   ) {
     return { kind: "stale", reason: "issue scope or identity changed" };
   }
-  if (!isCurrentImplementationClaim(context, readiness)) {
-    return { kind: "stale", reason: "issue is no longer claimed for implementation" };
-  }
-  if (sourceFingerprint(context, readiness.agentReadyLabelId) !== authority.sourceFingerprint) {
+  if (sourceFingerprint(context, readiness) !== authority.sourceFingerprint) {
     return { kind: "stale", reason: "Linear implementation source changed" };
   }
   return { kind: "confirmed" };
 }
 
-function sourceFingerprint(context: LinearIssueContext, agentReadyLabelId: string): string {
-  const workItem = toLinearWorkItemContext(context, agentReadyLabelId);
+function sourceFingerprint(context: LinearIssueContext, readiness: LinearReadinessConfig): string {
+  const lifecycleLabelIds = new Set([
+    readiness.agentReadyLabelId,
+    ...Object.values(readiness.agentActionLabelIds),
+  ]);
+  const sourceContext = {
+    ...context,
+    labels: context.labels.filter((label) => !lifecycleLabelIds.has(label.id)),
+    comments: context.comments.filter((comment) => !comment.body.includes("<!-- harness:")),
+  };
+  const workItem = toLinearWorkItemContext(sourceContext, readiness.agentReadyLabelId);
   const { state: _state, updatedAt: _updatedAt, ...source } = workItem;
   return createHash("sha256").update(JSON.stringify(source)).digest("hex");
 }
