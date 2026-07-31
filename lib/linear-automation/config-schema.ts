@@ -20,11 +20,28 @@ const LinearAutomationSpecSchema = z
   })
   .strict();
 
+const LinearAutomationImplementationProfileSchema = z
+  .object({
+    agent: z.literal("codex"),
+    model: z.string().trim().min(1),
+    modelReasoningEffort: z.enum(AGENT_REASONING_EFFORTS),
+    maxRuntimeMs: z.number().int().positive(),
+  })
+  .strict();
+
+const LinearAutomationImplementationSchema = z
+  .object({
+    implementer: LinearAutomationImplementationProfileSchema,
+    reviewers: LinearAutomationImplementationProfileSchema,
+  })
+  .strict();
+
 export const LinearAutomationConfigSchema = z
   .object({
     readiness: LinearReadinessMappingSchema,
     triage: LinearAutomationTriageSchema,
     spec: LinearAutomationSpecSchema.optional(),
+    implementation: LinearAutomationImplementationSchema.optional(),
   })
   .strict();
 

@@ -102,6 +102,20 @@ repository-run setup. It contains no secrets.
       "model": "gpt-5.6-sol",
       "modelReasoningEffort": "high",
       "maxRuntimeMs": 1800000
+    },
+    "implementation": {
+      "implementer": {
+        "agent": "codex",
+        "model": "gpt-5.6-sol",
+        "modelReasoningEffort": "high",
+        "maxRuntimeMs": 1800000
+      },
+      "reviewers": {
+        "agent": "codex",
+        "model": "gpt-5.6-sol",
+        "modelReasoningEffort": "high",
+        "maxRuntimeMs": 1800000
+      }
     }
   }
 }
@@ -113,6 +127,14 @@ it is absent, the worker remains triage-only and does not require
 field is required explicitly; there are no model, reasoning, or timeout
 fallbacks. The profile also requires `repositoryRuns`, registers the Spec
 consumer, and adds Open observation in the same worker composition.
+
+`linearAutomation.implementation` is an independent enable switch. It requires
+separate explicit `implementer` and `reviewers` profiles; the reviewer profile
+is used by both existing change-review steps. When present, the worker registers
+the bounded implementation consumer and adds Open observation. It uses one
+initial implementation pass, at most one resumed revision, at most two reviews,
+and publishes only the selected checkpoint. An exhausted review cycle publishes
+an explicitly unapproved pull request for human review.
 
 The initial worker composes one configured project. Its route map controls both
 which consumers exist and which states the poller observes. The standalone
@@ -213,8 +235,8 @@ Do not add `--volumes` to normal shutdown. It deliberately deletes Inngest
 history, repository leases and warm dependencies, package-manager caches, and
 the dedicated Codex login. Both services use restart policies, and the Connect
 worker automatically reconnects after an Inngest restart. The worker's stop
-grace period is longer than the configured maximum triage or Spec runtime so an
-active agent step can drain.
+grace period is longer than the configured maximum triage, Spec, or
+implementation runtime so an active agent step can drain.
 
 To run another target project, create another environment file with a distinct
 `COMPOSE_PROJECT_NAME`, workspace path, and dashboard port. Keep one configured
@@ -222,7 +244,8 @@ project per Compose stack until app and function identities become project-aware
 
 ## Function boundary
 
-The configured Harness worker registers four functions:
+The configured Harness worker registers the poller, readiness router, triage,
+and each enabled repository-backed consumer:
 
 - the poller lists at most 250 issue revisions per observed state every minute
   and fails the whole poll visibly if any state exceeds that bound;
@@ -232,7 +255,11 @@ The configured Harness worker registers four functions:
   and
 - the optional Spec consumer claims one released issue, uses separate author
   and read-only reviewer sessions, and runs at most three reviews and two
-  author revisions in one isolated Grove run.
+  author revisions in one isolated Grove run; and
+- the optional Implement consumer claims one released issue, runs one
+  implementer profile, resumes the original author for at most one revision,
+  runs the existing implementation and quality reviewers, and publishes the
+  selected checkpoint or an explicitly unapproved result.
 
 Only an updated revision creates a child checkpoint. An unchanged revision
 keeps the reviewed checkpoint, while Needs Input stops without publication.

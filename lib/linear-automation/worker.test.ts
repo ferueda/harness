@@ -25,6 +25,7 @@ import {
 import { LINEAR_READINESS_ROUTER_FUNCTION_ID } from "./readiness-router.ts";
 import { LINEAR_TRIAGE_FUNCTION_ID, type LinearTriageService } from "./triage-consumer.ts";
 import { LINEAR_SPEC_FUNCTION_ID } from "./spec-consumer.ts";
+import { LINEAR_IMPLEMENTATION_FUNCTION_ID } from "./implementation-consumer.ts";
 
 const settings: LinearAutomationSettings = {
   workspace: "/workspace/harness",
@@ -55,7 +56,7 @@ const settings: LinearAutomationSettings = {
   },
 };
 
-function app() {
+function app(options: Readonly<{ settings?: LinearAutomationSettings }> = {}) {
   const client = new Inngest({ id: LINEAR_AUTOMATION_APP_ID, eventKey: "test" });
   const never = async () => {
     throw new Error("Unexpected Linear call");
@@ -75,11 +76,56 @@ function app() {
       throw new Error("Unexpected agent call");
     },
   } satisfies Agent;
+  const selectedSettings = options.settings ?? settings;
+  const repository = selectedSettings.implementation
+    ? ({
+        resolveBase: async () => {
+          throw new Error("Unexpected repository call");
+        },
+        prepareRun: async () => {
+          throw new Error("Unexpected repository call");
+        },
+        inspectChanges: async () => {
+          throw new Error("Unexpected repository call");
+        },
+        checkpointRun: async () => {
+          throw new Error("Unexpected repository call");
+        },
+        openCheckpoint: async () => {
+          throw new Error("Unexpected repository call");
+        },
+        cleanupRun: async () => {
+          throw new Error("Unexpected repository call");
+        },
+      } satisfies RepositoryService)
+    : undefined;
+  const github = selectedSettings.implementation
+    ? ({
+        publishCheckpointPullRequest: async () => {
+          throw new Error("Unexpected GitHub checkpoint call");
+        },
+      } satisfies GitHubPublicationService)
+    : undefined;
   return createLinearAutomationFunctions({
     client,
     linear,
     triageAgent: agent,
-    settings,
+    ...(selectedSettings.implementation
+      ? {
+          implementationAgent: agent,
+          implementationReview: async () => {
+            throw new Error("Unexpected implementation review call");
+          },
+          repository,
+          github,
+          githubRepository: {
+            owner: "ferueda",
+            repository: "harness",
+            httpsRemote: "https://github.com/ferueda/harness.git",
+          },
+        }
+      : {}),
+    settings: selectedSettings,
   });
 }
 
@@ -341,7 +387,7 @@ describe("Linear automation worker", () => {
           GITHUB_TOKEN: "github-key",
         },
         { specEnabled: true },
-      ).spec,
+      ).repository,
     ).toEqual({
       repositoryRoot: "/var/lib/harness",
       githubToken: "github-key",
@@ -389,6 +435,46 @@ describe("Linear automation worker", () => {
       LINEAR_SPEC_FUNCTION_ID,
     ]);
     expect(composed.readiness.enabledRoutes.spec).toBe(true);
+    expect(linearAutomationObservedStateIds(composed.readiness)).toEqual({
+      backlog: settings.readiness.stateIds.backlog,
+      open: settings.readiness.stateIds.open,
+    });
+  });
+
+  it("registers Implement and keeps Open observation route-driven", () => {
+    const composed = app({
+      settings: {
+        ...settings,
+        implementation: {
+          implementer: {
+            agent: "codex",
+            model: "gpt-5.6-sol",
+            modelReasoningEffort: "high",
+            maxRuntimeMs: 1_800_000,
+          },
+          reviewers: {
+            agent: "codex",
+            model: "gpt-5.6-terra",
+            modelReasoningEffort: "medium",
+            maxRuntimeMs: 600_000,
+          },
+          baseRef: "main",
+          repositoryRuns: {
+            remote: "https://github.com/ferueda/harness.git",
+            maxTrees: 2,
+            setup: { command: ["pnpm", "install"], timeoutMs: 60_000 },
+          },
+        },
+      },
+    });
+
+    expect(composed.functions.map((fn) => fn.opts.id)).toEqual([
+      LINEAR_ISSUE_POLL_FUNCTION_ID,
+      LINEAR_READINESS_ROUTER_FUNCTION_ID,
+      LINEAR_TRIAGE_FUNCTION_ID,
+      LINEAR_IMPLEMENTATION_FUNCTION_ID,
+    ]);
+    expect(composed.readiness.enabledRoutes.implement).toBe(true);
     expect(linearAutomationObservedStateIds(composed.readiness)).toEqual({
       backlog: settings.readiness.stateIds.backlog,
       open: settings.readiness.stateIds.open,
