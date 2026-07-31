@@ -13,6 +13,7 @@ import { createImplementationReviewFindingId } from "../implementation/finding-i
 import type { ImplementationRevisionDecision } from "../implementation/revise-schema.ts";
 import {
   createLinearImplementationFunction,
+  recoverLinearImplementationFailure,
   type ImplementationReviewRunner,
   type LinearImplementationFunctionConfig,
   type LinearImplementationService,
@@ -262,7 +263,20 @@ function revisionFindingId(): string {
   });
 }
 
-function reviewNeedsChanges(): Extract<ChangeReviewResult, { status: "completed" }> {
+type ReviewInvocation = Parameters<ImplementationReviewRunner>[0];
+
+function reviewScope(input?: Pick<ReviewInvocation, "baseSha" | "revision">) {
+  return {
+    baseRef: "main",
+    headRef: "HEAD",
+    mergeBase: input?.baseSha ?? "a".repeat(40),
+    headSha: input?.revision ?? "b".repeat(40),
+  };
+}
+
+function reviewNeedsChanges(
+  input?: Pick<ReviewInvocation, "baseSha" | "revision">,
+): Extract<ChangeReviewResult, { status: "completed" }> {
   return {
     status: "completed" as const,
     verdict: "needs_changes" as const,
@@ -278,7 +292,7 @@ function reviewNeedsChanges(): Extract<ChangeReviewResult, { status: "completed"
     runId: "review-326",
     runDir: "/tmp/review-326",
     workspace: "/tmp/workspace",
-    scope: { baseRef: "main", headRef: "HEAD", mergeBase: "a".repeat(40), headSha: "b".repeat(40) },
+    scope: reviewScope(input),
   };
 }
 
@@ -381,7 +395,9 @@ function github(): GitHubPublicationService {
   };
 }
 
-function reviewPass(): Extract<ChangeReviewResult, { status: "completed" }> {
+function reviewPass(
+  input?: Pick<ReviewInvocation, "baseSha" | "revision">,
+): Extract<ChangeReviewResult, { status: "completed" }> {
   return {
     status: "completed" as const,
     verdict: "pass" as const,
@@ -393,7 +409,7 @@ function reviewPass(): Extract<ChangeReviewResult, { status: "completed" }> {
     runId: "review-326",
     runDir: "/tmp/review-326",
     workspace: "/tmp/workspace",
-    scope: { baseRef: "main", headRef: "HEAD", mergeBase: "a".repeat(40), headSha: "b".repeat(40) },
+    scope: reviewScope(input),
   };
 }
 
@@ -496,6 +512,35 @@ describe("Linear implementation consumer", () => {
     );
   });
 
+  it("rejects a review that targets a different checkpoint", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
+    roots.push(workspace);
+    const linear = fakeLinear(issueContext());
+    let changed = false;
+    const repository = fakeRepository(workspace, () =>
+      changed ? [{ path: "implementation.txt", status: "added" }] : [],
+    );
+    const review = vi.fn<ImplementationReviewRunner>(async (input) => ({
+      ...reviewPass(input),
+      scope: { ...reviewScope(input), headSha: "d".repeat(40) },
+    }));
+    const output = await execute({
+      context: issueContext(),
+      agent: implementationAgent(workspace, false, () => {
+        changed = true;
+      }),
+      repository: repository.service,
+      linear: linear.service,
+      review,
+      github: github(),
+    });
+
+    expect(output.error).toMatchObject({
+      message: expect.stringContaining("review scope does not match"),
+    });
+    expect(repository.service.cleanupRun).toHaveBeenCalledTimes(1);
+  });
+
   it("stops for human input without checkpoint or publication", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
     roots.push(workspace);
@@ -577,6 +622,32 @@ describe("Linear implementation consumer", () => {
     ).resolves.toEqual({ reopen: false, removeAgentReady: false });
   });
 
+  it("ignores generated markers but fingerprints human comments that quote one", () => {
+    const context = issueContext();
+    const marker = `<!-- harness:linear-implementation:${workRequestEventId("implement", workEvent(context).data)}:published -->`;
+    const comment = {
+      id: "comment-1",
+      author: null,
+      parentId: null,
+      quotedText: null,
+      createdAt: context.createdAt,
+      updatedAt: context.updatedAt,
+    };
+
+    expect(
+      implementationSourceFingerprint(
+        { ...context, comments: [{ ...comment, body: `${marker}\nGenerated outcome` }] },
+        readiness,
+      ),
+    ).toBe(implementationSourceFingerprint(context, readiness));
+    expect(
+      implementationSourceFingerprint(
+        { ...context, comments: [{ ...comment, body: `Human note quoting ${marker}` }] },
+        readiness,
+      ),
+    ).not.toBe(implementationSourceFingerprint(context, readiness));
+  });
+
   it("repairs an unchanged claimed issue after an implementation failure", async () => {
     const context = issueContext();
     const linear = fakeLinear(context);
@@ -600,6 +671,33 @@ describe("Linear implementation consumer", () => {
     ).resolves.toEqual({ reopen: true, removeAgentReady: true });
   });
 
+  it("cleans the repository run when Linear failure recovery throws", async () => {
+    const context = issueContext();
+    const linear = fakeLinear(context);
+    vi.mocked(linear.service.getIssueContext).mockRejectedValueOnce(
+      new Error("Linear unavailable"),
+    );
+    const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
+    roots.push(workspace);
+    const repository = fakeRepository(workspace, () => []);
+    const step = {
+      run: vi.fn(async (_id: string, handler: () => Promise<unknown>) => handler()),
+    } as never;
+
+    await expect(
+      recoverLinearImplementationFailure({
+        linear: linear.service,
+        repository: repository.service,
+        readiness,
+        event: workEvent(context).data,
+        error: new Error("implementation failed"),
+        step,
+      }),
+    ).rejects.toThrow("Linear unavailable");
+    expect(repository.service.recoverRun).toHaveBeenCalledTimes(1);
+    expect(repository.service.cleanupRun).toHaveBeenCalledTimes(1);
+  });
+
   it("checkpoints updated revisions and publishes the second review revision", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
     roots.push(workspace);
@@ -616,9 +714,9 @@ describe("Linear implementation consumer", () => {
           ],
     );
     let reviewCount = 0;
-    const review = vi.fn<ImplementationReviewRunner>(async () => {
+    const review = vi.fn<ImplementationReviewRunner>(async (input) => {
       reviewCount += 1;
-      return reviewCount === 1 ? reviewNeedsChanges() : reviewPass();
+      return reviewCount === 1 ? reviewNeedsChanges(input) : reviewPass(input);
     });
     const publication = github();
     const output = await execute({
@@ -658,9 +756,9 @@ describe("Linear implementation consumer", () => {
       changeSet === "none" ? [] : [{ path: "implementation.txt", status: "added" }],
     );
     let reviewCount = 0;
-    const review = vi.fn<ImplementationReviewRunner>(async () => {
+    const review = vi.fn<ImplementationReviewRunner>(async (input) => {
       reviewCount += 1;
-      return reviewCount === 1 ? reviewNeedsChanges() : reviewPass();
+      return reviewCount === 1 ? reviewNeedsChanges(input) : reviewPass(input);
     });
     const output = await execute({
       context: issueContext(),
@@ -693,7 +791,7 @@ describe("Linear implementation consumer", () => {
     const repository = fakeRepository(workspace, () =>
       changeSet === "none" ? [] : [{ path: "implementation.txt", status: "added" }],
     );
-    const review = vi.fn<ImplementationReviewRunner>(async () => reviewNeedsChanges());
+    const review = vi.fn<ImplementationReviewRunner>(async (input) => reviewNeedsChanges(input));
     const output = await execute({
       context: issueContext(),
       agent: implementationAgentWithRevision(
@@ -735,9 +833,9 @@ describe("Linear implementation consumer", () => {
           ],
     );
     let reviewCount = 0;
-    const review = vi.fn<ImplementationReviewRunner>(async () => {
+    const review = vi.fn<ImplementationReviewRunner>(async (input) => {
       reviewCount += 1;
-      return reviewNeedsChanges();
+      return reviewNeedsChanges(input);
     });
     const publication = github();
     const output = await execute({

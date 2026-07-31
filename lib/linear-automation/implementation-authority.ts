@@ -11,6 +11,9 @@ import { toLinearWorkItemContext } from "./work-item.ts";
 
 type ImplementationAuthorityLinear = Pick<LinearService, "getIssueContext">;
 
+const HARNESS_AUTOMATION_COMMENT =
+  /^<!-- harness:linear-(?:triage|spec|implementation):[^\r\n]+ -->(?:\r?\n|$)/;
+
 export type ImplementationAuthority = Readonly<{
   issueId: string;
   issueIdentifier: string;
@@ -175,7 +178,7 @@ function sourceFingerprint(context: LinearIssueContext, readiness: LinearReadine
   const sourceContext = {
     ...context,
     labels: context.labels.filter((label) => !lifecycleLabelIds.has(label.id)),
-    comments: context.comments.filter((comment) => !comment.body.includes("<!-- harness:")),
+    comments: context.comments.filter((comment) => !HARNESS_AUTOMATION_COMMENT.test(comment.body)),
   };
   const workItem = toLinearWorkItemContext(sourceContext, readiness.agentReadyLabelId);
   const { state: _state, updatedAt: _updatedAt, ...source } = workItem;

@@ -137,80 +137,14 @@ export function createLinearImplementationFunction(input: {
   const onFailure = async ({ event, error, step }: Context<Inngest.Any, FailureEventArgs>) => {
     const original = ImplementationWorkRequestDataSchema.safeParse(event.data.event.data);
     if (!original.success) return;
-    const reason = errorMessage(error);
-    const cleanupFailure = isRepositoryCleanupDiagnosticError(error);
-    const authority = original.data.sourceFingerprint
-      ? {
-          issueId: original.data.issueId,
-          issueIdentifier: original.data.issueIdentifier,
-          sourceFingerprint: original.data.sourceFingerprint,
-        }
-      : null;
-    const recovery = authority
-      ? await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:inspect`, () =>
-          beginImplementationFailureRecovery({
-            linear: input.linear,
-            issueId: original.data.issueId,
-            readiness: config.readiness,
-            authority,
-          }),
-        )
-      : { reopen: false, removeAgentReady: false };
-    await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:comment`, () =>
-      cleanupFailure
-        ? ensureImplementationCleanupFailureComment({
-            linear: input.linear,
-            event: original.data,
-            error: reason,
-            bestEffort: true,
-          })
-        : ensureImplementationFailureComment({
-            linear: input.linear,
-            event: original.data,
-            error: reason,
-            bestEffort: true,
-          }),
-    );
-    if (recovery.reopen) {
-      await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:reopen`, () =>
-        reopenImplementationClaim({
-          linear: input.linear,
-          issueId: original.data.issueId,
-          readiness: config.readiness,
-        }),
-      );
-    }
-    if (recovery.removeAgentReady) {
-      await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:labels`, () =>
-        finishImplementationRecovery({
-          linear: input.linear,
-          issueId: original.data.issueId,
-          readiness: config.readiness,
-        }),
-      );
-    }
-    // Failure events do not carry prior step output, so reacquire the deterministic
-    // run identity and release any Grove lease left by a failed attempt.
-    const identity = implementationWorkIdentity(original.data);
-    const run = await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:recover-run`, () =>
-      input.repository.recoverRun({ id: identity.workId }),
-    );
-    if (run) {
-      await cleanupRepositoryRun({
-        runStep: (id, handler) =>
-          step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:cleanup:${id}`, handler),
-        cleanupStepId: "run",
-        diagnosticStepId: "diagnostic",
-        repository: input.repository,
-        run,
-        reportFailure: (cleanupError) =>
-          ensureImplementationCleanupFailureComment({
-            linear: input.linear,
-            event: original.data,
-            error: cleanupError,
-          }),
-      });
-    }
+    await recoverLinearImplementationFailure({
+      linear: input.linear,
+      repository: input.repository,
+      readiness: config.readiness,
+      event: original.data,
+      error,
+      step,
+    });
   };
 
   return input.client.createFunction(
@@ -654,6 +588,89 @@ export function createLinearImplementationFunction(input: {
   );
 }
 
+export async function recoverLinearImplementationFailure(input: {
+  linear: LinearImplementationService;
+  repository: RepositoryService;
+  readiness: LinearReadinessConfig;
+  event: ImplementationWorkRequestData;
+  error: unknown;
+  step: StepTools;
+}): Promise<void> {
+  const reason = errorMessage(input.error);
+  const cleanupFailure = isRepositoryCleanupDiagnosticError(input.error);
+  const authority: ImplementationAuthority = {
+    issueId: input.event.issueId,
+    issueIdentifier: input.event.issueIdentifier,
+    sourceFingerprint: input.event.sourceFingerprint,
+  };
+  // Failure events do not carry prior step output, so reacquire the deterministic
+  // run identity and release any Grove lease left by a failed attempt.
+  const identity = implementationWorkIdentity(input.event);
+  const run = await input.step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:recover-run`, () =>
+    input.repository.recoverRun({ id: identity.workId }),
+  );
+  try {
+    const recovery = await input.step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:inspect`, () =>
+      beginImplementationFailureRecovery({
+        linear: input.linear,
+        issueId: input.event.issueId,
+        readiness: input.readiness,
+        authority,
+      }),
+    );
+    await input.step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:comment`, () =>
+      cleanupFailure
+        ? ensureImplementationCleanupFailureComment({
+            linear: input.linear,
+            event: input.event,
+            error: reason,
+            bestEffort: true,
+          })
+        : ensureImplementationFailureComment({
+            linear: input.linear,
+            event: input.event,
+            error: reason,
+            bestEffort: true,
+          }),
+    );
+    if (recovery.reopen) {
+      await input.step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:reopen`, () =>
+        reopenImplementationClaim({
+          linear: input.linear,
+          issueId: input.event.issueId,
+          readiness: input.readiness,
+        }),
+      );
+    }
+    if (recovery.removeAgentReady) {
+      await input.step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:labels`, () =>
+        finishImplementationRecovery({
+          linear: input.linear,
+          issueId: input.event.issueId,
+          readiness: input.readiness,
+        }),
+      );
+    }
+  } finally {
+    if (run) {
+      await cleanupRepositoryRun({
+        runStep: (id, handler) =>
+          input.step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:cleanup:${id}`, handler),
+        cleanupStepId: "run",
+        diagnosticStepId: "diagnostic",
+        repository: input.repository,
+        run,
+        reportFailure: (cleanupError) =>
+          ensureImplementationCleanupFailureComment({
+            linear: input.linear,
+            event: input.event,
+            error: cleanupError,
+          }),
+      });
+    }
+  }
+}
+
 async function runReview(
   review: ImplementationReviewRunner,
   step: StepTools,
@@ -680,6 +697,12 @@ async function runReview(
   );
   if (result.status !== "completed" || result.verdict === "blocked") {
     throw new Error("Implementation review did not complete both reviewers successfully.");
+  }
+  if (
+    result.scope.headSha !== checkpoint.revision ||
+    result.scope.mergeBase !== checkpoint.baseSha
+  ) {
+    throw new Error("Implementation review scope does not match the selected checkpoint.");
   }
   requireReviewerOutputs(result);
   return result;

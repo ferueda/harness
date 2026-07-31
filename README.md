@@ -111,8 +111,8 @@ Run `harness models` for the supported model catalog. The independent
 
 Cursor SDK runs require `CURSOR_API_KEY`. Codex follows local `codex login`
 authentication or `CODEX_API_KEY`. The Linear worker requires
-`LINEAR_API_KEY`; enabled Spec publication also requires worker-only GitHub and
-commit-author environment values.
+`LINEAR_API_KEY`; enabled Spec or Implementation work also requires worker-only
+GitHub and commit-author environment values.
 
 See the [setup manifest](docs/contributing/setup-manifest.md) for configuration,
 generated paths, and provider details.
