@@ -9,6 +9,8 @@ import type { GitHubPublicationService } from "../github/types.ts";
 import type { LinearIssueContext } from "../linear/types.ts";
 import type { RepositoryService } from "../repository/types.ts";
 import type { ChangeReviewResult } from "../../workflows/change-review.workflow.ts";
+import { createImplementationReviewFindingId } from "../implementation/finding-identity.ts";
+import type { ImplementationRevisionDecision } from "../implementation/revise-schema.ts";
 import {
   createLinearImplementationFunction,
   type ImplementationReviewRunner,
@@ -221,6 +223,124 @@ function implementationAgent(workspace: string, needsInput: boolean, onChange?: 
   };
 }
 
+const revisionFinding = {
+  title: "The implementation skips a required guard.",
+  severity: "High" as const,
+  location: "lib/example.ts:10",
+  issue: "The selected source can be used without validation.",
+  recommendation: "Validate the source before publishing.",
+  rationale: "Publishing unvalidated work can produce an unsafe pull request.",
+};
+
+function revisionFindingId(): string {
+  return createImplementationReviewFindingId({
+    reviewedRevision: "b".repeat(40),
+    reviewer: "implementation",
+    finding: revisionFinding,
+  });
+}
+
+function reviewNeedsChanges(): Extract<ChangeReviewResult, { status: "completed" }> {
+  return {
+    status: "completed" as const,
+    verdict: "needs_changes" as const,
+    reviewOutputs: {
+      implementation: {
+        verdict: "needs_changes" as const,
+        summary: "One implementation guard is missing.",
+        findings: [{ ...revisionFinding, must_fix: true }],
+      },
+      quality: { verdict: "pass" as const, summary: "Looks good.", findings: [] },
+    },
+    reviewFailures: [] as const,
+    runId: "review-326",
+    runDir: "/tmp/review-326",
+    workspace: "/tmp/workspace",
+    scope: { baseRef: "main", headRef: "HEAD", mergeBase: "a".repeat(40), headSha: "b".repeat(40) },
+  };
+}
+
+function revisionDecision(
+  outcome: "updated" | "unchanged" | "needs-input",
+): ImplementationRevisionDecision {
+  const response = {
+    findingId: revisionFindingId(),
+    disposition: outcome === "unchanged" ? ("declined" as const) : ("accepted" as const),
+    rationale: "The finding was evaluated against the selected source.",
+    evidence:
+      outcome === "updated"
+        ? []
+        : [
+            {
+              source: "repo-state" as const,
+              path: null,
+              lineStart: null,
+              lineEnd: null,
+              summary: "The current repository state was inspected.",
+            },
+          ],
+  };
+  if (outcome === "needs-input") {
+    return {
+      outcome,
+      rationale: "The finding exposes a project decision that must be resolved first.",
+      responses: [response],
+      proof: [],
+      remainingUncertainty: [],
+      questions: ["Which project invariant should this implementation preserve?"],
+    };
+  }
+  return {
+    outcome,
+    rationale: "The finding was evaluated against the selected source.",
+    responses: [response],
+    proof: [{ action: "focused test", status: "passed", observedResult: "passed" }],
+    remainingUncertainty: [],
+    questions: [],
+  };
+}
+
+function implementationAgentWithRevision(
+  workspace: string,
+  outcome: "updated" | "unchanged" | "needs-input",
+  onInitialChange: () => void,
+  onRevisionChange: () => void,
+): Agent {
+  return {
+    name: "codex",
+    run: vi.fn<Agent["run"]>(async (input): Promise<AgentRunResult> => {
+      if (input.schemaPath?.endsWith("implementation-revision-result.schema.json")) {
+        if (outcome === "updated") {
+          writeFileSync(join(workspace, "revision.txt"), "revised\n", "utf8");
+          onRevisionChange();
+        } else {
+          onRevisionChange();
+        }
+        return {
+          ok: true,
+          structuredOutput: revisionDecision(outcome),
+          session: { provider: "codex", id: "session-326-revision" },
+          raw: {},
+        };
+      }
+      writeFileSync(join(workspace, "implementation.txt"), "initial\n", "utf8");
+      onInitialChange();
+      return {
+        ok: true,
+        structuredOutput: {
+          outcome: "implemented",
+          summary: "Implemented the requested behavior.",
+          proof: [{ action: "focused test", status: "passed", observedResult: "passed" }],
+          remainingUncertainty: [],
+          questions: [],
+        },
+        session: { provider: "codex", id: "session-326" },
+        raw: {},
+      };
+    }),
+  };
+}
+
 function github(): GitHubPublicationService {
   return {
     publishCheckpointPullRequest: vi.fn<GitHubPublicationService["publishCheckpointPullRequest"]>(
@@ -336,5 +456,173 @@ describe("Linear implementation consumer", () => {
     expect(linear.state.context.state.id).toBe(readiness.stateIds.needsInput);
     expect(repository.service.checkpointRun).not.toHaveBeenCalled();
     expect(review).not.toHaveBeenCalled();
+  });
+
+  it("checkpoints updated revisions and publishes the second review revision", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
+    roots.push(workspace);
+    const linear = fakeLinear(issueContext());
+    let changeSet: "none" | "initial" | "revision" = "none";
+    const repository = fakeRepository(workspace, () =>
+      changeSet === "none"
+        ? []
+        : [
+            {
+              path: changeSet === "initial" ? "implementation.txt" : "revision.txt",
+              status: "added",
+            },
+          ],
+    );
+    let reviewCount = 0;
+    const review = vi.fn<ImplementationReviewRunner>(async () => {
+      reviewCount += 1;
+      return reviewCount === 1 ? reviewNeedsChanges() : reviewPass();
+    });
+    const publication = github();
+    const output = await execute({
+      context: issueContext(),
+      agent: implementationAgentWithRevision(
+        workspace,
+        "updated",
+        () => {
+          changeSet = "initial";
+        },
+        () => {
+          changeSet = "revision";
+        },
+      ),
+      repository: repository.service,
+      linear: linear.service,
+      review,
+      github: publication,
+    });
+
+    expect(output.result).toMatchObject({ outcome: "published", review: "passed" });
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(repository.service.checkpointRun).toHaveBeenCalledTimes(2);
+    expect(publication.publishCheckpointPullRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checkpoint: expect.objectContaining({ revision: "c".repeat(40) }),
+      }),
+    );
+  });
+
+  it("keeps the reviewed checkpoint when a revision reports unchanged", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
+    roots.push(workspace);
+    const linear = fakeLinear(issueContext());
+    let changeSet: "none" | "initial" = "none";
+    const repository = fakeRepository(workspace, () =>
+      changeSet === "none" ? [] : [{ path: "implementation.txt", status: "added" }],
+    );
+    let reviewCount = 0;
+    const review = vi.fn<ImplementationReviewRunner>(async () => {
+      reviewCount += 1;
+      return reviewCount === 1 ? reviewNeedsChanges() : reviewPass();
+    });
+    const output = await execute({
+      context: issueContext(),
+      agent: implementationAgentWithRevision(
+        workspace,
+        "unchanged",
+        () => {
+          changeSet = "initial";
+        },
+        () => {
+          changeSet = "none";
+        },
+      ),
+      repository: repository.service,
+      linear: linear.service,
+      review,
+      github: github(),
+    });
+
+    expect(output.result).toMatchObject({ outcome: "published", review: "passed" });
+    expect(repository.service.checkpointRun).toHaveBeenCalledTimes(1);
+    expect(review).toHaveBeenCalledTimes(2);
+  });
+
+  it("projects revision Needs Input with its rationale and cleans the run", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
+    roots.push(workspace);
+    const linear = fakeLinear(issueContext());
+    let changeSet: "none" | "initial" = "none";
+    const repository = fakeRepository(workspace, () =>
+      changeSet === "none" ? [] : [{ path: "implementation.txt", status: "added" }],
+    );
+    const review = vi.fn<ImplementationReviewRunner>(async () => reviewNeedsChanges());
+    const output = await execute({
+      context: issueContext(),
+      agent: implementationAgentWithRevision(
+        workspace,
+        "needs-input",
+        () => {
+          changeSet = "initial";
+        },
+        () => {
+          changeSet = "none";
+        },
+      ),
+      repository: repository.service,
+      linear: linear.service,
+      review,
+      github: github(),
+    });
+
+    expect(output.result).toMatchObject({ outcome: "needs-input" });
+    expect(linear.state.context.state.id).toBe(readiness.stateIds.needsInput);
+    expect(linear.state.comments.values().next().value).toContain("project decision");
+    expect(repository.service.cleanupRun).toHaveBeenCalledTimes(1);
+    expect(review).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes an unapproved PR after the bounded revision is exhausted", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "harness-implementation-"));
+    roots.push(workspace);
+    const linear = fakeLinear(issueContext());
+    let changeSet: "none" | "initial" | "revision" = "none";
+    const repository = fakeRepository(workspace, () =>
+      changeSet === "none"
+        ? []
+        : [
+            {
+              path: changeSet === "initial" ? "implementation.txt" : "revision.txt",
+              status: "added",
+            },
+          ],
+    );
+    let reviewCount = 0;
+    const review = vi.fn<ImplementationReviewRunner>(async () => {
+      reviewCount += 1;
+      return reviewNeedsChanges();
+    });
+    const publication = github();
+    const output = await execute({
+      context: issueContext(),
+      agent: implementationAgentWithRevision(
+        workspace,
+        "updated",
+        () => {
+          changeSet = "initial";
+        },
+        () => {
+          changeSet = "revision";
+        },
+      ),
+      repository: repository.service,
+      linear: linear.service,
+      review,
+      github: publication,
+    });
+
+    expect(output.result).toMatchObject({ outcome: "published", review: "exhausted" });
+    expect(publication.publishCheckpointPullRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checkpoint: expect.objectContaining({ revision: "c".repeat(40) }),
+      }),
+    );
+    expect(repository.service.checkpointRun).toHaveBeenCalledTimes(2);
+    expect(review).toHaveBeenCalledTimes(2);
   });
 });

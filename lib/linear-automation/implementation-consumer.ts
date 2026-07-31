@@ -30,6 +30,7 @@ import {
   confirmClaimedImplementation,
   loadClaimedImplementation,
   loadEligibleImplementation,
+  type ImplementationAuthority,
 } from "./implementation-authority.ts";
 import {
   implementationCommentMarker,
@@ -38,17 +39,21 @@ import {
   implementationWorkIdentity,
 } from "./implementation-cycle.ts";
 import {
+  beginImplementationFailureRecovery,
   claimImplementationState,
   consumeImplementationAgentReady,
+  ensureImplementationCleanupFailureComment,
   ensureImplementationFailureComment,
+  finishImplementationRecovery,
   projectImplementationOutcome,
-  recoverImplementationFailure,
+  reopenImplementationClaim,
 } from "./implementation-projection.ts";
-import { cleanupRepositoryRun } from "./repository-cleanup.ts";
+import { cleanupRepositoryRun, RepositoryCleanupDiagnosticError } from "./repository-cleanup.ts";
 import {
   renderImplementationNeedsInputComment,
   renderImplementationOutcomeComment,
   renderImplementationPullRequest,
+  renderImplementationRevisionNeedsInputComment,
   reservedImplementationPullRequestUrl,
 } from "./implementation-presentation.ts";
 
@@ -129,28 +134,72 @@ export function createLinearImplementationFunction(input: {
   const onFailure = async ({ event, error, step }: Context<Inngest.Any, FailureEventArgs>) => {
     const original = WorkRequestDataSchema.safeParse(event.data.event.data);
     if (!original.success) return;
-    await step.run(LINEAR_IMPLEMENTATION_FAILURE_STEP_ID, async () => {
-      try {
-        const recovered = await recoverImplementationFailure({
-          linear: input.linear,
-          event: original.data,
-          readiness: config.readiness,
-          error: errorMessage(error),
-        });
-        if (!recovered) {
-          await ensureImplementationFailureComment({
+    const reason = errorMessage(error);
+    const cleanupFailure = error instanceof RepositoryCleanupDiagnosticError;
+    await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:comment`, () =>
+      cleanupFailure
+        ? ensureImplementationCleanupFailureComment({
             linear: input.linear,
             event: original.data,
-            error: errorMessage(error),
-          });
-        }
-      } catch {
-        await ensureImplementationFailureComment({
+            error: reason,
+            bestEffort: true,
+          })
+        : ensureImplementationFailureComment({
+            linear: input.linear,
+            event: original.data,
+            error: reason,
+            bestEffort: true,
+          }),
+    );
+    const recovery = await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:inspect`, () =>
+      beginImplementationFailureRecovery({
+        linear: input.linear,
+        issueId: original.data.issueId,
+        readiness: config.readiness,
+      }),
+    );
+    if (recovery.reopen) {
+      await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:reopen`, () =>
+        reopenImplementationClaim({
+          linear: input.linear,
+          issueId: original.data.issueId,
+          readiness: config.readiness,
+        }),
+      );
+    }
+    if (recovery.removeAgentReady) {
+      await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:labels`, () =>
+        finishImplementationRecovery({
+          linear: input.linear,
+          issueId: original.data.issueId,
+          readiness: config.readiness,
+        }),
+      );
+    }
+    // Failure events do not carry prior step output, so reacquire the deterministic
+    // run identity and release any Grove lease left by a failed attempt.
+    const identity = implementationWorkIdentity(original.data);
+    const run = await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:prepare-run`, async () => {
+      const base = await input.repository.resolveBase({ baseRef: config.baseRef });
+      return input.repository.prepareRun({
+        id: identity.workId,
+        base,
+        branch: identity.branch,
+      });
+    });
+    await cleanupRepositoryRun({
+      runStep: (id, handler) =>
+        step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:cleanup:${id}`, handler),
+      cleanupStepId: "run",
+      diagnosticStepId: "diagnostic",
+      repository: input.repository,
+      run,
+      reportFailure: (cleanupError) =>
+        ensureImplementationCleanupFailureComment({
           linear: input.linear,
           event: original.data,
-          error: errorMessage(error),
-        });
-      }
+          error: cleanupError,
+        }),
     });
   };
 
@@ -171,175 +220,101 @@ export function createLinearImplementationFunction(input: {
 
       let run: RepositoryRun | undefined;
       const authority = loaded.authority;
-      await step.run(LINEAR_IMPLEMENTATION_CLAIM_STEP_ID, () =>
-        claimImplementationState(input.linear, event.data.issueId, config.readiness),
-      );
-      await step.run(LINEAR_IMPLEMENTATION_CONSUME_STEP_ID, () =>
-        consumeImplementationAgentReady(input.linear, event.data.issueId, config.readiness),
-      );
+      try {
+        await step.run(LINEAR_IMPLEMENTATION_CLAIM_STEP_ID, () =>
+          claimImplementationState(input.linear, event.data.issueId, config.readiness),
+        );
+        await step.run(LINEAR_IMPLEMENTATION_CONSUME_STEP_ID, () =>
+          consumeImplementationAgentReady(input.linear, event.data.issueId, config.readiness),
+        );
 
-      const identity = implementationWorkIdentity(event.data);
-      const base = await step.run(LINEAR_IMPLEMENTATION_BASE_STEP_ID, () =>
-        input.repository.resolveBase({ baseRef: config.baseRef }),
-      );
-      run = await step.run(LINEAR_IMPLEMENTATION_PREPARE_STEP_ID, () =>
-        input.repository.prepareRun({ id: identity.workId, base, branch: identity.branch }),
-      );
+        const identity = implementationWorkIdentity(event.data);
+        const base = await step.run(LINEAR_IMPLEMENTATION_BASE_STEP_ID, () =>
+          input.repository.resolveBase({ baseRef: config.baseRef }),
+        );
+        run = await step.run(LINEAR_IMPLEMENTATION_PREPARE_STEP_ID, () =>
+          input.repository.prepareRun({ id: identity.workId, base, branch: identity.branch }),
+        );
 
-      const selected = await step.run(LINEAR_IMPLEMENTATION_SOURCE_STEP_ID, async () => {
-        const claimed = await loadClaimedImplementation(input.linear, authority, config.readiness);
-        if (claimed.kind === "stale" || !claimed.workItem) return claimed;
-        const source = resolveImplementationSource({
-          workspace: run!.workspace,
-          workItem: claimed.workItem,
-        });
-        if (!source.ok) throw new Error(source.error);
-        return { kind: "confirmed" as const, workItem: claimed.workItem, source: source.value };
-      });
-      if (selected.kind === "stale")
-        return staleResult(event.data, selected.reason, run, input.repository, step, input.linear);
-
-      const authored = await step.run(LINEAR_IMPLEMENTATION_AGENT_STEP_ID, async () => {
-        const existing = await input.repository.inspectChanges(run!);
-        if (existing.length > 0)
-          throw new Error(
-            "Implementation retry found workspace changes from an earlier failed attempt.",
+        const selected = await step.run(LINEAR_IMPLEMENTATION_SOURCE_STEP_ID, async () => {
+          const claimed = await loadClaimedImplementation(
+            input.linear,
+            authority,
+            config.readiness,
           );
-        const result = await implementWorkItem({
-          source: selected.source,
-          workspace: run!.workspace,
-          agent: input.implementerAgent,
-          execution: config.execution,
+          if (claimed.kind === "stale" || !claimed.workItem) return claimed;
+          const source = resolveImplementationSource({
+            workspace: run!.workspace,
+            workItem: claimed.workItem,
+          });
+          if (!source.ok) throw new Error(source.error);
+          return { kind: "confirmed" as const, workItem: claimed.workItem, source: source.value };
         });
-        if (!result.ok) throw new Error(result.error);
-        return result;
-      });
-      if (authored.decision.outcome === "needs-input") {
-        const result = await projectNeedsInput({
-          event: event.data,
-          decision: authored.decision,
-          linear: input.linear,
-          readiness: config.readiness,
-          step,
-        });
-        return finishWithCleanup(
-          input.repository,
-          run!,
-          step,
-          result,
-          "needs-input",
-          input.linear,
-          event.data,
-        );
-      }
-
-      let changes = await step.run(LINEAR_IMPLEMENTATION_INSPECT_STEP_ID, () =>
-        input.repository.inspectChanges(run!),
-      );
-      if (changes.length === 0) {
-        const result = await projectZeroChange({
-          event: event.data,
-          workItem: selected.workItem,
-          decision: authored.decision,
-          source: selected.source,
-          linear: input.linear,
-          readiness: config.readiness,
-          step,
-        });
-        return finishWithCleanup(
-          input.repository,
-          run!,
-          step,
-          result,
-          "zero-change",
-          input.linear,
-          event.data,
-        );
-      }
-
-      let checkpoint = await step.run(LINEAR_IMPLEMENTATION_CHECKPOINT_STEP_ID, () =>
-        input.repository.checkpointRun({
-          id: `implementation-cycle-v1:initial:${identity.workId}`,
-          run: run!,
-          expectedParentRevision: run!.baseSha,
-          expectedChanges: changes,
-          message: `feat: implement ${event.data.issueIdentifier}`,
-        }),
-      );
-      let decision = authored.decision;
-      run = await openReviewRun({
-        repository: input.repository,
-        step,
-        baseRef: config.baseRef,
-        workRequestId: identity.workId,
-        checkpoint,
-        round: 0,
-      });
-      let review = await runReview(
-        input.review,
-        step,
-        identity.workId,
-        checkpoint,
-        run!,
-        selected.source,
-        0,
-      );
-      let reviewRound: 0 | 1 = 0;
-      let exhausted = false;
-      const authorSession = authored.provenance.session;
-
-      if (review.verdict !== "pass") {
-        const revisionReview = createImplementationRevisionReview({
-          reviewedRevision: checkpoint.revision,
-          reviews: requireReviewerOutputs(review),
-        });
-        if (!revisionReview.ok) throw new Error(revisionReview.error);
-        if (!authorSession)
-          throw new Error("Implementation agent did not return a resumable author session.");
-        const confirmed = await step.run(`${LINEAR_IMPLEMENTATION_REVISION_STEP_ID}:confirm`, () =>
-          confirmClaimedImplementation(input.linear, authority, config.readiness),
-        );
-        if (confirmed.kind === "stale")
+        if (selected.kind === "stale")
           return staleResult(
             event.data,
-            confirmed.reason,
+            authority,
+            config.readiness,
+            selected.reason,
             run,
             input.repository,
             step,
             input.linear,
           );
 
-        const revised = await step.run(LINEAR_IMPLEMENTATION_REVISION_STEP_ID, async () => {
-          const revisionRun = await input.repository.openCheckpoint({
-            checkpoint,
-            baseRef: config.baseRef,
-          });
-          const result = await reviseImplementation({
+        const authored = await step.run(LINEAR_IMPLEMENTATION_AGENT_STEP_ID, async () => {
+          const existing = await input.repository.inspectChanges(run!);
+          if (existing.length > 0)
+            throw new Error(
+              "Implementation retry found workspace changes from an earlier failed attempt.",
+            );
+          const result = await implementWorkItem({
             source: selected.source,
-            review: revisionReview.review,
-            authorSession: toRevisionSession(authorSession),
-            workspace: revisionRun.workspace,
+            workspace: run!.workspace,
             agent: input.implementerAgent,
             execution: config.execution,
           });
           if (!result.ok) throw new Error(result.error);
-          return { result, run: revisionRun };
+          return result;
         });
-        if (revised.result.decision.outcome === "needs-input") {
+        const confirmedAfterAgent = await step.run(
+          `${LINEAR_IMPLEMENTATION_AGENT_STEP_ID}:confirm`,
+          () => confirmClaimedImplementation(input.linear, authority, config.readiness),
+        );
+        if (confirmedAfterAgent.kind === "stale")
+          return staleResult(
+            event.data,
+            authority,
+            config.readiness,
+            confirmedAfterAgent.reason,
+            run,
+            input.repository,
+            step,
+            input.linear,
+          );
+        if (authored.decision.outcome === "needs-input") {
           const result = await projectNeedsInput({
             event: event.data,
-            decision: revised.result.decision,
+            decision: authored.decision,
+            authority,
             linear: input.linear,
             readiness: config.readiness,
             step,
-            marker: implementationCycleCommentMarker(
-              implementationWorkIdentity(event.data).workId,
-              "needs-input",
-            ),
           });
+          if (result.outcome === "stale")
+            return staleResult(
+              event.data,
+              authority,
+              config.readiness,
+              result.reason,
+              run,
+              input.repository,
+              step,
+              input.linear,
+            );
           return finishWithCleanup(
             input.repository,
-            revised.run,
+            run!,
             step,
             result,
             "needs-input",
@@ -347,89 +322,323 @@ export function createLinearImplementationFunction(input: {
             event.data,
           );
         }
-        changes = await step.run(`${LINEAR_IMPLEMENTATION_INSPECT_STEP_ID}:revision`, () =>
-          input.repository.inspectChanges(revised.run),
+
+        let changes = await step.run(LINEAR_IMPLEMENTATION_INSPECT_STEP_ID, () =>
+          input.repository.inspectChanges(run!),
         );
-        if (!sameChanges(changes, checkpoint.changes)) {
-          const round = implementationCycleIdentity({
-            workRequestId: identity.workId,
-            reviewRound: 1,
-            checkpointRevision: checkpoint.revision,
+        if (changes.length === 0) {
+          const result = await projectZeroChange({
+            event: event.data,
+            workItem: selected.workItem,
+            decision: authored.decision,
+            source: selected.source,
+            authority,
+            linear: input.linear,
+            readiness: config.readiness,
+            step,
           });
-          checkpoint = await step.run(round.checkpointStepId, () =>
-            input.repository.checkpointRun({
-              id: round.checkpointId,
-              run: revised.run,
-              expectedParentRevision: checkpoint.revision,
-              expectedChanges: changes,
-              message: `fix: revise ${event.data.issueIdentifier} implementation`,
-            }),
+          if (result.outcome === "stale")
+            return staleResult(
+              event.data,
+              authority,
+              config.readiness,
+              result.reason,
+              run,
+              input.repository,
+              step,
+              input.linear,
+            );
+          return finishWithCleanup(
+            input.repository,
+            run!,
+            step,
+            result,
+            "zero-change",
+            input.linear,
+            event.data,
           );
         }
-        decision = revised.result.decision;
-        reviewRound = 1;
+
+        let checkpoint = await step.run(LINEAR_IMPLEMENTATION_CHECKPOINT_STEP_ID, () =>
+          input.repository.checkpointRun({
+            id: `implementation-cycle-v1:initial:${identity.workId}`,
+            run: run!,
+            expectedParentRevision: run!.baseSha,
+            expectedChanges: changes,
+            message: `feat: implement ${event.data.issueIdentifier}`,
+          }),
+        );
+        const implementationDecision = authored.decision;
         run = await openReviewRun({
           repository: input.repository,
           step,
           baseRef: config.baseRef,
           workRequestId: identity.workId,
           checkpoint,
-          round: reviewRound,
+          round: 0,
         });
-        review = await runReview(
+        let review = await runReview(
           input.review,
           step,
           identity.workId,
           checkpoint,
           run!,
           selected.source,
-          1,
+          0,
         );
-        exhausted = review.verdict !== "pass";
-      }
+        let reviewRound: 0 | 1 = 0;
+        let exhausted = false;
+        const authorSession = authored.provenance.session;
+        const confirmedAfterReview = await step.run(
+          `${LINEAR_IMPLEMENTATION_REVIEW_STEP_ID}:confirm`,
+          () => confirmClaimedImplementation(input.linear, authority, config.readiness),
+        );
+        if (confirmedAfterReview.kind === "stale")
+          return staleResult(
+            event.data,
+            authority,
+            config.readiness,
+            confirmedAfterReview.reason,
+            run,
+            input.repository,
+            step,
+            input.linear,
+          );
 
-      const published = await publish(
-        input,
-        step,
-        identity.workId,
-        selected.workItem,
-        decision,
-        selected.source,
-        checkpoint,
-        review,
-        reviewRound,
-        exhausted,
-      );
-      run = published.run;
-      const confirmed = await step.run(`${LINEAR_IMPLEMENTATION_PROJECT_STEP_ID}:confirm`, () =>
-        confirmClaimedImplementation(input.linear, authority, config.readiness),
-      );
-      if (confirmed.kind === "stale")
-        return staleResult(event.data, confirmed.reason, run, input.repository, step, input.linear);
-      await step.run(LINEAR_IMPLEMENTATION_PROJECT_STEP_ID, () =>
-        projectImplementationOutcome({
-          linear: input.linear,
-          issueId: event.data.issueId,
-          marker: published.marker,
-          comment: published.comment,
-          readiness: config.readiness,
-          targetStateId: config.readiness.stateIds.needsReview,
-        }),
-      );
-      return finishWithCleanup(
-        input.repository,
-        run!,
-        step,
-        {
-          outcome: "published" as const,
-          issueId: event.data.issueId,
-          pullRequestUrl: published.pullRequestUrl,
-          review: exhausted ? ("exhausted" as const) : ("passed" as const),
-        },
-        "published",
-        input.linear,
-        event.data,
-      );
+        if (review.verdict !== "pass") {
+          const revisionReview = createImplementationRevisionReview({
+            reviewedRevision: checkpoint.revision,
+            reviews: requireReviewerOutputs(review),
+          });
+          if (!revisionReview.ok) throw new Error(revisionReview.error);
+          if (!authorSession)
+            throw new Error("Implementation agent did not return a resumable author session.");
+          const revised = await step.run(LINEAR_IMPLEMENTATION_REVISION_STEP_ID, async () => {
+            const revisionRun = await input.repository.openCheckpoint({
+              checkpoint,
+              baseRef: config.baseRef,
+            });
+            const result = await reviseImplementation({
+              source: selected.source,
+              review: revisionReview.review,
+              authorSession: toRevisionSession(authorSession),
+              workspace: revisionRun.workspace,
+              agent: input.implementerAgent,
+              execution: config.execution,
+            });
+            if (!result.ok) throw new Error(result.error);
+            return { result, run: revisionRun };
+          });
+          const revisionDecision = revised.result.decision;
+          const confirmedAfterRevision = await step.run(
+            `${LINEAR_IMPLEMENTATION_REVISION_STEP_ID}:confirm`,
+            () => confirmClaimedImplementation(input.linear, authority, config.readiness),
+          );
+          if (confirmedAfterRevision.kind === "stale")
+            return staleResult(
+              event.data,
+              authority,
+              config.readiness,
+              confirmedAfterRevision.reason,
+              revised.run,
+              input.repository,
+              step,
+              input.linear,
+            );
+          if (revisionDecision.outcome === "needs-input") {
+            const marker = implementationCycleCommentMarker(
+              implementationCycleIdentity({
+                workRequestId: identity.workId,
+                reviewRound: 0,
+                checkpointRevision: checkpoint.revision,
+              }).commentIdentity,
+              "needs-input",
+            );
+            const comment = renderImplementationRevisionNeedsInputComment({
+              marker,
+              decision: revisionDecision,
+            });
+            const projected = await step.run(
+              `${LINEAR_IMPLEMENTATION_PROJECT_STEP_ID}:revision-needs-input`,
+              () =>
+                projectClaimedImplementationOutcome({
+                  linear: input.linear,
+                  authority,
+                  issueId: event.data.issueId,
+                  marker,
+                  comment,
+                  readiness: config.readiness,
+                  targetStateId: config.readiness.stateIds.needsInput,
+                }),
+            );
+            if (projected.kind === "stale")
+              return staleResult(
+                event.data,
+                authority,
+                config.readiness,
+                projected.reason,
+                revised.run,
+                input.repository,
+                step,
+                input.linear,
+              );
+            const result = { outcome: "needs-input" as const, issueId: event.data.issueId };
+            return finishWithCleanup(
+              input.repository,
+              revised.run,
+              step,
+              result,
+              "needs-input",
+              input.linear,
+              event.data,
+            );
+          }
+          changes = await step.run(`${LINEAR_IMPLEMENTATION_INSPECT_STEP_ID}:revision`, () =>
+            input.repository.inspectChanges(revised.run),
+          );
+          if (revisionDecision.outcome === "unchanged" && changes.length > 0) {
+            throw new Error(
+              "Implementation revision reported unchanged but modified the workspace.",
+            );
+          }
+          if (revisionDecision.outcome === "updated" && changes.length === 0) {
+            throw new Error(
+              "Implementation revision reported updated but made no workspace changes.",
+            );
+          }
+          if (revisionDecision.outcome === "updated") {
+            const round = implementationCycleIdentity({
+              workRequestId: identity.workId,
+              reviewRound: 1,
+              checkpointRevision: checkpoint.revision,
+            });
+            checkpoint = await step.run(round.checkpointStepId, () =>
+              input.repository.checkpointRun({
+                id: round.checkpointId,
+                run: revised.run,
+                expectedParentRevision: checkpoint.revision,
+                expectedChanges: changes,
+                message: `fix: revise ${event.data.issueIdentifier} implementation`,
+              }),
+            );
+          }
+          reviewRound = 1;
+          run = await openReviewRun({
+            repository: input.repository,
+            step,
+            baseRef: config.baseRef,
+            workRequestId: identity.workId,
+            checkpoint,
+            round: reviewRound,
+          });
+          review = await runReview(
+            input.review,
+            step,
+            identity.workId,
+            checkpoint,
+            run!,
+            selected.source,
+            1,
+          );
+          exhausted = review.verdict !== "pass";
+          const confirmedAfterRevisionReview = await step.run(
+            `${LINEAR_IMPLEMENTATION_REVIEW_STEP_ID}:revision-confirm`,
+            () => confirmClaimedImplementation(input.linear, authority, config.readiness),
+          );
+          if (confirmedAfterRevisionReview.kind === "stale")
+            return staleResult(
+              event.data,
+              authority,
+              config.readiness,
+              confirmedAfterRevisionReview.reason,
+              run,
+              input.repository,
+              step,
+              input.linear,
+            );
+        }
+
+        const published = await publish(
+          input,
+          step,
+          authority,
+          identity.workId,
+          selected.workItem,
+          implementationDecision,
+          selected.source,
+          checkpoint,
+          review,
+          reviewRound,
+          exhausted,
+        );
+        if (published.kind === "stale")
+          return staleResult(
+            event.data,
+            authority,
+            config.readiness,
+            published.reason,
+            run,
+            input.repository,
+            step,
+            input.linear,
+          );
+        run = published.run;
+        const projected = await step.run(LINEAR_IMPLEMENTATION_PROJECT_STEP_ID, () =>
+          projectClaimedImplementationOutcome({
+            linear: input.linear,
+            authority,
+            issueId: event.data.issueId,
+            marker: published.marker,
+            comment: published.comment,
+            readiness: config.readiness,
+            targetStateId: config.readiness.stateIds.needsReview,
+          }),
+        );
+        if (projected.kind === "stale")
+          return staleResult(
+            event.data,
+            authority,
+            config.readiness,
+            projected.reason,
+            run,
+            input.repository,
+            step,
+            input.linear,
+          );
+        return finishWithCleanup(
+          input.repository,
+          run!,
+          step,
+          {
+            outcome: "published" as const,
+            issueId: event.data.issueId,
+            pullRequestUrl: published.pullRequestUrl,
+            review: exhausted ? ("exhausted" as const) : ("passed" as const),
+          },
+          "published",
+          input.linear,
+          event.data,
+        );
+      } catch (error) {
+        if (error instanceof RepositoryCleanupDiagnosticError) throw error;
+        if (run) {
+          await cleanupRepositoryRun({
+            runStep: (id, handler) =>
+              step.run(`${LINEAR_IMPLEMENTATION_CLEANUP_STEP_ID}:failure:${id}`, handler),
+            cleanupStepId: "run",
+            diagnosticStepId: "diagnostic",
+            repository: input.repository,
+            run,
+            reportFailure: (cleanupError) =>
+              ensureImplementationCleanupFailureComment({
+                linear: input.linear,
+                event: event.data,
+                error: cleanupError,
+              }),
+          });
+        }
+        throw error;
+      }
     },
   );
 }
@@ -506,6 +715,7 @@ function toRevisionSession(session: {
 async function publish(
   input: Parameters<typeof createLinearImplementationFunction>[0],
   step: StepTools,
+  authority: ImplementationAuthority,
   workRequestId: string,
   workItem: Parameters<typeof renderImplementationPullRequest>[0]["workItem"],
   decision: Extract<ImplementationResult, { ok: true }>["decision"],
@@ -521,6 +731,12 @@ async function publish(
     checkpointRevision: checkpoint.revision,
   });
   return step.run(`${identity.publishStepId}`, async () => {
+    const confirmed = await confirmClaimedImplementation(
+      input.linear,
+      authority,
+      input.config.readiness,
+    );
+    if (confirmed.kind === "stale") return { kind: "stale" as const, reason: confirmed.reason };
     const opened = await input.repository.openCheckpoint({
       checkpoint,
       baseRef: input.config.baseRef,
@@ -566,6 +782,7 @@ async function publish(
       throw new Error("Implementation publication did not return the selected checkpoint.");
     }
     return {
+      kind: "published" as const,
       run: opened,
       pullRequestUrl: pullRequest.url,
       marker: implementationCycleCommentMarker(
@@ -589,6 +806,7 @@ function requireImplementedDecision(
 async function projectNeedsInput(input: {
   event: WorkRequestData;
   decision: Extract<ImplementationResult, { ok: true }>["decision"];
+  authority: ImplementationAuthority;
   linear: LinearImplementationService;
   readiness: LinearReadinessConfig;
   step: StepTools;
@@ -602,17 +820,22 @@ async function projectNeedsInput(input: {
     summary: input.decision.summary,
     questions: input.decision.questions,
   });
-  await input.step.run(`${LINEAR_IMPLEMENTATION_PROJECT_STEP_ID}:needs-input`, () =>
-    projectImplementationOutcome({
-      linear: input.linear,
-      issueId: input.event.issueId,
-      marker,
-      comment,
-      readiness: input.readiness,
-      targetStateId: input.readiness.stateIds.needsInput,
-    }),
+  const projected = await input.step.run(
+    `${LINEAR_IMPLEMENTATION_PROJECT_STEP_ID}:needs-input`,
+    () =>
+      projectClaimedImplementationOutcome({
+        linear: input.linear,
+        authority: input.authority,
+        issueId: input.event.issueId,
+        marker,
+        comment,
+        readiness: input.readiness,
+        targetStateId: input.readiness.stateIds.needsInput,
+      }),
   );
-  return { outcome: "needs-input" as const, issueId: input.event.issueId };
+  return projected.kind === "stale"
+    ? { outcome: "stale" as const, reason: projected.reason }
+    : { outcome: "needs-input" as const, issueId: input.event.issueId };
 }
 
 async function projectZeroChange(input: {
@@ -620,6 +843,7 @@ async function projectZeroChange(input: {
   workItem: WorkItemContext;
   decision: Extract<ImplementationResult, { ok: true }>["decision"];
   source: ImplementationSource;
+  authority: ImplementationAuthority;
   linear: LinearImplementationService;
   readiness: LinearReadinessConfig;
   step: StepTools;
@@ -635,17 +859,41 @@ async function projectZeroChange(input: {
     checkpoint: null,
     review: null,
   });
-  await input.step.run(`${LINEAR_IMPLEMENTATION_PROJECT_STEP_ID}:zero-change`, () =>
-    projectImplementationOutcome({
-      linear: input.linear,
-      issueId: input.event.issueId,
-      marker,
-      comment,
-      readiness: input.readiness,
-      targetStateId: input.readiness.stateIds.needsReview,
-    }),
+  const projected = await input.step.run(
+    `${LINEAR_IMPLEMENTATION_PROJECT_STEP_ID}:zero-change`,
+    () =>
+      projectClaimedImplementationOutcome({
+        linear: input.linear,
+        authority: input.authority,
+        issueId: input.event.issueId,
+        marker,
+        comment,
+        readiness: input.readiness,
+        targetStateId: input.readiness.stateIds.needsReview,
+      }),
   );
-  return { outcome: "zero-change" as const, issueId: input.event.issueId };
+  return projected.kind === "stale"
+    ? { outcome: "stale" as const, reason: projected.reason }
+    : { outcome: "zero-change" as const, issueId: input.event.issueId };
+}
+
+async function projectClaimedImplementationOutcome(input: {
+  linear: LinearImplementationService;
+  authority: ImplementationAuthority;
+  issueId: string;
+  marker: string;
+  comment: string;
+  readiness: LinearReadinessConfig;
+  targetStateId: string;
+}): Promise<Readonly<{ kind: "projected" }> | Readonly<{ kind: "stale"; reason: string }>> {
+  const confirmed = await confirmClaimedImplementation(
+    input.linear,
+    input.authority,
+    input.readiness,
+  );
+  if (confirmed.kind === "stale") return confirmed;
+  await projectImplementationOutcome(input);
+  return { kind: "projected" };
 }
 
 async function finishWithCleanup(
@@ -664,23 +912,49 @@ async function finishWithCleanup(
     diagnosticStepId: "diagnostic",
     repository,
     run,
-    reportFailure: (error) => ensureImplementationFailureComment({ linear, event, error }),
+    reportFailure: (error) => ensureImplementationCleanupFailureComment({ linear, event, error }),
   });
   return result;
 }
 
 async function staleResult(
   event: WorkRequestData,
+  authority: ImplementationAuthority,
+  readiness: LinearReadinessConfig,
   reason: string,
   run: RepositoryRun | undefined,
   repository: RepositoryService,
   step: StepTools,
   linear: LinearImplementationService,
 ) {
-  if (run) await finishWithCleanup(repository, run, step, undefined, "stale", linear, event);
+  if (run) {
+    await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:stale`, () =>
+      ensureImplementationFailureComment({
+        linear,
+        event,
+        error: `Implementation authority changed during execution: ${reason}`,
+        bestEffort: true,
+      }),
+    );
+    const recovery = await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:stale-inspect`, () =>
+      beginImplementationFailureRecovery({
+        linear,
+        issueId: event.issueId,
+        readiness,
+        authority,
+      }),
+    );
+    if (recovery.reopen) {
+      await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:stale-reopen`, () =>
+        reopenImplementationClaim({ linear, issueId: event.issueId, readiness }),
+      );
+    }
+    if (recovery.removeAgentReady) {
+      await step.run(`${LINEAR_IMPLEMENTATION_FAILURE_STEP_ID}:stale-labels`, () =>
+        finishImplementationRecovery({ linear, issueId: event.issueId, readiness }),
+      );
+    }
+    await finishWithCleanup(repository, run, step, undefined, "stale", linear, event);
+  }
   return { outcome: "stale" as const, reason };
-}
-
-function sameChanges(left: readonly unknown[], right: readonly unknown[]): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }

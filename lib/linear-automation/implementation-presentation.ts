@@ -1,5 +1,6 @@
 import type { RepositoryCheckpoint } from "../repository/types.ts";
 import type { ImplementationDecision, ImplementationProof } from "../implementation/schema.ts";
+import type { ImplementationRevisionDecision } from "../implementation/revise-schema.ts";
 import type { ImplementationSource } from "../implementation/source.ts";
 import type { ChangeReviewResult } from "../../workflows/change-review.workflow.ts";
 import type { WorkItemContext } from "../work-item/schema.ts";
@@ -117,6 +118,50 @@ export function renderImplementationFailureComment(input: {
       "## Implementation automation needs attention",
       bounded(input.error),
       "The issue was returned to Open without Agent Ready. Review the failure, then grant Agent Ready to retry.",
+    ].join("\n\n"),
+    IMPLEMENTATION_LINEAR_COMMENT_LIMIT,
+  );
+}
+
+export function renderImplementationCleanupFailureComment(input: {
+  marker: string;
+  error: string;
+}): string {
+  return assertLimit(
+    "Linear implementation cleanup failure comment",
+    [
+      input.marker,
+      "## Implementation workspace cleanup needs attention",
+      bounded(input.error),
+      "The Linear outcome was retained, but the repository run could not be released. Inspect the Grove lease before retrying the issue.",
+    ].join("\n\n"),
+    IMPLEMENTATION_LINEAR_COMMENT_LIMIT,
+  );
+}
+
+export function renderImplementationRevisionNeedsInputComment(input: {
+  marker: string;
+  decision: ImplementationRevisionDecision;
+}): string {
+  if (input.decision.outcome !== "needs-input") {
+    throw new ImplementationPresentationError(
+      "Implementation revision Needs Input presentation requires a needs-input decision.",
+    );
+  }
+  return assertLimit(
+    "Linear implementation revision Needs Input comment",
+    [
+      input.marker,
+      "## Agent implementation revision",
+      "**Outcome:** Needs input",
+      `**Why:** ${bounded(input.decision.rationale)}`,
+      `**Questions**\n${input.decision.questions.map((question) => `- ${boundedText(question, 400)}`).join("\n")}`,
+      `**Finding responses**\n${input.decision.responses
+        .map(
+          (response) =>
+            `- \`${response.findingId}\` — **${response.disposition}**: ${boundedText(response.rationale, 400)}`,
+        )
+        .join("\n")}`,
     ].join("\n\n"),
     IMPLEMENTATION_LINEAR_COMMENT_LIMIT,
   );

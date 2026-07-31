@@ -375,7 +375,7 @@ describe("Linear automation worker", () => {
     expect(() =>
       parseLinearAutomationWorkerEnvironment(
         { LINEAR_API_KEY: "linear-key", INNGEST_DEV: "1" },
-        { specEnabled: true },
+        { repositoryEnabled: true },
       ),
     ).toThrow(/HARNESS_REPOSITORY_ROOT is required/);
     expect(
@@ -386,7 +386,7 @@ describe("Linear automation worker", () => {
           HARNESS_REPOSITORY_ROOT: "/var/lib/harness",
           GITHUB_TOKEN: "github-key",
         },
-        { specEnabled: true },
+        { repositoryEnabled: true },
       ).repository,
     ).toEqual({
       repositoryRoot: "/var/lib/harness",

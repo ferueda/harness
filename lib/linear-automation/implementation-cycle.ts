@@ -6,21 +6,18 @@ import {
   type WorkRequestData,
 } from "./events/work-events.ts";
 
-export const IMPLEMENTATION_REVIEW_ROUNDS = [0, 1] as const;
-export type ImplementationReviewRound = (typeof IMPLEMENTATION_REVIEW_ROUNDS)[number];
-
 const WORK_REQUEST_ID = new RegExp(`^${WORK_REQUEST_EVENT_ID_PREFIX}[0-9a-f]{64}$`);
 
 export type ImplementationCycleIdentity = Readonly<{
   key: string;
   reviewStepId: string;
-  revisionStepId: string;
   checkpointStepId: string;
   checkpointId: string;
   publishStepId: string;
-  projectStepId: string;
   commentIdentity: string;
 }>;
+
+type ImplementationReviewRound = 0 | 1;
 
 export function implementationWorkIdentity(event: WorkRequestData): Readonly<{
   workId: string;
@@ -64,11 +61,9 @@ export function implementationCycleIdentity(input: {
   return Object.freeze({
     key,
     reviewStepId: stepId("review"),
-    revisionStepId: stepId("revise"),
     checkpointStepId: stepId("checkpoint"),
     checkpointId: `${key}:checkpoint`,
     publishStepId: stepId("publish"),
-    projectStepId: stepId("project"),
     commentIdentity: `${key}:comment`,
   });
 }

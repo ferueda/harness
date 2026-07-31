@@ -137,7 +137,7 @@ export type LinearAutomationWorker = Readonly<{
 
 export function parseLinearAutomationWorkerEnvironment(
   environment: NodeJS.ProcessEnv,
-  options: Readonly<{ specEnabled?: boolean; repositoryEnabled?: boolean }> = {},
+  options: Readonly<{ repositoryEnabled?: boolean }> = {},
 ): LinearAutomationWorkerEnvironment {
   const parsed = WorkerEnvironmentSchema.parse(environment);
   const port = Number(parsed.HARNESS_WORKER_PORT);
@@ -145,7 +145,7 @@ export function parseLinearAutomationWorkerEnvironment(
     throw new Error("HARNESS_WORKER_PORT must be an integer from 1 to 65535.");
   }
   let repository: LinearAutomationWorkerEnvironment["repository"];
-  if (options.repositoryEnabled ?? options.specEnabled) {
+  if (options.repositoryEnabled) {
     const required = [
       ["HARNESS_REPOSITORY_ROOT", parsed.HARNESS_REPOSITORY_ROOT],
       ["GITHUB_TOKEN", parsed.GITHUB_TOKEN],

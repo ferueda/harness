@@ -29,7 +29,7 @@ import {
   toSpecRevisionAuthorSession,
   toSpecRevisionReview,
 } from "./spec-cycle.ts";
-import { cleanupRepositoryRun, SpecCleanupDiagnosticError } from "./spec-cleanup.ts";
+import { cleanupRepositoryRun, RepositoryCleanupDiagnosticError } from "./repository-cleanup.ts";
 import {
   SpecWorkRequestedEvent,
   WORK_REQUEST_EVENT_ID_PREFIX,
@@ -200,7 +200,7 @@ export function createLinearSpecFunction(input: {
       } catch (error) {
         // A cleanup diagnostic has already exhausted its own durable retries.
         // Rethrow it so onFailure runs instead of starting a second cleanup.
-        if (error instanceof SpecCleanupDiagnosticError) throw error;
+        if (error instanceof RepositoryCleanupDiagnosticError) throw error;
         return recoverSpecFailure({
           step,
           event: event.data,
