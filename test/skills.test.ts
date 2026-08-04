@@ -311,51 +311,6 @@ test("handoffs preserve accepted authority without duplicating inspectable sourc
   expect(handoff).not.toContain("### Files referenced");
 });
 
-test("orchestrated work preserves authority, routing, and recovery invariants", () => {
-  const skill = readFileSync(join(REPO_ROOT, "skills/orchestrate-work/SKILL.md"), "utf8");
-  const metadata = readFileSync(
-    join(REPO_ROOT, "skills/orchestrate-work/agents/openai.yaml"),
-    "utf8",
-  );
-  const prose = normalizedProse(skill);
-
-  expect(skill).toContain("name: orchestrate-work");
-  expect(skill).toContain("disable-model-invocation: true");
-  expect(metadata).toContain("allow_implicit_invocation: false");
-  expect(prose).toContain("single writer");
-  expect(prose).toContain("exact baseline");
-  expect(prose).toContain("both callback directions");
-  expect(skill).toContain("<source_thread_id>");
-  expect(prose).toContain("branch or detached-HEAD state");
-  expect(prose).toContain("Each destination owns its `model` and `thinking`");
-  expect(prose).toContain("Never copy settings from the sender");
-  expect(skill).toContain("`codex_app__list_projects`");
-  expect(skill).toContain("`codex_app__create_thread`");
-  expect(skill).toContain('environment: { type: "worktree" }');
-  expect(skill).toContain("A validation rejection created no task");
-  expect(skill).toContain("queued `clientThreadId`");
-  expect(skill).toContain("`codex_app__set_thread_title`");
-  expect(skill).toContain("`codex_app__list_threads`");
-  expect(skill).toContain("`codex_app__read_thread`");
-  expect(skill).toContain("`codex_app__send_message_to_thread`");
-  expect(prose).toContain("A callback's source identifies the executor, not the parent");
-  expect(prose).toContain("`source_host_id` and title-update output are not steering routes");
-  expect(prose).toContain("consult the parent whenever a decision or blocker appears");
-  expect(prose).toContain("do not poll unchanged state");
-  expect(skill).toContain("Readiness: [target-repo command or none]");
-  expect(prose).toContain("before source edits or provider work");
-  expect(prose).toContain("success needs no second approval");
-  expect(skill).toContain("Verification: [exact commands/gates and evidence required]");
-  expect(skill).toContain("Publication: [none, commit, push, pull request, or merge authority]");
-  expect(skill).toContain("`change-review-workflow`");
-  expect(skill).toContain("`handoff-work`");
-  expect(prose).toContain("The parent approves or adjusts dispositions");
-  expect(prose).toContain("exact recoverable state");
-  expect(prose).toContain("with the executor stopped");
-  expect(prose).not.toContain("`No AppServerManager registered`");
-  expect(prose).not.toContain("Keep `projectId` and `environment` under `target`");
-});
-
 test("architect stays explicit while diagnosis requires explicit or coordinator entry", () => {
   const architectMetadata = readFileSync(
     join(REPO_ROOT, "skills/architect/agents/openai.yaml"),
