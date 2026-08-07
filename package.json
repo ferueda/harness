@@ -35,20 +35,20 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@cursor/sdk": "1.0.24",
+    "@cursor/sdk": "1.0.26",
     "@ferueda/grove": "1.4.4",
-    "@linear/sdk": "88.3.0",
-    "@openai/codex": "0.145.0",
-    "@openai/codex-sdk": "0.145.0",
+    "@linear/sdk": "89.0.0",
+    "@openai/codex": "0.146.0",
+    "@openai/codex-sdk": "0.146.0",
     "commander": "15.0.0",
-    "inngest": "4.13.0",
+    "inngest": "4.14.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@inngest/test": "1.0.0",
-    "@types/node": "26.1.1",
-    "inngest-cli": "1.38.1",
-    "lint-staged": "17.2.0",
+    "@types/node": "26.1.2",
+    "inngest-cli": "1.40.0",
+    "lint-staged": "17.3.0",
     "oxfmt": "0.61.0",
     "oxlint": "1.76.0",
     "simple-git-hooks": "2.13.1",
