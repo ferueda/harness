@@ -311,7 +311,7 @@ test("handoffs preserve accepted authority without duplicating inspectable sourc
   expect(handoff).not.toContain("### Files referenced");
 });
 
-test("architect stays explicit while diagnosis requires explicit or coordinator entry", () => {
+test("planning coordinator triages before choosing planning work", () => {
   const architectMetadata = readFileSync(
     join(REPO_ROOT, "skills/architect/agents/openai.yaml"),
     "utf8",
@@ -327,6 +327,11 @@ test("architect stays explicit while diagnosis requires explicit or coordinator 
     "utf8",
   );
   const shaping = readFileSync(join(REPO_ROOT, "skills/shape-requirements/SKILL.md"), "utf8");
+  const gate = readFileSync(
+    join(REPO_ROOT, "skills/shape-requirements/references/gate-mode.md"),
+    "utf8",
+  );
+  const createPlan = readFileSync(join(REPO_ROOT, "skills/create-plan/SKILL.md"), "utf8");
   const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
   const agentGuidance = readFileSync(join(REPO_ROOT, "AGENTS.md"), "utf8");
 
@@ -341,25 +346,59 @@ test("architect stays explicit while diagnosis requires explicit or coordinator 
   expect(normalizedProse(diagnosis)).toContain(
     "an active documented workflow routed the current request here",
   );
-  expect(coordinator).toContain(
-    "| Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |",
+  const coordinatorProse = normalizedProse(coordinator);
+  expect(coordinatorProse).toContain("Respect the user's explicit requested deliverable");
+  expect(coordinatorProse).toContain(
+    "A bounded item has one coherent, observable outcome and one acceptance boundary",
   );
+  expect(coordinatorProse).toContain(
+    "Normal repository inspection, test writing, and local technical discovery are part of implementation",
+  );
+  expect(coordinatorProse).toContain(
+    "Do not infer the route from task nouns such as bug, ticket, feature, brief, or spec",
+  );
+  expect(coordinator).toContain("implement directly");
+  expect(coordinator).toContain("| Explicit codebase or workflow audit request | `audit` |");
   expect(coordinator).toContain("`../diagnose-issue/SKILL.md`");
   expect(normalizedProse(coordinator)).toContain(
     "Do not imitate the child skill's output without loading its instructions",
   );
-  expect(routing).toContain("| Is this bug/risk real in the code? | diagnose |");
-  expect(routing).toContain("| Brief asserts current behavior | shape → diagnose |");
   expect(routing).toContain(
-    '| 3 | "JIRA-442: login 500 when email is empty" | `planning-workflow` loads `diagnose-issue` |',
+    '| 3 | "Fix the login 500 when email is empty. Repro and acceptance criteria attached." | implementation |',
+  );
+  expect(routing).toContain(
+    '| 4 | "Login sometimes returns 500; find out why" | `diagnose-issue` |',
+  );
+  expect(routing).toContain('| 12 | "Audit this repo for DX improvements" | `audit` |');
+  expect(coordinatorProse).toContain(
+    "Files, layers, questions, and implementation steps do not define scope",
   );
   expect(shaping).toContain(
     "| `diagnose-issue` | Brief or interpretation asserts current behavior",
   );
+  expect(shaping).toContain("A multi-file or cross-area change does not by itself require a plan");
   expect(shaping).toContain("`../diagnose-issue/SKILL.md`");
+  expect(normalizedProse(gate)).toContain(
+    "materially changes the requested outcome, acceptance boundary, safety",
+  );
+  expect(createPlan).toContain("## Entry Gate");
+  expect(normalizedProse(createPlan)).toContain(
+    "Cross-area reach, multiple files, or several implementation steps",
+  );
+  expect(diagnosis).toContain("| Implement directly | **Confirmed** or **Likely**");
+  expect(normalizedProse(diagnosis)).toContain("before implementation or planning");
+  expect(normalizedProse(diagnosis)).toContain(
+    "Direct implementation requests must not select it directly",
+  );
   expect(architect).toContain("read `../diagnose-issue/SKILL.md` completely");
   expect(normalizedProse(agentGuidance)).toContain(
     "generic bugs, tickets, symptoms, and code-truth questions enter through `planning-workflow`",
+  );
+  expect(normalizedProse(agentGuidance)).toContain(
+    "The coordinator may implement directly; entering it does not require a plan or diagnosis",
+  );
+  expect(normalizedProse(agentGuidance)).toContain(
+    "Evidence-backed problem definition before implementation or planning",
   );
 });
 

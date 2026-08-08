@@ -1,50 +1,18 @@
 # Planning routing
 
-Routing rules, skip table, artifact paths, and scenario fixtures. Use when choosing the first skill or validating a path.
-
-## Intake
-
-| Signal | Start with |
-|--------|------------|
-| Vague idea, no brief | `shape-requirements` **interview** |
-| Build/fix/plan now but scope or done-ness unclear | `shape-requirements` **gate** |
-| Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |
-| Explicit `$architect` / "use architect" design request | `architect` |
-| Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing plans; otherwise `review-spec` or `create-plan` |
-| Created implementation plan needs review before execution | `harness run plan-review --plan <path>` (`review-spec` fallback) |
-| Approved plan ready to execute | implementation in the current or delegated session |
-
-Routes to packaged skills are executable handoffs: load the selected sibling
-`SKILL.md` and follow it instead of reproducing its workflow inline.
-
-**shape-requirements** when the question is what the user wants. **diagnose-issue** when the question is what is true in the repo. Too vague to investigate → **gate** only (not interview), then `diagnose-issue`.
-
-Intent-aware review: when work affects product direction, architecture boundaries, docs-architecture, data/tenancy, provider contracts, public APIs, or workflow-wide behavior, validate it against the target repo's intent source (`docs/project-intent.md`, root `VISION.md`, or explicit intent docs linked from repo guidance).
-
-`architect` is manual-only. It returns an inline architecture memo, writes no
-artifacts, and should sit before `create-plan` only when the user explicitly
-asks for repo-grounded ideation, research, or solution design.
-
-## shape ↔ diagnose handoffs
-
-| Question | Skill |
-|----------|-------|
-| What should we build? | shape |
-| Is this bug/risk real in the code? | diagnose |
-| Brief asserts current behavior | shape → diagnose |
-| Diagnose found multiple directions | diagnose → shape **gate** |
-| Diagnose **Not Found** / **Invalidated** | report evidence; shape **interview** only if the goal was wrong |
+Use these skip rules and fixtures when validating `planning-workflow` routing.
+The coordinator's intake rubric is authoritative.
 
 ## When to skip steps
 
 | Skip | When |
 |------|------|
-| shape | Ticket has repro + clear acceptance criteria |
-| diagnose | Greenfield feature with no code-truth claims |
-| architect | User did not explicitly invoke it, or the design decision is already clear enough for `create-plan` |
-| plan-review / review-spec | Trivial plan or prior review on same revision |
-| create-plan | Single-file fix after gate |
-| handoff-work | Same agent continues in one session |
+| shape | The outcome and acceptance boundary are materially clear |
+| diagnose | Code truth can be confirmed through normal implementation discovery and cannot reasonably change scope or direction |
+| review-spec | No material written claim needs validation, or the same revision was already reviewed |
+| create-plan | One safe implementation pass is credible and no durable sequencing, risk, review, or handoff artifact is needed |
+| plan-review | The plan is trivial or the same revision was already reviewed |
+| handoff-work | The same agent continues in one session |
 
 ## Artifact paths
 
@@ -57,30 +25,35 @@ asks for repo-grounded ideation, research, or solution design.
 
 ## Scenario fixtures
 
-Manual checks after editing `planning-workflow` or child skills. Compare agent behavior to the expected first action and path.
+Forward-test representative routes after editing the coordinator or child
+skills. Run each prompt with fresh context and compare the first action and path.
 
 | # | User prompt | Expected first action | Expected path |
 |---|-------------|----------------------|---------------|
-| 1 | "Interview me about a caching layer for session indexing" | `shape-requirements` **interview** | brief → `review-spec` → `create-plan` → `plan-review` |
-| 2 | "Add retry logic to the API client" (no scope) | `shape-requirements` **gate** | gate → implement or `create-plan` |
-| 3 | "JIRA-442: login 500 when email is empty" | `planning-workflow` loads `diagnose-issue` | diagnose → `create-plan` → `plan-review` → implementation |
-| 4 | "Review dev/plans/foo.md against the codebase" | `harness run plan-review --plan dev/plans/foo.md` | `plan-review` when harness is available; direct `review-spec` fallback |
-| 5 | "Implement dev/plans/foo.md" | implementation | implement → `change-review-workflow` |
-| 6 | "Audit this repo for DX improvements" | `audit` | audit → `create-plan`(s) |
-| 7 | "Add logging" (nothing else) | `shape-requirements` **gate** | gate only — no implement/plan before approval |
-| 8 | Three diagnose directions; pick one | `shape-requirements` **gate** | gate → `create-plan` → `plan-review` |
-| 9 | Greenfield brief, no code-truth claims | `shape-requirements` **interview** | brief → `create-plan` → `plan-review` (skip diagnose) |
-| 10 | "Plan a new public API shape for this project" | `shape-requirements` **gate** when intent is unclear; otherwise `review-spec` or `create-plan` | confirm intent source → `create-plan` → `plan-review` validates project alignment |
-| 11 | "Use architect to design a new public API shape first" | `architect` | inline memo → user chooses whether to `create-plan` |
+| 1 | "Interview me about a caching layer for session indexing" | `shape-requirements` **interview** | interview → brief; later work re-enters triage |
+| 2 | "Add retry logic to the API client" (no behavior or boundary) | low-risk read, then `shape-requirements` **gate** if material ambiguity remains | gate → re-triage |
+| 3 | "Fix the login 500 when email is empty. Repro and acceptance criteria attached." | implementation | repository test-first fix path → `change-review-workflow` |
+| 4 | "Login sometimes returns 500; find out why" | `diagnose-issue` | diagnosis → re-triage |
+| 5 | "Review dev/plans/foo.md against the codebase" | `harness run plan-review --plan dev/plans/foo.md` | plan review |
+| 6 | "Implement dev/plans/foo.md" | implementation | implement → `change-review-workflow` |
+| 7 | "Implement this detailed checkout spec. It touches API, database, and UI but defines one accepted outcome and tests." | low-risk validation, then implementation when the claims hold | implement → `change-review-workflow` |
+| 8 | "Plan the phased migration of stored tokens with rollback and zero downtime" | `create-plan` after validating material assumptions | plan → `plan-review` |
+| 9 | Three outcomes that can ship independently | `shape-requirements` **gate** | recommend the smallest useful slice → re-triage |
+| 10 | "Plan a new public API shape for this project" | `shape-requirements` **gate** when intent is unclear; otherwise `review-spec` or `create-plan` | validate intent → plan → `plan-review` |
+| 11 | "Use architect to design a new public API shape first" | `architect` | inline memo → stop or re-triage per the original request |
+| 12 | "Audit this repo for DX improvements" | `audit` | audit → prioritized findings or plans per the audit request |
+| 13 | "The brief says the worker retries forever; implement its bounded fix" | low-risk read; `diagnose-issue` only if that claim could change direction | validate or diagnose → re-triage or implement |
 
 ### Pass criteria
 
-- Names first skill before acting.
-- Loads the selected child skill instead of imitating it inline.
-- **gate**: no commands, edits, or plans before confirmed interpretation.
-- **interview**: one question at a time until user says write up.
-- Skipped steps match the skip table above with a stated reason.
-- Artifacts at expected paths when the path produces them.
-- Created plans are minimum-sufficient for a capable executor: compact default
-  shape, decision-shaping context only, and the highest stable test seam that
-  proves each behavior.
+- States the route before starting a child skill or editing.
+- Direct-ready work creates no requirements, diagnosis, or plan artifact.
+- Ready work asks no question unless a human prerequisite blocks all useful
+  routes.
+- Loads a selected child skill instead of imitating it inline.
+- Re-triages after a planning output; planning does not make `create-plan`
+  inevitable.
+- **gate** asks only about material ambiguity after low-risk discovery.
+- **interview** asks one question at a time until the user says write up.
+- Created plans are minimum-sufficient for a capable executor and connect each
+  material outcome to focused proof.
