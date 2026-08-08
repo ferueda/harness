@@ -4,7 +4,11 @@
 
 ## Underspecified
 
-After low-risk context read, treat as **underspecified** when objective, done, scope, constraints, environment, or safety is unclear — or multiple plausible interpretations exist.
+After a low-risk context read, treat work as **underspecified** only when the
+remaining ambiguity materially changes the requested outcome, acceptance
+boundary, safety, authority, or project direction. Do not gate on details that
+repository evidence, established defaults, or normal implementation discovery
+can settle safely.
 
 ## Ask
 

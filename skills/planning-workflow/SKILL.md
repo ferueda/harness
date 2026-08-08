@@ -1,76 +1,113 @@
 ---
 name: planning-workflow
 description: >
-  Coordinate planning from intent to implementation. Route through shape-requirements,
-  diagnose-issue, review-spec, create-plan, plan-review, and handoff-work.
-  Use when starting feature work, fixing a non-trivial issue, or running the full
-  plan-build cycle.
+  Route non-trivial, unclear, or explicitly planning-oriented work to the next
+  useful action: direct implementation, requirements shaping, diagnosis, spec
+  review, plan creation or review, handoff, and close. Use when the user invokes
+  planning-workflow, asks what should happen before implementation, or repository
+  guidance requires this coordinator. Do not force a plan for clear bounded work.
 ---
 
 # Planning Workflow
 
-Chat coordinator for intent → validated plan → implementation. Not a `harness run` target.
+Chat coordinator for intent → next useful action → implementation or an approved
+planning artifact. Not a `harness run` target.
 
 `architect` is manual-only. When the user explicitly invokes it for
-repo-grounded ideation or solution design, run it before `create-plan`; do not
-auto-route generic planning prompts to it.
+repo-grounded ideation or solution design, run it before later planning or
+implementation; do not auto-route generic work to it.
 
-## 1. Route intake
+## 1. Triage intake
 
-| Signal | Start with |
-|--------|------------|
-| Vague idea, no brief | `shape-requirements` **interview** |
-| Build/fix/plan now but scope or done-ness unclear | `shape-requirements` **gate** |
-| Symptom, bug, ticket, or design concern about current code | `diagnose-issue` |
-| Explicit `$architect` / "use architect" design request | `architect` |
-| Written brief/spec/plan already exists | `harness run plan-review --plan <path>` for existing implementation plans; otherwise `review-spec` or `create-plan` (see step 2) |
+Respect the user's explicit requested deliverable. An explicit interview,
+diagnosis, architecture, audit, plan, plan review, or approved-plan
+implementation request takes its named route. Invoking `planning-workflow`
+alone requests routing; it does not require a plan.
+
+When the route is not explicit, use a small read-only repository check when it
+can settle the decision. Then apply this rubric in order:
+
+1. **Check outcome scope.** A bounded item has one coherent, observable outcome
+   and one acceptance boundary. Outcomes that can be accepted, shipped,
+   deferred, or rolled back independently need separate work or one chosen
+   slice. Files, layers, questions, and implementation steps do not define
+   scope.
+2. **Check for a human prerequisite.** Ask for input only when a missing decision
+   blocks every useful route, including investigation. Gate when the requested
+   outcome, acceptance boundary, safety constraint, or project direction is
+   materially unknown or contradictory. Do not ask what repository evidence or
+   established defaults can answer.
+3. **Choose the next useful action.** Implement directly when the bounded outcome
+   is clear enough for one safe implementation pass. Normal repository
+   inspection, test writing, and local technical discovery are part of
+   implementation. Route to pre-edit work only when investigation, validation,
+   risk reduction, or sequencing must finish before editing can safely begin.
+
+Do not infer the route from task nouns such as bug, ticket, feature, brief, or
+spec. A clear bug may go directly to its repository's test-first fix path; an
+uncertain bug may need diagnosis. A detailed cross-area spec may be direct-ready;
+a short local request may still need a product decision.
+
+| Need | Route |
+|------|-------|
+| Clear bounded outcome; one safe implementation pass | implementation in the current or delegated session |
+| Desired outcome or acceptance boundary materially unclear | `shape-requirements` **gate** |
+| Explicit interview or idea-shaping request | `shape-requirements` **interview** |
+| Current-code truth, cause, or risk could invalidate the request or change direction | `diagnose-issue` |
+| Existing brief, spec, or plan has material claims that need codebase validation | `review-spec` or `harness run plan-review --plan <path>` for an implementation plan |
+| Explicit plan request, or durable sequencing, cutover, risk control, or executor handoff is needed | `create-plan` |
+| Explicit codebase or workflow audit request | `audit` |
 | Approved plan ready to execute | implementation in the current or delegated session |
+| Explicit `$architect` / "use architect" request | `architect` |
 
-Treat the selected route as an executable handoff. Read the sibling skill's
+Direct implementation may span several files or areas. Require a clear outcome
+and acceptance boundary, no unresolved material product or architecture choice,
+one coherent direction after the initial read, and a focused proof path.
+
+Treat a selected child route as an executable handoff. Read the sibling skill's
 `SKILL.md` completely and follow it in the current workflow; resolve sibling
 paths from this skill's directory (for example,
 `../diagnose-issue/SKILL.md`). Do not imitate the child skill's output without
 loading its instructions.
 
-**diagnose-issue** when the question is what is true in the repo. **shape-requirements** when the question is what the user wants.
+**Done when:** the next useful action is chosen and either begins or waits on one
+true prerequisite.
 
-Too vague to investigate → `shape-requirements` **gate** only (not interview), then `diagnose-issue`.
+## 2. Re-triage planning outputs
 
-**Done when:** starting skill chosen.
+Do not make a plan inevitable because shaping, diagnosis, or review occurred.
+Apply the intake rubric again after each planning output.
 
-## 2. Shape and validate
+| Output | Next |
+|--------|------|
+| Gate-cleared interpretation, validated brief/spec, or confirmed diagnosis with one safe implementation pass | implement directly |
+| Ambiguous outcome or multiple directions needing a product or priority choice | `shape-requirements` **gate** |
+| Unverified current-code claim that could change direction | `diagnose-issue` or `review-spec` |
+| Explicit plan request or durable sequencing, cutover, risk control, or executor handoff need | `create-plan` |
+| Created non-trivial implementation plan | `harness run plan-review --plan <path>`; direct `review-spec` fallback when harness is unavailable or durable review artifacts are unnecessary |
+| Inline architecture memo from `architect` | stop if design was the requested deliverable; otherwise re-triage for direct implementation, validation, or planning |
 
-| Artifact | Next |
-|----------|------|
-| Brief or problem definition | `review-spec` when claims must match the codebase |
-| Inline architecture memo from `architect` | `create-plan` when the user asks to build from it; `review-spec` first when claims need validation |
-| Problem definition with multiple directions | `shape-requirements` **gate** to pick one |
-| Validated spec or brief | `create-plan` when work is multi-step, cross-area, or needs executor handoff |
-| Created non-trivial implementation plan | `harness run plan-review --plan <path>`; direct `review-spec` fallback when harness is unavailable or durable artifacts are unnecessary |
-| Small scoped change after gate | implement directly or skip to step 4 |
+Cross-area reach, multiple files, and several implementation steps are risk
+signals, not automatic reasons to create a plan. Run `review-spec` before
+`create-plan` only when the plan would depend on unverified material claims.
+When work affects product direction, architecture boundaries,
+docs-architecture, data or tenancy, provider contracts, public APIs, or
+workflow-wide behavior, validate it against the target repository's intent
+source before accepting a direction.
 
-Run `review-spec` before `create-plan` when the plan would depend on unverified assumptions.
-When a brief, problem definition, or plan affects product direction,
-architecture boundaries, docs-architecture, data/tenancy, provider contracts,
-public APIs, or workflow-wide behavior, have `review-spec` validate it against
-the target repo's intent source (`docs/project-intent.md`, root `VISION.md`, or
-explicit intent docs linked from repo guidance).
-After `create-plan`, prefer `plan-review` for non-trivial, cross-area, or
-handoff-ready plans. The planning agent owns triage: accept, adapt, or decline
-reviewer findings, edit the plan, and rerun `plan-review` after material plan
-changes. Harness does not edit plans automatically.
+After `create-plan`, prefer `plan-review` for non-trivial or handoff-ready plans.
+The planning agent owns finding triage: accept, adapt, or decline reviewer
+findings, edit the plan, and rerun review after material plan changes. Harness
+does not edit plans automatically.
 
-Plans target a capable, context-limited executor with repository access. The
-default shape is `Goal`, `Changes`, and `Verify`, with `Boundaries` only for a
-concrete scope risk. Keep facts and tests beside the change they justify,
-prefer the highest existing stable test seam, and connect each material outcome
-to an exact proof action and expected observable evidence. Keep behavioral proof
-separate from the repository gate, prove terminal state for asynchronous
-outcomes, and return material unresolved choices or unavailable proof to the
-user instead of preserving ambiguity in the plan. Review content and decisions,
-not template completeness.
+Plans target a capable, context-limited executor with repository access. Keep
+facts and tests beside the change they justify, prefer the highest existing
+stable test seam, and connect each material outcome to an exact proof action and
+expected observable evidence. Return material unresolved choices or unavailable
+proof to the user instead of preserving ambiguity in the plan.
 
-**Done when:** plan approved or direct-implement path confirmed.
+**Done when:** direct implementation is confirmed, a plan is approved, or one
+material prerequisite is returned to the user.
 
 ## 3. Hand off between agents
 
@@ -85,10 +122,10 @@ Use `handoff-work` when a different agent or session continues:
 
 ## 4. Implement
 
-| Path | Skill |
-|------|-------|
-| Approved `dev/plans/*.md` | Implement in the current or delegated session |
-| Gate-cleared small change | implement in session |
+| Authority | Path |
+|-----------|------|
+| Original clear request or validated brief/problem definition | implement directly |
+| Approved `dev/plans/*.md` | implement the plan in the current or delegated session |
 
 Before edits, reconcile three sources: repository guidance constrains the work;
 the original request or approved plan defines the intended outcome; verified
@@ -104,7 +141,7 @@ artifact, checklist, or plan rewrite.
 validation is complete, or the exact unavailable checks are reported; and the
 resulting diff is reconciled with accepted decisions. A material conflict or
 required scope expansion stops implementation and returns to planning or the
-user.
+user; planning starts by triaging the new information.
 
 ## 5. Close
 
@@ -117,4 +154,4 @@ user.
 
 ## Reference
 
-- [references/routing.md](references/routing.md) — intake, handoffs, skip rules, fixtures, pass criteria
+- [references/routing.md](references/routing.md) — skip rules, fixtures, and pass criteria

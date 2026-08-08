@@ -53,12 +53,12 @@ Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/REA
 
 | Skill | Role | Artifact |
 |-------|------|----------|
-| `planning-workflow` | Route intake → shape/validate → handoff → implement → close | — |
+| `planning-workflow` | Triage intake → direct implementation or narrow planning work → handoff → close | — |
 | `shape-requirements` | Gate or interview → confirmed interpretation or brief | `dev/briefs/YYMMDD-short-slug.md` (interview) |
-| `diagnose-issue` | Evidence-backed problem definition before planning | inline or `dev/issues/YYMMDD-short-slug.md` |
+| `diagnose-issue` | Evidence-backed problem definition before implementation or planning | inline or `dev/issues/YYMMDD-short-slug.md` |
 | `architect` | Manual-only repo-grounded design/architecture memo before planning | inline |
 | `audit` | Codebase survey → prioritized handoff plans | `dev/plans/YYMMDD-short-slug.md` |
-| `create-plan` | Scoped plan from todo/spec/issue | `dev/plans/YYMMDD-short-slug.md` |
+| `create-plan` | Durable plan for explicit requests, sequencing, cutover, risk control, review, or handoff | `dev/plans/YYMMDD-short-slug.md` |
 | `review-spec` | Validate plan/spec against codebase; proportionality check; Simplicity as a finding category | advisory findings |
 | `plan-review` | Executable one-pass `review-spec` for non-trivial implementation plans | `.harness/runs/reviews/<run-id>/` |
 | `handoff-work` | Transfer context between agents or sessions | inline handoff |
@@ -69,12 +69,13 @@ Coordinator: **`planning-workflow`**. Plans: **`dev/plans/`** + **`dev/plans/REA
 enter through `planning-workflow`. Run `diagnose-issue` only when the human
 explicitly invokes `$diagnose-issue` or an active documented workflow routes
 there. A routed handoff must load and follow the child `SKILL.md`; do not imitate
-its output inline.
+its output inline. The coordinator may implement directly; entering it does not
+require a plan or diagnosis.
 
-**Typical chain** (skip steps per `planning-workflow` routing): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `plan-review` → implementation → `handoff-work` → `change-review-workflow`.
+**Available chain** (run only the steps selected by `planning-workflow` triage): `shape-requirements` → `diagnose-issue` → `review-spec` → `create-plan` → `plan-review` → implementation → `handoff-work` → `change-review-workflow`. Clear bounded work may route directly to implementation.
 Use `architect` only when explicitly invoked for ideation/research/solution design; it writes no artifacts and hands back an inline memo.
 
-**Routing reference:** `planning-workflow/references/routing.md` — intake, skip rules, scenario fixtures, pass criteria.
+**Routing reference:** `planning-workflow/references/routing.md` — skip rules, scenario fixtures, pass criteria.
 
 `audit` is read-only on source; only `dev/plans/` files may be created or updated. Reconcile with `dev/plans/README.md` before adding plans.
 

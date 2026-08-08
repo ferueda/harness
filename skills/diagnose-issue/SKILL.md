@@ -1,6 +1,6 @@
 ---
 name: diagnose-issue
-description: Research and define codebase issues before implementation planning. Use when the human explicitly invokes `$diagnose-issue`, or when an active documented workflow such as `planning-workflow`, `shape-requirements`, or `architect` routes a current-code question here. Do not select it directly from a generic bug, ticket, symptom, or design concern; enter through `planning-workflow` instead. Do not use when the user asks for a step-by-step implementation plan, direct implementation, or code review of an existing diff.
+description: Research and define codebase issues before implementation or planning. Use when the human explicitly invokes `$diagnose-issue`, or when an active documented workflow such as `planning-workflow`, `shape-requirements`, or `architect` routes a current-code question whose truth could change direction. Direct implementation requests must not select it directly, but planning-workflow may route them here before returning to implementation. Do not use for a step-by-step implementation plan or review of an existing diff.
 ---
 
 # Diagnose Issue
@@ -16,8 +16,9 @@ Continue only when either:
 
 Name the routing workflow when using the second path. If neither condition is
 true, stop before investigation and enter `planning-workflow`, which may route
-back here. Do not treat a generic bug, ticket, symptom, or code-truth request as
-direct authority to run this skill.
+back here. Do not select it directly from a generic bug, ticket, symptom, or design concern.
+Those requests enter `planning-workflow`, which routes here only when current-code
+truth could change direction.
 
 ## Operating Rules
 
@@ -135,11 +136,17 @@ Use this format unless the user asked for something narrower:
 |------|------|
 | `shape-requirements` **gate** | **Ambiguous** status or multiple directions need a product/priority pick |
 | `architect` (manual-only) | **Confirmed** or **Likely** and the user explicitly requests solution design before planning. Pass status, mechanism, evidence, constraints, and candidate directions as hypotheses. |
-| `create-plan` | **Confirmed** or **Likely** with a recommended direction |
+| Implement directly | **Confirmed** or **Likely**, one recommended direction, and the original build or fix can proceed in one safe implementation pass |
+| `create-plan` | **Confirmed** or **Likely** and the user explicitly requested a plan or safe execution needs durable sequencing, cutover, risk control, review, or executor handoff |
 | `review-spec` | Definition will become a written plan needing codebase validation |
 | Stop | **Not Found** or **Invalidated** — report evidence; reshape only if the goal was wrong |
 
-**Done when:** problem definition delivered and next step offered.
+When `planning-workflow` routed an implementation request here, re-enter its
+intake after diagnosis and continue directly when the result is implementation-
+ready. Do not create a plan only because diagnosis occurred.
+
+**Done when:** problem definition delivered and the original request continues
+through the selected route, or the next step is offered for diagnose-only work.
 
 ## Quality Bar
 
