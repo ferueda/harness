@@ -1,6 +1,6 @@
 ---
 name: create-plan
-description: Create a scoped, code-backed implementation plan from a todo, spec, issue, review notes, or raw instructions. Use for multi-step work, cross-area changes, executor handoffs, or a reviewable plan before coding.
+description: Create a scoped, code-backed implementation plan when the user explicitly asks for one or safe execution needs durable sequencing, cutover, risk control, review, or executor handoff. Do not create a plan only because work spans several files, steps, or areas; route uncertain build and fix requests through planning-workflow first.
 ---
 
 # Create Plan
@@ -8,6 +8,20 @@ description: Create a scoped, code-backed implementation plan from a todo, spec,
 Write the minimum sufficient plan for a capable, context-limited executor with
 repository access but without prior context about the task at hand. Resolve
 implementation decisions; do not teach inspectable repository basics.
+
+## Entry Gate
+
+Continue when either:
+
+- the user explicitly requested an implementation plan; or
+- an active workflow established that safe execution needs a durable plan for
+  sequencing, cutover, risk control, review, or executor handoff.
+
+For a raw build or fix request without that authority, enter
+`planning-workflow`, which may route back here or implement directly. Cross-area
+reach, multiple files, or several implementation steps do not by themselves
+require a plan. Ask before writing only when a missing human decision materially
+changes scope or architecture.
 
 ## Principles
 

@@ -35,9 +35,9 @@ Follow the loaded reference through its **completion criterion**.
 
 | Next | When |
 |------|------|
-| Implement | Gate cleared; small repo-local change |
+| Implement | Gate cleared; one safe implementation pass is credible |
 | `diagnose-issue` | Brief or interpretation asserts current behavior, bug, or risk needing code evidence |
-| `create-plan` | Multi-step, cross-area, or phased |
+| `create-plan` | User explicitly requested a plan, or safe execution needs durable sequencing, cutover, risk control, review, or executor handoff |
 | `review-spec` | Brief or plan needs codebase validation |
 | `planning-workflow` | Unsure which planning step comes next |
 | Stop | User only wanted confirmation or brief |
@@ -49,6 +49,9 @@ Resolve sibling paths from this skill's directory (for example,
 output inline.
 
 After **gate** approval, continue with the user's original build, fix, or plan request. For **interview** mode or clarify-only requests, offer the natural next step and wait.
+
+A multi-file or cross-area change does not by itself require a plan. Re-enter
+`planning-workflow` triage when the correct path is still unclear.
 
 **Done when:** original requested work continues, or next step stated for interview/clarify-only.
 
