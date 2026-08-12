@@ -13,11 +13,9 @@ const STEP_AGENTS = {
 } satisfies Record<PlanReviewStepId, ReviewAgentName>;
 
 export function run(ctx: WorkflowContext) {
-  const reviewSteps = PLAN_REVIEW_STEPS.map(
-    (id): ReviewStep => ({
-      agentName: STEP_AGENTS[id],
-    }),
-  );
+  const reviewSteps = PLAN_REVIEW_STEPS.map((id): ReviewStep => ({
+    agentName: STEP_AGENTS[id],
+  }));
   const runId = ctx.eventSink ? requiredRunId(ctx) : undefined;
   ctx.eventSink?.({
     type: "run:start",
