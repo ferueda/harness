@@ -238,6 +238,7 @@ function fakeRepository(workspace: string) {
         branch: input.branch,
       };
     }),
+    recoverRun: vi.fn<RepositoryService["recoverRun"]>(async () => null),
     inspectChanges: vi.fn<RepositoryService["inspectChanges"]>(async () => {
       state.order.push("inspect");
       return structuredClone(state.pendingChanges);

@@ -8,6 +8,7 @@ import {
   LinearIssueRevisionObservedEvent,
 } from "./events/linear-revision-events.ts";
 import { createWorkRequestedEvent } from "./events/work-events.ts";
+import { implementationSourceFingerprint } from "./implementation-authority.ts";
 import {
   classifyLinearReadiness,
   LinearReadinessConfigSchema,
@@ -34,6 +35,7 @@ export type LinearReadinessRouterConfig = Readonly<{
 type ObservedReadiness = Readonly<{
   issueId: string;
   issueIdentifier: string;
+  context: LinearIssueContext;
   decision: LinearReadinessDecision;
 }>;
 
@@ -129,12 +131,19 @@ export function createLinearReadinessRouter(input: {
       }
 
       const route = observed.decision.route;
-      const request = createWorkRequestedEvent(route, {
+      const commonData = {
         issueId: ready.issueId,
         issueIdentifier: ready.issueIdentifier,
         causationEventId: event.id,
         snapshotGeneration: ready.decision.snapshotGeneration,
-      });
+      };
+      const request =
+        route === "implement"
+          ? createWorkRequestedEvent(route, {
+              ...commonData,
+              sourceFingerprint: implementationSourceFingerprint(ready.context, config.readiness),
+            })
+          : createWorkRequestedEvent(route, commonData);
       await step.sendEvent(LINEAR_READINESS_SEND_STEP_ID, request);
 
       return {
@@ -174,6 +183,7 @@ async function loadReadiness(
     observed: {
       issueId: context.id,
       issueIdentifier: context.identifier,
+      context,
       decision: classifyLinearReadiness({ context, config }),
     },
   };

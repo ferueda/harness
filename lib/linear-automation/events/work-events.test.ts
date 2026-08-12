@@ -9,6 +9,7 @@ import {
   WORK_REQUEST_EVENT_VERSION,
   WorkRequestDataSchema,
   workRequestEventId,
+  type ImplementationWorkRequestData,
   type WorkRequestData,
 } from "./work-events.ts";
 
@@ -17,6 +18,11 @@ const data: WorkRequestData = {
   issueIdentifier: "FER-225",
   causationEventId: "linear-issue-revision-v1:revision-1",
   snapshotGeneration: "a".repeat(64),
+};
+
+const implementationData: ImplementationWorkRequestData = {
+  ...data,
+  sourceFingerprint: "b".repeat(64),
 };
 
 describe("provider-neutral work events", () => {
@@ -45,12 +51,20 @@ describe("provider-neutral work events", () => {
   it.each(["triage", "spec", "implement"] as const)(
     "creates a deterministic namespaced %s request",
     (route) => {
-      const event = createWorkRequestedEvent(route, data);
+      const expectedData = route === "implement" ? implementationData : data;
+      const event =
+        route === "implement"
+          ? createWorkRequestedEvent(route, implementationData)
+          : createWorkRequestedEvent(route, data);
+      const expectedId =
+        route === "implement"
+          ? workRequestEventId(route, implementationData)
+          : workRequestEventId(route, data);
 
       expect(event).toEqual({
         name: WORK_REQUEST_EVENT_NAMES[route],
-        data,
-        id: workRequestEventId(route, data),
+        data: expectedData,
+        id: expectedId,
         ts: undefined,
         v: WORK_REQUEST_EVENT_VERSION,
         meta: undefined,
@@ -63,7 +77,7 @@ describe("provider-neutral work events", () => {
   it("changes identity for a different route, issue, or readiness generation", () => {
     const original = workRequestEventId("spec", data);
 
-    expect(workRequestEventId("implement", data)).not.toBe(original);
+    expect(workRequestEventId("implement", implementationData)).not.toBe(original);
     expect(workRequestEventId("spec", { ...data, issueId: "issue-2" })).not.toBe(original);
     expect(
       workRequestEventId("spec", {
@@ -73,6 +87,9 @@ describe("provider-neutral work events", () => {
     ).not.toBe(original);
     expect(workRequestEventId("spec", { ...data, causationEventId: "later-delivery" })).toBe(
       original,
+    );
+    expect(workRequestEventId("implement", implementationData)).not.toBe(
+      workRequestEventId("implement", { ...implementationData, sourceFingerprint: "c".repeat(64) }),
     );
   });
 

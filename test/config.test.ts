@@ -276,6 +276,43 @@ test("resolveLinearAutomationSettings requires and preserves the Spec execution 
   });
 });
 
+test("resolveLinearAutomationSettings keeps implementation profiles independent", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
+  writeHarnessJson(workspace, {
+    repositoryRuns: {
+      remote: "https://github.com/example/project.git",
+      setup: { command: ["pnpm", "install"], timeoutMs: 600_000 },
+    },
+    linearAutomation: {
+      ...LINEAR_AUTOMATION,
+      implementation: {
+        implementer: {
+          agent: "codex",
+          model: "gpt-5.6-sol",
+          modelReasoningEffort: "high",
+          maxRuntimeMs: 1_800_000,
+        },
+        reviewers: {
+          agent: "codex",
+          model: "gpt-5.6-terra",
+          modelReasoningEffort: "medium",
+          maxRuntimeMs: 600_000,
+        },
+      },
+    },
+  });
+
+  const implementation = resolveLinearAutomationSettings({ workspace }, "/").implementation;
+  expect(implementation).toMatchObject({
+    implementer: { model: "gpt-5.6-sol", modelReasoningEffort: "high" },
+    reviewers: { model: "gpt-5.6-terra", modelReasoningEffort: "medium" },
+    baseRef: "main",
+  });
+  expect(Object.isFrozen(implementation)).toBe(true);
+  expect(Object.isFrozen(implementation?.implementer)).toBe(true);
+  expect(Object.isFrozen(implementation?.reviewers)).toBe(true);
+});
+
 test("Spec profile stays optional and fails fast without its repository config", () => {
   const triageOnly = mkdtempSync(join(tmpdir(), "harness-linear-automation-"));
   writeHarnessJson(triageOnly, { linearAutomation: LINEAR_AUTOMATION });

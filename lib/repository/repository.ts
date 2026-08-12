@@ -134,6 +134,48 @@ export function createRepository(options: CreateRepositoryOptions): RepositorySe
     }
   }
 
+  async function recoverRun(input: { id: string }): Promise<RepositoryRun | null> {
+    try {
+      const grove = await getGrove();
+      const lease = await grove.inspect(input.id.trim());
+      if (!lease) return null;
+      if (
+        lease.state !== "leased" &&
+        lease.state !== "releasing" &&
+        lease.state !== "quarantined"
+      ) {
+        throw new RepositoryError(
+          `Repository run ${input.id} cannot be recovered from Grove state ${lease.state}.`,
+          "run_conflict",
+        );
+      }
+      // The metadata is the run identity recorded at acquisition time. Grove's
+      // top-level fields may describe its current checkout instead.
+      const baseRef = lease.metadata?.[METADATA_KEYS.baseRef] ?? lease.baseRef;
+      const baseSha = lease.metadata?.[METADATA_KEYS.baseSha] ?? lease.baseSha;
+      const branch = lease.metadata?.[METADATA_KEYS.branch] ?? lease.branch;
+      if (!baseRef || !baseSha || !branch) {
+        throw new RepositoryError(
+          `Repository run ${input.id} has incomplete Grove identity metadata.`,
+          "run_conflict",
+        );
+      }
+      const run = Object.freeze({
+        version: RUN_VERSION,
+        id: lease.leaseId,
+        workspace: lease.path,
+        remote: config.remote,
+        baseRef,
+        baseSha,
+        branch,
+      }) satisfies RepositoryRun;
+      assertRunLease(lease, run, controllerWorkspace, poolDirectory);
+      return run;
+    } catch (error) {
+      throw normalizeRepositoryError("inspect", error);
+    }
+  }
+
   async function inspectChanges(run: RepositoryRun) {
     try {
       const grove = await getGrove();
@@ -266,6 +308,7 @@ export function createRepository(options: CreateRepositoryOptions): RepositorySe
   return Object.freeze({
     resolveBase,
     prepareRun,
+    recoverRun,
     inspectChanges,
     checkpointRun,
     openCheckpoint,

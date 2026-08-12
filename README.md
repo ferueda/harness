@@ -78,10 +78,12 @@ Linear, and sends issues that need classification to the independent triage
 operation. The triage result is written back through the standalone Linear
 module. When a target enables the optional Spec profile, Open + Spec + Agent
 Ready issues run in isolated repository workspaces and publish one review pull
-request before Linear moves to Needs Review.
+request before Linear moves to Needs Review. When a target enables the optional
+Implement profile, Open + Implement + Agent Ready issues run the bounded
+implementation/review cycle and publish the selected checkpoint.
 
 The worker uses stable workflow, action, and Agent Ready label IDs plus its
-triage and optional Spec profiles from the target repository's
+triage and optional Spec/Implement profiles from the target repository's
 `linearAutomation` configuration. Secrets stay in the environment. See the
 [Linear automation guide](docs/contributing/linear-automation.md) for the
 Compose setup, health checks, and smoke tests.
@@ -109,8 +111,8 @@ Run `harness models` for the supported model catalog. The independent
 
 Cursor SDK runs require `CURSOR_API_KEY`. Codex follows local `codex login`
 authentication or `CODEX_API_KEY`. The Linear worker requires
-`LINEAR_API_KEY`; enabled Spec publication also requires worker-only GitHub and
-commit-author environment values.
+`LINEAR_API_KEY`; enabled Spec or Implementation work also requires worker-only
+GitHub and commit-author environment values.
 
 See the [setup manifest](docs/contributing/setup-manifest.md) for configuration,
 generated paths, and provider details.

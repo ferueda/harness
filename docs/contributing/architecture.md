@@ -57,11 +57,12 @@ decision and structured result. Service modules communicate with an external
 system without knowing which operation or delivery host called them. Adding a
 new operation does not require adding a station to a shared lifecycle.
 
-The current worker registers three independent functions: polling, readiness
-routing, and triage. The composition's enabled routes also choose the states the
-poller observes: Backlog is always observed, and Open is added only when a Spec
-or Implement consumer is registered. Spec and implementation requests are typed
-but remain disabled until they have their own consumers.
+The current worker registers polling, readiness routing, and triage, plus each
+repository-backed consumer enabled by configuration. The composition's enabled
+routes also choose the states the poller observes: Backlog is always observed,
+and Open is added only when a Spec or Implement consumer is registered. Spec and
+implementation requests are typed and independently consumed; either route can
+remain disabled without changing the others.
 
 ### Automation construction contract
 

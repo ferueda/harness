@@ -255,6 +255,24 @@ test("setup failure keeps the same lease and retries with a secret-free environm
   });
 });
 
+test("recovers a leased run without refreshing its moving base or rerunning setup", async () => {
+  const fixture = createFixture();
+  const repository = createTestRepository(fixture);
+  const base = await repository.resolveBase({ baseRef: "main" });
+  const run = await repository.prepareRun({
+    id: "run-recover",
+    base,
+    branch: "codex/recover",
+  });
+  const setupCalls = readSetup(run).calls;
+
+  advanceRemote(fixture);
+
+  await expect(repository.recoverRun({ id: run.id })).resolves.toEqual(run);
+  expect(readSetup(run).calls).toBe(setupCalls);
+  await expect(repository.cleanupRun(run)).resolves.toEqual({ status: "released" });
+});
+
 test("interrupted Grove acquire and cleanup resume through matching repair intents", async () => {
   const fixture = createFixture();
   const repository = createTestRepository(fixture);
