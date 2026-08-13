@@ -24,6 +24,11 @@ import { createLinearReadinessRouter } from "./readiness-router.ts";
 import type { LinearReadinessConfig } from "./readiness.ts";
 import { createLinearTriageFunction, type LinearTriageService } from "./triage-consumer.ts";
 import { createLinearSpecFunction, type LinearSpecService } from "./spec-consumer.ts";
+import {
+  createLinearImplementationFunction,
+  type ImplementationReviewRunner,
+} from "./implementation-consumer.ts";
+import { implementationReviewAuthority } from "./implementation-presentation.ts";
 import { createLinear, type LinearService } from "../linear/client.ts";
 import { createGitHubPublication } from "../github/publication.ts";
 import { parseGitHubRemote } from "../github/remote.ts";
@@ -31,6 +36,8 @@ import type { GitHubPublicationService } from "../github/types.ts";
 import { createRepository } from "../repository/repository.ts";
 import type { RepositoryService } from "../repository/types.ts";
 import { createAgentProvider } from "../../providers/registry.ts";
+import { cleanupOrphanedRunDir, createWorkflowContext } from "../review/runtime.ts";
+import { run as runChangeReview } from "../../workflows/change-review.workflow.ts";
 
 export const LINEAR_AUTOMATION_APP_ID = "harness-linear-automation";
 export const LINEAR_AUTOMATION_MAX_WORKER_CONCURRENCY = 1;
@@ -109,7 +116,7 @@ export type LinearAutomationWorkerEnvironment = Readonly<{
   port: number;
   instanceId: string;
   appVersion?: string;
-  spec?: Readonly<{
+  repository?: Readonly<{
     repositoryRoot: string;
     githubToken: string;
   }>;
@@ -130,29 +137,31 @@ export type LinearAutomationWorker = Readonly<{
 
 export function parseLinearAutomationWorkerEnvironment(
   environment: NodeJS.ProcessEnv,
-  options: Readonly<{ specEnabled?: boolean }> = {},
+  options: Readonly<{ repositoryEnabled?: boolean }> = {},
 ): LinearAutomationWorkerEnvironment {
   const parsed = WorkerEnvironmentSchema.parse(environment);
   const port = Number(parsed.HARNESS_WORKER_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("HARNESS_WORKER_PORT must be an integer from 1 to 65535.");
   }
-  let spec: LinearAutomationWorkerEnvironment["spec"];
-  if (options.specEnabled) {
+  let repository: LinearAutomationWorkerEnvironment["repository"];
+  if (options.repositoryEnabled) {
     const required = [
       ["HARNESS_REPOSITORY_ROOT", parsed.HARNESS_REPOSITORY_ROOT],
       ["GITHUB_TOKEN", parsed.GITHUB_TOKEN],
     ] as const;
     const missing = required.find(([, value]) => !value);
     if (missing) {
-      throw new Error(`${missing[0]} is required when linearAutomation.spec is enabled.`);
+      throw new Error(
+        `${missing[0]} is required when a repository-backed Linear route is enabled.`,
+      );
     }
     if (!isAbsolute(parsed.HARNESS_REPOSITORY_ROOT ?? "")) {
       throw new Error(
-        "HARNESS_REPOSITORY_ROOT must be an absolute path when linearAutomation.spec is enabled.",
+        "HARNESS_REPOSITORY_ROOT must be an absolute path when a repository-backed Linear route is enabled.",
       );
     }
-    spec = Object.freeze({
+    repository = Object.freeze({
       repositoryRoot: parsed.HARNESS_REPOSITORY_ROOT as string,
       githubToken: parsed.GITHUB_TOKEN as string,
     });
@@ -168,7 +177,7 @@ export function parseLinearAutomationWorkerEnvironment(
     port,
     instanceId: parsed.HARNESS_WORKER_INSTANCE_ID ?? hostname(),
     ...(parsed.HARNESS_APP_VERSION ? { appVersion: parsed.HARNESS_APP_VERSION } : {}),
-    ...(spec ? { spec } : {}),
+    ...(repository ? { repository } : {}),
   });
 }
 
@@ -222,12 +231,15 @@ export function createLinearAutomationFunctions(input: {
   triageAgent: Agent;
   specAuthorAgent?: Agent;
   specReviewAgent?: Agent;
+  implementationAgent?: Agent;
+  implementationReview?: ImplementationReviewRunner;
   settings: LinearAutomationSettings;
   repository?: RepositoryService;
   github?: GitHubPublicationService;
   githubRepository?: ReturnType<typeof parseGitHubRemote>;
 }): LinearAutomationFunctions {
   const specEnabled = Boolean(input.settings.spec);
+  const implementationEnabled = Boolean(input.settings.implementation);
   if (
     specEnabled &&
     (!input.specAuthorAgent ||
@@ -240,12 +252,24 @@ export function createLinearAutomationFunctions(input: {
       "The enabled Linear Spec route requires its author and review agents, repository, and GitHub publication services.",
     );
   }
+  if (
+    implementationEnabled &&
+    (!input.implementationAgent ||
+      !input.implementationReview ||
+      !input.repository ||
+      !input.github ||
+      !input.githubRepository)
+  ) {
+    throw new Error(
+      "The enabled Linear Implementation route requires its implementer and review agents, repository, and GitHub publication services.",
+    );
+  }
   const readiness = Object.freeze({
     ...input.settings.readiness,
     enabledRoutes: Object.freeze({
       triage: true,
       spec: specEnabled,
-      implement: false,
+      implement: implementationEnabled,
     }),
   });
   const poller = createLinearIssuePoller({
@@ -302,10 +326,42 @@ export function createLinearAutomationFunctions(input: {
           },
         })
       : null;
+  const implementation =
+    input.settings.implementation &&
+    input.implementationAgent &&
+    input.implementationReview &&
+    input.repository &&
+    input.github &&
+    input.githubRepository
+      ? createLinearImplementationFunction({
+          client: input.client,
+          linear: input.linear,
+          implementerAgent: input.implementationAgent,
+          review: input.implementationReview,
+          repository: input.repository,
+          github: input.github,
+          config: {
+            readiness,
+            baseRef: input.settings.implementation.baseRef,
+            execution: {
+              model: input.settings.implementation.implementer.model,
+              modelReasoningEffort: input.settings.implementation.implementer.modelReasoningEffort,
+              maxRuntimeMs: input.settings.implementation.implementer.maxRuntimeMs,
+            },
+            githubRepository: input.githubRepository,
+          },
+        })
+      : null;
 
   return Object.freeze({
     client: input.client,
-    functions: Object.freeze([poller, router, triage, ...(spec ? [spec] : [])]),
+    functions: Object.freeze([
+      poller,
+      router,
+      triage,
+      ...(spec ? [spec] : []),
+      ...(implementation ? [implementation] : []),
+    ]),
     readiness,
   });
 }
@@ -319,6 +375,38 @@ export function linearAutomationObservedStateIds(
       ? { open: readiness.stateIds.open }
       : {}),
   });
+}
+
+function createImplementationReviewRunner(input: {
+  profile: NonNullable<LinearAutomationSettings["implementation"]>["reviewers"];
+  codexPathOverride?: string;
+  codexEnvironment: Readonly<Record<string, string>>;
+}): ImplementationReviewRunner {
+  return async (reviewInput) => {
+    const authority = implementationReviewAuthority(reviewInput.source);
+    const context = createWorkflowContext({
+      workspace: reviewInput.workspace,
+      baseRef: reviewInput.baseSha,
+      headRef: reviewInput.revision,
+      ...(authority.planPath ? { planPath: authority.planPath } : {}),
+      ...(authority.handoffText ? { handoffText: authority.handoffText } : {}),
+      model: input.profile.model,
+      modelReasoningEffort: input.profile.modelReasoningEffort,
+      maxRuntimeMs: input.profile.maxRuntimeMs,
+      agentProviderFactory: () =>
+        createAgentProvider({
+          provider: input.profile.agent,
+          codexPathOverride: input.codexPathOverride,
+          codexEnvironment: input.codexEnvironment,
+        }),
+    });
+    try {
+      return await runChangeReview(context);
+    } catch (error) {
+      cleanupOrphanedRunDir(context.runDir);
+      throw error;
+    }
+  };
 }
 
 export async function startLinearAutomationWorker(input: {
@@ -370,9 +458,10 @@ export async function runLinearAutomationWorker(input: {
   const processEnvironment = input.environment ?? process.env;
   const baseEnvironment = parseLinearAutomationWorkerEnvironment(processEnvironment);
   const settings = resolveLinearAutomationSettings({ workspace: input.workspace });
-  const environment = settings.spec
-    ? parseLinearAutomationWorkerEnvironment(processEnvironment, { specEnabled: true })
-    : baseEnvironment;
+  const environment =
+    settings.spec || settings.implementation
+      ? parseLinearAutomationWorkerEnvironment(processEnvironment, { repositoryEnabled: true })
+      : baseEnvironment;
   await verifyLinearAutomationCodexAuthentication({
     environment: processEnvironment,
     codexExecutable: settings.codexPathOverride,
@@ -409,22 +498,37 @@ export async function runLinearAutomationWorker(input: {
         codexEnvironment,
       })
     : undefined;
+  const implementationAgent = settings.implementation
+    ? createAgentProvider({
+        provider: settings.implementation.implementer.agent,
+        codexPathOverride: settings.codexPathOverride,
+        codexEnvironment,
+      })
+    : undefined;
+  const implementationReview = settings.implementation
+    ? createImplementationReviewRunner({
+        profile: settings.implementation.reviewers,
+        codexPathOverride: settings.codexPathOverride,
+        codexEnvironment,
+      })
+    : undefined;
   let repository: RepositoryService | undefined;
   let github: GitHubPublicationService | undefined;
   let githubRepository: ReturnType<typeof parseGitHubRemote> | undefined;
-  if (settings.spec && environment.spec) {
-    githubRepository = linearAutomationGitHubRepository(settings.spec.repositoryRuns.remote);
+  const repositorySettings = settings.spec ?? settings.implementation;
+  if (repositorySettings && environment.repository) {
+    githubRepository = linearAutomationGitHubRepository(repositorySettings.repositoryRuns.remote);
     const paths = linearAutomationRepositoryPaths({
-      repositoryRoot: environment.spec.repositoryRoot,
-      remote: settings.spec.repositoryRuns.remote,
+      repositoryRoot: environment.repository.repositoryRoot,
+      remote: repositorySettings.repositoryRuns.remote,
     });
     repository = createRepository({
-      ...settings.spec.repositoryRuns,
+      ...repositorySettings.repositoryRuns,
       controllerWorkspace: paths.controllerWorkspace,
       poolDirectory: paths.poolDirectory,
     });
     github = createGitHubPublication({
-      token: environment.spec.githubToken,
+      token: environment.repository.githubToken,
     });
   }
   const app = createLinearAutomationFunctions({
@@ -433,6 +537,8 @@ export async function runLinearAutomationWorker(input: {
     triageAgent,
     specAuthorAgent,
     specReviewAgent,
+    implementationAgent,
+    implementationReview,
     settings,
     repository,
     github,

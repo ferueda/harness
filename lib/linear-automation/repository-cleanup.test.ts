@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RepositoryRun, RepositoryService } from "../repository/types.ts";
-import { cleanupRepositoryRun, SpecCleanupDiagnosticError } from "./spec-cleanup.ts";
+import {
+  cleanupRepositoryRun,
+  isRepositoryCleanupDiagnosticError,
+  RepositoryCleanupDiagnosticError,
+} from "./repository-cleanup.ts";
 
 const run: RepositoryRun = {
   version: 1,
@@ -79,8 +83,18 @@ describe("cleanupRepositoryRun", () => {
           throw new Error("Linear unavailable");
         },
       }),
-    ).rejects.toThrow(SpecCleanupDiagnosticError);
+    ).rejects.toThrow(RepositoryCleanupDiagnosticError);
 
     expect(steps).toEqual(["cleanup", "diagnostic"]);
+  });
+
+  it("preserves the cleanup discriminator across serialization", () => {
+    const error = new RepositoryCleanupDiagnosticError(
+      "cleanup and diagnostic failed",
+      new Error(),
+    );
+    const roundTrip: unknown = JSON.parse(JSON.stringify(error));
+
+    expect(isRepositoryCleanupDiagnosticError(roundTrip)).toBe(true);
   });
 });

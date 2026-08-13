@@ -24,9 +24,11 @@ label, and Agent Ready permission IDs from the target repository's
 `linearAutomation` section. Triage requires `triage.agent: "codex"` and accepts
 a timeout plus optional model and reasoning overrides. The optional
 `linearAutomation.spec` profile enables Spec work and requires its model,
-reasoning effort, and timeout explicitly. It also requires `repositoryRuns`,
-which defines the credential-free GitHub remote, pool size, and idempotent
-setup command used by write-capable consumers. Unsupported providers,
+reasoning effort, and timeout explicitly. `linearAutomation.implementation`
+enables Implementation work and requires separate implementer and reviewer
+profiles. Either profile requires `repositoryRuns`, which defines the
+credential-free GitHub remote, pool size, and idempotent setup command used by
+write-capable consumers. Unsupported providers,
 incomplete execution profiles, invalid repository setup, and unusable
 publication remotes fail during startup configuration loading, before Connect
 accepts work. These sections do not contain secrets.
@@ -40,7 +42,7 @@ keys or a base URL. `HARNESS_WORKER_HOST` and `HARNESS_WORKER_PORT` default to
 optional deployment metadata. See [Linear automation](./linear-automation.md)
 for the self-hosted deployment commands.
 
-When Spec is enabled, the worker also requires an absolute
+When Spec or Implementation is enabled, the worker also requires an absolute
 `HARNESS_REPOSITORY_ROOT` and `GITHUB_TOKEN`. They remain worker-only and are
 not forwarded to the Codex agent process.
 

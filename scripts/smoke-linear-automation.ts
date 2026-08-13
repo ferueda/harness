@@ -439,6 +439,7 @@ const repository: RepositoryService = {
     };
     return repositoryRun;
   },
+  recoverRun: async () => repositoryRun ?? null,
   inspectChanges: async () => structuredClone(repositoryPendingChanges),
   checkpointRun: async (input) => {
     assert(

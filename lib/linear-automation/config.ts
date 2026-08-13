@@ -26,6 +26,22 @@ export type LinearAutomationSettings = Readonly<{
     baseRef: string;
     repositoryRuns: RepositoryRunsConfig;
   }>;
+  implementation?: Readonly<{
+    implementer: Readonly<{
+      agent: "codex";
+      model: string;
+      modelReasoningEffort: AgentReasoningEffort;
+      maxRuntimeMs: number;
+    }>;
+    reviewers: Readonly<{
+      agent: "codex";
+      model: string;
+      modelReasoningEffort: AgentReasoningEffort;
+      maxRuntimeMs: number;
+    }>;
+    baseRef: string;
+    repositoryRuns: RepositoryRunsConfig;
+  }>;
 }>;
 
 export function resolveLinearAutomationSettings(
@@ -47,10 +63,8 @@ export function resolveLinearAutomationSettingsFromSnapshot(
       "linearAutomation is required in harness.json for the Linear worker. Configure readiness IDs and triage.",
     );
   }
-  if (automation.spec && !config.repositoryRuns) {
-    throw new Error(
-      "repositoryRuns is required when linearAutomation.spec enables the Spec consumer.",
-    );
+  if ((automation.spec || automation.implementation) && !config.repositoryRuns) {
+    throw new Error("repositoryRuns is required when a repository-backed Linear route is enabled.");
   }
 
   const agentConfig = config.agents?.codex ?? {};
@@ -106,11 +120,27 @@ function freezeLinearAutomationSettings(input: {
           }),
         })
       : undefined;
+  const implementation =
+    input.automation.implementation && input.repositoryRuns
+      ? Object.freeze({
+          implementer: Object.freeze({ ...input.automation.implementation.implementer }),
+          reviewers: Object.freeze({ ...input.automation.implementation.reviewers }),
+          baseRef: input.baseRef,
+          repositoryRuns: Object.freeze({
+            ...input.repositoryRuns,
+            setup: Object.freeze({
+              ...input.repositoryRuns.setup,
+              command: [...input.repositoryRuns.setup.command],
+            }),
+          }),
+        })
+      : undefined;
   return Object.freeze({
     workspace: input.workspace,
     ...(input.codexPathOverride ? { codexPathOverride: input.codexPathOverride } : {}),
     readiness,
     triage,
     ...(spec ? { spec } : {}),
+    ...(implementation ? { implementation } : {}),
   });
 }
