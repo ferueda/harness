@@ -75,11 +75,9 @@ export function run(
 ): Promise<ChangeReviewResult> {
   const identity = requireChangeReviewIdentity(ctx);
   const selectedSteps = normalizeChangeReviewSteps(options.steps);
-  const reviewSteps = selectedSteps.map(
-    (id): ReviewStep => ({
-      agentName: STEP_AGENTS[id],
-    }),
-  );
+  const reviewSteps = selectedSteps.map((id): ReviewStep => ({
+    agentName: STEP_AGENTS[id],
+  }));
   ctx.eventSink?.({
     type: "run:start",
     runId: identity.runId,

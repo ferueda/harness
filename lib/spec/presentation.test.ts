@@ -340,14 +340,11 @@ describe("Spec presentation", () => {
   });
 
   it("marks an exhausted Spec unapproved and preserves every bounded finding ID", () => {
-    const findings = Array.from(
-      { length: 12 },
-      (_, index): SpecReviewFinding => ({
-        ...finding,
-        id: `spec-review-finding-${index.toString(16).padStart(64, "0")}`,
-        problem: `${index}: ${"p".repeat(2_000)}`,
-      }),
-    );
+    const findings = Array.from({ length: 12 }, (_, index): SpecReviewFinding => ({
+      ...finding,
+      id: `spec-review-finding-${index.toString(16).padStart(64, "0")}`,
+      problem: `${index}: ${"p".repeat(2_000)}`,
+    }));
     const decision: SpecReviewDecision = {
       ...changesRequestedReview,
       findings,
