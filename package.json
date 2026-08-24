@@ -37,7 +37,7 @@
   "dependencies": {
     "@cursor/sdk": "1.0.28",
     "@ferueda/grove": "1.4.4",
-    "@linear/sdk": "90.0.0",
+    "@linear/sdk": "91.0.0",
     "@openai/codex": "0.147.0",
     "@openai/codex-sdk": "0.147.0",
     "commander": "15.0.0",
