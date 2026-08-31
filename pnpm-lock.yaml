@@ -15,8 +15,8 @@ importers:
         specifier: 1.4.4
         version: 1.4.4
       '@linear/sdk':
-        specifier: 91.0.0
-        version: 91.0.0(graphql@17.0.2)
+        specifier: 92.0.0
+        version: 92.0.0(graphql@17.0.2)
       '@openai/codex':
         specifier: 0.149.0
         version: 0.149.0
@@ -176,8 +176,8 @@ packages:
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
 
-  '@linear/sdk@91.0.0':
-    resolution: {integrity: sha512-H0pa8J6D4OSL89wZK7xtM7g/JcOjGWfZgeLyvl0RcUfY+arvWVimjMz+XVRxmu2yMLov0eeuRB1z0qIWIrCd9w==}
+  '@linear/sdk@92.0.0':
+    resolution: {integrity: sha512-MDqvUcgkvVNg//ivlJx2a4d9bjELrMo2h5qK0xc6hYABTV98oAOsZkepd9RV8n5j1rqfA5vJsQNeIC5en40TkQ==}
     engines: {node: '>=18.x'}
 
   '@napi-rs/wasm-runtime@1.2.3':
@@ -2301,7 +2301,7 @@ snapshots:
 
   '@js-sdsl/ordered-map@4.4.2': {}
 
-  '@linear/sdk@91.0.0(graphql@17.0.2)':
+  '@linear/sdk@92.0.0(graphql@17.0.2)':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@17.0.2)
     transitivePeerDependencies:
