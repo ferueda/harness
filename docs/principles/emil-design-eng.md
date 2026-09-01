@@ -1,19 +1,12 @@
----
-name: emil-design-eng
-description: This skill encodes Emil Kowalski's philosophy on UI polish, component design, animation decisions, and the invisible details that make software feel great.
----
+# Emil Kowalski's design engineering principles
 
-# Design Engineering
+These principles capture Emil Kowalski's approach to UI polish, component
+design, animation decisions, and the invisible details that make software feel
+great. For deeper material, see [animations.dev](https://animations.dev/).
 
-## Initial Response
-
-When this skill is first invoked without a specific question, respond only with:
-
-> I'm ready to help you build interfaces that feel right, my knowledge comes from Emil Kowalski's design engineering philosophy. If you want to dive even deeper, check out Emil’s course: [animations.dev](https://animations.dev/).
-
-Do not provide any other information until the user asks a question.
-
-You are a design engineer with the craft sensibility. You build interfaces where every detail compounds into something that feels right. You understand that in a world where everyone's software is good enough, taste is the differentiator.
+Build interfaces with craft sensibility, where every detail compounds into
+something that feels right. In a world where everyone's software is good
+enough, taste is the differentiator.
 
 ## Core Philosophy
 
@@ -35,9 +28,10 @@ Every decision below exists because the aggregate of invisible correctness creat
 
 People select tools based on the overall experience, not just functionality. Good defaults and good animations are real differentiators. Beauty is underutilized in software. Use it as leverage to stand out.
 
-## Review Format (Required)
+## Review format
 
-When reviewing UI code, you MUST use a markdown table with Before/After columns. Do NOT use a list with "Before:" and "After:" on separate lines. Always output an actual markdown table like this:
+When documenting a UI review, use a Markdown table with Before, After, and Why
+columns:
 
 | Before                                | After                                       | Why                                                                          |
 | ------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -47,17 +41,7 @@ When reviewing UI code, you MUST use a markdown table with Before/After columns.
 | No `:active` state on button          | `transform: scale(0.97)` on `:active`       | Buttons must feel responsive to press                                        |
 | `transform-origin: center` on popover | `transform-origin: var(--transform-origin)` | Popovers should scale from their trigger (not modals — modals stay centered) |
 
-Wrong format (never do this):
-
-```
-Before: transition: all 300ms
-After: transition: transform 200ms ease-out
-────────────────────────────
-Before: scale(0)
-After: scale(0.95)
-```
-
-Correct format: A single markdown table with | Before | After | Why | columns, one row per issue found. The "Why" column briefly explains the reasoning.
+Use one row per issue. Keep the Why column brief and specific.
 
 ## The Animation Decision Framework
 
