@@ -42,6 +42,7 @@ Keep this repo standalone. No references, examples, paths, fixtures, or docs tie
 ## Contributor docs
 
 - project intent -> `docs/project-intent.md`
+- interface implementation, motion, and polish -> `docs/principles/README.md`
 - contributor index -> `docs/contributing/index.md`
 - harness-engineering guide -> `docs/contributing/harness-engineering.md`
 - architecture map -> `docs/contributing/architecture.md`

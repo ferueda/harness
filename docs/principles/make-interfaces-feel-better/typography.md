@@ -103,7 +103,7 @@ html {
 
 ## Font Family Scope
 
-This skill does not require a specific font family. Do not introduce a paid or proprietary typeface just to satisfy the polish checklist.
+These principles do not require a specific font family. Do not introduce a paid or proprietary typeface just to satisfy the polish checklist.
 
 Use the product's existing type system unless the task explicitly asks for a type change. If the design calls for a system-native macOS feel, use the system font stack. If the design calls for a commercial face such as Helvetica Now, treat it as an optional brand decision and keep a practical fallback stack.
 

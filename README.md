@@ -137,6 +137,15 @@ Skill resolution prefers target-repository `.agents/skills/`, then user
 live under [`automations/`](automations/). Local agent-history analysis is
 provided separately by [Sessions](https://github.com/ferueda/sessions).
 
+## Engineering Principles
+
+Reusable guidance for daily engineering work lives under
+[`docs/principles/`](docs/principles/). These documents are references rather
+than installable skills:
+
+- [Make interfaces feel better](docs/principles/make-interfaces-feel-better.md)
+- [Emil Kowalski's design engineering principles](docs/principles/emil-design-eng.md)
+
 ## Develop Harness
 
 ```bash
@@ -150,6 +159,7 @@ Use `make fix` for formatting or lint fixes, inspect the diff, then rerun
 Contributor references:
 
 - [Project intent](docs/project-intent.md)
+- [Engineering principles](docs/principles/README.md)
 - [Contributor index](docs/contributing/index.md)
 - [Architecture](docs/contributing/architecture.md)
 - [Script and command surface](docs/contributing/script-command-surface.md)
