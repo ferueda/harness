@@ -1,9 +1,24 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
   IMPLEMENTATION_REVIEW_PROMPT,
   QUALITY_REVIEW_PROMPT,
   SPEC_REVIEW_PROMPT,
 } from "../lib/review/prompts/index.ts";
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+function normalizedPrimitiveFit(source: string): string {
+  const heading = /^### Primitive fit\s*$/im.exec(source);
+  if (!heading) throw new Error("Missing primitive-fit section");
+
+  const remainder = source.slice(heading.index + heading[0].length);
+  const nextHeading = /^#{1,3}\s+/m.exec(remainder);
+  const section = nextHeading ? remainder.slice(0, nextHeading.index) : remainder;
+  return section.replace(/\s+/g, " ").trim();
+}
 
 test("review prompts include scope placeholders and JSON output contract", () => {
   for (const prompt of [IMPLEMENTATION_REVIEW_PROMPT, QUALITY_REVIEW_PROMPT]) {
@@ -98,6 +113,14 @@ test("quality prompt covers scoped quality and simplification guidance", () => {
   expect(QUALITY_REVIEW_PROMPT).toContain(
     "verified correctness, contract, or test-reliability risk",
   );
+});
+
+test.each([
+  ["quality review", QUALITY_REVIEW_PROMPT, "skills/code-quality-review/SKILL.md"],
+  ["spec review", SPEC_REVIEW_PROMPT, "skills/review-spec/SKILL.md"],
+])("%s prompt keeps primitive fit aligned with its skill", (_name, prompt, skillPath) => {
+  const skill = readFileSync(resolve(REPO_ROOT, skillPath), "utf8");
+  expect(normalizedPrimitiveFit(prompt)).toBe(normalizedPrimitiveFit(skill));
 });
 
 test("change reviewers use a consistent blocker and verdict contract", () => {
