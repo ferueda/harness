@@ -38,11 +38,11 @@
     "@cursor/sdk": "1.0.30",
     "@ferueda/grove": "1.4.4",
     "@linear/sdk": "92.0.0",
-    "@openai/codex": "0.150.1",
-    "@openai/codex-sdk": "0.150.1",
+    "@openai/codex": "0.151.0",
+    "@openai/codex-sdk": "0.151.0",
     "commander": "15.0.0",
     "inngest": "4.18.1",
-    "zod": "4.5.2"
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@inngest/test": "1.0.0",
