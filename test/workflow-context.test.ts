@@ -99,6 +99,11 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
     "Accept a horizontal step when the plan gives a short, evidence-backed reason",
   );
   expect(SPEC_REVIEW_PROMPT).toContain("Treat delivery shape as judgment, not a ban");
+  expect(SPEC_REVIEW_PROMPT).toContain("When a plan adds, duplicates, extends, replaces, or moves");
+  expect(SPEC_REVIEW_PROMPT).toContain("Complete primitive fit when repository evidence supports");
+  expect(SPEC_REVIEW_PROMPT).toContain(
+    "changes an executor choice or locks a contract or boundary",
+  );
   expect(SPEC_REVIEW_PROMPT).toContain("A finding may use `must_fix: true` only for");
   expect(SPEC_REVIEW_PROMPT).toContain("Reviewer-proposed optional hardening");
   expect(SPEC_REVIEW_PROMPT).toContain("smallest exact missing evidence or human question");
@@ -127,6 +132,9 @@ test("spec review prompt stays aligned with review-spec dimensions and schema ve
     "Accept a horizontal step when the plan gives a short, evidence-backed reason",
   );
   expect(reviewSpecSkill).toContain("Treat delivery shape as judgment, not a ban");
+  expect(reviewSpecSkill).toContain("When a plan adds, duplicates, extends, replaces, or moves");
+  expect(reviewSpecSkill).toContain("Complete primitive fit when repository evidence supports");
+  expect(reviewSpecSkill).toContain("changes an executor choice or locks a contract or boundary");
   expect(reviewSpecSkill).toContain("Finding Contract");
   expect(reviewSpecSkill).toContain("work-item authority");
   expect(reviewSpecSkill).toContain("unmarked proposals, comments, and metadata");

@@ -34,6 +34,16 @@ Check these decisions only when the proposed change makes them material:
 - When it replaces, redirects, splits, deprecates, or removes behavior, require the post-change owner, exact removals and cutover order, and required compatibility.
 - When it changes failure handling, state or data flow, privacy, or security, require the intended behavior beside the affected change.
 
+### Primitive fit
+
+When a plan adds, duplicates, extends, replaces, or moves a primitive or its owner, apply **primitive fit** at the relevant layer. Treat a primitive as an owned building block or contract at the relevant product, workflow, or system layer. Verify the current owner, source of truth, directly affected contracts and consumers, lifecycle, dependency direction, and relevant existing primitives. Evaluate in order:
+
+1. **Reuse:** an existing primitive already owns and satisfies the accepted need without weakening or crossing its boundary.
+2. **Extend:** the behavior belongs to the same owner and lifecycle, and the extension keeps its contract coherent for current consumers while preserving source-of-truth and dependency boundaries.
+3. **Add:** neither option fits; the plan introduces the smallest primitive at the correct boundary for a verified current need.
+
+Complete primitive fit when repository evidence supports the selected option and why earlier options do not fit. Require the plan to record that decision only when it changes an executor choice or locks a contract or boundary. Let accepted requirements and verified consumers bound a new primitive's surface; treat future reuse as a benefit, not authority for broader scope.
+
 ### Delivery shape
 
 - For multi-unit work, prefer vertical slices where each unit completes one coherent, observable behavior across the boundaries it needs and can be verified when it lands. Prefer units that separate agents can own with limited overlap, that can proceed in parallel after the minimum shared setup, and that can be reviewed, landed, or rolled back independently.
