@@ -34,21 +34,21 @@ and maintainability. Stay read-only.
 When changed code adds, duplicates, extends, replaces, or moves a primitive or
 its owner, apply **primitive fit** at the relevant layer. Treat a primitive as
 an owned building block or contract. Verify relevant existing primitives, the
-current owner and source of truth, directly affected contracts and callers, and
-dependency direction. Evaluate in order:
+current owner and source of truth, directly affected contracts and consumers,
+and dependency direction. Evaluate in order:
 
 1. **Reuse:** an existing primitive already owns and satisfies the accepted need
    without weakening or crossing its boundary.
 2. **Extend:** the behavior belongs to the same owner and lifecycle, and the
-   extension keeps its contract coherent for current callers while preserving
+   extension keeps its contract coherent for current consumers while preserving
    source-of-truth and dependency boundaries.
 3. **Add:** neither option fits; the diff introduces the smallest primitive at
    the correct boundary for a verified current need.
 
 Complete primitive fit only when evidence supports the selected option and why
-earlier options do not fit. Let accepted scope and verified callers bound a new
-primitive's surface; treat future reuse as a benefit, not authority for broader
-scope.
+earlier options do not fit. Let present requirements and verified consumers
+bound a new primitive's surface; treat future reuse as a benefit, not authority
+for broader scope.
 
 ## Skills and Guidelines
 
