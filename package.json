@@ -35,23 +35,23 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@cursor/sdk": "1.0.28",
+    "@cursor/sdk": "1.0.30",
     "@ferueda/grove": "1.4.4",
     "@linear/sdk": "92.0.0",
-    "@openai/codex": "0.149.0",
-    "@openai/codex-sdk": "0.149.0",
+    "@openai/codex": "0.150.1",
+    "@openai/codex-sdk": "0.150.1",
     "commander": "15.0.0",
     "inngest": "4.18.1",
-    "zod": "4.4.3"
+    "zod": "4.5.2"
   },
   "devDependencies": {
     "@inngest/test": "1.0.0",
-    "@types/node": "26.2.0",
-    "inngest-cli": "1.43.0",
-    "lint-staged": "17.3.0",
-    "oxfmt": "0.64.0",
-    "oxlint": "1.79.0",
-    "simple-git-hooks": "2.13.1",
+    "@types/node": "26.4.0",
+    "inngest-cli": "1.44.0",
+    "lint-staged": "17.4.1",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.80.0",
+    "simple-git-hooks": "2.14.0",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   },
