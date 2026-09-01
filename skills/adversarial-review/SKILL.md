@@ -57,8 +57,9 @@ would inspect the same evidence.
 Choose lenses from the proposal's material risks rather than applying a fixed
 panel. Useful lenses include:
 
-- **Reality and contracts:** current-system fit, feasibility, ownership,
-  source-of-truth boundaries, existing primitives, and compatibility.
+- **Reality, boundaries, and contracts:** current-system fit, feasibility,
+  ownership, source-of-truth, layer, and dependency boundaries, directly
+  affected contracts, and compatibility.
 - **Simplicity and scope:** overlapping concepts, speculative machinery,
   unnecessary phases, and the smallest equivalent design.
 - **Failure and operations:** partial failure, retries, concurrency,
@@ -70,6 +71,26 @@ panel. Useful lenses include:
   material.
 - **Evaluation:** falsifiable success criteria, counterexamples, false-positive
   costs, drift, and rollback thresholds.
+
+When a proposal adds, duplicates, extends, replaces, or moves a primitive or
+its owner, apply **primitive fit** at the relevant layer. Treat a primitive as
+an owned building block or contract at the relevant product, workflow, or
+system layer. Verify the current owner, source of truth, directly affected
+contracts and consumers, and dependency direction. Then challenge the decision
+in order:
+
+1. **Reuse:** an existing primitive already owns and satisfies the accepted need
+   without weakening or crossing its boundary.
+2. **Extend:** the behavior belongs to the same owner and lifecycle, and the
+   extension keeps its contract coherent for current consumers while preserving
+   source-of-truth and dependency boundaries.
+3. **Add:** neither option fits; the proposal introduces the smallest primitive
+   at the correct boundary for a verified current need.
+
+Complete primitive fit only when evidence supports the selected option and why
+earlier options do not fit. Let present requirements and verified consumers
+bound a new primitive's surface; treat future reuse as a benefit, not authority
+for broader scope.
 
 Assign each reviewer one bounded question, a distinct evidence surface, and an
 explicit output contract. Give every reviewer the same authoritative proposal
