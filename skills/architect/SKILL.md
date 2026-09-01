@@ -54,21 +54,46 @@ configuration, and lifecycle boundaries needed to follow the behavior. Use
 prior plans only for accepted decisions, and keep current behavior distinct
 from planned work. Consult official sources when third-party behavior matters.
 
-Before proposing new state, coordination, or abstraction, identify the current
-owner and existing repository, platform, or provider primitives. Name the
-verified gap they cannot satisfy; if none exists, prefer no change or use those
-primitives.
+Before proposing new state, coordination, abstraction, or another primitive
+change, identify the current owner and existing repository, platform, or
+provider primitives. For each decision-relevant primitive, verify its source of
+truth, directly affected contracts and consumers, lifecycle, and dependency
+direction. Name the verified gap they cannot satisfy; if none exists, prefer no
+change or use those primitives.
 
 Follow the flow far enough to support each decision with durable `path:line`
 anchors. Label remaining assumptions.
 
-**Done when:** repository evidence and project intent constrain the design.
+**Done when:** repository evidence and project intent constrain the design, and
+each decision-relevant primitive is grounded in its owner, contract, and
+boundaries.
 
 ### 3. Choose the smallest credible direction
 
 - Recommend no change when it already satisfies the goal.
 - Otherwise prefer the smallest repo-native change that satisfies the goal and
   invariants.
+
+#### Primitive fit
+
+When a direction adds, duplicates, extends, replaces, or moves a primitive or
+its owner, apply **primitive fit** at the relevant layer. Treat a primitive as
+an owned building block or contract at the relevant product, workflow, or
+system layer. Evaluate in order:
+
+1. **Reuse:** an existing primitive already owns and satisfies the accepted need
+   without weakening or crossing its boundary.
+2. **Extend:** the behavior belongs to the same owner and lifecycle, and the
+   extension keeps its contract coherent for current consumers while preserving
+   source-of-truth and dependency boundaries.
+3. **Add:** neither option fits; propose the smallest primitive at the correct
+   boundary for a verified current need.
+
+Complete primitive fit only when evidence supports the selected option and why
+earlier options do not fit. Let present requirements and verified consumers
+bound a new primitive's surface; treat future reuse as a benefit, not authority
+for broader scope.
+
 - Classify the recommended direction as **One scoped outcome** or **An umbrella
   requiring scoped units**.
 - Treat a direction as one scoped outcome when it has one observable user or
@@ -106,9 +131,10 @@ Evaluate only the fit, tradeoffs, risks, compatibility, and test implications
 that could change the recommendation or the user's approval. Explicitly answer
 any surface the user asked about, even when unchanged.
 
-**Done when:** one recommendation wins on current evidence, its outcome scope is
-classified, any umbrella has coherent architectural units, and alternatives
-remain only where the user has a real choice.
+**Done when:** one recommendation wins on current evidence, any material
+primitive fit is resolved, its outcome scope is classified, any umbrella has
+coherent architectural units, and alternatives remain only where the user has
+a real choice.
 
 ### 4. Consult when decision-changing
 
@@ -147,7 +173,8 @@ Return a proportional memo using the smallest useful shape:
 ## Why this fits
 
 Decision-shaping project intent, repository facts, and tradeoffs. Place each
-`path:line` anchor beside the claim it supports.
+`path:line` anchor beside the claim it supports. When primitive fit is material,
+name the selected option and why earlier options do not fit.
 
 ## Scoped units
 
