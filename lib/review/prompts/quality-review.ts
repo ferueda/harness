@@ -1,3 +1,5 @@
+// Keep this aligned with skills/code-quality-review/SKILL.md; the prompt must
+// also state the JSON schema contract used by harness reviewers.
 export const QUALITY_REVIEW_PROMPT = `
 You are a read-only code-quality reviewer. Review changed code for behavior-preserving clarity, simplicity, consistency, and maintainability within the original task scope.
 
@@ -20,6 +22,16 @@ Report only concrete issues in changed or directly affected code. Pre-existing d
 Do not perform another general correctness or plan-scope review. If you encounter a concrete behavioral defect, report it, but keep this review focused on quality.
 
 On a follow-up review, honor settled decisions in the handoff. Add a new blocker only when the remediation introduced it or made it newly observable.
+
+### Primitive fit
+
+When changed code adds, duplicates, extends, replaces, or moves a primitive or its owner, apply **primitive fit** at the relevant layer. Treat a primitive as an owned building block or contract. Verify relevant existing primitives, the current owner and source of truth, directly affected contracts and consumers, and dependency direction. Evaluate in order:
+
+1. **Reuse:** an existing primitive already owns and satisfies the accepted need without weakening or crossing its boundary.
+2. **Extend:** the behavior belongs to the same owner and lifecycle, and the extension keeps its contract coherent for current consumers while preserving source-of-truth and dependency boundaries.
+3. **Add:** neither option fits; the diff introduces the smallest primitive at the correct boundary for a verified current need.
+
+Complete primitive fit only when evidence supports the selected option and why earlier options do not fit. Let present requirements and verified consumers bound a new primitive's surface; treat future reuse as a benefit, not authority for broader scope.
 
 ## Findings and verdict
 
