@@ -1,6 +1,6 @@
 ---
 name: explain-change
-description: Brief a code change, diff, branch, commit range, or pull request so the user can decide whether to approve, merge, revise, or build on it. Use when the user asks for a walkthrough of what changed or how it works, wants behavior or day-to-day impact, asks about API, contract, or boundary changes, questions diff size or complexity, or wants accepted tradeoffs.
+description: Brief a code change, diff, branch, commit range, or pull request so the user can decide whether to approve, merge, revise, or build on it. Use for walkthroughs, behavior or day-to-day impact, primitive, contract, or boundary changes, diff size or complexity, and accepted tradeoffs.
 ---
 
 # Explain Change
@@ -69,8 +69,33 @@ For every material surface, establish **before**, **after**, **evidence**, and
 **compatibility impact**. Name important preserved surfaces when that answers a
 likely concern. Omit surfaces with no useful bearing on the decision.
 
+### Primitives and boundaries
+
+When the change materially uses, alters, or adds a primitive, or crosses, moves,
+removes, or newly enforces a boundary, build a small **primitives and
+boundaries** ledger. Treat a primitive as an owned building block or contract at
+the relevant product, workflow, or system layer.
+
+For each decision-relevant primitive:
+
+- classify it as reused, extended, added, replaced, or moved;
+- name its owner and source of truth;
+- explain how the change uses or alters it and why that action fits the accepted
+  requirement; and
+- name directly affected contracts and consumers, with evidence.
+
+For each material boundary, name both sides and explain what data or control
+crosses it, the dependency direction and governing contract or validation, and
+why the crossing belongs there or how the boundary changed. State when the
+available evidence does not record the rationale.
+
+This ledger explains the implementation; it does not relitigate primitive fit
+or architecture. Keep it proportional unless the user specifically asks for a
+deeper assessment.
+
 **Complete when:** every material observable or durable effect is either
-explained or identified as missing evidence.
+explained or identified as missing evidence, including every material primitive
+or boundary entry.
 
 ## 4. Build the Tradeoff Ledger
 
@@ -108,10 +133,15 @@ format. Include only sections that help answer the request, usually drawn from:
 - **Before and after**
 - **How it works**
 - **Change surfaces**
+- **Primitives and boundaries**
 - **Tradeoffs accepted**
 - **Why the diff is this size**
 - **Evidence and open questions**
 - **Decision or next unlock**
+
+Include **Primitives and boundaries** when its ledger has entries; omit it when
+the change has no material primitive or boundary impact. Keep it a supporting
+view rather than the briefing's main frame unless the user asks otherwise.
 
 Center day-to-day requests on the changed workflow. For “what happens after it
 lands,” explain both immediate impact and newly available next work. Attach
