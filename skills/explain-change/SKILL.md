@@ -78,7 +78,7 @@ the relevant product, workflow, or system layer.
 
 For each decision-relevant primitive:
 
-- classify it as reused, extended, added, replaced, or moved;
+- classify it as reused, extended, added, replaced, moved, or removed;
 - name its owner and source of truth;
 - explain how the change uses or alters it and why that action fits the accepted
   requirement; and
