@@ -1,21 +1,20 @@
 # Interview
 
-**Completion criterion:** User said write up. Brief saved per [brief-template.md](brief-template.md). Every TBD in **Open Questions**. Synthesized prose — not a transcript.
+Use this branch only for an explicitly requested interview or collaborative
+idea development. Ask one focused question at a time, normally starting with
+the desired outcome. Use known context instead of repeating audience or scope
+questions already answered.
 
-## Open
+Explore gaps that change requirements, constraints, acceptance, or tradeoffs.
+Challenge vague terms with concrete examples. Do not turn the interview into a
+mandatory topic checklist. Record unresolved decisions without blocking useful
+exploration; advice and recommended options are welcome when they help.
 
-If the topic is not named, ask for artifact type first. After the answer, ask for audience. If the topic is named, start domain-first.
+When the user signals they are ready for a write-up, synthesize the brief using
+[the brief template](brief-template.md). Use their requested location or the
+repository's convention, defaulting to `dev/briefs/YYMMDD-short-slug.md` for a
+requested repository artifact. Use inline output when requested. Do not save a
+file merely because a conversation occurred.
 
-## Question
-
-**One per message.** Depth-first. Why over what. Challenge vague ("fast" → SLA). Paraphrase before the next. Cover gaps: edges, failures, stakeholders, broken assumptions.
-
-Crisp answer → next area. TBD → **Open Questions**, continue.
-
-## Close
-
-User signals done → write brief → save `dev/briefs/YYMMDD-short-slug.md` unless the user names a path.
-
-## Anti-patterns
-
-Open-ended beats yes/no here. No advice unless asked. No brief before user says done.
+An interview-only request ends with its brief. Continue implementation or
+planning only when the original request also authorized it.

@@ -22,8 +22,8 @@
     "codex:proxy": "node scripts/codex-proxy.mjs",
     "fix": "make fix",
     "fix:plan": "oxfmt --write dev/plans",
-    "format": "oxfmt --write bin lib providers scripts workflows test docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
-    "format:check": "oxfmt --check bin lib providers scripts workflows test docs package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
+    "format": "oxfmt --write bin lib providers scripts workflows test docs skills automations AGENTS.md README.md package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
+    "format:check": "oxfmt --check bin lib providers scripts workflows test docs skills automations AGENTS.md README.md package.json tsconfig.json tsconfig.build.json vitest.config.ts .oxlintrc.json .oxfmtrc.json",
     "lint": "oxlint -c .oxlintrc.json bin lib providers scripts workflows test vitest.config.ts",
     "lint:fix": "oxlint -c .oxlintrc.json --fix bin lib providers scripts workflows test vitest.config.ts",
     "prepare": "simple-git-hooks",
@@ -62,7 +62,9 @@
     "{bin,lib,providers,scripts,workflows,test,docs}/**/*.{ts,js,json,md}": "pnpm exec oxfmt --write",
     "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts,.oxlintrc.json,.oxfmtrc.json}": "pnpm exec oxfmt --write",
     "{bin,lib,providers,scripts,workflows,test}/**/*.{ts,js}": "pnpm exec oxlint -c .oxlintrc.json --fix",
-    "./vitest.config.ts": "pnpm exec oxlint -c .oxlintrc.json --fix"
+    "./vitest.config.ts": "pnpm exec oxlint -c .oxlintrc.json --fix",
+    "{skills,automations}/**/*.md": "pnpm exec oxfmt --write",
+    "./{AGENTS,README}.md": "pnpm exec oxfmt --write"
   },
   "engines": {
     "node": ">=24"

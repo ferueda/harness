@@ -12,7 +12,7 @@ describe("Spec revision prompt", () => {
     const artifact = { path: "dev/plans/FER-283.md", revision: REVISION };
     const prompt = renderSpecRevisionPrompt({ workItem, artifact, review });
 
-    expect(SPEC_REVISION_POLICY_VERSION).toBe("2");
+    expect(SPEC_REVISION_POLICY_VERSION).toBe("3");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`"reviewedRevision": "${REVISION}"`);
     expect(prompt).toContain(`"rubricVersion": "2"`);
@@ -29,10 +29,10 @@ describe("Spec revision prompt", () => {
       "resumed session is useful context, but it is not the source of truth",
     );
     expect(prompt).toContain(
-      "repository invariants and current project intent; explicit requirements and accepted decisions; verified codebase facts",
+      "accepted requirements within host permissions",
     );
     expect(prompt).toContain("Treat reviewer findings as advisory evidence, not authority");
-    expect(prompt).toContain("Research and resolve inspectable questions yourself");
+    expect(prompt).toContain("without duplicate confirmation");
     expect(prompt).toContain("smallest coherent change");
     expect(prompt).toContain("decisions rather than prewritten implementation");
     expect(prompt).toContain("every material outcome tied to an observable result");

@@ -1,83 +1,38 @@
-# Plan Template
+# Plan template
 
-Write for a capable, context-limited executor with repository access but without
-prior context about the task at hand. The plan records decisions and durable
-source references; the executor inspects the named code.
-
-File naming: `dev/plans/YYMMDD-short-slug.md` (`YYMMDD` is the plan date).
-
-## Default shape
+Use repository naming and lifecycle rules; otherwise use
+`dev/plans/YYMMDD-short-slug.md`. The plan must work without prior chat.
 
 ```markdown
-# <Outcome-oriented title>
+# <Observable outcome>
 
 ## Goal
 
-The problem, intended outcome, acceptance criteria, and material project
-constraints.
+The intended behavior, acceptance criteria, and material constraints.
 
 ## Changes
 
-1. `path/to/file.ts:symbol` — the implementation decision and intended
-   behavior. Name the existing test seam that proves it when relevant.
-2. ...
+- `path/to/file.ts:symbol`: decision, behavior, and evidence that justify it.
+  Include affected owners, cutover, and compatibility only when material.
 
 ## Verify
 
-- `<focused proof action>` → `<expected observable evidence>`.
-- The repository's canonical validation command.
+- `<focused proof action>`: `<expected observable evidence and material limits>`.
+- `<canonical repository gate>`.
 
 ## Boundaries
 
-Only concrete non-goals or STOP conditions that prevent a likely scope mistake.
-Omit this section when none exist.
+Only concrete exclusions or stop conditions. Omit when none are needed.
 ```
 
-## Authoring rules
+Use independently verifiable vertical outcomes for multi-unit work. Explain a
+necessary horizontal migration or shared prerequisite rather than forcing a
+mechanical layer-by-layer itinerary. Existing source and tests are inspectable;
+link them rather than copying them. Include a verified executor aid only when
+it changes an execution decision.
 
-- Inline a current-state fact only beside the decision it justifies.
-- Prefer the highest existing stable test seam proving acceptance; use a lower
-  seam only for a distinct invariant or failure mode unobservable there.
-- Connect each material outcome or forbidden effect to an exact proof action and
-  expected observable evidence. Keep the repository gate separate from
-  acceptance-level behavioral proof.
-- State material limits of mocks, fakes, intercepted requests, or source-only
-  checks. For asynchronous work, prove the terminal state or downstream effect;
-  acceptance or enqueueing alone is insufficient.
-- Require explicit authority, prerequisites, disposable data, assertions, stop
-  conditions, redaction, cleanup, and remaining uncertainty for live proof.
-- Report unavailable material proof with its concrete blocker. Use a short list
-  for simple work and an outcome-to-proof table only when multiple outcomes or
-  proof layers would otherwise be unclear.
-- Organize multiple changes as vertical outcome slices that can be verified and
-  that separate agents can own with limited overlap. Prefer slices that can be
-  reviewed, landed, or rolled back independently and can proceed in parallel
-  after the minimum shared setup. Expand shared setup only when a later slice
-  proves the need.
-- Do not divide a plan mechanically by repository layer or component type. If
-  an indivisible migration, cross-cutting safety fix, or minimum shared
-  prerequisite must remain horizontal, name its bounded scope and state briefly
-  why vertical delivery is impractical or unsafe.
-- Include excerpts only when the exact target shape is load-bearing.
-- Mention a verified executor skill beside a change only when it adds
-  non-obvious guidance. Do not add a skills table by default.
-- When work replaces, redirects, splits, deprecates, or removes an existing
-  behavior, name its post-change owner, exact removals and cutover order, and
-  required compatibility beside the change. Omit this lifecycle detail for
-  ordinary additive work.
-- When work materially changes failure handling, state or data flow, privacy, or
-  security behavior, state the required behavior beside the affected change.
-  Omit this detail when that behavior is unchanged or irrelevant.
-- Add another section only when a migration, rollout, public contract, or named
-  risk cannot be understood safely in the default shape.
-- Prune repeated criteria, commands covered by the canonical repository gate,
-  duplicated context, and empty optional sections.
-
-## Quality bar
-
-- Every change and test traces to acceptance, an invariant, or a verified risk.
-- Exact files or symbols make the intended ownership clear.
-- No material implementation choice remains unresolved.
-- Boundaries are specific, not boilerplate.
-- Durable repository references replace copied context when practical.
-- No secrets appear in the plan.
+Require terminal proof for asynchronous outcomes and explicit authority, safe
+data, assertions, stop conditions, redaction, and cleanup for live checks.
+Record unavailable checks and uncertainty. Never copy secrets into the plan.
+Omit duplicate proof layers, covered commands, empty sections, and unresolved
+material implementation choices. A plan is a decision record, not a tutorial.

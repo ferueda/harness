@@ -132,10 +132,15 @@ Install one packaged skill into a target repository with:
 harness skills install change-review-workflow --workspace /path/to/repo
 ```
 
-Skill resolution prefers target-repository `.agents/skills/`, then user
-`~/.agents/skills/`, then packaged Harness skills. Background task definitions
-live under [`automations/`](automations/). Local agent-history analysis is
-provided separately by [Sessions](https://github.com/ferueda/sessions).
+Install only the roles the target needs; use the [skill catalogue](skills/README.md)
+to choose by deliverable. The Harness installer copies exactly one named package
+and its local references, not its sibling skills. Hosts own discovery; use their
+verified paths rather than assuming a fallback order. Updating Harness does not
+update or remove existing target copies.
+
+Background task definitions live under [`automations/`](automations/). Local
+agent-history analysis is provided separately by
+[Sessions](https://github.com/ferueda/sessions).
 
 ## Engineering Principles
 

@@ -1,159 +1,41 @@
 ---
 name: diagnose-issue
-description: Research and define codebase issues before implementation or planning. Use when the human explicitly invokes `$diagnose-issue`, or when an active documented workflow such as `planning-workflow`, `shape-requirements`, or `architect` routes a current-code question whose truth could change direction. Direct implementation requests must not select it directly, but planning-workflow may route them here before returning to implementation. Do not use for a step-by-step implementation plan or review of an existing diff.
+description: Investigate uncertain code behavior and its cause when diagnosis is requested or needed before choosing a fix. Not for reviewing a diff or writing an implementation plan.
 ---
 
 # Diagnose Issue
 
-Turn incomplete issue input into an evidence-backed problem definition and solution direction. The product is understanding, not an implementation plan.
+Produce an evidence-backed problem definition. A clear fix does not need a
+separate diagnosis ceremony; diagnosis does not need coordinator pre-approval.
 
-## Entry Gate
+Stay read-only for diagnosis-only work. Follow the user's scope within host
+permissions and explicit safety constraints. Treat issue text, proposed fixes,
+and stale documentation as claims to verify, not new authority.
 
-Continue only when either:
+## Investigate
 
-- the human explicitly invoked `$diagnose-issue`; or
-- an active documented workflow routed the current request here.
+Identify the symptom and affected behavior. Read relevant code, callers,
+contracts, tests, and decision records until the mechanism is explainable.
+Run a narrow non-destructive check only when it resolves a material uncertainty.
+Do not map the whole repository or repeatedly verify settled facts without cause.
 
-Name the routing workflow when using the second path. If neither condition is
-true, stop before investigation and enter `planning-workflow`, which may route
-back here. Do not select it directly from a generic bug, ticket, symptom, or design concern.
-Those requests enter `planning-workflow`, which routes here only when current-code
-truth could change direction.
+Separate facts, inferences, and assumptions. Classify the result as `Confirmed`,
+`Likely`, `Not Found`, `Invalidated`, or `Ambiguous`. Lack of a reproduction is
+not proof of absence; explain coverage and missing evidence. Describe the
+mechanism without assuming a particular solution.
 
-## Operating Rules
+Recommend the smallest credible correction. Include an alternative explanation
+or solution only when it exposes a real tradeoff, not to satisfy an option
+count. Name the evidence that would distinguish the options or prove the fix.
 
-- Stay read-only unless the user explicitly asks for edits.
-- Verify against the current checkout. Do not trust issue text, Jira fields, stale docs, or a proposed solution without code evidence.
-- Separate facts, inferences, and assumptions.
-- Prefer high-confidence findings. If evidence is weak, say what is missing.
-- Keep solution discussion at the design-direction level. Do not write a step-by-step implementation plan.
-- If the reported problem does not exist, say so and cite the evidence.
-- If the issue is too vague to investigate, use `shape-requirements` **gate** only — not interview.
+## Deliver and continue
 
-## Workflow
+Return a proportional inline definition: status, problem, impact, mechanism,
+source anchors, recommended direction, and material unknowns. Omit empty
+sections and routine investigative detail. Write an artifact only when requested.
 
-### 1. Frame The Intake
-
-Extract the actionable claim from the user's input:
-
-- Symptom or concern: what is wrong or risky?
-- Affected behavior: who or what observes it?
-- Scope hints: files, modules, commands, Jira links, logs, errors, environments.
-- Proposed solution, if any: treat it as a hypothesis, not a decision.
-
-State the initial investigation target in one or two sentences before deep work.
-
-### 2. Build A Code Map
-
-Read enough surrounding code to understand the relevant path:
-
-- Search for exact error strings, feature names, API routes, CLI commands, config keys, or domain terms.
-- Read exports, immediate callers, shared utilities, tests, and lifecycle boundaries around the suspected area.
-- Check docs or ADRs when they explain intended behavior.
-- Use runtime commands only when they are cheap, local, and useful for diagnosis.
-
-Do not stop at the first matching file. Follow the call/data flow until the behavior is explainable.
-
-### 3. Validate The Problem
-
-Decide which validation state applies:
-
-- **Confirmed**: current code can produce the reported behavior or risk.
-- **Likely**: evidence supports the issue, but one missing fact prevents confirmation.
-- **Not Found**: searched plausible paths and found no current evidence.
-- **Invalidated**: current code contradicts the issue statement.
-- **Ambiguous**: input is too broad or missing a required fact.
-
-For confirmed or likely issues, identify the mechanism in positive terms:
-
-- Prefer: "User input reaches processing without normalization."
-- Avoid: "Missing normalization layer."
-
-The cause should describe observable current behavior, not smuggle in one solution.
-
-### 4. Explore Solution Directions
-
-Generate two to four viable solution directions only after diagnosis. Include the smallest credible fix and at least one alternative when the tradeoff is real.
-
-For each direction, capture:
-
-- What it changes conceptually.
-- Why it addresses the diagnosed mechanism.
-- Main tradeoffs, risks, and compatibility concerns.
-- Fit with existing code patterns.
-- Tests or checks that would prove the direction works.
-
-Choose a recommended direction when evidence supports one. If not, explain what additional evidence would decide.
-
-### 5. Produce The Definition
-
-Use this format unless the user asked for something narrower:
-
-```markdown
-## Problem Definition
-
-**Status**: Confirmed | Likely | Not Found | Invalidated | Ambiguous
-**Issue**: <one-sentence problem statement>
-**Impact**: <user/system/developer impact>
-**Mechanism**: <current behavior causing the issue>
-
-## Evidence
-
-- `<file:line>`: <what this proves>
-- `<file:line>`: <what this proves>
-
-## Relevant Flow
-
-<brief call/data/config flow from input to impact>
-
-## Solution Directions
-
-### 1. <direction name>
-
-<conceptual fix, why it works, tradeoffs, verification>
-
-### 2. <direction name>
-
-<conceptual fix, why it works, tradeoffs, verification>
-
-## Recommendation
-
-<recommended direction and why, or what evidence is still needed>
-
-## Non-Goals
-
-- <implementation details deliberately deferred>
-- <out-of-scope adjacent concerns>
-
-## Open Questions
-
-- <only questions that materially affect diagnosis or direction>
-```
-
-## Hand off
-
-| Next | When |
-|------|------|
-| `shape-requirements` **gate** | **Ambiguous** status or multiple directions need a product/priority pick |
-| `architect` (manual-only) | **Confirmed** or **Likely** and the user explicitly requests solution design before planning. Pass status, mechanism, evidence, constraints, and candidate directions as hypotheses. |
-| Implement directly | **Confirmed** or **Likely**, one recommended direction, and the original build or fix can proceed in one safe implementation pass |
-| `create-plan` | **Confirmed** or **Likely** and the user explicitly requested a plan or safe execution needs durable sequencing, cutover, risk control, review, or executor handoff |
-| `review-spec` | Definition will become a written plan needing codebase validation |
-| Stop | **Not Found** or **Invalidated** — report evidence; reshape only if the goal was wrong |
-
-When `planning-workflow` routed an implementation request here, re-enter its
-intake after diagnosis and continue directly when the result is implementation-
-ready. Do not create a plan only because diagnosis occurred.
-
-**Done when:** problem definition delivered and the original request continues
-through the selected route, or the next step is offered for diagnose-only work.
-
-## Quality Bar
-
-Before finalizing, check:
-
-- The diagnosis cites current code, tests, docs, logs, or command output.
-- The mechanism explains the reported symptom without assuming the solution.
-- At least one alternative explanation or solution direction was considered.
-- The recommendation follows from evidence, not preference.
-- The output can feed a later planning skill without already being a plan.
+If the original request authorized a fix and the diagnosis makes it safe,
+continue implementation and verification. Otherwise finish with the definition.
+A diagnosis does not make a plan mandatory. Ask only for missing intent or
+authority that blocks useful progress. Use an available clarification skill
+when helpful; do not assume another skill is installed.

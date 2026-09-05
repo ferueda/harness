@@ -1,60 +1,32 @@
 ---
 name: shape-requirements
-description: >
-  Shape requirements before planning or implementing. Gate underspecified build,
-  fix, or plan tasks. Interview when the user says "interview me about", "ask me
-  questions about", "help me think through", "I need to spec out", "let's flesh
-  out", or has a vague idea to turn into a brief.
+description: Clarify material requirements that block useful progress, or interview a user to develop a brief. Not for routine implementation choices or ordinary document edits.
 ---
 
 # Shape Requirements
 
-## 1. Pick a branch
+Resolve missing intent, not details the repository or established defaults can
+answer. Honor the requested deliverable and existing authorization.
 
-| Signal | Branch | Load |
-|--------|--------|------|
-| Build, fix, or plan **now** — objective, scope, done-ness, or constraints unclear | **gate** | [references/gate-mode.md](references/gate-mode.md) |
-| Written spec exists; only implementation choices unclear | **gate** | [references/gate-mode.md](references/gate-mode.md) |
-| Think out loud, interview, flesh out an idea; **no artifact yet** | **interview** | [references/interview-mode.md](references/interview-mode.md) |
+## Select one branch
 
-Explicit interview or doc request → **interview**. Otherwise → **gate**.
+- A material requirement, acceptance boundary, or authority decision prevents
+  useful progress: read [gate mode](references/gate-mode.md).
+- The user explicitly requests an interview or collaborative idea development:
+  read [interview mode](references/interview-mode.md).
+- Otherwise continue the original task without a clarification workflow.
 
-Low-risk discovery reads OK when they don't commit direction. Don't ask what a quick read answers.
+A request to write or update a document is not automatically an interview.
+Discovery and independent authorized work may continue while a genuine human
+prerequisite remains unresolved.
 
-**Done when:** branch chosen and its reference loaded.
+## Resume the original task
 
-## 2. Run the branch
+When answers or authorized assumptions settle material uncertainty, continue
+without requesting another approval for the same decision. Stop after the
+clarification or brief when that was the requested deliverable.
 
-Follow the loaded reference through its **completion criterion**.
-
-**Done when:**
-- **gate** — confirmed interpretation approved ([template](references/brief-template.md#confirmed-interpretation-gate-mode)); no edits, commands, or dependent plans before approval
-- **interview** — user said write up; brief saved per [brief-template.md](references/brief-template.md); every TBD in **Open Questions**
-
-## 3. Hand off
-
-| Next | When |
-|------|------|
-| Implement | Gate cleared; one safe implementation pass is credible |
-| `diagnose-issue` | Brief or interpretation asserts current behavior, bug, or risk needing code evidence |
-| `create-plan` | User explicitly requested a plan, or safe execution needs durable sequencing, cutover, risk control, review, or executor handoff |
-| `review-spec` | Brief or plan needs codebase validation |
-| `planning-workflow` | Unsure which planning step comes next |
-| Stop | User only wanted confirmation or brief |
-
-When continuing the user's original work, treat a packaged-skill handoff as
-executable: read the selected sibling `SKILL.md` completely and follow it.
-Resolve sibling paths from this skill's directory (for example,
-`../diagnose-issue/SKILL.md`). Do not only name the next skill or imitate its
-output inline.
-
-After **gate** approval, continue with the user's original build, fix, or plan request. For **interview** mode or clarify-only requests, offer the natural next step and wait.
-
-A multi-file or cross-area change does not by itself require a plan. Re-enter
-`planning-workflow` triage when the correct path is still unclear.
-
-**Done when:** original requested work continues, or next step stated for interview/clarify-only.
-
-## Cross-branch
-
-Don't mix **gate** batching with **interview** one-at-a-time in one pass.
+Use diagnosis for uncertain current-code claims and planning only when a plan
+is requested or needed for safe execution. These are optional next actions,
+not a fixed chain. Resolve and read another skill's available `SKILL.md` before
+using it; do not assume sibling installs or imitate an unavailable skill.

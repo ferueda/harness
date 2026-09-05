@@ -18,7 +18,7 @@ describe("implementation revision prompt", () => {
       review: review(),
     });
 
-    expect(IMPLEMENTATION_REVISION_POLICY_VERSION).toBe("1");
+    expect(IMPLEMENTATION_REVISION_POLICY_VERSION).toBe("2");
     expect(prompt).toContain("PLAN_AUTHORITY_SENTINEL");
     expect(prompt).toContain(FINDING_ID);
     expect(prompt).toContain(`"reviewedRevision": "${REVISION}"`);

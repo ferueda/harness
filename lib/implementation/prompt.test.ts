@@ -27,7 +27,7 @@ describe("implementation prompt", () => {
     const prompt = renderImplementationPrompt(linearAuthority());
 
     expect(prompt).toContain(
-      "repository invariants and current project intent; the selected implementation source",
+      "selected implementation source within host permissions",
     );
     expect(prompt).toContain("make the smallest coherent code change");
     expect(prompt).toContain("highest existing stable behavioral seam");
