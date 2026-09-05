@@ -1,58 +1,22 @@
 ---
 name: handoff-work
-description: >
-  Use when the user asks to hand off work, prepare a handoff, document work for another agent, or
-  when another agent or session will continue or review the work.
+description: Transfer work context to another agent or session when continuation or review needs it. Return an inline handoff unless an artifact is requested.
 ---
 
 # Handoff Work
 
-Produce navigational context so another agent can continue or review work.
+Leave enough context to continue without replaying the conversation. No handoff
+is needed when the same agent can finish in the same session.
 
-A handoff follows repository guidance and the original task or accepted plan
-as its authority. Point to inspectable sources. Repeat only session-only or
-otherwise load-bearing constraints and decisions. The next agent inspects those
-sources and changed code.
+Include status (`complete`, `in_progress`, or `blocked`), the authoritative goal
+or plan pointer, current state, and verification commands with observed results.
+Name skipped required checks and concrete reasons. Do not label unverified work
+complete or infer a pass from an unsupported executor claim.
 
-## Required core
+Add only material session-only decisions, adaptations, entrypoints, blockers,
+and the next action when ordering matters. Point to inspectable sources rather
+than copying them. Distinguish accepted decisions from proposals and inferred
+rationale; a handoff cannot grant permissions the task did not grant.
 
-- **Status** — `complete`, `in_progress`, or `blocked`.
-- **Authority and goal** — point to the authoritative request, accepted plan, or
-  spec and state the intended outcome concisely.
-- **Current state** — summarize what is complete, pending, or blocked without
-  reproducing inspectable source content.
-- **Verification** — list commands and results; when a relevant check was not
-  run or is unavailable, name the exact check and reason.
-
-## Add only when relevant
-
-- **Material adaptations** — accepted deviations or decisions needed to explain
-  the current state, with concise rationale.
-- **Important files** — entry points needed for continuation and why they matter.
-- **Next steps** — the first continuation action when work is incomplete or
-  ordering matters.
-- **Open items** — blockers, unanswered decisions, risks, or review focus.
-
-## Output
-
-Use this structure:
-
-```markdown
-## Work Handoff
-
-**Status:** in_progress | complete | blocked
-
-### Authority and goal
-[Authoritative source pointer and concise intended outcome]
-
-### Current state
-[What is complete, pending, or blocked]
-
-### Verification
-[Commands and results, or exact unavailable checks and reasons]
-
-<!-- Include only relevant optional sections: Material adaptations, Important files, Next steps, Open items. -->
-```
-
-Return the handoff inline. Create a repository artifact only when the user
-explicitly requests one.
+Return inline. Create a file only when requested. A handoff transfers context,
+not automatically control: continue work still assigned to you and authorized.

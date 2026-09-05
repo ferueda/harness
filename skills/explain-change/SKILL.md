@@ -1,154 +1,39 @@
 ---
 name: explain-change
-description: Brief a code change, diff, branch, commit range, or pull request so the user can decide whether to approve, merge, revise, or build on it. Use for walkthroughs, behavior or day-to-day impact, primitive, contract, or boundary changes, diff size or complexity, and accepted tradeoffs.
+description: Explain a diff, branch, commit range, or pull request through its behavior and tradeoffs. Use for walkthroughs and impact questions, not defect-finding or merge approval.
 ---
 
 # Explain Change
 
-Produce an evidence-backed change briefing. Organize it around behavior,
-decisions, and an acceptance-level mental model.
+Give the user an evidence-backed mental model. Stay read-only for explanation-
+only work; a walkthrough is not permission to fix or publish.
 
-## Success Criteria
+Resolve the base, head, and scope. Refresh evidence for a named PR; include
+relevant committed and working-tree changes for a local request. Ask only when
+competing scopes would materially change the answer.
 
-Finish when the user can explain the change and make the requested next
-decision from supported facts, visible tradeoffs, and clearly named unknowns.
+Read the diff and enough entrypoints, callers, tests, and decision records to
+explain old and new behavior. Consult intent when rationale or a boundary matters,
+not as a mandatory repository tour. Accepted decisions govern within host
+permissions and explicit safety constraints; verify PR descriptions and handoffs.
 
-## Authority
+Lead with changes for the user, developer, or operator. Group files conceptually
+and use an example when it clarifies behavior. Explain material contract, data,
+ownership, failure, compatibility, and operational consequences; omit irrelevant
+surfaces unless asked about them.
 
-Use this order:
+For material primitives/boundaries, name what was reused, extended, added,
+replaced, moved, or removed; its owner and source of truth; and the consumers or
+contracts affected. Explain the implementation rather than re-running design
+selection. Do not manufacture formal ledgers for a small change.
 
-1. Repository guidance and documented project intent.
-2. The original request, accepted plan, issue, ADR, and settled decisions.
-3. The actual diff, current code, directly affected consumers, and tests.
-4. PR descriptions, commit messages, and handoffs as claims to verify.
+Distinguish accepted tradeoffs from inferred consequences. State the benefit,
+cost, documented alternatives, and revisit conditions where known. For complexity
+questions, map churn to behavior, compatibility, tests, docs, and incidental
+complexity, then support a `proportional`, `mixed`, or `disproportionate` verdict.
 
-Keep explanation-only work read-only. When the request also authorizes a change
-or publication, complete that work first and brief the resulting scope.
-
-## 1. Resolve the Change
-
-Select the explicit PR, branch, commit range, or working-tree diff. When the
-user implies the current change and only one credible scope exists, use it and
-state the choice. Ask for the smallest missing scope only when multiple choices
-would produce materially different briefings.
-
-Resolve the real base and head. Refresh remote PR evidence when the request
-names a PR. Include staged, unstaged, deleted, renamed, generated, and untracked
-files that belong to a local change.
-
-**Complete when:** the base, head, current state, and every file in scope are
-known.
-
-## 2. Build the Mental Model
-
-Read the changed code and enough unchanged surrounding code to explain the old
-path. Inspect entry points, callers, consumers, tests, and intent sources that
-establish why the change exists.
-
-Group files into conceptual parts. Trace each material path from its user,
-operator, or system entry point through decisions and state changes to its
-observable result. Use concrete examples when they make behavior clearer.
-
-**Complete when:** the old behavior, new behavior, implementation shape, and
-reason for the change can each be stated plainly.
-
-## 3. Build the Surface Ledger
-
-Assess each surface that the change could materially affect:
-
-- user, developer, or operator behavior;
-- CLI, HTTP, package, or internal API contracts;
-- schemas, durable files, events, messages, and provider protocols;
-- data ownership, module boundaries, trust boundaries, and side effects;
-- failure, retry, recovery, and concurrency behavior;
-- compatibility, migration, rollout, and reversibility;
-- security, privacy, performance, cost, and operability; and
-- tests and other proof for changed behavior.
-
-For every material surface, establish **before**, **after**, **evidence**, and
-**compatibility impact**. Name important preserved surfaces when that answers a
-likely concern. Omit surfaces with no useful bearing on the decision.
-
-### Primitives and boundaries
-
-When the change materially uses, alters, or adds a primitive, or crosses, moves,
-removes, or newly enforces a boundary, build a small **primitives and
-boundaries** ledger. Treat a primitive as an owned building block or contract at
-the relevant product, workflow, or system layer.
-
-For each decision-relevant primitive:
-
-- classify it as reused, extended, added, replaced, moved, or removed;
-- name its owner and source of truth;
-- explain how the change uses or alters it and why that action fits the accepted
-  requirement; and
-- name directly affected contracts and consumers, with evidence.
-
-For each material boundary, name both sides and explain what data or control
-crosses it, the dependency direction and governing contract or validation, and
-why the crossing belongs there or how the boundary changed. State when the
-available evidence does not record the rationale.
-
-This ledger explains the implementation; it does not relitigate primitive fit
-or architecture. Keep it proportional unless the user specifically asks for a
-deeper assessment.
-
-**Complete when:** every material observable or durable effect is either
-explained or identified as missing evidence, including every material primitive
-or boundary entry.
-
-## 4. Build the Tradeoff Ledger
-
-For each accepted tradeoff, state:
-
-- the benefit gained;
-- the cost, limitation, risk, or behavior given up;
-- the rejected alternative and rationale, when evidence exists; and
-- reversibility or the condition that should reopen the decision.
-
-Label a tradeoff **explicit** when an authoritative source records its
-acceptance. Label it **inferred** when it follows from the implementation but
-its acceptance is undocumented. State when available evidence shows no
-material tradeoff; infer only from implementation evidence.
-
-When the user questions diff size, complexity, or overengineering, quantify the
-main sources of churn and map them to product behavior, safety, compatibility,
-tests, documentation, or incidental complexity. Give a clear verdict:
-**proportional**, **mixed**, or **disproportionate**.
-
-Route requests for defect-finding, correctness, or merge safety through the
-applicable review workflow when available, then use its result as evidence in
-the briefing. Use this skill alone for explanation, impact, and proportionality.
-
-**Complete when:** every material tradeoff is labeled explicit or inferred,
-its cost and rationale are grounded, and any proportionality verdict is
-supported by the diff.
-
-## 5. Deliver the Briefing
-
-Lead with the conclusion. Use inline Markdown unless the user requests another
-format. Include only sections that help answer the request, usually drawn from:
-
-- **What changes**
-- **Before and after**
-- **How it works**
-- **Change surfaces**
-- **Primitives and boundaries**
-- **Tradeoffs accepted**
-- **Why the diff is this size**
-- **Evidence and open questions**
-- **Decision or next unlock**
-
-Include **Primitives and boundaries** when its ledger has entries; omit it when
-the change has no material primitive or boundary impact. Keep it a supporting
-view rather than the briefing's main frame unless the user asks otherwise.
-
-Center day-to-day requests on the changed workflow. For “what happens after it
-lands,” explain both immediate impact and newly available next work. Attach
-file, test, plan, or PR evidence near the claim it supports. Use a small diagram
-only when it makes a multi-step flow or boundary clearer than prose.
-
-Prefer existing verification evidence. Run a narrow, non-destructive check only
-when a material claim cannot be resolved from code and recorded results. Stop
-once the success criteria are met; preserve facts, decisions, caveats, and next
-steps before adding optional background.
+Use adequate recorded verification. Run a narrow non-destructive check only for
+an unresolved material claim. Return the smallest explanation that answers the
+question with anchors and meaningful unknowns. Omit empty sections and repeated
+summaries. Safety review belongs to an available reviewer; do not present an
+explanation as merge approval.

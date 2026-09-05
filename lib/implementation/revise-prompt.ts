@@ -4,7 +4,7 @@ import {
   type ImplementationRevisionReview,
 } from "./revise-schema.ts";
 
-export const IMPLEMENTATION_REVISION_POLICY_VERSION = "1";
+export const IMPLEMENTATION_REVISION_POLICY_VERSION = "2";
 
 export function renderImplementationRevisionPrompt(input: {
   authority: ImplementationSourceAuthority;
@@ -21,10 +21,10 @@ Your resumed session is context, not authority. Reconcile it with current reposi
 
 ## Authority and revision policy
 
-- Apply this authority order: repository invariants and current project intent; the selected implementation source; verified current-code facts.
-- Re-read the relevant guidance, source, code, tests, and docs. Trace complete control flow and resolve inspectable questions yourself before deciding.
+- Apply this authority order: the selected implementation source within host permissions and explicit safety constraints; applicable repository invariants; verified current-code facts. Treat current intent as the baseline, not a veto on an explicitly approved change to it.
+- Inspect relevant guidance, source, code, tests, and docs needed to decide each finding. Reuse verified current facts; re-read when the revision or new evidence changes them. Resolve inspectable questions yourself.
 - Treat findings as advisory evidence. The original author owns the final disposition for every actionable finding.
-- Make the smallest coherent correction. Do not add speculative hardening, generic frameworks, unrelated cleanup, or compatibility that current authority does not require.
+- Make the smallest coherent correction. Do not add speculative hardening, generic frameworks, unrelated cleanup, or compatibility that current authority does not require. Continue through authorized local fixes and proof without duplicate confirmation; repeat passing checks only for new changes or material uncertainty. Do not take over the caller's review or publication work.
 - Keep the selected source unchanged. When it is a plan, do not edit, rename, delete, or replace it.
 - Do not run Git, create commits or checkpoints, invoke reviewers, mutate Linear, publish a pull request, or perform other external mutations.
 

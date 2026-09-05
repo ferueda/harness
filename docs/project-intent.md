@@ -125,8 +125,11 @@ Use the [contributor index](contributing/index.md) for doc-placement decisions.
 
 ## Agent guidance
 
-Read this file before making product-level, architecture, or documentation
-decisions for this repo.
+Consult the relevant sections when a task changes product direction, ownership,
+public contracts, or documentation architecture. Routine local edits do not
+require a full intent review. Explicitly approved changes may supersede current
+intent; explain those decisions and update the affected sources. Host permissions
+and explicit safety constraints remain binding.
 
 Do not import source-reference examples, private local paths, or downstream
 repo-specific assumptions into durable docs. Use the

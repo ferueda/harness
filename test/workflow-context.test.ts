@@ -1,17 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { createWorkflowContext, createWorkflowContextForTest } from "../lib/review/runtime.ts";
 import type { AgentProviderOptions, AgentRunInput } from "../lib/agent/contract.ts";
 import type { ReviewOutput } from "../lib/review/schema.ts";
-import { SPEC_REVIEW_PROMPT } from "../lib/review/prompts/index.ts";
 import { createAgentProvider } from "../providers/registry.ts";
 import { run as runChangeReview } from "../workflows/change-review.workflow.ts";
-
-const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 function createGitWorkspace() {
   const workspace = mkdtempSync(join(tmpdir(), "harness-workspace-"));
@@ -57,97 +53,6 @@ const QUALITY_PASS = {
 function reviewerOutputForPrompt(prompt: string): ReviewOutput {
   return prompt.includes("implementation reviewer") ? IMPLEMENTATION_PASS : QUALITY_PASS;
 }
-
-test("spec review prompt stays aligned with review-spec dimensions and schema verdicts", () => {
-  for (const keyword of [
-    "Architecture",
-    "Feasibility",
-    "Simplicity",
-    "Project Alignment",
-    "intent source",
-    "docs/project-intent.md",
-    "VISION.md",
-    "Reliability",
-    "Performance",
-    "Security",
-    "Edge Cases",
-    "Testing",
-    "pass",
-    "needs_changes",
-    "blocked",
-    "must_fix",
-    "one-call-site abstractions",
-  ]) {
-    expect(SPEC_REVIEW_PROMPT).toContain(keyword);
-  }
-  expect(SPEC_REVIEW_PROMPT).toContain("Intent source gate");
-  expect(SPEC_REVIEW_PROMPT).toContain("docs-architecture");
-  expect(SPEC_REVIEW_PROMPT).toContain("minimum sufficient executable plan");
-  expect(SPEC_REVIEW_PROMPT).toContain("Unsupported work already proposed by the plan");
-  expect(SPEC_REVIEW_PROMPT).toContain("Review content, not template completeness");
-  expect(SPEC_REVIEW_PROMPT).toContain("highest existing stable seam proving acceptance");
-  expect(SPEC_REVIEW_PROMPT).toContain("exact proof action and expected observable evidence");
-  expect(SPEC_REVIEW_PROMPT).toContain("Acceptance or enqueueing alone is insufficient");
-  expect(SPEC_REVIEW_PROMPT).toContain("Do not demand repeated layers");
-  expect(SPEC_REVIEW_PROMPT).toContain("For multi-unit work, prefer vertical slices");
-  expect(SPEC_REVIEW_PROMPT).toContain("separate agents can own with limited overlap");
-  expect(SPEC_REVIEW_PROMPT).toContain("reviewed, landed, or rolled back independently");
-  expect(SPEC_REVIEW_PROMPT).toContain(
-    "Challenge needlessly horizontal phases such as completing all persistence, then all services, then all interfaces",
-  );
-  expect(SPEC_REVIEW_PROMPT).toContain(
-    "Accept a horizontal step when the plan gives a short, evidence-backed reason",
-  );
-  expect(SPEC_REVIEW_PROMPT).toContain("Treat delivery shape as judgment, not a ban");
-  expect(SPEC_REVIEW_PROMPT).toContain("When a plan adds, duplicates, extends, replaces, or moves");
-  expect(SPEC_REVIEW_PROMPT).toContain("Complete primitive fit when repository evidence supports");
-  expect(SPEC_REVIEW_PROMPT).toContain(
-    "changes an executor choice or locks a contract or boundary",
-  );
-  expect(SPEC_REVIEW_PROMPT).toContain("A finding may use `must_fix: true` only for");
-  expect(SPEC_REVIEW_PROMPT).toContain("Reviewer-proposed optional hardening");
-  expect(SPEC_REVIEW_PROMPT).toContain("smallest exact missing evidence or human question");
-  expect(SPEC_REVIEW_PROMPT).toContain('verdict: "needs_changes"` only when at least one finding');
-  expect(SPEC_REVIEW_PROMPT).toContain("Blocked is exempt");
-
-  const reviewSpecSkill = readFileSync(join(REPO_ROOT, "skills/review-spec/SKILL.md"), "utf8");
-  expect(reviewSpecSkill).toContain("Project Alignment");
-  expect(reviewSpecSkill).toContain("Intent Source Gate");
-  expect(reviewSpecSkill).toContain("Narrow bug fixes");
-  expect(reviewSpecSkill).toContain("docs-architecture");
-  expect(reviewSpecSkill).toContain("Unsupported work already proposed by the plan");
-  expect(reviewSpecSkill).toContain("Plan Contract");
-  expect(reviewSpecSkill).toContain("highest existing stable seam proving acceptance");
-  expect(reviewSpecSkill).toContain("exact proof action and");
-  expect(reviewSpecSkill).toMatch(/expected observable\s+evidence/);
-  expect(reviewSpecSkill).toContain("Acceptance or enqueueing alone is insufficient");
-  expect(reviewSpecSkill).toMatch(/Do\s+not demand repeated layers/);
-  expect(reviewSpecSkill).toContain("For multi-unit work, prefer vertical slices");
-  expect(reviewSpecSkill).toMatch(/separate agents can own with limited\s+overlap/);
-  expect(reviewSpecSkill).toContain("reviewed, landed, or rolled back independently");
-  expect(reviewSpecSkill).toContain(
-    "Challenge needlessly horizontal phases such as completing all persistence",
-  );
-  expect(reviewSpecSkill).toContain(
-    "Accept a horizontal step when the plan gives a short, evidence-backed reason",
-  );
-  expect(reviewSpecSkill).toContain("Treat delivery shape as judgment, not a ban");
-  expect(reviewSpecSkill).toContain("When a plan adds, duplicates, extends, replaces, or moves");
-  expect(reviewSpecSkill).toContain("Complete primitive fit when repository evidence supports");
-  expect(reviewSpecSkill).toContain("changes an executor choice or locks a contract or boundary");
-  expect(reviewSpecSkill).toContain("Finding Contract");
-  expect(reviewSpecSkill).toContain("work-item authority");
-  expect(reviewSpecSkill).toContain("unmarked proposals, comments, and metadata");
-  expect(reviewSpecSkill).toContain("post-change owner, exact removals and cutover order");
-  expect(reviewSpecSkill).toContain("failure handling, state or data flow, privacy, or security");
-  expect(reviewSpecSkill).toContain("Reviewer-proposed optional hardening");
-  expect(reviewSpecSkill).toContain("original source request and accepted task decisions");
-  expect(reviewSpecSkill).toContain("smallest exact missing");
-  expect(reviewSpecSkill).toContain("`title`, `severity`, `location`");
-  expect(reviewSpecSkill).toContain("**Must fix**: Yes | No");
-  expect(reviewSpecSkill).toContain("**Verdict**: Pass | Needs changes | Blocked");
-  expect(reviewSpecSkill).not.toContain("**Category**");
-});
 
 test("workflow context supports spec review dry-runs without git scope", async () => {
   const workspace = createPlainWorkspace();

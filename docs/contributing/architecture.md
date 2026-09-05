@@ -283,9 +283,10 @@ configured work consumer through Inngest Connect. The current Harness
 configuration composes the independent Spec consumer. The worker caps total
 concurrency at one and exposes `/health` plus Connect-backed `/ready` endpoints.
 
-The one-minute poller lists revisions for one configured project's Backlog.
-The readiness router reloads the complete issue context and emits a triage
-request only when current Linear state requires it. Revision-bound request
+The one-minute poller observes Backlog and adds Open when a Spec or Implement
+consumer is enabled. The readiness router reloads complete current issue context
+and selects only enabled, authorized routes. For Backlog triage, it emits a
+triage request only when current Linear state requires it. Revision-bound request
 identity lets a later Backlog revision request triage again without duplicating
 work for an unchanged revision. The triage consumer invokes the configured
 Codex profile and applies its rationale, Agent action label, and target status

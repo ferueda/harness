@@ -6,6 +6,7 @@ import type { Agent, AgentRunInput } from "../agent/contract.ts";
 import type { WorkItemContext } from "../work-item/schema.ts";
 import { createImplementationReviewFindingId } from "./finding-identity.ts";
 import { reviseImplementation } from "./revise.ts";
+import { IMPLEMENTATION_REVISION_POLICY_VERSION } from "./revise-prompt.ts";
 
 const fsState = vi.hoisted(() => ({ failSchemaRead: false }));
 
@@ -67,7 +68,7 @@ it("returns a typed provider failure when the result schema cannot be read", asy
       provider: "codex",
       model: "gpt-5.6-sol",
       modelReasoningEffort: "high",
-      policyVersion: "1",
+      policyVersion: IMPLEMENTATION_REVISION_POLICY_VERSION,
       resultSchemaVersion: "1",
       reviewedRevision: "a".repeat(40),
       promptSha256: null,

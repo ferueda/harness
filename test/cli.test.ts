@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { CURSOR_SDK_MODEL_MODES } from "../lib/agent/contract.ts";
+import { QUALITY_REVIEW_PROMPT } from "../lib/review/prompts/index.ts";
 import {
   HARNESS_GITIGNORE_ENTRY,
   HARNESS_RECOMMENDED_COMMAND,
@@ -1024,7 +1025,7 @@ test("harness run change-review dry-run reads Codex provider from harness.json",
     modelReasoningEffort: "high",
   });
 });
-test("harness run change-review dry-run includes scoped simplification guidance in quality", () => {
+test("harness run change-review renders the current quality template", () => {
   const workspace = createGitWorkspace();
   const result = runHarness([
     "run",
@@ -1044,8 +1045,7 @@ test("harness run change-review dry-run includes scoped simplification guidance 
   expect(output.prompts.quality).toMatch(/quality-review\.prompt\.md$/);
 
   const qualityPrompt = readFileSync(output.prompts.quality, "utf8");
-  expect(qualityPrompt).toContain("Prefer explicit, boring, repo-native code");
-  expect(qualityPrompt).toContain("materially smaller equivalent shape");
-  expect(qualityPrompt).toContain("Read only the `SKILL.md` files relevant");
-  expect(qualityPrompt).not.toContain("{{SKILL_PATH}}");
+  const [qualityPreamble] = QUALITY_REVIEW_PROMPT.split("{{DIFF_RANGE}}");
+  expect(qualityPrompt).toContain(qualityPreamble);
+  expect(qualityPrompt).not.toMatch(/\{\{[A-Z_]+\}\}/);
 });

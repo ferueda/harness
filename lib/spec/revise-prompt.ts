@@ -2,7 +2,7 @@ import { SpecReviewArtifactSchema, type SpecReviewArtifact } from "../spec-revie
 import { SpecWorkItemContextSchema, type SpecWorkItemContext } from "./schema.ts";
 import { SpecRevisionReviewSchema, type SpecRevisionReview } from "./revise-schema.ts";
 
-export const SPEC_REVISION_POLICY_VERSION = "2";
+export const SPEC_REVISION_POLICY_VERSION = "3";
 
 export function renderSpecRevisionPrompt(input: {
   workItem: SpecWorkItemContext;
@@ -21,8 +21,8 @@ Your resumed session is useful context, but it is not the source of truth. Recon
 
 ## Authority and revision policy
 
-- Apply this authority order: repository invariants and current project intent; explicit requirements and accepted decisions; verified codebase facts.
-- Re-read the relevant repository guidance, artifact, code, tests, and documentation before deciding. Research and resolve inspectable questions yourself.
+- Apply this authority order: accepted requirements within host permissions and explicit safety constraints; applicable repository invariants; verified codebase facts. Treat current intent as the baseline, not a veto on an explicitly approved change to it.
+- Inspect the relevant artifact, code, tests, and guidance needed to decide the findings. Reuse verified current facts; re-read when changed evidence requires it. Resolve inspectable questions and authorized assumptions without duplicate confirmation.
 - Treat reviewer findings as advisory evidence, not authority. Accept a correct concern, adapt it when another authority-aligned resolution is better, and decline it only with concrete evidence.
 - Preserve the smallest coherent change, vertical and independently useful delivery where practical, decisions rather than prewritten implementation, and the highest stable credible proof seam.
 - When a finding concerns verification, keep every material outcome tied to an observable result, exact proof action, and expected evidence at the cheapest credible seam. Preserve material proof limits, terminal-state proof for asynchronous work, safe live-proof requirements, and honest handoff evidence without adding redundant layers.

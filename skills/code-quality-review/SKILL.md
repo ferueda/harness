@@ -1,84 +1,47 @@
 ---
 name: code-quality-review
-description: >
-  Review recently modified code for behavior-preserving clarity, simplicity, consistency, and
-  maintainability. Trigger when the user wants a code quality, readability, maintainability, or
-  simplification review of a diff or implementation.
+description: Review changed code read-only for behavior-preserving clarity, simplicity, and maintainability. Not a second general correctness review or surrounding-code cleanup.
 ---
 
 # Code Quality Review
 
-Review changed code for behavior-preserving clarity, simplicity, consistency,
-and maintainability. Stay read-only.
+Stay read-only. Preserve accepted behavior, scope, contracts, output shapes,
+artifact paths, CLI behavior, validation boundaries, and regression coverage.
+Do not apply fixes or publish without separate authority.
 
-## Audit Focus
+Read the full diff and nearby code needed to establish conventions. Consult
+only relevant guidance and specialist skills at verified locations. Existing
+intent is the baseline; accepted changes to it are not automatically defects.
+Host permissions and explicit safety constraints still bind the work.
 
-- Preserve exact behavior, accepted scope, public contracts, structured output
-  shapes, artifact paths, CLI behavior, validation boundaries, and regression
-  coverage.
-- Prefer project conventions and nearby code over general industry preferences.
-- Flag unnecessary abstractions, speculative generality, duplicated setup,
-  avoidable indirection, and deeply nested control flow introduced by the diff.
-  Recommend simplification only when a materially smaller equivalent shape
-  exists.
-- Check naming, file organization, error handling, dependencies, tests, and
-  explicit control flow against repository policy and established patterns.
-- Do not perform a second general correctness review. Report a behavioral
-  defect only when found while evaluating quality.
-- Exclude pre-existing debt, surrounding cleanup, broad rewrites, future
-  improvements, architecture changes outside the accepted task, and equally
-  valid style alternatives.
+Look for materially smaller equivalent shapes: duplication, avoidable
+indirection, speculative abstractions, unclear naming, or test complexity
+introduced by the change. Industry preferences do not override working local
+conventions. Do not perform a second general correctness review; report a
+concrete defect when encountered during quality review.
 
 ### Primitive fit
 
-When changed code adds, duplicates, extends, replaces, or moves a primitive or
-its owner, apply **primitive fit** at the relevant layer. Treat a primitive as
-an owned building block or contract. Verify relevant existing primitives, the
-current owner and source of truth, directly affected contracts and consumers,
-and dependency direction. Evaluate in order:
+When ownership or a building block changes, verify the existing owner, source
+of truth, relevant consumers, lifecycle, and dependency direction. Prefer reuse,
+then an extension of the same coherent contract, then the smallest new primitive
+for a verified need. Future reuse alone does not justify more machinery.
 
-1. **Reuse:** an existing primitive already owns and satisfies the accepted need
-   without weakening or crossing its boundary.
-2. **Extend:** the behavior belongs to the same owner and lifecycle, and the
-   extension keeps its contract coherent for current consumers while preserving
-   source-of-truth and dependency boundaries.
-3. **Add:** neither option fits; the diff introduces the smallest primitive at
-   the correct boundary for a verified current need.
+## Findings and completion
 
-Complete primitive fit only when evidence supports the selected option and why
-earlier options do not fit. Let present requirements and verified consumers
-bound a new primitive's surface; treat future reuse as a benefit, not authority
-for broader scope.
+Report only material issues in changed or directly affected code. Exclude
+pre-existing debt, broad rewrites, surrounding cleanup, and equivalent style
+choices. Use `must_fix` only for an applicable hard policy violation or verified
+correctness, contract, or test-reliability risk preventing safe acceptance.
+Optional simplifications remain advisory.
 
-## Skills and Guidelines
+On follow-up, do not relitigate settled preferences. Report new evidence of a
+material defect even when previously missed, explaining why it changes the
+decision. Use narrow non-destructive checks only for unresolved material claims;
+the validation stage owns the canonical gate.
 
-Discover available host and repository skills. Read only the `SKILL.md` files
-relevant to languages, frameworks, or patterns changed by the diff. Use them as
-subordinate guidelines, not a new checklist.
-
-## Process
-
-1. Read repository guidance, the task handoff when present, relevant skills,
-   and the full diff. Inspect nearby code only to verify established conventions.
-2. Review only changed or directly affected code.
-3. Check whether changed tests encode behavior and whether added complexity
-   creates test-reliability risk.
-4. Make every finding actionable and specific. Include:
-   - **Severity**: `Critical` | `High` | `Medium` | `Low`
-   - **Location**: file/line or function/class/module name
-   - **Issue**: description of the finding
-   - **Recommendation**: smallest behavior-preserving correction
-   - **Rationale**: evidence that the correction is warranted
-   - **must_fix**: `true` | `false`
-5. Complete the full diff. Include lower-severity findings only when they
-   materially affect maintainability or test confidence.
-6. Mark `must_fix: true` only for a hard repository-policy violation or when
-   added complexity creates a verified correctness, contract, or
-   test-reliability risk that makes safe acceptance unreasonable. Keep optional
-   simplifications advisory.
-7. Use `pass` when no finding has `must_fix: true`, `needs_changes` when at
-   least one does, and `blocked` only when coverage is unavailable.
-8. Run narrow read-only checks when useful. Leave deterministic validation to
-   the validation stage.
-
-Return only material, evidence-backed findings. A clean review is valid.
+Each finding has title, severity (`Critical`, `High`, `Medium`, `Low`), location,
+issue, smallest correction, rationale, and `must_fix`. End with `pass`,
+`needs_changes`, or `blocked` for no blockers, at least one blocker, or unavailable
+required coverage respectively. A clean review is valid. Structured calls return
+only the supplied JSON contract; reference formats are subordinate.

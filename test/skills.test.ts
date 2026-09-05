@@ -1,533 +1,193 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import type * as NodeFs from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 
-const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const SKILLS = join(ROOT, "skills");
+const workspaces: string[] = [];
+const expectedNames = [
+  "adversarial-review",
+  "architect",
+  "change-review-workflow",
+  "code-quality-review",
+  "create-plan",
+  "diagnose-issue",
+  "explain-change",
+  "handoff-work",
+  "planning-workflow",
+  "review-implementation",
+  "review-spec",
+  "shape-requirements",
+];
 
 afterEach(() => {
   vi.doUnmock("node:fs");
   vi.resetModules();
+  for (const workspace of workspaces.splice(0)) {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
-function normalizedProse(content: string): string {
-  return content.replace(/\s+/g, " ");
+function workspace(): string {
+  const path = mkdtempSync(join(tmpdir(), "harness-skills-"));
+  workspaces.push(path);
+  return path;
 }
 
-test("installPackagedSkill restores existing skill when forced replace fails", async () => {
-  const workspace = mkdtempSync(join(tmpdir(), "harness-skills-"));
-  const skillPath = join(workspace, ".agents/skills/change-review-workflow/SKILL.md");
-  mkdirSync(join(workspace, ".agents/skills/change-review-workflow"), { recursive: true });
-  writeFileSync(skillPath, "# Original local skill\n", "utf8");
+function read(path: string): string {
+  return readFileSync(join(ROOT, path), "utf8");
+}
 
-  let renameCalls = 0;
+function skillNames(): string[] {
+  return readdirSync(SKILLS, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function packageFiles(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(root, entry.name);
+    return entry.isDirectory() ? packageFiles(path) : [path];
+  });
+}
+
+test("the supported distributable catalogue excludes retired packages", () => {
+  expect(skillNames()).toEqual(expectedNames);
+  for (const path of [
+    "skills/audit",
+    "skills/docs-drift-review",
+    "automations/harness-doc-drift.md",
+    "skills/sessions",
+    "skills/session-evidence",
+    "skills/simplify-review",
+    "bin/sessions.ts",
+    "lib/sessions",
+    "test/sessions",
+    "test/fixtures/sessions",
+  ]) {
+    expect(existsSync(join(ROOT, path)), path).toBe(false);
+  }
+});
+
+test.each(expectedNames)("%s has valid discovery metadata and local references", (name) => {
+  const root = join(SKILLS, name);
+  const source = readFileSync(join(root, "SKILL.md"), "utf8");
+  const metadata = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(source)?.[1];
+  expect(metadata).toBeDefined();
+  expect(metadata).toMatch(new RegExp(`^name: ${name}$`, "m"));
+  expect(metadata).toMatch(/^description: \S.+$/m);
+  for (const match of source.matchAll(/\]\(([^)]+)\)/g)) {
+    const target = match[1].split("#")[0];
+    if (!target || /^[a-z]+:/i.test(target)) continue;
+    const resolved = resolve(root, target);
+    expect(relative(root, resolved)).not.toMatch(/^\.\.(?:[/\\]|$)/);
+    expect(isAbsolute(target)).toBe(false);
+    expect(existsSync(resolved), `${name}: ${target}`).toBe(true);
+  }
+});
+
+test.each(expectedNames)("installing %s copies its complete package only", async (name) => {
+  const target = workspace();
+  const { installPackagedSkill } = await import("../lib/skills/install.ts");
+  const result = installPackagedSkill(name, { workspace: target });
+  expect(result.status).toBe("installed");
+  expect(readdirSync(join(target, ".agents/skills"))).toEqual([name]);
+  for (const path of packageFiles(join(SKILLS, name))) {
+    const copied = join(target, ".agents/skills", name, relative(join(SKILLS, name), path));
+    expect(readFileSync(copied)).toEqual(readFileSync(path));
+  }
+});
+
+test.each(["audit", "docs-drift-review"])("retired %s cannot be installed", async (name) => {
+  const target = workspace();
+  const { installPackagedSkill } = await import("../lib/skills/install.ts");
+  expect(() => installPackagedSkill(name, { workspace: target })).toThrow(
+    `Packaged skill not found: ${name}`,
+  );
+  expect(existsSync(join(target, ".agents/skills"))).toBe(false);
+});
+
+test("a forced replacement failure restores the existing installed skill", async () => {
+  const target = workspace();
+  const skillPath = join(target, ".agents/skills/change-review-workflow/SKILL.md");
+  mkdirSync(dirname(skillPath), { recursive: true });
+  writeFileSync(skillPath, "# Original local skill\n", "utf8");
+  let renames = 0;
   vi.doMock("node:fs", async () => {
     const actual = await vi.importActual<typeof NodeFs>("node:fs");
     return {
       ...actual,
       renameSync: vi.fn<(oldPath: string, newPath: string) => void>((oldPath, newPath) => {
-        renameCalls += 1;
-        if (renameCalls === 2) {
-          throw new Error("simulated replace failure");
-        }
+        renames += 1;
+        if (renames === 2) throw new Error("simulated replace failure");
         return actual.renameSync(oldPath, newPath);
       }),
     };
   });
-
   const { installPackagedSkill } = await import("../lib/skills/install.ts");
-
-  expect(() => installPackagedSkill("change-review-workflow", { workspace, force: true })).toThrow(
+  const options = { workspace: target, force: true };
+  expect(() => installPackagedSkill("change-review-workflow", options)).toThrow(
     /simulated replace failure/,
   );
   expect(readFileSync(skillPath, "utf8")).toBe("# Original local skill\n");
 });
 
-const LEGACY_SESSIONS_PATTERNS = [
-  /skills\/sessions/,
-  /sessions analyze/,
-  /~\/\.sessions\/index/,
-  /SESSIONS_INSTALL_BIN/,
-  /session-evidence/,
-  /\bbin\/sessions/,
-  /\blib\/sessions/,
-] as const;
-
-test("Harness does not vendor or route to the legacy Sessions implementation", () => {
-  const removedPaths = [
-    "bin/sessions.ts",
-    "lib/sessions",
-    "skills/session-evidence",
-    "skills/sessions",
-    "test/sessions",
-    "test/fixtures/sessions",
-  ];
-  for (const relativePath of removedPaths) {
-    expect(existsSync(join(REPO_ROOT, relativePath))).toBe(false);
-  }
-
-  const docPaths = [
-    "README.md",
-    "AGENTS.md",
-    "docs/contributing/script-command-surface.md",
-    "docs/contributing/setup-manifest.md",
-    "docs/contributing/testing.md",
-    "skills/planning-workflow/SKILL.md",
-    "skills/planning-workflow/references/routing.md",
-  ];
-
-  for (const relativePath of docPaths) {
-    const content = readFileSync(join(REPO_ROOT, relativePath), "utf8");
-    for (const pattern of LEGACY_SESSIONS_PATTERNS) {
-      expect(content).not.toMatch(pattern);
-    }
+test("architect stays explicit-only and defaults name available skills", () => {
+  for (const name of expectedNames) {
+    const path = join(SKILLS, name, "agents/openai.yaml");
+    if (!existsSync(path)) continue;
+    const metadata = readFileSync(path, "utf8");
+    expect(metadata).toContain(`$${name}`);
+    if (name === "architect") expect(metadata).toMatch(/allow_implicit_invocation:\s*false/);
   }
 });
 
-test("planning skills use the compact capable-executor contract", () => {
-  const createPlan = readFileSync(join(REPO_ROOT, "skills/create-plan/SKILL.md"), "utf8");
-  const template = readFileSync(
-    join(REPO_ROOT, "skills/create-plan/references/plan-template.md"),
-    "utf8",
-  );
-  const coordinator = readFileSync(join(REPO_ROOT, "skills/planning-workflow/SKILL.md"), "utf8");
-  const audit = readFileSync(join(REPO_ROOT, "skills/audit/SKILL.md"), "utf8");
-  const auditTemplate = readFileSync(
-    join(REPO_ROOT, "skills/audit/references/plan-template.md"),
-    "utf8",
-  );
-
-  for (const content of [createPlan, template, coordinator, audit, auditTemplate]) {
-    expect(content).toMatch(/capable, context-limited\s+executors?/);
-    expect(content).toMatch(/highest existing\s+stable test seam/);
-    expect(content).not.toContain("weakest plausible executor");
-  }
-
-  for (const content of [createPlan, template, audit, auditTemplate]) {
-    expect(normalizedProse(content)).toContain("without prior context about the task at hand");
-    expect(content).not.toContain("no prior conversation");
-  }
-
-  expect(template).toContain("## Goal");
-  expect(template).toContain("## Changes");
-  expect(template).toContain("## Verify");
-  expect(template).toContain("## Boundaries");
-  expect(template).toContain("Do not add a skills table by default");
-  expect(template).not.toContain("## Status");
-  expect(template).not.toContain("## Maintenance notes");
-  expect(createPlan).not.toContain("less capable model with zero context");
-  expect(auditTemplate).toContain("Planned at");
-  expect(auditTemplate).toContain("## Index file: `dev/plans/README.md`");
-  expect(auditTemplate).not.toContain("## Commands you will need");
-
-  for (const content of [template, auditTemplate]) {
-    const prose = normalizedProse(content);
-    expect(prose).toContain(
-      "replaces, redirects, splits, deprecates, or removes an existing behavior",
+test("removed workflow routes are absent from active instructions", () => {
+  const paths = ["AGENTS.md", ...expectedNames.map((name) => `skills/${name}/SKILL.md`)];
+  for (const path of paths) {
+    expect(read(path), path).not.toMatch(
+      /skills\/(?:audit|docs-drift-review)|`(?:audit|docs-drift-review)`/,
     );
-    expect(prose).toContain("post-change owner, exact removals and cutover order");
-    expect(prose).toContain("required compatibility beside the change");
-    expect(prose).toContain("Omit this lifecycle detail for ordinary additive work");
-    expect(prose).toContain(
-      "When work materially changes failure handling, state or data flow, privacy, or security behavior, state the required behavior beside the affected change. Omit this detail when that behavior is unchanged or irrelevant.",
-    );
-    expect(prose).toContain(
-      "Prune repeated criteria, commands covered by the canonical repository gate, duplicated context, and empty optional sections",
-    );
-    expect(prose).toContain("No secrets appear");
   }
-
-  expect(createPlan).toContain(
-    "Verify repository commands and external contracts before prescribing them",
-  );
-  expect(createPlan).toContain("For multi-unit work, prefer vertical slices");
-  expect(createPlan).toMatch(/Keep shared setup\s+to the minimum required by the first slice/);
-  expect(createPlan).toMatch(/separate agents can own with limited overlap/);
-  expect(createPlan).toContain("reviewed, landed, or rolled back independently");
-  expect(createPlan).toContain(
-    "Do not divide work mechanically by repository layer or component type",
-  );
-  expect(auditTemplate).toContain(
-    "Verify repository commands and external contracts before prescribing them",
-  );
-
-  const templateProse = normalizedProse(template);
-  expect(templateProse).toContain(
-    "Every change and test traces to acceptance, an invariant, or a verified risk",
-  );
-  expect(templateProse).toContain("Exact files or symbols make the intended ownership clear");
-  expect(templateProse).toContain("No material implementation choice remains unresolved");
-  expect(templateProse).toContain(
-    "vertical outcome slices that can be verified and that separate agents can own with limited overlap",
-  );
-  expect(templateProse).toContain("can proceed in parallel after the minimum shared setup");
-  expect(templateProse).toContain(
-    "If an indivisible migration, cross-cutting safety fix, or minimum shared prerequisite must remain horizontal",
-  );
-
-  const auditTemplateProse = normalizedProse(auditTemplate);
-  expect(auditTemplateProse).toContain(
-    "Every change and test traces to the finding, an invariant, or a verified risk",
-  );
-  expect(auditTemplateProse).toContain("Exact files or symbols make ownership clear");
-  expect(auditTemplateProse).toContain("The plan contains no unresolved implementation decision");
-  expect(auditTemplateProse).toContain(
-    "vertical outcome slices that can be verified and that separate agents can own with limited overlap",
-  );
-  expect(auditTemplateProse).toContain("reviewed, landed, or rolled back independently");
-  expect(auditTemplateProse).toContain("can proceed in parallel after the minimum shared setup");
-  expect(auditTemplateProse).toContain(
-    "If an indivisible migration, cross-cutting safety fix, or minimum shared prerequisite must remain horizontal",
-  );
-  expect(auditTemplateProse).toContain(
-    "state briefly why vertical delivery is impractical or unsafe",
-  );
-
-  const coordinatorProse = normalizedProse(coordinator);
-  expect(coordinatorProse).toContain("repository guidance constrains the work");
-  expect(coordinatorProse).toContain(
-    "the original request or approved plan defines the intended outcome",
-  );
-  expect(coordinatorProse).toContain("verified current code is the implementation baseline");
-  expect(coordinatorProse).toContain(
-    "Historical branches and superseded implementations are context only",
-  );
-  expect(coordinatorProse).toContain(
-    "Carry forward named ownership, removal, cutover, and compatibility decisions",
-  );
-  expect(coordinatorProse).toContain("Before review or handoff, reconcile the resulting diff");
-  expect(coordinatorProse).toContain("Perform both checks in session");
-  expect(coordinatorProse).toContain("the accepted outcome is implemented");
-  expect(coordinatorProse).toContain("relevant non-destructive validation is complete");
-  expect(coordinatorProse).toContain("the exact unavailable checks are reported");
-  expect(coordinatorProse).toContain("the resulting diff is reconciled with accepted decisions");
-  expect(coordinatorProse).toContain(
-    "A material conflict or required scope expansion stops implementation and returns to planning or the user",
-  );
-  expect(coordinator).not.toContain("**Done when:** plan phases complete or scoped change landed.");
 });
 
-test("planning guidance connects material outcomes to proportional proof", () => {
-  const createPlan = readFileSync(join(REPO_ROOT, "skills/create-plan/SKILL.md"), "utf8");
-  const template = readFileSync(
-    join(REPO_ROOT, "skills/create-plan/references/plan-template.md"),
-    "utf8",
-  );
-  const auditTemplate = readFileSync(
-    join(REPO_ROOT, "skills/audit/references/plan-template.md"),
-    "utf8",
-  );
-  const reviewSpec = readFileSync(join(REPO_ROOT, "skills/review-spec/SKILL.md"), "utf8");
-  const testingGuide = readFileSync(join(REPO_ROOT, "docs/contributing/testing.md"), "utf8");
-
-  for (const authoring of [createPlan, template, auditTemplate, testingGuide]) {
-    const prose = normalizedProse(authoring);
-    expect(prose).toContain("material outcome or forbidden effect");
-    expect(prose).toContain("proof action");
-    expect(prose).toContain("expected observable evidence");
-    expect(prose).toContain("repository gate");
-    expect(prose.toLowerCase()).toContain("acceptance or enqueueing");
-    expect(prose).toContain("explicit authority");
-    expect(prose).toContain("stop conditions");
-    expect(prose).toContain("cleanup");
-  }
-
-  const reviewProse = normalizedProse(reviewSpec);
-  expect(reviewProse).toContain("cheapest credible acceptance-level proof");
-  expect(reviewProse).toContain("canonical repository gate proves general health");
-  expect(reviewProse).toContain("does not replace behavioral proof");
-  expect(reviewProse).toContain("terminal state or downstream effect");
-  expect(reviewProse.toLowerCase()).toContain("do not demand repeated layers");
-  expect(reviewProse).toContain("observed results and skipped checks");
-});
-
-test("outcome-proof forward-evaluation fixtures keep the five fixed scenarios", () => {
-  const fixture = readFileSync(join(REPO_ROOT, "test/fixtures/outcome-proof-eval.md"), "utf8");
-  const testingGuide = readFileSync(join(REPO_ROOT, "docs/contributing/testing.md"), "utf8");
-
-  for (const heading of [
-    "## Focused module change",
-    "## Cross-boundary workflow",
-    "## Asynchronous completion",
-    "## Live provider behavior",
-    "## Docs-only local change",
+test("behavioral forward-evaluation fixtures retain representative decision cases", () => {
+  const fixture: unknown = JSON.parse(read("test/fixtures/skill-routing-eval.json"));
+  expect(Array.isArray(fixture)).toBe(true);
+  if (!Array.isArray(fixture)) return;
+  const ids = fixture.map((item: unknown) => {
+    if (!item || typeof item !== "object" || !("id" in item)) return undefined;
+    return item.id;
+  });
+  expect(new Set(ids).size).toBe(ids.length);
+  for (const id of [
+    "direct-fix",
+    "authorized-defaults",
+    "document-edit",
+    "review-only",
+    "full-workflow",
+    "delegated-author",
+    "missing-child",
+    "new-review-evidence",
   ]) {
-    expect(fixture).toContain(heading);
+    expect(ids).toContain(id);
   }
-
-  expect(fixture).toContain("Do not use only the candidate reviewer");
-  expect(fixture.match(/\*\*Reviewer fixture:\*\*/g)).toHaveLength(5);
-  expect(fixture.match(/\*\*Revision expectation:\*\*/g)).toHaveLength(5);
-  expect(fixture).toContain("GPT-5.6 Luna with medium reasoning");
-  expect(fixture).toContain("exactly three");
-  expect(fixture).toContain("complete five-scenario rounds");
-  expect(fixture).toContain("accepted response or enqueue event as sufficient proof");
-  expect(fixture).toContain("explicit authority");
-  expect(fixture).toContain("Do not place the live call in CI");
-  const fixtureProse = normalizedProse(fixture);
-  expect(fixtureProse).toContain(
-    "A scenario passes one round only when its authoring, review, and revision outputs",
-  );
-  expect(fixtureProse).toContain("pass in all three rounds");
-  expect(fixtureProse).toContain(
-    "at least four of the five scenarios pass in each of the three rounds",
-  );
-  expect(fixtureProse).toContain("baseline performance does not change the candidate pass rule");
-  expect(testingGuide).toContain("../../test/fixtures/outcome-proof-eval.md");
-  expect(testingGuide).toContain("Provider-backed runs remain opt-in");
+  const proof = read("test/fixtures/outcome-proof-eval.md");
+  expect(proof.match(/\*\*Reviewer fixture:\*\*/g)).toHaveLength(5);
+  expect(proof.match(/\*\*Revision expectation:\*\*/g)).toHaveLength(5);
 });
 
-test("handoffs preserve accepted authority without duplicating inspectable sources", () => {
-  const handoff = readFileSync(join(REPO_ROOT, "skills/handoff-work/SKILL.md"), "utf8");
-  const prose = normalizedProse(handoff);
-
-  expect(prose).toContain(
-    "follows repository guidance and the original task or accepted plan as its authority",
-  );
-  expect(prose).toContain("Point to inspectable sources");
-  expect(prose).toContain(
-    "Repeat only session-only or otherwise load-bearing constraints and decisions",
-  );
-  expect(prose).toContain("Use when the user asks to hand off work");
-  expect(handoff).toContain("## Required core");
-  expect(handoff).toContain("**Status**");
-  expect(handoff).toContain("**Authority and goal**");
-  expect(handoff).toContain("**Current state**");
-  expect(handoff).toContain("**Verification**");
-  expect(handoff).toContain("### Authority and goal");
-  expect(handoff).toContain("### Current state");
-  expect(handoff).toContain("### Verification");
-  expect(handoff).toContain("## Add only when relevant");
-  expect(handoff).toContain("**Material adaptations**");
-  expect(handoff).toContain("**Important files**");
-  expect(handoff).toContain("**Next steps**");
-  expect(handoff).toContain("**Open items**");
-  expect(handoff).toContain("Return the handoff inline");
-  expect(handoff).not.toContain("### How it was done");
-  expect(handoff).not.toContain("### Why it was done");
-  expect(handoff).not.toContain("### What was worked on");
-  expect(handoff).not.toContain("### Files referenced");
-});
-
-test("planning coordinator triages before choosing planning work", () => {
-  const architectMetadata = readFileSync(
-    join(REPO_ROOT, "skills/architect/agents/openai.yaml"),
-    "utf8",
-  );
-  const diagnosisMetadata = readFileSync(
-    join(REPO_ROOT, "skills/diagnose-issue/agents/openai.yaml"),
-    "utf8",
-  );
-  const diagnosis = readFileSync(join(REPO_ROOT, "skills/diagnose-issue/SKILL.md"), "utf8");
-  const coordinator = readFileSync(join(REPO_ROOT, "skills/planning-workflow/SKILL.md"), "utf8");
-  const routing = readFileSync(
-    join(REPO_ROOT, "skills/planning-workflow/references/routing.md"),
-    "utf8",
-  );
-  const shaping = readFileSync(join(REPO_ROOT, "skills/shape-requirements/SKILL.md"), "utf8");
-  const gate = readFileSync(
-    join(REPO_ROOT, "skills/shape-requirements/references/gate-mode.md"),
-    "utf8",
-  );
-  const createPlan = readFileSync(join(REPO_ROOT, "skills/create-plan/SKILL.md"), "utf8");
-  const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
-  const agentGuidance = readFileSync(join(REPO_ROOT, "AGENTS.md"), "utf8");
-
-  expect(architectMetadata).toContain("policy:\n  allow_implicit_invocation: false");
-  expect(architectMetadata).toContain('default_prompt: "Use $architect');
-  expect(diagnosisMetadata).toContain('default_prompt: "Use $diagnose-issue');
-  expect(diagnosisMetadata).not.toContain("allow_implicit_invocation: false");
-  expect(diagnosis).toContain(
-    "Do not select it directly from a generic bug, ticket, symptom, or design concern",
-  );
-  expect(normalizedProse(diagnosis)).toContain("the human explicitly invoked `$diagnose-issue`");
-  expect(normalizedProse(diagnosis)).toContain(
-    "an active documented workflow routed the current request here",
-  );
-  const coordinatorProse = normalizedProse(coordinator);
-  expect(coordinatorProse).toContain("Respect the user's explicit requested deliverable");
-  expect(coordinatorProse).toContain(
-    "A bounded item has one coherent, observable outcome and one acceptance boundary",
-  );
-  expect(coordinatorProse).toContain(
-    "Normal repository inspection, test writing, and local technical discovery are part of implementation",
-  );
-  expect(coordinatorProse).toContain(
-    "Do not infer the route from task nouns such as bug, ticket, feature, brief, or spec",
-  );
-  expect(coordinator).toContain("implement directly");
-  expect(coordinator).toContain("| Explicit codebase or workflow audit request | `audit` |");
-  expect(coordinator).toContain("`../diagnose-issue/SKILL.md`");
-  expect(normalizedProse(coordinator)).toContain(
-    "Do not imitate the child skill's output without loading its instructions",
-  );
-  expect(routing).toContain(
-    '| 3 | "Fix the login 500 when email is empty. Repro and acceptance criteria attached." | implementation |',
-  );
-  expect(routing).toContain(
-    '| 4 | "Login sometimes returns 500; find out why" | `diagnose-issue` |',
-  );
-  expect(routing).toContain('| 12 | "Audit this repo for DX improvements" | `audit` |');
-  expect(coordinatorProse).toContain(
-    "Files, layers, questions, and implementation steps do not define scope",
-  );
-  expect(shaping).toContain(
-    "| `diagnose-issue` | Brief or interpretation asserts current behavior",
-  );
-  expect(shaping).toContain("A multi-file or cross-area change does not by itself require a plan");
-  expect(shaping).toContain("`../diagnose-issue/SKILL.md`");
-  expect(normalizedProse(gate)).toContain(
-    "materially changes the requested outcome, acceptance boundary, safety",
-  );
-  expect(createPlan).toContain("## Entry Gate");
-  expect(normalizedProse(createPlan)).toContain(
-    "Cross-area reach, multiple files, or several implementation steps",
-  );
-  expect(diagnosis).toContain("| Implement directly | **Confirmed** or **Likely**");
-  expect(normalizedProse(diagnosis)).toContain("before implementation or planning");
-  expect(normalizedProse(diagnosis)).toContain(
-    "Direct implementation requests must not select it directly",
-  );
-  expect(architect).toContain("read `../diagnose-issue/SKILL.md` completely");
-  expect(normalizedProse(agentGuidance)).toContain(
-    "generic bugs, tickets, symptoms, and code-truth questions enter through `planning-workflow`",
-  );
-  expect(normalizedProse(agentGuidance)).toContain(
-    "The coordinator may implement directly; entering it does not require a plan or diagnosis",
-  );
-  expect(normalizedProse(agentGuidance)).toContain(
-    "Evidence-backed problem definition before implementation or planning",
-  );
-});
-
-test("architect prefers the smallest intent-aligned design and explains its impact", () => {
-  const architect = readFileSync(join(REPO_ROOT, "skills/architect/SKILL.md"), "utf8");
-  const metadata = readFileSync(join(REPO_ROOT, "skills/architect/agents/openai.yaml"), "utf8");
-  const prose = normalizedProse(architect);
-
-  expect(prose).toContain("Repository invariants and documented project intent");
-  expect(prose).toContain("Recommend no change when it already satisfies the goal");
-  expect(prose).toContain("smallest repo-native change");
-  expect(prose).toContain(
-    "Classify the recommended direction as **One scoped outcome** or **An umbrella requiring scoped units**",
-  );
-  expect(prose).toContain(
-    "Complexity, file count, and cross-layer reach do not make it an umbrella",
-  );
-  expect(prose).toContain("could be accepted, shipped, deferred, or rolled back independently");
-  expect(prose).toContain(
-    "observable outcome, acceptance boundary, dependencies on other units, and explicit exclusions",
-  );
-  expect(prose).toContain("do not split work mechanically by layer or module");
-  expect(prose).toContain("Do not manufacture an option count");
-  expect(prose).toContain("identify the current owner and existing repository");
-  expect(prose).toContain("Name the verified gap they cannot satisfy");
-  expect(prose).toContain("observable behavior; APIs, CLI, configuration, schemas, events");
-  expect(prose).toContain("assess expected performance and separate measurements from estimates");
-  expect(prose).toContain("winning direction's accepted tradeoffs");
-  expect(prose).toContain("recommend build now, defer, or record only");
-  expect(prose).toContain("highest existing stable test seam");
-  expect(prose).toContain("only when its answer could change the recommendation");
-  expect(prose).toContain("challenge the smallest proposed design");
-  expect(prose).toContain("Name the task `architect-advisor`");
-  expect(prose).toContain("Only materially different viable choices");
-  expect(prose).toContain("Omit when one direction is clear");
-  expect(architect).toContain("## Impact and tradeoffs");
-  expect(architect).toContain("**Scope**: One scoped outcome | An umbrella requiring scoped units");
-  expect(architect).toContain("## Scoped units");
-  expect(prose).toContain("State relevant unchanged surfaces the user asked about");
-  expect(prose).toContain("material consequences and accepted tradeoffs understood");
-  expect(metadata).toContain("explain material impact and accepted tradeoffs");
-  expect(architect).not.toContain("disable-model-invocation");
-  expect(architect).not.toContain("Use an alternate model");
-  expect(architect).not.toMatch(/gpt-5\.6-(terra|luna)/);
-  expect(architect).not.toContain("Generate two to four viable designs");
-  expect(architect).not.toContain("bolder architecture");
-  expect(architect).not.toContain("## Current-State Anchors");
-  expect(architect).not.toContain("## Locked For Planning");
-});
-
-test("change review converges within the original task scope", () => {
-  const skill = readFileSync(join(REPO_ROOT, "skills/change-review-workflow/SKILL.md"), "utf8");
-  const implementation = readFileSync(
-    join(REPO_ROOT, "skills/review-implementation/SKILL.md"),
-    "utf8",
-  );
-  const quality = readFileSync(join(REPO_ROOT, "skills/code-quality-review/SKILL.md"), "utf8");
-  const handoff = readFileSync(
-    join(REPO_ROOT, "skills/change-review-workflow/references/review-handoff.md"),
-    "utf8",
-  );
-  const prose = normalizedProse(skill);
-
-  expect(prose).toContain("Use at most three total runs");
-  expect(prose).toContain("After any code edit, always rerun `implementation`");
-  expect(prose).toContain("A partial run passes only its requested roles");
-  expect(prose).toContain("Advisories remain evidence by default");
-  expect(prose).toContain("material scope expansion or a new product decision");
-  expect(prose).toContain("made it newly observable");
-  expect(prose).toContain("clarity, simplicity, conventions");
-  expect(prose).toContain("retaining reviewer provenance");
-  expect(prose).toContain(
-    "Reconcile conflicts among findings, the original task or accepted plan, handoff context, and the diff",
-  );
-  expect(prose).toContain(
-    "each underlying issue an evidence-backed `Implement`, `Adapt`, or `Decline`",
-  );
-  expect(prose).toContain("Decisions are issue-local");
-  expect(prose).toContain("entire reviewer, run, or finding set");
-  expect(prose).not.toContain("`simplify`");
-  const implementationProse = normalizedProse(implementation);
-  expect(implementationProse).toContain(
-    "authoritative task or plan names a post-change owner, removal, cutover, or compatibility commitment",
-  );
-  expect(implementationProse).toContain("verify it against the diff and directly affected paths");
-  expect(implementationProse).toContain("Handoffs provide context, not authority");
-  expect(implementationProse).toContain("invent no migration work absent such a commitment");
-  expect(quality).toContain("materially smaller equivalent shape");
-  expect(quality).toContain("verified correctness, contract, or");
-  expect(existsSync(join(REPO_ROOT, "skills/simplify-review/SKILL.md"))).toBe(false);
-
-  expect(handoff).toContain("## Goal");
-  expect(handoff).toContain("## Decisions and boundaries");
-  expect(handoff).toContain("## Verification");
-  expect(handoff).toContain("## Scrutiny");
-  expect(handoff).toContain("## Follow-up focus");
-  expect(handoff).not.toContain("### Files changed");
-  expect(handoff).not.toContain("Provider session");
-});
-
-test("manual implementation review matches the harness acceptance contract", () => {
-  const implementation = readFileSync(
-    join(REPO_ROOT, "skills/review-implementation/SKILL.md"),
-    "utf8",
-  );
-  const prose = normalizedProse(implementation);
-
-  expect(prose).toContain("Repository hard invariants and documented project intent");
-  expect(prose).toContain(
-    "Original goal, acceptance criteria, accepted decisions, and explicit boundaries",
-  );
-  expect(prose).toContain("Verified behavior of the current diff and directly affected code");
-  expect(prose).toContain("Reviewer preferences and improvement opportunities");
-  expect(prose).toContain("A finding may block acceptance only when it establishes");
-  expect(prose).toContain("an unmet acceptance criterion");
-  expect(prose).toContain("a hard invariant violated by the change");
-  expect(prose).toContain(
-    "a correctness, security, reliability, or compatibility regression introduced or worsened by the diff",
-  );
-  expect(prose).toContain("missing behavioral proof required for changed behavior");
-  expect(prose).toContain(
-    "pre-existing debt, optional hardening, alternative architecture, nearby cleanup, and out-of-scope refactors as non-blocking",
-  );
-  expect(prose).toContain("material scope expansion or a new product decision");
-  expect(prose).toContain("state the exact human decision needed");
-  expect(prose).toContain(
-    'Use `verdict: "pass"` when no finding has `must_fix: true`; advisory findings may accompany a pass',
-  );
-  expect(prose).not.toContain(
-    "blockers, major correctness issues, contract violations, data loss, security issues, or missing tests for changed behavior",
-  );
-});
+// Package/wiring checks do not establish model-level routing or execution quality.
+// Run authorized fresh-session forward evaluations separately; do not pin prose.

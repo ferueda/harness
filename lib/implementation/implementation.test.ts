@@ -9,6 +9,7 @@ import {
   IMPLEMENTATION_RESULT_SCHEMA_PATH,
   type ImplementationExecution,
 } from "./implementation.ts";
+import { IMPLEMENTATION_POLICY_VERSION } from "./prompt.ts";
 import type { ImplementationSource } from "./source.ts";
 
 const temporaryPaths: string[] = [];
@@ -54,7 +55,7 @@ describe("implementWorkItem", () => {
         provider: "codex",
         model: "gpt-5.6-sol",
         modelReasoningEffort: "high",
-        policyVersion: "1",
+        policyVersion: IMPLEMENTATION_POLICY_VERSION,
         resultSchemaVersion: "1",
         promptSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
         schemaSha256: expect.stringMatching(/^[0-9a-f]{64}$/),

@@ -1,25 +1,14 @@
-# Contributing to harness
+# Contributing to Harness
 
-## Start here
+Use `README.md` for installation and usage. Read the relevant contributor source
+when a task needs it; this index is not a required reading sequence.
 
-Use this directory when changing the harness repo itself. `README.md` is for
-installing and using harness; `docs/contributing/` is for people and agents who
-need to maintain its docs, commands, workflows, providers, skills, and review
-loops.
-
-## Current docs
-
-- [Project intent](../project-intent.md) - product-level decisions,
-  documentation boundaries, and hard invariants.
-- [Harness-engineering guide](./harness-engineering.md) - workflow-quality
-  decisions and durable improvement habits.
-- [Architecture map](./architecture.md) - runtime paths, ownership boundaries,
-  subsystem locations, artifacts, and extension seams.
-- [Linear automation](./linear-automation.md) - run the self-hosted polling
-  server and persistent Connect worker.
-- [Script and command surface](./script-command-surface.md) - command
-  ownership, mutability, generated-help policy, and inventory rules.
-- [Setup manifest](./setup-manifest.md) - local requirements, install/update
-  behavior, generated artifacts, provider auth, and repo-boundary rules.
-- [Testing](./testing.md) - testing principles, proof-layer selection, authoring
-  guidance, smoke policy, verification commands, and drift checks.
+- [Project intent](../project-intent.md): direction, non-goals, and ownership.
+- [Architecture](architecture.md): current runtime paths and subsystem boundaries.
+- [Harness engineering](harness-engineering.md): durable improvement and enforcement.
+- [Agent guidance](agent-guidance.md): editing skills, prompts, routing, and evaluations.
+- [Packaged skills](../../skills/README.md): task selection and installation boundaries.
+- [Testing](testing.md): focused proof, authoring, smokes, gates, and their limits.
+- [Commands](script-command-surface.md): command owners and mutability.
+- [Setup](setup-manifest.md): requirements, authentication, and generated artifacts.
+- [Linear automation](linear-automation.md): self-hosted worker operation.

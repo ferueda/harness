@@ -1,95 +1,70 @@
 ---
 name: change-review-workflow
-description: Run and close the harness `change-review` workflow for current code changes. Use when the user asks to run a review, run a full review, run a review for these changes, run the change review workflow, run a harness review, run a multi-agent review, or compile and act on harness reviewer results. If the requested steps are not explicit, run all change-review steps.
+description: Run Harness change-review and coordinate finding resolution for a full-workflow request. Fixes and publication remain limited to the authority granted for the task.
 ---
 
 # Change Review Workflow
 
-Decide whether the current implementation safely completes the original task.
-Review converges on accepted scope; it does not turn the PR into a general
-cleanup effort.
+Decide whether current changes satisfy the accepted task. Keep review and
+remediation in scope; a review request alone does not authorize source fixes,
+commits, or external publication.
 
-## Review contract
+## Start
 
-- Initial coverage runs all roles:
-  - `implementation`: correctness, task and plan fidelity, contracts,
-    regressions, and required behavioral tests.
-  - `quality`: behavior-preserving clarity, simplicity, conventions, and
-    maintainability, including smaller equivalent shapes for complexity
-    introduced by the diff.
-- Approval requires completed initial coverage, a passing implementation review
-  of the current head, and no `must_fix` findings.
-- `needs_changes` requires at least one `must_fix`. Advisory findings may
-  accompany `pass`.
-- `blocked` or a failed reviewer means incomplete coverage, not approval.
-- Use at most three total runs: the initial run and two follow-ups. Remaining
-  blockers after that are unresolved and require user direction.
+Resolve base, head, requested roles, and the task/plan. Harness reviews
+`merge-base(base, head)..head`: staged, unstaged, and untracked work is excluded.
+A committed review does not cover uncommitted changes. Include local
+work through an authorized temporary review ref/commit object, or report the
+exact uncovered scope. Do not commit someone else's work to satisfy the runner.
 
-## Before the initial run
-
-1. Write the compact handoff from
-   [references/review-handoff.md](references/review-handoff.md). Include only
-   task context the diff and plan cannot provide.
-2. Confirm scope. Harness reviews `merge-base(base, head)..head`; unstaged,
-   staged-but-uncommitted, and untracked files are excluded. Use a temporary
-   review ref or commit object when the current worktree must be included.
-3. Include `--plan` when a plan exists and `--workspace` for another repo.
-4. Run all roles through the available `harness`, `.harness/bin/harness`, or
-   source checkout executable:
+Load [the handoff reference](references/review-handoff.md) only when session-only
+context or follow-up decisions need transferring. Discover an available
+`harness`, `.harness/bin/harness`, or source executable; consult its help for
+flags rather than guessing commands. For example:
 
 ```bash
 printf '%s\n' "$HANDOFF" | harness run change-review --workspace /path/to/repo --base main --head HEAD --handoff-stdin --verbose
 ```
 
-## Triage
+Include `--plan` when a plan exists. By default run both `implementation` and
+`quality` for initial full coverage. An explicitly limited role request proves
+only that role, not full approval. If the runner is unavailable, state that
+limit; use a direct available reviewer only when the requested deliverable
+allows it, never claim Harness ran.
 
-Read `meta.json`, `summary.md`, and every completed reviewer JSON. Read raw
-or stream artifacts only for failed or ambiguous reviewers; use `events.jsonl`
-when diagnosing the timeline.
+## Triage and continue
 
-Group duplicate findings by underlying issue while retaining reviewer
-provenance. Reconcile conflicts among findings, the original task or accepted
-plan, handoff context, and the diff using the authority and scope checks below.
-Give each underlying issue an evidence-backed `Implement`, `Adapt`, or `Decline`
-disposition. Decisions are issue-local; never apply one disposition to an
-entire reviewer, run, or finding set. Advisories remain evidence by default;
-adopt one only when it directly improves the original goal with low scope risk.
+Read structured reviewer JSON and run metadata/summary. Streams are diagnostics,
+not verdict authority. Merge duplicate issues while preserving provenance.
+Give each material issue an evidence-backed `Implement`, `Adapt`, or `Decline`
+disposition. A reviewer preference cannot redefine accepted scope.
 
-Before accepting any recommendation, confirm:
+Blockers must establish a changed-code regression, unmet acceptance, hard
+invariant violation, or required missing proof. Optional polish and pre-existing
+debt do not block. New evidence of a material defect is valid on follow-up even
+when an earlier review missed it; explain why it changes the decision. Do not
+reopen settled preferences without new evidence.
 
-1. It serves the original goal or an accepted decision.
-2. The diff introduced or worsened the problem, or the problem prevents an
-   acceptance criterion or hard invariant.
-3. It is required for safe acceptance.
-4. The smallest correction stays inside accepted scope.
+When fixes are authorized, apply the smallest accepted corrections, fix failures
+caused by them, and run focused checks plus required gates. Continue without
+asking for approval at each iteration. Otherwise return findings and proposed
+corrections without editing. Material scope expansion or a new human decision
+pauses only the affected correction.
 
-If a safe correction requires material scope expansion or a new product
-decision, stop and ask the user. Do not let reviewer advice silently redefine
-the task.
-
-Apply only accepted in-scope fixes, then run focused verification. Add a
-regression test when a bug fix needs one.
-
-## Follow-up runs
-
-After any code edit, always rerun `implementation`; add `quality` only when the
-fix affects clarity, simplicity, conventions, maintainability, or tests. If no
-code changed and a reviewer failed, retry only that role. Record why omitted
-roles remain covered.
-
-Use `--steps <ids>` for targeted follow-ups. A partial run passes only its
-requested roles; it does not establish approval by itself.
-
-The follow-up handoff names resolved blockers and settled decisions. Reviewers
-may add a new blocker only when remediation introduced it or made it newly
-observable. Do not reopen declined advisories or unchanged pre-existing debt.
+After any code edit, always rerun `implementation`. Add `quality` when the fix
+changes clarity, conventions, maintainability, or tests. If no code changed,
+retry only failed roles. Use `--steps <ids>` and explain why omitted roles remain
+covered. Preserve all review artifacts and accepted dispositions.
 
 ## Completion
 
-- **Approve**: required coverage complete for the current head; no blockers.
-- **Needs changes**: in-scope blockers remain and another run is available.
-- **Unresolved**: three runs exhausted, required scope expansion, human decision,
-  blocked review, or reviewer failure that cannot be recovered.
+Use at most three total runs: initial plus two follow-ups. Stop with unresolved
+blockers or failed coverage when the budget is exhausted; do not restart the
+counter by naming another workflow.
 
-Preserve all run artifacts. Structured reviewer JSON is verdict authority;
-stream logs are diagnostics only.
+Approve only with completed initial coverage, a passing implementation review
+of the current head, and no `must_fix` findings. `needs_changes` requires at
+least one must-fix; advisories may accompany `pass`. A failed or `blocked`
+reviewer means incomplete coverage, not approval. Report the reviewed revision,
+observed checks, dispositions, and remaining blockers. Publication is separate
+and requires its own task authority.

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Agent, AgentRunInput } from "../agent/contract.ts";
 import { reviseSpec } from "./revise.ts";
+import { SPEC_REVISION_POLICY_VERSION } from "./revise-prompt.ts";
 import type { SpecRevisionReview } from "./revise-schema.ts";
 import type { SpecWorkItemContext } from "./schema.ts";
 
@@ -79,7 +80,7 @@ it("returns a typed provider failure when the result schema cannot be read", asy
       provider: "codex",
       model: "gpt-5.6-sol",
       modelReasoningEffort: "high",
-      policyVersion: "2",
+      policyVersion: SPEC_REVISION_POLICY_VERSION,
       resultSchemaVersion: "1",
       reviewRubricVersion: null,
       promptSha256: null,

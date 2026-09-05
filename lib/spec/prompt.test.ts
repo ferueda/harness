@@ -8,7 +8,7 @@ describe("Spec prompt", () => {
     const artifactPath = "dev/plans/FER-273.md";
     const prompt = renderSpecPrompt({ workItem, artifactPath });
 
-    expect(SPEC_POLICY_VERSION).toBe("3");
+    expect(SPEC_POLICY_VERSION).toBe("4");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`Write the complete Spec at exactly ${artifactPath}`);
     expect(prompt).toContain(`artifactPath must be exactly "${artifactPath}"`);
@@ -22,11 +22,9 @@ describe("Spec prompt", () => {
       artifactPath: "dev/plans/FER-273.md",
     });
 
-    expect(prompt).toContain("Read repository guidance such as AGENTS.md and README.md");
+    expect(prompt).toContain("Read applicable repository guidance");
     expect(prompt).toContain("authoritative project intent or vision source");
-    expect(prompt).toContain(
-      "repository invariants and current project intent; explicit requirements and accepted decisions; verified codebase facts",
-    );
+    expect(prompt).toContain("accepted requirements within host permissions");
     expect(prompt).toContain("Separate current behavior from requested behavior");
     expect(prompt).toContain("Research first");
     expect(prompt).toContain("Prefer one coherent recommended direction");
