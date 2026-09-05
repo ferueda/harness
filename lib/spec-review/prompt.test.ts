@@ -12,8 +12,8 @@ describe("Spec review prompt", () => {
     const artifact = { path: "dev/plans/FER-282.md", revision: "a".repeat(40) };
     const prompt = renderSpecReviewPrompt({ workItem, artifact });
 
-    expect(SPEC_REVIEW_RUBRIC_VERSION).toBe("3");
-    expect(SPEC_REVIEW_PROMPT_VERSION).toBe("3");
+    expect(SPEC_REVIEW_RUBRIC_VERSION).toBe("4");
+    expect(SPEC_REVIEW_PROMPT_VERSION).toBe("4");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`Review exactly ${artifact.path}`);
     expect(prompt).toContain(`trusted revision ${artifact.revision}`);
@@ -23,12 +23,10 @@ describe("Spec review prompt", () => {
   it("grounds review in authority and a proportional versioned rubric", () => {
     const prompt = render();
 
-    expect(prompt).toContain(
-      "repository invariants and current project intent; explicit requirements and accepted decisions; verified codebase facts",
-    );
+    expect(prompt).toContain("accepted requirements within host permissions");
     expect(prompt).toContain("Review the Spec as a decision record");
     expect(prompt).toContain("Do not demand template sections");
-    expect(prompt).toContain("accepted, current, locked, or superseding");
+    expect(prompt).toContain("only when supplied by the user or trusted caller");
     expect(prompt).toContain("unmarked proposals, comments, metadata");
     expect(prompt).toContain("matching SKILL.md files");
     expect(prompt).toContain("resolves planning-time choices");

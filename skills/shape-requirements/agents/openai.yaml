@@ -1,4 +1,4 @@
 interface:
   display_name: "Shape Requirements"
-  short_description: "Gate underspecified tasks or interview to draft a requirements brief"
-  default_prompt: "Use $shape-requirements — gate if the task is underspecified, interview if I need a brief."
+  short_description: "Clarify blocking requirements or conduct an interview"
+  default_prompt: "Use $shape-requirements to resolve material missing intent, or interview me when I explicitly request it. Continue once my answers or authorized assumptions unblock the task."

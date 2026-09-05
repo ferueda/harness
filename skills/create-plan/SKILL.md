@@ -1,113 +1,54 @@
 ---
 name: create-plan
-description: Create a scoped, code-backed implementation plan when the user explicitly asks for one or safe execution needs durable sequencing, cutover, risk control, review, or executor handoff. Do not create a plan only because work spans several files, steps, or areas; route uncertain build and fix requests through planning-workflow first.
+description: Write a plan when explicitly requested or when safe execution needs durable sequencing, cutover, risk controls, or an executor handoff. File count alone does not justify planning.
 ---
 
 # Create Plan
 
 Write the minimum sufficient plan for a capable, context-limited executor with
-repository access but without prior context about the task at hand. Resolve
-implementation decisions; do not teach inspectable repository basics.
+repository access but without prior context about the task at hand.
 
-## Entry Gate
+## Entry and authority
 
-Continue when either:
+Use for a requested plan or an established execution need. Clear build/fix work
+may proceed directly; no router is needed to obtain permission. Planning does
+not authorize implementation or publication.
 
-- the user explicitly requested an implementation plan; or
-- an active workflow established that safe execution needs a durable plan for
-  sequencing, cutover, risk control, review, or executor handoff.
+Accepted requirements govern within host permissions and explicit safety
+constraints. Repository intent is the baseline, not a veto on an approved change
+to it. Explain such changes and their review boundaries. Proposals are context.
 
-For a raw build or fix request without that authority, enter
-`planning-workflow`, which may route back here or implement directly. Cross-area
-reach, multiple files, or several implementation steps do not by themselves
-require a plan. Ask before writing only when a missing human decision materially
-changes scope or architecture.
+## Make the plan executable
 
-## Principles
+Inspect relevant code, callers, contracts, tests, and current documentation.
+Read intent sources when direction or ownership matters. Separate existing and
+requested behavior; resolve material design choices. Ask only for a human
+prerequisite preventing a useful plan. Routine execution-time discovery belongs
+to the executor.
 
-- Follow repository invariants and project intent, then explicit requirements
-  and accepted decisions, then verified codebase facts.
-- Choose the smallest coherent change that satisfies the acceptance criteria.
-- For multi-unit work, prefer vertical slices: each unit completes one coherent,
-  observable behavior across the boundaries it needs and can be verified when
-  it lands. Prefer units that separate agents can own with limited overlap and
-  that can be reviewed, landed, or rolled back independently. Keep shared setup
-  to the minimum required by the first slice so later units can proceed in
-  parallel where practical.
-- Do not divide work mechanically by repository layer or component type. When
-  an indivisible migration, cross-cutting safety fix, or minimum shared
-  prerequisite must remain horizontal, state briefly why vertical delivery is
-  impractical or unsafe.
-- Prefer concise durable paths and symbols over copied source.
-- Prefer the highest existing stable test seam that proves acceptance. Add a
-  lower seam only for a distinct invariant or failure mode unobservable there.
-- For each material outcome or forbidden effect, name the proof action and
-  expected observable evidence. Keep behavioral proof separate from the
-  repository gate, and state material limits of mocks, fakes, or source-only
-  checks. For asynchronous work, acceptance or enqueueing is not terminal proof.
-- Require explicit authority and safe setup, assertions, stop conditions,
-  cleanup, and remaining uncertainty for live proof.
-- Ask the user before writing when a missing decision materially changes scope
-  or architecture. Do not carry unresolved implementation choices into a plan.
+Choose the smallest coherent change. Preserve accepted owners, removals,
+cutover order, and compatibility. Prefer vertical outcome slices that can be
+verified, reviewed, and landed independently. Explain an indivisible migration
+or minimum shared prerequisite when horizontal delivery is necessary.
 
-## Workflow
+Use [the plan template](references/plan-template.md). Keep evidence and proof
+beside their change. Name verified paths or symbols instead of copying source
+or prescribing shell choreography. Name a verified executor skill only when it
+adds non-obvious guidance for a concrete decision; do not assume sibling installs.
 
-### 1. Ground the work
+Connect each material outcome or forbidden effect to an exact proof action and
+expected observable evidence. Prefer the highest existing stable test seam;
+another seam needs a distinct failure mode. Separate acceptance evidence from
+the repository gate and avoid duplicate commands. State mock/source-check limits.
+Async work needs terminal evidence, not only acceptance or enqueueing. Live proof
+needs explicit authority, prerequisites, assertions, stop conditions, redaction,
+disposable data, cleanup, and stated uncertainty.
 
-- Read the source request and repository guidance, including the project intent
-  source when the work affects direction or boundaries.
-- Inspect only the relevant code, callers, contracts, tests, and current docs.
-- Verify repository commands and external contracts before prescribing them.
+## Deliver
 
-**Done when:** acceptance criteria, relevant invariants, current behavior, and
-the smallest credible solution are known.
+Write under `dev/plans/` using the target repository's naming, index, and
+retirement policy. Prune repeated context, empty sections, speculative hardening,
+and tests unrelated to acceptance or verified risk. Report unavailable proof.
 
-### 2. Reconcile requirements with reality
-
-- Separate current behavior from requested behavior.
-- Resolve stale claims, conflicts, implemented baseline, and real gaps.
-- Reject speculative hardening, future-proofing, and unrelated cleanup.
-- Ask only questions whose answers change the implementation direction.
-
-**Done when:** the plan has one coherent direction and no material open choice.
-
-### 3. Discover executor aids
-
-Inspect available skill descriptions and repository guidance. Read only skills
-that match a concrete change. Mention a verified skill beside that change only
-when it adds non-obvious execution guidance; do not add a skills table by
-default.
-
-**Done when:** every named aid exists and changes how a step should be executed.
-
-### 4. Write the plan
-
-Use [references/plan-template.md](references/plan-template.md). Name exact files
-or symbols and the decisions that matter. Keep relevant facts and tests beside
-the change they justify. Add a section, excerpt, checklist, or command only when
-it changes an executor decision or proves a distinct criterion, invariant, or
-verified regression risk.
-
-Verification must connect material outcomes to exact proof actions and expected
-evidence. Record material proof limits and any unavailable proof honestly. Use a
-short list unless several outcomes or proof layers need a table.
-
-**Done when:** a capable executor can implement the outcome from the plan and
-repository without prior chat.
-
-### 5. Prune
-
-- Trace every change and test to acceptance, an invariant, or a verified risk.
-- Remove repeated criteria, covered commands, duplicated context, and empty
-  optional sections.
-- Keep verification to focused behavioral checks and the canonical repository
-  gate.
-
-**Done when:** removing any remaining material would make execution less safe or
-leave a decision ambiguous.
-
-## Output
-
-Write one plan under `dev/plans/` and reconcile `dev/plans/README.md` according
-to repository guidance. State findings plainly; plan length follows decision
-and change-surface complexity, not a target.
+For plan-only work, finish with the reviewable plan. Continue further review or
+execution only when already authorized, rather than stopping after naming it.

@@ -75,8 +75,9 @@ The command creates only the normal ignored `node_modules/`, skips shared Git
 hook mutation, and does not copy or link dependencies from another worktree or
 create a worktree-local package store. `.pnpm-store/` is also ignored as defense
 in depth so transient cache files cannot become candidate source evidence.
-Manual executors run setup after their before-edit checkpoint is acknowledged.
-Automated repository runs execute the same repository-owned setup through
+Manual executors run setup after verifying their Git baseline; no additional
+acknowledgment is required for already-authorized local setup. Automated
+repository runs execute their configured repository-owned setup through
 Harness's secret-filtering setup primitive after Grove acquisition. They do not
 use Grove shell hooks because those inherit the worker environment. Readiness
 does not replace the final `make check` gate.
@@ -120,8 +121,6 @@ Git hooks.
 | Protected Linear automation environment file outside a repo                                         | Deployment operator                                                                                                                                            | Local deployment secrets                                                   | User data; do not commit             | Holds Linear, Inngest, optional Codex, and enabled GitHub publication values with owner-only permissions. Stable IDs stay in target-repo `harness.json`.                                                    |
 | Compose volumes for Inngest SQLite, repository data, package caches, and optional Codex credentials | `compose.linear-automation.yaml`                                                                                                                               | Local deployment state                                                     | User data; do not commit             | Preserves Inngest history, Grove leases and warm ignored dependencies, package downloads, and unattended Codex login across normal container restarts.                                                      |
 | `.agents/skills/` in a target repo                                                                  | `harness skills install`                                                                                                                                       | Target repo local skill installs                                           | Target repo decides                  | Live installs copy packaged skills into the target repo.                                                                                                                                                    |
-| `~/.codex/state_5.sqlite`                                                                           | Codex CLI                                                                                                                                                      | User-level Codex state                                                     | Do not commit                        | Source of truth for Codex session indexing.                                                                                                                                                                 |
-| `~/.codex/sqlite/state_5.sqlite`                                                                    | Older or alternate Codex CLI state layout                                                                                                                      | User-level Codex state                                                     | Do not commit                        | Missing-root fallback for Codex session indexing.                                                                                                                                                           |
 
 Review artifacts are workspace-relative ignored local state: they live under an
 external target repo when reviewing another repo, and under this harness checkout

@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { Agent, AgentRunInput } from "../agent/contract.ts";
 import type { WorkItemContext } from "../work-item/schema.ts";
 import { implementWorkItem } from "./implementation.ts";
+import { IMPLEMENTATION_POLICY_VERSION } from "./prompt.ts";
 
 const fsState = vi.hoisted(() => ({ failSchemaRead: false }));
 
@@ -64,7 +65,7 @@ it("returns a typed provider failure when the result schema cannot be read", asy
       provider: "codex",
       model: "gpt-5.6-sol",
       modelReasoningEffort: "high",
-      policyVersion: "1",
+      policyVersion: IMPLEMENTATION_POLICY_VERSION,
       resultSchemaVersion: "1",
       promptSha256: null,
       schemaSha256: null,

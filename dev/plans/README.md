@@ -1,88 +1,23 @@
-# Plans & handoffs
+# Plans and handoffs
 
 ## Active queue
 
 No active plans.
 
-The archived handoff roadmap is no longer executor authority. Standalone review resumability, deterministic graders, hosted triggers, and orchestration remain unplanned future directions in the contributor architecture; revalidate them and create scoped Linear work before writing a new plan.
+Use this directory for approved implementation plans, not a second backlog.
+Unplanned proposals and priorities belong in the work tracker. Historical plans
+are context, never current executor authority.
 
----
+## Lifecycle
 
-## Shipped (git history only)
+Manual plans use `YYMMDD-short-slug.md`. The Linear Spec operation uses the exact
+issue key, such as `FER-273.md`. Reconcile the active queue before adding either.
+Record the intended outcome, source revision, status, and dependencies when
+needed for safe continuation.
 
-Completed plans are **removed from the tree** after land. Use merged PRs and `git log -- dev/plans/` for history — do not re-run old executor steps.
+Implementation or review approval is not the same as landing. Keep the active
+plan until its change lands; then remove it and update the active queue. Do not
+keep an `archive/` copy or duplicate historical workflows here.
 
-| Phase | Work                                         | PR                                                                                                       |
-| ----- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| A     | Rightmost JSON + schema-aware parse          | [#33](https://github.com/ferueda/harness/pull/33)                                                        |
-| B     | SDK stream JSONL + `streamArtifacts`         | [#34](https://github.com/ferueda/harness/pull/34)                                                        |
-| C     | `events.jsonl` + `--verbose`                 | [#34](https://github.com/ferueda/harness/pull/34)                                                        |
-| D     | Provider `AbortSignal`                       | [#36](https://github.com/ferueda/harness/pull/36)                                                        |
-| E     | SDK-only reviews                             | [#37](https://github.com/ferueda/harness/pull/37)                                                        |
-| —     | Shared review JSON parse                     | [#38](https://github.com/ferueda/harness/pull/38)                                                        |
-| F     | Review-output schema ↔ Zod sync tests        | [#39](https://github.com/ferueda/harness/pull/39)                                                        |
-| G     | Review-runtime hardening                     | [#40](https://github.com/ferueda/harness/pull/40)                                                        |
-| H     | Sessions skill colocation                    | [#42](https://github.com/ferueda/harness/pull/42)                                                        |
-| —     | Instruction memory prune                     | [#43](https://github.com/ferueda/harness/pull/43)                                                        |
-| —     | Cursor display-title fallback                | [#48](https://github.com/ferueda/harness/pull/48)                                                        |
-| —     | Plan-review workflow                         | [#49](https://github.com/ferueda/harness/pull/49)                                                        |
-| —     | Harness docs foundation                      | [#50](https://github.com/ferueda/harness/pull/50)                                                        |
-| —     | Command/setup inventory                      | [#51](https://github.com/ferueda/harness/pull/51)                                                        |
-| —     | Testing enforcement                          | [#52](https://github.com/ferueda/harness/pull/52)                                                        |
-| —     | Project alignment rubric                     | [#54](https://github.com/ferueda/harness/pull/54)                                                        |
-| —     | README slimdown                              | [#55](https://github.com/ferueda/harness/pull/55)                                                        |
-| —     | Commit hygiene hooks                         | [#56](https://github.com/ferueda/harness/pull/56)                                                        |
-| —     | Gate output runner                           | [#58](https://github.com/ferueda/harness/pull/58)                                                        |
-| —     | Factory intake and deterministic routing     | [#60](https://github.com/ferueda/harness/pull/60)                                                        |
-| —     | Factory station API, sessions, and planning  | [#64](https://github.com/ferueda/harness/pull/64)                                                        |
-| —     | Factory operator docs and smoke coverage     | [#68](https://github.com/ferueda/harness/pull/68)                                                        |
-| —     | Linear plan PR handoff                       | [#72](https://github.com/ferueda/harness/pull/72)                                                        |
-| —     | Linear triage apply                          | [#74](https://github.com/ferueda/harness/pull/74)                                                        |
-| —     | Linear planning input                        | [#75](https://github.com/ferueda/harness/pull/75)                                                        |
-| —     | Linear planning apply                        | [#78](https://github.com/ferueda/harness/pull/78)                                                        |
-| —     | Linear planning publish handoff apply        | [#80](https://github.com/ferueda/harness/pull/80)                                                        |
-| —     | Factory lifecycle event log and read model   | [#85](https://github.com/ferueda/harness/pull/85)                                                        |
-| —     | Read-only Linear status listing              | [#86](https://github.com/ferueda/harness/pull/86)                                                        |
-| —     | Factory implementation input resolver        | [#88](https://github.com/ferueda/harness/pull/88)                                                        |
-| —     | Factory implementation dry-run shell         | [#92](https://github.com/ferueda/harness/pull/92)                                                        |
-| —     | Live factory implementation station          | [#94](https://github.com/ferueda/harness/pull/94)                                                        |
-| —     | Constrained factory Linear create            | [#99](https://github.com/ferueda/harness/pull/99)                                                        |
-| —     | Native Linear PR linking docs                | [#102](https://github.com/ferueda/harness/pull/102)                                                      |
-| —     | Trim factory dry-run from operator docs      | [#103](https://github.com/ferueda/harness/pull/103)                                                      |
-| —     | Durable factory store                        | [#108](https://github.com/ferueda/harness/pull/108)                                                      |
-| —     | Lifecycle-authoritative triage rerun policy  | [#111](https://github.com/ferueda/harness/pull/111)                                                      |
-| —     | Fail-closed Linear implementation projection | [#116](https://github.com/ferueda/harness/pull/116)                                                      |
-| —     | Minimum-sufficient Factory planning contract | [#123](https://github.com/ferueda/harness/pull/123), [#125](https://github.com/ferueda/harness/pull/125) |
-| —     | Factory action kernel and manual triage      | [#127](https://github.com/ferueda/harness/pull/127)                                                      |
-| —     | Manually stepped Factory planning            | [#129](https://github.com/ferueda/harness/pull/129)                                                      |
-| —     | Planning/implementation/review authority     | [#130](https://github.com/ferueda/harness/pull/130)                                                      |
-| —     | Factory implementation candidate and review  | [#135](https://github.com/ferueda/harness/pull/135)                                                      |
-| —     | Factory implementation revisions             | [#143](https://github.com/ferueda/harness/pull/143)                                                      |
-| —     | Read-only Factory work-item inspection       | [#146](https://github.com/ferueda/harness/pull/146)                                                      |
-| —     | Factory pull-request publication             | [#149](https://github.com/ferueda/harness/pull/149)                                                      |
-| —     | Provider-neutral Factory Git authority       | [#152](https://github.com/ferueda/harness/pull/152)                                                      |
-| —     | Factory store contract version 2             | [#154](https://github.com/ferueda/harness/pull/154)                                                      |
-| —     | Explicit Factory review continuations        | [#160](https://github.com/ferueda/harness/pull/160)                                                      |
-| —     | Deterministic full-chain Factory smoke       | [#167](https://github.com/ferueda/harness/pull/167)                                                      |
-| —     | Failed-role-only Factory review recovery     | [#172](https://github.com/ferueda/harness/pull/172)                                                      |
-| —     | Grove-backed hosted Factory runner           | [#189](https://github.com/ferueda/harness/pull/189)                                                      |
-| —     | Inngest Factory operation delivery           | [#191](https://github.com/ferueda/harness/pull/191)                                                      |
-| —     | Runnable Factory operation reconciliation    | [#193](https://github.com/ferueda/harness/pull/193)                                                      |
-| —     | Hosted Factory authority before delivery     | [#195](https://github.com/ferueda/harness/pull/195)                                                      |
-| —     | Obsolete Factory cutover removal             | [#199](https://github.com/ferueda/harness/pull/199)                                                      |
-| —     | Bound automatic Factory retryable chains     | [#206](https://github.com/ferueda/harness/pull/206)                                                      |
-| —     | Standalone Linear issue-context reader       | [#213](https://github.com/ferueda/harness/pull/213)                                                      |
-| —     | Safe standalone Linear mutations             | [#214](https://github.com/ferueda/harness/pull/214)                                                      |
-| —     | Provider-neutral Linear readiness router     | [#224](https://github.com/ferueda/harness/pull/224)                                                      |
-| —     | Independent Linear triage consumer           | [#225](https://github.com/ferueda/harness/pull/225)                                                      |
-| —     | Self-hosted Linear Backlog poller            | [#231](https://github.com/ferueda/harness/pull/231)                                                      |
-| —     | Remove Factory from Harness                  | [#233](https://github.com/ferueda/harness/pull/233)                                                      |
-
----
-
-**New plans:** manual planning-workflow plans use `YYMMDD-short-slug.md`; the
-Linear Spec operation uses the exact issue key, such as `FER-273.md`. Reconcile
-either kind here before adding it. Todo-like backlog spikes live in Linear; this
-directory is for approved implementation plans and handoffs. **When done:**
-remove the plan file and update this README shipped table; do not keep an
-`archive/` copy.
+Use merged pull requests and `git log -- dev/plans/` for shipped work and retired
+plans. Revalidate historical assumptions before proposing a new change.

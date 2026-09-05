@@ -33,7 +33,7 @@ engineering loop rather than duplicating the testing taxonomy.
 
 Use the same loop for features, fixes, docs, and harness work:
 
-1. Plan the intent, scope, and acceptance criteria.
+1. Establish the intent, scope, and acceptance criteria; write a plan only when useful or requested.
 2. Implement the smallest coherent change.
 3. Verify with scoped checks while iterating and the final gate before handoff.
 4. Review with humans or harness reviewers.
@@ -144,9 +144,10 @@ have been checked for secrets.
 
 ## Maintenance cadence
 
-Periodically remove stale guidance, tighten unclear instructions, and choose
-one repeated review issue to encode mechanically. Keep command inventory docs
-and drift tests current as command surfaces change.
+Periodically remove stale guidance and encode a repeated concrete failure at its
+smallest useful enforcement boundary. Keep command inventory and drift checks
+current, but do not freeze incidental wording. Use [agent-guidance.md](agent-guidance.md)
+when changing prompts, skill activation, completion, or instruction ownership.
 
 Finished plans leave the active tree according to `dev/plans/README.md`; active
 plans stay in `dev/plans/` until they land.

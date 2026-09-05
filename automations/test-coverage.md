@@ -7,12 +7,14 @@ Every run, inspect recent merged code and add missing tests where coverage is we
 ## Prioritization
 
 Prioritize:
+
 - New code paths without tests.
 - Bug fixes that only changed production code.
 - Edge-case logic, parsing, concurrency, permissions, and data validation.
 - Shared utilities and core flows with large blast radius.
 
 Avoid:
+
 - Trivial snapshots with little signal.
 - Tests for cosmetic-only changes.
 - Refactors that do not change behavior unless critical behavior is now untested.
@@ -43,6 +45,7 @@ Avoid:
 ## Output
 
 Push the feature branch and open a Pull Request targeting `main` using the `gh` CLI. Do NOT push or merge changes directly to `main`. Include:
+
 - Only your changes
 - Relevant description, and explanation of what was done and why
 - Risky behavior now covered

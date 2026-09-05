@@ -11,6 +11,7 @@ import {
   IMPLEMENTATION_REVISION_RESULT_SCHEMA_PATH,
   type ImplementationRevisionExecution,
 } from "./revise.ts";
+import { IMPLEMENTATION_REVISION_POLICY_VERSION } from "./revise-prompt.ts";
 import {
   IMPLEMENTATION_REVISION_RESULT_SCHEMA_VERSION,
   type ImplementationRevisionDecision,
@@ -74,7 +75,7 @@ describe("reviseImplementation", () => {
         provider: "codex",
         model: "gpt-5.6-sol",
         modelReasoningEffort: "high",
-        policyVersion: "1",
+        policyVersion: IMPLEMENTATION_REVISION_POLICY_VERSION,
         resultSchemaVersion: IMPLEMENTATION_REVISION_RESULT_SCHEMA_VERSION,
         reviewedRevision: REVISION,
         promptSha256: expect.stringMatching(/^[0-9a-f]{64}$/),

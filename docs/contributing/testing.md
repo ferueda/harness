@@ -30,6 +30,24 @@ docs should link here. Exact command ownership lives in
 - Keep tests quiet on success. Expected failures and subprocess output should be
   asserted and produce bounded diagnostics when they fail.
 
+## Task scope and stopping
+
+Read-only explanations and assessments need no full gate unless a material claim
+requires a check. For edits, keep the current required gate: skill/prompt changes
+can alter behavior and are not plan-only work. Do not invent a lighter gate or
+reuse `make check-plan` for unrelated documentation.
+
+Within documented offline isolation, run checks, fix failures caused by the
+requested change, and rerun affected checks without asking for approval at each
+step. A passing check need not be repeated without new changes, a failure, or
+material unresolved risk. Broader or live proof needs a distinct relevant boundary.
+
+Static package and prompt tests prove discovery metadata, references, installation,
+placeholders, and minimal safety sentinels; they do not prove model judgment.
+Use the opt-in [routing scenarios](../../test/fixtures/skill-routing-eval.json)
+and [guidance maintenance](agent-guidance.md) for model comparisons. Preserve
+existing schema, artifact-identity, and side-effect tests when rewriting prose.
+
 ## Outcome Proof in Plans and Handoffs
 
 Connect each material outcome or forbidden effect to the cheapest credible proof:
