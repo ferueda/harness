@@ -26,9 +26,7 @@ describe("implementation prompt", () => {
   it("keeps implementation, proof, and external side effects in their owners", () => {
     const prompt = renderImplementationPrompt(linearAuthority());
 
-    expect(prompt).toContain(
-      "selected implementation source within host permissions",
-    );
+    expect(prompt).toContain("selected implementation source within host permissions");
     expect(prompt).toContain("make the smallest coherent code change");
     expect(prompt).toContain("highest existing stable behavioral seam");
     expect(prompt).toContain("repository's canonical gate");

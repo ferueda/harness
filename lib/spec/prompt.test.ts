@@ -24,9 +24,7 @@ describe("Spec prompt", () => {
 
     expect(prompt).toContain("Read applicable repository guidance");
     expect(prompt).toContain("authoritative project intent or vision source");
-    expect(prompt).toContain(
-      "accepted requirements within host permissions",
-    );
+    expect(prompt).toContain("accepted requirements within host permissions");
     expect(prompt).toContain("Separate current behavior from requested behavior");
     expect(prompt).toContain("Research first");
     expect(prompt).toContain("Prefer one coherent recommended direction");

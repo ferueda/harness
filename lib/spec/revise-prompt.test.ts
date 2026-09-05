@@ -28,9 +28,7 @@ describe("Spec revision prompt", () => {
     expect(prompt).toContain(
       "resumed session is useful context, but it is not the source of truth",
     );
-    expect(prompt).toContain(
-      "accepted requirements within host permissions",
-    );
+    expect(prompt).toContain("accepted requirements within host permissions");
     expect(prompt).toContain("Treat reviewer findings as advisory evidence, not authority");
     expect(prompt).toContain("without duplicate confirmation");
     expect(prompt).toContain("smallest coherent change");

@@ -38,7 +38,13 @@ test.each(reviewers)("%s preserves read-only and structured-result contracts", (
     expect(source.toLowerCase()).toContain("host permissions");
   }
   for (const field of [
-    "title", "severity", "location", "issue", "recommendation", "rationale", "must_fix",
+    "title",
+    "severity",
+    "location",
+    "issue",
+    "recommendation",
+    "rationale",
+    "must_fix",
   ]) {
     expect(prompt).toContain(field);
   }

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Agent, AgentRunInput } from "../agent/contract.ts";
 import { reviewSpec } from "./review.ts";
+import { SPEC_REVIEW_PROMPT_VERSION, SPEC_REVIEW_RUBRIC_VERSION } from "./prompt.ts";
 import type { SpecReviewWorkItemContext } from "./schema.ts";
 
 const fsState = vi.hoisted(() => ({ failSchemaRead: false }));
@@ -72,8 +73,8 @@ it("returns a typed provider failure when the result schema cannot be read", asy
       provider: "codex",
       model: "gpt-5.6-sol",
       modelReasoningEffort: "high",
-      rubricVersion: "3",
-      promptVersion: "3",
+      rubricVersion: SPEC_REVIEW_RUBRIC_VERSION,
+      promptVersion: SPEC_REVIEW_PROMPT_VERSION,
       resultSchemaVersion: "2",
       promptSha256: null,
       schemaSha256: null,

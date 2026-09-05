@@ -23,9 +23,7 @@ describe("Spec review prompt", () => {
   it("grounds review in authority and a proportional versioned rubric", () => {
     const prompt = render();
 
-    expect(prompt).toContain(
-      "accepted requirements within host permissions",
-    );
+    expect(prompt).toContain("accepted requirements within host permissions");
     expect(prompt).toContain("Review the Spec as a decision record");
     expect(prompt).toContain("Do not demand template sections");
     expect(prompt).toContain("only when supplied by the user or trusted caller");

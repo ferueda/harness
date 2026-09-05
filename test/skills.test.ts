@@ -17,9 +17,18 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SKILLS = join(ROOT, "skills");
 const workspaces: string[] = [];
 const expectedNames = [
-  "adversarial-review", "architect", "change-review-workflow", "code-quality-review",
-  "create-plan", "diagnose-issue", "explain-change", "handoff-work", "planning-workflow",
-  "review-implementation", "review-spec", "shape-requirements",
+  "adversarial-review",
+  "architect",
+  "change-review-workflow",
+  "code-quality-review",
+  "create-plan",
+  "diagnose-issue",
+  "explain-change",
+  "handoff-work",
+  "planning-workflow",
+  "review-implementation",
+  "review-spec",
+  "shape-requirements",
 ];
 
 afterEach(() => {
@@ -57,9 +66,16 @@ function packageFiles(root: string): string[] {
 test("the supported distributable catalogue excludes retired packages", () => {
   expect(skillNames()).toEqual(expectedNames);
   for (const path of [
-    "skills/audit", "skills/docs-drift-review", "automations/harness-doc-drift.md",
-    "skills/sessions", "skills/session-evidence", "skills/simplify-review",
-    "bin/sessions.ts", "lib/sessions", "test/sessions", "test/fixtures/sessions",
+    "skills/audit",
+    "skills/docs-drift-review",
+    "automations/harness-doc-drift.md",
+    "skills/sessions",
+    "skills/session-evidence",
+    "skills/simplify-review",
+    "bin/sessions.ts",
+    "lib/sessions",
+    "test/sessions",
+    "test/fixtures/sessions",
   ]) {
     expect(existsSync(join(ROOT, path)), path).toBe(false);
   }
@@ -121,9 +137,10 @@ test("a forced replacement failure restores the existing installed skill", async
     };
   });
   const { installPackagedSkill } = await import("../lib/skills/install.ts");
-  expect(() => installPackagedSkill("change-review-workflow", {
-    workspace: target, force: true,
-  })).toThrow(/simulated replace failure/);
+  const options = { workspace: target, force: true };
+  expect(() => installPackagedSkill("change-review-workflow", options)).toThrow(
+    /simulated replace failure/,
+  );
   expect(readFileSync(skillPath, "utf8")).toBe("# Original local skill\n");
 });
 
@@ -140,7 +157,9 @@ test("architect stays explicit-only and defaults name available skills", () => {
 test("removed workflow routes are absent from active instructions", () => {
   const paths = ["AGENTS.md", ...expectedNames.map((name) => `skills/${name}/SKILL.md`)];
   for (const path of paths) {
-    expect(read(path), path).not.toMatch(/skills\/(?:audit|docs-drift-review)|`(?:audit|docs-drift-review)`/);
+    expect(read(path), path).not.toMatch(
+      /skills\/(?:audit|docs-drift-review)|`(?:audit|docs-drift-review)`/,
+    );
   }
 });
 
@@ -154,8 +173,14 @@ test("behavioral forward-evaluation fixtures retain representative decision case
   });
   expect(new Set(ids).size).toBe(ids.length);
   for (const id of [
-    "direct-fix", "authorized-defaults", "document-edit", "review-only",
-    "full-workflow", "delegated-author", "missing-child", "new-review-evidence",
+    "direct-fix",
+    "authorized-defaults",
+    "document-edit",
+    "review-only",
+    "full-workflow",
+    "delegated-author",
+    "missing-child",
+    "new-review-evidence",
   ]) {
     expect(ids).toContain(id);
   }
