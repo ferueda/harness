@@ -32,7 +32,7 @@ test("the coordinator permits proportional selection without blanket reruns", ()
   expect(source).not.toContain("By default run both");
 });
 
-test.each(reviewers)("%s keeps finding materiality aligned across entrypoints", (name, prompt) => {
+test.each(reviewers)("%s keeps consequential finding rules", (name, prompt) => {
   const skill = read(`skills/${name}/SKILL.md`);
   for (const source of [prompt, skill]) {
     expect(source).toContain("concrete consequence");
@@ -50,22 +50,20 @@ test("the handoff does not suppress newly evidenced material defects", () => {
 });
 
 test("review evaluation cases have valid, distinct grading expectations", () => {
-  const fixture = z
-    .array(
-      z
-        .object({
-          id: z.string().min(1),
-          phase: z.enum(["selection", "follow-up", "review"]),
-          prompt: z.string().min(1),
-          context: z.string().min(1),
-          roles: z.enum(["skip", "implementation", "quality", "both", "caller-owned"]).nullable(),
-          verdict: z.enum(["pass", "needs_changes", "blocked"]).nullable(),
-          expected: z.string().min(1),
-          forbidden: z.string().min(1),
-        })
-        .strict(),
-    )
-    .parse(JSON.parse(read("test/fixtures/review-policy-eval.json")));
+  const caseSchema = z
+    .object({
+      id: z.string().min(1),
+      phase: z.enum(["selection", "follow-up", "review"]),
+      prompt: z.string().min(1),
+      context: z.string().min(1),
+      roles: z.enum(["skip", "implementation", "quality", "both", "caller-owned"]).nullable(),
+      verdict: z.enum(["pass", "needs_changes", "blocked"]).nullable(),
+      expected: z.string().min(1),
+      forbidden: z.string().min(1),
+    })
+    .strict();
+  const data: unknown = JSON.parse(read("test/fixtures/review-policy-eval.json"));
+  const fixture = z.array(caseSchema).parse(data);
 
   expect(new Set(fixture.map((entry) => entry.id)).size).toBe(fixture.length);
   for (const entry of fixture) {
