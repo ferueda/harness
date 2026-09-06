@@ -40,6 +40,17 @@ Read relevant sections, not the entire documentation set before every edit.
 Load specialist skills only when they change a decision. Use verified available
 paths; never assume a sibling skill is installed or claim to run one unread.
 
+## Independent review
+
+At a coherent completion point, assess the complete change, not each edit.
+Skip independent review for routine low-risk work; select implementation for
+material behavioral risk, quality for substantial structural risk, or both for
+distinct concerns. Honor explicit requests and mandatory caller gates. Use
+`change-review-workflow` for details only when needed. Reassess follow-ups by
+substantive effect, not a new HEAD. Explain selection briefly; skipping is not a
+review pass and does not waive required checks. Report consequential findings,
+not nitpicks; block only on evidence preventing safe acceptance.
+
 ## Verification
 
 For fresh isolated worktrees, run `make setup-worktree` before source edits or provider work.

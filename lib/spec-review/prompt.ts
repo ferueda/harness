@@ -5,8 +5,8 @@ import {
   type SpecReviewWorkItemContext,
 } from "./schema.ts";
 
-export const SPEC_REVIEW_RUBRIC_VERSION = "4";
-export const SPEC_REVIEW_PROMPT_VERSION = "4";
+export const SPEC_REVIEW_RUBRIC_VERSION = "5";
+export const SPEC_REVIEW_PROMPT_VERSION = "5";
 
 export function renderSpecReviewPrompt(input: {
   workItem: SpecReviewWorkItemContext;
@@ -36,7 +36,7 @@ This is a fresh review. You do not have the Spec author's session and must not i
 Evaluate whether the Spec:
 
 1. follows repository invariants, project intent, accepted requirements, and verified code reality;
-2. resolves planning-time choices instead of handing them to the executor;
+2. resolves planning-time choices instead of handing material decisions to the executor, while leaving inspectable routine implementation details to them;
 3. uses Needs Input and reviewer decisions consistently: prerequisite input blocks every useful Spec, while later human-authority choices may remain as researched reviewer decisions;
 4. chooses the smallest coherent change and avoids speculative hardening, generic frameworks, unrelated cleanup, and unrequired compatibility;
 5. uses vertical, independently useful units where appropriate and explains unavoidable horizontal work;
@@ -44,9 +44,11 @@ Evaluate whether the Spec:
 7. connects every material outcome or forbidden effect to the cheapest credible proof action and expected observable evidence;
 8. is right-sized, portable, and executable without the author's hidden context.
 
-Trace every proposed change and test to an accepted requirement, a repository invariant, or a verified risk. Unsupported work already proposed by the Spec is a scope defect.
+Trace every proposed change and test to an accepted requirement, a substantive repository invariant, or a verified risk. Unsupported material work already proposed by the Spec is a scope defect.
 
-Check these details only when the proposed change makes them material:
+Distinguish a missing material decision from an omitted description of something already settled by accepted requirements, named tests, or accessible code. Routine helper names, local implementation details, familiar headings, and repeated conventions do not justify a revision. A viable accepted design need not be replaced with a reviewer's preferred alternative.
+
+Check these details only when omission could materially misdirect execution:
 
 - For replaced, redirected, split, deprecated, or removed behavior: the post-change owner, exact removals, cutover order, and required compatibility.
 - For changed failure handling, state or data flow, privacy, security, reliability, performance, or edge cases: the intended behavior and credible proof beside the affected change.
@@ -55,17 +57,20 @@ Check these details only when the proposed change makes them material:
 
 - The canonical repository gate proves general health; it does not replace acceptance-level behavioral proof.
 - Require another proof layer only for a distinct boundary or failure mode that the cheaper seam cannot observe. Approve focused proof plus the gate when it is sufficient.
-- Require material limits of mocks, fakes, intercepted requests, or source-only checks to be explicit.
+- Named existing tests and repository contracts can supply proof detail. Do not require the same evidence copied into every section. A plan needs a verification strategy, not already-passing implementation results; execution reports observed results later.
+- Require material limits of mocks, fakes, intercepted requests, or source-only checks to be explicit where they affect acceptance.
 - For asynchronous work, require observation of the terminal state or downstream effect. Acceptance or enqueueing alone is insufficient.
 - For live proof, require explicit authority, prerequisites, disposable data, assertions, stop conditions, redaction, cleanup, and remaining uncertainty.
-- Require unavailable material proof and handoff evidence to state exact observed results, skipped checks with reasons, concrete blockers, and remaining unknowns.
+- Require unavailable material proof and handoff evidence to state exact observed results, skipped checks with reasons, concrete blockers, and remaining unknowns when those checks are executed. Do not confuse missing planning decisions with unavailable execution results.
 
 ## Findings
 
-- Every returned finding requests a change. Omit advisory observations that do not justify revising the Spec.
-- Request changes only when the Spec omits or contradicts an accepted goal, requirement, decision, or boundary; materially expands scope without authority; violates a repository invariant; introduces a verified correctness, security, reliability, or compatibility risk; or omits a material executor decision or behavioral proof needed for safe implementation.
+- Every returned finding requests a change. Omit advisory observations that do not justify revising the Spec. No findings is normal.
+- Every finding needs evidence of a concrete consequence for execution or acceptance: explain what would go wrong if the Spec were implemented as written and why proceeding unresolved prevents safe acceptance. A supported code or contract argument is sufficient; a live failure is not required. Speculation alone is insufficient.
+- Omit nitpicks, naming/prose preferences, equivalent styles, missing familiar headings, inspectable routine details, and redundant proof demands. Do not disguise these as invariants or acceptance failures. Consolidate duplicate causes; no finding quota or rejected-nit list.
+- Request changes only when the Spec materially omits or contradicts an accepted outcome or boundary; materially expands scope without authority; violates a substantive repository invariant; introduces a verified correctness, security, reliability, or compatibility risk; or omits a material executor decision or proof needed for safe implementation. Stylistic conventions cannot block.
 - Reviewer-proposed optional hardening, alternative architectures, preferences, nearby cleanup, and unrelated future work cannot request changes.
-- Every finding must identify the deficient artifact section or line range, cite one or more facts that prove the problem, explain the problem, and state the required outcome.
+- Every finding must identify the deficient artifact section or line range, cite one or more facts that prove the problem, explain the consequence in problem, and state the smallest necessary correction in requiredOutcome. Do not add fields to the schema.
 - artifactLocation identifies where the Spec is deficient. Evidence identifies the independent work-item, artifact, code, docs, test, or repository-state facts that support the finding.
 - Use path null for work-item citations. Use portable repository-relative paths for artifact, code, docs, and test citations. An artifact citation path must be exactly "${artifact.path}".
 - Use positive, ordered line ranges when line evidence is useful; otherwise use null for both lineStart and lineEnd.

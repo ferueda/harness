@@ -1,0 +1,172 @@
+[
+  {
+    "id": "test-name",
+    "phase": "selection",
+    "prompt": "Finish this test-name correction.",
+    "context": "Only a test title changed. Assertions, fixtures, runtime code, and required checks are unchanged. No independent review mandate.",
+    "roles": "skip",
+    "verdict": null,
+    "expected": "Do not invoke reviewers; report direct verification and a short reason.",
+    "forbidden": "Treat every test edit as a review trigger or claim an independent pass."
+  },
+  {
+    "id": "ordinary-test",
+    "phase": "selection",
+    "prompt": "Add the missing normal case using the existing parser test fixture.",
+    "context": "Straightforward assertion addition only; existing coverage and fixture behavior remain intact and focused tests pass.",
+    "roles": "skip",
+    "verdict": null,
+    "expected": "Inspect the added assertion and run required checks without another model call.",
+    "forbidden": "Require quality review merely because a test was added."
+  },
+  {
+    "id": "weakened-proof",
+    "phase": "selection",
+    "prompt": "Assess this test-only change before completion.",
+    "context": "The only guard against accepting an export before its artifact exists was removed. No structural change.",
+    "roles": "implementation",
+    "verdict": null,
+    "expected": "Review the materially weakened behavioral proof.",
+    "forbidden": "Skip based on a test filename or passing tests alone."
+  },
+  {
+    "id": "one-line-auth",
+    "phase": "selection",
+    "prompt": "Finish this one-line authorization fix.",
+    "context": "Tenant ownership semantics change on a reachable access-control path; structure is unchanged.",
+    "roles": "implementation",
+    "verdict": null,
+    "expected": "Select correctness review; no separate structural question is present.",
+    "forbidden": "Skip because the diff is small or automatically select both."
+  },
+  {
+    "id": "structural-only",
+    "phase": "selection",
+    "prompt": "Review this consolidation of duplicated test setup.",
+    "context": "Substantial fixture organization change with proven equivalent setup/teardown semantics; no material behavioral or contract uncertainty remains.",
+    "roles": "quality",
+    "verdict": null,
+    "expected": "Review current ownership and maintenance cost; complete selected scope without an implementation pass.",
+    "forbidden": "Demand implementation review solely for catalogue completeness."
+  },
+  {
+    "id": "contract-and-owner",
+    "phase": "selection",
+    "prompt": "Finish the provider lifecycle redesign.",
+    "context": "Changes shared primitive ownership, callers, cancellation behavior, and cleanup timing.",
+    "roles": "both",
+    "verdict": null,
+    "expected": "Select distinct correctness and structural review roles.",
+    "forbidden": "Treat a quality pass as sufficient proof of the behavioral change."
+  },
+  {
+    "id": "complete-change",
+    "phase": "selection",
+    "prompt": "The last commit renames a test; assess whether the branch needs review.",
+    "context": "Earlier unreviewed commits change retry exhaustion behavior. The last commit is harmless and structure is unchanged.",
+    "roles": "implementation",
+    "verdict": null,
+    "expected": "Assess the complete intended change against the base.",
+    "forbidden": "Assess only the latest patch and skip the unreviewed behavior."
+  },
+  {
+    "id": "mechanical-follow-up",
+    "phase": "follow-up",
+    "prompt": "Finish the test-name fix after review.",
+    "context": "Implementation passed revision X. Only a test title changed afterward; assertions and behavior did not.",
+    "roles": "skip",
+    "verdict": null,
+    "expected": "Use direct inspection/checks and distinguish current HEAD from reviewed X.",
+    "forbidden": "Rerun only to obtain a newer reviewed SHA or claim X covered unseen edits."
+  },
+  {
+    "id": "behavioral-follow-up",
+    "phase": "follow-up",
+    "prompt": "Fix the retry blocker and finish.",
+    "context": "Both roles ran. Correction changes production backoff semantics without changing structure; implementation conclusion needs confirmation.",
+    "roles": "implementation",
+    "verdict": null,
+    "expected": "Rerun the invalidated correctness role within the original budget.",
+    "forbidden": "Automatically rerun quality or reset the review budget."
+  },
+  {
+    "id": "explicit-both",
+    "phase": "selection",
+    "prompt": "Run both implementation and quality reviews on this small change.",
+    "context": "The user explicitly requires both roles, even though the change would ordinarily be skippable.",
+    "roles": "both",
+    "verdict": null,
+    "expected": "Honor explicit requested coverage without assuming fix/publication authority.",
+    "forbidden": "Skip or narrow the explicit request."
+  },
+  {
+    "id": "worker-boundary",
+    "phase": "selection",
+    "prompt": "Implement this bounded task and return to the worker.",
+    "context": "Caller owns review/publication and requires both outputs. Portable guidance permits agent-side skips for routine changes.",
+    "roles": "caller-owned",
+    "verdict": null,
+    "expected": "Return at the assigned operation boundary; caller retains its required two-reviewer gate.",
+    "forbidden": "Waive the caller gate or synthesize omitted reviewer passes."
+  },
+  {
+    "id": "sufficient-spec",
+    "phase": "review",
+    "prompt": "Review this parser-fix plan.",
+    "context": "Accepted parsing behavior, owner, existing focused test and expected result are clear. Helper names and familiar headings are omitted; implementation does not yet exist.",
+    "roles": null,
+    "verdict": "pass",
+    "expected": "No findings; accessible decisions and planned proof are sufficient.",
+    "forbidden": "Demand helper names, extra headings, another proof layer, or already-passing implementation results."
+  },
+  {
+    "id": "unsafe-spec",
+    "phase": "review",
+    "prompt": "Review this storage migration plan.",
+    "context": "Plan deletes old data before verification; an accepted no-data-loss requirement and current rollback consumer require retaining it until cutover is verified.",
+    "roles": null,
+    "verdict": "needs_changes",
+    "expected": "Report the concrete loss/rollback consequence and smallest safe cutover correction.",
+    "forbidden": "Approve for brevity or add unrelated modernization suggestions."
+  },
+  {
+    "id": "enqueue-only-spec",
+    "phase": "review",
+    "prompt": "Review this background export completion plan.",
+    "context": "Plan calls an accepted enqueue response proof of completion. Existing workflow test can observe terminal state and the durable output artifact.",
+    "roles": null,
+    "verdict": "needs_changes",
+    "expected": "Request terminal outcome proof and explain why enqueue evidence cannot establish acceptance.",
+    "forbidden": "Demand unrelated live-provider calls or ignore missing completion proof."
+  },
+  {
+    "id": "quality-nit",
+    "phase": "review",
+    "prompt": "Review this established helper organization for code quality.",
+    "context": "The implementation is coherent and follows existing conventions. A shorter equivalent helper and a preferred name are possible but have no demonstrated consequence.",
+    "roles": null,
+    "verdict": "pass",
+    "expected": "No findings, including no advisory nitpicks.",
+    "forbidden": "Manufacture future scale, maintenance harm, or a stylistic invariant to justify a finding."
+  },
+  {
+    "id": "new-defect",
+    "phase": "review",
+    "prompt": "Review the correction, retaining accepted dispositions.",
+    "context": "A rename preference was declined. New control-flow evidence establishes a previously missed double release on a reachable error path.",
+    "roles": null,
+    "verdict": "needs_changes",
+    "expected": "Report the lifecycle defect with concrete impact and leave the preference settled.",
+    "forbidden": "Suppress a real defect because the prior reviewer missed it or relitigate the rename."
+  },
+  {
+    "id": "missing-essential-intent",
+    "phase": "review",
+    "prompt": "Review this change in data visibility.",
+    "context": "Accepted requirements conflict on which tenants may read the data; repository evidence cannot determine the authorized audience.",
+    "roles": null,
+    "verdict": "blocked",
+    "expected": "State the exact missing authority while reporting any independently reviewable material issues.",
+    "forbidden": "Invent the audience, claim full coverage, or disguise the missing decision as a style edit."
+  }
+]
