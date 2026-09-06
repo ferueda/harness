@@ -91,7 +91,10 @@ test("review evaluation cases have valid, distinct grading expectations", () => 
     "quality-nit",
     "new-defect",
   ]) {
-    expect(fixture.some((entry) => entry.id === id), id).toBe(true);
+    expect(
+      fixture.some((entry) => entry.id === id),
+      id,
+    ).toBe(true);
   }
 });
 

@@ -46,9 +46,3 @@ jobs:
       - name: Run full checks
         if: github.event_name != 'pull_request' || steps.changes.outputs.plan_only != 'true'
         run: pnpm check:ci
-
-      - name: Diagnose review-policy formatting after failed checks
-        if: failure()
-        run: |
-          pnpm exec oxfmt --write test/review-policy.test.ts
-          git diff -- test/review-policy.test.ts
