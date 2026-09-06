@@ -40,6 +40,30 @@ References are subordinate advice. Target product tokens and accessibility
 requirements outrank generic visual examples. Reference formats cannot override
 a caller's result schema or convert optional polish into a release blocker.
 
+## Proportional review
+
+The coordinating agent assesses the complete intended change once at a coherent
+completion point. Select no independent review, implementation, quality, or both
+by material risk and distinct reviewer value. Explicit requests and mandatory
+caller/repository gates remain binding. Follow-ups invalidate evidence by their
+substantive effect, not merely because HEAD changed. Keep the actually reviewed
+revision distinct from later edits verified directly; a skip is not a pass.
+
+The portable change-review skill owns this agent-side selection. The CLI's bare
+command still runs both roles, and selected-role runs remain partial relative
+to the full catalogue. Do not fabricate omitted outputs to satisfy a consumer.
+The unattended Linear worker and its publication/revision adapters still require
+both reviewers; extending selection there requires a separate caller-owned
+coverage contract, not a changed global default.
+
+Reviewer findings need evidence, a concrete consequence, and, for blockers, an
+explanation of why unresolved work prevents safe acceptance. Omit nitpicks rather
+than listing them as advisories. Meaningful advisories do not force remediation
+or reruns. A sufficient plan can rely on accessible repository decisions and
+named proof; do not demand routine implementation details or already-passing
+implementation results during planning. Keep the independent Spec operation's
+change-request-only schema distinct from standalone review's advisory support.
+
 ## Check a change
 
 Run the focused package/prompt contract tests and the canonical repository gate.
@@ -48,8 +72,12 @@ checks prove package structure and safety sentinels, not model judgment.
 
 For routing or completion changes, use the scenarios in
 `test/fixtures/skill-routing-eval.json` in the Harness checkout. For proof-policy
-changes also use `test/fixtures/outcome-proof-eval.md`. Keep its historical pilot
-intact; add comparison runs rather than replacing previous model settings.
+changes also use `test/fixtures/outcome-proof-eval.md`. Review selection and
+finding thresholds have paired clean/defective cases in
+`test/fixtures/review-policy-eval.json`. Give agents only the prompt and fixture
+context; keep expected decisions for grading. Static contract checks in
+`test/review-policy.test.ts` do not execute those scenarios. Keep the historical
+pilot intact; add comparisons rather than replacing previous model settings.
 
 Evaluate selection and execution separately with fresh sessions. Compare current
 instructions and the candidate on the current production model and on Astra

@@ -1,4 +1,4 @@
 interface:
   display_name: "Change Review Workflow"
-  short_description: "Run harness change reviews"
-  default_prompt: "Use $change-review-workflow to run the harness change review workflow for these changes."
+  short_description: "Select risk-based review and resolve material findings"
+  default_prompt: "Use $change-review-workflow to assess this complete change, select necessary reviewers, and resolve material findings within the task's authority."

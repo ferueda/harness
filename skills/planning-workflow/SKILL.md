@@ -59,9 +59,14 @@ cutover, and compatibility decisions. Use focused behavioral proof and the
 repository's required gate; do not repeat successful checks without a new
 change, failure, or unresolved risk. Report unavailable checks accurately.
 
-Run `change-review-workflow` when review is required and authorized. Continue
-accepted in-scope fixes and follow-up review instead of merely naming the next
-workflow. Use `handoff-work` only when another agent or session needs context.
+At a coherent completion point, select independent review from the complete
+change: skip routine low-risk work, implementation for material behavioral risk,
+quality for substantial structural risk, or both for distinct concerns. Honor
+explicit role requests and mandatory caller/repository gates; tests and file
+counts are not automatic triggers. Use `change-review-workflow` when review is
+warranted and authorized. Continue material in-scope fixes and only necessary
+follow-up roles, not a reviewer run after every edit. A skip is not a review pass
+and does not waive verification. Use `handoff-work` only when another agent or session needs context.
 A delegated operation must return at its assigned boundary: it must not start
 reviewers or publish unless assigned that authority.
 

@@ -12,8 +12,8 @@ describe("Spec review prompt", () => {
     const artifact = { path: "dev/plans/FER-282.md", revision: "a".repeat(40) };
     const prompt = renderSpecReviewPrompt({ workItem, artifact });
 
-    expect(SPEC_REVIEW_RUBRIC_VERSION).toBe("4");
-    expect(SPEC_REVIEW_PROMPT_VERSION).toBe("4");
+    expect(SPEC_REVIEW_RUBRIC_VERSION).toBe("5");
+    expect(SPEC_REVIEW_PROMPT_VERSION).toBe("5");
     expect(prompt).toContain(JSON.stringify(workItem, null, 2));
     expect(prompt).toContain(`Review exactly ${artifact.path}`);
     expect(prompt).toContain(`trusted revision ${artifact.revision}`);
@@ -63,6 +63,16 @@ describe("Spec review prompt", () => {
     expect(prompt).toContain("An artifact citation path must be exactly");
     expect(prompt).toContain("Do not write replacement Spec text");
     expect(prompt).toContain("Keep findings distinct");
+  });
+
+  it("requires consequential findings rather than style or execution-time evidence", () => {
+    const prompt = render();
+
+    expect(prompt).toContain("concrete consequence");
+    expect(prompt).toContain("prevents safe acceptance");
+    expect(prompt).toContain("Omit nitpicks");
+    expect(prompt).toContain("not already-passing implementation results");
+    expect(prompt).toContain("inspectable routine");
   });
 
   it("keeps the reviewer independent, read-only, and outside trusted identity", () => {

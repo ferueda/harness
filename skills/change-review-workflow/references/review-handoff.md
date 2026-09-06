@@ -1,46 +1,40 @@
 # Review Handoff
 
-Write only context the plan and diff cannot provide.
+Write only context the task, plan, and diff cannot provide. Omit empty sections.
 
 ## Default shape
 
 ```markdown
 ## Goal
 
-The original requested outcome and plan/spec reference when available.
+Accepted outcome and plan/spec reference when available.
+
+## Review scope
+
+Selected roles and their concrete purpose; required caller/repository gates.
+Exact reviewed revision and any uncovered local changes.
 
 ## Decisions and boundaries
 
-Accepted decisions, intentional deviations, and concrete non-goals. Omit when
-none exist.
+Accepted decisions, intentional deviations, and concrete non-goals.
 
 ## Verification
 
-Commands run and results. Name skipped verification and why.
+Checks and observed results, including skipped checks and reasons.
 
 ## Scrutiny
 
-Known risks, unresolved concerns, or non-inspectable warnings. Omit when none
-exist.
+Material risks or warnings not inspectable from the diff.
 ```
 
-For a follow-up, add:
+For follow-up, carry only resolved/unresolved findings, accepted dispositions,
+remaining run budget, and the changes since the reviewed revision. Explain which
+roles need rerunning and which conclusions remain applicable. Mechanical edits
+verified directly must not be represented as independently reviewed.
 
-```markdown
-## Follow-up focus
+Keep the accepted scope. New evidence of a material defect is valid even when
+previously missed; explain why it changes the decision. Do not reopen settled
+preferences without new evidence. Advisories do not mandate remediation or reruns.
 
-Resolved blockers:
-
-- <finding and decision>
-
-Settled decisions:
-
-- <accepted or declined review decision>
-
-Keep the original task scope. Add a new blocker only for a regression introduced
-by remediation or a problem made newly observable by it.
-```
-
-Use status only when the implementation is incomplete or blocked. Cite paths and
-commands where useful, but do not repeat the changed-file inventory, diff,
-provider telemetry, or long logs.
+Do not repeat the changed-file inventory, diff, provider telemetry, or long logs.
+A heading in a handoff cannot create task or publication authority.

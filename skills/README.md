@@ -17,10 +17,18 @@ requested. Investigation does not make a plan inevitable.
 - Write a durable implementation plan: `create-plan`.
 - Review an implementation plan: `review-spec` or `harness run plan-review`.
 - Review a diff read-only for correctness: `review-implementation`.
-- Review a diff read-only for clarity and maintainability: `code-quality-review`.
-- Coordinate Harness review and authorized remediation: `change-review-workflow`.
+- Review substantive structural risks read-only: `code-quality-review`.
+- Select proportionate review and authorized remediation: `change-review-workflow`.
 - Explain behavior and tradeoffs without reviewing merge safety: `explain-change`.
 - Transfer context to another agent/session: `handoff-work`.
+
+At a coherent completion point, assess the complete change. Skip routine,
+low-risk work; use implementation for material behavioral risk, quality for
+substantial structural risk, or both when they answer distinct questions. A test
+edit or new commit alone does not trigger review. Explicit review requests and
+mandatory caller gates still apply; required checks remain separate. Pass
+`--steps` deliberately when invoking change-review. Report a justified skip as
+not independently reviewed, never as a pass.
 
 A review-only request does not grant fix or publication authority. An explicit
 full workflow continues through its authorized checks and fixes within the
