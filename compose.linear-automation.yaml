@@ -1,6 +1,6 @@
 services:
   inngest:
-    image: inngest/inngest:v1.37.0@sha256:deff5ded6145002bff572f7a28be386167b6e64a97101f5ab9aa65f92cc774f6
+    image: inngest/inngest:v1.44.0@sha256:d5365a31f8bf504dc2d54ddd114fcdc1a0413f8b57a450365c095ab6234ad8c2
     command:
       - inngest
       - start

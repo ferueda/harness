@@ -53,6 +53,10 @@ from elsewhere. The installer validates Node 24 or newer, runs
 `pnpm install --frozen-lockfile`, writes the user-level `harness` shim, and
 verifies `harness --help`.
 
+Package scripts verify dependencies before running and fail if installation is
+needed. Run `pnpm install --frozen-lockfile` first; this keeps parallel Make
+checks from racing to install dependencies under pnpm 12.
+
 Set `HARNESS_INSTALL_SKIP_PNPM=1` only for tests that need to skip dependency
 installation. Normal installs should let the installer run pnpm.
 

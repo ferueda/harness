@@ -95,18 +95,14 @@ test("createAgentAbortRace rejects after subscribe and cleans up its listener", 
   const addEventListener = controller.signal.addEventListener.bind(controller.signal);
   const removeEventListener = controller.signal.removeEventListener.bind(controller.signal);
   let abortListeners = 0;
-  const trackedAddEventListener: AbortSignal["addEventListener"] = (
-    type: string,
-    listener: EventListener | EventListenerObject,
-    options?: AddEventListenerOptions | boolean,
-  ) => {
+  const trackedAddEventListener: AbortSignal["addEventListener"] = (type, listener, options) => {
     if (type === "abort") abortListeners += 1;
     return addEventListener(type, listener, options);
   };
   const trackedRemoveEventListener: AbortSignal["removeEventListener"] = (
-    type: string,
-    listener: EventListener | EventListenerObject,
-    options?: EventListenerOptions | boolean,
+    type,
+    listener,
+    options,
   ) => {
     if (type === "abort") abortListeners -= 1;
     return removeEventListener(type, listener, options);
