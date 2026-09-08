@@ -34,7 +34,12 @@ export function buildRunId(date = new Date()): string {
 }
 
 export function gitExec(workspace: string, args: string[]): string {
-  return execFileSync("git", args, { cwd: workspace, encoding: "utf8" }).trim();
+  return execFileSync("git", args, {
+    cwd: workspace,
+    encoding: "utf8",
+    // Review diffs can exceed Node's default 1 MiB output limit.
+    maxBuffer: 16 * 1024 * 1024,
+  }).trim();
 }
 
 export function prepareGitScope(
