@@ -29,6 +29,7 @@ const expectedNames = [
   "review-implementation",
   "review-spec",
   "shape-requirements",
+  "triage",
 ];
 
 afterEach(() => {
@@ -178,9 +179,14 @@ test("behavioral forward-evaluation fixtures retain representative decision case
     "document-edit",
     "review-only",
     "full-workflow",
-    "delegated-author",
+    "delegated-implementation",
     "missing-child",
     "new-review-evidence",
+    "triage-bounded-implementation",
+    "triage-investigation-before-edits",
+    "triage-prerequisite-input",
+    "triage-broad-outcomes",
+    "triage-incomplete-context",
   ]) {
     expect(ids).toContain(id);
   }

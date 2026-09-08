@@ -63,36 +63,8 @@ function expectBoundaryViolation(relativePath: string, source: string, message: 
   expect(result.output).toContain(message);
 }
 
-describe("automation import boundaries", () => {
-  it("keeps Linear primitives independent of domain and delivery code", () => {
-    expect.hasAssertions();
-    expectAllowed(
-      "lib/linear/allowed.ts",
-      'import { LinearError } from "./error.ts";\nvoid LinearError;',
-    );
-    expectBoundaryViolation(
-      "lib/linear/forbidden.ts",
-      'import { triageIssue } from "../triage/triage.ts";',
-      "domain and delivery policy belong outside lib/linear",
-    );
-    expectBoundaryViolation(
-      "lib/linear/forbidden.ts",
-      'import { implementWorkItem } from "../implementation/implementation.ts";',
-      "domain and delivery policy belong outside lib/linear",
-    );
-    expectBoundaryViolation(
-      "lib/linear/forbidden.ts",
-      'import { connect } from "inngest/connect";',
-      "Linear service primitives must not depend on delivery code",
-    );
-    expectBoundaryViolation(
-      "lib/linear/forbidden.ts",
-      'import { SPEC_REVIEW_PROMPT } from "../review/prompts/spec-review.ts";',
-      "domain and delivery policy belong outside lib/linear",
-    );
-  });
-
-  it("keeps shared Agent support independent of applications and providers", () => {
+describe("review and provider import boundaries", () => {
+  it("keeps shared Agent support independent of reviews and providers", () => {
     expect.hasAssertions();
     expectAllowed(
       "lib/agent/allowed.ts",
@@ -100,13 +72,13 @@ describe("automation import boundaries", () => {
     );
     expectBoundaryViolation(
       "lib/agent/forbidden.ts",
-      'import type { LinearService } from "../linear/client.ts";',
-      "must remain independent of services, domain operations, reviews, and concrete providers",
+      'import type { ReviewOutput } from "../review/schema.ts";',
+      "must remain independent of reviews and concrete providers",
     );
     expectBoundaryViolation(
       "lib/agent/forbidden.ts",
-      'import type { ImplementationResult } from "../implementation/implementation.ts";',
-      "must remain independent of services, domain operations, reviews, and concrete providers",
+      'import { createAgentProvider } from "../../providers/registry.ts";',
+      "must remain independent of reviews and concrete providers",
     );
     expectBoundaryViolation(
       "lib/agent/forbidden.ts",
@@ -115,161 +87,39 @@ describe("automation import boundaries", () => {
     );
   });
 
-  it("keeps review execution independent of Linear automation and domain operations", () => {
+  it("keeps review execution behind the shared Agent interface", () => {
     expect.hasAssertions();
     expectAllowed(
       "lib/review/allowed.ts",
-      'import type { Agent } from "../agent/contract.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
+      'import type { Agent } from "../agent/contract.ts";\nexport type { Agent };',
     );
     expectBoundaryViolation(
       "lib/review/forbidden.ts",
-      'import { classifyLinearReadiness } from "../linear-automation/readiness.ts";',
-      "must remain independent of automation, services, domain operations, and concrete providers",
-    );
-    expectBoundaryViolation(
-      "lib/review/forbidden.ts",
-      'import { triageIssue } from "../triage/triage.ts";',
-      "must remain independent of automation, services, domain operations, and concrete providers",
-    );
-    expectBoundaryViolation(
-      "lib/review/forbidden.ts",
-      'import { implementWorkItem } from "../implementation/implementation.ts";',
-      "must remain independent of automation, services, domain operations, and concrete providers",
-    );
-  });
-
-  it("keeps domain operations independent of systems and concrete providers", () => {
-    expect.hasAssertions();
-    expectAllowed(
-      "lib/spec/allowed.ts",
-      'import type { Agent } from "../agent/contract.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
-    );
-    expectBoundaryViolation(
-      "lib/spec/forbidden.ts",
-      'import type { LinearService } from "../linear/client.ts";',
-      "use injected service, provider, and repository interfaces",
-    );
-    expectBoundaryViolation(
-      "lib/spec/forbidden.ts",
-      'import { LinearWebhookClient } from "@linear/sdk/webhooks";',
-      "receive normalized input instead of importing Linear",
-    );
-    expectBoundaryViolation(
-      "lib/spec/forbidden.ts",
       'import { createAgentProvider } from "../../providers/registry.ts";',
-      "use injected service, provider, and repository interfaces",
+      "must remain independent of concrete providers",
     );
     expectBoundaryViolation(
-      "lib/spec/forbidden.ts",
-      'import { execFile } from "child_process";',
-      "instead of running Git or GitHub commands",
-    );
-    expectAllowed(
-      "lib/spec-review/allowed.ts",
-      'import type { Agent } from "../agent/contract.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
-    );
-    expectBoundaryViolation(
-      "lib/spec-review/forbidden.ts",
-      'import { createRepositoryWorkspace } from "../repository/workspace.ts";',
-      "use injected service, provider, and repository interfaces",
-    );
-    expectBoundaryViolation(
-      "lib/spec-review/forbidden.ts",
-      'import { LinearClient } from "@linear/sdk";',
-      "receive normalized input instead of importing Linear",
-    );
-    expectAllowed(
-      "lib/implementation/allowed.ts",
-      'import type { Agent } from "../agent/contract.ts";\nimport type { WorkItemContext } from "../work-item/schema.ts";\ntype Inputs = Agent | WorkItemContext;\nexport type { Inputs };',
-    );
-    expectBoundaryViolation(
-      "lib/implementation/forbidden.ts",
-      'import { createRepository } from "../repository/repository.ts";',
-      "use injected service, provider, and repository interfaces",
-    );
-    expectBoundaryViolation(
-      "lib/implementation/forbidden.ts",
-      'import { createWorkflowContext } from "../review/runtime.ts";',
-      "use injected service, provider, and repository interfaces",
-    );
-    expectBoundaryViolation(
-      "lib/implementation/forbidden.ts",
-      'import { connect } from "inngest/connect";',
-      "must not depend on delivery code",
-    );
-    expectBoundaryViolation(
-      "lib/implementation/forbidden.ts",
-      'import { createGitHubPublication } from "../github/publication.ts";',
-      "use injected service, provider, and repository interfaces",
-    );
-    expectBoundaryViolation(
-      "lib/implementation/forbidden.ts",
-      'import { LinearClient } from "@linear/sdk";',
-      "receive normalized input instead of importing Linear",
-    );
-    expectBoundaryViolation(
-      "lib/implementation/forbidden.ts",
-      'import { createAgentProvider } from "../../providers/registry.ts";',
-      "use injected service, provider, and repository interfaces",
-    );
-    expectBoundaryViolation(
-      "lib/implementation/forbidden.ts",
-      'import { execFile } from "node:child_process";',
-      "instead of running Git or GitHub commands",
+      "lib/review/forbidden.ts",
+      'import { Codex } from "@openai/codex-sdk";',
+      "depends on the shared Agent interface",
     );
   });
 
-  it("keeps repository primitives independent of tracker and domain policy", () => {
-    expect.hasAssertions();
-    expectAllowed(
-      "lib/repository/allowed.ts",
-      'import { mkdir } from "node:fs/promises";\nvoid mkdir;',
-    );
-    expectBoundaryViolation(
-      "lib/repository/forbidden.ts",
-      'import type { LinearService } from "../linear/client.ts";',
-      "not tracker, publication, provider, or domain policy",
-    );
-    expectBoundaryViolation(
-      "lib/repository/forbidden.ts",
-      'import { publishRun } from "../github/publication.ts";',
-      "not tracker, publication, provider, or domain policy",
-    );
-  });
-
-  it("keeps GitHub publication independent of tracker and domain policy", () => {
-    expect.hasAssertions();
-    expectAllowed(
-      "lib/github/allowed.ts",
-      'import type { RepositoryRun } from "../repository/types.ts";\ntype Run = RepositoryRun;\nexport type { Run };',
-    );
-    expectBoundaryViolation(
-      "lib/github/forbidden.ts",
-      'import type { LinearService } from "../linear/client.ts";',
-      "not tracker, delivery, provider, or domain policy",
-    );
-    expectBoundaryViolation(
-      "lib/github/forbidden.ts",
-      'import { specIssue } from "../spec/spec.ts";',
-      "not tracker, delivery, provider, or domain policy",
-    );
-  });
-
-  it("keeps provider adapters independent of tracker and domain operations", () => {
+  it("keeps provider adapters independent of review policy", () => {
     expect.hasAssertions();
     expectAllowed(
       "providers/codex/allowed.ts",
-      'import type { Agent } from "../../lib/agent/contract.ts";\ntype AgentContract = Agent;\nexport type { AgentContract };',
+      'import type { Agent } from "../../lib/agent/contract.ts";\nexport type { Agent };',
     );
     expectBoundaryViolation(
       "providers/codex/forbidden.ts",
-      'import { triageIssue } from "../../lib/triage/triage.ts";',
-      "must not import tracker or domain operations",
+      'import { SPEC_REVIEW_PROMPT } from "../../lib/review/prompts/spec-review.ts";',
+      "must remain independent of review policy and workflows",
     );
     expectBoundaryViolation(
       "providers/codex/forbidden.ts",
-      'import { implementWorkItem } from "../../lib/implementation/implementation.ts";',
-      "must not import tracker or domain operations",
+      'import { run } from "../../workflows/plan-review.workflow.ts";',
+      "must remain independent of review policy and workflows",
     );
   });
 });

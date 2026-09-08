@@ -9,16 +9,7 @@ import {
   type TurnOptions,
   type Usage,
 } from "@openai/codex-sdk";
-import {
-  type Agent,
-  type AgentRunInput,
-  type AgentRunResult,
-  type AgentSessionRef,
-} from "../../lib/agent/contract.ts";
-import {
-  createAgentSessionRef,
-  normalizeAgentSessionForProvider,
-} from "../../lib/agent/session.ts";
+import { type Agent, type AgentRunInput, type AgentRunResult } from "../../lib/agent/contract.ts";
 import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent/stream-log.ts";
 import {
   createAbortedAgentResult,
@@ -37,7 +28,6 @@ type CodexThread = {
 };
 type CodexClient = {
   startThread(options: ThreadOptions): CodexThread;
-  resumeThread(id: string, options?: ThreadOptions): CodexThread;
 };
 type CodexFactory = (options: CodexOptions) => CodexClient;
 type CodexTurn = RunResult & { streamLog?: AgentStreamLogSummary };
@@ -68,9 +58,6 @@ async function invokeCodexAgent(
   environment: Readonly<Record<string, string>> | undefined,
   input: AgentRunInput,
 ): Promise<AgentRunResult> {
-  const sessionResult = normalizeAgentSessionForProvider("codex", input.session);
-  if (!sessionResult.ok) return sessionResult.error;
-
   let outputSchema;
   try {
     outputSchema = input.schemaPath ? loadSchema({ schemaPath: input.schemaPath }) : undefined;
@@ -94,7 +81,7 @@ async function invokeCodexAgent(
     return beforeStatus.error;
   }
   const guardWorkspace = (result: AgentRunResult): AgentRunResult =>
-    withWorkspaceGuard(result, input.workspace, beforeStatus.value, input.workspaceGuard);
+    withWorkspaceGuard(result, input.workspace, beforeStatus.value);
 
   const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
   if (signalState.isExternallyAborted()) {
@@ -119,7 +106,7 @@ async function invokeCodexAgent(
       ...(environment ? { env: { ...environment } } : {}),
     });
     const threadOptions = buildThreadOptions(input);
-    const thread = openCodexThread(codex, sessionResult.session, threadOptions);
+    const thread = codex.startThread(threadOptions);
     const turnOptions = {
       outputSchema,
       signal: signalState.signal,
@@ -162,7 +149,6 @@ async function invokeCodexAgent(
       ok: true,
       structuredOutput: parsed.value,
       raw: acceptedTurn,
-      session: createAgentSessionRef("codex", thread.id),
       usage: turn.usage ?? undefined,
     });
   } catch (error) {
@@ -196,15 +182,6 @@ function buildThreadOptions(input: AgentRunInput): ThreadOptions {
     approvalPolicy: input.approvalPolicy,
     modelReasoningEffort: input.modelReasoningEffort,
   };
-}
-
-function openCodexThread(
-  codex: CodexClient,
-  session: AgentSessionRef | undefined,
-  threadOptions: ThreadOptions,
-): CodexThread {
-  if (!session) return codex.startThread(threadOptions);
-  return codex.resumeThread(session.id, threadOptions);
 }
 
 async function runCodexTurnStreamed(

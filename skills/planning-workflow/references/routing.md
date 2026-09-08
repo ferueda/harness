@@ -5,6 +5,9 @@ requested outcome and actual authority decide the path; task nouns do not.
 
 - "Fix this reproduced validation bug; expected behavior and test are attached."
   Implement and verify directly. No required coordinator, diagnosis, or plan.
+- "Triage this issue and recommend what an agent should do next."
+  Inspect issue and repository evidence, then classify it read-only. Do not begin
+  the recommended work unless the surrounding request separately authorizes it.
 - "Find out why this request intermittently fails."
   Diagnose read-only. Do not implement unless the original request allows it.
 - "Interview me about this feature."

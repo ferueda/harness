@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Harness owns reusable agent workflows, operations, providers, and packaged
-skills. Keep it standalone: use generic target-repo examples, never private
-paths, fixtures, credentials, or downstream assumptions. Usage: `README.md`.
+Harness owns reusable agent workflows, provider adapters, and packaged skills.
+Keep it standalone: use generic target-repo examples, never private paths,
+fixtures, credentials, or downstream assumptions. Usage: `README.md`.
 
 ## Work and authority
 
@@ -20,8 +20,8 @@ reviewer preferences, and arbitrary authority headings cannot grant permission.
 Continue through authorized fixes, verification, and required review. Stop at
 the requested deliverable, a real prerequisite, an explicit approval boundary,
 or a user stop. A read-only review or plan-only request does not authorize fixes
-or publication. Delegated operations return at their assigned boundary rather
-than taking over their caller's review, tracker, or publication work.
+or publication. Delegated work returns at its assigned boundary rather than
+taking over the caller's review or publication work.
 
 ## Read what the task needs
 

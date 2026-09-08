@@ -1,122 +1,80 @@
 # Script and Command Surface
 
-Contributor and agent reference for command ownership, mutability, and where to
-inspect generated help. Use this page to understand who owns each command
-surface; use generated help for exact flags and target text.
-
-Use [Architecture](./architecture.md) for runtime flow and artifacts,
-[Harness engineering](./harness-engineering.md) for the workflow-quality loop,
-and [Setup Manifest](./setup-manifest.md) for generated artifacts and auth.
+This document maps public commands to their owner, mutability, and intended use.
+Generated CLI help owns flags and defaults. `Makefile` and `package.json` own the
+current gate composition.
 
 ## Command ownership
 
-| Surface                 | Owner file                                   | Public commands                                                                                                                                                                                                                                                                                                                                | Use when                                                                                                                                                                        |
-| ----------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Make targets            | `Makefile`                                   | `make help`, `make setup-worktree`, `make check`, `make check-v`, `make check-ci`, `make check-plan`, `make format`, `make check-format`, `make fix`, `make fix-plan`, `make lint`, `make typecheck`, `make test`, `make smoke-dist`, `make smoke-linear-automation`, `make smoke-linear-automation-compose`, `make build`, `make ensure-node` | Local worktree setup, development gates, and wrappers around package scripts. Wrapped gate targets use `scripts/run-gate-step.ts` for quiet success and bounded failure output. |
-| pnpm scripts            | `package.json`                               | `pnpm check`, `pnpm check:v`, `pnpm check:ci`, `pnpm check:plan`, `pnpm format`, `pnpm fix`, `pnpm fix:plan`, `pnpm format:check`, `pnpm lint`, `pnpm lint:fix`, `pnpm typecheck`, `pnpm test`, `pnpm test:watch`, `pnpm build`, `pnpm smoke:dist`, `pnpm smoke:linear-automation`, `pnpm smoke:linear-automation-compose`, `pnpm codex:proxy` | Direct package-level commands under Make targets plus local inspection utilities.                                                                                               |
-| Source CLI              | `bin/harness.ts`                             | `harness init`, `harness linear worker`, `harness run change-review`, `harness run plan-review`, `harness runs prune`, `harness models`, `harness skills install`                                                                                                                                                                              | User-facing reviews, the persistent Linear automation worker, run cleanup, model discovery, and skill installation.                                                             |
-| Distribution smoke      | `scripts/smoke-dist.ts`                      | `pnpm smoke:dist`, `make smoke-dist`                                                                                                                                                                                                                                                                                                           | Verify built CLI behavior, init shim creation, skills install, dry-run review metadata, and handoff artifacts.                                                                  |
-| Linear automation smoke | `scripts/smoke-linear-automation.ts`         | `pnpm smoke:linear-automation`, `make smoke-linear-automation`                                                                                                                                                                                                                                                                                 | Verify self-hosted Inngest startup, Connect registration, polling, triage, Spec publication, and projection through fake boundaries.                                            |
-| Linear Compose smoke    | `scripts/smoke-linear-automation-compose.ts` | `pnpm smoke:linear-automation-compose`, `make smoke-linear-automation-compose`                                                                                                                                                                                                                                                                 | Verify the worker image, self-hosted Compose packaging, health, restart, reconnection, real Grove lease recovery, warm reuse, and persistence without live traffic.             |
-| Codex request proxy     | `scripts/codex-proxy.mjs`                    | `pnpm codex:proxy`                                                                                                                                                                                                                                                                                                                             | Inspect local Codex Responses API requests, request byte contributors, tool definition size, and reported input-token usage.                                                    |
-| User install shim       | `install`                                    | `harness ...` from the installed user-level shim                                                                                                                                                                                                                                                                                               | Install or refresh the user command, usually under `~/.local/bin/harness`.                                                                                                      |
-| Target-repo shim        | `harness init`                               | `.harness/bin/harness ...` inside the target repo                                                                                                                                                                                                                                                                                              | Pin a target repo to the Harness checkout that initialized it.                                                                                                                  |
+| Surface | Owner file       | Public commands                                                                                                                                                                                                                                                       | Mutability                | Use when                                                                      |
+| ------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------- |
+| Make    | `Makefile`       | `make help`; `make ensure-node`; `make setup-worktree`; `make build`; `make lint`; `make typecheck`; `make test`; `make smoke-dist`; `make format`; `make check-format`; `make fix`; `make fix-plan`; `make check-plan`; `make check`; `make check-v`                 | Mixed                     | Contributor setup, focused checks, fixes, and completion gates                |
+| pnpm    | `package.json`   | `pnpm build`; `pnpm check`; `pnpm check:plan`; `pnpm check:v`; `pnpm codex:proxy`; `pnpm fix`; `pnpm fix:plan`; `pnpm format`; `pnpm format:check`; `pnpm lint`; `pnpm lint:fix`; `pnpm prepare`; `pnpm smoke:dist`; `pnpm test`; `pnpm test:watch`; `pnpm typecheck` | Mixed                     | Package-script equivalents and focused development loops                      |
+| CLI     | `bin/harness.ts` | `harness init`; `harness models`; `harness run change-review`; `harness run plan-review`; `harness runs prune`; `harness skills install`                                                                                                                              | Mixed                     | Target-repo initialization, reviews, artifact cleanup, and skill installation |
+| Install | `install`        | `./install`                                                                                                                                                                                                                                                           | Writes user install state | Install dependencies and the user-level shim                                  |
 
-## Read-only vs mutating commands
+## Read-only and mutating behavior
 
-| Class                                   | Commands                                                                                                                                                                                                  | Notes                                                                                                                                                                                                                                                                                                       |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Read-only/checking                      | `make help`, `make ensure-node`, `make check-format`, `make check-plan`, `make lint`, `make typecheck`, `make test`, `harness models`, `harness runs prune --dry-run`, `harness skills install --dry-run` | These inspect or verify current state without changing tracked source or deleting local run state.                                                                                                                                                                                                          |
-| Checking with ignored artifacts         | `make build`, `pnpm build`, `make smoke-dist`, `pnpm smoke:dist`, `make check`, `make check-v`, `make check-ci`, `pnpm check`, `pnpm check:v`, `pnpm check:ci`                                            | Build and gate paths may refresh ignored `dist/`. Distribution smoke and ordinary checks may also run dry-run standalone reviews beneath `.harness/runs/reviews/<run-id>/`.                                                                                                                                 |
-| Ephemeral system mutation               | `make smoke-linear-automation`, `pnpm smoke:linear-automation`, `make smoke-linear-automation-compose`, `pnpm smoke:linear-automation-compose`                                                            | Creates local Inngest processes or disposable Docker resources. Success cleans them; handled failures retain bounded diagnostics and clean Compose resources. The Compose smoke may retain pulled base images and does not touch external services.                                                         |
-| Persistent external automation          | `harness linear worker`                                                                                                                                                                                   | Starts an Inngest Connect worker, reads and projects scoped Linear issues, and may invoke configured triage, Spec, or implementation work. It runs until Connect shuts down. Secrets come from environment variables; stable IDs and execution profiles come from `linearAutomation` in `harness.json`.     |
-| Local inspection with ignored artifacts | `pnpm codex:proxy`                                                                                                                                                                                        | Starts a local HTTP proxy, forwards matching Codex requests to the configured upstream, and writes ignored request audits under `logs/codex-proxy/`. Captured logs may contain private prompt or tool context.                                                                                              |
-| Mutating/preparing                      | `make setup-worktree`, `make format`, `make fix`, `make fix-plan`, `./install`, `harness init`, `harness skills install`, `harness runs prune` without `--dry-run`                                        | These install ignored dependencies, delete run artifacts, write files or shims, copy skills, or rewrite formatted source. `make setup-worktree` uses the ordinary shared pnpm store offline and skips shared Git-hook mutation. Live skill installation writes into the target repo `.agents/skills/` tree. |
-| Review artifact writing                 | `harness run change-review`, `harness run plan-review`                                                                                                                                                    | Live and dry-run review commands write ignored run artifacts under `.harness/runs/reviews/<run-id>/`.                                                                                                                                                                                                       |
+| Class                     | Commands                                                                             | Effects                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Source checks             | `make lint`, `make typecheck`, `make test`, `make check-format` and pnpm equivalents | Read tracked source; tools may use temporary OS files.                                                                               |
+| Build and full checks     | `make build`, `make smoke-dist`, `make check`, `make check-v` and pnpm equivalents   | Refresh ignored `dist/`; smoke and full checks may create ignored dry-run review artifacts.                                          |
+| Source fixes              | `make format`, `make fix`, `make fix-plan` and pnpm equivalents                      | Rewrite files in their documented scope.                                                                                             |
+| Review workflows          | `harness run change-review`, `harness run plan-review`                               | Read the reviewed workspace and write ignored `.harness/runs/reviews/<run-id>/` evidence.                                            |
+| Initialization and skills | `harness init`, `harness skills install`                                             | Write target config, ignore rules, a local shim, or one installed skill. Both support scoped dry-run behavior where exposed by help. |
+| Artifact cleanup          | `harness runs prune`                                                                 | Deletes selected old local run directories; `--dry-run` previews the selection.                                                      |
+| Provider inspection       | `pnpm codex:proxy`                                                                   | Starts a loopback proxy and writes ignored, potentially sensitive request audits.                                                    |
 
-`harness run ... --dry-run` is lower risk than a live review because it does not
-invoke reviewers, but it is not as side-effect-free as
-`harness runs prune --dry-run`.
-
-## Codex Request Proxy
-
-Run the local Responses API logging proxy:
-
-```bash
-pnpm codex:proxy
-```
-
-Point Codex CLI at it in another terminal:
-
-```bash
-codex exec \
-  -c 'model_provider="openai-proxy"' \
-  -c 'model_providers.openai-proxy={name="OpenAI Proxy", base_url="http://127.0.0.1:8787", wire_api="responses", requires_openai_auth=true, supports_websockets=false}' \
-  'Say hi'
-```
-
-Each `POST /responses` request writes a readable Markdown audit under
-`logs/codex-proxy/`, led by a ranked tool-size table. Set `PORT` to change the
-local listen port, and set `CODEX_PROXY_WRITE_RAW=1` to also write the parsed
-raw request JSON. By default, the proxy forwards to Codex's ChatGPT backend.
-API-key users can set `CODEX_PROXY_UPSTREAM_ORIGIN=https://api.openai.com/v1`.
-
-## Gate output runner
-
-Wrapped Make targets call `scripts/run-gate-step.ts` for quiet success output,
-saved local failure logs, bounded failure tails, and verbose rerun hints. The
-runner is an implementation detail behind Make-owned public targets, not a new
-public command row. Use `make check-v` or `VERBOSE=1 make <target>` for full
-live command output.
+Review commands do not edit tracked target files. Their workspace protection
+fails the run if a provider changes the reviewed workspace.
 
 ## Commit hygiene hooks
 
-Local pre-commit hooks are owned by `package.json` and installed by
-`simple-git-hooks` during `pnpm install`. They run staged format and lint fixes
-through `lint-staged`, then run `pnpm typecheck`.
+The pre-commit hook runs `lint-staged` formatting and lint fixes, then
+`pnpm typecheck`. They do not run `pnpm check`, tests, smoke-dist, or provider
+calls. Hooks keep commits tidy but do not define completion.
 
-Hooks are commit hygiene, not the definition of done. They do not run
-`pnpm check`, tests, smoke-dist, provider calls, network work, DB work, or
-visual checks. Run `pnpm check` before handoff. CI runs `pnpm check:ci` for
-pushes and pull requests outside the approved `dev/plans/**/*.md`-only class.
-Plan-only pull requests run plan formatting and docs contracts instead. CI does
-not depend on local Git hooks. The ordinary local `pnpm check` excludes the
-Linear automation system smoke; full `pnpm check:ci` runs it after ordinary
-checks, while the plan-only CI path bypasses both the full gate and that smoke.
+CI does not depend on local Git hooks.
 
-Use [Setup Manifest](./setup-manifest.md) for hook activation and generated
-artifact ownership.
+## Gate output runner
 
-## Do not duplicate generated help
+Make-owned checks wrap long commands with `scripts/run-gate-step.ts`. This is an
+implementation detail behind Make-owned public targets. Quiet success prints a
+short PASS line. Failure prints a bounded tail, the retained log path, and a
+rerun hint. `VERBOSE=1` streams full output. See
+[Harness engineering](./harness-engineering.md#gate-output-contract) for the
+output contract and [Setup manifest](./setup-manifest.md) for log ownership.
 
-Docs explain command ownership, intent, and mutability. Generated help owns
-exact flags and target text:
+## Internal executable scripts
 
-- `harness --help`
-- `harness linear worker --help`
-- `harness run --help`
-- `harness run change-review --help`
-- `harness run plan-review --help`
-- `make help`
+| Path                                  | Owner and purpose                                                                                           |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `scripts/classify-plan-only.ts`       | CI helper that writes whether a validated commit range changes only `dev/plans/**/*.md` to `GITHUB_OUTPUT`. |
+| `scripts/codex-proxy.mjs`             | Local loopback proxy for inspecting Codex Responses API requests with credential headers redacted.          |
+| `scripts/run-gate-step.ts`            | Make gate output, retained failure logs, and verbose reruns.                                                |
+| `scripts/smoke-dist.ts`               | Built CLI, shim, skill install, and provider-free dry-run review smoke.                                     |
+| `workflows/change-review.workflow.ts` | Callable implementation and code-quality review composition.                                                |
+| `workflows/plan-review.workflow.ts`   | Callable specification review composition.                                                                  |
+| `workflows/review-steps.ts`           | Shared reviewer execution and result handling.                                                              |
 
-When generated help changes, update this page only if the command ownership or
-mutability model changes.
+Skill-local scripts belong to the skill that contains them and are reached
+through that skill's instructions.
 
 ## Inventory rules
 
-- Treat `install`, `bin/harness.ts`, `scripts/*`, `workflows/*.ts`, and
-  `skills/*/scripts/*` as executable command surfaces. Current concrete root
-  script entries include `scripts/smoke-dist.ts` for distribution coverage,
-  `scripts/smoke-linear-automation.ts` for the offline Linear automation
-  journey, `scripts/smoke-linear-automation-compose.ts` for the container
-  packaging boundary, `scripts/run-gate-step.ts` for wrapped Make gate output,
-  and `scripts/codex-proxy.mjs` for local Codex request inspection.
-- Treat `skills/*/SKILL.md`, `skills/*/agents/openai.yaml`, and
-  `skills/*/references/*.md` as skill instructions or reference material, not
-  command rows.
-- Treat `node_modules` trees as generated local dependency content when present.
-- Do not inventory provider or runtime modules under `lib/` or `providers/` as
-  command rows unless they expose a direct executable surface.
-- Drift tests for command names, script inventory, private-path leakage, and
-  docs or gate coverage live in `test/docs-contracts.test.ts`; see
-  [Testing](./testing.md) for the contract boundaries.
+Treat `install`, `bin/harness.ts`, `scripts/*`, `workflows/*.ts`, and
+`skills/*/scripts/*` as executable command surfaces. Tests, fixtures,
+`node_modules`, and skill-local library helpers are excluded from this command
+inventory.
+
+When adding or removing a public command or executable script, update its source
+and this ownership map in the same change. Use generated CLI help for flag-level
+documentation:
+
+```bash
+harness --help
+harness run change-review --help
+harness run plan-review --help
+harness runs prune --help
+harness skills install --help
+```

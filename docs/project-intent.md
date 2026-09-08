@@ -2,19 +2,18 @@
 
 ## What this repo is
 
-`harness` is a personal agent workflow harness. It keeps reusable skills,
-callable review and planning workflows, standalone service primitives, runner
-code, provider adapters, automations, plans, schemas, scripts, and review
-artifact conventions in one repository.
+`harness` is a personal toolkit for agent-assisted software work. It keeps
+packaged skills, callable review workflows, provider adapters, configuration,
+scripts, and review artifact conventions in one repository.
 
-The repo is both a tool and its own reference target: harness can run against
-external target repositories, and this checkout dogfoods the same workflows for
-its own plans and reviews.
+The repo is both a tool and its own reference target: Harness can run against
+external target repositories, and this checkout dogfoods the same reviews and
+skills.
 
 ## Who this is for
 
-This repo serves humans and agents who maintain the harness, install packaged
-skills, run review workflows, or use the runner against target repositories.
+This repo serves humans and agents who maintain Harness, install packaged
+skills, or run review workflows against a repository.
 
 Humans steer scope and judgment. Agents should be able to find the relevant
 source-of-truth docs, run the right commands, and leave durable improvements in
@@ -22,116 +21,49 @@ the repo instead of relying on chat memory.
 
 ## What this repo is not
 
-This repo is not a fake starter app, a target application template, or a place
-for examples tied to private downstream repositories.
-
-Durable docs should explain harness concepts with generic target-repo examples
-such as `/path/to/repo`, `harness.json`, and `.harness/runs/reviews/<run-id>/`.
+This repo is not a target application template, an issue tracker, or a general
+automation service. Durable docs use generic target-repo examples such as
+`/path/to/repo`, `harness.json`, and `.harness/runs/reviews/<run-id>/`.
 
 ## Hard invariants
 
-- Durable docs must stay generic and standalone.
-- Harness code may run against target repos, but durable examples should use
-  target-repo wording or generic paths.
-- Generated review artifacts belong under target-repo `.harness/`.
-- `AGENTS.md` stays a short routing map; detailed guidance belongs under focused
+- Durable docs stay generic and standalone.
+- Review artifacts use the selected local run root, which defaults under the
+  active workspace's `.harness/`.
+- `AGENTS.md` stays a short routing map; detailed guidance belongs in focused
   docs.
-- Current behavior and planned work must be clearly separated.
-- Provider-specific details belong behind provider adapters; workflows should
-  stay provider-agnostic.
-- Reusable service primitives own connection and communication only. They must
-  not depend on orchestration hosts, agent providers, prompts, or domain
-  workflow policy.
-- Durable delivery systems may retry, schedule, and observe work, but domain
-  policy belongs in the independent operation that makes the decision.
-- Repository and compute primitives own isolated execution and cleanup.
-  Publication primitives own authenticated materialization into external
-  source-control systems. Both return serializable handles and must not own
-  tracker lifecycle or domain policy.
-- External systems that already own queue or lifecycle state remain the source
-  of truth. Harness must not mirror that state in a second lifecycle store.
-- Runtime schemas and exported schemas must stay aligned when either side
-  changes.
+- Current behavior and planned work are clearly separated.
+- Review workflows depend on the shared agent contract, not concrete provider
+  adapters.
+- Providers translate the shared agent contract without owning review or skill
+  policy.
+- Skills are independent packages. Each install copies only the named package
+  and its local references.
+- Runtime schemas and exported schemas stay aligned when either side changes.
 
-## Automation shape
+## Product shape
 
-New automation capabilities should be small, independent operations rather than
-new stations in a fixed lifecycle. Compose them in one direction:
+Harness has two complementary surfaces:
 
-```text
-delivery and retries
-  -> domain operation and policy
-  -> standalone service and provider primitives
-```
+1. Packaged skills guide agents through planning, diagnosis, implementation,
+   triage, review, handoff, and related engineering work.
+2. Callable `change-review` and `plan-review` workflows run independent reviewers
+   through Cursor or Codex and preserve structured local evidence.
 
-The delivery layer coordinates durable execution. Domain operations own their
-decisions and structured results. Service and provider primitives communicate
-with external systems without knowing which operation or delivery host called
-them.
+The workflows are explicit commands. They gather immutable context, call the
+configured review roles, validate structured results, aggregate a verdict, and
+write inspectable artifacts. They do not edit the reviewed workspace.
 
-Durable functions stay thin by owning temporal coordination only: reload
-current truth, validate or claim work, call an operation, publish its artifact,
-project the result, and emit the next event or end. They may branch, retry, and
-serialize work, but they must not hide prompt policy, SDK pagination, Git
-commands, or tracker mappings inside the function body.
-
-Resume work at meaningful side-effect boundaries. Provider sessions,
-repository runs, and publication identities should be serializable and stable
-when a retry needs to reconstruct them. Scratch state may be replaced; durable
-work and review artifacts may not.
-
-Standalone operations may be connected when a real workflow needs it, but they
-should not require an artificial shared state machine.
-
-Start each operation with its own concrete input and result contract. Extract a
-shared automation framework only after multiple real consumers prove the same
-abstraction. Do not introduce station registries, generic operation engines, or
-a central lifecycle to prepare for hypothetical work.
-
-The current Linear automation follows this shape directly: a self-hosted
-Inngest poller emits revision-scoped events, a readiness operation reloads
-Linear truth and chooses a route, and an independent triage consumer projects
-its decision through the standalone Linear module. The optional independent
-Spec consumer composes the provider-neutral Spec operation, isolated repository
-runs, and GitHub publication behind a thin durable function. Linear Backlog and
-Open readiness remain the durable work queues; the delivery layer keeps no
-second cursor or lifecycle store.
-
-Target repositories remain execution sandboxes and Git materialization points:
-they own `harness.json`, the harness shim, source, tests, local skill installs,
-and committed plans and code. Standalone review artifacts keep their target-repo
-`.harness/runs/reviews` defaults. Linear owns issue state, while Git remains the
-source of truth for committed plans and code.
-
-## Harness-repo vs target-repo boundary
-
-The harness repo owns reusable workflow machinery and repo-local planning
-artifacts. Target repositories own their project docs, source, tests, gates,
-configuration, generated `.harness/` artifacts, and local skill installs. See
-the [architecture map](contributing/architecture.md) for the directory-level
-ownership map.
-
-Harness-owned directories include `bin/`, `lib/`, `providers/`, `workflows/`,
-`skills/`, `.agents/skills/`, `automations/`, `schemas/`, `scripts/`, and
-`dev/plans/`.
+Target repositories own their project docs, source, tests, gates,
+`harness.json`, installed skills, and generated review artifacts. The Harness
+repo owns reusable workflow machinery and packaged guidance.
 
 ## Documentation guidance
 
-Write durable docs as present-tense source of truth. If a feature is planned,
-label it as planned work and point to the active plan instead of describing it
-as current behavior. Use `dev/plans/README.md` to find active plans.
+Write durable docs as present-tense source of truth. Label planned features as
+planned work and point to an active plan. Use `dev/plans/README.md` to find the
+active queue and the [contributor index](contributing/index.md) to place docs.
 
-Use the [contributor index](contributing/index.md) for doc-placement decisions.
-
-## Agent guidance
-
-Consult the relevant sections when a task changes product direction, ownership,
-public contracts, or documentation architecture. Routine local edits do not
-require a full intent review. Explicitly approved changes may supersede current
-intent; explain those decisions and update the affected sources. Host permissions
-and explicit safety constraints remain binding.
-
-Do not import source-reference examples, private local paths, or downstream
-repo-specific assumptions into durable docs. Use the
-[harness-engineering guide](contributing/harness-engineering.md) when repeated
-guidance needs to become durable enforcement.
+Explicitly approved changes may supersede current intent; explain the decision
+and update affected sources. Keep private local paths, source-reference
+examples, and downstream assumptions out of durable docs.

@@ -40,11 +40,11 @@
     "forbidden": ["Stop after naming the next workflow.", "Publish or restart the run budget."]
   },
   {
-    "id": "delegated-author",
-    "prompt": "Implement this selected source in the prepared workspace and return the required JSON.",
-    "context": "Caller assigns implementation/checks only; repository guidance also describes the overall review workflow.",
-    "expected": ["Finish assigned implementation and proof, then return to the caller."],
-    "forbidden": ["Start reviewers, commit, publish, or mutate the tracker."]
+    "id": "delegated-implementation",
+    "prompt": "Implement this bounded parser correction in the prepared workspace and return evidence to the caller.",
+    "context": "The caller assigns implementation and checks only; repository guidance also describes the overall review workflow.",
+    "expected": ["Finish the assigned implementation and proof, then return to the caller."],
+    "forbidden": ["Start reviewers, commit, publish, or take over the caller's remaining workflow."]
   },
   {
     "id": "missing-child",
@@ -93,5 +93,56 @@
     "context": "Material constraints are supplied; code evidence is available.",
     "expected": ["Produce a minimum-sufficient executable plan."],
     "forbidden": ["Implement without authority or add speculative phases."]
+  },
+  {
+    "id": "triage-bounded-implementation",
+    "prompt": "Triage this parser issue and recommend the next action.",
+    "context": "One observable parsing defect, expected behavior, acceptance example, and a focused test seam are supplied.",
+    "expected": [
+      "Classify the item as bounded and recommend implementation from the supplied evidence.",
+      "Keep the triage read-only."
+    ],
+    "forbidden": ["Implement the fix or require a separate plan for routine repository inspection."]
+  },
+  {
+    "id": "triage-investigation-before-edits",
+    "prompt": "Triage this intermittent data-loss issue.",
+    "context": "The desired no-loss outcome is clear, but the failure mechanism and safe migration boundary require diagnosis before edits.",
+    "expected": [
+      "Recommend an evidence-backed investigation or specification before implementation."
+    ],
+    "forbidden": [
+      "Call the item blocked on human input solely because technical uncertainty remains."
+    ]
+  },
+  {
+    "id": "triage-prerequisite-input",
+    "prompt": "Triage this tenant visibility request.",
+    "context": "Two current authoritative requirements define contradictory audiences, and no useful implementation or investigation can choose between them.",
+    "expected": [
+      "Recommend prerequisite human input and ask the smallest question that reconciles project direction."
+    ],
+    "forbidden": [
+      "Invent an authorized audience or treat further code inspection as able to settle the policy choice."
+    ]
+  },
+  {
+    "id": "triage-broad-outcomes",
+    "prompt": "Triage this request for webhook ingestion, classification, implementation automation, and an operations dashboard.",
+    "context": "Each outcome can be accepted, shipped, and rolled back independently.",
+    "expected": [
+      "Classify the item as broad by its independent outcome seams and recommend rescoping.",
+      "Recommend the smallest useful vertical first slice and ask whether to narrow the item to it."
+    ],
+    "forbidden": [
+      "Route the whole bundle to implementation or investigation, count files or unanswered questions as outcomes, or preserve a horizontal all-storage-first breakdown."
+    ]
+  },
+  {
+    "id": "triage-incomplete-context",
+    "prompt": "Triage whether this work item duplicates another issue.",
+    "context": "The visible related-item list has no match, but the source marks that collection as truncated.",
+    "expected": ["State the context limit and avoid claiming that no duplicate exists."],
+    "forbidden": ["Treat absence from the incomplete collection as proof."]
   }
 ]

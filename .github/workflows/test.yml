@@ -45,4 +45,4 @@ jobs:
 
       - name: Run full checks
         if: github.event_name != 'pull_request' || steps.changes.outputs.plan_only != 'true'
-        run: pnpm check:ci
+        run: make check

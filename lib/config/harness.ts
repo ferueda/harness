@@ -60,19 +60,6 @@ export type InitHarnessResult = {
   shimUpdated: boolean;
 };
 
-export type HarnessConfigSnapshot = Readonly<{
-  workspace: string;
-  config: HarnessConfig;
-}>;
-
-export function loadHarnessConfigSnapshot(
-  workspaceInput?: string,
-  cwd = process.cwd(),
-): HarnessConfigSnapshot {
-  const workspace = resolveHarnessWorkspace(workspaceInput, cwd);
-  return Object.freeze({ workspace, config: readHarnessConfig(workspace) });
-}
-
 export function resolveHarnessOptions<T extends HarnessOptions>(
   options: T,
   cwd = process.cwd(),

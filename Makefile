@@ -10,7 +10,7 @@ define RUN
 @VERBOSE="$(VERBOSE)" GATE_STEP_NAME="$(if $(2),$(2),$@)" GATE_STEP_RERUN="$(if $(3),$(3),VERBOSE=1 make $@)" GATE_STEP_COMMAND='$(1)' node scripts/run-gate-step.ts
 endef
 
-.PHONY: help ensure-node setup-worktree build lint typecheck test smoke-dist smoke-linear-automation smoke-linear-automation-compose format check-format fix fix-plan check-plan check check-v check-ci
+.PHONY: help ensure-node setup-worktree build lint typecheck test smoke-dist format check-format fix fix-plan check-plan check check-v
 
 ensure-node: ## Ensure node and pnpm are available
 	@command -v node >/dev/null 2>&1 || { echo "node not found in PATH"; exit 1; }
@@ -35,12 +35,6 @@ test: ensure-node ## Run unit tests
 smoke-dist: ensure-node build ## Smoke test the built CLI entrypoint
 	$(call RUN,$(PNPM) run smoke:dist)
 
-smoke-linear-automation: ensure-node ## Smoke test the offline Linear automation journey
-	$(call RUN,$(PNPM) run smoke:linear-automation)
-
-smoke-linear-automation-compose: ensure-node ## Smoke test the Docker Compose packaging boundary
-	$(call RUN,$(PNPM) run smoke:linear-automation-compose)
-
 format: ensure-node ## Apply formatting
 	$(PNPM) run format
 
@@ -63,9 +57,6 @@ check: ensure-node ## Quiet full local gate
 
 check-v: ## Verbose full local gate
 	@VERBOSE=1 $(MAKE) check
-
-check-ci: check ## CI gate
-	@$(MAKE) smoke-linear-automation
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-24s %s\n", $$1, $$2}'

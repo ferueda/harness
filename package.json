@@ -16,7 +16,6 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "check": "make check",
-    "check:ci": "make check-ci",
     "check:plan": "oxfmt --check dev/plans && vitest run test/docs-contracts.test.ts",
     "check:v": "make check-v",
     "codex:proxy": "node scripts/codex-proxy.mjs",
@@ -28,26 +27,19 @@
     "lint:fix": "oxlint -c .oxlintrc.json --fix bin lib providers scripts workflows test vitest.config.ts",
     "prepare": "simple-git-hooks",
     "smoke:dist": "node scripts/smoke-dist.ts",
-    "smoke:linear-automation": "node scripts/smoke-linear-automation.ts",
-    "smoke:linear-automation-compose": "node scripts/smoke-linear-automation-compose.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@cursor/sdk": "1.0.31",
-    "@ferueda/grove": "1.4.5",
-    "@linear/sdk": "93.0.1",
     "@openai/codex": "0.153.4",
     "@openai/codex-sdk": "0.153.4",
     "commander": "15.0.0",
-    "inngest": "4.20.0",
     "zod": "4.5.4"
   },
   "devDependencies": {
-    "@inngest/test": "1.0.0",
     "@types/node": "24.13.3",
-    "inngest-cli": "1.44.0",
     "lint-staged": "17.5.0",
     "oxfmt": "0.67.0",
     "oxlint": "1.82.0",

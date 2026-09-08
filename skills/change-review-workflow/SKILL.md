@@ -58,7 +58,7 @@ observed progress; elapsed time alone is not a reason to stop the review.
 If the runner is unavailable, report the limitation. Use an available direct
 reviewer only when the task permits it; never claim Harness ran. A delegated
 operation returns to its caller and cannot waive that caller's review or
-publication requirements. The unattended Linear worker retains both reviewers.
+publication requirements.
 
 ## Findings and remediation
 

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -125,6 +125,48 @@ test("callable change-review returns full reviews bound to its exact run and Git
   });
   expect(result.reviewFailures).toEqual([]);
   expect(existsSync(join(result.runDir, "meta.json"))).toBe(true);
+});
+
+test("large removal diffs remain complete in dry-run review artifacts", async () => {
+  const workspace = createGitWorkspace();
+  try {
+    const largeFile = join(workspace, "large.txt");
+    writeFileSync(largeFile, "Large review payload\n".repeat(70_000) + "Last removed line\n");
+    execFileSync("git", ["add", "large.txt"], { cwd: workspace });
+    execFileSync("git", ["commit", "-m", "add large file"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["switch", "-c", "remove-large-file"], {
+      cwd: workspace,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["rm", "large.txt"], { cwd: workspace });
+    execFileSync("git", ["commit", "-m", "remove large file"], {
+      cwd: workspace,
+      stdio: "ignore",
+    });
+    const ctx = createWorkflowContextForTest({
+      workspace,
+      baseRef: "main",
+      headRef: "HEAD",
+      dryRun: true,
+      agentProviderFactory(options) {
+        return {
+          name: options.provider,
+          async run() {
+            throw new Error("dry-run should not call provider");
+          },
+        };
+      },
+      maxRuntimeMs: 1_000,
+    });
+
+    const result = await runChangeReview(ctx);
+    const diff = readFileSync(join(result.runDir, "context/diff.patch"), "utf8");
+    expect(result.status).toBe("dry_run");
+    expect(Buffer.byteLength(diff)).toBeGreaterThan(1024 * 1024);
+    expect(diff).toContain("-Last removed line");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test("callable change-review keeps a completed sibling when one reviewer fails", async () => {

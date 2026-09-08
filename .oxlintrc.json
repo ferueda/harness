@@ -14,34 +14,6 @@
   },
   "overrides": [
     {
-      "files": ["lib/linear/**/*.ts"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^inngest(?:/|$)",
-                "message": "Linear service primitives must not depend on delivery code."
-              },
-              {
-                "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
-                "message": "Linear service primitives must not depend on concrete providers."
-              },
-              {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:agent(?:/|$)|config(?:/|$)|review(?:/|$)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|repository(?:/|$)|linear-automation(?:/|$))",
-                "message": "Linear service primitives may only communicate with Linear; domain and delivery policy belong outside lib/linear."
-              },
-              {
-                "regex": "^\\.\\./(?:\\.\\./)*providers(?:/|$)",
-                "message": "Linear service primitives must not depend on concrete providers."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "files": ["lib/agent/**/*.ts"],
       "rules": {
         "no-restricted-imports": [
@@ -49,20 +21,12 @@
           {
             "patterns": [
               {
-                "regex": "^inngest(?:/|$)",
-                "message": "Agent contracts and support must not depend on delivery code."
-              },
-              {
-                "regex": "^@linear/sdk(?:/|$)",
-                "message": "Agent contracts and support must not depend on Linear."
-              },
-              {
                 "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
                 "message": "Shared Agent support must not depend on a concrete provider SDK."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|repository(?:/|$)|review(?:/|$)|providers(?:/|$))",
-                "message": "Agent contracts and support must remain independent of services, domain operations, reviews, and concrete providers."
+                "regex": "^\\.\\./(?:\\.\\./)*(?:review|providers)(?:/|$)",
+                "message": "Agent contracts and support must remain independent of reviews and concrete providers."
               }
             ]
           }
@@ -77,119 +41,12 @@
           {
             "patterns": [
               {
-                "regex": "^inngest(?:/|$)",
-                "message": "Review execution must not depend on delivery code."
-              },
-              {
-                "regex": "^@linear/sdk(?:/|$)",
-                "message": "Review execution must not depend on Linear."
-              },
-              {
                 "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
                 "message": "Review execution depends on the shared Agent interface, not a concrete provider."
               },
               {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|repository(?:/|$)|providers(?:/|$))",
-                "message": "Review execution must remain independent of automation, services, domain operations, and concrete providers."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": [
-        "lib/triage/**/*.ts",
-        "lib/spec/**/*.ts",
-        "lib/spec-review/**/*.ts",
-        "lib/implementation/**/*.ts"
-      ],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "paths": [
-              {
-                "name": "node:child_process",
-                "message": "Domain operations must use injected repository or publication primitives instead of running Git or GitHub commands."
-              },
-              {
-                "name": "child_process",
-                "message": "Domain operations must use injected repository or publication primitives instead of running Git or GitHub commands."
-              }
-            ],
-            "patterns": [
-              {
-                "regex": "^inngest(?:/|$)",
-                "message": "Domain operations must not depend on delivery code."
-              },
-              {
-                "regex": "^@linear/sdk(?:/|$)",
-                "message": "Domain operations receive normalized input instead of importing Linear."
-              },
-              {
-                "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
-                "message": "Domain operations depend on the shared Agent interface, not a concrete provider."
-              },
-              {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|repository(?:/|$)|github(?:/|$)|review(?:/|$)|providers(?:/|$))",
-                "message": "Domain operations own policy only; use injected service, provider, and repository interfaces."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["lib/repository/**/*.ts"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^inngest(?:/|$)",
-                "message": "Repository primitives must not depend on delivery code."
-              },
-              {
-                "regex": "^@linear/sdk(?:/|$)",
-                "message": "Repository primitives must not depend on tracker code."
-              },
-              {
-                "regex": "^@octokit(?:/|$)",
-                "message": "Repository workspace primitives must not own GitHub publication."
-              },
-              {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|github(?:/|$)|providers(?:/|$))",
-                "message": "Repository primitives own isolated execution and cleanup, not tracker, publication, provider, or domain policy."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["lib/github/**/*.ts"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^inngest(?:/|$)",
-                "message": "GitHub publication primitives must not depend on delivery code."
-              },
-              {
-                "regex": "^@linear/sdk(?:/|$)",
-                "message": "GitHub publication primitives must not depend on tracker code."
-              },
-              {
-                "regex": "^(?:@openai/codex(?:-sdk)?|@cursor/sdk)(?:/|$)",
-                "message": "GitHub publication primitives must not depend on agent providers."
-              },
-              {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:linear(?:/|-)|inngest(?:/|$)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$)|providers(?:/|$))",
-                "message": "GitHub publication owns commit, push, and pull requests, not tracker, delivery, provider, or domain policy."
+                "regex": "^\\.\\./(?:\\.\\./)*providers(?:/|$)",
+                "message": "Review execution must remain independent of concrete providers."
               }
             ]
           }
@@ -204,16 +61,8 @@
           {
             "patterns": [
               {
-                "regex": "^inngest(?:/|$)",
-                "message": "Provider adapters must not depend on delivery code."
-              },
-              {
-                "regex": "^@linear/sdk(?:/|$)",
-                "message": "Provider adapters must not depend on Linear."
-              },
-              {
-                "regex": "^\\.\\./(?:\\.\\./)*(?:lib/)?(?:linear(?:/|-)|triage(?:/|$)|spec(?:-review)?(?:/|$)|implementation(?:/|$))",
-                "message": "Provider adapters translate provider behavior and must not import tracker or domain operations."
+                "regex": "^\\.\\./(?:\\.\\./)*(?:lib/)?(?:review|workflows)(?:/|$)",
+                "message": "Provider adapters must remain independent of review policy and workflows."
               }
             ]
           }

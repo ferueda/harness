@@ -1,0 +1,4 @@
+interface:
+  display_name: "Triage"
+  short_description: "Classify work items and recommend the next action"
+  default_prompt: "Use $triage to assess this issue's scope and recommend the next useful agent action from repository evidence."
