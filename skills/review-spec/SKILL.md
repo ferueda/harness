@@ -10,6 +10,12 @@ the accessible repository? Review read-only. Use `harness run plan-review --plan
 <path>` when durable artifacts or provider selection matter; otherwise review
 directly. Do not run both for the same evidence without a reason.
 
+Runner or delegated reviews can take up to 20 minutes, depending on task size.
+Prefer completion notifications; when polling is needed, check every 1–2 minutes
+for small tasks and every 3–5 minutes for larger tasks, rather than every 30
+seconds. Adjust to observed progress; elapsed time alone is not a reason to stop
+the review.
+
 ## Authority and grounding
 
 Accepted requirements govern within host permissions and explicit safety
