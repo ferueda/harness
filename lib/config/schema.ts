@@ -5,8 +5,6 @@ import {
   AGENT_REASONING_EFFORTS,
   AGENT_SANDBOX_MODES,
 } from "../agent/contract.ts";
-import { LinearAutomationConfigSchema } from "../linear-automation/config-schema.ts";
-import { RepositoryRunsConfigSchema } from "../repository/config-schema.ts";
 
 export const HarnessConfigSchema = z
   .object({
@@ -33,10 +31,8 @@ export const HarnessConfigSchema = z
       })
       .passthrough()
       .optional(),
-    linearAutomation: LinearAutomationConfigSchema.optional(),
-    repositoryRuns: RepositoryRunsConfigSchema.optional(),
   })
-  .passthrough()
+  .strict()
   .superRefine((config, ctx) => {
     const runtime = config.agents?.cursor?.runtime;
     if (runtime !== undefined) {
@@ -45,14 +41,6 @@ export const HarnessConfigSchema = z
         path: ["agents", "cursor", "runtime"],
         message:
           "agents.cursor.runtime is no longer supported; harness reviews always use the Cursor SDK. Remove agents.cursor.runtime from harness.json.",
-      });
-    }
-
-    if ("factory" in config) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["factory"],
-        message: "factory is no longer supported; remove it from harness.json",
       });
     }
   });

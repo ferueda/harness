@@ -7,15 +7,10 @@ import type {
   SDKAgent as CursorSdkAgentInstance,
 } from "@cursor/sdk";
 import { CURSOR_SDK_MODEL_MODES, DEFAULT_AGENT_MODELS } from "../../lib/agent/contract.ts";
-import {
-  createAgentSessionRef,
-  normalizeAgentSessionForProvider,
-} from "../../lib/agent/session.ts";
 import type {
   Agent,
   AgentRunInput,
   AgentRunResult,
-  AgentSessionRef,
   CursorSdkModelMode,
 } from "../../lib/agent/contract.ts";
 import { createAgentStreamWriter, type AgentStreamLogSummary } from "../../lib/agent/stream-log.ts";
@@ -33,10 +28,6 @@ import { readWorkspaceStatus, withWorkspaceGuard } from "../../lib/agent/workspa
 import { loadSchema, parseStructuredOutput, wrapPrompt } from "./lib/schema.ts";
 
 type CreateCursorSdkAgent = (options: CursorSdkAgentOptions) => Promise<CursorSdkAgentInstance>;
-type ResumeCursorSdkAgent = (
-  agentId: string,
-  options: CursorSdkAgentOptions,
-) => Promise<CursorSdkAgentInstance>;
 type CursorStreamPump = {
   settle(fallback: AgentStreamLogSummary | undefined): Promise<AgentStreamLogSummary | undefined>;
 };
@@ -44,7 +35,6 @@ type CursorStreamPump = {
 export type CursorSdkAgentFactoryOptions = {
   apiKey?: string;
   createSdkAgent?: CreateCursorSdkAgent;
-  resumeSdkAgent?: ResumeCursorSdkAgent;
 };
 
 const GPT_56_CONTEXT_PARAMS = [
@@ -97,7 +87,6 @@ const CURSOR_SDK_MODEL_SELECTIONS = {
 
 export function createCursorSdkAgent(options: CursorSdkAgentFactoryOptions = {}): Agent {
   const createSdkAgent = options.createSdkAgent ?? CursorSdkAgent.create;
-  const resumeSdkAgent = options.resumeSdkAgent ?? CursorSdkAgent.resume;
 
   return {
     name: "cursor",
@@ -106,7 +95,6 @@ export function createCursorSdkAgent(options: CursorSdkAgentFactoryOptions = {})
         input,
         apiKey: options.apiKey ?? process.env.CURSOR_API_KEY,
         createSdkAgent,
-        resumeSdkAgent,
       });
     },
   };
@@ -116,16 +104,11 @@ async function invokeCursorSdkAgent({
   input,
   apiKey,
   createSdkAgent,
-  resumeSdkAgent,
 }: {
   input: AgentRunInput;
   apiKey: string | undefined;
   createSdkAgent: CreateCursorSdkAgent;
-  resumeSdkAgent: ResumeCursorSdkAgent;
 }): Promise<AgentRunResult> {
-  const sessionResult = normalizeAgentSessionForProvider("cursor", input.session);
-  if (!sessionResult.ok) return sessionResult.error;
-
   if (!apiKey) {
     return {
       ok: false,
@@ -152,7 +135,7 @@ async function invokeCursorSdkAgent({
     return beforeStatus.error;
   }
   const guardWorkspace = (result: AgentRunResult): AgentRunResult =>
-    withWorkspaceGuard(result, input.workspace, beforeStatus.value, input.workspaceGuard);
+    withWorkspaceGuard(result, input.workspace, beforeStatus.value);
 
   const signalState = createAgentSignalState(input.signal, input.maxRuntimeMs);
   if (signalState.isExternallyAborted()) {
@@ -186,12 +169,9 @@ async function invokeCursorSdkAgent({
 
   try {
     const agentOptions = buildCursorAgentOptions(input, apiKey, modelResult.value);
-    sdkAgent = await withDeadline(
-      openCursorSdkAgent(sessionResult.session, createSdkAgent, resumeSdkAgent, agentOptions),
-      (lateAgent) => {
-        void safeDisposeAgent(lateAgent);
-      },
-    );
+    sdkAgent = await withDeadline(createSdkAgent(agentOptions), (lateAgent) => {
+      void safeDisposeAgent(lateAgent);
+    });
     run = await withDeadline(
       sdkAgent.send(wrapPrompt(input.prompt, schemaResult.schema)),
       (lateRun) => {
@@ -244,7 +224,6 @@ async function invokeCursorSdkAgent({
       ok: true,
       structuredOutput: structuredOutput.value,
       raw,
-      session: createAgentSessionRef("cursor", sdkAgent.agentId),
     });
   } catch (error) {
     if (signalState.signal.aborted && run) {
@@ -312,16 +291,6 @@ function unsupportedCursorPolicyFailure(
     error: `Cursor SDK adapter cannot honor Agent execution policies: ${requestedPolicies.join(", ")}`,
     exitCode: 1,
   };
-}
-
-function openCursorSdkAgent(
-  session: AgentSessionRef | undefined,
-  createSdkAgent: CreateCursorSdkAgent,
-  resumeSdkAgent: ResumeCursorSdkAgent,
-  agentOptions: CursorSdkAgentOptions,
-): Promise<CursorSdkAgentInstance> {
-  if (!session) return createSdkAgent(agentOptions);
-  return resumeSdkAgent(session.id, agentOptions);
 }
 
 function cursorSdkModelSelection(

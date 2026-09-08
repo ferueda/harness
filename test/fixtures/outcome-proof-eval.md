@@ -1,7 +1,7 @@
 # Outcome-Proof Forward-Evaluation Scenarios
 
-Use these fixed generic scenarios to compare current and candidate plan/Spec
-authoring, review, and revision prompts. Run each in a fresh session with the
+Use these fixed generic scenarios to compare current and candidate plan
+authoring, review, and revision guidance. Run each in a fresh session with the
 same model and reasoning effort. Score the decisions below, not exact wording.
 Do not use only the candidate reviewer to grade the candidate author.
 

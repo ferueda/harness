@@ -12,22 +12,12 @@ export const CURSOR_SDK_MODEL_MODES = [
   "gpt-5.6-terra-high",
   "gpt-5.6-terra-xhigh",
 ] as const;
-export const AGENT_WORKSPACE_GUARD_MODES = ["enforce", "record"] as const;
 
 export type AgentProviderName = (typeof AGENT_PROVIDERS)[number];
 export type AgentSandboxMode = (typeof AGENT_SANDBOX_MODES)[number];
 export type AgentApprovalPolicy = (typeof AGENT_APPROVAL_POLICIES)[number];
 export type AgentReasoningEffort = (typeof AGENT_REASONING_EFFORTS)[number];
 export type CursorSdkModelMode = (typeof CURSOR_SDK_MODEL_MODES)[number];
-export type AgentWorkspaceGuardMode = (typeof AGENT_WORKSPACE_GUARD_MODES)[number];
-
-export type AgentSessionRef = {
-  provider: AgentProviderName;
-  /** Session ids must be nonblank after trim before provider resume. */
-  id: string;
-  /** Optional provider metadata or provenance. Consumers should prefer provider + id. */
-  raw?: unknown;
-};
 
 const DEFAULT_CURSOR_MODEL = "grok-4.5" satisfies CursorSdkModelMode;
 
@@ -63,7 +53,6 @@ export const AGENT_MODEL_CATALOG = {
 export type AgentProviderOptions = {
   provider: AgentProviderName;
   codexPathOverride?: string;
-  codexEnvironment?: Readonly<Record<string, string>>;
 };
 
 export type AgentRunInput = {
@@ -74,8 +63,6 @@ export type AgentRunInput = {
   sandboxMode?: AgentSandboxMode;
   approvalPolicy?: AgentApprovalPolicy;
   modelReasoningEffort?: AgentReasoningEffort;
-  session?: AgentSessionRef;
-  workspaceGuard?: AgentWorkspaceGuardMode;
   maxRuntimeMs: number;
   logPath?: string;
   signal?: AbortSignal;
@@ -86,7 +73,6 @@ export type AgentRunResult =
       ok: true;
       structuredOutput?: unknown;
       raw: unknown;
-      session?: AgentSessionRef;
       usage?: unknown;
     }
   | {

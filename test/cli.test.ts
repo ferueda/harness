@@ -151,33 +151,6 @@ test("harness root help exits cleanly", () => {
   expect(result.stdout).toMatch(/run/);
   expect(result.stdout).toMatch(/runs/);
   expect(result.stdout).toMatch(/skills/);
-  expect(result.stdout).toMatch(/linear/);
-  expect(result.stdout).not.toMatch(/factory/i);
-});
-test("harness factory is no longer a command", () => {
-  const result = runHarness(["factory"]);
-  expect(result.status).toBe(2);
-  expect(result.stderr).toMatch(/unknown command.*factory/i);
-});
-test("harness linear worker help exposes only workspace selection", () => {
-  const result = runHarness(["linear", "worker", "--help"]);
-  expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/harness linear worker/);
-  expect(result.stdout).toMatch(/polling, readiness, triage, Spec, and implementation work/);
-  expect(result.stdout).toMatch(/--workspace/);
-  expect(result.stdout).not.toMatch(/--model|--agent|--port/);
-});
-test("harness linear worker validates environment before connecting", () => {
-  const workspace = createGitWorkspace();
-  const result = runHarness(["linear", "worker", "--workspace", workspace], {
-    env: {
-      LINEAR_API_KEY: "",
-      INNGEST_DEV: "1",
-    },
-  });
-  expect(result.status).toBe(1);
-  expect(result.stderr).toMatch(/LINEAR_API_KEY/);
-  expect(result.stderr).not.toMatch(/LINEAR_WEBHOOK_SECRET/);
 });
 test("harness models prints provider model defaults", () => {
   const result = runHarness(["models"]);

@@ -5,7 +5,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertCodexOnlyAgentOptions } from "./cli-validation.ts";
-import { addLinearWorkerCommand } from "./linear-worker-command.ts";
 import {
   AGENT_APPROVAL_POLICIES,
   AGENT_MODEL_CATALOG,
@@ -204,8 +203,6 @@ function buildProgram(): Command {
       });
       console.log(JSON.stringify(result, null, 2));
     });
-
-  addLinearWorkerCommand(program);
 
   program
     .command("models")

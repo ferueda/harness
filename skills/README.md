@@ -11,6 +11,7 @@ Use `planning-workflow` only when the next action is unclear or coordination is
 requested. Investigation does not make a plan inevitable.
 
 - Clarify blocking intent or conduct an explicit interview: `shape-requirements`.
+- Triage an issue or work item read-only and recommend its next action: `triage`.
 - Establish uncertain code behavior and cause: `diagnose-issue`.
 - Design a solution when explicitly invoked: `architect`.
 - Challenge a proposed design before planning: `adversarial-review`.

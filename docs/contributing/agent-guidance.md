@@ -8,8 +8,8 @@ It is not required context for ordinary implementation work.
 `AGENTS.md` is the short repository entrypoint. It owns local constraints,
 command entrypoints, and contextual links, not complete skill workflows.
 `skills/` owns portable task roles; each package must work without unrelated
-Harness contributor files. `lib/*/prompt.ts`, revision prompts, and
-`lib/review/prompts/` own runtime operation/reviewer instructions.
+Harness contributor files. `lib/review/prompts/` owns runtime reviewer
+instructions.
 
 Keep shared semantics aligned without injecting a universal policy manual into
 every invocation. Runtime schemas and operation permissions remain with their
@@ -52,17 +52,14 @@ revision distinct from later edits verified directly; a skip is not a pass.
 The portable change-review skill owns this agent-side selection. The CLI's bare
 command still runs both roles, and selected-role runs remain partial relative
 to the full catalogue. Do not fabricate omitted outputs to satisfy a consumer.
-The unattended Linear worker and its publication/revision adapters still require
-both reviewers; extending selection there requires a separate caller-owned
-coverage contract, not a changed global default.
 
 Reviewer findings need evidence, a concrete consequence, and, for blockers, an
 explanation of why unresolved work prevents safe acceptance. Omit nitpicks rather
 than listing them as advisories. Meaningful advisories do not force remediation
 or reruns. A sufficient plan can rely on accessible repository decisions and
 named proof; do not demand routine implementation details or already-passing
-implementation results during planning. Keep the independent Spec operation's
-change-request-only schema distinct from standalone review's advisory support.
+implementation results during planning. The standalone review result supports
+both blockers and useful non-blocking advisories.
 
 ## Check a change
 

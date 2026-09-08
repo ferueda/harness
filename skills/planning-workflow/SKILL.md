@@ -16,6 +16,8 @@ routine details from evidence and established defaults before asking questions.
 Files, layers, and step counts do not determine whether a plan is needed.
 
 - Clear outcome and one safe implementation pass: implement directly.
+- An explicit request to classify an issue or work item: use `triage`. Work
+  already assigned for execution does not need a triage pass first.
 - Material missing user intent: use `shape-requirements`. An explicit interview
   uses its interview branch; a document edit does not.
 - Uncertain behavior could change the solution: use `diagnose-issue`.

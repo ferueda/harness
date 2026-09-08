@@ -85,7 +85,7 @@ test("review evaluation cases have valid, distinct grading expectations", () => 
     "mechanical-follow-up",
     "behavioral-follow-up",
     "explicit-both",
-    "worker-boundary",
+    "delegated-boundary",
     "sufficient-spec",
     "unsafe-spec",
     "quality-nit",

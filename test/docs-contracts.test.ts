@@ -327,43 +327,28 @@ test("testing taxonomy documents required proof layers", () => {
   expect(content).toContain("do not replace `pnpm check`");
 });
 
-test("system smoke commands preserve their intended local and CI boundaries", () => {
+test("distribution smoke remains part of the local and CI gate", () => {
   const packageJson: unknown = JSON.parse(readRepoFile("package.json"));
   expect(isObject(packageJson) && isObject(packageJson.scripts)).toBe(true);
   if (!isObject(packageJson) || !isObject(packageJson.scripts)) return;
-  expect(packageJson.scripts["smoke:factory"]).toBeUndefined();
-  expect(packageJson.scripts["smoke:linear-automation"]).toBe(
-    "node scripts/smoke-linear-automation.ts",
-  );
-  expect(packageJson.scripts["smoke:linear-automation-compose"]).toBe(
-    "node scripts/smoke-linear-automation-compose.ts",
-  );
+  expect(packageJson.scripts["smoke:dist"]).toBe("node scripts/smoke-dist.ts");
 
   const makefile = readRepoFile("Makefile");
-  expect(makefile).not.toMatch(/^smoke-factory:/m);
-  expect(makefile).toMatch(/^smoke-linear-automation: ensure-node ##/m);
-  expect(makefile).toMatch(/^smoke-linear-automation-compose: ensure-node ##/m);
+  expect(makefile).toMatch(/^smoke-dist: ensure-node build ##/m);
   const localCheck = readMakeTarget(makefile, "check");
   expect(localCheck).toContain("$(MAKE) smoke-dist");
-  expect(localCheck).not.toContain("smoke-factory");
-  expect(localCheck).not.toContain("smoke-linear-automation");
-  expect(makefile).toMatch(/^check-ci: check ##[^\n]*\n\t@\$\(MAKE\) smoke-linear-automation$/m);
 
   const workflow = readRepoFile(".github/workflows/test.yml");
   expect(workflow).toContain("run: make check-plan");
-  expect(workflow).toContain("run: pnpm check:ci");
+  expect(workflow).toContain("run: make check");
   expect(workflow).toContain("steps.changes.outputs.plan_only == 'true'");
   expect(workflow).toContain("steps.changes.outputs.plan_only != 'true'");
 
   const testing = readRepoFile(TESTING_DOC);
-  for (const lane of ["Vitest", "Distribution smoke", "Linear automation smoke", "Optional live"]) {
+  for (const lane of ["Vitest", "Distribution smoke", "Optional live"]) {
     expect(testing).toContain(lane);
   }
-  expect(testing).not.toContain("smoke:factory");
-  expect(testing).toContain("pnpm smoke:linear-automation");
-  expect(testing).toContain("pnpm smoke:linear-automation-compose");
-  expect(testing).toContain("scripts/smoke-linear-automation.ts");
-  expect(testing).toContain("scripts/smoke-linear-automation-compose.ts");
+  expect(testing).toContain("pnpm smoke:dist");
   expect(testing).toContain("make fix-plan");
   expect(testing).toContain("make check-plan");
 });
@@ -377,7 +362,7 @@ test("hook docs document activation and gate boundaries", () => {
   expect(setup).toContain("pnpm-workspace.yaml");
   expect(setup).toContain("pnpm exec simple-git-hooks");
   expect(setup).toContain("Hooks do not replace `pnpm check`");
-  expect(setup).toContain("CI uses `pnpm check:ci`");
+  expect(setup).toContain("CI uses `make check`");
 
   const commandSurface = readRepoFile(SCRIPT_COMMAND_SURFACE);
   expect(commandSurface).toContain("## Commit hygiene hooks");
@@ -479,7 +464,7 @@ test("command parser extracts Make and pnpm commands from ownership table", () =
     "| Surface | Owner file | Public commands | Mutability | Use when |",
     "|---------|------------|-----------------|------------|----------|",
     "| Make | `Makefile` | `make check`, `make check-v` | read-only | local gate |",
-    "| pnpm | `package.json` | `pnpm test -- test/skills.test.ts`; `pnpm smoke:dist`; `pnpm check:ci`; `pnpm format:check` | read-only | package scripts |",
+    "| pnpm | `package.json` | `pnpm test -- test/skills.test.ts`; `pnpm smoke:dist`; `pnpm check:plan`; `pnpm format:check` | read-only | package scripts |",
     "| CLI | `bin/harness.ts` | `harness run change-review --verbose`, `node bin/harness.ts init` | writes artifacts | generated help owns flags |",
     "| Install | `install` | `./install` | mutating | install shim |",
     "",
@@ -492,7 +477,7 @@ test("command parser extracts Make and pnpm commands from ownership table", () =
 
   expect(parseDocumentedCommands(fixture)).toEqual({
     makeTargets: ["check", "check-v"],
-    pnpmScripts: ["check:ci", "format:check", "smoke:dist", "test"],
+    pnpmScripts: ["check:plan", "format:check", "smoke:dist", "test"],
   });
 });
 
@@ -513,6 +498,8 @@ test("documented Make and pnpm commands exist in source truth", () => {
       `${SCRIPT_COMMAND_SURFACE} documents missing pnpm script: ${script}`,
     ).toBe(true);
   }
+  expect(documented.makeTargets).toEqual([...makeTargets].sort());
+  expect(documented.pnpmScripts).toEqual([...packageScripts].sort());
 });
 
 test.each([
@@ -616,17 +603,6 @@ test("readme stays a concise entrypoint", () => {
   expect(readme).not.toContain("dev/plans/");
   expect(readme).not.toContain("harness run review");
   expect(readme).not.toMatch(/^### [a-z0-9]+(?:-[a-z0-9]+)+$/m);
-});
-
-test("retired Factory docs, commands, and skill stay absent", () => {
-  expect(existsSync(join(REPO_ROOT, "docs/contributing/factory.md"))).toBe(false);
-  expect(existsSync(join(REPO_ROOT, "skills/factory-operator/SKILL.md"))).toBe(false);
-  expect(existsSync(join(REPO_ROOT, "scripts/smoke-factory.ts"))).toBe(false);
-  expect(existsSync(join(REPO_ROOT, "scripts/smoke-factory-grove.ts"))).toBe(false);
-
-  for (const path of durableDocPaths()) {
-    expect(readRepoFile(path), `${path} still documents Factory`).not.toMatch(/\bfactory\b/i);
-  }
 });
 
 test("agent completion gates stay explicit", () => {

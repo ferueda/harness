@@ -5,15 +5,11 @@ packages:
 verifyDepsBeforeRun: error
 
 allowBuilds:
-  inngest-cli: true
-  protobufjs: false
   simple-git-hooks: true
 
 minimumReleaseAgeExclude:
   - '@openai/codex-sdk@0.144.0 || 0.144.1 || 0.144.2 || 0.144.3 || 0.144.4 || 0.145.0'
   - '@openai/codex@0.144.0-darwin-arm64 || 0.144.0-darwin-x64 || 0.144.0-linux-arm64 || 0.144.0-linux-x64 || 0.144.0-win32-arm64 || 0.144.0-win32-x64 || 0.144.0 || 0.144.1-darwin-arm64 || 0.144.1-darwin-x64 || 0.144.1-linux-arm64 || 0.144.1-linux-x64 || 0.144.1-win32-arm64 || 0.144.1-win32-x64 || 0.144.1 || 0.144.2-darwin-arm64 || 0.144.2-darwin-x64 || 0.144.2-linux-arm64 || 0.144.2-linux-x64 || 0.144.2-win32-arm64 || 0.144.2-win32-x64 || 0.144.2 || 0.144.3-darwin-arm64 || 0.144.3-darwin-x64 || 0.144.3-linux-arm64 || 0.144.3-linux-x64 || 0.144.3-win32-arm64 || 0.144.3-win32-x64 || 0.144.3 || 0.144.4-darwin-arm64 || 0.144.4-darwin-x64 || 0.144.4-linux-arm64 || 0.144.4-linux-x64 || 0.144.4-win32-arm64 || 0.144.4-win32-x64 || 0.144.4 || 0.145.0-darwin-arm64 || 0.145.0-darwin-x64 || 0.145.0-linux-arm64 || 0.145.0-linux-x64 || 0.145.0-win32-arm64 || 0.145.0-win32-x64 || 0.145.0'
-  - inngest@4.13.0
-  - '@ferueda/grove@1.4.5'
   - '@oxfmt/binding-android-arm-eabi@0.67.0'
   - '@oxfmt/binding-android-arm64@0.67.0'
   - '@oxfmt/binding-darwin-arm64@0.67.0'
@@ -58,4 +54,3 @@ minimumReleaseAgeExclude:
 # Remove vulnerable transitive versions until the parent packages update their ranges.
 overrides:
   "@connectrpc/connect-node@1>undici": "6.28.0"
-  "inngest-cli>adm-zip": "0.6.0"

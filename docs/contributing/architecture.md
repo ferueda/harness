@@ -3,305 +3,140 @@
 ## Purpose and audience
 
 This is the navigation map for contributors changing Harness. It explains the
-runtime paths, ownership boundaries, subsystem locations, and durable artifacts
-needed to find the right code.
+runtime paths, boundaries, subsystem locations, and durable artifacts needed to
+find the right code.
 
 Use [Script and command surface](./script-command-surface.md) for public
-commands and mutability, [Setup manifest](./setup-manifest.md) for requirements,
-auth, and generated paths, and [Linear automation](./linear-automation.md) for
-the self-hosted worker. Generated CLI help owns current flags.
+commands and mutability, and [Setup manifest](./setup-manifest.md) for
+requirements, authentication, and generated paths. Generated CLI help owns
+current flags.
 
-## Runtime flows
+## Product surfaces
 
-Standalone reviews:
+Packaged skills are self-contained guidance installed into an agent host or a
+target repository. They may contain local references and scripts, but one skill
+must not depend on an unverified sibling install. The catalogue in
+`skills/README.md` routes by deliverable. The generic read-only `triage` skill
+helps classify a work item without changing its tracker or repository.
+
+Standalone reviews follow one shared runtime path:
 
 ```text
 CLI
   -> workspace and config resolution
-  -> review context and immutable input artifacts
-  -> workflow definition and review steps
-  -> provider adapters
-  -> structured results and aggregate verdict
-  -> workspace-local review artifacts
+  -> immutable review context
+  -> change-review or plan-review workflow
+  -> shared agent contract
+  -> Cursor or Codex provider adapter
+  -> validated reviewer results and aggregate verdict
+  -> local review artifacts
 ```
 
-Linear triage automation:
+`change-review` can run implementation and code-quality roles.
+`plan-review` runs the specification-review role against one plan. Both are
+read-only with respect to the reviewed workspace; their only writes are ignored
+run artifacts under `.harness/`.
 
-```text
-self-hosted Inngest cron
-  -> poll configured Linear Backlog revisions
-  -> reload complete current issue context
-  -> deterministic readiness policy
-  -> provider-neutral triage request
-  -> triage operation through the configured agent
-  -> guarded Linear comment, label, and status writes
-```
+## Dependency boundaries
 
-These paths share provider construction and configuration primitives, but each
-consumer receives its own adapter and owns its lifecycle
-state. Reviews are explicit CLI runs. Linear is the issue queue and source of
-truth for automation; Inngest owns delivery, retries, scheduling, and traces.
+| Layer            | Owns                                                                                   | Must not own                                                |
+| ---------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Skills           | Agent process, completion bounds, and optional local references or scripts             | Hidden sibling-skill dependencies or target-specific policy |
+| Workflows        | Review selection, role composition, scope, and verdict aggregation                     | Concrete provider SDK calls or provider authentication      |
+| Review runtime   | Context capture, prompts, structured results, events, reports, and cleanup             | Provider construction or target-repo policy                 |
+| Agent contract   | Provider-neutral invocation, structured output, cancellation, and workspace protection | Review semantics or provider SDK details                    |
+| Provider adapter | Authentication, invocation streams, sandbox settings, and result translation           | Review, workflow, or skill policy                           |
+| Configuration    | Target defaults and provider-specific options                                          | Secrets or generated run state                              |
 
-## Automation model
+The import checks enforce the important direction: agent code is independent of
+reviews and providers; review code is independent of providers; providers are
+independent of reviews and workflow policy. The CLI composition root connects
+these layers.
 
-Automation is built from small operations with one-way dependencies:
+## Directory ownership
 
-```text
-delivery and retries
-  -> domain operation and policy
-  -> standalone service and provider primitives
-```
+| Path           | Ownership                                                                        |
+| -------------- | -------------------------------------------------------------------------------- |
+| `bin/`         | CLI composition, command parsing, generated help, and workspace resolution       |
+| `lib/agent/`   | Provider-neutral invocation and workspace protection                             |
+| `lib/config/`  | `harness.json` loading and validation                                            |
+| `lib/review/`  | Review context, prompts, results, events, reports, and run cleanup               |
+| `lib/skills/`  | Packaged skill installation                                                      |
+| `providers/`   | Cursor and Codex adapters plus the model registry                                |
+| `workflows/`   | Callable plan and change review definitions and shared review steps              |
+| `skills/`      | Independently installable agent skills                                           |
+| `automations/` | Generic background-task definitions                                              |
+| `schemas/`     | Exported structured review result contract                                       |
+| `scripts/`     | Build, distribution smoke, gate, classification, and provider-inspection helpers |
+| `test/`        | Cross-module CLI, contract, import-boundary, and distribution tests              |
+| `docs/`        | Project intent, contributor references, and interface principles                 |
+| `dev/plans/`   | Active manual implementation plans and their lifecycle rules                     |
 
-The delivery layer coordinates when work runs. A domain operation owns its
-decision and structured result. Service modules communicate with an external
-system without knowing which operation or delivery host called them. Adding a
-new operation does not require adding a station to a shared lifecycle.
+## Review runtime
 
-The current worker registers polling, readiness routing, and triage, plus each
-repository-backed consumer enabled by configuration. The composition's enabled
-routes also choose the states the poller observes: Backlog is always observed,
-and Open is added only when a Spec or Implement consumer is registered. Spec and
-implementation requests are typed and independently consumed; either route can
-remain disabled without changing the others.
+The CLI resolves the workspace and base branch, loads `harness.json`, and asks
+the selected workflow for its review roles. Review context records the exact
+Git scope and any plan input before a provider runs. Every reviewer receives a
+role-specific prompt and an output schema through the provider-neutral agent
+contract.
 
-### Automation construction contract
+The runtime validates each response and retains exact scope, validated outputs,
+and provider failures in `ChangeReviewResult`. A completed review verdict is
+`pass`, `needs_changes`, or `blocked`; run status distinguishes `completed`,
+`failed`, and `dry_run`. Failed runs keep evidence from reviewers that completed.
+Reviewers run with workspace protection enabled; a workspace change fails that
+reviewer.
 
-Build a new automation capability from the smallest set of these parts that its
-first real flow needs:
+The change-review workflow selects implementation, quality, or both roles. The
+plan-review workflow binds one plan artifact and uses the specification-review
+prompt. Shared execution belongs in `workflows/review-steps.ts`; role policy
+belongs in the workflow or its prompt.
 
-| Part                         | Owns                                                                                        | Must not own                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Service primitive            | One external system's auth, SDK quirks, pagination, errors, and plain JSON-safe data        | Prompts, providers, Inngest, or domain workflow policy               |
-| Domain operation             | Prompt or decision policy, normalized input, strict result validation, and provenance       | Tracker lifecycle, delivery retries, or concrete provider wiring     |
-| Repository/compute primitive | Isolated workspaces, change inspection, local checkpoints, and cleanup                      | Publication, Linear, Inngest, Spec, implementation, or domain policy |
-| Publication primitive        | Approved changes, authenticated commit/push, external artifact identity, and retry recovery | Workspace creation, cleanup, tracker lifecycle, or domain policy     |
-| Projection adapter           | Guarded mapping from one domain result to external-system writes                            | Prompt policy, delivery scheduling, or a shared lifecycle engine     |
-| Execution consumer           | Triggering, fresh reads, claims, durable steps, retries, ordering, coordination, and traces | SDK pagination, prompt rendering, Git commands, or domain choices    |
-| Event contract               | Minimal typed identifiers and stable work identity                                          | A cached replacement for current external truth                      |
+## Provider boundary
 
-Dependencies point inward from the execution consumer:
+Cursor and Codex implement the same `Agent` interface. Each adapter owns its SDK
+request, authentication, stream translation, timeout and cancellation handling,
+and provider-specific model options. Every review invocation is independent,
+and workflows do not depend on provider response shapes.
 
-```text
-execution consumer
-  -> domain operation -> provider interface
-  -> projection adapter -> service primitive
-  -> repository/compute primitive
-  -> publication primitive
-```
+Provider capability checks happen before a run starts. The agent contract owns
+the supported model catalogue exposed by `harness models`; the provider registry
+constructs only the adapter selected by configuration.
 
-Concrete provider adapters, delivery hosts, and external SDK objects stay at
-the edges. Inputs, outputs, event payloads, and resumable handles crossing a
-durable step must be serializable.
+## Configuration
 
-An Inngest function is thin when its code reads as temporal coordination:
+A target repository's `harness.json` contains:
 
-```text
-receive identity
-  -> reload current truth
-  -> validate and claim
-  -> call one domain operation
-  -> validate and publish artifacts
-  -> project the result
-  -> emit the next event or end
-```
+- `base`, the default comparison branch;
+- `defaultAgent`, the default `cursor` or `codex` provider;
+- `agents.cursor.model`, an optional Cursor model override;
+- `agents.codex` options for model, executable, sandbox mode, approval policy,
+  and model reasoning effort.
 
-Thin does not mean no branching. Delivery code may branch on a validated
-operation result, retry side effects, serialize by work ID, and stop stale work.
-It should not decide what a good Spec is, render a prompt, traverse an SDK, run
-Git directly, or inline status and label policy. A projection adapter may start
-co-located with one consumer, but keep its mapping explicit and Inngest-free so
-it can move behind a small interface when another consumer needs it.
+Secrets stay in the environment. Configuration loading rejects unsupported
+top-level keys so retired or misspelled settings cannot silently remain active.
 
-Human handoffs end a run. Linear later produces a new readiness snapshot when a
-human returns the issue to an actionable state; a function does not wait for a
-human inside one long-lived execution. Add shared abstractions only after two
-real consumers expose the same stable contract.
+## Artifact lifecycle
 
-## Ownership boundaries
+| Path                                          | Meaning                                                        |
+| --------------------------------------------- | -------------------------------------------------------------- |
+| `harness.json`                                | Target-repo review and provider defaults                       |
+| `.harness/bin/harness`                        | Ignored target-repo shim created by `harness init`             |
+| `.harness/runs/reviews/<run-id>/context/`     | Immutable scope and plan inputs                                |
+| `.harness/runs/reviews/<run-id>/*-review.*`   | Prompts, streams, raw responses, and validated reviewer output |
+| `.harness/runs/reviews/<run-id>/events.jsonl` | Append-only local run events                                   |
+| `.harness/runs/reviews/<run-id>/summary.md`   | Human-readable result                                          |
+| `.harness/runs/reviews/<run-id>/meta.json`    | Machine-readable run metadata                                  |
 
-| Owner             | Owns                                                                                                      | Does not own                                             |
-| ----------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Harness checkout  | CLI, config and schemas, workflows, operations, providers, packaged skills, scripts, and contributor docs | Target product decisions, source, tests, or CI policy    |
-| Target repository | `harness.json`, shim, optional installed skills, source, tests, project docs, and local review runs       | Harness provider internals or Inngest delivery state     |
-| Linear            | Issue content, workflow status, labels, comments, blockers, and the durable work queue                    | Agent execution or delivery retries                      |
-| Inngest           | Function delivery, retries, scheduling, concurrency, traces, and local event history                      | Triage policy or a second issue lifecycle                |
-| Provider adapter  | Authentication, invocation, streams, sessions, sandbox settings, and provider result translation          | Domain routing, Linear projection, or target-repo policy |
-| Git               | Committed plans and code                                                                                  | Linear issue state or Inngest delivery state             |
+The default run root is `.harness/runs/reviews/` in the selected workspace;
+`--runs-dir` may choose another local root. `harness runs prune` removes old
+review runs from the selected root. A target repository decides whether
+installed skills under `.agents/skills/` are committed.
 
-## Source map
+## Harness repo and target repo
 
-| Area                     | Responsibility                                                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `bin/`                   | CLI entrypoint, generated help, and the persistent Linear worker command                                        |
-| `lib/agent/`             | Provider-neutral Agent contract, invocation support, structured output, streams, sessions, and workspace guards |
-| `lib/work-item/`         | Source-neutral normalized work-item, evidence, and portable-path schemas shared by proven operations            |
-| `providers/`             | Cursor and Codex invocation, auth, streaming, sessions, sandboxing, and provider result translation             |
-| `lib/config/`            | `harness.json` composition, workspace resolution, local initialization, and review option resolution            |
-| `lib/review/`            | Review runtime, prompt context, aggregation, events, schemas, artifacts, handoffs, and run management           |
-| `workflows/`             | Callable provider-neutral change-review and plan-review definitions                                             |
-| `lib/linear/`            | Standalone, JSON-safe Linear read, write, pagination, and webhook primitives without domain or delivery policy  |
-| `lib/triage/`            | Triage prompt, structured decision schema, and provider-independent operation                                   |
-| `lib/spec/`              | Initial and resumed Spec operations, strict result schemas, and issue-key artifact validation                   |
-| `lib/spec-review/`       | Independent read-only Spec rubric, finding schema, trusted identity, and provider-independent review operation  |
-| `lib/implementation/`    | Initial and resumed implementation policy, source integrity, trusted finding identity, provenance, and sessions |
-| `lib/repository/`        | Grove leases, safe setup, change inspection, local checkpoints, and reset cleanup                               |
-| `lib/github/`            | GitHub remote parsing, credential-safe checkpoint push, exact PR publication, and retry recovery                |
-| `lib/linear-automation/` | Linear readiness policy, application event contracts, Inngest functions, worker config, and process hosting     |
-| `lib/skills/`            | Packaged-skill installation support                                                                             |
-| `skills/`                | Packaged skills installed into target repositories                                                              |
-| `.agents/skills/`        | Development-only skills for this Harness checkout                                                               |
-| `schemas/`               | Exported JSON schemas that stay aligned with runtime validation                                                 |
-| `scripts/`               | Build, distribution, smoke, and gate infrastructure                                                             |
-| `automations/`           | Background task definitions                                                                                     |
-| `dev/plans/`             | Active implementation plans and their index; not current architecture truth                                     |
-
-Prefer these ownership clusters over a file-by-file mental model. A new source
-file should live with the subsystem whose contract it extends.
-
-## Runtime boundaries
-
-### Review workflow boundary
-
-`change-review` and `plan-review` use an immutable workflow context and callable
-workflow definitions. Reviewers run through the shared provider interface and
-write structured results beneath the run directory. Aggregation owns the final
-verdict; provider adapters do not. Programmatic `change-review` callers receive
-the complete validated reviewer outputs and typed reviewer failures bound to
-the exact run and Git scope. Durable metadata and CLI JSON keep the compact
-review summaries used by people and existing tools. Within `lib/review/`,
-`runtime.ts` composes a run, `reviewer.ts` owns prompt and provider execution,
-and `run-report.ts` owns durable summaries, metadata, stream records, and
-incomplete-run cleanup.
-
-### Domain operation boundary
-
-Domain operations accept plain serializable input and return validated
-structured output. They own policy and prompt rendering, but they know nothing
-about Inngest scheduling. Triage is read-only. Spec receives an isolated
-writable workspace, writes one issue-keyed plan, and validates the claimed
-artifact without publishing it. Spec review receives an exact trusted artifact
-revision, runs a fresh read-only reviewer, and binds validated findings to that
-identity without running Git or exposing the reviewer session. Initial
-implementation receives one canonical merged plan or complete normalized work
-item in an already-prepared writable workspace, owns its prompt and result
-policy, verifies that selected plan authority remains unchanged, and returns
-the original author session. Resumed implementation receives that session plus
-trusted actionable findings bound to an exact reviewed revision; the original
-author accepts, adapts, or declines each finding and returns a continued
-session. A workflow-edge adapter selects actionable findings from the two
-generic change reviewers without making the implementation domain depend on the
-review runtime. Linear/Inngest coordination, review execution, repository
-inspection and checkpoints, workspace-effect acceptance, and publication
-remain outside these operations. They can be tested with fake agents without
-starting a worker.
-
-### Service boundary
-
-The Linear module resolves SDK relations, pagination, and failures behind a
-small application interface. It returns plain data and does not import Inngest,
-triage policy, prompts, or providers. Domain code owns route names and how a
-decision maps to Linear status and labels. `client.ts` is the consumer facade,
-`types.ts` is the public JSON-safe read contract, and issue context, revisions,
-and lookups remain separate operations behind that facade.
-
-### Provider boundary
-
-Workflows and operations depend on the shared provider interface. Provider
-auth, SDK or CLI invocation, streaming, session continuation, model policy, and
-sandbox details stay under `providers/` or provider-scoped configuration.
-
-### Repository boundary
-
-The repository module adapts Grove behind plain `RepositoryBase` and
-`RepositoryRun` handles. It resolves mutable base refs to exact commits, gives
-each durable work ID a writable branch lease, runs the target repository's
-configured setup command after acquisition, reports plain Git changes, and
-returns successful worktrees to a reusable pool.
-
-Setup runs with a fixed environment allowlist, so Linear, Inngest, Codex, and
-GitHub credentials are not passed to target-repository scripts. Reset cleanup
-removes tracked and ordinary untracked work while retaining ignored dependency
-caches such as `node_modules`. A checkpoint turns one exact caller-approved
-change set into a marked immutable local commit while keeping the lease active;
-its durable identity contains no workspace path. A later process may reopen that
-checkpoint only while the same Grove lease remains active and its clean
-workspace still matches the exact checkpoint revision and metadata. Reopening
-never repairs, resets, or checks out the worktree. The module does not push,
-open pull requests, update Linear, or choose Spec and implementation policy.
-
-### GitHub publication boundary
-
-The GitHub module accepts a validated `RepositoryRun` plus one exact
-`RepositoryCheckpoint` selected by its caller. It verifies and publishes the existing immutable
-revision without changing it, pushes one explicit branch without force, and
-finds or creates one exact pull request. Recovery observes the local checkpoint,
-remote branch SHA, and GitHub PR identity; it does not add a publication
-database or retry state machine.
-
-The token stays inside the service and is exposed only to primitive-owned
-authenticated Git and REST calls after local run validation. GitHub publication
-does not create or clean workspaces, validate Spec content, update Linear, or
-depend on Inngest. The durable consumer owns retries and calls repository
-cleanup only after publication succeeds.
-
-### Delivery boundary
-
-Inngest functions reload external truth before deciding or projecting. Event
-payloads identify work; they do not replace current Linear issue context.
-Revision-scoped event IDs and function concurrency make retries converge while
-leaving Linear as the queue.
-
-### Schema boundary
-
-Runtime validation lives with its owner: operation schemas beside their
-operation, review output under `lib/review/`, composed Harness configuration
-under `lib/config/`, and feature configuration under the owning application.
-Exported schemas live in `schemas/`. When a public structured contract changes,
-check the runtime schema, exported schema, prompt, and consumer together.
-
-## Artifact map
-
-| Root                                             | Purpose                                                                               |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `.harness/runs/reviews/<run-id>/`                | Review context, prompts, structured results, streams, summaries, metadata, and events |
-| `.harness/bin/harness`                           | Ignored target-repo shim pointing to the Harness checkout that initialized it         |
-| `dev/plans/<ISSUE-KEY>.md`                       | Tracked Spec artifact written in an isolated workspace; publication remains separate  |
-| Self-hosted Inngest SQLite volume                | Local delivery history, retry state, function metadata, and traces                    |
-| Protected worker environment file outside a repo | Linear, Inngest, and optional Codex credentials for one deployment                    |
-| Dedicated worker Codex credential volume         | Optional unattended ChatGPT-backed Codex login, separate from the host account        |
-| Repository data volume                           | Writable controller clones, Grove leases, worktrees, and warm ignored dependencies    |
-| Package-manager cache volume                     | Reusable package downloads shared by setup runs for one Compose deployment            |
-
-Review artifacts are ignored workspace-local state. Self-hosted deployment
-state and credentials are external user data. Neither belongs in Git.
-
-## Current execution model
-
-`harness linear worker` loads one `linearAutomation` configuration snapshot at
-startup and registers the poller, readiness router, triage consumer, and any
-configured work consumer through Inngest Connect. The current Harness
-configuration composes the independent Spec consumer. The worker caps total
-concurrency at one and exposes `/health` plus Connect-backed `/ready` endpoints.
-
-The one-minute poller observes Backlog and adds Open when a Spec or Implement
-consumer is enabled. The readiness router reloads complete current issue context
-and selects only enabled, authorized routes. For Backlog triage, it emits a
-triage request only when current Linear state requires it. Revision-bound request
-identity lets a later Backlog revision request triage again without duplicating
-work for an unchanged revision. The triage consumer invokes the configured
-Codex profile and applies its rationale, Agent action label, and target status
-through the standalone Linear service. Backlog triage remains automatic and
-removes stale Agent Ready permission from every outcome. Human handoffs use
-Needs Input and Needs Review statuses; Spec and Implement labels describe the
-next agent action, while Agent Ready separately grants human permission to
-dispatch Open work after its consumer is enabled. The Spec consumer claims
-Open work before consuming Agent Ready, then coordinates the standalone author,
-review, revision, repository, GitHub, and Linear operations. It runs no more
-than three independent reviews and two resumed author revisions, binds every
-round to the exact reviewed checkpoint, and publishes either the approved
-checkpoint or an explicitly unapproved latest checkpoint after exhaustion. It
-clears the Spec action only after its marked handoff comment exists and attempts
-repository cleanup on every terminal path.
-
-For planned work, use `dev/plans/README.md`. Add future behavior here only after
-it becomes a current repository relationship.
+The Harness repo owns reusable runtime code, providers, workflows, packaged
+skills, docs, and release checks. A target repository owns its source, project
+instructions, tests, gates, `harness.json`, installed skill copies, and local
+review artifacts. Workflows read target content through explicit context; they
+do not copy target policy back into Harness.

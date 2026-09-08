@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import type { AgentRunResult, AgentWorkspaceGuardMode } from "./contract.ts";
+import type { AgentRunResult } from "./contract.ts";
 import { errorArtifact, errorMessage } from "./invocation.ts";
 
 export type WorkspaceStatusMeta = {
@@ -40,16 +40,14 @@ export function withWorkspaceGuard(
   result: AgentRunResult,
   workspace: string,
   beforeStatus: string,
-  workspaceGuard: AgentWorkspaceGuardMode = "enforce",
 ): AgentRunResult {
-  return applyWorkspaceGuard(result, beforeStatus, readWorkspaceStatus(workspace), workspaceGuard);
+  return applyWorkspaceGuard(result, beforeStatus, readWorkspaceStatus(workspace));
 }
 
 export function applyWorkspaceGuard(
   result: AgentRunResult,
   beforeStatus: string,
   afterStatus: WorkspaceStatusResult,
-  workspaceGuard: AgentWorkspaceGuardMode = "enforce",
 ): AgentRunResult {
   if (!afterStatus.ok) {
     const workspaceStatus: WorkspaceStatusMeta = { before: beforeStatus, guard: "unverified" };
@@ -68,8 +66,6 @@ export function applyWorkspaceGuard(
   };
 
   if (afterStatus.value === beforeStatus) return guardedResult;
-  // Record mode captures mutations but leaves validation to the caller.
-  if (workspaceGuard === "record") return guardedResult;
   if (!result.ok && (result.aborted || result.exitCode === 124)) return guardedResult;
 
   return {

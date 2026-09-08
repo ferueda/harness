@@ -5,7 +5,6 @@ export function createAgentProvider(options: AgentProviderOptions): Agent {
   if (options.provider === "codex") {
     return createCodexAgent({
       codexPathOverride: options.codexPathOverride,
-      environment: options.codexEnvironment,
     });
   }
 

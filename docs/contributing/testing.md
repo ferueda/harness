@@ -1,189 +1,86 @@
 # Testing
 
-## Purpose
-
-Tests are part of the engineering harness. They let humans and agents change
-Harness while keeping workflow behavior, provider boundaries, artifacts, and
-commands visible.
-
-The goal is high-confidence feedback at the cheapest stable boundary, not the
-largest possible suite. This is the canonical testing guide; broader contributor
-docs should link here. Exact command ownership lives in
-[Script and command surface](./script-command-surface.md).
-
 ## Principles
 
-- Test durable behavior and public contracts, not private call order, incidental
-  prose, broad snapshots, or guarantees already enforced by TypeScript.
-- Choose the narrowest credible layer. Do not repeat the same acceptance
-  criterion across module, CLI, and smoke tests without a distinct failure mode.
-- Prefer fewer, coherent workflow tests when setup, actions, and assertions
-  describe one journey. Multiple related assertions are useful.
-- Keep setup explicit. Prefer top-level `test(...)`, inline setup, and factories
-  that return ready-to-run objects over shared mutable fixtures.
-- Use disposable helpers only for real cleanup. Keep temporary repositories,
-  stores, processes, and ports isolated from user state.
-- Keep routine tests deterministic and offline. Use provider fakes, local bare
-  remotes, deterministic IDs, and observable events instead of sleeps.
-- Add regression coverage when it protects an important or repeatable failure.
-  Do not add slow or brittle coverage only to record a one-off symptom.
-- Keep tests quiet on success. Expected failures and subprocess output should be
-  asserted and produce bounded diagnostics when they fail.
+- Prove behavior at the highest stable seam that observes the acceptance
+  criterion.
+- Add a lower seam only for a distinct failure mode.
+- Prefer real local files, Git repositories, and built entrypoints when they are
+  cheap and deterministic.
+- Keep network protocols behind injected transports. Optional live checks need
+  explicit authority and disposable state.
+- Fix failures caused by the current change, then rerun the affected check.
+  Broaden only when a new failure or uncertainty justifies it.
+- Test policy and boundaries rather than copying implementation details into
+  assertions.
 
-## Task scope and stopping
-
-Read-only explanations and assessments need no full gate unless a material claim
-requires a check. For edits, keep the current required gate: skill/prompt changes
-can alter behavior and are not plan-only work. Do not invent a lighter gate or
-reuse `make check-plan` for unrelated documentation.
-
-Within documented offline isolation, run checks, fix failures caused by the
-requested change, and rerun affected checks without asking for approval at each
-step. A passing check need not be repeated without new changes, a failure, or
-material unresolved risk. Broader or live proof needs a distinct relevant boundary.
-
-Static package and prompt tests prove discovery metadata, references, installation,
-placeholders, and minimal safety sentinels; they do not prove model judgment.
-Use the opt-in [routing scenarios](../../test/fixtures/skill-routing-eval.json)
-and [guidance maintenance](agent-guidance.md) for model comparisons. Preserve
-existing schema, artifact-identity, and side-effect tests when rewriting prose.
-
-## Outcome Proof in Plans and Handoffs
-
-Connect each material outcome or forbidden effect to the cheapest credible proof:
-
-- Name the observable result, the proof action, and the expected observable
-  evidence.
-- Keep acceptance-level behavioral proof separate from the canonical repository
-  gate. The gate proves general health; it does not replace focused proof.
-- Add another layer only for a distinct boundary or failure mode the cheaper seam
-  cannot observe, and state material limits of mocks, fakes, intercepted requests,
-  or source-only checks.
-- When completion is asynchronous, prove the terminal state or downstream effect.
-  Acceptance or enqueueing alone is insufficient.
-- For live proof, require explicit authority, prerequisites, disposable data,
-  assertions, stop conditions, redaction, cleanup, and remaining uncertainty.
-- Report exact observed results, skipped checks with reasons, and unresolved
-  material behavior at handoff.
-
-Use a short list for simple work. Use an outcome-to-proof table only when several
-outcomes or proof layers would otherwise be unclear.
-
-Prompt changes to this contract can use the fixed
-[outcome-proof forward-evaluation scenarios](../../test/fixtures/outcome-proof-eval.md).
-Provider-backed runs remain opt-in and outside deterministic CI.
+Pre-commit hooks provide cheap commit hygiene. They format/lint staged files and
+run `pnpm typecheck`; they do not replace `pnpm check` as the completion gate.
 
 ## Layers
 
-| Layer                    | Use for                                                                                 |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| Static and module        | Types, parsers, validators, mappers, policies, and helpers                              |
-| Workflow and operation   | Review behavior, domain decisions, idempotency, and guarded external projections        |
-| Provider adapter         | SDK/CLI translation, streaming, sessions, schemas, timeout, and abort behavior          |
-| Repository integration   | Real local Git/Grove leases, setup, resume, inspection, warm reuse, and reset cleanup   |
-| CLI integration          | Argument parsing, command selection, structured output, and separate-process behavior   |
-| Repository self-contract | Packaged skills, command inventory, documentation structure, and private-path exclusion |
-| Distribution smoke       | Built package layout, installed entrypoint, generated shim, and basic public wiring     |
-| Linear automation smoke  | Self-hosted Inngest, Connect registration, polling, routing, triage, and projection     |
-| Linear Compose smoke     | Worker image, Compose health, restart, reconnection, and persistent local state         |
-| Optional live            | Explicitly authorized external integration proof                                        |
+| Layer                      | Proves                                                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `lib/` unit tests          | Agent contract, configuration, review aggregation, artifacts, and skill installation                                                 |
+| `providers/` adapter tests | Provider request translation, streams, cancellation, schema handling, and workspace protection                                       |
+| `workflows` tests          | Role selection, exact review scope, verdicts, and failure reporting                                                                  |
+| `test/cli.test.ts`         | Command parsing, workspace resolution, config precedence, and user-visible failures                                                  |
+| Contract tests             | Docs, schemas, import boundaries, package layout, and instruction surfaces                                                           |
+| `test/gate-output.test.ts` | Quiet success, bounded failure tails, retained logs, and rerun hints from `scripts/run-gate-step.ts`                                 |
+| Distribution smoke         | Built package layout, installed entrypoint, generated shim, skill install, and dry-run review wiring through `scripts/smoke-dist.ts` |
+| Optional live              | Provider authentication and protocol behavior that deterministic tests cannot prove                                                  |
 
-Use fast module and contract tests by default. Add broader proof only when the
-changed behavior crosses a boundary the cheaper layer cannot observe.
+Use target-repo fixtures for public behavior. A test target should own its own
+`harness.json`, Git state, instructions, and expected `.harness/` artifacts.
 
 ## Where to Put New Tests
 
-- Put repository-level workflow, CLI, and self-contract tests under `test/`.
-- Colocate focused module tests under `lib/` and provider tests under
-  `providers/` when the owning module already follows that pattern.
-- Keep `workflows` behavior in focused root tests such as
-  `test/review-steps.test.ts` and `test/workflow-context.test.ts`.
-- Keep public CLI behavior in `test/cli.test.ts` or an existing command-specific
-  CLI test.
-- Keep skill-owned suites inside the owning skill when a packaged skill needs
-  its own test boundary.
-- Keep built-distribution coverage in `scripts/smoke-dist.ts`, the independent
-  Linear journey in `scripts/smoke-linear-automation.ts`, the container boundary
-  in `scripts/smoke-linear-automation-compose.ts`, and gate-output behavior in
-  `test/gate-output.test.ts`.
-- Keep target-repo fixtures isolated from the Harness checkout and user state.
-- Exercise repository lifecycle behavior with real temporary Git remotes and
-  Grove state. Mock neither Git nor Grove transitions.
+- Put pure policy and data-shape tests beside the module in `lib/`.
+- Put provider SDK translation and cancellation tests beside the adapter in
+  `providers/`.
+- Put workflow composition and result-shape tests beside `workflows/*.ts` or in
+  the existing workflow contract suite.
+- Put command parsing and end-to-end source CLI behavior in `test/cli.test.ts`.
+- Put cross-file invariants in focused `test/*contract*.test.ts` files.
+- Keep built-distribution coverage in `scripts/smoke-dist.ts`; do not duplicate
+  the same path in Vitest unless the lower test isolates a separate failure.
+- Add a skill fixture only when it proves package discovery, local-reference
+  copying, script execution, or another installer boundary.
 
-Use an existing location before inventing another test directory or suffix.
+Prefer assertions on structured results and durable artifacts. Use snapshots
+only when the complete output is itself the contract. Keep fixtures small and
+generic so they do not import downstream repository assumptions.
 
-## Authoring Rules
+## System and live checks
 
-- Name tests as behavior plus consequence.
-- Use `describe` only when it materially improves navigation.
-- Keep setup close enough that the journey is readable without opening several
-  unrelated helpers.
-- Assert exact stable contracts and partial unrelated fields. For idempotency or
-  authority, also assert the absence of forbidden side effects.
-- For prompts, skills, help, and docs, prefer structure, schemas, routing, or the
-  smallest safety sentinel over pinning full paragraphs.
-- Clean new fixtures on success. Diagnostic smokes may retain a bounded temporary
-  root on failure when they print its path.
-- Apply these rules to new or materially changed tests; do not churn unrelated
-  coverage for stylistic consistency.
+`scripts/smoke-dist.ts` builds and packs Harness, installs it in a temporary
+target repo, exercises the entrypoint and shim, installs a packaged skill, and
+runs provider-free dry-run reviews. It is the only required system smoke and is
+part of `make check`.
 
-## Smoke and Live Tests
-
-Add a system smoke only for a critical journey that faster layers cannot prove.
-Keep branches, malformed input, tampering, and retry matrices beside their owning
-modules or actions.
-
-System smokes should:
-
-- use an explicit command outside default Vitest discovery and watch mode;
-- use local fakes through production-supported seams;
-- run offline with isolated repositories and local services;
-- stay out of pre-commit and the ordinary edit loop;
-- clean on success and preserve bounded evidence on failure;
-- avoid generic test-only runtimes or weakened production validation.
-
-Distribution smoke proves packaging and command wiring. Linear automation smoke
-runs a real local self-hosted Inngest server and Connect worker with fake Linear
-and agent boundaries, then proves polling, revision routing, unchanged-revision
-deduplication, and the triage-to-projection journey. The Linear Compose smoke
-uses a blocked-egress network to prove the worker image, service health,
-restarts, reconnection, and persistent volume behavior without live traffic.
-These smokes clean their disposable state on success. Live protocols require
-explicit authority, credentials, stop conditions, disposable targets, and
-cleanup; they are not routine CI coverage.
-
-GitHub publication uses temporary repositories, a local bare remote, and an
-injected HTTP transport in Vitest. This proves exact checkpoint publication,
-push and response-loss recovery, and PR idempotency without live GitHub access.
-A live push/PR smoke is reserved for explicitly authorized protocol verification
-and must clean its disposable branch and pull request.
+Live provider calls are optional. Use them only when a provider protocol or
+authentication path changed and local adapter tests cannot prove it. State the
+expected external mutation, use a disposable target when needed, and report why
+the live check was run or skipped.
 
 ## Verification Commands
 
-During iteration, run the narrowest relevant path, for example:
+During iteration, run the narrowest relevant command, for example:
 
 ```bash
-pnpm exec vitest run lib/linear-automation/readiness.test.ts
 pnpm exec vitest run providers/codex/codex-agent.test.ts
-pnpm exec vitest run test/docs-contracts.test.ts
+pnpm exec vitest run test/docs-contracts.test.ts test/instruction-surface.test.ts
+pnpm exec vitest run test/import-boundaries.test.ts
 ```
 
 - `pnpm test` runs the Vitest suite.
-- `pnpm smoke:dist` proves built distribution wiring.
-- `pnpm smoke:linear-automation` / `make smoke-linear-automation` runs the
-  independent Linear automation journey. It is not part of Vitest, watch mode,
-  pre-commit, or ordinary local `pnpm check`.
-- `pnpm smoke:linear-automation-compose` / `make smoke-linear-automation-compose`
-  runs the explicit Docker packaging smoke. It is not part of Vitest, pre-commit,
-  ordinary local `pnpm check`, or the CI gate.
+- `pnpm smoke:dist` / `make smoke-dist` proves built distribution wiring.
 - `pnpm check` / `make check` is the normal local handoff gate.
-- `pnpm check:ci` / `make check-ci` is the CI-owned gate and runs the Linear
-  automation system smoke after the ordinary checks.
-- Approved plan-only changes use `make fix-plan` and `make check-plan`. CI runs
-  the same focused check; it bypasses the full gate and system smoke.
-- Other docs-only behavior follows the normal command contract.
-- Run an explicit system smoke or live protocol only when the changed boundary
-  requires it.
+- CI runs `make check` as the same full gate.
+- Approved plan-only changes use `make fix-plan` and `make check-plan`; CI runs
+  the same focused plan check.
+- Other docs-only or skill changes follow the normal full gate because they can
+  change agent behavior or public guidance.
 
 Before handoff, report tests added or changed, commands run, and checks skipped
 with the concrete reason.
@@ -193,22 +90,21 @@ with the concrete reason.
 - Command/docs drift uses `Makefile` and `package.json` as source truth, with
   `docs/contributing/script-command-surface.md` as the documented command
   surface under test.
-- Command subset checks parse the `## Command ownership` public-commands column.
-  Other command tables are explanatory, not a second command matrix.
-- Script inventory and gate-output checks cover executable surfaces, Make runner
-  wiring, and contributor links to `scripts/run-gate-step.ts`.
-- Private-reference scans cover durable non-skill docs and `automations/*.md`.
-  Planning artifacts remain outside that scan.
-- Developer-local path checks stay generic; do not add downstream-repo-specific
+- The command subset check parses only the `## Command ownership` table's public
+  commands column.
+- Script inventory and gate-output checks cover executable surfaces and the Make
+  runner wiring.
+- Private-reference scans cover durable docs and `automations/*.md`.
+- Developer-local path checks remain generic; do not add downstream-specific
   allow or deny names.
-- `docs/` must remain covered by `format:check` or an explicit docs-check command.
+- `docs/` remains covered by `format:check` or an explicit docs check.
 
 ## Maintenance Notes
 
-Pre-commit hooks provide cheap commit hygiene after deterministic checks exist.
-They format/lint staged files and run `pnpm typecheck`; they do not define done
-and do not replace `pnpm check` as the final handoff gate.
+When the same review feedback repeats, strengthen Harness proportionally:
+clarify this guide, add focused coverage, add a lint or schema guard, add a
+script, then add CI enforcement when the rule is stable enough to block a merge.
 
-When the same review feedback repeats, strengthen the harness proportionally:
-clarify this guide, add focused coverage, add a lint/schema guard, add a script,
-then add CI enforcement when the rule is stable enough to block a merge.
+Keep one source of truth for every command and contract. Tests may enforce the
+source, but prose should not maintain a second exhaustive copy of generated CLI
+help or package metadata.

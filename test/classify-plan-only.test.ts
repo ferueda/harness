@@ -182,7 +182,7 @@ test("workflow preserves Tests/test and routes only plan-only pull requests to f
   expect(workflow).toMatch(/jobs:\s+test:/);
   expect(workflow).toContain("node scripts/classify-plan-only.ts");
   expect(workflow).toContain("run: make check-plan");
-  expect(workflow).toContain("run: pnpm check:ci");
+  expect(workflow).toContain("run: make check");
 });
 
 test("shared plan commands own the focused check and formatter", () => {

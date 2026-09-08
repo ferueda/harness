@@ -1,153 +1,102 @@
-# Harness engineering
+# Harness Engineering
 
-## Core mindset
+Durable guidance for changing Harness itself. Read
+[Project intent](../project-intent.md) for product scope,
+[Architecture](./architecture.md) for boundaries, and [Testing](./testing.md)
+for proof selection.
 
-The model harness is the AI host around the model: model choice, tools,
-permissions, sessions, browser or MCP surfaces, and execution environment.
+## Change shape
 
-The engineering harness is what this repository owns: docs, commands, checks,
-tests, scripts, workflows, providers, artifacts, review loops, and maintenance
-habits.
+Prefer the smallest coherent change that proves a current need. Put behavior in
+the narrowest owning layer:
 
-The model predicts. The engineering harness makes the correct path easy, the
-wrong path visible, and repeated mistakes expensive to keep repeating.
+- agent invocation and workspace-effect checks in `lib/agent/`;
+- review context, prompts, artifacts, and results in `lib/review/`;
+- review composition and role policy in `workflows/`;
+- SDK and authentication translation in `providers/`;
+- independently installable agent process guidance in `skills/`;
+- CLI parsing and layer construction in `bin/`.
 
-## Source-of-truth boundaries
+Keep the dependency direction visible in imports. Agent code stays independent
+of reviews and providers. Review code stays independent of providers. Provider
+adapters stay independent of reviews and workflow policy. The CLI composition
+root may connect all three.
 
-`AGENTS.md` is a routing map, not an encyclopedia. Keep it short enough to load
-by default and link to focused docs for detail.
+Do not add a shared framework for hypothetical consumers. Extract a common
+contract after multiple real callers demonstrate the same stable need.
 
-Use `README.md` for install, usage, workflows, skills, automations, and
-development commands. Use `docs/contributing/` for contributor decisions and
-agent-facing maintenance guidance.
+## Skills and workflows
 
-Current command detail is intentionally high level here. The present final gate
-is `pnpm check` / `make check`; command ownership and mutability live in
-[Script and command surface](./script-command-surface.md).
+A skill is a package of agent instructions. It owns invocation cues, process,
+completion criteria, and only the references or scripts that package needs.
+One installed skill cannot assume its siblings are present.
 
-Testing strategy, proof-layer selection, authoring guidance, and smoke policy
-live in [Testing](./testing.md). Keep this guide focused on the broader
-engineering loop rather than duplicating the testing taxonomy.
+A callable review workflow is runtime code. It owns selected reviewer roles,
+scope, and verdict aggregation. Prompts in `lib/review/prompts/` define what a
+reviewer assesses; provider adapters only deliver that request and translate its
+result.
 
-## Continuous improvement loop
+When guidance and executable reviews cover related work, keep each entrypoint
+complete. A user may install a review skill without running Harness, or run a
+workflow without installing its companion skill.
 
-Use the same loop for features, fixes, docs, and harness work:
+## Errors and structured results
 
-1. Establish the intent, scope, and acceptance criteria; write a plan only when useful or requested.
-2. Implement the smallest coherent change.
-3. Verify with scoped checks while iterating and the final gate before handoff.
-4. Review with humans or harness reviewers.
-5. Encode durable learning in the repo.
+Validate configuration and provider capability before starting expensive work.
+Return structured results that preserve exact review scope, validated reviewer
+outputs, and failures. Error messages should name the failed layer and give the
+next useful action without exposing credentials or full private prompts.
 
-When work teaches the repo something durable, capture it near the source of
-truth before the session ends.
+Cancellation and timeouts flow through the shared `AbortSignal`. Provider
+adapters translate native cancellation and retain bounded diagnostic streams.
+Review aggregation distinguishes a review finding from an invocation error.
 
-## Promote repeated guidance into enforcement
+## Artifact discipline
 
-Repeated advice should escalate from docs -> tests/self-tests -> lint/static guardrails -> scripts/automation.
+Write run evidence under the resolved workspace's
+`.harness/runs/reviews/<run-id>/`. Context captured before provider execution is
+immutable. Reviewer prompts, streams, validated outputs, events, summary, and
+metadata remain inspectable after a failure.
 
-Start with docs when a rule needs explanation. Add tests when behavior can
-regress. Add lint or structural checks when the mistake is static. Wrap
-repeatable workflows in scripts only when the command makes the next correct
-action clearer.
-
-## Build an automation capability
-
-Use the [automation construction contract](./architecture.md#automation-construction-contract)
-before adding a new Linear or Inngest path.
-
-Start with one vertical slice and only the primitives it calls. In order:
-
-1. Normalize the external input through a standalone service primitive.
-2. Define one operation-specific input, result, policy, and provenance contract.
-3. Add an isolated repository or compute primitive only if the operation must
-   write or execute an artifact.
-4. Add a separate publication primitive only when approved workspace changes
-   must become a commit, branch, pull request, or another external artifact.
-5. Keep tracker projection separate from the operation.
-6. Compose the flow with a short durable consumer whose steps match meaningful
-   external side effects.
-
-Before handoff, check the dependency direction:
-
-- service primitives do not import domain operations, providers, or Inngest;
-- domain operations depend on the provider interface, not a concrete adapter,
-  and do not import Linear, Inngest, Git, or GitHub code;
-- repository primitives do not import domain or tracker policy;
-- publication primitives do not create workspaces or import domain, tracker, or
-  delivery policy;
-- projection code does not render prompts or schedule work;
-- Inngest consumers reload current truth and coordinate the other parts rather
-  than implementing them inline;
-- event payloads carry identifiers and provenance, not copied lifecycle state;
-- retryable sessions, workspaces, branches, comments, and publications have
-  stable identities where duplication would matter;
-- a human handoff ends the function and waits for a later external event.
-
-Keep schemas local to the operation at first. Do not add a generic operation
-base class, station registry, central route engine, or second work-state store
-for future consumers. Once two real consumers repeat the same code, extract the
-smallest proven shared boundary.
+Keep tracked source and local run state separate. Tests use temporary target
+repositories and clean them on success. Diagnostic failure paths may retain one
+bounded artifact with an explicit path.
 
 ## Gate output contract
 
-Repo gates are quiet on success by default. Wrapped Make steps print concise
-progress and duration, for example `==> check-format` and
-`PASS check-format (1.2s)`. Successful tool output is hidden by default; use
-verbose mode when auditing warning drift or debugging a suspicious pass.
+Long local gates use `scripts/run-gate-step.ts` through Make's `RUN` wrapper.
+The wrapper keeps success quiet and makes failures useful:
 
-Failures are bounded and actionable. A failed wrapped step prints `FAIL`, a
-local log path, the last configured log lines, and a verbose rerun hint. The log
-path is authoritative; if the tail does not show the root cause, inspect the
-saved log locally before rerunning blindly.
+- success prints one `PASS` line with the step name and duration;
+- failure prints one `FAIL` line, then `Log:` with the retained log path;
+- the visible diagnostic tail begins with `--- last` and remains bounded;
+- the final `Rerun with full logs:` line gives the exact verbose rerun hint.
 
-Failure output uses stable markers:
+`VERBOSE=1` streams the full child command and does not print a retained-log
+summary. Default runs delete successful temporary logs. Failed runs retain the
+log path; `KEEP_GATE_LOGS=1` retains successful logs too. `GATE_LOG_DIR` lets a
+caller choose the diagnostic directory.
 
-```text
-==> test
-FAIL test (12.7s)
-Log: /tmp/harness-gate-abc123/test.log
+Add Make-owned checks through the wrapper when their output is long enough to
+hide the real result. Keep fast setup, formatting, and help commands direct.
 
---- last 120 lines ---
-...
+## Documentation and contracts
 
-Rerun with full logs:
-VERBOSE=1 make test
-```
+Generated help, schemas, configuration code, and package scripts are source
+truth. Contributor docs explain ownership, reasons, and safe use; avoid copying
+large discoverable inventories that can drift.
 
-Failure flow:
+Use generic target-repo examples. Keep private paths, credentials, fixture
+names, and downstream policy out of docs and test messages. When a behavior is
+removed, delete its guidance and obsolete tombstone assertions rather than
+preserving a historical compatibility surface.
 
-1. Read the quiet gate failure output first: failed step, log path, bounded
-   tail, and rerun hint.
-2. Inspect the saved log if the tail is insufficient.
-3. Rerun the printed verbose command.
-4. For format or lint failures, run `make fix` when applicable.
-5. Rerun the smallest failed gate, then run `pnpm check` before handoff.
+## Completion
 
-Saved logs may contain local environment or provider details. Keep them local,
-review before sharing, and do not paste full logs into chat or PRs unless they
-have been checked for secrets.
+Use the highest stable seam that proves the change, then run `make check` before
+handoff. Approved plan-only changes use `make check-plan`. If formatting or lint
+fails, run the matching fix target, inspect the diff, and rerun the gate.
 
-## Working agreements
-
-- Keep changes scoped and reviewable.
-- Include verification commands in handoffs and PR descriptions.
-- Update the closest source-of-truth doc when workflow behavior changes.
-- Keep independent operations small. Delivery code should coordinate retries;
-  domain code should own policy; service modules should only communicate with
-  external systems.
-- Make durable work state explicit in the system that owns it. Do not create a
-  second lifecycle store when Linear or another service is already the queue.
-- Avoid introducing new patterns without documenting when to use them.
-- Prefer boring, explicit commands over hidden agent memory.
-- Keep durable examples generic to this repo and target repositories.
-
-## Maintenance cadence
-
-Periodically remove stale guidance and encode a repeated concrete failure at its
-smallest useful enforcement boundary. Keep command inventory and drift checks
-current, but do not freeze incidental wording. Use [agent-guidance.md](agent-guidance.md)
-when changing prompts, skill activation, completion, or instruction ownership.
-
-Finished plans leave the active tree according to `dev/plans/README.md`; active
-plans stay in `dev/plans/` until they land.
+Assess independent review once at a coherent completion point. Select it for
+material behavior or structural risk, and skip it for routine low-risk work.
+Record the selection and any consequential findings in the handoff.

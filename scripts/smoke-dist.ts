@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,30 +42,9 @@ function runHarness(args: string[], input?: string): string {
   return result.stdout;
 }
 
-function runHarnessAllowFailure(args: string[]) {
-  if (!existsSync(BIN)) {
-    throw new Error(`Built harness CLI not found: ${BIN}`);
-  }
-  return spawnSync(process.execPath, [BIN, ...args], {
-    cwd: ROOT,
-    encoding: "utf8",
-  });
-}
-
-function findFactoryDistEntries(root: string): string[] {
-  if (!existsSync(root)) return [];
-  const matches: string[] = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const path = join(root, entry.name);
-    if (entry.name.startsWith("factory-")) matches.push(path);
-    if (entry.isDirectory()) matches.push(...findFactoryDistEntries(path));
-  }
-  return matches;
-}
-
 const rootHelp = runHarness(["--help"]);
-if (/\bfactory\b/i.test(rootHelp)) {
-  throw new Error("Expected root help not to expose the removed factory command");
+if (!rootHelp.includes("Usage: harness")) {
+  throw new Error("Expected root help to include command usage");
 }
 const planReviewHelp = runHarness(["run", "plan-review", "--help"]);
 if (!planReviewHelp.includes("harness run plan-review")) {
@@ -74,16 +53,6 @@ if (!planReviewHelp.includes("harness run plan-review")) {
 if (!planReviewHelp.includes("--plan <path>")) {
   throw new Error("Expected plan-review help to include --plan");
 }
-const removedFactory = runHarnessAllowFailure(["factory"]);
-const removedFactoryText = `${removedFactory.stderr}\n${removedFactory.stdout}`;
-if (removedFactory.status === 0 || !/unknown command.*factory/i.test(removedFactoryText)) {
-  throw new Error("Expected the installed CLI to reject the removed factory command");
-}
-const staleFactoryEntries = findFactoryDistEntries(join(ROOT, "dist"));
-if (staleFactoryEntries.length > 0) {
-  throw new Error(`Expected no stale Factory build output:\n${staleFactoryEntries.join("\n")}`);
-}
-
 const initWorkspace = mkdtempSync(join(tmpdir(), "harness-smoke-init-"));
 const initOutput = runHarness(["init", "--workspace", initWorkspace]);
 const init = JSON.parse(initOutput) as {

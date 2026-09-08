@@ -87,6 +87,4 @@ without authority.
 
 Direct chat may use Markdown. Harness calls return only the supplied JSON
 contract: `verdict`, `summary`, and `findings` with `title`, `severity`, `location`,
-`issue`, `recommendation`, `rationale`, and `must_fix`. The independent Spec
-operation has a different caller-supplied schema and admits change requests only;
-never add advisory findings or unsupported fields to it.
+`issue`, `recommendation`, `rationale`, and `must_fix`.
