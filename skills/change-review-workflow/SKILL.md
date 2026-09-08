@@ -50,6 +50,11 @@ to both for compatibility; that is not a requirement to run both on every task.
 Include `--plan` when relevant. Load [the handoff reference](references/review-handoff.md)
 only for session-only context, selected scope, or follow-up decisions.
 
+Reviews can take up to 20 minutes, depending on task size. Prefer completion
+notifications; when polling is needed, check every 1–2 minutes for small tasks
+and every 3–5 minutes for larger tasks, rather than every 30 seconds. Adjust to
+observed progress; elapsed time alone is not a reason to stop the review.
+
 If the runner is unavailable, report the limitation. Use an available direct
 reviewer only when the task permits it; never claim Harness ran. A delegated
 operation returns to its caller and cannot waive that caller's review or
