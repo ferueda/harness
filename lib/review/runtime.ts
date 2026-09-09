@@ -122,7 +122,7 @@ function createWorkflowContextInternal(options: WorkflowContextFactoryOptions) {
         headRef,
       };
       scopeMeta = buildScopeMeta(scope);
-      diffRef = buildDiffRef(scope.diff, runDir, workspace);
+      diffRef = buildDiffRef(scope.diff, runDir);
     }
 
     contextArtifacts = writeRunContext({
