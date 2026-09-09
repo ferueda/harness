@@ -48,9 +48,27 @@ export function prepareGitScope(
 ): GitScope {
   gitExec(workspace, ["rev-parse", "--is-inside-work-tree"]);
 
-  const mergeBase = gitExec(workspace, ["merge-base", refs.baseRef, refs.headRef]);
-  const headSha = gitExec(workspace, ["rev-parse", refs.headRef]);
-  const diff = gitExec(workspace, ["diff", `${mergeBase}..${refs.headRef}`]);
+  // Resolve each ref once; neither a moving branch nor an annotated tag may change the scope.
+  const baseSha = gitExec(workspace, [
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${refs.baseRef}^{commit}`,
+  ]);
+  const headSha = gitExec(workspace, [
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${refs.headRef}^{commit}`,
+  ]);
+  const mergeBase = gitExec(workspace, ["merge-base", baseSha, headSha]);
+  const diff = gitExec(workspace, [
+    "diff",
+    "--no-ext-diff",
+    "--no-textconv",
+    `${mergeBase}..${headSha}`,
+    "--",
+  ]);
 
   let headBranch = "HEAD";
   try {
@@ -66,7 +84,7 @@ export function fillTemplate(template: string, values: Record<string, string>): 
   return template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_match, key) => values[key] ?? "");
 }
 
-export function buildPlanRef(planArtifact: ContextArtifact, workspace: string): string {
+export function buildPlanRef(planArtifact: ContextArtifact, workspace?: string): string {
   return buildArtifactSection(planArtifact, workspace, {
     none: "_No plan file provided._",
     missing: "_Plan file not found: `{{requested}}`_",
@@ -90,7 +108,7 @@ export function buildInlinedHandoffSection(handoffArtifact: ContextArtifact): st
   return `## Handoff\n\n${content}`;
 }
 
-export function buildDiffRef(diff: string, runDir: string, workspace: string): string {
+export function buildDiffRef(diff: string, runDir: string, workspace?: string): string {
   const contextDir = join(runDir, "context");
   mkdirSync(contextDir, { recursive: true });
   const patchPath = join(contextDir, "diff.patch");
@@ -164,7 +182,8 @@ function writeHandoffArtifact(input: {
   });
 }
 
-function formatArtifactPath(path: string, workspace: string): string {
+function formatArtifactPath(path: string, workspace?: string): string {
+  if (!workspace) return path;
   const artifactPath = relative(workspace, path);
   if (artifactPath && !artifactPath.startsWith("..") && !isAbsolute(artifactPath)) {
     return artifactPath;
@@ -174,7 +193,7 @@ function formatArtifactPath(path: string, workspace: string): string {
 
 function buildArtifactSection(
   artifact: ContextArtifact,
-  workspace: string,
+  workspace: string | undefined,
   options: ArtifactSectionOptions,
 ): string {
   if (!artifact?.requested) {

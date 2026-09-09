@@ -28,6 +28,7 @@ import {
   type ReviewRunScope,
   type StreamArtifacts,
 } from "./run-report.ts";
+import { withReviewWorkspace } from "./revision-workspace.ts";
 import { ReviewOutputSchema, formatZodError, type ReviewOutput } from "./schema.ts";
 
 const MODULE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -159,16 +160,32 @@ export async function runReviewer(input: {
 
   let result: AgentRunResult | undefined;
   try {
-    result = await input.provider.run({
-      workspace: input.workspace,
-      prompt,
-      schemaPath: SCHEMA_PATH,
-      model: input.resolvedAgent.model,
-      ...input.resolvedAgent.policy,
-      maxRuntimeMs: input.maxRuntimeMs,
-      logPath: streamPath,
-      signal: input.signal,
-    });
+    const invoke = async (workspace: string) => {
+      const response = await input.provider.run({
+        workspace,
+        prompt,
+        schemaPath: SCHEMA_PATH,
+        model: input.resolvedAgent.model,
+        ...input.resolvedAgent.policy,
+        maxRuntimeMs: input.maxRuntimeMs,
+        logPath: streamPath,
+        signal: input.signal,
+      });
+      // Retain provider evidence even when revision verification or cleanup fails.
+      writeJson(join(input.runDir, config.rawFile), rawAgentArtifact(response));
+      return response;
+    };
+    if (input.scope) {
+      result = await withReviewWorkspace(
+        input.workspace,
+        input.scope.headSha,
+        join(input.runDir, `${config.stage}-workspace`),
+        invoke,
+        (agentResult) => agentResult.ok,
+      );
+    } else {
+      result = await invoke(input.workspace);
+    }
   } finally {
     recordStreamArtifact(
       input.streamArtifacts,
@@ -179,8 +196,6 @@ export async function runReviewer(input: {
     );
   }
   if (!result) throw new Error(`${config.stage} reviewer failed without a result`);
-
-  writeJson(join(input.runDir, config.rawFile), rawAgentArtifact(result));
 
   if (!result.ok) {
     if (result.aborted) throw new Error(`Agent was aborted: ${config.stage} reviewer`);
@@ -211,7 +226,7 @@ function buildPromptValues({
     DIFF_RANGE: scope ? `${scope.mergeBase}..${scope.headSha}` : "",
     PLAN_REF:
       agentName === "review-implementation" || agentName === "review-spec"
-        ? buildPlanRef(contextArtifacts.plan, workspace)
+        ? buildPlanRef(contextArtifacts.plan, scope ? undefined : workspace)
         : "",
     HANDOFF_SECTION: buildInlinedHandoffSection(contextArtifacts.handoff),
     DIFF_REF: diffRef ?? "",
