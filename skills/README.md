@@ -65,8 +65,10 @@ skills in any repository.
 
 Each directory has one short task-specific description and a self-contained
 `SKILL.md`; keep required local references inside that package. Optional
-`agents/openai.yaml` controls host presentation and invocation policy.
-`architect` remains explicit-only. Do not add hidden global reading dependencies.
+`agents/openai.yaml` controls host presentation and invocation policy. Installable
+skills are explicit-only by default; only `change-review-workflow` and
+`review-spec` allow implicit/model invocation. Do not add hidden global reading
+dependencies.
 
 Portable skills and Harness runtime prompts are separate entrypoints. Changes
 to shared authority, proof, or review semantics must be checked in both; the

@@ -2,3 +2,5 @@ interface:
   display_name: "Explain Change"
   short_description: "Explain changes, primitives, boundaries, and tradeoffs"
   default_prompt: "Use $explain-change to walk me through this diff, including behavior, primitives touched, boundary changes, and accepted tradeoffs."
+policy:
+  allow_implicit_invocation: false
