@@ -7,6 +7,7 @@ export async function withReviewWorkspace<T>(
   headSha: string,
   workspace: string,
   review: (workspace: string) => Promise<T>,
+  checkRevision?: (result: T) => boolean,
 ): Promise<T> {
   gitExec(sourceWorkspace, [
     "-c",
@@ -21,7 +22,11 @@ export async function withReviewWorkspace<T>(
   try {
     assertReviewRevision(workspace, headSha);
     const result = await review(workspace);
-    assertReviewRevision(workspace, headSha);
+    // Skip only when the caller already has a failed result to report. A
+    // successful result still has to match the captured revision.
+    if (checkRevision?.(result) ?? true) {
+      assertReviewRevision(workspace, headSha);
+    }
     return result;
   } finally {
     gitExec(sourceWorkspace, ["worktree", "remove", "--force", "--", workspace]);

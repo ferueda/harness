@@ -92,9 +92,11 @@ readable from that worktree. The caller's dirty files and subsequent edits are
 neither included nor modified. No stash, source commit, or branch switch is
 performed in the caller's checkout.
 
-Before accepting a reviewer result, the runtime verifies the worktree root,
-head commit, and clean Git status. An unreadable or changed review worktree
-fails that role, retaining its raw response and any successful sibling. Each
+Before accepting a successful reviewer result, the runtime verifies the
+worktree root, head commit, and clean Git status. An unreadable or changed
+review worktree fails that role, retaining its raw response and any successful
+sibling. A provider timeout, abort, or workspace-guard failure keeps that
+recorded cause instead of being rewritten as a revision mismatch. Each
 role removes its owned worktree and Git registration in a `finally` block;
 cleanup failure also fails the role. Dry runs and plan reviews do not create these worktrees.
 

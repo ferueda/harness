@@ -181,6 +181,7 @@ export async function runReviewer(input: {
         input.scope.headSha,
         join(input.runDir, `${config.stage}-workspace`),
         invoke,
+        (agentResult) => agentResult.ok,
       );
     } else {
       result = await invoke(input.workspace);

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { expect, test } from "vitest";
-import type { AgentRunInput } from "../lib/agent/contract.ts";
+import type { AgentRunInput, AgentRunResult } from "../lib/agent/contract.ts";
 import { createWorkflowContextForTest } from "../lib/review/runtime.ts";
 import { run as runChangeReview } from "../workflows/change-review.workflow.ts";
 
@@ -135,3 +135,82 @@ test.each(REVISION_FAILURES)("%s failure preserves raw evidence and a sibling", 
     for (const checkout of checkouts) expect(existsSync(checkout)).toBe(false);
   });
 });
+
+const PROVIDER_FAILURES = [
+  {
+    name: "timeout",
+    result: {
+      ok: false,
+      error: "Agent timed out",
+      exitCode: 124,
+      raw: { timeout: true },
+    },
+    error: "implementation reviewer failed: Agent timed out",
+  },
+  {
+    name: "abort",
+    result: {
+      ok: false,
+      error: "Agent was aborted",
+      exitCode: 130,
+      aborted: true,
+      raw: { aborted: true },
+    },
+    error: "Agent was aborted: implementation reviewer",
+  },
+  {
+    name: "workspace-guard",
+    result: {
+      ok: false,
+      error: "Agent runtime modified the workspace during a review run",
+      exitCode: 1,
+      failureKind: "workspace-guard",
+      raw: { failureKind: "workspace-guard" },
+    },
+    error:
+      "implementation reviewer failed: Agent runtime modified the workspace during a review run",
+  },
+] as const satisfies ReadonlyArray<{
+  name: string;
+  result: Extract<AgentRunResult, { ok: false }>;
+  error: string;
+}>;
+
+test.each(PROVIDER_FAILURES)(
+  "$name failure keeps its recorded cause after dirty porcelain",
+  async ({ result: agentResult, error }) => {
+    await inRepository(async (workspace) => {
+      const checkouts: string[] = [];
+      const ctx = createWorkflowContextForTest({
+        workspace,
+        baseRef: "main",
+        maxRuntimeMs: 1_000,
+        agentProviderFactory({ provider }) {
+          return {
+            name: provider,
+            async run(input) {
+              checkouts.push(input.workspace);
+              if (input.prompt.includes("implementation reviewer")) {
+                writeFileSync(join(input.workspace, "README.md"), "changed during failure\n");
+                return agentResult;
+              }
+              return { ok: true, structuredOutput: PASS, raw: { structuredOutput: PASS } };
+            },
+          };
+        },
+      });
+      const result = await runChangeReview(ctx);
+      expect(result.status).toBe("failed");
+      expect(result.reviewOutputs).toEqual({ quality: PASS });
+      expect(result.reviewFailures).toEqual([
+        { key: "implementation", stage: "implementation", error },
+      ]);
+      const raw = JSON.parse(
+        readFileSync(join(result.runDir, "implementation-review.raw.json"), "utf8"),
+      );
+      expect(raw).toEqual(agentResult.raw);
+      expect(existsSync(join(result.runDir, "implementation-review.json"))).toBe(false);
+      for (const checkout of checkouts) expect(existsSync(checkout)).toBe(false);
+    });
+  },
+);
