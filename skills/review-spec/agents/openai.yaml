@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Spec"
+  short_description: "Review implementation plans for completeness"
+  default_prompt: "Use $review-spec to review this implementation plan for correctness, completeness, and execution risk."
+policy:
+  allow_implicit_invocation: true

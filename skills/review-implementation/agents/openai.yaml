@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Implementation"
+  short_description: "Review diffs for correctness and acceptance risk"
+  default_prompt: "Use $review-implementation to review this diff for correctness, regressions, and acceptance risk without modifying it."
+policy:
+  allow_implicit_invocation: false

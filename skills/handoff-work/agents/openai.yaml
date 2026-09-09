@@ -1,0 +1,6 @@
+interface:
+  display_name: "Handoff Work"
+  short_description: "Prepare context for another agent or session"
+  default_prompt: "Use $handoff-work to prepare the minimum sufficient context for another agent or session to continue this work."
+policy:
+  allow_implicit_invocation: false

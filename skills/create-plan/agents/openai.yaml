@@ -2,3 +2,5 @@ interface:
   display_name: "Create Plan"
   short_description: "Create compact, code-backed implementation plans"
   default_prompt: "Use $create-plan to turn these requirements into a minimum-sufficient, code-backed plan for a capable executor."
+policy:
+  allow_implicit_invocation: false
