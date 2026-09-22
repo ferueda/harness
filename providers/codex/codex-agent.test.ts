@@ -193,7 +193,8 @@ test("createCodexAgent passes an explicit environment without mutating it", asyn
   });
 
   expect(result.ok).toBe(true);
-  expect(calls.codexOptions).toEqual({ env: environment });
+  expect(calls.codexOptions).toMatchObject({ env: environment });
+  expect(calls.codexOptions?.codexPathOverride).toBe(process.env.CODEX_EXECUTABLE);
   expect(environment).toEqual({ CODEX_HOME: "/codex", PATH: "/usr/bin" });
 });
 
