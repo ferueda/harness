@@ -39,7 +39,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@types/node": "24.13.3",
+    "@types/node": "26.6.2",
     "lint-staged": "17.5.1",
     "oxfmt": "0.68.0",
     "oxlint": "1.83.0",
