@@ -23,7 +23,7 @@ const DEFAULT_CURSOR_MODEL = "grok-4.5" satisfies CursorSdkModelMode;
 
 export const DEFAULT_AGENT_MODELS = {
   cursor: DEFAULT_CURSOR_MODEL,
-  codex: "gpt-5.6-sol",
+  codex: "gpt-6.1-sol",
 } as const satisfies Record<AgentProviderName, string>;
 
 export const DEFAULT_CODEX_REASONING_EFFORT = "high" satisfies AgentReasoningEffort;
@@ -38,6 +38,9 @@ export const AGENT_MODEL_CATALOG = {
     defaultModel: DEFAULT_AGENT_MODELS.codex,
     defaultReasoningEffort: DEFAULT_CODEX_REASONING_EFFORT,
     models: [
+      "gpt-6.1-sol",
+      "gpt-6-astra",
+      "gpt-6-sol",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.4",

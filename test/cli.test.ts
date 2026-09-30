@@ -160,7 +160,7 @@ test("harness models prints provider model defaults", () => {
   expect(output.cursor.models).toEqual([...CURSOR_SDK_MODEL_MODES]);
   expect(output.cursor.modelsNote).toMatch(/Fixed Cursor SDK review modes/);
   expect(output.cursor.liveListCommand).toBeUndefined();
-  expect(output.codex.defaultModel).toBe("gpt-5.6-sol");
+  expect(output.codex.defaultModel).toBe("gpt-6.1-sol");
   expect(output.codex.defaultReasoningEffort).toBe("high");
   expect(output.codex.reasoningEfforts).toContain("xhigh");
 });
@@ -968,7 +968,7 @@ test("harness run change-review dry-run accepts Codex provider options", () => {
   expect(output.status).toBe("dry_run");
   expect(output.agent).toMatchObject({
     name: "codex",
-    model: "gpt-5.6-sol",
+    model: "gpt-6.1-sol",
     sandboxMode: "workspace-write",
     approvalPolicy: "on-request",
     modelReasoningEffort: "medium",
@@ -992,7 +992,7 @@ test("harness run change-review dry-run reads Codex provider from harness.json",
   const output = JSON.parse(result.stdout);
   expect(output.agent).toMatchObject({
     name: "codex",
-    model: "gpt-5.6-sol",
+    model: "gpt-6.1-sol",
     sandboxMode: "read-only",
     approvalPolicy: "never",
     modelReasoningEffort: "high",

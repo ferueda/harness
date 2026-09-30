@@ -690,7 +690,7 @@ test("workflow context passes Codex review sandbox and approval defaults", async
   expect(review.verdict).toBe("pass");
   expect(calls.providerOptions).toMatchObject({ provider: "codex" });
   expect(calls.input).toMatchObject({
-    model: "gpt-5.6-sol",
+    model: "gpt-6.1-sol",
     sandboxMode: "read-only",
     approvalPolicy: "never",
     modelReasoningEffort: "high",
