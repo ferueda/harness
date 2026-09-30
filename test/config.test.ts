@@ -112,7 +112,7 @@ test("resolveHarnessOptions applies provider model defaults", () => {
   writeFileSync(join(codexWorkspace, "harness.json"), '{ "defaultAgent": "codex" }\n', "utf8");
   const codexOptions = resolveHarnessOptions({ workspace: codexWorkspace }, "/");
   expect(codexOptions.agentProvider).toBe("codex");
-  expect(codexOptions.model).toBe("gpt-5.6-sol");
+  expect(codexOptions.model).toBe("gpt-6.1-sol");
   expect(codexOptions.modelReasoningEffort).toBe("high");
 });
 

@@ -86,7 +86,11 @@ Cursor or Codex; the `agents` map stores provider-specific model and Codex
 execution defaults.
 
 Cursor SDK runs require `CURSOR_API_KEY`. Codex follows local `codex login`
-authentication or `CODEX_API_KEY`.
+authentication or `CODEX_API_KEY`. The Codex default is `gpt-6.1-sol` with
+`high` reasoning. Use the pinned CLI/SDK 0.159.0 or a verified compatible
+executable: CLI 0.156.0 can reject this model for ChatGPT accounts even when
+local model metadata lists it. `harness models` is a static catalog, not an
+account availability check.
 
 See the [setup manifest](docs/contributing/setup-manifest.md) for configuration,
 generated paths, and provider details.
