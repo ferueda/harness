@@ -117,6 +117,10 @@ named package and its local references, not its sibling skills. Hosts own
 discovery; use their verified paths rather than assuming a fallback order.
 Updating Harness does not update or remove existing target copies.
 
+For a skills-only OpenAI plugin ZIP, run `make package-plugin`. The
+[plugin guide](docs/contributing/plugin.md) covers private installation,
+versioned updates, and the separate Harness runner requirements.
+
 Background task definitions live under [`automations/`](automations/). Local
 agent-history analysis is provided separately by
 [Sessions](https://github.com/ferueda/sessions).

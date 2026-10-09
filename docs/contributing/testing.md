@@ -19,16 +19,17 @@ run `pnpm typecheck`; they do not replace `pnpm check` as the completion gate.
 
 ## Layers
 
-| Layer                      | Proves                                                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `lib/` unit tests          | Agent contract, configuration, review aggregation, artifacts, and skill installation                                                 |
-| `providers/` adapter tests | Provider request translation, streams, cancellation, schema handling, and workspace protection                                       |
-| `workflows` tests          | Role selection, exact review scope, verdicts, and failure reporting                                                                  |
-| `test/cli.test.ts`         | Command parsing, workspace resolution, config precedence, and user-visible failures                                                  |
-| Contract tests             | Docs, schemas, import boundaries, package layout, and instruction surfaces                                                           |
-| `test/gate-output.test.ts` | Quiet success, bounded failure tails, retained logs, and rerun hints from `scripts/run-gate-step.ts`                                 |
-| Distribution smoke         | Built package layout, installed entrypoint, generated shim, skill install, and dry-run review wiring through `scripts/smoke-dist.ts` |
-| Optional live              | Provider authentication and protocol behavior that deterministic tests cannot prove                                                  |
+| Layer                         | Proves                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `lib/` unit tests             | Agent contract, configuration, review aggregation, artifacts, and skill installation                                                 |
+| `providers/` adapter tests    | Provider request translation, streams, cancellation, schema handling, and workspace protection                                       |
+| `workflows` tests             | Role selection, exact review scope, verdicts, and failure reporting                                                                  |
+| `test/cli.test.ts`            | Command parsing, workspace resolution, config precedence, and user-visible failures                                                  |
+| Contract tests                | Docs, schemas, import boundaries, package layout, and instruction surfaces                                                           |
+| `test/gate-output.test.ts`    | Quiet success, bounded failure tails, retained logs, and rerun hints from `scripts/run-gate-step.ts`                                 |
+| Distribution smoke            | Built package layout, installed entrypoint, generated shim, skill install, and dry-run review wiring through `scripts/smoke-dist.ts` |
+| `test/plugin-package.test.ts` | Skills-only ZIP extraction, canonical bytes, discovery metadata, references, invocation policy, exclusions, and reproducibility      |
+| Optional live                 | Provider authentication and protocol behavior that deterministic tests cannot prove                                                  |
 
 Use target-repo fixtures for public behavior. A test target should own its own
 `harness.json`, Git state, instructions, and expected `.harness/` artifacts.

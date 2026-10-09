@@ -10,7 +10,7 @@ define RUN
 @VERBOSE="$(VERBOSE)" GATE_STEP_NAME="$(if $(2),$(2),$@)" GATE_STEP_RERUN="$(if $(3),$(3),VERBOSE=1 make $@)" GATE_STEP_COMMAND='$(1)' node scripts/run-gate-step.ts
 endef
 
-.PHONY: help ensure-node setup-worktree build lint typecheck test smoke-dist format check-format fix fix-plan check-plan check check-v
+.PHONY: help ensure-node setup-worktree build package-plugin lint typecheck test smoke-dist format check-format fix fix-plan check-plan check check-v
 
 ensure-node: ## Ensure node and pnpm are available
 	@command -v node >/dev/null 2>&1 || { echo "node not found in PATH"; exit 1; }
@@ -22,6 +22,9 @@ setup-worktree: ensure-node ## Prepare a fresh isolated worktree from the shared
 
 build: ensure-node ## Build installable JavaScript into dist/
 	$(call RUN,$(PNPM) run build)
+
+package-plugin: ensure-node ## Package canonical skills as a versioned plugin ZIP
+	$(call RUN,$(PNPM) run package:plugin)
 
 lint: ensure-node ## Lint source, test, and config files
 	$(call RUN,$(PNPM) run lint)

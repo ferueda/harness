@@ -418,7 +418,7 @@ test("pre-commit hook config stays scoped to staged hygiene", () => {
 
   const lintStaged = isObject(parsed["lint-staged"]) ? parsed["lint-staged"] : {};
   expect(Object.keys(lintStaged)).toContain(
-    "./{package.json,tsconfig.json,tsconfig.build.json,vitest.config.ts,.oxlintrc.json,.oxfmtrc.json}",
+    "./{package.json,plugin.json,tsconfig.json,tsconfig.build.json,vitest.config.ts,.oxlintrc.json,.oxfmtrc.json}",
   );
   expect(Object.keys(lintStaged)).toContain("./vitest.config.ts");
   expect(Object.keys(lintStaged)).not.toContain(
