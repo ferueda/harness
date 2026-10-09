@@ -110,12 +110,7 @@ Use the product's existing type system unless the task explicitly asks for a typ
 ```css
 /* System-native macOS/iOS feel */
 html {
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 ```
 
