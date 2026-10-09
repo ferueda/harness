@@ -78,11 +78,15 @@ test("the ZIP extracts one portable plugin with every canonical skill and invoca
     .split("\0")
     .filter((path) => path && path !== "skills/README.md");
   expect(names).toEqual(
-    ["LICENSE", "README.md", "assets/harness.svg", "plugin.json", ...tracked].sort(),
+    ["LICENSE", "README.md", "assets/harness.svg", "plugin.json", ...tracked]
+      .map((path) => `harness/${path}`)
+      .sort(),
   );
   expect(names.filter((path) => path.endsWith("/SKILL.md"))).toHaveLength(13);
-  const extracted = join(root, "extracted");
-  execFileSync("unzip", ["-q", result.archive, "-d", extracted]);
+  const extraction = join(root, "extracted");
+  execFileSync("unzip", ["-q", result.archive, "-d", extraction]);
+  expect(readdirSync(extraction)).toEqual(["harness"]);
+  const extracted = join(extraction, "harness");
   for (const path of tracked) {
     expect(readFileSync(join(extracted, path))).toEqual(readFileSync(join(ROOT, path)));
   }
@@ -127,7 +131,7 @@ test("the ZIP extracts one portable plugin with every canonical skill and invoca
     expect(metadata).toMatch(/display_name: "\S.+"/);
     expect(metadata).toMatch(/allow_implicit_invocation: (?:true|false)/);
     if (/allow_implicit_invocation: true/.test(metadata)) implicit.push(name);
-    for (const path of names.filter(
+    for (const path of tracked.filter(
       (path) => path.startsWith(`skills/${name}/`) && path.endsWith(".md"),
     )) {
       for (const match of readFileSync(join(extracted, path), "utf8").matchAll(/\]\(([^)]+)\)/g)) {

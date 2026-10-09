@@ -16,9 +16,9 @@ In a Harness Git checkout, with Node 24+, pnpm, and Info-ZIP `zip` on PATH:
 make setup-worktree
 make check
 make package-plugin
-unzip -l dist/plugins/harness-0.1.0.zip
+unzip -l dist/plugins/harness-0.1.1.zip
 cd dist/plugins
-shasum -a 256 -c harness-0.1.0.zip.sha256
+shasum -a 256 -c harness-0.1.1.zip.sha256
 ```
 
 `pnpm package:plugin` runs the same packaging command. The manifest version owns
@@ -28,8 +28,10 @@ running them. ZIPs and checksum sidecars are generated in ignored `dist/plugins/
 keep them with the reviewed source revision when sharing a private build. This
 repo has no automated plugin release or upload job.
 
-The archive has one plugin root: `plugin.json`, `LICENSE`, this guide as
-`README.md`, the icon, and every Git-tracked file inside the skill directories.
+The archive encloses one `harness/` directory containing the plugin root:
+`harness/plugin.json`, `harness/LICENSE`, this guide as `harness/README.md`,
+`harness/assets/harness.svg`, and every Git-tracked file inside
+`harness/skills/`. Discovery and asset paths remain relative to that plugin root.
 The contributor catalogue `skills/README.md` is omitted because it links to
 unbundled repository docs. Stage new skill files before packaging. File bytes
 come from the working tree; package a reviewed clean revision for distribution.
@@ -59,14 +61,29 @@ submission flow is a separate action.
 If the account exposes no private ZIP import, use the local marketplace route
 below for local testing; a fresh cloud installation remains unverified.
 
-For local authoring, extract the ZIP into a dedicated plugin directory and point
-a supported personal/repo marketplace entry at that directory, following the
+For local authoring, extract the ZIP and point a supported personal/repo
+marketplace entry at its enclosed `harness/` directory, following the
 official packaging guide. A local marketplace is a local-client distribution
 surface; it does not establish a cloud installation.
 
 For an update, keep the manifest `name`, increment its `version`, rerun checks,
 rebuild, verify the checksum, and upload the replacement ZIP to the existing
 private plugin. Verify which version is enabled and test in a fresh task.
+For an eligible private plugin saved through PluginCreator, an update overlays
+the current release: omitted files remain, including binary assets. Omitting a
+retired skill or reference from a new ZIP does not delete it from that plugin.
+Before updating, read the existing plugin's complete file inventory with
+`get_plugin_files`, following every `next_offset`, and retain its
+`current_release_id`. Pass that observed ID as `expected_release_id` to
+`update_plugin`. For intended removals, pass exact plugin-root-relative file
+paths from that inventory in `delete_paths`; directories and globs are not
+supported. Omit those files from the upload and update their references in the
+same change. If explicit deletion is unavailable, report the removal as pending.
+If the release changed, refresh the source and reconcile the candidate before
+retrying. After a successful update, read back the affected files and complete
+inventory to confirm the version, removals, references, and retained files.
+Git-synced or otherwise managed plugins use their owning release process.
+
 A private archive upload is a snapshot: later GitHub commits do not automatically
 sync to it. GitHub-backed workspace imports are a separate distribution choice.
 Keep the previous ZIP/checksum if a rollback is needed.
