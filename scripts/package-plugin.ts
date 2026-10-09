@@ -81,10 +81,11 @@ for (const path of skills.filter((path) => path.endsWith(".md"))) {
 const staging = mkdtempSync(join(tmpdir(), "harness-plugin-"));
 try {
   const names = [...files.keys()].sort();
+  const pluginRoot = join(staging, metadata.name);
   for (const name of names) {
     const source = files.get(name);
     if (!source) throw new Error(`Missing source for ${name}`);
-    const target = join(staging, name);
+    const target = join(pluginRoot, name);
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(join(ROOT, source), target);
     chmodSync(target, 0o644);
@@ -94,7 +95,8 @@ try {
   const filename = `${metadata.name}-${metadata.version}.zip`;
   const archive = join(staging, filename);
   // Stored entries avoid compressor-version differences; -X strips host extras.
-  execFileSync("zip", ["-X", "-0", "-q", archive, "--", ...names], {
+  const entries = names.map((name) => `${metadata.name}/${name}`);
+  execFileSync("zip", ["-X", "-0", "-q", archive, "--", ...entries], {
     cwd: staging,
     env: { ...process.env, TZ: "UTC", ZIPOPT: "" },
   });
