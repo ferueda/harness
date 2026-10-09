@@ -17,6 +17,10 @@ artifact lifecycle.
 | POSIX shell with `bash` | Installer and generated shims               | Shims use `#!/usr/bin/env bash` and `set -euo pipefail`.        |
 | Git checkout of Harness | Source install and development              | The checkout can live anywhere; use `/path/to/harness` in docs. |
 
+Plugin packaging additionally requires Git and Info-ZIP `zip`; archive inspection
+and package tests use `unzip`. Installed skills do not require these packaging
+tools. See the [plugin guide](plugin.md) for distribution and runner boundaries.
+
 ## Install and update
 
 Run `./install` from the Harness checkout, or run `/path/to/harness/install`
@@ -78,6 +82,7 @@ local `codex login` state or `CODEX_API_KEY`.
 | `.git/hooks/pre-commit`                                       | `pnpm install`, `pnpm exec simple-git-hooks` | Do not commit                               | Local staged-file hygiene.                                                               |
 | `node_modules/`                                               | `pnpm install`, `make setup-worktree`        | Ignored                                     | Repository dependencies from the ordinary shared pnpm store.                             |
 | `dist/`                                                       | Build, distribution smoke, and full gates    | Ignored                                     | Built JavaScript used by packaging checks.                                               |
+| `dist/plugins/`                                               | `make package-plugin`                        | Ignored                                     | Versioned skills-only plugin ZIPs and SHA-256 sidecars; build clears `dist/`.            |
 | OS temp `harness-gate-*` dirs or `GATE_LOG_DIR`               | `scripts/run-gate-step.ts`                   | Do not commit                               | Failed logs remain for diagnosis. Successful logs are removed unless `KEEP_GATE_LOGS=1`. |
 | `logs/codex-proxy/`                                           | `pnpm codex:proxy`                           | Ignored; treat as sensitive                 | Request audits can include prompts, tools, and request metadata.                         |
 | `.harness/` in this checkout                                  | Dogfooded review commands and full checks    | Ignored                                     | Local workflow artifacts.                                                                |

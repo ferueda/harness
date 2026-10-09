@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "harness",
+  "version": "0.1.0",
+  "description": "Reusable engineering skills for planning, diagnosis, review, and handoff.",
+  "author": {
+    "name": "Felipe Rueda",
+    "url": "https://github.com/ferueda"
+  },
+  "homepage": "https://github.com/ferueda/harness",
+  "repository": "https://github.com/ferueda/harness",
+  "license": "MIT",
+  "keywords": ["engineering", "planning", "review"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Harness",
+        "shortDescription": "Engineering workflow skills",
+        "longDescription": "Reusable instructions for engineers and coding agents: clarify requirements, triage and diagnose issues, design and plan work, review specifications and changes, explain changes, and hand off context. Includes 13 skills and their local references. Eleven skills require explicit invocation; change-review-workflow and review-spec also allow implicit invocation. The plugin distributes instructions only. Running independent Harness reviews requires a separate Harness CLI installation, repository access, and an authenticated provider in the execution environment.",
+        "developerName": "Felipe Rueda",
+        "category": "Developer Tools",
+        "websiteURL": "https://github.com/ferueda/harness",
+        "defaultPrompt": [
+          "Use $triage to assess this issue and recommend the next useful action.",
+          "Use $explain-change to explain this diff and its tradeoffs."
+        ],
+        "composerIcon": "./assets/harness.svg",
+        "logo": "./assets/harness.svg"
+      }
+    }
+  }
+}

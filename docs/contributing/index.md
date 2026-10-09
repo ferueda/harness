@@ -8,6 +8,7 @@ when a task needs it; this index is not a required reading sequence.
 - [Harness engineering](harness-engineering.md): durable improvement and enforcement.
 - [Agent guidance](agent-guidance.md): editing skills, prompts, routing, and evaluations.
 - [Packaged skills](../../skills/README.md): task selection and installation boundaries.
+- [Skills plugin](plugin.md): private OpenAI plugin packaging, installation, and updates.
 - [Testing](testing.md): focused proof, distribution smoke, gates, and their limits.
 - [Commands](script-command-surface.md): command owners and mutability.
 - [Setup](setup-manifest.md): requirements, authentication, and generated artifacts.

@@ -38,6 +38,11 @@ or documentation corrections; answer those tasks directly with scoped evidence.
 
 ## Installation and resolution
 
+For all skills as one OpenAI plugin, use `make package-plugin` in the Harness
+checkout. See the [plugin guide](../docs/contributing/plugin.md) for private ZIP
+installation, updates, and the separate runner prerequisites. `skills/` remains
+the canonical source for both distribution paths.
+
 Use `npx skills add ferueda/harness` to select skills for a supported host, or:
 
 ```bash
